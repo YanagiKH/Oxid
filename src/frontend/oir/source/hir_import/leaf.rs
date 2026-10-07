@@ -149,7 +149,53 @@ pub(super) fn verify(
     candidate_allocator: &mut Allocator,
     limits: IndexLimits,
 ) -> Result<VerifyFacts, VerifyRejected> {
+    requested(
+        candidate::Request::Verify,
+        owner,
+        captured_source,
+        observation,
+        candidate_allocator,
+        limits,
+    )
+}
+
+/// The private Run precursor is denied before source work or allocation. No
+/// test-only switch or caller-supplied entry can bypass the literal gate.
+#[allow(clippy::result_large_err)]
+pub(super) fn run(
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<VerifyFacts, VerifyRejected> {
+    if !candidate::RUN_ADMITTED {
+        return Err(VerifyRejected::Disabled);
+    }
+    requested(
+        candidate::Request::Run,
+        owner,
+        captured_source,
+        observation,
+        candidate_allocator,
+        limits,
+    )
+}
+
+/// One complete source/canonical/candidate/checker terminal for both requests.
+#[allow(clippy::result_large_err)]
+fn requested(
+    request: candidate::Request,
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<VerifyFacts, VerifyRejected> {
     if !candidate::VERIFY_ADMITTED {
+        return Err(VerifyRejected::Disabled);
+    }
+    if request == candidate::Request::Run && !candidate::RUN_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
     let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
@@ -193,7 +239,8 @@ pub(super) fn verify(
     // Canonical ownership is moved into the one candidate construction body.
     // Its admitted metadata prepays candidate/helper + all downstream work on
     // this same meter before the first reserve. No second debit follows here.
-    let verified_result = candidate::verify_candidate(
+    let verified_result = candidate::request_candidate(
+        request,
         &syntax,
         canonical,
         candidate_allocator,
@@ -371,7 +418,24 @@ fn outer_named_bytes() -> Result<usize, Boundary> {
 fn verify_outer_named_bytes() -> Result<usize, Boundary> {
     let copies = |bytes: usize, count: usize| bytes.checked_mul(count).ok_or(Boundary::Overflow);
     let roles = [
-        size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
+        // Both wrappers and their complete common dispatch call/return roles
+        // are paid, even though Run currently rejects before dispatch.
+        copies(
+            size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
+            2,
+        )?,
+        copies(
+            size_of::<(
+                candidate::Request,
+                SourceOwner<'_>,
+                &[u8],
+                &[u8],
+                &mut Allocator,
+                IndexLimits,
+            )>(),
+            2,
+        )?,
+        copies(size_of::<candidate::Request>(), 3)?,
         size_of::<SourceView<'_>>(),
         copies(size_of::<SourcePlan>(), 2)?,
         copies(size_of::<Result<SourcePlan, Rejected>>(), 2)?,
@@ -382,7 +446,7 @@ fn verify_outer_named_bytes() -> Result<usize, Boundary> {
         size_of::<Result<candidate::VerifyFacts, VerifyRejected>>(),
         size_of::<VerifyFacts>(),
         copies(size_of::<VerifyRejected>(), 2)?,
-        copies(size_of::<Result<VerifyFacts, VerifyRejected>>(), 3)?,
+        copies(size_of::<Result<VerifyFacts, VerifyRejected>>(), 5)?,
         copies(size_of::<u64>(), 4)?,
         copies(size_of::<usize>(), 4)?,
         copies(size_of::<Result<usize, Boundary>>(), 3)?,

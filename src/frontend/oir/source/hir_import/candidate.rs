@@ -26,6 +26,15 @@ pub(super) use verify_terminal::{Facts as VerifyFacts, Rejected as VerifyRejecte
 // Enabled only after carrier measurement and independent boundary review.
 // There is no caller-controlled enablement flag or default compiler route.
 pub(super) const VERIFY_ADMITTED: bool = true;
+// Run remains a compiled, hard-denied precursor until its complete carrier and
+// entry/runtime boundary has been measured and independently reviewed.
+pub(super) const RUN_ADMITTED: bool = false;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Request {
+    Verify,
+    Run,
+}
 
 enum CanonicalInput<'h, 'm> {
     Observe(&'h hir::Program),
@@ -308,7 +317,8 @@ pub(super) fn compare_candidate(
 }
 
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-pub(super) fn verify_candidate(
+pub(super) fn request_candidate(
+    request: Request,
     syntax: &ComparedSyntax<'_, '_, '_>,
     canonical: hir::Program,
     allocator: &mut Allocator,
@@ -317,14 +327,18 @@ pub(super) fn verify_candidate(
     work: &WorkMeter,
     origin: Span,
 ) -> Result<VerifyFacts, VerifyRejected> {
-    if !VERIFY_ADMITTED {
+    if !VERIFY_ADMITTED || (request == Request::Run && !RUN_ADMITTED) {
         return Err(VerifyRejected::Disabled);
     }
     match construct(
         syntax,
         CanonicalInput::Verify {
             canonical,
-            context: verify_terminal::Context { work, origin },
+            context: verify_terminal::Context {
+                request,
+                work,
+                origin,
+            },
         },
         allocator,
         outside_fixed_bytes,
@@ -372,9 +386,10 @@ fn construct(
         // Read only admitted metadata. This cannot stand in for the mandatory
         // final complete() fill/order/capacity checks below.
         let admitted = session.admitted_receipt();
-        let plan = verify_terminal::WorkPlan::calculate(
+        let plan = verify_terminal::WorkPlan::calculate_request(
             admitted.requested,
             usize::from(syntax.bound.wire.rows),
+            context.request,
         )?;
         let charged = builder_work
             .checked_add(admitted.helper_work)
@@ -398,7 +413,7 @@ fn construct(
             .debit(
                 charged,
                 context.origin,
-                "checked HIR candidate and Verify passes",
+                "checked HIR candidate and terminal passes",
             )
             .map_err(|_| Failure::Admission)?;
         Some(plan)
@@ -603,14 +618,20 @@ fn construct(
             drop(candidate);
             Ok(Completion::Observed(facts))
         }
-        CanonicalInput::Verify { canonical, .. } => {
+        CanonicalInput::Verify { canonical, context } => {
             drop(canonical);
             if !equal {
                 drop(candidate);
                 return Err(VerifyRejected::HirMismatch(facts));
             }
-            verify_terminal::run(syntax, candidate, facts, prepaid.ok_or(Failure::Shape)?)
-                .map(Completion::Verified)
+            verify_terminal::run(
+                context.request,
+                syntax,
+                candidate,
+                facts,
+                prepaid.ok_or(Failure::Shape)?,
+            )
+            .map(Completion::Verified)
         }
     }
 }
@@ -1395,6 +1416,7 @@ pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
     let roles = [
         verify_terminal::named_bytes()?,
         size_of::<(
+            Request,
             &ComparedSyntax<'_, '_, '_>,
             hir::Program,
             &mut Allocator,
@@ -1404,7 +1426,8 @@ pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
             Span,
         )>(),
         copies::<Result<VerifyFacts, VerifyRejected>>(2)?,
-        size_of::<verify_terminal::Context<'_>>(),
+        copies::<Request>(3)?,
+        copies::<verify_terminal::Context<'_>>(2)?,
         size_of::<verify_terminal::WorkPlan>(),
         size_of::<&verify_terminal::Context<'_>>(),
         copies::<u64>(3)?,
@@ -1443,5 +1466,7 @@ fn work_bound(rows: usize) -> Result<u64, Failure> {
         .ok_or(Failure::Overflow)
 }
 
+#[cfg(test)]
+mod run_entry_tests;
 #[cfg(test)]
 mod tests;

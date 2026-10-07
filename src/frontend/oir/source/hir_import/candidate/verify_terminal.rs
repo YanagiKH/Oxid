@@ -2,18 +2,19 @@
 //! The public/default source path remains disconnected. Only fixed verification
 //! facts escape after all candidate, typed and verified owners are dropped.
 use super::super::{Counts, MAX_ROWS};
-use super::{hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure};
+use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, Request};
 use crate::frontend::{
     declaration_index::WorkMeter,
     diagnostic::Diagnostic,
-    oir::{self, lower, source::association, verify},
+    oir::{self, lower, source::association, verify, RunFailure, Scalar},
     project::ModuleId,
-    source::{SourceMap, SourceView, Span},
+    source::{SourceFile, SourceMap, SourceView, Span},
     typeck,
 };
 use std::mem::{size_of, size_of_val};
 
 pub(super) struct Context<'m> {
+    pub(super) request: Request,
     pub(super) work: &'m WorkMeter,
     pub(super) origin: Span,
 }
@@ -27,10 +28,11 @@ pub(super) struct WorkPlan {
     pub(super) definitions: u64,
     pub(super) pass_work: u64,
     pub(super) typed_work: u64,
+    pub(super) entry_work: u64,
     pub(super) total: u64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub(in crate::frontend::oir::source::hir_import) struct Facts {
     pub(in crate::frontend::oir::source::hir_import) candidate: ComparisonFacts,
     pub(in crate::frontend::oir::source::hir_import) typed_cells: usize,
@@ -39,6 +41,8 @@ pub(in crate::frontend::oir::source::hir_import) struct Facts {
     pub(in crate::frontend::oir::source::hir_import) association_spans: usize,
     pub(in crate::frontend::oir::source::hir_import) pass_work: u64,
     pub(in crate::frontend::oir::source::hir_import) typed_work: u64,
+    pub(in crate::frontend::oir::source::hir_import) entry_work: u64,
+    pub(in crate::frontend::oir::source::hir_import) runtime: Option<Result<Scalar, RunFailure>>,
 }
 
 #[derive(Debug)]
@@ -145,9 +149,62 @@ impl WorkPlan {
             definitions: d,
             pass_work,
             typed_work,
+            entry_work: 0,
             total: add(pass_work, typed_work)?,
         })
     }
+
+    pub(super) fn calculate_request(
+        counts: Counts,
+        rows: usize,
+        request: Request,
+    ) -> Result<Self, Failure> {
+        let mut plan = Self::calculate(counts, rows)?;
+        if request == Request::Run {
+            // Complete source/OPA admission has bounded functions and source
+            // bytes by MAX_ROWS. Each function's identity/name check plus all
+            // name-byte comparisons fit functions + MAX_ROWS visits; two
+            // visits cover entry/exit. 256 covers fixed checked field access.
+            // This is shared compile work, never runtime fuel.
+            let functions = u64::try_from(counts.0[1]).map_err(|_| Failure::Overflow)?;
+            let source_bytes = u64::try_from(MAX_ROWS).map_err(|_| Failure::Overflow)?;
+            plan.entry_work = mul(256, add(add(functions, source_bytes)?, 2)?)?;
+            plan.total = add(plan.total, plan.entry_work)?;
+        }
+        Ok(plan)
+    }
+}
+
+/// Source/AST/function identity projection only, after complete source/OPA and
+/// candidate/canonical equality. The caller never supplies an entry ordinal.
+/// The returned DefId is captured from the corresponding candidate function
+/// before genuine typechecking consumes that candidate.
+pub(super) fn root_entry(
+    root: &ast::Program,
+    source: &SourceFile,
+    candidate: &hir::Program,
+) -> Result<Option<hir::DefId>, Failure> {
+    super::require(root.modules.is_empty() && root.imports.is_empty())?;
+    super::require(source.text().len() <= MAX_ROWS && root.functions.len() <= MAX_ROWS)?;
+    super::require(
+        root.functions.len() == candidate.functions.len()
+            && root.functions.len() == candidate.signatures.len(),
+    )?;
+    let mut entry = None;
+    let mut ordinal = 0usize;
+    while ordinal < root.functions.len() {
+        let function = &root.functions[ordinal];
+        let resolved = &candidate.functions[ordinal];
+        let signature = &candidate.signatures[ordinal];
+        super::require(resolved.id == hir::DefId(ordinal) && signature.span == function.name)?;
+        let name = source.try_text(function.name).ok_or(Failure::Shape)?;
+        if name == "main" {
+            super::require(entry.is_none())?;
+            entry = Some(resolved.id);
+        }
+        ordinal += 1;
+    }
+    Ok(entry)
 }
 
 /// The construction body has completed exact HIR equality, completed/dropped
@@ -155,11 +212,15 @@ impl WorkPlan {
 /// original shared WorkMeter. No callback or owner-return channel is accepted.
 #[allow(clippy::result_large_err)]
 pub(super) fn run(
+    request: Request,
     syntax: &ComparedSyntax<'_, '_, '_>,
     candidate: hir::Program,
     comparison: ComparisonFacts,
     plan: WorkPlan,
 ) -> Result<Facts, Rejected> {
+    if !super::VERIFY_ADMITTED || (request == Request::Run && !super::RUN_ADMITTED) {
+        return Err(Rejected::Disabled);
+    }
     super::require(comparison.equal)?;
     let owner = syntax.bound.owner;
     let SourceView::Map(sources) = owner.view() else {
@@ -167,6 +228,13 @@ pub(super) fn run(
     };
     let root = owner.ast(ModuleId(0)).map_err(|_| Failure::Shape)?;
     super::require(owner.count() == 1 && root.modules.is_empty() && root.imports.is_empty())?;
+    let entry = if request == Request::Run {
+        let source_result = owner.file(ModuleId(0));
+        let source = source_result.map_err(|_| Failure::Shape)?;
+        root_entry(root, source, &candidate)?
+    } else {
+        None
+    };
     // Genuine check is the sole constructor. Keep its entire authentic error
     // vector, including diagnostics from later functions and their order.
     let typed_result = typeck::check(candidate);
@@ -189,6 +257,10 @@ pub(super) fn run(
     let verified_result = verify::verify(raw, sources);
     let verified = verified_result.map_err(Rejected::Oir)?;
     let functions = verified.function_count();
+    let runtime = match request {
+        Request::Verify => None,
+        Request::Run => Some(verified.run(entry)),
+    };
     drop(verified);
     Ok(Facts {
         candidate: comparison,
@@ -198,6 +270,8 @@ pub(super) fn run(
         association_spans: associated.validation.spans,
         pass_work: plan.pass_work,
         typed_work: plan.typed_work,
+        entry_work: plan.entry_work,
+        runtime,
     })
 }
 
@@ -209,15 +283,17 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
     let roles = [
         size_of::<Context<'_>>(),
         size_of::<(&Context<'_>, Counts, usize, u64)>(),
-        copies(size_of::<WorkPlan>(), 3)?,
-        copies(size_of::<Result<WorkPlan, Failure>>(), 3)?,
+        copies(size_of::<Request>(), 4)?,
+        copies(size_of::<(Counts, usize, Request)>(), 2)?,
+        copies(size_of::<WorkPlan>(), 5)?,
+        copies(size_of::<Result<WorkPlan, Failure>>(), 5)?,
         copies(size_of::<Option<WorkPlan>>(), 2)?,
         size_of::<(Counts, usize)>(),
         size_of::<[usize; 8]>(),
         size_of::<std::array::IntoIter<usize, 8>>(),
         copies(size_of::<usize>(), 10)?,
-        copies(size_of::<u64>(), 24)?,
-        copies(size_of::<Result<u64, Failure>>(), 6)?,
+        copies(size_of::<u64>(), 32)?,
+        copies(size_of::<Result<u64, Failure>>(), 12)?,
         copies(size_of::<(u64, u64)>(), 5)?,
         // Every concrete weighted call's array, by-value input and iterator:
         // K/N/association (3), typecheck/verify (8), lower (9), association
@@ -234,6 +310,7 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         copies(size_of::<[(u64, u64); 4]>(), 2)?,
         size_of::<std::array::IntoIter<(u64, u64), 4>>(),
         size_of::<(
+            Request,
             &ComparedSyntax<'_, '_, '_>,
             hir::Program,
             ComparisonFacts,
@@ -244,6 +321,24 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<&SourceMap>(),
         size_of::<&crate::frontend::ast::Program>(),
         size_of::<Result<&crate::frontend::ast::Program, Box<Diagnostic>>>(),
+        // Run entry capture: complete helper arguments, fixed scan locals,
+        // source-file lookup/conversion, and helper call/return transports.
+        copies(size_of::<(&ast::Program, &SourceFile, &hir::Program)>(), 2)?,
+        copies(size_of::<&SourceFile>(), 2)?,
+        size_of::<Result<&SourceFile, Box<Diagnostic>>>(),
+        size_of::<Result<&SourceFile, Failure>>(),
+        size_of::<Result<&SourceFile, Rejected>>(),
+        size_of::<&ast::Function>(),
+        size_of::<&hir::Function>(),
+        size_of::<&hir::Signature>(),
+        size_of::<&str>(),
+        size_of::<Option<&str>>(),
+        size_of::<Result<&str, Failure>>(),
+        copies(size_of::<usize>(), 2)?,
+        copies(size_of::<hir::DefId>(), 2)?,
+        copies(size_of::<Option<hir::DefId>>(), 4)?,
+        copies(size_of::<Result<Option<hir::DefId>, Failure>>(), 3)?,
+        size_of::<Result<Option<hir::DefId>, Rejected>>(),
         // Genuine pass call argument, return, conversion and held owners.
         size_of::<hir::Program>(),
         size_of::<Result<typeck::TypedProgram, Vec<Diagnostic>>>(),
@@ -263,6 +358,11 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<Result<oir::VerifiedProgram, Rejected>>(),
         size_of::<oir::VerifiedProgram>(),
         size_of::<&oir::VerifiedProgram>(),
+        // Existing reference runtime, retaining its ordinary limits. This
+        // pays only new importer transport, not engine-owned frame payloads.
+        size_of::<(&oir::VerifiedProgram, Option<hir::DefId>)>(),
+        copies(size_of::<Result<Scalar, RunFailure>>(), 2)?,
+        copies(size_of::<Option<Result<Scalar, RunFailure>>>(), 2)?,
         size_of::<usize>(),
         size_of::<Facts>(),
         copies(size_of::<Rejected>(), 2)?,
@@ -302,10 +402,12 @@ mod tests {
         assert!(WorkPlan::calculate(Counts([MAX_ROWS + 1; 8]), MAX_ROWS).is_err());
         assert!(WorkPlan::calculate(Counts::default(), MAX_ROWS + 1).is_err());
         println!(
-            "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={}",
+            "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={} request={} entry={} entry_result={} scalar={} run_failure={} runtime={} optional_runtime={}",
             named_bytes().unwrap(), size_of::<Context<'_>>(), size_of::<WorkPlan>(),
             size_of::<Facts>(), size_of::<Rejected>(), size_of::<Result<Facts, Rejected>>(),
             size_of::<typeck::TypedProgram>(), size_of::<oir::Program>(), size_of::<oir::VerifiedProgram>(),
+            size_of::<Request>(), size_of::<Option<hir::DefId>>(), size_of::<Result<Option<hir::DefId>, Failure>>(),
+            size_of::<Scalar>(), size_of::<RunFailure>(), size_of::<Result<Scalar, RunFailure>>(), size_of::<Option<Result<Scalar, RunFailure>>>(),
         );
     }
 }
