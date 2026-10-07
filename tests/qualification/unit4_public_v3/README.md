@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact 264-input native storage compiler manifest, the reviewed 265-input
+`authority.py` pins the exact 266-input native inventory compiler manifest, the reviewed 267-input
 lifecycle overlay map and the current additive patch successor. Four exact
 enum-era substitutions preserve the logical collection, parser and owned-route
 hooks in the current execution bodies. The current `observer-stdin-v1.patch`
@@ -191,7 +191,7 @@ logical event. No frozen observer or contract is edited.
 
 The qualified-values descriptor and helper remain unchanged. Its semantic source
 authority is the exact retained 237-input `enum-source.json`; execution source
-is the 264-input `current-source.json`. The public amendment receipt records
+is the 266-input `current-source.json`. The public amendment receipt records
 both roles separately. Current executions cannot use the old compiler authority,
 and the frozen semantic amendment cannot be rebound to the new compiler. The
 final join independently validates both exact hashes and their roles.
@@ -209,3 +209,13 @@ The native storage successor binds checkpoint
 patch, so `observer-stdin-v1.patch` remains byte-identical. The retained stdout
 source authority and all older semantic, resource and lifecycle authorities keep
 their original checkpoint identities.
+
+The native inventory admission successor binds source checkpoint
+`ffa2e00543b7a1958321b719677ed3b48f42bc74`, 266 current inputs and a
+267-member lifecycle view. Its five changed bodies and two added test modules
+have no lifecycle patch overlap, so `observer-stdin-v1.patch` and all logical
+hooks remain byte-identical. The exact 264-input Phase1 source is retained in
+`native-storage-source.json`; its authority, transition and older semantic
+authorities keep their original identities. Current execution receipts bind the
+new source while the qualified-values semantic authority remains the 237-input
+enum predecessor.

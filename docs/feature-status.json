@@ -259,7 +259,7 @@
         "docs/architecture/boolean-logic-validation.md",
         "docs/architecture/mutable-locals-validation.md"
       ],
-      "limitations": "Linux x86_64 LLVM 19.1.7 O0 only; explicit toolchain and host C environment required. Whole-call-graph recursion rejection, 32 call depth, 64 user parameters, 256 scalar slots/function, 8192 aggregate/live scalar slots and 4096 blocks remain. Transitively acyclic functions retain a 100000 fuel bound; cyclic modules use shared 1000000 runtime fuel. Scalar-only guarded modules add 16 MiB diagnostic/64 MiB LLVM text bounds. The experimental owned source route, its additional S+O/expanded-cell/byte limits and exact source qualification scope are recorded once by typed-preview-ownership-foundations. No wider arithmetic, cross compilation, stable ABI, general memory-safety certification, sandbox or self-hosting is claimed. Legacy compilation remains independent."
+      "limitations": "Linux x86_64 LLVM 19.1.7 O0 only; explicit toolchain and host C environment required. Whole-call-graph recursion rejection, 32 call depth, 64 user parameters, 256 scalar slots/function, 8192 aggregate/live scalar slots and 4096 blocks remain. Transitively acyclic functions retain a 100000 fuel bound; cyclic modules use shared 1000000 runtime fuel. Scalar-only guarded modules add 16 MiB diagnostic/64 MiB LLVM text bounds. The experimental owned source route, its additional S+O/inventory/byte limits and exact source qualification scope are recorded once by typed-preview-ownership-foundations. No wider arithmetic, cross compilation, stable ABI, general memory-safety certification, sandbox or self-hosting is claimed. Legacy compilation remains independent."
     },
     {
       "id": "independent-self-hosting",
@@ -745,7 +745,9 @@
       "spec": [
         "rfcs/0014-owned-structs-call-borrows.md",
         "spec/typed-preview.md",
-        "spec/native-preview.md"
+        "spec/native-preview.md",
+        "rfcs/0026-owned-native-storage-plan.md",
+        "rfcs/0027-native-admission-inventories.md"
       ],
       "implementation": [
         "src/frontend/ast.rs",
@@ -765,7 +767,8 @@
         "src/frontend/oir/owned/source/program.rs",
         "src/frontend/oir/owned/plan.rs",
         "src/frontend/oir/owned/execute.rs",
-        "src/frontend/oir/owned/native.rs"
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/oir/owned/native_storage.rs"
       ],
       "tests": [
         "src/frontend/owned_syntax_tests.rs",
@@ -790,13 +793,17 @@
         "scripts/owned_source_native.py",
         "scripts/owned_source_native_audit.py",
         "scripts/test_owned_source_native.py",
-        "scripts/test_owned_source_native_audit.py"
+        "scripts/test_owned_source_native_audit.py",
+        "src/frontend/oir/owned/native_storage_tests.rs",
+        "src/frontend/oir/owned/native_inventory_tests.rs",
+        "src/frontend/oir/owned/native_inventory_admission_tests.rs"
       ],
       "evidence": [
         "docs/architecture/owned-source-validation.md",
-        "docs/architecture/owned-consumers-validation.md"
+        "docs/architecture/owned-consumers-validation.md",
+        "rfcs/0027-native-admission-inventories.md"
       ],
-      "limitations": "Experimental production source route; the source ledger binds each qualification claim to exact compiler, source and target identities. CLI/ELF comparison, native semantic/store evidence, resource gates and hosted CI are separate scopes; raw-consumer evidence is historical. One capability covers declaration, verifier, source and consumer work. Exact nominal/mode matching; no borrow coercion, stored/returned references, scalar/field/temporary borrows, standalone blocks, nested owned fields, partial moves, general dereference, mutable parameter bindings, heap/destructors or unsafe/FFI ownership. Check may accept an owned-returning main; run/compile require scalar zero-argument main. Any owned syntax selects owned routing for the whole module without fallback. Source raw payload <=64 MiB; separate declaration/verifier/plan/runtime/native ledgers apply. New owned diagnostic text <=2048 bytes each excludes shared lexer/parser formatting, capacities, rendering, paths and RSS. No Rust equivalence, stable ABI, general safety certification, M2 or v1.0 completion claim."
+      "limitations": "Experimental production source route; the source ledger binds each qualification claim to exact compiler, source and target identities. CLI/ELF comparison, native semantic/store evidence, resource gates and hosted CI are separate scopes; raw-consumer evidence is historical. One capability covers declaration, verifier, source and consumer work. RFC 0027 intentionally broadens native admission with independent whole-program I/W inventories each <= 8,192, replacing only aggregate/live reference-expanded-cell guards. Aggregate/live explicit bytes remain <= 1 MiB including builtin scratch and the conditional wrapper fuel cell; other caps, reference storage, logical fuel, LLVM and ABI are unchanged. This is not an allocation optimization. Production activation is 189cbed; tested compiler source is ffa2e00. Local successor evidence does not establish capability or exact-head hosted qualification; historical ledgers/oracles stay frozen. Exact nominal/mode matching; no borrow coercion, stored/returned references, scalar/field/temporary borrows, standalone blocks, nested owned fields, partial moves, general dereference, mutable parameter bindings, heap/destructors or unsafe/FFI ownership. Check may accept an owned-returning main; run/compile require scalar zero-argument main. Any owned syntax selects owned routing for the whole module without fallback. Source raw payload <=64 MiB; separate declaration/verifier/plan/runtime/native ledgers apply. New owned diagnostic text <=2048 bytes each excludes shared lexer/parser formatting, capacities, rendering, paths and RSS. No Rust equivalence, stable ABI, general safety certification, M2 or v1.0 completion claim."
     },
     {
       "id": "typed-preview-bounded-projects",

@@ -314,8 +314,10 @@ share the 65,536 member cap; record fields retain their 1,024 per-record cap.
 The existing 100,000-node and 64-level parser limits remain. Affected enum-bearing
 HIR storage and admitted projection/lowering scratch use a 64 MiB ceiling; this
 is a scoped storage account, not a universal compiler-memory or RSS cap. Reference
-execution retains the 200,000-expanded-cell/16 MiB bounds; native retains
-8,192 expanded cells/1 MiB and its stricter whole-program admission.
+execution retains the 200,000-expanded-cell/16 MiB bounds. Native admission uses
+independent whole-program inventories I and W, each at most 8,192, plus unchanged
+1 MiB aggregate/live explicit-byte bounds and its other stricter limits; see
+[RFC 0027](../rfcs/0027-native-admission-inventories.md).
 
 Enum borrows, storage in record fields or arrays, aggregate/recursive payloads,
 partial moves, equality, printing and source-visible tags are unavailable.
@@ -1268,20 +1270,30 @@ sites, and P the sum of each owner's checked recursive width: scalar leaves
 count 1, records use `max(1, sum(field widths))`, fixed arrays use `max(1, N)`,
 and enums use 2. This includes zero-length and unit arrays. B is the
 checked aligned owner arena, including parameters, locals, expression temporaries,
-argument staging, call results and inter-owner padding. Let I be 1024 for the
-canonical input builtin and 0 otherwise; it reserves private scratch in the same
-payload allocation, outside all owner extents. All declared storage is counted,
-including unused/skipped work. On the qualified x86_64 representation:
+argument staging, call results and inter-owner padding. Let T be 1024 scratch
+bytes for each canonical input or output builtin and 0 otherwise; it reserves
+private scratch in the same payload allocation, outside all owner extents.
+All declared storage is counted, including unused/skipped work. On the qualified
+x86_64 representation:
 
 ```text
 X = S + A + P + 4O + 8R + 12L + 2C
 Xphysical = X + 2(R+L)
-Dref = 8(S+A) + B + I + 32O + 80R + 112L + 16C
+Dref = 8(S+A) + B + T + 32O + 80R + 112L + 16C
 ```
 
 X is the logical activation-fuel count. Xphysical includes the existing
-reference/loan view metadata and is the expanded-cell admission count; the
-metadata and input scratch do not add logical activation fuel.
+reference/loan view metadata and remains the reference expanded-cell admission
+count; the metadata and builtin scratch do not add logical activation fuel.
+
+Native admission separately uses whole-program `I = sum(S + A + O + R + L + C)`
+and `W = sum(P)`, each at most 8,192, including all argument positions, unused
+functions and untaken branches. [RFC 0027](../rfcs/0027-native-admission-inventories.md)
+replaces only the native aggregate/live Xphysical gates with these inventories.
+This intentionally broadens admission without allocation optimization or changes
+to reference storage, logical fuel, LLVM or ABI. The native 1 MiB aggregate/live
+explicit-byte checks still include canonical builtin scratch and the conditional
+8-byte wrapper fuel cell; all other caps remain.
 
 Reference execution retains 1,000,000 fuel, 1,024 live frames and 200,000 live
 scalar slots, and additionally caps live Xphysical at 200,000 and requested runtime
@@ -1326,8 +1338,8 @@ another owner/event; owned name expressions move through explicit temporaries.
 Scalar expressions in owned modules still preserve scalar snapshots and ordered
 checked arithmetic, but whole-module calls/storage use the owned ledger.
 
-Activation admission checks fuel, frames, scalar slots, expanded cells, bytes,
-then allocation. An exhausted charge performs no part of the operation. Earlier
+Reference activation admission checks fuel, frames, scalar slots, expanded cells,
+bytes, then allocation. An exhausted charge performs no part of the operation. Earlier
 effects remain; abrupt failure promises no rollback, normal-return loan release,
 destructor execution or unwinding. Root errors retain entry origins and call
 activation errors retain Invoke origins. Existing scalar overflow retains its

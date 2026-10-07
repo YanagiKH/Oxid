@@ -128,6 +128,8 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned/mod.rs',
     'src/frontend/oir/owned/native.rs',
     'src/frontend/oir/owned/native_heldout_review.rs',
+    'src/frontend/oir/owned/native_inventory_admission_tests.rs',
+    'src/frontend/oir/owned/native_inventory_tests.rs',
     'src/frontend/oir/owned/native_storage.rs',
     'src/frontend/oir/owned/native_storage_tests.rs',
     'src/frontend/oir/owned/native_tests.rs',
@@ -322,6 +324,8 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned/enum_query_allocation_tests.rs',
     'src/frontend/oir/owned/enum_reference_tests.rs',
     'src/frontend/oir/owned/input.rs',
+    'src/frontend/oir/owned/native_inventory_admission_tests.rs',
+    'src/frontend/oir/owned/native_inventory_tests.rs',
     'src/frontend/oir/owned/native_storage.rs',
     'src/frontend/oir/owned/native_storage_tests.rs',
     'src/frontend/oir/owned/negation_raw_tests.rs',
@@ -430,7 +434,7 @@ PROJECTED_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.r
 ENUM_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/declaration_index/resource.rs",
                               "src/frontend/parser.rs",
                               "src/frontend/project/budget.rs", "src/frontend/source.rs")
-AUTHORITY_SHA = '8df96dfffcd1a5a8d00acc65f77b85069c364a91832a7f452deb9921c57ef202'
+AUTHORITY_SHA = 'e5340abb07ea0dc8e663954ee926b876288f73303492c114e9d5459ccab96f55'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -550,9 +554,30 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 264, "complete current source count")
+    same(len(current["files"]), 266, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
+    verify_map(REPOSITORY, [active["native_inventory_authority"],
+                           active["native_inventory_transition_patch"],
+                           active["native_storage_source_manifest"]])
+    same(active["native_inventory_authority"]["path"], "tests/fixtures/typed_project_source_binding/native-inventory-authority.json", "native inventory authority path")
+    same(active["native_inventory_transition_patch"]["path"], "tests/fixtures/typed_project_source_binding/native-inventory-transition.patch", "native inventory patch path")
+    same(active["native_storage_source_manifest"]["path"], "tests/fixtures/typed_project_source_binding/native-storage-source.json", "native storage predecessor path")
+    inventory = read(REPOSITORY / active["native_inventory_authority"]["path"])
+    storage_source = read(REPOSITORY / active["native_storage_source_manifest"]["path"])
+    same(inventory["schema"], "oxid-native-inventory-source-transition-v1", "native inventory authority schema")
+    same(inventory["reviewed_source_head"], current["reviewed_source_head"], "native inventory source checkpoint")
+    same(inventory["source_only_tree"], current["source_only_tree"], "native inventory source tree")
+    same(inventory["base_head"], current["native_inventory_base_head"], "native inventory predecessor checkpoint")
+    same(inventory["current_source_sha256"], active["current_source_manifest"]["sha256"], "native inventory current source identity")
+    same(inventory["native_storage_source_sha256"], active["native_storage_source_manifest"]["sha256"], "native inventory exact storage predecessor")
+    same(current["native_storage_source_sha256"], active["native_storage_source_manifest"]["sha256"], "current exact storage predecessor")
+    same(len(storage_source["files"]), 264, "complete retained native storage source count")
+    same(inventory["native_storage_authority_sha256"], active["native_storage_authority"]["sha256"], "native inventory exact storage authority")
+    same(inventory["transition_patch_sha256"], active["native_inventory_transition_patch"]["sha256"], "native inventory exact transition patch")
+    for field in ("instrumentation", "control_instrumentation"):
+        same(sorted(set(inventory["transition_paths"]).intersection(row["path"] for row in result[field])),
+             [], "native inventory transition must not overlap parser instrumentation")
     enum_authority = read(REPOSITORY / active["enum_authority"]["path"])
     same(sorted(set(enum_authority["transition_paths"]).intersection(row["path"] for row in result["instrumentation"])),
          list(ENUM_INSTRUMENTATION_PATHS), "exact enum observer overlap roster")
@@ -587,10 +612,10 @@ def authority():
     same(active["native_storage_authority"]["path"], "tests/fixtures/typed_project_source_binding/native-storage-authority.json", "native storage authority path")
     same(active["native_storage_transition_patch"]["path"], "tests/fixtures/typed_project_source_binding/native-storage-transition.patch", "native storage patch path")
     same(native_storage["schema"], "oxid-native-storage-source-transition-v1", "native storage authority schema")
-    same(native_storage["reviewed_source_head"], current["reviewed_source_head"], "native storage source checkpoint")
-    same(native_storage["source_only_tree"], current["source_only_tree"], "native storage source tree")
+    same(native_storage["reviewed_source_head"], storage_source["reviewed_source_head"], "native storage source checkpoint")
+    same(native_storage["source_only_tree"], storage_source["source_only_tree"], "native storage source tree")
     same(native_storage["base_head"], stdout_source["reviewed_source_head"], "native storage predecessor checkpoint")
-    same(native_storage["current_source_sha256"], active["current_source_manifest"]["sha256"], "native storage current source identity")
+    same(native_storage["current_source_sha256"], active["native_storage_source_manifest"]["sha256"], "native storage predecessor source identity")
     same(native_storage["stdout_source_sha256"], active["stdout_source_manifest"]["sha256"], "native storage exact stdout predecessor")
     same(native_storage["stdout_authority_sha256"], active["stdout_authority"]["sha256"], "native storage exact stdout authority")
     same(native_storage["transition_patch_sha256"], active["native_storage_transition_patch"]["sha256"], "native storage exact transition patch")
@@ -608,7 +633,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 264, "duplicate current member")
+    same(len(after), 266, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -624,7 +649,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 427, "current base count")
+    same(len(base), 429, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -655,7 +680,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 430, "current derived count")
+        same(len(ordered), 432, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -1180,7 +1205,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 209, "current compiler body count")
+    same(len(wanted), 211, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

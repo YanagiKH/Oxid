@@ -1,13 +1,13 @@
 # Mandatory current Unit4 qualification
 
-This integration admits the exact component closure and the 264-input current
-compiler authority at source checkpoint `983dad1f21bdc9d37cf0d1364b58aad219e553d0`.
-Its additive lifecycle observer contains 265 members. The named
+This integration admits the exact component closure and the 266-input current
+compiler authority at source checkpoint `ffa2e00543b7a1958321b719677ed3b48f42bc74`.
+Its additive lifecycle observer contains 267 members. The named
 `observer-stdin-v1.patch` successor composes the existing logical event hooks onto
 current bodies and reverses exactly to the retained enum, projected and historical
 patches. Frozen semantic/native/mutation contracts remain unchanged.
 
-The current parser has 427 base and 430 derived inputs per role, with 209 compiler
+The current parser has 429 base and 432 derived inputs per role, with 211 compiler
 bodies. Its separately pinned enum-free structural projection removes only an
 empty Program enum arena and maps exact crate-root QualifiedPath carriers to
 their historical AbsolutePath shape. Raw and normalized observations remain
@@ -59,8 +59,8 @@ command, exit, snapshot ordering and comparison bytes. The closure requires ever
 consumed input and all four executable identities. Both generated current
 candidate-source manifests must remain as actual compact bodies and are resolved
 against their pinned identities and re-derived maps. The allowed omissions are
-exactly 429 derived-tree members per role plus four binaries (862 identities); the
-430-member derived maps and complete comparison closure are unchanged. The
+exactly 431 derived-tree members per role plus four binaries (866 identities); the
+432-member current derived maps and complete comparison closure remain bound. The
 final join reconstructs each normalized
 row from the unchanged raw case using the frozen normalizer and derives the
 complete case/mode/profile roster. Source/binary replay at original paths was
@@ -74,7 +74,7 @@ controls only; it never supplies a hosted execution row.
 
 The current parser successor lives in `tests/qualification/unit4_parser_current`.
 It preserves the complete original frozen v3 package and distinguishes its
-283/286 historical maps from the current 427/430 maps. The source manifest and
+283/286 historical maps from the current 429/432 maps. The source manifest and
 transition records bind actual current compiler bodies through the final join.
 Only a failed stage08 prints a bounded, JSON-escaped stderr tail; workflow marker
 pairs are escaped too. Full stderr and its exact receipt hash remain preserved,
@@ -104,5 +104,5 @@ re-derives them from unchanged raw process bytes and the admitted source manifes
 This amendment is not part of the Closed parser structural projection.
 
 The four-case qualified-values amendment keeps its exact 237-input enum semantic
-authority. Its receipt separately binds the 264-input current execution manifest;
+authority. Its receipt separately binds the 266-input current execution manifest;
 the final join rejects a changed or swapped authority in either role.
