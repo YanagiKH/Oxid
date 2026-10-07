@@ -1,12 +1,12 @@
-//! Private still-denied comparison leaf. No default caller is connected.
-//! Only fixed facts can leave after candidate and canonical owners are dropped.
+//! Private comparison and hard-denied Verify entries. No default caller is
+//! connected. Successful terminal values contain fixed facts only.
 use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
     diagnostic::Diagnostic,
     hir,
     project::{budget::Allocator, ModuleId},
-    source::{SourceFile, Span},
+    source::{SourceFile, SourceView, Span},
 };
 use std::{
     convert::Infallible,
@@ -55,6 +55,31 @@ impl From<allocation::Failure> for Rejected {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct VerifyFacts {
+    pub(super) verified: candidate::VerifyFacts,
+    pub(super) source_work: u64,
+    pub(super) canonical_work: u64,
+    pub(super) total_work: u64,
+    pub(super) outside_fixed_bytes: usize,
+}
+#[derive(Debug)]
+pub(super) enum VerifyRejected {
+    Disabled,
+    Source(Rejected),
+    Terminal(candidate::VerifyRejected),
+}
+impl From<Boundary> for VerifyRejected {
+    fn from(value: Boundary) -> Self {
+        Self::Source(Rejected::Boundary(value))
+    }
+}
+impl From<candidate::VerifyRejected> for VerifyRejected {
+    fn from(value: candidate::VerifyRejected) -> Self {
+        Self::Terminal(value)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct SourcePlan {
     outside_fixed_bytes: usize,
@@ -88,6 +113,103 @@ impl SourcePlan {
             source_work,
         })
     }
+
+    #[allow(clippy::result_large_err)]
+    fn calculate_verify(limits: IndexLimits) -> Result<Self, Rejected> {
+        let mut plan = Self::calculate(limits)?;
+        let extra = verify_outer_named_bytes()?
+            .checked_add(candidate::verify_named_bytes()?)
+            .ok_or(Boundary::Overflow)?;
+        plan.outside_fixed_bytes = plan
+            .outside_fixed_bytes
+            .checked_add(extra)
+            .ok_or(Boundary::Overflow)?;
+        plan.fixed_bytes = plan
+            .fixed_bytes
+            .checked_add(extra)
+            .ok_or(Boundary::Overflow)?;
+        let default = IndexLimits::default();
+        let bytes = u64::try_from(plan.fixed_bytes).map_err(|_| Boundary::Overflow)?;
+        if bytes > limits.scratch.min(default.scratch)
+            || bytes > limits.retained.min(default.retained)
+        {
+            return Err(Rejected::Budget);
+        }
+        Ok(plan)
+    }
+}
+
+/// Compiled for complete carrier review only. The hard false guard also exists
+/// at the candidate Verify entrance; no caller flag or cfg(test) bypass exists.
+#[allow(clippy::result_large_err)]
+pub(super) fn verify(
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<VerifyFacts, VerifyRejected> {
+    if !candidate::VERIFY_ADMITTED {
+        return Err(VerifyRejected::Disabled);
+    }
+    let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
+    if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
+        return Err(Boundary::Domain.into());
+    }
+    let origin = owner
+        .file(ModuleId(0))
+        .map_err(|_| Boundary::Source)?
+        .span(0, 0);
+    let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
+    work.debit(
+        plan.source_work,
+        origin,
+        "checked HIR source/OPA comparison",
+    )
+    .map_err(|_| VerifyRejected::Source(Rejected::Budget))?;
+    let bound_result = BoundObservation::bind(owner, captured_source, observation);
+    let bound = bound_result?;
+    let syntax_result = ast_compare::compare(&bound);
+    let syntax = syntax_result?;
+    let canonical_result = {
+        let mut canonical_allocator = Allocator::default();
+        hir::resolve_sources_with_meter(owner, &work, &mut canonical_allocator)
+    };
+    let canonical = canonical_result
+        .map_err(Rejected::Canonical)
+        .map_err(VerifyRejected::Source)?;
+    let canonical_work = work
+        .used()
+        .checked_sub(plan.source_work)
+        .ok_or(Boundary::Overflow)?;
+    let remaining = IndexLimits {
+        retained: limits.retained.min(IndexLimits::default().retained),
+        scratch: limits.scratch.min(IndexLimits::default().scratch),
+        work: work
+            .limit()
+            .checked_sub(work.used())
+            .ok_or(Boundary::Overflow)?,
+    };
+    // Canonical ownership is moved into the one candidate construction body.
+    // Its admitted metadata prepays candidate/helper + all downstream work on
+    // this same meter before the first reserve. No second debit follows here.
+    let verified_result = candidate::verify_candidate(
+        &syntax,
+        canonical,
+        candidate_allocator,
+        plan.outside_fixed_bytes,
+        remaining,
+        &work,
+        origin,
+    );
+    let verified = verified_result?;
+    Ok(VerifyFacts {
+        verified,
+        source_work: plan.source_work,
+        canonical_work,
+        total_work: work.used(),
+        outside_fixed_bytes: plan.outside_fixed_bytes,
+    })
 }
 
 /// Not called by any production/default path. Paid controls exercise only
@@ -243,6 +365,37 @@ fn outer_named_bytes() -> Result<usize, Boundary> {
         .try_fold(bank, |sum, n| sum.checked_add(n).ok_or(Boundary::Overflow))
 }
 
+/// Added Verify request/result/call roles; the common source/resolve owners and
+/// source-comparison bank remain fully included by calculate(). Sum complete
+/// transport types rather than field subtotals or supposed optimized frames.
+fn verify_outer_named_bytes() -> Result<usize, Boundary> {
+    let copies = |bytes: usize, count: usize| bytes.checked_mul(count).ok_or(Boundary::Overflow);
+    let roles = [
+        size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
+        size_of::<SourceView<'_>>(),
+        copies(size_of::<SourcePlan>(), 2)?,
+        copies(size_of::<Result<SourcePlan, Rejected>>(), 2)?,
+        size_of::<Result<SourcePlan, VerifyRejected>>(),
+        size_of::<Result<hir::Program, VerifyRejected>>(),
+        size_of::<candidate::VerifyFacts>(),
+        size_of::<Result<candidate::VerifyFacts, candidate::VerifyRejected>>(),
+        size_of::<Result<candidate::VerifyFacts, VerifyRejected>>(),
+        size_of::<VerifyFacts>(),
+        copies(size_of::<VerifyRejected>(), 2)?,
+        copies(size_of::<Result<VerifyFacts, VerifyRejected>>(), 3)?,
+        copies(size_of::<u64>(), 4)?,
+        copies(size_of::<usize>(), 4)?,
+        copies(size_of::<Result<usize, Boundary>>(), 3)?,
+    ];
+    let bank = size_of_val(&roles)
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
+        .ok_or(Boundary::Overflow)?;
+    roles.into_iter().try_fold(bank, |sum, value| {
+        sum.checked_add(value).ok_or(Boundary::Overflow)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,6 +448,48 @@ mod tests {
             .unwrap()
             .fixed_bytes,
             plan.fixed_bytes
+        );
+    }
+
+    #[test]
+    fn checked_hir_import_verify_leaf_layout_and_preflight_only() {
+        let plan = SourcePlan::calculate_verify(IndexLimits::default()).unwrap();
+        let comparison = SourcePlan::calculate(IndexLimits::default()).unwrap();
+        assert_eq!(plan.source_work, comparison.source_work);
+        assert_eq!(
+            plan.fixed_bytes - comparison.fixed_bytes,
+            verify_outer_named_bytes().unwrap() + candidate::verify_named_bytes().unwrap(),
+        );
+        let exact = IndexLimits {
+            retained: plan.fixed_bytes as u64,
+            scratch: plan.fixed_bytes as u64,
+            work: plan.source_work,
+        };
+        assert!(SourcePlan::calculate_verify(exact).is_ok());
+        for limits in [
+            IndexLimits {
+                retained: exact.retained - 1,
+                ..exact
+            },
+            IndexLimits {
+                scratch: exact.scratch - 1,
+                ..exact
+            },
+            IndexLimits {
+                work: exact.work - 1,
+                ..exact
+            },
+        ] {
+            assert!(matches!(
+                SourcePlan::calculate_verify(limits),
+                Err(Rejected::Budget)
+            ));
+        }
+        println!(
+            "HIR_IMPORT_VERIFY_LEAF extra={} candidate={} outside={} fixed={} facts={} rejection={} result={}",
+            verify_outer_named_bytes().unwrap(), candidate::verify_named_bytes().unwrap(),
+            plan.outside_fixed_bytes, plan.fixed_bytes, size_of::<VerifyFacts>(),
+            size_of::<VerifyRejected>(), size_of::<Result<VerifyFacts, VerifyRejected>>(),
         );
     }
 }

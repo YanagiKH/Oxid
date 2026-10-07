@@ -335,6 +335,12 @@ pub(super) struct Session<'h, 'a> {
     failed: Cell<bool>,
 }
 impl<'h, 'a> Session<'h, 'a> {
+    /// Planned/admitted scalar metadata only. This does not certify completed
+    /// fills and cannot replace complete() or provide an owner/reserve token.
+    pub(super) fn admitted_receipt(&self) -> Receipt {
+        self.receipt
+    }
+
     /// `outside_fixed_bytes` must come from the enclosing leaf's measured map,
     /// row, source-bound argument and transport roles. It is not a provenance
     /// claim. Its Program header roles must include canonical and candidate
@@ -660,6 +666,9 @@ pub(super) fn helper_named_bytes() -> Result<usize, Failure> {
         size_of::<Result<StoragePlan, Boundary>>(),
         size_of::<StoragePlan>(),
         size_of::<Receipt>(),
+        // Read-only admitted metadata receiver and complete return/caller copy.
+        size_of::<&Session<'_, '_>>(),
+        copies::<Receipt>(2)?,
         // Local admission result, forwarding return, caller result and owner.
         size_of::<Session<'_, '_>>(),
         copies::<Result<Session<'_, '_>, Failure>>(3)?,

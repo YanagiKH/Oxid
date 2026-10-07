@@ -11,7 +11,7 @@ use super::{
     hir, MAX_ROWS,
 };
 use crate::frontend::{
-    declaration_index::IndexLimits,
+    declaration_index::{IndexLimits, WorkMeter},
     lexer::{Kind, Token},
     project::{budget::Allocator, ModuleId},
     source::Span,
@@ -20,6 +20,33 @@ use std::mem::{size_of, size_of_val};
 
 // Pure complete STF1 comparison is compiled; Verify consumers remain closed.
 mod typed_compare;
+mod verify_terminal;
+pub(super) use verify_terminal::{Facts as VerifyFacts, Rejected as VerifyRejected};
+
+// A source edit after carrier measurement and independent boundary review is
+// required to admit success. There is no caller-controlled enablement flag.
+pub(super) const VERIFY_ADMITTED: bool = false;
+
+enum CanonicalInput<'h, 'm> {
+    Observe(&'h hir::Program),
+    Verify {
+        canonical: hir::Program,
+        context: verify_terminal::Context<'m>,
+    },
+}
+impl CanonicalInput<'_, '_> {
+    fn program(&self) -> &hir::Program {
+        match self {
+            Self::Observe(program) => program,
+            Self::Verify { canonical, .. } => canonical,
+        }
+    }
+}
+
+enum Completion {
+    Observed(ComparisonFacts),
+    Verified(VerifyFacts),
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ComparisonFacts {
@@ -266,6 +293,60 @@ pub(super) fn compare_candidate(
     outside_fixed_bytes: usize,
     remaining: IndexLimits,
 ) -> Result<ComparisonFacts, Failure> {
+    match construct(
+        syntax,
+        CanonicalInput::Observe(canonical),
+        allocator,
+        outside_fixed_bytes,
+        remaining,
+    ) {
+        Ok(Completion::Observed(facts)) => Ok(facts),
+        Err(VerifyRejected::Candidate(failure)) => Err(failure),
+        // Neither can arise from Observe; no compiler owner crosses the match.
+        Ok(Completion::Verified(_)) | Err(_) => Err(Failure::Shape),
+    }
+}
+
+#[allow(clippy::too_many_arguments, clippy::result_large_err)]
+pub(super) fn verify_candidate(
+    syntax: &ComparedSyntax<'_, '_, '_>,
+    canonical: hir::Program,
+    allocator: &mut Allocator,
+    outside_fixed_bytes: usize,
+    remaining: IndexLimits,
+    work: &WorkMeter,
+    origin: Span,
+) -> Result<VerifyFacts, VerifyRejected> {
+    if !VERIFY_ADMITTED {
+        return Err(VerifyRejected::Disabled);
+    }
+    match construct(
+        syntax,
+        CanonicalInput::Verify {
+            canonical,
+            context: verify_terminal::Context { work, origin },
+        },
+        allocator,
+        outside_fixed_bytes,
+        remaining,
+    )? {
+        Completion::Verified(facts) => Ok(facts),
+        Completion::Observed(_) => Err(Failure::Shape.into()),
+    }
+}
+
+/// The one construction body serves observation and the closed Verify path.
+/// Observe drops the candidate inside its existing allocation-observer scope;
+/// Verify owns canonical HIR so it can release it before genuine typechecking.
+#[allow(clippy::result_large_err)]
+fn construct(
+    syntax: &ComparedSyntax<'_, '_, '_>,
+    input: CanonicalInput<'_, '_>,
+    allocator: &mut Allocator,
+    outside_fixed_bytes: usize,
+    remaining: IndexLimits,
+) -> Result<Completion, VerifyRejected> {
+    let canonical = input.program();
     let program = syntax
         .bound
         .owner
@@ -287,6 +368,43 @@ pub(super) fn compare_candidate(
     };
     mapping.validate()?;
     let session = Session::admit(canonical, allocator, fixed, helper_limits)?;
+    let prepaid = if let CanonicalInput::Verify { context, .. } = &input {
+        // Read only admitted metadata. This cannot stand in for the mandatory
+        // final complete() fill/order/capacity checks below.
+        let admitted = session.admitted_receipt();
+        let plan = verify_terminal::WorkPlan::calculate(
+            admitted.requested,
+            usize::from(syntax.bound.wire.rows),
+        )?;
+        let charged = builder_work
+            .checked_add(admitted.helper_work)
+            .and_then(|n| n.checked_add(plan.total))
+            .ok_or(Failure::Overflow)?;
+        // Preserve exactly the remaining original allowance; no fresh meter,
+        // later candidate debit, refund or replenishment is possible here.
+        require(
+            remaining.work
+                <= context
+                    .work
+                    .limit()
+                    .checked_sub(context.work.used())
+                    .ok_or(Failure::Overflow)?,
+        )?;
+        if charged > remaining.work {
+            return Err(Failure::Admission.into());
+        }
+        context
+            .work
+            .debit(
+                charged,
+                context.origin,
+                "checked HIR candidate and Verify passes",
+            )
+            .map_err(|_| Failure::Admission)?;
+        Some(plan)
+    } else {
+        None
+    };
     let mut signatures =
         session.reserve::<hir::Signature>(Key::Signatures, program.functions.len())?;
     let mut functions =
@@ -466,19 +584,34 @@ pub(super) fn compare_candidate(
     };
     let allocation = session.complete()?;
     let equal = same_program(&candidate, canonical);
-    // All complete and partial error exits have lexical RAII ownership. No
-    // returned value can retain candidate storage, even in the unequal case.
-    drop(candidate);
+    // Session owns a canonical borrow and allocator borrow. Release both before
+    // the owning input is moved, and before canonical HIR can be dropped.
+    drop(session);
     let charged_work = builder_work
         .checked_add(allocation.helper_work)
         .ok_or(Failure::Overflow)?;
-    Ok(ComparisonFacts {
+    let facts = ComparisonFacts {
         allocation,
         equal,
         builder_named_bytes,
         builder_work,
         charged_work,
-    })
+    };
+    match input {
+        CanonicalInput::Observe(_) => {
+            drop(candidate);
+            Ok(Completion::Observed(facts))
+        }
+        CanonicalInput::Verify { canonical, .. } => {
+            drop(canonical);
+            if !equal {
+                drop(candidate);
+                return Err(VerifyRejected::HirMismatch(facts));
+            }
+            verify_terminal::run(syntax, candidate, facts, prepaid.ok_or(Failure::Shape)?)
+                .map(Completion::Verified)
+        }
+    }
 }
 
 fn statement_kind(
@@ -987,6 +1120,23 @@ fn sum<const N: usize>(values: [usize; N]) -> Result<usize, Failure> {
 /// Rows constructed locally and their helper transport are separate named roles.
 pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
     let roles = [
+        // Complete common dispatch/input/result carriers, including the owned
+        // canonical alternative even for the preserved Observe entry. These
+        // are transport roles additional to the enclosing Program owners.
+        size_of::<(
+            &ComparedSyntax<'_, '_, '_>,
+            CanonicalInput<'_, '_>,
+            &mut Allocator,
+            usize,
+            IndexLimits,
+        )>(),
+        copies::<CanonicalInput<'_, '_>>(2)?,
+        size_of::<&CanonicalInput<'_, '_>>(),
+        size_of::<&hir::Program>(),
+        copies::<Completion>(2)?,
+        copies::<VerifyRejected>(2)?,
+        copies::<Result<Completion, VerifyRejected>>(3)?,
+        size_of::<Option<verify_terminal::WorkPlan>>(),
         // Entry arguments, mapping construction/caller and source AST borrow.
         size_of::<(
             &ComparedSyntax<'_, '_, '_>,
@@ -1231,6 +1381,32 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
         copies::<u64>(6)?,
         copies::<Result<u64, Failure>>(3)?,
         copies::<Result<usize, Failure>>(4)?,
+    ];
+    let bank = size_of_val(&roles)
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
+        .ok_or(Failure::Overflow)?;
+    sum(roles)?.checked_add(bank).ok_or(Failure::Overflow)
+}
+
+/// Only the closed Verify source plan adds this complete downstream bank.
+pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
+    let roles = [
+        verify_terminal::named_bytes()?,
+        size_of::<(
+            &ComparedSyntax<'_, '_, '_>,
+            hir::Program,
+            &mut Allocator,
+            usize,
+            IndexLimits,
+            &WorkMeter,
+            Span,
+        )>(),
+        copies::<Result<VerifyFacts, VerifyRejected>>(2)?,
+        size_of::<verify_terminal::Context<'_>>(),
+        size_of::<verify_terminal::WorkPlan>(),
+        size_of::<&verify_terminal::Context<'_>>(),
+        copies::<u64>(3)?,
     ];
     let bank = size_of_val(&roles)
         .checked_mul(2)
