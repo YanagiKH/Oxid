@@ -1,5 +1,5 @@
-//! Contained scalar candidate comparison. The private paid leaf compares and
-//! drops the owner; no default compiler caller or typed authority is connected.
+//! Contained scalar candidate comparison and private Verify construction.
+//! No default compiler caller is connected; only fixed facts leave the leaf.
 //!
 //! Values come from source/OPA correspondence and supplied resolution column 3.
 //! Canonical HIR is used only by Session for shape and by the equality oracle.
@@ -18,13 +18,13 @@ use crate::frontend::{
 };
 use std::mem::{size_of, size_of_val};
 
-// Pure complete STF1 comparison is compiled; Verify consumers remain closed.
+// Complete STF1 comparison precedes private Verify lowering.
 mod typed_compare;
 mod verify_terminal;
 pub(super) use verify_terminal::{Facts as VerifyFacts, Rejected as VerifyRejected};
 
-// A source edit after carrier measurement and independent boundary review is
-// required to admit success. There is no caller-controlled enablement flag.
+// Enabled only after carrier measurement and independent boundary review.
+// There is no caller-controlled enablement flag or default compiler route.
 pub(super) const VERIFY_ADMITTED: bool = true;
 
 enum CanonicalInput<'h, 'm> {
@@ -335,7 +335,7 @@ pub(super) fn verify_candidate(
     }
 }
 
-/// The one construction body serves observation and the closed Verify path.
+/// The one construction body serves observation and the private Verify path.
 /// Observe drops the candidate inside its existing allocation-observer scope;
 /// Verify owns canonical HIR so it can release it before genuine typechecking.
 #[allow(clippy::result_large_err)]
@@ -1390,7 +1390,7 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
     sum(roles)?.checked_add(bank).ok_or(Failure::Overflow)
 }
 
-/// Only the closed Verify source plan adds this complete downstream bank.
+/// Only the private Verify source plan adds this complete downstream bank.
 pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
     let roles = [
         verify_terminal::named_bytes()?,

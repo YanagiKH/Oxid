@@ -1,4 +1,4 @@
-//! Disconnected comparison of every active STF1 semantic cell.
+//! Private comparison of every active STF1 semantic cell.
 //!
 //! Only the genuine scalar checker may construct the borrowed TypedProgram.
 //! The enclosing leaf must first establish complete candidate/canonical HIR

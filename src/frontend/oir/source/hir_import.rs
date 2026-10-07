@@ -405,3 +405,6 @@ mod pass_measurements;
 
 #[cfg(test)]
 mod verify_tests;
+
+#[cfg(test)]
+mod verify_fact_tests;

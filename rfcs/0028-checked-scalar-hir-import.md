@@ -1,6 +1,7 @@
 # RFC 0028: private checked scalar HIR import
 
-Status: **accepted private architecture; denied precursor only**.
+Status: **private Verify enabled; execution qualification in progress**.
+Run, Emit and public provider integration remain outside the enabled scope.
 Updated 2026-10-07.
 
 ## Outcome and boundary
@@ -155,7 +156,7 @@ measured and charged before consumption; a source file alone is not admission.
 
 ### Bounded comparison preflight
 
-The current disconnected source comparator has genuine producer controls for all
+At the source-comparison checkpoint, the disconnected comparator has genuine producer controls for all
 36 scalar row kinds. A stale cached project-syntax summary cannot authorize an
 original-owner route when a function's actual public field is present. This is
 checked after bounded domain admission; public input continues to require the
@@ -175,7 +176,7 @@ claim scans require additional bounded work charges. Combine those with genuine
 canonical resolution and candidate work under the existing work ceiling before
 connecting candidate allocation.
 
-The disconnected allocation helper has passed 12 focused tests; 22 source,
+At the allocation-helper checkpoint, the disconnected helper passed 12 focused tests; 22 source,
 framing and comparison tests pass at the preceding immutable fixture checkpoint.
 The measured helper named-value envelope is 18,784 bytes on the 64-bit test host,
 including its complete Session and typed reserve/fill/finish carriers. It is not
@@ -258,7 +259,8 @@ k attempts, k-1 successful calls, zero live bytes and only the preceding request
 bytes at peak. Logical failure differs: it makes no kth GlobalAlloc attempt.
 These are explicit expectations for the new controls, not claimed results before
 execution. Wrong-binding/callee/loop/annotation controls mutate only resolved
-facts, while source and OPA remain intact; type/flow import is still closed.
+facts, while source and OPA remain intact. At that predecessor checkpoint,
+type/flow import remained closed.
 
 ## Accepted private Verify phase
 

@@ -142,3 +142,85 @@ fn checked_hir_import_verify_owned_pipeline_drops_success_and_failure_storage() 
         assert!(owned::hir_import_allocation_observers_idle());
     }
 }
+
+#[test]
+fn checked_hir_import_verify_real_null_reserves_drop_all_pipeline_storage() {
+    use crate::frontend::{
+        oir::owned,
+        project::budget::real_null_observer::{self, Operation, Target},
+    };
+    use std::alloc::Layout;
+    // Independent rich-fixture allocation oracle, inherited from the reviewed
+    // candidate-only test. The observed interval here covers the whole pipeline.
+    let requests = [
+        ("signatures", 2, 56, 8),
+        ("functions", 2, 112, 8),
+        ("parameters", 1, 1, 1),
+        ("locals", 1, 32, 8),
+        ("expressions", 1, 72, 8),
+        ("blocks", 1, 72, 8),
+        ("statements", 1, 96, 8),
+        ("locals", 1, 32, 8),
+        ("expressions", 10, 72, 8),
+        ("blocks", 4, 72, 8),
+        ("statements", 3, 96, 8),
+        ("statements", 1, 96, 8),
+        ("statements", 1, 96, 8),
+        ("statements", 1, 96, 8),
+        ("arguments", 1, 8, 8),
+        ("arguments", 1, 8, 8),
+    ];
+    let text = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/rich-source.txt"
+    ));
+    let wire = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import/rich-success.bin"
+    ));
+    for (index, (kind, slots, width, align)) in requests.into_iter().enumerate() {
+        let kind = match kind {
+            "signatures" => "checked HIR candidate signatures",
+            "functions" => "checked HIR candidate functions",
+            "parameters" => "checked HIR candidate parameters",
+            "locals" => "checked HIR candidate locals",
+            "expressions" => "checked HIR candidate expressions",
+            "blocks" => "checked HIR candidate blocks",
+            "statements" => "checked HIR candidate statements",
+            "arguments" => "checked HIR candidate arguments",
+            _ => unreachable!(),
+        };
+        let mut allocator = Allocator::default();
+        allocator.observer_trace_bound(32).unwrap();
+        let target = Target {
+            attempt: index + 1,
+            kind,
+            slots,
+            element_bytes: width,
+            layout: Layout::from_size_align(slots * width, align).unwrap(),
+        };
+        let mut failed = false;
+        let (observed, report) =
+            real_null_observer::with_selected(&mut allocator, target, |allocator| {
+                owned::hir_import_measure_allocations(|| {
+                    failed = matches!(
+                        verify_original(text, wire, allocator, IndexLimits::default()),
+                        Err(leaf::VerifyRejected::Terminal(
+                            candidate::VerifyRejected::Candidate(allocation::Failure::Allocation)
+                        ))
+                    );
+                })
+            })
+            .unwrap();
+        assert!(failed && report.selected && report.matched && report.fired);
+        assert_eq!(report.rejection, None);
+        let actual = report.actual.unwrap();
+        assert_eq!(actual.operation, Operation::Alloc);
+        assert_eq!(actual.layout, target.layout);
+        assert_eq!(actual.new_size, None);
+        assert_eq!(allocator.attempts, index + 1);
+        assert_eq!(observed.0, observed.1 + 1);
+        assert_eq!(observed.2, 0);
+        assert!(owned::hir_import_allocation_observers_idle());
+    }
+}
