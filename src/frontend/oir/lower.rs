@@ -1,4 +1,7 @@
 use super::*;
+#[cfg(test)]
+#[path = "lower_measurement.rs"]
+pub(in crate::frontend) mod measurement;
 
 const STAGE: &str = "oir-lower";
 #[derive(Clone, Copy)]
@@ -274,6 +277,8 @@ fn lower_expression(
     };
     let mut frames = vec![ExprFrame::Visit(root)];
     while let Some(frame) = frames.pop() {
+        #[cfg(test)]
+        measurement::expression_frames_capacity(frames.capacity());
         match frame {
             ExprFrame::Visit(id) => {
                 let expr = &function.expressions[id.0];
@@ -451,6 +456,8 @@ fn lower_expression(
             }
         }
     }
+    #[cfg(test)]
+    measurement::expression_frames_capacity(frames.capacity());
     Ok(())
 }
 
@@ -505,6 +512,14 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
             next: 0,
         }];
         while let Some(frame) = frames.pop() {
+            #[cfg(test)]
+            measurement::body_scratch(
+                local_map.capacity(),
+                expression_map.capacity(),
+                loop_targets.capacity(),
+                active_loops.capacity(),
+                frames.capacity(),
+            );
             let statement = match frame {
                 Frame::Body { id, next } => {
                     let Some(statement) = function.blocks[id.0].body.get(next) else {
@@ -732,6 +747,14 @@ pub(super) fn lower(typed: &typeck::TypedProgram) -> Result<Program, OirFailure>
                 }
             }
         }
+        #[cfg(test)]
+        measurement::body_scratch(
+            local_map.capacity(),
+            expression_map.capacity(),
+            loop_targets.capacity(),
+            active_loops.capacity(),
+            frames.capacity(),
+        );
         assert!(active_loops.is_empty());
         assert!(loop_targets.iter().all(Option::is_none));
         if next_expr != function.expressions.len() {

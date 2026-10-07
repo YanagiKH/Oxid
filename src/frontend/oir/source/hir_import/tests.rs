@@ -28,7 +28,7 @@ fn original<'s>(sources: &'s SourceMap, ast: &'s crate::frontend::ast::Program) 
     .unwrap()
 }
 
-fn project(text: &str) -> ProjectSources {
+pub(super) fn project(text: &str) -> ProjectSources {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

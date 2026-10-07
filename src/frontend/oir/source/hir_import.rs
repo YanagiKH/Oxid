@@ -399,3 +399,6 @@ fn denied_probe(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod pass_measurements;

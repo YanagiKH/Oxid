@@ -1,5 +1,8 @@
 //! A successful typed program has no holes: construction is private to this pass.
 use super::{diagnostic::Diagnostic, hir::*, parser::MAX_DIAGNOSTICS};
+#[cfg(test)]
+#[path = "typeck_measurement.rs"]
+pub(in crate::frontend) mod measurement;
 #[derive(Debug)]
 pub struct TypedProgram {
     program: Program,
@@ -140,6 +143,8 @@ pub fn check(program: Program) -> Result<TypedProgram, Vec<Diagnostic>> {
             break;
         }
     }
+    #[cfg(test)]
+    measurement::bodies_capacity(bodies.capacity());
     if diagnostics.is_empty() {
         Ok(TypedProgram { program, bodies })
     } else {
@@ -179,6 +184,12 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
             body: BodyBlockId,
         },
     }
+    #[cfg(test)]
+    measurement::frame_layout(
+        std::mem::size_of::<Frame>(),
+        std::mem::align_of::<Frame>(),
+        std::mem::size_of::<Vec<Frame>>(),
+    );
     let mut block_flows: Vec<Option<FlowSummary>> = vec![None; function.blocks.len()];
     let mut frames = vec![Frame::Block {
         block: function.body,
@@ -187,6 +198,8 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
         active_loop: None,
     }];
     while let Some(frame) = frames.pop() {
+        #[cfg(test)]
+        measurement::frames_capacity(frames.capacity());
         let (block, index, mut flow, active_loop) = match frame {
             Frame::Block {
                 block,
@@ -541,15 +554,30 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
             Some(function.end),
         ));
     }
-    let locals = locals
+    #[cfg(test)]
+    let locals_source_capacity = locals.capacity();
+    let locals: Vec<Ty> = locals
         .into_iter()
         .map(|ty| ty.expect("all resolved locals have typed initializers"))
         .collect();
+    #[cfg(test)]
+    let locals_destination_capacity = locals.capacity();
     assert_eq!(next_expr, function.expressions.len());
-    let block_flows = block_flows
+    #[cfg(test)]
+    let block_flows_source_capacity = block_flows.capacity();
+    let block_flows: Vec<FlowSummary> = block_flows
         .into_iter()
         .map(|flow| flow.expect("all resolved blocks have checked flow"))
         .collect();
+    #[cfg(test)]
+    measurement::body_finished(
+        frames.capacity(),
+        expressions.capacity(),
+        locals_source_capacity,
+        locals_destination_capacity,
+        block_flows_source_capacity,
+        block_flows.capacity(),
+    );
     Ok(TypedBody {
         expressions,
         locals,
