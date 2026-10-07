@@ -164,10 +164,7 @@ fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
                 args,
             } if args
                 .iter()
-                .all(|arg| matches!(arg, ast::Argument::Value(_))) =>
-            {
-                ()
-            }
+                .all(|arg| matches!(arg, ast::Argument::Value(_))) => {}
             _ => return Err(Boundary::Domain),
         }
     }

@@ -104,3 +104,30 @@ and failures remain immutable. First use focused denial/layout tests and a
 bounded independent review, followed by one coherent qualification milestone.
 The supported native target remains the existing Linux x86_64/LLVM 19.1.7 scope;
 portable framing tests do not claim native support on other hosts.
+
+## Initial measured precursor
+
+The denied probe now uses genuine canonical resolution only to describe retained
+HIR storage. Basic framing recognizes actual original/public producer outputs
+with 29 rows and item head 1; it does not compare their full AST or semantic facts.
+Every path still terminates in rejection, including valid successful artifacts.
+An owner-derived immutable source slice remains tied to the real source owner.
+
+On the measured 64-bit host, SourceOwner/Wire/bound-request are 32/24/72 bytes;
+Counts/StoragePlan/ProbeFacts are 64/152/96 bytes. Rejection and its uninhabited
+Result are 104 bytes, while the plan Result is 160 bytes. The existing checked
+source carrier remains 320 bytes. These measurements do not establish a complete
+new caller/construction/coexistence budget.
+
+The 113-byte nonempty fixture requests eight-family slot counts
+`[2, 2, 1, 2, 11, 5, 7, 2]`. Actual canonical capacities are
+`[4, 4, 8, 8, 20, 5, 7, 8]`: 3,472 retained payload bytes versus 2,241 hypothetical
+candidate requested bytes. Adding two 48-byte Program headers gives a hypothetical
+HIR pair of 5,809 bytes. Actual candidate allocation remains zero. No reserve,
+allocator overhead, source/AST baseline, future typed storage or full compiler
+memory admission is inferred from that subtotal.
+
+Eleven focused tests cover real producer framing, wrong source/owner routes,
+excluded source domains, reserved cells, overflow and passive capacity counts.
+Complete import validation, named coexistence accounting and actual candidate
+reserve/failure evidence remain separate requirements before private success.
