@@ -12,7 +12,7 @@ use super::{
 use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::{size_of, size_of_val};
 
-const PRIVATE_EMIT_ADMITTED: bool = false;
+const PRIVATE_EMIT_ADMITTED: bool = true;
 const MAX_RETAINED: usize = 32 * 1024 * 1024;
 const MAX_SCRATCH: usize = 16 * 1024 * 1024;
 

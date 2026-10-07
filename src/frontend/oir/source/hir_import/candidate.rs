@@ -31,7 +31,7 @@ pub(super) const VERIFY_ADMITTED: bool = true;
 // Run's fixed entry/runtime boundary is separately measured and qualified.
 pub(super) const RUN_ADMITTED: bool = true;
 // Compiled connection only. No caller/test switch can enable private emission.
-pub(super) const EMIT_ADMITTED: bool = false;
+pub(super) const EMIT_ADMITTED: bool = true;
 // Paid on the original Emit meter before its new fixed-bank calculations.
 // The private terminal documents the complete finite source-event tariff.
 pub(super) const EMIT_CONNECTION_WORK: u64 = 32_768;

@@ -1,7 +1,9 @@
 # RFC 0028: private checked scalar HIR import
 
 Status: **private Verify and Run enabled and locally qualified**.
-Emit and public provider integration remain outside the enabled scope.
+Private LLVM-text Emit is enabled for focused qualification, which is pending.
+Public provider integration and external native-tool execution remain outside
+the enabled scope.
 Updated 2026-10-07.
 
 ## Outcome and boundary
@@ -510,3 +512,19 @@ observed inherited heaps, not secretly included in the affected-importer cap.
 Both gates stay false while complete successor layouts, fixed bounds, default
 regressions, independent review and later private-output qualification remain
 pending. No native tool invocation or publication is part of this connection.
+
+### Private LLVM-text activation
+
+The reviewed denied precursor has passed its local fixed-carrier, payment-order,
+provenance, default-regression and standalone String-null checks. Its two private
+Emit gates are now enabled for focused qualification. No successful private
+Emit, final-text allocation-failure recovery or source-scope independence is
+claimed by this activation checkpoint. Those checks must run against actual
+imported emission before the step is qualified.
+
+The scope is owned LLVM text only, using Result policy and unchanged default
+emitter limits and errors when private budgets suffice. Public/default routing,
+provider selection, external LLVM tools and native executable execution remain
+outside this step. The historical denied controls and their receipts remain
+evidence of the preceding boundary; activation needs corresponding successor
+controls through the fully paid source leaf.
