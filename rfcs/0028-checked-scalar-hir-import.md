@@ -9,7 +9,7 @@ Connect the bounded Oxid scalar frontend to the compiler's real scalar pipeline
 without treating an observation as executable authority. Keep the existing
 OPA1/STF1 bytes, single-file 128-byte ASCII grammar and all compiler limits.
 The initial implementation is a private, permanently denied decoder/source-owner
-and storage precursor. It cannot construct HIR, a typed program, checked source
+and storage precursor. It cannot construct candidate HIR, a typed program, checked source
 program, verified OIR or native artifact. Positive private import requires a
 separate measured-boundary review; public provider selection is not included.
 
@@ -69,7 +69,8 @@ compiler code or a separate Oxid lowerer.
 ## Denied precursor invariants
 
 - Private entry returns a result with an uninhabited success type
-- No call to HIR construction, the checker, lowerer, verifier or native emitter
+- Genuine canonical resolution may run only to describe the passive plan; no
+  candidate HIR construction or checker/lowerer/verifier/native call is allowed
 - Genuine source-owner and captured-source checks precede frame interpretation
 - Exact frame lengths, tags, row counts and bounded checked reads are enforced
 - Basic framing or a passive plan never implies complete source/AST validation

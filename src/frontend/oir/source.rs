@@ -5,6 +5,9 @@ use super::*;
 use crate::frontend::ast;
 pub(in crate::frontend::oir) mod association;
 mod sealed;
+// Deliberately disconnected: every request terminates in denial.
+#[allow(dead_code)]
+mod hir_import;
 pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;
 pub(in crate::frontend::oir) use sealed::{
     check_project_candidate, check_project_executable_candidate,
