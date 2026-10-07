@@ -408,3 +408,6 @@ mod verify_tests;
 
 #[cfg(test)]
 mod verify_fact_tests;
+
+#[cfg(test)]
+mod verify_diagnostic_tests;

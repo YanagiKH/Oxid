@@ -154,7 +154,7 @@ fn reject_changed_fact(
     // Genuine checker observations must exist, while inherited lower/verify
     // observations remain empty. These are stage controls, not heap-peak claims.
     assert!(typed.frame_bytes > 0);
-    assert!(typed.bodies_capacity > 0);
+    assert!(typed.bodies_capacity_max > 0);
     assert_no_lower_observations(lowered);
     assert_eq!(verified.successful_functions, 0);
     assert_eq!(verified.excluded_failed_functions, 0);
