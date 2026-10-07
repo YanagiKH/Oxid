@@ -30,7 +30,11 @@ from verify_bounded_typed_parser import inventory, observer_identity, require, s
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/bounded_typed_static"
 ROSTER_SHA256 = "985c6f5286b86591bdb5945ef13df66bce7b5bbdd2ff4cdb8e8a4cd7742a2df3"
-CONTROLS_SHA256 = "873c9168c38b6a1d84c2f1bcbe556e15c932d05bbbb653a5b088e6de26275d81"
+CONTROLS_SHA256 = "6790f03fb0cc09ecd476954ade897a09e90f1d7f9e82bab72f71e6d6686b347a"
+IO_SOURCES = {
+    "stdout_prefix_eio.c": "12a9dd506a82d466a9af348da7d43159f9313781fa9b05aeaa2e1a8b3a0b26c3",
+    "calibrate_stdout_prefix.c": "2499d674ba045ecf980f3b3f283fb8527f9f38d9c2fe60b4fcd5abf075489ce6",
+}
 RELAYS = {"canonical-036", "canonical-037", "canonical-038", "canonical-039"}
 ROOTS = {"parser": "parser_main.ox", "consumer": "ast_static_main.ox"}
 MEMBERS = tuple(name + ".ox" for name in (
@@ -47,9 +51,16 @@ MALFORMED_NAMES = tuple((
     "block-statement-role-confusion argument-detaches-sibling function-order-repaired "
     "right-associative-subtraction chained-comparison source-nonascii source-unterminated-comment "
     "source-length129 opa-failure-status row-count129 source-length-mismatch truncated-at-4 "
+    "nonzero-sentinel group-child-self-cycle prefix-height call-wrong-callee-token "
+    "negative-number-canonical-shape control-after-condition truncated-0 "
     "truncated-final-byte trailing-two-witnesses").split())
 IO_NAMES = ("directory-stdin", "integer-sigpipe-default", "integer-sigpipe-ignored",
             "type_error-sigpipe-default", "type_error-sigpipe-ignored")
+BASELINE_NAMES = ("integer", "type_error")
+# Existing fixed prefix locations: before output, inside OPA1, at its boundary,
+# inside the STF1 header, and one byte before the complete output ends.
+PREFIXES = {"integer": (0, 1, 1559, 1563, 2606), "type_error": (0, 1, 1559, 1563, 1574)}
+INJECTED_NAMES = tuple(name + "-prefix-" + str(prefix) for name in BASELINE_NAMES for prefix in PREFIXES[name])
 
 
 def load_cases(path):
@@ -98,6 +109,9 @@ def snapshot_sources(destination):
         shutil.copyfile(ROOT / "scripts" / (name + ".py"), host / (name + ".py"))
     shutil.copyfile(FIXTURES / "observer/observe.py", host / "canonical_observe.py")
     shutil.copyfile(FIXTURES / "malformed_controls.py", host / "malformed_controls.py")
+    for name, expected in IO_SOURCES.items():
+        require(digest(FIXTURES / name) == expected, "fixed I/O calibration source changed: " + name)
+        shutil.copyfile(FIXTURES / name, host / name)
     return candidate, host
 
 
@@ -109,27 +123,31 @@ def check_execution(result, remaining, *, status=0, expected_remaining=b"", empt
         require(result.stdout == b"", "refusal / I/O failure emitted stdout")
 
 
-def run_process(directory, command, data, cwd, *, clear=False, io_kind=None):
+def run_process(directory, command, data, cwd, *, clear=False, io_kind=None, prefix=None, shim=None):
     """Retain real streams and seekable input consumption, including failures.
 
-    The two I/O controls use real kernel EISDIR/EPIPE; there is no preload shim.
-    A no-reader pipe delivers zero bytes, so it is not partial-write evidence.
+    Directory and closed-pipe controls use real kernel EISDIR/EPIPE. Prefix
+    controls separately inject fd1-only short writes/EIO using the fixed shim;
+    they are not real-kernel partial-write evidence.
     """
     directory.mkdir(parents=True, exist_ok=False)
     argv = [str(part) for part in command]
     require(io_kind in (None, "directory-stdin", "sigpipe-default", "sigpipe-ignored"),
             "unknown I/O control")
+    require(prefix is None or (isinstance(prefix, int) and prefix >= 0 and shim is not None and io_kind is None),
+            "invalid injected prefix control")
     (directory / "input.bin").write_bytes(data)
     stream = (directory / "input.bin").open("rb", buffering=0)
-    input_fd, pipe_fd, directory_fd = stream.fileno(), None, None
+    input_fd, pipe_fd, directory_fd, output_file = stream.fileno(), None, None, None
     stdout, stderr, remaining = b"", b"", b""
     started = time.monotonic()
     receipt = {"command": argv, "cwd": str(cwd), "cleared_environment": clear,
                "input_sha256": digest(directory / "input.bin"), "input_bytes": len(data),
                "input_mode": "seekable exact bytes", "output_mode": "captured pipe",
-               "io_kind": io_kind}
+               "io_kind": io_kind, "injected_prefix_bytes": prefix, "child_only_environment_overrides": {}}
     try:
         kwargs = {}
+        environment = {} if clear else None
         if io_kind == "directory-stdin":
             directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
             input_fd = directory_fd
@@ -141,9 +159,20 @@ def run_process(directory, command, data, cwd, *, clear=False, io_kind=None):
             kwargs = {"preexec_fn": lambda: signal.signal(signal.SIGPIPE, policy),
                       "restore_signals": False}
             receipt["output_mode"] = "real pipe with no readers; zero bytes delivered"
+        if prefix is not None:
+            environment = {} if clear else os.environ.copy()
+            require("LD_PRELOAD" not in environment, "refuse to merge unrelated preload configuration")
+            output_file = (directory / "stdout").open("wb", buffering=0)
+            target = os.fstat(output_file.fileno())
+            overrides = {"LD_PRELOAD": str(shim), "OXID_STDOUT_PREFIX_BYTES": str(prefix),
+                         "OXID_STDOUT_TARGET_DEV": str(target.st_dev), "OXID_STDOUT_TARGET_INO": str(target.st_ino)}
+            environment.update(overrides)
+            receipt["child_only_environment_overrides"] = overrides
+            receipt["output_mode"] = "regular file; calibrated fd1-only injected short write/EIO"
+        output_fd = output_file.fileno() if output_file is not None else pipe_fd
         result = subprocess.run(argv, stdin=input_fd,
-                                stdout=pipe_fd if pipe_fd is not None else subprocess.PIPE,
-                                stderr=subprocess.PIPE, cwd=cwd, env={} if clear else None,
+                                stdout=output_fd if output_fd is not None else subprocess.PIPE,
+                                stderr=subprocess.PIPE, cwd=cwd, env=environment,
                                 timeout=120, check=False, **kwargs)
         stdout, stderr = result.stdout or b"", result.stderr or b""
         receipt["status"] = result.returncode
@@ -163,6 +192,9 @@ def run_process(directory, command, data, cwd, *, clear=False, io_kind=None):
             os.close(directory_fd)
         if pipe_fd is not None:
             os.close(pipe_fd)
+        if output_file is not None:
+            output_file.close()
+            stdout = (directory / "stdout").read_bytes()
         (directory / "stdout").write_bytes(stdout)
         (directory / "stderr").write_bytes(stderr)
         (directory / "remaining-stdin.bin").write_bytes(remaining)
@@ -171,6 +203,7 @@ def run_process(directory, command, data, cwd, *, clear=False, io_kind=None):
                        remaining_hex=remaining.hex(), stdout_bytes=len(stdout), stderr_bytes=len(stderr),
                        stdout_sha256=digest(directory / "stdout"), stderr_sha256=digest(directory / "stderr"))
         save(directory / "receipt.json", receipt)
+    return_value.stdout = stdout
     return return_value, remaining
 
 
@@ -204,12 +237,21 @@ def completed(report, cases, modes):
     require(len(checks) == len(expected)
             and {(c["case"], c["mode"], c["route"]) for c in checks} == expected
             and all(c["passed"] for c in checks), "incomplete or duplicate 77+4 results")
-    for group, names in (("malformed", MALFORMED_NAMES), ("io", IO_NAMES)):
+    groups = (("malformed", MALFORMED_NAMES), ("io", IO_NAMES),
+              ("baseline", BASELINE_NAMES), ("injected", INJECTED_NAMES))
+    for group, names in groups:
         wanted = {(name, mode) for name in names for mode in modes}
         records = report[group]
         require(len(records) == len(wanted)
                 and {(c["case"], c["mode"]) for c in records} == wanted
                 and all(c["passed"] for c in records), "incomplete " + group + " controls")
+    io_pairs = {(group, name) for group, names in groups for name in names} if "native" in modes else set()
+    require(len(report["io_pairs"]) == len(io_pairs)
+            and {(c["group"], c["case"]) for c in report["io_pairs"]} == io_pairs
+            and all(c["passed"] for c in report["io_pairs"]), "incomplete 48 I/O reference/native pairs")
+    require(report["calibration"].get("passed") is True, "missing fd1-only injection calibration")
+    require(len(report["io_build"]) == 2 and {c["name"] for c in report["io_build"]} == {"shim", "calibrator"}
+            and all(c["passed"] for c in report["io_build"]), "incomplete I/O support compilation")
     wanted_pairs = {case["name"] for case in cases} if "native" in modes else set()
     require(len(report["wire_pairs"]) == len(wanted_pairs)
             and {c["case"] for c in report["wire_pairs"]} == wanted_pairs
@@ -220,7 +262,8 @@ def completed(report, cases, modes):
             and {(c["root"], c["stage"]) for c in report["setup"]} == setup
             and all(c["passed"] for c in report["setup"]), "incomplete root setup")
     report["counts"] = {mode: {**dict(Counter(c["route"] for c in checks if c["mode"] == mode)),
-                              "pending": 0, "malformed": 24, "io": 5} for mode in modes}
+                              "pending": 0, "malformed": 31, "io": 5, "baseline": 2,
+                              "injected": 10, "io_executions": 48} for mode in modes}
 
 
 def qualify(compiler, static_observer, lexer_observer, output, native=False):
@@ -230,13 +273,14 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
     require(sys.platform.startswith("linux"), "actual qualification requires Linux process I/O and ELF conventions")
     output.mkdir(parents=True, exist_ok=False)
     report = {"passed": False, "native": native, "checks": [], "malformed": [], "io": [],
+              "baseline": [], "injected": [], "io_pairs": [], "io_build": [], "calibration": {},
               "wire_pairs": [], "setup": [], "compiler_sha256": digest(compiler),
               "controller_sha256": digest(Path(__file__)), "case_roster_sha256": ROSTER_SHA256,
               "malformed_controls_sha256": CONTROLS_SHA256,
               "scope": "81 fixed sources, complete typed facts / first diagnostic; 77 AST1 routes and four parser relays per mode",
               "compiler_scope": "Externally qualified compiler supplied by caller; compiler build/provenance qualification remains external",
-              "execution_scope": "Two independent ELF processes; each native run has empty cwd and cleared environment, with the fixed source snapshot renamed; no filesystem sandbox claim",
-              "io_scope": "24 retained malformed inputs, real directory-input error, and four zero-delivery closed-pipe output failures per mode; separate 96-run prefix-injection evidence is not rerun here"}
+              "execution_scope": "Two independent ELF processes; each native run has empty cwd and cleared environment except recorded injection overrides, with the fixed source snapshot renamed; no filesystem sandbox claim",
+              "io_scope": "Existing 48 I/O executions per mode: two transport baselines, 31 retained malformed inputs, one real directory-input error, four zero-delivery closed-pipe failures and ten calibrated fd1-only injected prefixes; injected prefixes are not real-kernel partial-write evidence"}
     save(output / "report.json", report)
     try:
         report["static_observer"] = observer_identity(static_observer, static_builder, "static")
@@ -258,9 +302,12 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
         report["control_lineage"] = controls.LINEAGE
         report["source_sha256"] = inventory(sources)
         report["binary_sha256"] = {}
+        report["io_artifact_sha256"] = {}
         modes = ["reference"] + (["native"] if native else [])
         entries = {kind: candidate / name for kind, name in ROOTS.items()}
         binaries = {kind: output / kind for kind in ROOTS}
+        io_support = {"shim": output / "io-support/stdout_prefix_eio.so",
+                      "calibrator": output / "io-support/calibrate_stdout_prefix"}
         commands = {mode: {kind: ([compiler, "run", entry, "--edition", "typed-preview", "--entry-mode", "process"]
                                  if mode == "reference" else [binaries[kind]])
                            for kind, entry in entries.items()} for mode in modes}
@@ -271,8 +318,10 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
             require(digest(Path(__file__)) == report["controller_sha256"], "controller changed")
             for kind, expected in report["binary_sha256"].items():
                 require(digest(binaries[kind]) == expected, "native executable changed: " + kind)
+            for kind, expected in report["io_artifact_sha256"].items():
+                require(digest(io_support[kind]) == expected, "I/O support executable changed: " + kind)
 
-        def execute(directory, command, data, mode=None, io_kind=None):
+        def execute(directory, command, data, mode=None, io_kind=None, prefix=None):
             identities()
             hidden = output / "retained-source"
             if mode == "native":
@@ -280,7 +329,8 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
                 sources.rename(hidden)
             try:
                 return run_process(directory, command, data, empty,
-                                   clear=mode != "reference", io_kind=io_kind)
+                                   clear=mode != "reference", io_kind=io_kind, prefix=prefix,
+                                   shim=io_support["shim"] if prefix is not None else None)
             finally:
                 if mode == "native":
                     hidden.rename(sources)
@@ -300,6 +350,30 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
                     report["binary_sha256"][kind] = digest(binaries[kind])
                 save(output / "report.json", report)
 
+        # Build the exact previously reviewed injection/calibration support.
+        cc = shutil.which("cc")
+        require(cc is not None, "cc is required for the retained I/O prefix controls")
+        (output / "io-support").mkdir()
+        for kind, command in (
+            ("shim", [cc, "-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror",
+                      host / "stdout_prefix_eio.c", "-o", io_support["shim"], "-ldl"]),
+            ("calibrator", [cc, "-O2", "-Wall", "-Wextra", "-Werror",
+                            host / "calibrate_stdout_prefix.c", "-o", io_support["calibrator"]]),
+        ):
+            result, remaining = execute(output / "io-build" / kind, command, b"unread setup input", "reference")
+            check_execution(result, remaining, expected_remaining=b"unread setup input")
+            report["io_artifact_sha256"][kind] = digest(io_support[kind])
+            report["io_build"].append({"name": kind, "passed": True})
+            save(output / "report.json", report)
+        calibration = output / "calibration"
+        unrelated = calibration / "unrelated-fd.bin"
+        result, remaining = execute(calibration, [io_support["calibrator"], unrelated], b"", prefix=3)
+        require(result.returncode == 0 and result.stdout == b"abc" and result.stderr == b"diagnostic\n"
+                and remaining == b"" and unrelated.read_bytes() == b"side-before\nside-after\n",
+                "fd1-only injection calibration failed")
+        report["calibration"] = {"passed": True, "scope": "seven-byte fd1 write returns three; next write gets EIO; stderr and unrelated FD unchanged"}
+        save(output / "report.json", report)
+
         # Establish every independent expectation before candidate execution.
         expectations = {}
         for case in cases:
@@ -316,7 +390,18 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
             expectations[case["name"]] = (expected, lexical.get("tokens"))
         save(output / "report.json", report)
 
-        reference_outputs = {}
+        reference_outputs, reference_io = {}, {}
+
+        def record_io(group, name, mode, result, remaining, **metadata):
+            observed = (result.returncode, result.stdout, result.stderr, remaining)
+            if mode == "reference":
+                reference_io[group, name] = observed
+            else:
+                require(reference_io[group, name] == observed, "I/O status/streams/consumption parity changed: " + name)
+                report["io_pairs"].append({"group": group, "case": name, "passed": True})
+            report[group].append({"case": name, "mode": mode, "passed": True, **metadata})
+            save(output / "report.json", report)
+
         for mode in modes:
             for case in cases:
                 name, data = case["name"], case["source"].encode("ascii")
@@ -347,29 +432,45 @@ def qualify(compiler, static_observer, lexer_observer, output, native=False):
                                          "oracle": "named record-keyword refusal at 0..6; no canonical static diagnostic parity"
                                          if name == "canonical-039" else "canonical static observation"})
                 save(output / "report.json", report)
+            baselines = {}
+            for control in fixed["output_failure_inputs"]:
+                name, data = control["name"], control["data"]
+                result, remaining = execute(output / mode / "baseline" / name, commands[mode]["consumer"], data, mode)
+                check_execution(result, remaining)
+                opa = data[5 + data[4]:]
+                tag = 0 if name == "integer" else 1
+                require(result.stdout[:1559] == opa and result.stdout[1559:1564] == b"STF1" + bytes([tag])
+                        and len(result.stdout) == PREFIXES[name][-1] + 1, "I/O baseline framing changed")
+                baselines[name] = result.stdout
+                record_io("baseline", name, mode, result, remaining,
+                          scope="ordinary consumer output; transport-prefix oracle only")
             for control in fixed["malformed"]:
                 data = control["data"]
                 result, remaining = execute(output / mode / "malformed" / control["name"],
                                             commands[mode]["consumer"], data, mode)
                 check_execution(result, remaining, status=64, empty_output=True,
                                 expected_remaining=data[control["consumed"]:])
-                report["malformed"].append({"case": control["name"], "mode": mode,
-                                            "origin": control["origin"], "input_sha256": control["input_sha256"],
-                                            "passed": True})
-                save(output / "report.json", report)
+                record_io("malformed", control["name"], mode, result, remaining,
+                          origin=control["origin"], input_sha256=control["input_sha256"])
             result, remaining = execute(output / mode / "io/directory-stdin", commands[mode]["consumer"],
                                         b"", mode, "directory-stdin")
             check_execution(result, remaining, status=74, empty_output=True)
-            report["io"].append({"case": "directory-stdin", "mode": mode, "passed": True})
-            save(output / "report.json", report)
+            record_io("io", "directory-stdin", mode, result, remaining)
             for control in fixed["output_failure_inputs"]:
                 for policy in ("default", "ignored"):
                     name = control["name"] + "-sigpipe-" + policy
                     result, remaining = execute(output / mode / "io" / name, commands[mode]["consumer"],
                                                 control["data"], mode, "sigpipe-" + policy)
                     check_execution(result, remaining, status=74, empty_output=True)
-                    report["io"].append({"case": name, "mode": mode, "passed": True})
-                    save(output / "report.json", report)
+                    record_io("io", name, mode, result, remaining)
+                for prefix in PREFIXES[control["name"]]:
+                    name = control["name"] + "-prefix-" + str(prefix)
+                    result, remaining = execute(output / mode / "injected" / name, commands[mode]["consumer"],
+                                                control["data"], mode, prefix=prefix)
+                    check_execution(result, remaining, status=74)
+                    require(result.stdout == baselines[control["name"]][:prefix], "injected output was not the exact observed prefix")
+                    record_io("injected", name, mode, result, remaining,
+                              scope="calibrated injected short write/EIO; no real-kernel partial-write claim")
         identities()
         require(observer_identity(static_observer, static_builder, "static") == report["static_observer"]
                 and observer_identity(lexer_observer, lexer_builder, "lexer") == report["lexer_observer"],

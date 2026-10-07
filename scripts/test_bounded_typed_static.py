@@ -25,7 +25,9 @@ class SelectionTests(unittest.TestCase):
         controls = gate.load_module("test_bounded_static_controls", gate.FIXTURES / "malformed_controls.py")
         records = controls.records()
         self.assertEqual(tuple(c["name"] for c in records["malformed"]), gate.MALFORMED_NAMES)
-        self.assertEqual(len(records["malformed"]), 24)
+        self.assertEqual(len(records["malformed"]), 31)
+        for name, expected in gate.IO_SOURCES.items():
+            self.assertEqual(gate.digest(gate.FIXTURES / name), expected)
         for control in records["malformed"]:
             self.assertEqual(hashlib.sha256(control["data"]).hexdigest(), control["input_sha256"])
             self.assertLessEqual(control["consumed"], len(control["data"]))
@@ -105,6 +107,42 @@ class BoundaryTests(unittest.TestCase):
 
 
 class ProcessReceiptTests(unittest.TestCase):
+    def test_fake_prefix_process_binds_only_its_stdout_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def fake(argv, **kwargs):
+                overrides = kwargs["env"]
+                self.assertEqual(set(overrides), {"LD_PRELOAD", "OXID_STDOUT_PREFIX_BYTES",
+                                                 "OXID_STDOUT_TARGET_DEV", "OXID_STDOUT_TARGET_INO"})
+                self.assertEqual(overrides["LD_PRELOAD"], str(root / "fake-shim.so"))
+                self.assertEqual(overrides["OXID_STDOUT_PREFIX_BYTES"], "2")
+                stat = os.fstat(kwargs["stdout"])
+                self.assertEqual(overrides["OXID_STDOUT_TARGET_DEV"], str(stat.st_dev))
+                self.assertEqual(overrides["OXID_STDOUT_TARGET_INO"], str(stat.st_ino))
+                self.assertEqual(os.read(kwargs["stdin"], 3), b"abc")
+                os.write(kwargs["stdout"], b"xy")
+                return subprocess.CompletedProcess(argv, 74, None, b"")
+            with patch.object(gate.subprocess, "run", side_effect=fake):
+                result, remaining = gate.run_process(root / "prefix", ["fake"], b"abc", root,
+                                                     clear=True, prefix=2, shim=root / "fake-shim.so")
+            self.assertEqual(result.stdout, b"xy")
+            self.assertEqual(remaining, b"")
+            receipt = json.loads((root / "prefix/receipt.json").read_bytes())
+            self.assertEqual(receipt["stdout_sha256"], hashlib.sha256(b"xy").hexdigest())
+            self.assertEqual(receipt["injected_prefix_bytes"], 2)
+
+    def test_prefix_rejects_unrelated_preload_without_launching(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.dict(gate.os.environ, {"LD_PRELOAD": "unrelated"}), patch.object(gate.subprocess, "run") as run:
+                with self.assertRaises(ValueError):
+                    gate.run_process(root / "prefix", ["fake"], b"abc", root,
+                                     prefix=1, shim=root / "fake-shim.so")
+                run.assert_not_called()
+            receipt = json.loads((root / "prefix/receipt.json").read_bytes())
+            self.assertEqual(receipt["status"], "execution-error")
+            self.assertEqual((root / "prefix/remaining-stdin.bin").read_bytes(), b"abc")
+
     def test_fake_process_records_exact_remaining_bytes_and_cleared_environment(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -162,6 +200,14 @@ class CompletionTests(unittest.TestCase):
             "malformed": [{"case": name, "mode": mode, "passed": True}
                           for name in gate.MALFORMED_NAMES for mode in self.modes],
             "io": [{"case": name, "mode": mode, "passed": True} for name in gate.IO_NAMES for mode in self.modes],
+            "baseline": [{"case": name, "mode": mode, "passed": True} for name in gate.BASELINE_NAMES for mode in self.modes],
+            "injected": [{"case": name, "mode": mode, "passed": True} for name in gate.INJECTED_NAMES for mode in self.modes],
+            "io_pairs": [{"group": group, "case": name, "passed": True}
+                         for group, names in (("malformed", gate.MALFORMED_NAMES), ("io", gate.IO_NAMES),
+                                              ("baseline", gate.BASELINE_NAMES), ("injected", gate.INJECTED_NAMES))
+                         for name in names],
+            "calibration": {"passed": True},
+            "io_build": [{"name": name, "passed": True} for name in ("shim", "calibrator")],
             "wire_pairs": [{"case": case["name"], "passed": True} for case in self.cases],
             "setup": [{"root": root, "stage": stage, "passed": True}
                       for root in gate.ROOTS for stage in ("check", "compile")]}
@@ -169,18 +215,21 @@ class CompletionTests(unittest.TestCase):
     def test_nonzero_complete_counts(self):
         gate.completed(self.report, self.cases, self.modes)
         self.assertEqual(self.report["counts"]["native"],
-                         {"ast1-pair": 77, "parser-relay": 4, "pending": 0, "malformed": 24, "io": 5})
+                         {"ast1-pair": 77, "parser-relay": 4, "pending": 0, "malformed": 31, "io": 5,
+                          "baseline": 2, "injected": 10, "io_executions": 48})
+        self.assertEqual(len(self.report["io_pairs"]), 48)
 
     def test_reference_only_counts(self):
-        for group in ("checks", "malformed", "io"):
+        for group in ("checks", "malformed", "io", "baseline", "injected"):
             self.report[group] = [c for c in self.report[group] if c["mode"] == "reference"]
         self.report["wire_pairs"] = []
+        self.report["io_pairs"] = []
         self.report["setup"] = [c for c in self.report["setup"] if c["stage"] == "check"]
         gate.completed(self.report, self.cases, ["reference"])
         self.assertEqual(set(self.report["counts"]), {"reference"})
 
     def test_partial_duplicate_failed_and_wrong_identity_never_pass(self):
-        for group in ("checks", "malformed", "io", "wire_pairs", "setup"):
+        for group in ("checks", "malformed", "io", "baseline", "injected", "wire_pairs", "io_pairs", "setup", "io_build"):
             for kind in ("empty", "missing", "duplicate", "failed", "wrong_identity"):
                 with self.subTest(group=group, kind=kind):
                     report = copy.deepcopy(self.report)
@@ -193,9 +242,16 @@ class CompletionTests(unittest.TestCase):
                     elif kind == "failed":
                         report[group][0]["passed"] = False
                     else:
-                        report[group][0]["root" if group == "setup" else "case"] = "unselected"
+                        identity = "root" if group == "setup" else "name" if group == "io_build" else "case"
+                        report[group][0][identity] = "unselected"
                     with self.assertRaises(ValueError):
                         gate.completed(report, self.cases, self.modes)
+
+    def test_missing_or_failed_calibration_never_passes(self):
+        for value in ({}, {"passed": False}):
+            self.report["calibration"] = value
+            with self.assertRaises(ValueError):
+                gate.completed(self.report, self.cases, self.modes)
 
 
 if __name__ == "__main__":
