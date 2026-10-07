@@ -5,7 +5,7 @@ use super::*;
 use crate::frontend::{
     declaration_index::IndexLimits,
     lexer,
-    oir::{execute, source::check_source, RunFailure, Scalar},
+    oir::{execute, owned, source::check_source, RunFailure, Scalar},
     parser,
     project::budget::Allocator,
     source::{SourceMap, SourceView},
@@ -52,16 +52,34 @@ fn original_parity(text: &str, bytes: &[u8]) -> leaf::VerifyFacts {
     let source = sources.get(id);
     let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
     let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+    // Source/AST/capture and caller-retained validation trace are outside this
+    // interval. Only the fixed outcome survives all imported compiler/runtime
+    // owners, including expected arithmetic/fuel/frame failure teardown.
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(32).unwrap();
+    let trace_capacity = allocator.trace.capacity();
     let imported_runtime = execute::measurement::begin();
-    let facts = leaf::run(
-        owner,
-        text.as_bytes(),
-        bytes,
-        &mut Allocator::default(),
-        IndexLimits::default(),
-    )
-    .unwrap();
+    let mut result = None;
+    let allocation = owned::hir_import_measure_allocations(|| {
+        result = Some(leaf::run(
+            owner,
+            text.as_bytes(),
+            bytes,
+            &mut allocator,
+            IndexLimits::default(),
+        ));
+    });
     let imported_runtime = imported_runtime.finish();
+    let facts = result.unwrap().unwrap();
+    assert_eq!(allocation.2, 0);
+    assert_eq!(allocator.trace.capacity(), trace_capacity);
+    assert!(!allocator.observer_trace_overflow);
+    assert!(owned::hir_import_allocation_observers_idle());
+    println!(
+        "HIR_IMPORT_RUN_OUTCOME_CLEANUP bytes={} runtime={:?} allocation={allocation:?}",
+        text.len(),
+        facts.verified.runtime
+    );
     assert_eq!(facts.verified.typed_cells, usize::from(bytes[8]));
     let checked = check_source(source, &ast, &sources).unwrap();
     let ordinary_runtime = execute::measurement::begin();
