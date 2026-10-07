@@ -2,8 +2,8 @@
 
 Status: `ast_static_main.ox` now implements the complete validator and the
 subsequent resolution/type-checking stages, with local bounded reference/native
-qualification described in [README.md](README.md). Integrated current-source
-qualification and exact-head hosted CI remain pending. The combined
+qualification and reproducible current-source controller results described in
+[README.md](README.md). Exact-head hosted CI remains pending. The combined
 source-to-typing candidate remains refused at I = 8,778 against the unchanged
 8,192 limit. Production provider activation remains outside this component.
 

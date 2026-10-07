@@ -86,8 +86,10 @@ refused at I = 8,778.
 This is concrete progress toward a reusable frontend: syntax and complete bounded
 static observations now have explicit component boundaries. Integrated
 source/projection review has passed for the bounded scope, including independent
-re-projection of all 77 retained semantic pairs. Reproducible current-source
-controller qualification and exact-head hosted CI remain pending. Production provider selection, authoritative source ownership,
+re-projection of all 77 retained semantic pairs. The reproducible current-source
+controller passes 81 cases in each mode, 81 wire pairs and 48 I/O pairs; its
+independent review is clear. Exact-head hosted CI remains pending. Production
+provider selection, authoritative source ownership,
 `TypedProgram`/OIR construction and compiler self-rebuilds still require their own
 gates; this component does not complete a roadmap milestone.
 

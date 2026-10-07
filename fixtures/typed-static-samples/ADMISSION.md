@@ -12,8 +12,8 @@ scratch storage before resolution and typing.
 The combined source-to-type `typed_main.ox` candidate remains refused at
 I = 8,778. Admitting a separate consumer does not qualify that combined root.
 [README.md](README.md) separates completed local semantic, validator and I/O
-checks from pending integrated current-source and hosted qualification. Those
-local results are component evidence, not provider or self-hosting admission.
+checks, the completed current-source controller and pending hosted qualification.
+These local results are component evidence, not provider or self-hosting admission.
 
 ## Historical carrier and canonical observer
 

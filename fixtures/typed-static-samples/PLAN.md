@@ -4,8 +4,9 @@ The separate AST1 consumer now implements complete validation, resolution, typin
 and flow observation with the bounded local evidence in [README.md](README.md).
 Integrated source/projection review passed for the bounded scope,
 including independent re-projection of all 77 retained semantic pairs. The
-remaining work is a reproducible controller against its exact current sources
-and hosted CI on the exact proposed head.
+reproducible controller also passes all 81 cases in both modes, 81 wire pairs and
+48 I/O pairs; its independent review is clear. The remaining qualification gate
+is hosted CI on the exact proposed head.
 Production source ownership/provider integration and compiler self-rebuilds are
 separate future work. A passing separate consumer does not admit the combined
 source-to-type candidate that failed at I = 8,778.

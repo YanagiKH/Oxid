@@ -2,8 +2,8 @@
 
 Status: the separate `ast_static_main.ox` consumer implements complete AST1
 validation, scalar resolution, typing and flow observation. Local bounded
-reference/native qualification is recorded in [README.md](README.md); integrated
-current-source qualification and exact-head hosted CI remain pending. Production
+reference/native qualification and reproducible current-source controller results
+are recorded in [README.md](README.md); exact-head hosted CI remains pending. Production
 provider activation is not enabled. Input remains one source of at most 128 ASCII
 bytes in the existing scalar parser grammar. Historical probe and resolution-only
 roots retain their separate contracts below.

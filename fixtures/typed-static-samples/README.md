@@ -3,8 +3,8 @@
 This Oxid-written component resolves names and checks types and control flow for
 one source of at most 128 ASCII bytes in the existing scalar parser grammar. It
 produces complete observed HIR facts or the first canonical static diagnostic.
-Local reference/native qualification covers the bounded component; integrated
-current-source replay and exact-head hosted CI remain separate pending gates.
+The reproducible local controller passes both reference and native execution.
+Exact-head hosted CI remains a separate pending gate.
 
 ## Use the component
 
@@ -76,7 +76,9 @@ fresh integrated-head results. [ADMISSION.md](ADMISSION.md) preserves this histo
 The reusable boundary advances the frontend while keeping the parser's own
 syntax-only scope. Its observations are not a compiler-owned `TypedProgram`, an
 OIR artifact or a source-association witness. Production provider selection and
-compiler self-rebuilds are unchanged. Reproducible current-source controller
-qualification and hosted CI are still required; future
-provider integration must establish the compiler's actual source identity and
-authoritative ownership separately.
+compiler self-rebuilds are unchanged. The committed controller reproduces all
+81 cases in each mode, 81 exact wire pairs and the 48 I/O pairs using the existing
+qualified local compiler. Independent controller/I/O review and 795 Python tests
+(two skipped) pass. Hosted ordinary debug/release profiles remain pending;
+future provider integration must establish the compiler's actual source identity
+and authoritative ownership separately.
