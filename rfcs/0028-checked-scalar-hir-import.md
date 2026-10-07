@@ -370,10 +370,10 @@ against the ordinary source route before considering further activation.
 
 The compiled denied precursor measures Request at 1 byte, Context at 40,
 WorkPlan at 56, terminal facts/result at 288 and outer facts/result at 320 on the
-qualified local 64-bit target. The first, incomplete carrier sample changed the private Verify fixed
-envelope from 90,177 to 94,835 bytes and rich retained admission from 95,890 to
-100,548 bytes. Review then identified two missing complete method-call argument
-carriers, which are now included and require a fresh measurement before admission. The shared construction carrier also
+qualified local 64-bit target. Complete enclosing-carrier pricing changes the private Verify fixed envelope
+from 90,177 to 94,955 bytes and rich retained admission from 95,890 to 100,668
+bytes. This includes the complete 40-byte source lookup and 32-byte source text
+call argument carriers, plus their ledger-array growth. The shared construction carrier also
 changes the private Observe fixed envelope from 74,924 to 75,356 bytes. These are
 explicit private admission successors under the same ceilings; public/default
 source admission does not use these disconnected leaves. Verify compilation
@@ -386,5 +386,6 @@ simultaneous vector payload is 147,592 bytes and the recursive frame-limit case
 is 155,648 bytes. Missing/wrong-arity main creates no observed runtime storage.
 These are successful-allocation capacity samples, excluding allocation metadata,
 failed partial construction and realloc transients. They do not replace the new
-importer ledger or establish a total memory bound. Private Run remains denied
-pending entry/denial controls and independent accounting review.
+importer ledger or establish a total memory bound. The 86 focused entry/denial, admission, comparison and Verify controls passed,
+and independent review cleared the corrected accounting boundary. Private Run
+remains denied pending its separate execution activation gate.

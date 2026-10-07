@@ -39,8 +39,10 @@ fn checked_hir_import_run_outer_denial_precedes_every_allocation() {
                 work: 0,
             },
         ] {
-            let mut allocator = Allocator::default();
-            allocator.fail_at = Some(1);
+            let mut allocator = Allocator {
+                fail_at: Some(1),
+                ..Allocator::default()
+            };
             let checker = typeck::measurement::begin();
             let runtime = execute::measurement::begin();
             let mut disabled = false;
@@ -76,8 +78,10 @@ fn checked_hir_import_run_candidate_denial_precedes_reserves_and_work() {
     let canonical = hir::resolve_sources(owner).unwrap();
     assert_eq!(canonical.signatures.capacity(), 0);
     assert_eq!(canonical.functions.capacity(), 0);
-    let mut allocator = Allocator::default();
-    allocator.fail_at = Some(1);
+    let mut allocator = Allocator {
+        fail_at: Some(1),
+        ..Allocator::default()
+    };
     let work = WorkMeter::new(0);
     let checker = typeck::measurement::begin();
     let runtime = execute::measurement::begin();
