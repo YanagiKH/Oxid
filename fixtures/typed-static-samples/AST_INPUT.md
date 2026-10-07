@@ -1,8 +1,11 @@
 # AST1 source/AST consumer boundary
 
-Status: accepted for a closed decoder/validation admission experiment. The
-combined source-to-typing candidate remains refused at I = 8,778 against the
-unchanged 8,192 limit. No complete typed parity or provider activation is claimed.
+Status: `ast_static_main.ox` now implements the complete validator and the
+subsequent resolution/type-checking stages, with local bounded reference/native
+qualification described in [README.md](README.md). Integrated current-source
+qualification and exact-head hosted CI remain pending. The combined
+source-to-typing candidate remains refused at I = 8,778 against the unchanged
+8,192 limit. Production provider activation remains outside this component.
 
 This is deliberately a two-executable pipeline: the existing bounded parser
 produces OPA1, and a separate Oxid consumer validates source plus a syntax-success
@@ -87,7 +90,12 @@ clear temporary marks/heights/frames and hand the resolver genuinely zero local,
 semantic and traversal storage. Do not manufacture parser State/root markers to
 pretend `static_state::release` established this new phase boundary.
 
-## Admission and enablement
+## Historical admission and enablement plan
+
+The following records the original closed experiment's plan and conservative
+budget, not the completed consumer's measured costs. The `ast_static_main.ox`
+consumer has I = 7,741, W = 3,907, 95 functions, 1,818 blocks and 79,048 explicit
+native bytes including the eight-byte wrapper. All existing limits remain active.
 
 Measured subtraction of seven parser construction/dispatch modules from the
 rejected candidate leaves a conservative 4,930 I before new transport, validation
@@ -109,7 +117,7 @@ OPA1+STF1 result. Even then it remains a component observation, not a TypedProgr
 source-association witness or production provider. Future provider use must bind
 to the compiler's actual source identity and ordinary authoritative pipeline.
 
-## Closed precursor measurement
+## Historical closed precursor measurement
 
 The first role dispatcher exceeded the unchanged 256 scalar-slot function limit.
 An acyclic declaration/statement/expression role split preserves the checks and
@@ -124,4 +132,7 @@ row permutations preserve the logical Binary/ExprStmt graph yet reject, while
 canonical allocation positives pass. A trailing-data control consumes exactly
 one witness byte beyond the record and leaves the rest unread. No resolver or
 typing invocation occurs in this root. Full validation, independent adversarial
-review and later semantic enablement remain separate gates.
+review and semantic enablement were separate later gates, not claims made by
+these 53 controls. The permanent closed root retains status 70 even though the
+separate semantic consumer has since passed the local checks in
+[README.md](README.md).

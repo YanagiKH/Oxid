@@ -1,12 +1,16 @@
-# Bounded scalar static frontend: precursor contract
+# Bounded scalar static frontend contract
 
-Status: the isolated carrier/control precursor and scalar resolution stage are
-implemented. Complete typing and provider activation are not enabled. Input remains
-one source of at most 128 ASCII bytes, with the existing lexer and scalar parser.
+Status: the separate `ast_static_main.ox` consumer implements complete AST1
+validation, scalar resolution, typing and flow observation. Local bounded
+reference/native qualification is recorded in [README.md](README.md); integrated
+current-source qualification and exact-head hosted CI remain pending. Production
+provider activation is not enabled. Input remains one source of at most 128 ASCII
+bytes in the existing scalar parser grammar. Historical probe and resolution-only
+roots retain their separate contracts below.
 
 ## Semantic endpoint
 
-The intended endpoint is complete scalar resolution followed by scalar typing:
+The semantic endpoint is complete scalar resolution followed by scalar typing:
 exact signatures, bindings, literal values, HIR references, types and block flows,
 or the first canonical static diagnostic. Resolution of the entire program must
 finish before any typing begins. Library checking accepts empty input, recursion,
@@ -81,14 +85,15 @@ This is a bounded test/component observation, not a public compiler ABI.
 Retain the complete existing OPA1 observation first. A lexical/parser failure is
 its existing 11-byte frame with no static suffix. Syntax success is the existing
 1,559-byte OPA1 frame followed by an STF1 suffix. This keeps syntax and semantic
-acceptance distinct without inventing an alternate AST input protocol.
+acceptance distinct. The separate consumer's source/AST input is specified by
+[AST1](AST_INPUT.md); it does not change these result bytes.
 
 The suffix header is exactly 16 bytes:
 
 | Byte | Field |
 | --- | --- |
 | 0..3 | ASCII STF1 |
-| 4 | tag: 0 static success, 1 static diagnostic, 2 precursor probe only |
+| 4 | tag: 0 static success, 1 static diagnostic, 2 probe or resolution-only, never typed success |
 | 5 | AST row count, matching OPA1 |
 | 6 | diagnostic kind below, otherwise 0 |
 | 7..8 | primary start/end |
@@ -145,14 +150,14 @@ Diagnostic kinds bind exact canonical code/stage/message templates:
 For kind 8, expected/actual codes are each in 1..3 and differ. For kind 10, counts must fit the actual bounded AST and differ; zero is a legitimate count. For all other kinds bytes 12..15 are zero. If label is absent, bytes 9..11 are zero. The primary must denote the context listed above rather than merely be some in-bounds span. Named secondary labels must match their exact canonical text. Kind 8's allowed secondary label depends on the actual failing constraint; it must not accept an arbitrary label among 0/2/3.
 
 The quoted templates, source-derived name spelling and context-specific spans
-are checked against the unchanged canonical observer before semantic activation.
+are checked against the unchanged canonical observer during qualification.
 Type displays are exactly `bool`, `i32` and `()`. Secondary labels are exactly
 `first declared here`, `function declared here`, `binding declared here` and
 `immutable binding declared here` for labels 1 through 4. Process status 0 means
 a complete observation, not semantic acceptance; inherited transport statuses
 64/74 and internal failure 70 remain distinct. Incomplete output is rejected.
-The precursor must not emit tags 0 or 1. Its only successful suffix is tag 2,
-with zero diagnostic fields and full-width synthetic probe columns. Those
+The permanent synthetic `static_main.ox` precursor must not emit tags 0 or 1.
+Its only successful suffix is tag 2, with zero diagnostic fields and full-width synthetic probe columns. Those
 columns need not obey semantic row roles; a semantic consumer rejects tag 2
 before reading them as typed facts. Their last cell remains zero. Probe success
 is never static acceptance, a TypedProgram or a source-association witness.
@@ -172,7 +177,10 @@ unknown-type route. The projection derives only structural IDs and copies observ
 binding targets and literal values; it does not resolve names, convert decimals,
 infer types or compute expected flow. See [RESOLUTION.md](RESOLUTION.md).
 
-## Carrier/control precursor
+## Historical carrier/control precursor
+
+The following preserves the precursor design and measurements; it is not the
+current semantic consumer's admission or validation result.
 
 Add the two fact columns and a separate 129-cell active-local stack. Reuse the
 existing parser frame buffer only after successful parser completion: mode 9,

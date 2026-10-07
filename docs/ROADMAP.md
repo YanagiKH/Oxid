@@ -72,6 +72,25 @@ physical storage and language fuel are unchanged. Hosted qualification, provider
 selection, source provenance and broader grammar remain distinct gates. This is
 a reusable frontend component, not a compiler self-rebuild claim.
 
+The separate [bounded scalar static frontend](../fixtures/typed-static-samples/README.md)
+adds complete AST1 validation, name resolution, type checking and flow observation
+for the same 128-byte ASCII scalar grammar. The existing parser and a separate
+Oxid consumer exchange exact source/OPA1 bytes; the host only frames and relays
+them. Local reference/native checks cover 77 semantic pairs (29 complete typed
+fact results and 48 first diagnostics covering all 14 kinds), with four producer
+failures/refusals recorded separately. Independent validator and I/O controls
+cover the untrusted source/AST boundary. The consumer admits at I = 7,741 and
+W = 3,907 under unchanged limits; the combined source-to-type candidate remains
+refused at I = 8,778.
+
+This is concrete progress toward a reusable frontend: syntax and complete bounded
+static observations now have explicit component boundaries. Integrated
+source/projection review has passed for the bounded scope, including independent
+re-projection of all 77 retained semantic pairs. Reproducible current-source
+controller qualification and exact-head hosted CI remain pending. Production provider selection, authoritative source ownership,
+`TypedProgram`/OIR construction and compiler self-rebuilds still require their own
+gates; this component does not complete a roadmap milestone.
+
 ## Native AI work
 
 Native AI support needs typed buffers and CPU tensors first, followed by automatic differentiation, optimizers, and complete training loops. GPU execution, tensor compilation, multi-device training, and resumable checkpoints add separate hardware and correctness requirements. Calling an external framework through a process adapter does not satisfy these milestones.

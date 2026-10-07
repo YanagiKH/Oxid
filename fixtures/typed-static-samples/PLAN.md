@@ -1,4 +1,19 @@
-# Precursor plan
+# Static frontend qualification plan
+
+The separate AST1 consumer now implements complete validation, resolution, typing
+and flow observation with the bounded local evidence in [README.md](README.md).
+Integrated source/projection review passed for the bounded scope,
+including independent re-projection of all 77 retained semantic pairs. The
+remaining work is a reproducible controller against its exact current sources
+and hosted CI on the exact proposed head.
+Production source ownership/provider integration and compiler self-rebuilds are
+separate future work. A passing separate consumer does not admit the combined
+source-to-type candidate that failed at I = 8,778.
+
+## Historical precursor plan
+
+These steps record the carrier/control stage and its original gates. They do not
+replace current semantic qualification or imply that a tag-2 probe types input.
 
 1. Independently review the complete fact/first-diagnostic contract and canonical
    route selection. Pin an observer over unchanged parser/resolver/typechecker

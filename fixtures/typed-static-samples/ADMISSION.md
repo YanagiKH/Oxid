@@ -1,4 +1,21 @@
-# Static precursor admission
+# Static component admission
+
+## Current separate AST1 consumer
+
+The separate `ast_static_main.ox` consumer passes ordinary native admission
+with I = 7,741, W = 3,907, 95 functions, 1,818 blocks and 79,048 explicit native
+bytes including the eight-byte process wrapper. Headroom under the unchanged
+8,192 I/W ceilings is 451/4,285. No input, scalar-slot, storage, fuel or other
+admission limit was raised. It validates the complete AST1 boundary and clears
+scratch storage before resolution and typing.
+
+The combined source-to-type `typed_main.ox` candidate remains refused at
+I = 8,778. Admitting a separate consumer does not qualify that combined root.
+[README.md](README.md) separates completed local semantic, validator and I/O
+checks from pending integrated current-source and hosted qualification. Those
+local results are component evidence, not provider or self-hosting admission.
+
+## Historical carrier and canonical observer
 
 This is a carrier and canonical-observer precursor. It does not resolve or type
 check candidate programs, and its successful suffix remains STF1 tag 2.
@@ -25,7 +42,7 @@ controls pass without increasing fuel limits.
 The original lexer wrapper also admits: I falls from 2,157 to 1,289, W rises from
 3,276 to 3,556, and explicit native bytes fall from 31,984 to 26,088.
 
-Current focused qualification executes:
+The precursor's focused qualification executed:
 
 - 400 existing lexer observations across reference and native modes
 - 139 parser cases in each mode: 118 canonical comparisons and 21 grammar-site
@@ -46,4 +63,6 @@ and checker fit. Replacing the 313-item probe driver gives only an arithmetic
 upper bound of 1,969 items for replacement semantics and state. That driver
 contains synthetic stress work and actual source observations; useful work must
 be retained. Complete semantic control/diagnostic state is still unpriced.
-Broad semantic implementation and provider activation require a separate gate.
+Those measurements did not admit broad semantic implementation or provider
+activation. The subsequent separate consumer is measured above; provider
+activation still requires a separate gate.

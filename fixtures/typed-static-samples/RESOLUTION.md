@@ -1,4 +1,8 @@
-# Complete bounded scalar resolution, pending typing
+# Resolution-only component
+
+This page records the independently retained resolution stage and its historical
+qualification. Typing remains pending in this root; the separate complete
+`ast_static_main.ox` consumer is documented in [README.md](README.md).
 
 `fixtures/typed-lexer-samples/resolver_main.ox` is a separate source-to-resolution
 component over the existing 128-byte scalar parser grammar. The permanent
@@ -44,5 +48,7 @@ observations; all 65 default typed outputs remain byte-identical to its earlier
 reviewed observer.
 
 No production compiler behavior or provider selection changes here. Full typing
-and flow remain a separately measured stage; any native gate failure must remain
-visible and stop expansion before qualification.
+and flow required a separately measured stage: the combined source-to-type root
+failed native admission at I = 8,778, while the separate AST1 consumer later
+admitted under unchanged limits. Neither outcome changes this resolution-only
+root's tag-2 contract. Failed gates remain part of the qualification history.
