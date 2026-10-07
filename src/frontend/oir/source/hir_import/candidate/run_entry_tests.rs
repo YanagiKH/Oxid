@@ -309,3 +309,71 @@ fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
     assert!(observed.0 > 16 && observed.3 > 147_456);
     println!("HIR_IMPORT_PRIVATE_RUN {facts:?} allocations={observed:?}");
 }
+
+#[test]
+fn checked_hir_import_run_exact_compile_budget_precedes_execution() {
+    let mut sources = SourceMap::new();
+    let id = sources.add("run-budget.ox".into(), RICH_SOURCE.into());
+    let source = sources.get(id);
+    let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+    let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+    let baseline = leaf::run(
+        owner,
+        RICH_SOURCE.as_bytes(),
+        RICH_WIRE,
+        &mut Allocator::default(),
+        IndexLimits::default(),
+    )
+    .unwrap();
+    let receipt = baseline.verified.candidate.allocation;
+    let exact = IndexLimits {
+        retained: receipt.affected_bytes as u64,
+        scratch: receipt.fixed_bytes as u64,
+        work: baseline.total_work,
+    };
+    assert_eq!(exact.work, 1_310_659);
+    let accepted = leaf::run(
+        owner,
+        RICH_SOURCE.as_bytes(),
+        RICH_WIRE,
+        &mut Allocator::default(),
+        exact,
+    )
+    .unwrap();
+    assert_eq!(accepted.verified.runtime, baseline.verified.runtime);
+    for limits in [
+        IndexLimits {
+            retained: exact.retained - 1,
+            ..exact
+        },
+        IndexLimits {
+            scratch: exact.scratch - 1,
+            ..exact
+        },
+        IndexLimits {
+            work: exact.work - 1,
+            ..exact
+        },
+    ] {
+        let mut allocator = Allocator::default();
+        let checker = typeck::measurement::begin();
+        let runtime = execute::measurement::begin();
+        let rejected = leaf::run(
+            owner,
+            RICH_SOURCE.as_bytes(),
+            RICH_WIRE,
+            &mut allocator,
+            limits,
+        );
+        assert!(matches!(
+            rejected,
+            Err(leaf::VerifyRejected::Source(leaf::Rejected::Budget))
+                | Err(leaf::VerifyRejected::Terminal(VerifyRejected::Candidate(
+                    Failure::Admission
+                )))
+        ));
+        assert_eq!(allocator.attempts, 0);
+        assert_eq!(checker.finish().frame_bytes, 0);
+        assert_eq!(runtime.finish(), execute::measurement::Snapshot::default());
+    }
+}
