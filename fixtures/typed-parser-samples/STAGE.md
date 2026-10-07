@@ -22,6 +22,20 @@ pending at this checkpoint. Bare assignment and match still use unfinished
 generic-error paths and are not claimed as contract-complete. Calls are the next
 increment.
 
+## Call continuations
+
+At `40898984`, calls preserve exact callee and argument spans, source-ordered
+postorder expression IDs, linked argument ownership and deferred close/postfix/
+height diagnostics. Ordinary native admission passes with I = 5,660, W = 2,571,
+80 functions, 1,343 blocks and 56,964 explicit bytes including the wrapper.
+
+Paired replay passes 105 inputs per mode: 84 complete canonical comparisons,
+18 refusals and three pending cases. Sixteen authored decoder methods pass.
+Forty retained corruption expectations remain unchanged; the old Number-to-Call
+mutation now rejects as a malformed callee token instead of an unsupported row
+kind. Its exact named successor remains a rejection. Let/assignment and control
+flow are the next increments; this is not full statement-contract acceptance.
+
 ## Historical initial control checkpoint
 
 The canonical parser observer copies unchanged Rust sources and projects full

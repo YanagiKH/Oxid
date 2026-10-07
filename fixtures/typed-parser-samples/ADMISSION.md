@@ -26,6 +26,13 @@ owner width. Remaining I/W headroom is 2,934/5,621. Exact syntax/first-diagnosti
 parity is recorded by [the stage report](STAGE.md); this does not qualify the
 unimplemented statement/call grammar.
 
+## Call increment
+
+At `40898984`, ordinary native admission passes with I = 5,660, W = 2,571,
+80 functions, 1,343 blocks and 56,964 explicit bytes including the wrapper.
+Calls add 402 inventory items and no owner width. Remaining I/W headroom is
+2,532/5,621; all other native gates still apply.
+
 ## Historical carrier experiments
 
 The first probe shares the existing lexer modules and source bound. Its entry is

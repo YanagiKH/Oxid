@@ -51,6 +51,8 @@ fn block(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd:
         return;
     }
     if kind == 47 { crate::parser_state::fail(&*codes, &*tokens, &mut *state, 11); return; }
+    let binding = crate::parser_statement::start(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *frames, &mut *state);
+    if binding { return; }
     if kind == 14 || kind == 15 || kind == 16 {
         let at = crate::parser_state::bump(&*tokens, &mut *state);
         let tag = kind - 4;
@@ -69,7 +71,7 @@ fn block(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd:
         }
         crate::parser_state::push(&mut *frames, &mut *state, 7, statement, 0);
     } else {
-        if kind == 12 || kind == 17 || kind == 18 {
+        if kind == 17 || kind == 18 {
             state.error = 5; state.detail = 100 + kind;
             state.start = crate::parser_state::lo(token); state.end = crate::parser_state::hi(token);
             return;
@@ -87,8 +89,9 @@ fn expression_done(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut 
     let phase = frame % 32;
     let node = frame / 65536;
     let value = state.value;
-    if phase == 7 {
-        crate::parser_state::low(&mut *ab, node, value);
+    if phase == 5 || phase == 6 || phase == 7 {
+        if phase == 7 { crate::parser_state::low(&mut *ab, node, value); }
+        else { crate::parser_state::low(&mut *cd, node, value); }
         let origin = crate::parser_state::lo(headers[node - 1]);
         crate::parser_state::span(&mut *headers, node, origin, crate::parser_state::hi(tokens[semi - 1]));
         let finished = crate::parser_state::pop(&mut *frames, &mut *state);
