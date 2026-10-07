@@ -233,7 +233,7 @@ impl VerifiedProgram {
             })
             .transpose()?;
         #[cfg(test)]
-        emit_observation::retained(&bounds, diagnostics.as_ref());
+        emit_observation::retained(&bounds, diagnostics.as_ref(), guarded);
         // Count the exact emitted UTF-8 bytes without allocating the final LLVM
         // text buffer. Inherited native metadata/temporary Strings still allocate.
         let mut count = Emission {

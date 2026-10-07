@@ -149,15 +149,19 @@ pub(super) fn human_bytes(render: bool, bytes: usize) {
     });
 }
 
-pub(super) fn retained(bounds: &Vec<Bound>, diagnostics: Option<&GuardedDiagnostics>) {
+pub(super) fn retained(
+    bounds: &Vec<Bound>,
+    diagnostics: Option<&GuardedDiagnostics>,
+    guarded: bool,
+) {
     update(|observation| {
+        observation.guarded = guarded;
         observation.bounds_capacity_bytes = capacity_bytes(
             bounds.capacity(),
             size_of::<Bound>(),
             &mut observation.overflow,
         );
         if let Some(diagnostics) = diagnostics {
-            observation.guarded = true;
             observation.message_count = diagnostics.messages.len();
             observation.map_entries = diagnostics.ids.len();
             observation.message_vec_capacity_bytes = capacity_bytes(
