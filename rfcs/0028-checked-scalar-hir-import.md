@@ -152,3 +152,35 @@ A private fixed-storage source/OPA comparison module is the first implementation
 checkpoint of this stage. It is compiled but is not yet connected to candidate
 allocation. Its actual event/map/result/caller layouts and bounded work must be
 measured and charged before consumption; a source file alone is not admission.
+
+### Bounded comparison preflight
+
+The current disconnected source comparator has genuine producer controls for all
+36 scalar row kinds. A stale cached project-syntax summary cannot authorize an
+original-owner route when a function's actual public field is present. This is
+checked after bounded domain admission; public input continues to require the
+genuine project owner.
+
+Before byte comparison, reject different capture/source lengths, then reject an
+equal length over 128. Thus an oversized, equal-length but different capture now
+returns the private Domain boundary instead of scanning its bytes and returning
+Source. No public diagnostic or default entry changes. Token/item counts and
+parameter/argument lengths are also bounded before their scans. The complete
+comparison must precede canonical resolution in the future consumed leaf, so
+mutable AST fields are checked against source before resolver assumptions apply.
+
+The comparator's 2,690 maximum visit count is only its original visit model.
+Source binding, domain checks, literal and child-height scans, framing and final
+claim scans require additional bounded work charges. Combine those with genuine
+canonical resolution and candidate work under the existing work ceiling before
+connecting candidate allocation.
+
+The disconnected allocation helper has passed 12 focused tests; 22 source,
+framing and comparison tests pass at the preceding immutable fixture checkpoint.
+The measured helper named-value envelope is 18,784 bytes on the 64-bit test host,
+including its complete Session and typed reserve/fill/finish carriers. It is not
+a stack measurement or complete importer price. Caller/source/comparison roles,
+actual candidate construction and simultaneous partial-candidate cleanup remain
+separate integration obligations. Exact requested capacities and observed
+retained capacities are distinguished from allocator metadata or transient
+excess capacity, which this model does not bound.

@@ -398,3 +398,63 @@ fn checked_hir_import_original_route_rejects_stale_public_summary() {
         Err(Boundary::Source)
     ));
 }
+
+#[test]
+fn checked_hir_import_scan_preflight_bounds_mutable_arenas() {
+    let text = "fn f(x:i32)->i32{return x;}";
+    for kind in 0..3 {
+        let (sources, mut program) = parsed(text);
+        match kind {
+            0 => {
+                let token = program.tokens[0].clone();
+                program.tokens.resize(CELLS + 1, token);
+            }
+            1 => program.items.resize(MAX_ROWS + 1, ast::ItemId::Function(0)),
+            _ => {
+                let name = program.functions[0].params[0].name;
+                let ty = program.functions[0].params[0].ty;
+                program.functions[0]
+                    .params
+                    .resize_with(MAX_ROWS + 1, || ast::Param { name, ty });
+            }
+        }
+        assert!(matches!(
+            BoundObservation::bind(
+                original(&sources, &program),
+                text.as_bytes(),
+                &frame(text.len())
+            ),
+            Err(Boundary::Domain)
+        ));
+    }
+    let text = "fn f()->(){f();return;}";
+    let (sources, mut program) = parsed(text);
+    if let ast::ExprKind::Call { args, .. } = &mut program.expressions[0].kind {
+        args.resize_with(MAX_ROWS + 1, || ast::Argument::Value(ast::ExprId(0)));
+    } else {
+        panic!("fixture must contain the call");
+    }
+    assert!(matches!(
+        BoundObservation::bind(
+            original(&sources, &program),
+            text.as_bytes(),
+            &frame(text.len())
+        ),
+        Err(Boundary::Domain)
+    ));
+}
+
+#[test]
+fn checked_hir_import_oversized_equal_length_capture_stops_before_bytes() {
+    let text = " ".repeat(MAX_ROWS + 1);
+    let (sources, program) = parsed(&text);
+    let captured = vec![b'\t'; MAX_ROWS + 1];
+    assert!(matches!(
+        BoundObservation::bind(original(&sources, &program), &captured, &[]),
+        Err(Boundary::Domain)
+    ));
+    assert!(matches!(
+        BoundObservation::bind(original(&sources, &program), &captured[..MAX_ROWS], &[]),
+        Err(Boundary::Source)
+    ));
+}

@@ -96,7 +96,9 @@ fn scalar_type(ty: ast::TypeSyntax) -> bool {
     )
 }
 fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
-    if !program.records.is_empty()
+    if program.tokens.len() > CELLS
+        || program.items.len() > MAX_ROWS
+        || !program.records.is_empty()
         || !program.enums.is_empty()
         || !program.modules.is_empty()
         || !program.imports.is_empty()
@@ -116,15 +118,15 @@ fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
     };
     add(program.functions.len())?;
     for function in &program.functions {
-        if !scalar_type(function.result) || function.params.iter().any(|p| !scalar_type(p.ty)) {
-            return Err(Boundary::Domain);
-        }
         add(1)?; // result type
         add(function
             .params
             .len()
             .checked_mul(2)
             .ok_or(Boundary::Overflow)?)?;
+        if !scalar_type(function.result) || function.params.iter().any(|p| !scalar_type(p.ty)) {
+            return Err(Boundary::Domain);
+        }
         add(function.blocks.len())?;
         for block in &function.blocks {
             add(block.body.len())?;
@@ -152,6 +154,7 @@ fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
             }
         }
     }
+    let mut arguments = 0usize;
     for expression in &program.expressions {
         match &expression.kind {
             ast::ExprKind::Negate { .. }
@@ -167,9 +170,18 @@ fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
             ast::ExprKind::Call {
                 callee: ast::ItemPath::Unqualified(_),
                 args,
-            } if args
-                .iter()
-                .all(|arg| matches!(arg, ast::Argument::Value(_))) => {}
+            } => {
+                arguments = arguments
+                    .checked_add(args.len())
+                    .filter(|&n| n <= MAX_ROWS)
+                    .ok_or(Boundary::Domain)?;
+                if !args
+                    .iter()
+                    .all(|arg| matches!(arg, ast::Argument::Value(_)))
+                {
+                    return Err(Boundary::Domain);
+                }
+            }
             _ => return Err(Boundary::Domain),
         }
     }
@@ -195,10 +207,18 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
         if owner.flavor() == SyntaxFlavor::OriginalSingleFile && ast.uses_project_syntax() {
             return Err(Boundary::Source);
         }
+        if captured_source.len() != source.text().len() {
+            return Err(Boundary::Source);
+        }
+        // Reject oversized equal-length inputs before inspecting their bytes.
+        // The private boundary therefore has a bounded equality/ASCII scan.
+        if captured_source.len() > MAX_ROWS {
+            return Err(Boundary::Domain);
+        }
         if captured_source != source.text().as_bytes() {
             return Err(Boundary::Source);
         }
-        if captured_source.len() > MAX_ROWS || !captured_source.is_ascii() {
+        if !captured_source.is_ascii() {
             return Err(Boundary::Domain);
         }
         bounded_ast_domain(ast)?;
