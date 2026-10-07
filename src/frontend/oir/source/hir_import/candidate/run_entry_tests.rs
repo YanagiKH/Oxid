@@ -31,11 +31,12 @@ fn checked_hir_import_run_outer_budget_precedes_every_allocation() {
         (RICH_SOURCE.as_bytes(), &[][..]),
         (&[][..], RICH_WIRE),
     ] {
-        for limits in [IndexLimits {
-            retained: 0,
-            scratch: 0,
-            work: 0,
-        }] {
+        {
+            let limits = IndexLimits {
+                retained: 0,
+                scratch: 0,
+                work: 0,
+            };
             let mut allocator = Allocator {
                 fail_at: Some(1),
                 ..Allocator::default()
