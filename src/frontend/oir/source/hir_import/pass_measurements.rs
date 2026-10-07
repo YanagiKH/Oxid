@@ -10,7 +10,7 @@ use crate::frontend::{
 };
 
 fn observe_case(label: &str, owner: SourceOwner<'_>, sources: &SourceMap) {
-    assert!(!candidate::VERIFY_ADMITTED);
+    const { assert!(!candidate::VERIFY_ADMITTED) };
     let root = owner.ast(ModuleId(0)).unwrap();
     let canonical = hir::resolve_sources(owner).unwrap();
     let hir_payload = StoragePlan::describe(&canonical)
@@ -131,5 +131,5 @@ fn checked_hir_import_ordinary_pass_layouts_and_capacity_envelopes() {
         SourceOwner::project(&project),
         project.sources(),
     );
-    assert!(!candidate::VERIFY_ADMITTED);
+    const { assert!(!candidate::VERIFY_ADMITTED) };
 }
