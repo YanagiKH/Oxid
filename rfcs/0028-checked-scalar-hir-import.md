@@ -1,7 +1,6 @@
 # RFC 0028: private checked scalar HIR import
 
-Status: **private Verify and Run enabled and locally qualified**.
-Private LLVM-text Emit is enabled for focused qualification, which is pending.
+Status: **private Verify, Run and LLVM-text Emit enabled and locally qualified**.
 Public provider integration and external native-tool execution remain outside
 the enabled scope.
 Updated 2026-10-07.
@@ -528,3 +527,25 @@ provider selection, external LLVM tools and native executable execution remain
 outside this step. The historical denied controls and their receipts remain
 evidence of the preceding boundary; activation needs corresponding successor
 controls through the fully paid source leaf.
+
+### Local LLVM-text qualification
+
+The private text route has passed its focused qualification. The genuine rich
+producer observation yields 14,325 LLVM bytes equal to ordinary source emission,
+with 16 candidate reservations and one final String reservation. The artifact
+remains valid after the actual source/AST backing scope ends. Its original-meter
+work is 10,069,187. Genuine project/public observations and explicitly synthetic
+scalar/entry controls preserve ordinary text or complete native diagnostics.
+
+Actual work and retained-byte boundaries, 326 supplied-fact mutations before
+lowering, final-buffer logical and real-null failures, same-allocator recovery,
+no-growth and complete output/error teardown controls passed. The 3,365-byte
+path succeeds at work 255,928,515; the 3,366-byte path is privately work-rejected
+while ordinary emission remains admitted. These outcomes retain the declared
+private admission differences and inherited-allocation exclusions.
+
+Local validation at the qualified source includes 18 focused Emit controls,
+1,649 passing unit tests with 55 explicitly ignored, strict all-target Clippy
+and formatting checks. This is bounded-debug Linux evidence on Rust 1.99.0,
+not hosted or standard-profile qualification. No external LLVM tool or native
+executable ran in this step; no public provider/default source route changed.
