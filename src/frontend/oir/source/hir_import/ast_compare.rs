@@ -207,6 +207,55 @@ impl Scratch {
 // Includes the actual explicit traversal stack, ownership bits and heights.
 pub(super) const SCRATCH_BYTES: usize = std::mem::size_of::<Scratch>();
 
+/// Named fixed comparison banks and their construction/return transports.
+/// This deliberately adds roles whose optimized machine lifetimes may not
+/// overlap. It is neither a measured stack maximum nor a general lexer budget.
+/// The source owner, retained source/AST, caller and canonical/candidate HIR
+/// owners belong to the enclosing leaf's separate accounting.
+pub(super) fn named_bytes() -> Result<usize, Boundary> {
+    use std::mem::{size_of, size_of_val};
+    let copies = |size: usize, count: usize| size.checked_mul(count).ok_or(Boundary::Overflow);
+    let roles = [
+        // Explicit stack initializer, constructor return, and actual walker.
+        size_of::<[Event; MAX_EVENTS]>(),
+        size_of::<Scratch>(),
+        size_of::<Walker<'_, '_, '_>>(),
+        // Local syntax, returned syntax, and the caller-held comparison result.
+        copies(size_of::<ComparedSyntax<'_, '_, '_>>(), 3)?,
+        copies(size_of::<Result<ComparedSyntax<'_, '_, '_>, Boundary>>(), 2)?,
+        size_of::<&BoundObservation<'_, '_>>(),
+        size_of::<&ast::Program>(),
+        size_of::<crate::frontend::source::SourceFileId>(),
+        // Bounded event/row/span read and forwarding roles, including the
+        // four-byte word decoder and the four-value row validation array.
+        copies(size_of::<Event>(), 3)?,
+        size_of::<Option<Event>>(),
+        copies(size_of::<Row>(), 3)?,
+        copies(size_of::<Result<Row, Boundary>>(), 3)?,
+        copies(size_of::<Span>(), 3)?,
+        size_of::<[u8; 4]>(),
+        size_of::<[u32; 4]>(),
+        copies(size_of::<Result<i32, Boundary>>(), 3)?,
+        copies(size_of::<Result<(), Boundary>>(), 8)?,
+        // Lexical scan arguments, returned pair, operator table/iterator and
+        // scalar cursor/height/depth state. No new token vector is produced.
+        size_of::<(&ast::Program, &[u8], crate::frontend::source::SourceFileId)>(),
+        size_of::<(&[u8], usize)>(),
+        copies(size_of::<Result<(Kind, usize), Boundary>>(), 2)?,
+        copies(size_of::<[(&[u8; 2], Kind); 7]>(), 2)?,
+        size_of::<std::array::IntoIter<(&[u8; 2], Kind), 7>>(),
+        copies(size_of::<usize>(), 16)?,
+        copies(size_of::<u8>(), 12)?,
+    ];
+    let bank = size_of_val(&roles)
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
+        .ok_or(Boundary::Overflow)?;
+    roles.into_iter().try_fold(bank, |sum, value| {
+        sum.checked_add(value).ok_or(Boundary::Overflow)
+    })
+}
+
 struct Walker<'b, 's, 'w> {
     syntax: ComparedSyntax<'b, 's, 'w>,
     program: &'s ast::Program,

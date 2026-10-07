@@ -13,6 +13,8 @@ use std::{convert::Infallible, mem::size_of};
 mod ast_compare;
 // Prepaid vector helper remains disconnected from any candidate Program builder.
 mod allocation;
+// Contained candidate helper is compiled for layout review; consumers remain disconnected.
+mod candidate;
 
 const CELLS: usize = 129;
 const MAX_ROWS: usize = 128;

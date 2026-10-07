@@ -411,6 +411,7 @@ fn checked_hir_import_source_opa_complete_layouts() {
         "compared-result",
         Result<ComparedSyntax<'static, 'static, 'static>, Boundary>
     );
+    println!("HIR_IMPORT_AST named_bytes={}", named_bytes().unwrap());
     assert_eq!(SCRATCH_BYTES, size_of::<Scratch>());
     assert!(
         SCRATCH_BYTES >= size_of::<[Event; MAX_EVENTS]>() + 2 * MAX_ROWS + 6 * size_of::<usize>()
