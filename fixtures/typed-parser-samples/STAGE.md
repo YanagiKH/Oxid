@@ -4,8 +4,23 @@ The native inventory successor in RFC 0027 is qualified. The unchanged parked
 parser at `8f1fe203` passed ordinary native compilation and 54 retained
 reference/native cases, plus 41 separate strict-decoder controls. These comprise
 35 canonical comparisons, 11 domain refusals and eight pending grammar cases.
-The full scalar grammar remains unfinished. Expression continuations are the
-next implementation increment; no provider activation is included.
+The full scalar grammar remains unfinished; no provider activation is included.
+
+## Expression continuations
+
+Source checkpoint `c9a5d733` and strict projection checkpoint `00545401` implement
+Group/Unit, signed and general prefixes, arithmetic, comparisons and logical
+operators. Ordinary native admission passes with I = 5,258, W = 2,571,
+76 functions, 1,281 blocks and 53,776 explicit bytes including the wrapper.
+The existing arrays and State layout are unchanged.
+
+Paired reference/native replay passes 87 inputs: 68 complete canonical AST or
+first-diagnostic comparisons, 15 site refusals and four explicit pending cases
+per mode. The 41 retained corruption controls pass in each mode; 11 authored
+decoder test methods cover the new row families. Calls, let, if and while remain
+pending at this checkpoint. Bare assignment and match still use unfinished
+generic-error paths and are not claimed as contract-complete. Calls are the next
+increment.
 
 ## Historical initial control checkpoint
 

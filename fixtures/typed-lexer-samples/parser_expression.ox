@@ -80,12 +80,20 @@ fn reduce(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd
 // True means that the entire expression returned to its grammar caller. A
 // single transition otherwise extends or finishes one expression owner.
 pub fn resume(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32], cd: &mut [i32], frames: &mut [i32], state: &mut crate::parser_state::State) -> bool {
+    let phase = frames[state.stack - 1] % 32;
+    if phase == 19 {
+        crate::parser_call::resume(&*codes, &*tokens, &mut *headers, &mut *cd, &mut *frames, &mut *state);
+        return false;
+    }
     let level = precedence(tokens[state.cursor] % 64);
     if level != 0 && level >= state.floor {
         extend(&*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state, level);
         return false;
     }
-    let phase = frames[state.stack - 1] % 32;
+    if phase == 15 {
+        crate::parser_call::argument_done(&mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
+        return false;
+    }
     if phase == 13 || phase == 14 || phase == 16 || phase == 17 {
         reduce(&*codes, &*tokens, &mut *headers, &mut *ab, &mut *cd, &mut *frames, &mut *state);
         return false;

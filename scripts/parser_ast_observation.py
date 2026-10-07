@@ -34,13 +34,14 @@ MESSAGES = {
     21: "loop transfer requires `;`; values and labels are unavailable",
     22: "grouping requires `)`",
     23: "comparison operators cannot be chained; use parentheses",
+    24: "call requires `)`",
 }
 FAMILIES = {1: "module", 2: "import", 3: "record", 4: "enum",
             5: "reference_type", 6: "array_type", 7: "qualified_type",
             8: "match", 9: "array_literal", 10: "qualified_value_or_call",
             11: "field_index_length", 12: "indexing", 13: "record_literal",
             14: "borrow_argument"}
-EXPRESSION_KINDS = set(range(15, 37)) - {20}  # Call remains a separate stage.
+EXPRESSION_KINDS = set(range(15, 37))
 IMPLEMENTED = {1, 2, 3, 4, 5, 9, 10, 11, 12} | EXPRESSION_KINDS
 # Local shape constraints validate the supplied tree; they never select a parse
 # from tokens or supply expected AST facts in a differential comparison.
@@ -241,8 +242,8 @@ def project_ast(wire, source, tokens):
         first, last = take("LParen"), take("RParen")
         return {"kind": "TypeUnit", "span": extent(row, first, last)}
 
-    def expression(ref, floor=0):
-        row = claim(ref, EXPRESSION_KINDS)
+    def expression(ref, floor=0, linked=False):
+        row = claim(ref, EXPRESSION_KINDS, linked=linked)
         kind, fields, height = row["kind"], {}, 1
         require(kind not in BINARY or BINARY[kind][3] >= floor,
                 "expression tree violates precedence or associativity")
@@ -267,6 +268,20 @@ def project_ast(wire, source, tokens):
             zero(row, "b")
             first = last = take("Ident", row["a"])
             fields = {"kind": "Name", "name": first}
+        elif kind == 20:
+            first = take("Ident", row["a"])
+            take("LParen")
+            args, argument, maximum = [], row["b"], 0
+            while argument:
+                if args:
+                    take("Comma")
+                value = expression(argument, linked=True)
+                args.append(value)
+                maximum = max(maximum, heights[value])
+                argument = rows[argument - 1]["next"]
+            last = take("RParen")
+            fields = {"kind": "Call", "callee": first, "args": args}
+            height += maximum
         elif kind == 21:
             zero(row, "b")
             first = take("LParen")

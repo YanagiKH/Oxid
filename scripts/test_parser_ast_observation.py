@@ -247,17 +247,140 @@ class ProjectionExpressionTests(unittest.TestCase):
         root = f.add(21, "open", "a", a=child, d=2)
         self.reject(f.select(root), "expected RParen")
 
-    def test_call_remains_explicitly_unsupported(self):
-        f = simple_binary()
-        f.rows[4]["kind"] = 20
-        with self.assertRaises(observation.ProjectionUnsupported):
-            f.decode()
+    def test_call_zero_arguments_has_exact_fields(self):
+        f = Fixture([token("callee", "Ident", "g"), token("open", "LParen", "("),
+                     token("close", "RParen", ")")])
+        root = f.add(20, "callee", "close", a=f.labels["callee"], d=1)
+        f.select(root)
+        self.assertEqual(f.decode()["ast"]["expressions"], [
+            {"id": 0, "kind": "Call", "callee": f.at("callee"), "args": [],
+             "span": observation.span(f.at("callee")["start"], f.at("close")["end"])},
+        ])
+        for field, value in [("a", f.labels["function"]), ("b", root), ("c", 1),
+                             ("d", 0), ("d", 2), ("next", root),
+                             ("start", f.at("open")["start"]), ("end", f.at("open")["end"])]:
+            with self.subTest(field=field, value=value):
+                bad = copy.deepcopy(f)
+                bad.rows[root - 1][field] = value
+                self.reject(bad)
+
+    def test_nested_calls_and_binary_arguments_have_source_order_postorder_ids(self):
+        f = Fixture([token("g", "Ident", "g"), token("g_open", "LParen", "("),
+                     token("a", "Ident", "a"), token("comma1", "Comma", ","),
+                     token("h", "Ident", "h"), token("h_open", "LParen", "("),
+                     token("b", "Ident", "b"), token("h_close", "RParen", ")"),
+                     token("comma2", "Comma", ","), token("c", "Ident", "c"),
+                     token("plus", "Plus", "+"), token("d", "Ident", "d"),
+                     token("g_close", "RParen", ")")])
+        f.add(20, "g", "g_close", a=f.labels["g"], b=6, d=3)
+        f.add(19, "a", "a", a=f.labels["a"], d=1, next=7)
+        f.add(20, "h", "h_close", a=f.labels["h"], b=8, d=2, next=9)
+        f.name("b")
+        f.add(24, "c", "d", a=10, b=11, c=f.labels["plus"], d=2)
+        f.name("c")
+        f.name("d")
+        f.select(5)
+        self.assertEqual(f.decode()["ast"]["expressions"], [
+            {"id": 0, "kind": "Name", "name": f.at("a"), "span": f.at("a")},
+            {"id": 1, "kind": "Name", "name": f.at("b"), "span": f.at("b")},
+            {"id": 2, "kind": "Call", "callee": f.at("h"), "args": [1],
+             "span": observation.span(f.at("h")["start"], f.at("h_close")["end"])},
+            {"id": 3, "kind": "Name", "name": f.at("c"), "span": f.at("c")},
+            {"id": 4, "kind": "Name", "name": f.at("d"), "span": f.at("d")},
+            {"id": 5, "kind": "Arithmetic", "op": "Add", "left": 3, "right": 4,
+             "operator_span": f.at("plus"),
+             "span": observation.span(f.at("c")["start"], f.at("d")["end"])},
+            {"id": 6, "kind": "Call", "callee": f.at("g"), "args": [0, 2, 5],
+             "span": observation.span(f.at("g")["start"], f.at("g_close")["end"])},
+        ])
+        for row, field, value in [(4, "b", 7), (4, "b", 8), (4, "d", 2),
+                                  (6, "c", 8), (6, "d", 1), (5, "next", 0),
+                                  (5, "next", 6), (6, "next", 6), (7, "next", 9),
+                                  (8, "next", 6), (9, "next", 11), (4, "a", f.labels["h"])]:
+            with self.subTest(row=row, field=field, value=value):
+                bad = copy.deepcopy(f)
+                bad.rows[row][field] = value
+                self.reject(bad)
+
+    def test_group_and_prefix_argument_roots_own_their_next_links(self):
+        f = Fixture([token("g", "Ident", "g"), token("g_open", "LParen", "("),
+                     token("open", "LParen", "("), token("a", "Ident", "a"),
+                     token("close", "RParen", ")"), token("comma1", "Comma", ","),
+                     token("minus", "Minus", "-"), token("b", "Ident", "b"),
+                     token("comma2", "Comma", ","), token("not", "Not", "!"),
+                     token("c", "Ident", "c"), token("g_close", "RParen", ")")])
+        f.add(20, "g", "g_close", a=f.labels["g"], b=6, d=3)
+        f.add(21, "open", "close", a=9, d=2, next=7)
+        f.add(22, "minus", "b", a=10, b=f.labels["minus"], d=2, next=8)
+        f.add(23, "not", "c", a=11, b=f.labels["not"], d=2)
+        f.name("a")
+        f.name("b")
+        f.name("c")
+        f.select(5)
+        exprs = f.decode()["ast"]["expressions"]
+        self.assertEqual(exprs[-1]["args"], [1, 3, 5])
+        self.assertEqual([e["kind"] for e in exprs], ["Name", "Group", "Name", "Negate", "Name", "Not", "Call"])
+        for row in (8, 9, 10):
+            bad = copy.deepcopy(f)
+            bad.rows[row]["next"] = 6
+            self.reject(bad, "non-list row retained a next link")
+
+    def test_call_delimiters_and_argument_lists_cannot_omit_tokens(self):
+        for spelling in (",", "a,", "a", "a b"):
+            with self.subTest(spelling=spelling):
+                pieces = [token("g", "Ident", "g"), token("open", "LParen", "(")]
+                if spelling.startswith("a"):
+                    pieces.append(token("a", "Ident", "a"))
+                if spelling.endswith(","):
+                    pieces.append(token("comma", "Comma", ","))
+                if spelling == "a b":
+                    pieces += [token("space_args", "Trivia", " "), token("b", "Ident", "b")]
+                if spelling != "a":
+                    pieces.append(token("close", "RParen", ")"))
+                f = Fixture(pieces)
+                child = f.name("a") if spelling.startswith("a") else 0
+                if spelling == "a b":
+                    f.rows[child - 1]["next"] = f.name("b")
+                root = f.add(20, "g", "a" if spelling == "a" else "close",
+                             a=f.labels["g"], b=child, d=2 if child else 1)
+                self.reject(f.select(root))
+
+    def test_call_cannot_share_a_previous_argument_or_omit_callee_row_ownership(self):
+        f = Fixture([token("g", "Ident", "g"), token("open", "LParen", "("),
+                     token("a1", "Ident", "a"), token("comma", "Comma", ","),
+                     token("a2", "Ident", "a"), token("close", "RParen", ")")])
+        argument = f.name("a1")
+        f.rows[argument - 1]["next"] = argument
+        root = f.add(20, "g", "close", a=f.labels["g"], b=argument, d=2)
+        self.reject(f.select(root), "cyclic or shared")
+        f = Fixture([token("g", "Ident", "g"), token("open", "LParen", "("), token("close", "RParen", ")")])
+        root = f.add(20, "g", "close", a=f.labels["g"], d=1)
+        f.name("g")  # A Call must not also allocate an unused Name for its callee.
+        self.reject(f.select(root), "orphan active rows")
+
+    def test_call_height_includes_maximum_argument_and_empty_nested_call(self):
+        for count in (62, 63):
+            pieces = [token("g", "Ident", "g"), token("g_open", "LParen", "(")]
+            pieces += [token(str(i), "Not", "!") for i in range(count)]
+            pieces += [token("h", "Ident", "h"), token("h_open", "LParen", "("),
+                       token("h_close", "RParen", ")"), token("g_close", "RParen", ")")]
+            f = Fixture(pieces)
+            child = f.add(20, "h", "h_close", a=f.labels["h"], d=1)
+            for i in reversed(range(count)):
+                child = f.add(23, str(i), "h_close", a=child, b=f.labels[str(i)], d=count - i + 1)
+            root = f.add(20, "g", "g_close", a=f.labels["g"], b=child, d=count + 2)
+            f.select(root)
+            if count == 62:
+                self.assertEqual(len(f.decode()["ast"]["expressions"]), 64)
+            else:
+                self.reject(f, "computed expression height")
 
     def test_expression_diagnostics_preserve_complete_first_diagnostic(self):
         for detail, source, start, end, message in [
             (22, b"fn f()->(){(a;}", 13, 14, "grouping requires `)`"),
             (23, b"fn f()->(){a<b<c;}", 14, 15,
              "comparison operators cannot be chained; use parentheses"),
+            (24, b"fn f()->(){g(a;}", 14, 15, "call requires `)`"),
         ]:
             with self.subTest(detail=detail):
                 raw = b"OPA1" + bytes([1, detail, start, end, 0, 0, len(source)])

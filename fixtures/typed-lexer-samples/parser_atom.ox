@@ -1,4 +1,4 @@
-// Primary/prefix entry. Calls retain an explicit stage-pending result.
+// Primary/prefix entry. Every nested expression owns a charged continuation.
 fn reject(state: &mut crate::parser_state::State, error: i32, detail: i32, token: i32) -> () {
     state.error = error;
     state.detail = detail;
@@ -26,10 +26,6 @@ fn name_tail(codes: &[i32], tokens: &[i32], state: &mut crate::parser_state::Sta
     let kind = token % 64;
     if qualified(&*tokens, &*state) {
         reject(&mut *state, 4, 10, token);
-        return;
-    }
-    if kind == 22 {
-        reject(&mut *state, 5, 20, token);
         return;
     }
     if kind == 11 {
@@ -122,6 +118,10 @@ pub fn parse(codes: &[i32], tokens: &[i32], headers: &mut [i32], ab: &mut [i32],
         payload = crate::parser_state::bump(&*tokens, &mut *state);
         name_tail(&*codes, &*tokens, &mut *state);
         if state.error != 0 { return; }
+        if tokens[state.cursor] % 64 == 22 {
+            crate::parser_call::start(&*tokens, &mut *headers, &mut *ab, &mut *frames, &mut *state, payload);
+            return;
+        }
     } else { if kind == 22 {
         crate::parser_state::bump(&*tokens, &mut *state);
         if tokens[state.cursor] % 64 != 23 {

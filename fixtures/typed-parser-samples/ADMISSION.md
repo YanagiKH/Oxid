@@ -17,6 +17,15 @@ Their 1,200-cell engineering target was superseded by the explicit inventory
 contract; it is not an additional current parser limit. Full grammar, exact
 canonical projection and independent decoder validation remain unfinished.
 
+## First expression increment
+
+At `c9a5d733`, ordinary native admission passes with I = 5,258 and W = 2,571,
+76 functions, 1,281 blocks and 53,776 explicit bytes including the Process
+wrapper. Compared with the initial parser this adds 612 inventory items and no
+owner width. Remaining I/W headroom is 2,934/5,621. Exact syntax/first-diagnostic
+parity is recorded by [the stage report](STAGE.md); this does not qualify the
+unimplemented statement/call grammar.
+
 ## Historical carrier experiments
 
 The first probe shares the existing lexer modules and source bound. Its entry is
