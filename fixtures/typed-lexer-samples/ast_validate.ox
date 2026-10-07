@@ -9,17 +9,15 @@ pub fn clear(values: &mut [i32]) -> () {
 }
 fn row(value: i32, rows: i32) -> bool { return value > 0 && value <= rows; }
 fn token(value: i32, count: i32) -> bool { return value > 0 && value < count; }
-// Role-specific raw bounds precede graph traversal and every indirect index.
-fn roles(kind: i32, a: i32, b: i32, c: i32, d: i32, rows: i32, count: i32) -> bool {
-    if kind == 1 { return (a == 0 || token(a, count)) && b <= rows && row(c, rows) && row(d, rows); }
-    if kind == 2 { return row(a, rows) && b == 0 && c == 0 && d == 0; }
-    if kind == 3 { return token(a, count) && b == 0 && c == 0 && d == 0; }
-    if kind == 4 || kind == 11 || kind == 12 { return a == 0 && b == 0 && c == 0 && d == 0; }
-    if kind == 5 { return token(a, count) && b <= rows && c == 0 && d == 0; }
+// Pure acyclic handlers preserve the original role predicates and order.
+fn statement_roles(kind: i32, a: i32, b: i32, c: i32, d: i32, rows: i32, count: i32) -> bool {
     if kind == 6 || kind == 7 { return token(a, count) && b <= rows && row(c, rows) && d == 0; }
     if kind == 8 { return token(a, count) && token(b, count) && row(c, rows) && d == 0; }
     if kind == 9 || kind == 10 { return (row(a, rows) || (kind == 10 && a == 0)) && b == 0 && c == 0 && d == 0; }
     if kind == 13 || kind == 14 { return row(a, rows) && row(b, rows) && c <= rows && (kind == 13 || c == 0) && d == 0; }
+    return false;
+}
+fn expression_roles(kind: i32, a: i32, b: i32, c: i32, d: i32, rows: i32, count: i32) -> bool {
     if kind == 15 { return token(a, count) && b <= 1 && c == 0 && d == 1; }
     if kind >= 16 && kind <= 18 { return a == 0 && b == 0 && c == 0 && d == 1; }
     if kind == 19 { return token(a, count) && b == 0 && c == 0 && d == 1; }
@@ -27,6 +25,16 @@ fn roles(kind: i32, a: i32, b: i32, c: i32, d: i32, rows: i32, count: i32) -> bo
     if kind == 21 { return row(a, rows) && b == 0 && c == 0 && d >= 2 && d <= 64; }
     if kind == 22 || kind == 23 { return row(a, rows) && token(b, count) && c == 0 && d >= 2 && d <= 64; }
     return row(a, rows) && row(b, rows) && token(c, count) && d >= 2 && d <= 64;
+}
+// Role-specific raw bounds precede graph traversal and every indirect index.
+fn roles(kind: i32, a: i32, b: i32, c: i32, d: i32, rows: i32, count: i32) -> bool {
+    if kind == 1 { return (a == 0 || token(a, count)) && b <= rows && row(c, rows) && row(d, rows); }
+    if kind == 2 { return row(a, rows) && b == 0 && c == 0 && d == 0; }
+    if kind == 3 { return token(a, count) && b == 0 && c == 0 && d == 0; }
+    if kind == 4 || kind == 11 || kind == 12 { return a == 0 && b == 0 && c == 0 && d == 0; }
+    if kind == 5 { return token(a, count) && b <= rows && c == 0 && d == 0; }
+    if kind <= 14 { return statement_roles(kind, a, b, c, d, rows, count); }
+    return expression_roles(kind, a, b, c, d, rows, count);
 }
 pub fn raw(headers: &[i32], ab: &[i32], cd: &[i32], meta: &crate::ast_input::Header, count: i32) -> bool {
     let mut i = 0;
