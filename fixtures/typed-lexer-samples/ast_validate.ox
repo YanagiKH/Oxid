@@ -1,6 +1,5 @@
-// CLOSED representative validator. Status 0 is local progress only, never an
-// accepted AST. Status 70 means pending; unimplemented families are not a new
-// language restriction. No resolver/type entry is reachable from this module.
+// Closed source/AST validator. Local progress is never an accepted AST or a
+// semantic witness. The consumer remains status 70 after complete validation.
 pub struct State { pub cursor: i32, pub count: i32, pub rows: i32, pub next: i32, pub error: i32 }
 pub fn clear(values: &mut [i32]) -> () {
     let mut i = 0;
@@ -78,7 +77,7 @@ pub fn span(state: &mut State, header: i32, first: i32, last: i32) -> () {
     if crate::parser_state::lo(header) != crate::parser_state::lo(first) || crate::parser_state::hi(header) != crate::parser_state::hi(last) { state.error = 64; }
     return;
 }
-fn ty(tokens: &[i32], headers: &[i32], ab: &[i32], seen: &mut [i32], state: &mut State, id: i32) -> () {
+pub fn ty(tokens: &[i32], headers: &[i32], ab: &[i32], seen: &mut [i32], state: &mut State, id: i32) -> () {
     if !claim(&*headers, &mut *seen, &mut *state, id, 3, 4, false) || !allocate(&mut *state, id) { return; }
     let h = headers[id - 1];
     let mut first = 0; let mut last = 0;
