@@ -7,6 +7,7 @@ mod driver;
 mod format;
 mod format_cli;
 mod hir;
+mod hir_producer;
 mod lexer;
 mod native;
 mod oir;

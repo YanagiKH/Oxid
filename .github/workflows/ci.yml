@@ -681,7 +681,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746
+            --source-manifest-sha256 17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -694,7 +694,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746
+            --source-manifest-sha256 17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1093,3 +1093,55 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: ${{ runner.temp }}/unit4-final-join/comparison.json
+
+  local-hir-producers:
+    name: Explicit local HIR producers (ordinary debug and release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: producer-current
+    env:
+      HIR_PRODUCER_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      HIR_PRODUCER_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux producer environment
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+          mkdir "$GITHUB_WORKSPACE/producer-current"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: producer-current
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch exact locked dependencies
+        run: cargo fetch --locked
+      - name: Test producer qualification admission and evidence controls
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_producers.py -v
+          python3 -B -m unittest discover -s scripts -p test_run_hir_producer_ci.py -v
+      - name: Build exact-head executables and qualify both ordinary profiles
+        run: |
+          python3 -B scripts/run_hir_producer_ci.py \
+            --expected-head "$HIR_PRODUCER_EXPECTED_HEAD" \
+            --event-sha "$HIR_PRODUCER_EVENT_SHA" \
+            --llvm-bin "$OXID_LLVM_BIN" \
+            --output "$RUNNER_TEMP/local-hir-producers"
+      - name: Retain producer builds, observations and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-hir-producer-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/local-hir-producers
+            !${{ runner.temp }}/local-hir-producers/target/**

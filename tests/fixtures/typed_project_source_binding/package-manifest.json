@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 28595,
+      "bytes": 30241,
       "path": "README.md",
-      "sha256": "515188e07848189a81badf8000fd0dbdb8ae64db8f32716b4039dd2b9bab2a75"
+      "sha256": "1ad81b924a5c91923d0abb353453a583e354bd8d04f688ee57c782f17bdda04a"
     },
     {
       "bytes": 9916,
@@ -41,9 +41,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 62558,
+      "bytes": 63220,
       "path": "current-source.json",
-      "sha256": "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
+      "sha256": "17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680"
     },
     {
       "bytes": 29723,
@@ -111,9 +111,24 @@
       "sha256": "a4105c042d49b8145393d59482ae1e6b3872cb1de5ef6760fd098c71bb42ce34"
     },
     {
+      "bytes": 62558,
+      "path": "hir-import-source.json",
+      "sha256": "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
+    },
+    {
       "bytes": 656303,
       "path": "hir-import-transition.patch",
       "sha256": "a3a0b5f8e109e7baf6a9713418ce6bc132a9a2e481be5a6a4f42dee08efb8947"
+    },
+    {
+      "bytes": 130362,
+      "path": "hir-producer-authority.json",
+      "sha256": "b6054a027220f74d8a6c5210b033569c51ea2e1ff991c73e70488a548060806d"
+    },
+    {
+      "bytes": 96326,
+      "path": "hir-producer-transition.patch",
+      "sha256": "3ebdfff79cc4b4cc2b8c73c8efdf5b8532af33b2d6375e3e509027e8cd43ecdb"
     },
     {
       "bytes": 104690,
@@ -166,9 +181,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 184395,
+      "bytes": 191445,
       "path": "run.py",
-      "sha256": "82af7710da235fb872d02c6b6881d285e45596bd6736160ab56a43455c3ad2ff"
+      "sha256": "eff21a441b072dcb45f04dda283e16bf9be0f0e5a9b8d9692e0bfaf9f6ff95d9"
     },
     {
       "bytes": 55961,

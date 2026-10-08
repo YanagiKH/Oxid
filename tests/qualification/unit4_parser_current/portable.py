@@ -52,6 +52,8 @@ ENUM_AST_SCHEMA_ADAPTER = {
 HISTORICAL_AUTHORITY_SHA = "02b72b3dcf45c695e5c523d71bb1c83e15c082556cf36029829fefc7a71571b0"
 STDIN_SOURCE_SHA = "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f"
 CURRENT_PATHS = (
+    'Cargo.lock',
+    'Cargo.toml',
     'fixtures/typed-record-composition-samples/main.ox',
     'fixtures/typed-record-composition-samples/model.ox',
     'fixtures/typed-record-composition-samples/ops.ox',
@@ -76,6 +78,9 @@ CURRENT_PATHS = (
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
     'src/frontend/hir.rs',
+    'src/frontend/hir_producer.rs',
+    'src/frontend/hir_producer/bundle.rs',
+    'src/frontend/hir_producer/supervisor.rs',
     'src/frontend/lexer.rs',
     'src/frontend/mod.rs',
     'src/frontend/oir/arithmetic_tests.rs',
@@ -350,6 +355,9 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/format/enum_candidate_tests.rs',
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
+    'src/frontend/hir_producer.rs',
+    'src/frontend/hir_producer/bundle.rs',
+    'src/frontend/hir_producer/supervisor.rs',
     'src/frontend/oir/execute_measurement.rs',
     'src/frontend/oir/lower_measurement.rs',
     'src/frontend/oir/native_emit_cost.rs',
@@ -551,8 +559,10 @@ ENUM_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/declaration_i
                               "src/frontend/parser.rs",
                               "src/frontend/project/budget.rs", "src/frontend/source.rs")
 NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842"
+HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
+HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = 'dc41cb0cc4d213fca287be89afe43c1dd89a1ea71507a31af3861a0cf8181107'
+AUTHORITY_SHA = 'c1949f97e90a709bae95c54b7d3e9e8e7f47c906ac7939dee2c753c4e4237767'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -654,6 +664,60 @@ def verify_map(root, records, exact=False, extras=()):
         same(sorted(files), sorted(names + list(extras)), "complete file inventory differs")
 
 
+def restore_hir_producer_source(active, inputs):
+    """Reverse the complete producer layer, including Cargo, to the retained HIR source."""
+    fields = ("source_binding_runner", "hir_producer_transition_patch", "hir_import_source_manifest")
+    verify_map(REPOSITORY, [active[key] for key in fields])
+    same(active["hir_import_source_manifest"]["sha256"], HIR_IMPORT_SOURCE_SHA,
+         "exact retained HIR import source identity")
+    runner = REPOSITORY / active["source_binding_runner"]["path"]
+    module = types.ModuleType("unit4_hir_producer_source_binding")
+    module.__file__ = str(runner)
+    exec(compile(runner.read_bytes(), str(runner), "exec"), module.__dict__)
+    transition = active["hir_producer_transition_patch"]
+    try:
+        restored, touched = module.inverse_hir_producer_patch(
+            inputs, (REPOSITORY / transition["path"]).read_bytes())
+    except module.BindingError as error:
+        raise Rejected("HIR producer inverse rejected: " + str(error)) from error
+    same(touched, list(HIR_PRODUCER_PATHS), "exact HIR producer inverse scope")
+    predecessor = read(REPOSITORY / active["hir_import_source_manifest"]["path"])
+    actual = [{"path": name, "bytes": len(raw), "sha256": sha(raw)}
+              for name, raw in sorted(restored.items())]
+    same(actual, predecessor["files"], "HIR producer inverse must recover exact HIR import source")
+    return restored
+
+
+def validate_hir_producer_transition(active, current, historical):
+    fields = (("hir_producer_authority", "hir-producer-authority.json"),
+              ("hir_producer_transition_patch", "hir-producer-transition.patch"),
+              ("hir_import_source_manifest", "hir-import-source.json"))
+    for key, filename in fields:
+        same(active[key]["path"], "tests/fixtures/typed_project_source_binding/" + filename,
+             "HIR producer binding path")
+    verify_map(REPOSITORY, [active[key] for key, _ in fields])
+    same(active["hir_import_source_manifest"]["sha256"], HIR_IMPORT_SOURCE_SHA,
+         "exact retained HIR import source identity")
+    predecessor = read(REPOSITORY / active["hir_import_source_manifest"]["path"])
+    producer = read(REPOSITORY / active["hir_producer_authority"]["path"])
+    same(producer["schema"], "oxid-hir-producer-source-transition-v1", "HIR producer authority schema")
+    same(producer["reviewed_source_head"], current["reviewed_source_head"], "HIR producer source checkpoint")
+    same(producer["source_only_tree"], current["source_only_tree"], "HIR producer source tree")
+    same(producer["predecessor_source_head"], predecessor["reviewed_source_head"], "HIR producer predecessor checkpoint")
+    same(producer["base_tree"], predecessor["source_only_tree"], "HIR producer exact predecessor tree")
+    for field, key in (("current_source_sha256", "current_source_manifest"),
+                       ("hir_import_source_sha256", "hir_import_source_manifest"),
+                       ("hir_import_authority_sha256", "hir_import_authority"),
+                       ("transition_patch_sha256", "hir_producer_transition_patch")):
+        same(producer[field], active[key]["sha256"], "HIR producer exact " + field)
+    same(len(predecessor["files"]), 324, "complete retained HIR import source count")
+    same(producer["transition_paths"], list(HIR_PRODUCER_PATHS), "exact HIR producer transition roster")
+    for field in ("instrumentation", "control_instrumentation"):
+        same(sorted(set(producer["transition_paths"]).intersection(row["path"] for row in historical[field])),
+             [], "HIR producer transition must not overlap parser instrumentation")
+    return predecessor
+
+
 def authority():
     raw = (HERE / "authority.json").read_bytes()
     same(sha(raw), AUTHORITY_SHA, "unreviewed current parser authority")
@@ -672,9 +736,10 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 324, "complete current source count")
+    same(len(current["files"]), 327, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
+    hir_source = validate_hir_producer_transition(active, current, result)
     verify_map(REPOSITORY, [active["hir_import_authority"], active["hir_import_transition_patch"],
                            active["native_inventory_source_manifest"]])
     for key, filename in (("hir_import_authority", "hir-import-authority.json"),
@@ -686,11 +751,11 @@ def authority():
     same(active["native_inventory_source_manifest"]["sha256"], NATIVE_INVENTORY_SOURCE_SHA, "exact retained native inventory source identity")
     inventory_source = read(REPOSITORY / active["native_inventory_source_manifest"]["path"])
     same(hir_import["schema"], "oxid-hir-import-source-transition-v1", "HIR import authority schema")
-    same(hir_import["reviewed_source_head"], current["reviewed_source_head"], "HIR import source checkpoint")
-    same(hir_import["source_only_tree"], current["source_only_tree"], "HIR import source tree")
+    same(hir_import["reviewed_source_head"], hir_source["reviewed_source_head"], "HIR import source checkpoint")
+    same(hir_import["source_only_tree"], hir_source["source_only_tree"], "HIR import source tree")
     same(hir_import["predecessor_source_head"], inventory_source["reviewed_source_head"], "HIR import predecessor checkpoint")
     same(hir_import["base_tree"], inventory_source["source_only_tree"], "HIR import exact predecessor tree")
-    same(hir_import["current_source_sha256"], active["current_source_manifest"]["sha256"], "HIR import current source identity")
+    same(hir_import["current_source_sha256"], active["hir_import_source_manifest"]["sha256"], "HIR import current source identity")
     same(hir_import["native_inventory_source_sha256"], active["native_inventory_source_manifest"]["sha256"], "HIR import exact inventory predecessor")
     same(hir_import["native_inventory_authority_sha256"], active["native_inventory_authority"]["sha256"], "HIR import exact inventory authority")
     same(hir_import["transition_patch_sha256"], active["hir_import_transition_patch"]["sha256"], "HIR import exact transition patch")
@@ -775,7 +840,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 324, "duplicate current member")
+    same(len(after), 327, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -791,8 +856,11 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 487, "current base count")
+    same(len(base), 490, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
+    verify_map(REPOSITORY, current["files"])
+    restore_hir_producer_source(active, {row["path"]: (REPOSITORY / row["path"]).read_bytes()
+                                         for row in current["files"]})
     result["current"] = active
     result["current_source"] = current
     candidate = (json.dumps(current_candidate(result), sort_keys=True, indent=2) + "\n").encode()
@@ -822,7 +890,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 490, "current derived count")
+        same(len(ordered), 493, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -1377,7 +1445,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 249, "current compiler body count")
+    same(len(wanted), 252, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

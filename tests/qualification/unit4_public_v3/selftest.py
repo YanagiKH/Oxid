@@ -43,9 +43,9 @@ class SourceAuthorityControls(unittest.TestCase):
         import authority
         original = json.loads((self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes())
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-        self.assertEqual(len(original['files']), 324)
+        self.assertEqual(len(original['files']), 327)
         self.assertEqual(sha(canonical(original['files'])), authority.CURRENT_FILES_SHA)
-        self.assertEqual(len(self.manifest['files']), 325)
+        self.assertEqual(len(self.manifest['files']), 328)
         self.assertEqual(sha(canonical(self.manifest['files'])), authority.OBSERVER_FILES_SHA)
         self.assertEqual(set(self.manifest['changed_paths']), {
             'src/frontend/mod.rs', 'src/frontend/project.rs', 'src/frontend/lexer.rs',
@@ -282,7 +282,7 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         self.assertEqual(receipt['source_manifest']['sha256'], authority.ENUM_SOURCE_SHA)
         self.assertEqual(receipt['source_manifest']['members'], 237)
         self.assertEqual(receipt['execution_source_manifest']['sha256'], authority.CURRENT_SOURCE_SHA)
-        self.assertEqual(receipt['execution_source_manifest']['members'], 324)
+        self.assertEqual(receipt['execution_source_manifest']['members'], 327)
         self.assertEqual(self.helper.sha(self.manifest.read_bytes()), authority.ENUM_SOURCE_SHA)
         with self.assertRaisesRegex(Reject, 'current execution source identity'):
             Predecessors(self.contracts, self.manifest, self.amendment_root)

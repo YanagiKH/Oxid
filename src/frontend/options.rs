@@ -14,6 +14,9 @@ pub enum Route {
     TypedImport {
         request: Box<[ImportOptions; 1]>,
     },
+    TypedProducer {
+        request: Box<[ProducerOptions; 1]>,
+    },
     TypedFormat {
         path: String,
         check: bool,
@@ -54,6 +57,17 @@ pub enum Route {
 pub struct ImportOptions {
     pub path: String,
     pub observation: String,
+    pub output: Option<String>,
+    pub json: bool,
+    pub operation: Operation,
+}
+
+/// Explicit producer-only CLI ownership, separate from the stable import route.
+/// The fallible one-element carrier owns already classified argv strings.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ProducerOptions {
+    pub path: String,
+    pub bundle: String,
     pub output: Option<String>,
     pub json: bool,
     pub operation: Operation,
@@ -219,6 +233,8 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     let mut format_seen = false;
     let mut import_seen = false;
     let mut import = None;
+    let mut producer_seen = false;
+    let mut producer = None;
     let mut json = false;
     let mut error = None;
     let mut index = 0;
@@ -240,6 +256,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             "--message-format",
             "--entry-mode",
             "--experimental-hir-import",
+            "--experimental-hir-producers",
         ]
         .into_iter()
         .find(|name| {
@@ -259,6 +276,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             "--message-format" => &mut format_seen,
             "--entry-mode" => &mut entry.seen,
             "--experimental-hir-import" => &mut import_seen,
+            "--experimental-hir-producers" => &mut producer_seen,
             _ => unreachable!("the option name is selected from a closed list"),
         };
         if *seen {
@@ -281,6 +299,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
                 error.get_or_insert_with(|| format!("{name} requires a value"));
             }
             ("--experimental-hir-import", Some(value)) => import = Some(value.to_string()),
+            ("--experimental-hir-producers", Some(value)) => producer = Some(value.to_string()),
             ("--edition", Some(value @ ("legacy-0.9" | "typed-preview"))) => {
                 edition = Some(value);
             }
@@ -343,6 +362,26 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     if import_seen && entry.policy == EntryPolicy::Process {
         error.get_or_insert_with(|| {
             "--experimental-hir-import supports only Result entry mode".into()
+        });
+    }
+    if producer_seen
+        && (edition != Some("typed-preview")
+            || !matches!(command, Some("check" | "run" | "compile")))
+    {
+        error.get_or_insert_with(|| {
+            "--experimental-hir-producers requires explicit typed-preview check, run or compile"
+                .into()
+        });
+    }
+    if producer_seen && entry.policy == EntryPolicy::Process {
+        error.get_or_insert_with(|| {
+            "--experimental-hir-producers supports only Result entry mode".into()
+        });
+    }
+    if import_seen && producer_seen {
+        error.get_or_insert_with(|| {
+            "--experimental-hir-import and --experimental-hir-producers are mutually exclusive"
+                .into()
         });
     }
     if format_seen && edition != Some("typed-preview") {
@@ -450,6 +489,23 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             };
         }
     }
+    if let Some(bundle) = producer {
+        let Some(path) = path else {
+            return Route::Error {
+                message: format!("typed-preview {command} requires exactly one source path"),
+                json,
+                operation,
+            };
+        };
+        let options = ProducerOptions {
+            path,
+            bundle,
+            output,
+            json,
+            operation,
+        };
+        return producer_route(options, &mut super::project::budget::Allocator::default());
+    }
     if let Some(observation) = import {
         let Some(path) = path else {
             return Route::Error {
@@ -520,6 +576,36 @@ fn import_route(
         .try_into()
         .expect("one admitted import option");
     Route::TypedImport { request }
+}
+
+fn producer_route(
+    options: ProducerOptions,
+    allocator: &mut super::project::budget::Allocator,
+) -> Route {
+    let json = options.json;
+    let operation = options.operation;
+    // One exact, fallible allocation owns the new opt-in carrier. Conversion
+    // cannot need a shrink/reallocation because actual capacity is exactly one.
+    let mut storage = Vec::new();
+    if std::mem::size_of::<ProducerOptions>() as u64
+        > super::declaration_index::IndexLimits::default().retained
+        || allocator
+            .vector_exact(&mut storage, 1, "experimental producer options")
+            .is_err()
+        || storage.capacity() != 1
+    {
+        return Route::Error {
+            message: "cannot allocate experimental producer options".into(),
+            json,
+            operation,
+        };
+    }
+    storage.push(options);
+    let request = storage
+        .into_boxed_slice()
+        .try_into()
+        .expect("one admitted producer option");
+    Route::TypedProducer { request }
 }
 
 /// A selected formatter has its own text-only, exit-2 error contract.
@@ -1320,6 +1406,336 @@ mod import_options_tests {
         assert_eq!(allocator.attempts, 1);
         assert_eq!(allocator.trace[0].kind, "experimental import options");
         assert_eq!(allocator.trace[0].length, 1);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(std::mem::size_of::<Route>(), 56);
+    }
+}
+
+#[cfg(test)]
+mod producer_options_tests {
+    use super::*;
+
+    fn parse(values: &[&str]) -> Route {
+        route(
+            &values
+                .iter()
+                .map(|value| (*value).into())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn expect_error(values: &[&str], expected: &str) {
+        match parse(values) {
+            Route::Error { message, .. } | Route::ProcessError { message } => {
+                assert!(message.contains(expected), "{values:?}: {message}");
+            }
+            other => panic!("expected {expected} error for {values:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn producers_accept_all_result_operations_and_global_option_positions() {
+        for (command, operation) in [
+            ("check", Operation::Check),
+            ("run", Operation::Run),
+            ("compile", Operation::Compile),
+        ] {
+            for prefix in [true, false] {
+                for json in [false, true] {
+                    let mut values = vec!["--edition=typed-preview"];
+                    if prefix {
+                        values.extend(["--experimental-hir-producers", "bundle dir"]);
+                    }
+                    values.extend([command, "source.ox"]);
+                    if !prefix {
+                        values.push("--experimental-hir-producers=bundle dir");
+                    }
+                    if json {
+                        values.push("--message-format=json");
+                    }
+                    if command != "check" {
+                        values.push("--entry-mode=result");
+                    }
+                    if command == "compile" {
+                        values.extend([
+                            "--backend=llvm",
+                            "--target=x86_64-unknown-linux-gnu",
+                            "--output=new.elf",
+                        ]);
+                    }
+                    let Route::TypedProducer { request } = parse(&values) else {
+                        panic!("producer route was not selected for {values:?}");
+                    };
+                    assert_eq!(request[0].path, "source.ox");
+                    assert_eq!(request[0].bundle, "bundle dir");
+                    assert_eq!(request[0].operation, operation);
+                    assert_eq!(request[0].json, json);
+                    assert_eq!(
+                        request[0].output.as_deref(),
+                        (command == "compile").then_some("new.elf")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn producers_require_explicit_typed_edition_and_semantic_command() {
+        for edition in [None, Some("--edition=legacy-0.9")] {
+            let mut values = vec!["run", "missing.ox", "--experimental-hir-producers=bundle"];
+            values.extend(edition);
+            expect_error(&values, "requires explicit typed-preview");
+        }
+        for command in ["fmt", "build", "check-other", "script", "help", "unknown"] {
+            // Place the recognized option before script's command-owned tail.
+            expect_error(
+                &[
+                    "--edition=typed-preview",
+                    "--experimental-hir-producers=bundle",
+                    command,
+                    "missing.ox",
+                ],
+                "requires explicit typed-preview",
+            );
+        }
+        expect_error(
+            &[
+                "--edition=typed-preview",
+                "--experimental-hir-producers=bundle",
+            ],
+            "requires explicit typed-preview",
+        );
+    }
+
+    #[test]
+    fn producers_reject_empty_duplicate_conflicting_and_process_selections() {
+        for selection in [
+            vec!["--experimental-hir-producers"],
+            vec!["--experimental-hir-producers="],
+            vec!["--experimental-hir-producers", ""],
+            vec!["--experimental-hir-producers", "--message-format=text"],
+        ] {
+            let mut values = vec!["run", "missing.ox", "--edition=typed-preview"];
+            values.extend(selection);
+            expect_error(&values, "requires a value");
+        }
+        for selection in [
+            vec![
+                "--experimental-hir-producers=a",
+                "--experimental-hir-producers=b",
+            ],
+            vec![
+                "--experimental-hir-producers",
+                "a",
+                "--experimental-hir-producers",
+                "a",
+            ],
+        ] {
+            let mut values = vec!["run", "missing.ox", "--edition=typed-preview"];
+            values.extend(selection);
+            expect_error(&values, "may only be specified once");
+        }
+        for selection in [
+            [
+                "--experimental-hir-import=wire",
+                "--experimental-hir-producers=bundle",
+            ],
+            [
+                "--experimental-hir-producers=bundle",
+                "--experimental-hir-import=wire",
+            ],
+        ] {
+            let mut values = vec!["run", "missing.ox", "--edition=typed-preview"];
+            values.extend(selection);
+            expect_error(&values, "mutually exclusive");
+        }
+        for command in ["run", "compile"] {
+            for json in [false, true] {
+                let mut values = vec![
+                    command,
+                    "missing.ox",
+                    "--edition=typed-preview",
+                    "--experimental-hir-producers=bundle",
+                    "--entry-mode=process",
+                ];
+                if json {
+                    values.push("--message-format=json");
+                }
+                expect_error(&values, "only Result entry mode");
+                match parse(&values) {
+                    Route::ProcessError { .. } => assert_eq!(command, "run"),
+                    Route::Error { json: actual, .. } => {
+                        assert_eq!(command, "compile");
+                        assert_eq!(actual, json);
+                    }
+                    other => panic!("wrong process error channel: {other:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn producers_keep_script_and_separator_ownership() {
+        let values = [
+            "script",
+            "test",
+            "--experimental-hir-producers=bundle",
+            "--experimental-hir-import=wire",
+            "--edition=typed-preview",
+        ];
+        assert_eq!(
+            parse(&values),
+            Route::Legacy(values.iter().map(|value| (*value).into()).collect())
+        );
+        assert_eq!(
+            parse(&[
+                "run",
+                "--edition=typed-preview",
+                "--",
+                "--experimental-hir-producers=bundle"
+            ]),
+            Route::TypedRun {
+                path: "--experimental-hir-producers=bundle".into(),
+                json: false,
+                entry_policy: EntryPolicy::Result,
+            }
+        );
+        let Route::TypedProducer { request } = parse(&[
+            "run",
+            "--edition=typed-preview",
+            "--experimental-hir-producers=bundle",
+            "--",
+            "--experimental-hir-import=literal-source",
+        ]) else {
+            panic!("separator did not preserve a literal producer source");
+        };
+        assert_eq!(request[0].path, "--experimental-hir-import=literal-source");
+        expect_error(
+            &[
+                "run",
+                "--edition=typed-preview",
+                "--experimental-hir-producers=bundle",
+                "--",
+                "source.ox",
+                "--entry-mode=process",
+            ],
+            "exactly one source path",
+        );
+    }
+
+    #[test]
+    fn producers_preserve_compile_backend_output_and_source_validation() {
+        for (tail, expected) in [
+            (vec!["source.ox"], "requires --backend llvm"),
+            (vec!["source.ox", "--backend=llvm"], "requires --output"),
+            (
+                vec!["source.ox", "--backend=other", "--output=new.elf"],
+                "requires --backend llvm",
+            ),
+            (
+                vec![
+                    "source.ox",
+                    "--backend=llvm",
+                    "--output=new.elf",
+                    "--target=other",
+                ],
+                "only --target",
+            ),
+            (
+                vec!["source.ox", "--backend=llvm", "--output="],
+                "requires one nonempty value",
+            ),
+            (
+                vec!["source.ox", "--backend=llvm", "--output=a", "--output=b"],
+                "may occur only once",
+            ),
+            (
+                vec!["--backend=llvm", "--output=new.elf"],
+                "exactly one source path",
+            ),
+            (
+                vec![
+                    "source.ox",
+                    "other.ox",
+                    "--backend=llvm",
+                    "--output=new.elf",
+                ],
+                "exactly one source path",
+            ),
+        ] {
+            let mut values = vec![
+                "compile",
+                "--edition=typed-preview",
+                "--experimental-hir-producers=bundle",
+            ];
+            values.extend(tail);
+            expect_error(&values, expected);
+        }
+        expect_error(
+            &[
+                "check",
+                "source.ox",
+                "--edition=typed-preview",
+                "--experimental-hir-producers=bundle",
+                "--output=new.elf",
+            ],
+            "unsupported option",
+        );
+    }
+
+    #[test]
+    fn producer_box_uses_one_fallible_exact_allocation_and_moves_strings() {
+        let options = || ProducerOptions {
+            path: "source.ox".into(),
+            bundle: "bundle".into(),
+            output: Some("new.elf".into()),
+            json: true,
+            operation: Operation::Compile,
+        };
+        let mut allocator = super::super::project::budget::Allocator {
+            fail_at: Some(1),
+            ..Default::default()
+        };
+        assert!(matches!(
+            producer_route(options(), &mut allocator),
+            Route::Error {
+                json: true,
+                operation: Operation::Compile,
+                ..
+            }
+        ));
+        assert_eq!(allocator.attempts, 1);
+        assert_eq!(allocator.trace[0].kind, "experimental producer options");
+        assert!(!allocator.trace[0].success);
+
+        let mut allocator = super::super::project::budget::Allocator::default();
+        allocator.observer_trace_bound(1).unwrap();
+        let options = options();
+        let original = (
+            options.path.as_ptr(),
+            options.bundle.as_ptr(),
+            options.output.as_ref().unwrap().as_ptr(),
+        );
+        let Route::TypedProducer { request } = producer_route(options, &mut allocator) else {
+            panic!("producer allocation failed");
+        };
+        assert_eq!(allocator.attempts, 1);
+        assert_eq!(allocator.trace.len(), 1);
+        assert_eq!(allocator.trace[0].kind, "experimental producer options");
+        assert_eq!(allocator.trace[0].length, 1);
+        assert_eq!(
+            allocator.trace[0].element_bytes,
+            std::mem::size_of::<ProducerOptions>()
+        );
+        assert!(allocator.trace[0].success);
+        assert_eq!(
+            original,
+            (
+                request[0].path.as_ptr(),
+                request[0].bundle.as_ptr(),
+                request[0].output.as_ref().unwrap().as_ptr(),
+            )
+        );
         #[cfg(target_pointer_width = "64")]
         assert_eq!(std::mem::size_of::<Route>(), 56);
     }

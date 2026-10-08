@@ -1,8 +1,8 @@
 # Current-source Unit4 parser qualification
 
-This adapter admits checked-HIR import source checkpoint
-`a1dc6fc823d36d8858375eb651b48c3c682ac2c4`, full tree
-`74ba20e2dcecb6056d4b13448a643ba289d83f75`, while retaining the byte-identical
+This adapter admits HIR producer source checkpoint
+`5871a92e8d5d6cd1995ca1b12296e8bd83da57ca`, full tree
+`6a67309be29b6841f4776ed392853b36d7263e02`, while retaining the byte-identical
 `tests/fixtures/typed_project_unit4_parser_portable/frozen/v3` package.
 
 The replay uses the historical `parse_counted` entry, whose current implementation
@@ -15,12 +15,12 @@ must not be represented as positive public enum parser coverage.
 ## Exact source and preparation boundaries
 
 The historical authority binds 283 base inputs, 113 compiler bodies and two
-286-member derived views. Current source admission binds 324 inputs, including
-246 `src/` and `native/` members, 56 retained non-source inputs, both scanner
+286-member derived views. Current source admission binds 327 inputs, including
+249 `src/` and `native/` members, 56 retained non-source inputs, both scanner
 fixtures and 20 newly included compile-time text/binary fixtures. The
-historical-to-current override has 282 members: 78 changed historical inputs and
-204 additions. The current parser binds 487 base inputs,
-249 compiler bodies and two 490-member derived views. These inventories have
+historical-to-current override has 287 members: 80 changed historical inputs and
+207 additions. The current parser binds 490 base inputs,
+252 compiler bodies and two 493-member derived views. These inventories have
 different purposes and must not be substituted for one another.
 
 `authority.json` pins the complete current maps, source checkpoint, immutable
@@ -30,7 +30,16 @@ Unknown members, missing inputs, compiler deletions, reordered paths, changed
 bytes and coherently rehashed input tails remain rejected. Scanner include
 closure belongs to the separately pinned source-binding authority.
 
-The checked-HIR import transition binds current execution source to the exact
+The producer transition first recovers the immutable 324-input
+`hir-import-source.json` from all 327 current inputs. Its exact 12-path inverse
+restores both Cargo files and removes only the three producer modules. The
+producer layer has no observer or control instrumentation overlap. Every authority
+load validates this full inverse before the unchanged HIR and earlier
+instrumentation derivations; dependency drift, extra or missing modules, and
+coherent predecessor rebases remain rejected. The retained HIR authority,
+transition, fixture roster and historical semantic expectations are unchanged.
+
+The checked-HIR import transition binds retained HIR execution source to the exact
 266-input retained `native-inventory-source.json`. Only allocator-budget overlaps
 observer instrumentation; control instrumentation has no overlap. Its exact
 transition section restores the retained native-inventory budget before the
@@ -133,8 +142,8 @@ builds, 12 ordinary passivity pairs and all 638 frozen observations across
 248 sources. Every build, collection, passivity and comparison rechecks the
 checkout, derived bodies, historical provenance and current transition binding.
 The compact capsule retains all 14 generated provenance artifacts. Each current
-derived view includes a generated candidate manifest; its other 489 members and
-the four executables may be full-archive-only, for 982 identities total.
+derived view includes a generated candidate manifest; its other 492 members and
+the four executables may be full-archive-only, for 988 identities total.
 
 Run bounded controls from the repository root:
 

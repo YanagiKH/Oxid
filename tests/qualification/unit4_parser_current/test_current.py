@@ -33,12 +33,12 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [487, 490, 490])
-        self.assertEqual(len(a['current_source']['files']), 324)
-        self.assertEqual(len(p.compiler_map(a)), 249)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [490, 493, 493])
+        self.assertEqual(len(a['current_source']['files']), 327)
+        self.assertEqual(len(p.compiler_map(a)), 252)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 282)
+        self.assertEqual(len(a['current']['source_delta']), 287)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
@@ -53,6 +53,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/format/enum_candidate_tests.rs',
  'src/frontend/format/resource_tests.rs',
  'src/frontend/format_cli.rs',
+ 'src/frontend/hir_producer.rs',
+ 'src/frontend/hir_producer/bundle.rs',
+ 'src/frontend/hir_producer/supervisor.rs',
  'src/frontend/oir/execute_measurement.rs',
  'src/frontend/oir/lower_measurement.rs',
  'src/frontend/oir/native_emit_cost.rs',
@@ -243,9 +246,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 78)
-        self.assertEqual(a['current']['reviewed_source_head'], 'a1dc6fc823d36d8858375eb651b48c3c682ac2c4')
-        self.assertEqual(a['current']['source_only_tree'], '74ba20e2dcecb6056d4b13448a643ba289d83f75')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 80)
+        self.assertEqual(a['current']['reviewed_source_head'], '5871a92e8d5d6cd1995ca1b12296e8bd83da57ca')
+        self.assertEqual(a['current']['source_only_tree'], '6a67309be29b6841f4776ed392853b36d7263e02')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read
@@ -293,7 +296,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -332,7 +335,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 487)
+        self.assertEqual(len(candidate['files']), 490)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -457,7 +460,7 @@ class SourceReadCompositionControls(unittest.TestCase):
         original_read = p.read
         historical_path = p.FROZEN / 'authority.json'
         for role, name, message in (
-            ('instrumentation', 'src/frontend/driver.rs', 'exact HIR import instrumentation overlap roster'),
+            ('instrumentation', 'src/frontend/driver.rs', 'HIR producer transition must not overlap parser instrumentation'),
             ('control_instrumentation', 'src/frontend/source.rs', 'exact enum control overlap roster')):
             historical = copy.deepcopy(original_read(historical_path))
             historical[role].append({'path': name, 'before_sha256': '0' * 64, 'after_sha256': '1' * 64})
@@ -1162,6 +1165,62 @@ class EnumStructuralProjectionControls(unittest.TestCase):
 
 
 
+class HirProducerTransitionControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a = p.authority()
+        cls.active = cls.a['current']
+        cls.inputs = {row['path']: (p.REPOSITORY / row['path']).read_bytes()
+                      for row in cls.a['current_source']['files']}
+
+    def test_exact_inverse_restores_both_cargo_files_and_retained_hir_source(self):
+        restored = p.restore_hir_producer_source(self.active, self.inputs)
+        predecessor = p.read(p.REPOSITORY / self.active['hir_import_source_manifest']['path'])
+        self.assertEqual(len(restored), 324)
+        for row in predecessor['files']:
+            self.assertEqual({'path': row['path'], 'bytes': len(restored[row['path']]),
+                              'sha256': p.sha(restored[row['path']])}, row)
+        for name in ('Cargo.toml', 'Cargo.lock'):
+            self.assertNotEqual(restored[name], self.inputs[name])
+        self.assertFalse(any(name.startswith('src/frontend/hir_producer') for name in restored))
+
+    def test_changed_dependency_module_missing_and_extra_input_reject(self):
+        for name in ('Cargo.toml', 'Cargo.lock', 'src/frontend/hir_producer.rs'):
+            altered = dict(self.inputs)
+            altered[name] += b'\n// unauthorized tail\n'
+            with self.subTest(changed=name), self.assertRaises(p.Rejected):
+                p.restore_hir_producer_source(self.active, altered)
+        for name in ('src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs',
+                     'src/frontend/hir_producer/supervisor.rs'):
+            altered = dict(self.inputs)
+            del altered[name]
+            with self.subTest(missing=name), self.assertRaises(p.Rejected):
+                p.restore_hir_producer_source(self.active, altered)
+        altered = dict(self.inputs, **{'src/frontend/hir_producer/extra.rs': b'// extra\n'})
+        with self.assertRaises(p.Rejected):
+            p.restore_hir_producer_source(self.active, altered)
+
+    def test_predecessor_rebase_transition_and_runner_pin_reject(self):
+        for field in ('hir_import_source_manifest', 'hir_producer_transition_patch', 'source_binding_runner'):
+            altered = copy.deepcopy(self.active)
+            altered[field]['sha256'] = '0' * 64
+            with self.subTest(field=field), self.assertRaises(p.Rejected):
+                p.restore_hir_producer_source(altered, self.inputs)
+
+    def test_double_inverse_rejects(self):
+        restored = p.restore_hir_producer_source(self.active, self.inputs)
+        with self.assertRaises(p.Rejected):
+            p.restore_hir_producer_source(self.active, restored)
+
+    def test_unexpected_instrumentation_overlap_rejects(self):
+        historical = copy.deepcopy(self.a)
+        for field in ('instrumentation', 'control_instrumentation'):
+            altered = copy.deepcopy(historical)
+            altered[field].append({'path': 'src/frontend/hir_producer.rs'})
+            with self.subTest(field=field), self.assertRaisesRegex(p.Rejected, 'must not overlap parser instrumentation'):
+                p.validate_hir_producer_transition(self.active, self.a['current_source'], altered)
+
+
 class HirImportOverlapControls(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1252,7 +1311,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 249)
+        self.assertEqual(len(bound['compiler_files']), 252)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())

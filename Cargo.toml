@@ -12,6 +12,8 @@ name = "oxid"
 path = "src/cli.rs"
 
 [dependencies]
+libc = "=0.2.177"
+sha2 = "=0.10.9"
 
 [build-dependencies]
 cc = "1"
