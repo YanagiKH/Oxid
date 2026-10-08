@@ -162,6 +162,16 @@ Preparation performs zero compiler executions and supplies no semantic pass.
 Actual execution must use the current published qualification head and existing
 host gate. Earlier historical or failed receipts cannot become current passes.
 
+### Bounded frontend v2 composition
+
+The current compiler view advances to 330 source members and 253 compiler/build
+bodies. The preserved producer view remains 327 members. A pinned v2 inverse
+first removes the two exact new compile-time fixtures and reconstructs that
+producer view; only then does the unchanged producer/import inverse chain run.
+The v2 delta has no overlap with either frozen parser instrumentation roster.
+Current base/derived maps contain 493/496 entries. These map changes add no new
+parser oracle, hook, semantic predicate, or admission-budget allowance.
+
 
 ## Current dependency closure
 

@@ -439,3 +439,34 @@ This admission is neither a semantic waiver nor a resource measurement. See
 `docs/architecture/record-composition-current-qualification.md` for the explicit
 case-level amendments and independent resource appendix. Older counts and
 receipts above identify their historical checkpoints, not current execution.
+
+## Bounded frontend v2 source-capacity successor
+
+The active source inventory contains 330 members: the unchanged 327-member
+producer predecessor plus `hir_protocol.rs` and two exact compile-time v2
+fixtures. `hir-producer-source.json` retains the previous current manifest
+byte-for-byte. The historical producer authority and transition patch are not
+rewritten, and the older inverse chain and semantic/resource oracles remain
+unchanged.
+
+`frontend-v2-authority.json`, `frontend-v2-transition.patch`, and the pinned
+`frontend_v2.py` helper admit the real checkout, all compiler members/modes,
+the two fixture identities, and the exact compiler delta. The helper removes
+only those two verified fixture inputs and reverses the compiler delta to the
+exact producer predecessor before invoking its existing inverse. Wrong-stage,
+missing/changed new-input, coherent metadata rewrite and double-inverse controls
+must refuse before historical inversion or compiler execution.
+
+The authority explicitly records the shared named-bank successor: v1's rich
+fixed bank grows from 138,865 to 139,939 bytes, while v1 work/output remain
+10,069,187/14,325. This is an admission change for v1 as well as v2, not byte-level
+resource compatibility. The predecessor endpoint now refuses without candidate
+allocation. The current v2 fixture has separate measured exact/minus-one
+boundaries. No global limit or historical semantic expectation is increased.
+
+The producer's 31-module build closure remains outside the compiler-observer
+inventory. Its unchanged source-manifest and builder identities are checked as
+explicit authority references; the CI wrapper independently requires the
+reviewed source-manifest digest before building and joins both profile recipes
+to their compiler/source/receipt identities. This source admission is not itself
+semantic execution, hosted qualification, or a self-hosting claim.

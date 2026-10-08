@@ -6,6 +6,7 @@ use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, R
 use crate::frontend::{
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::Diagnostic,
+    hir_protocol::Protocol,
     oir::{
         self, lower,
         native::{emit_work, private_emit},
@@ -196,20 +197,32 @@ impl WorkPlan {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn calculate_request(
         counts: Counts,
         rows: usize,
         request: Request,
     ) -> Result<Self, Failure> {
+        Self::calculate_request_protocol(counts, rows, request, Protocol::V1)
+    }
+
+    pub(super) fn calculate_request_protocol(
+        counts: Counts,
+        rows: usize,
+        request: Request,
+        protocol: Protocol,
+    ) -> Result<Self, Failure> {
         let mut plan = Self::calculate(counts, rows)?;
         if matches!(request, Request::Run | Request::Emit) {
-            // Complete source/OPA admission has bounded functions and source
-            // bytes by MAX_ROWS. Each function's identity/name check plus all
-            // name-byte comparisons fit functions + MAX_ROWS visits; two
+            // Complete source/OPA admission bounds functions by MAX_ROWS and
+            // source bytes by the wire's closed protocol. Each function's
+            // identity/name check plus all name-byte comparisons fit
+            // functions + source_max visits; two
             // visits cover entry/exit. 256 covers fixed checked field access.
             // This is shared compile work, never runtime fuel.
             let functions = u64::try_from(counts.0[1]).map_err(|_| Failure::Overflow)?;
-            let source_bytes = u64::try_from(MAX_ROWS).map_err(|_| Failure::Overflow)?;
+            let source_bytes =
+                u64::try_from(protocol.source_max()).map_err(|_| Failure::Overflow)?;
             plan.entry_work = mul(256, add(add(functions, source_bytes)?, 2)?)?;
             plan.total = add(plan.total, plan.entry_work)?;
         }
@@ -223,13 +236,25 @@ impl WorkPlan {
 /// candidate/canonical equality. The caller never supplies an entry ordinal.
 /// The returned DefId is captured from the corresponding candidate function
 /// before genuine typechecking consumes that candidate.
+#[cfg(test)]
 pub(super) fn root_entry(
     root: &ast::Program,
     source: &SourceFile,
     candidate: &hir::Program,
 ) -> Result<Option<hir::DefId>, Failure> {
+    root_entry_protocol(root, source, candidate, Protocol::V1)
+}
+
+fn root_entry_protocol(
+    root: &ast::Program,
+    source: &SourceFile,
+    candidate: &hir::Program,
+    protocol: Protocol,
+) -> Result<Option<hir::DefId>, Failure> {
     super::require(root.modules.is_empty() && root.imports.is_empty())?;
-    super::require(source.text().len() <= MAX_ROWS && root.functions.len() <= MAX_ROWS)?;
+    super::require(
+        source.text().len() <= protocol.source_max() && root.functions.len() <= MAX_ROWS,
+    )?;
     super::require(
         root.functions.len() == candidate.functions.len()
             && root.functions.len() == candidate.signatures.len(),
@@ -282,7 +307,7 @@ pub(super) fn run(
     let entry = if matches!(request, Request::Run | Request::Emit) {
         let source_result = owner.file(ModuleId(0));
         let source = source_result.map_err(|_| Failure::Shape)?;
-        root_entry(root, source, &candidate)?
+        root_entry_protocol(root, source, &candidate, syntax.bound.wire.protocol())?
     } else {
         None
     };
@@ -349,7 +374,12 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<Context<'_>>(),
         size_of::<(&Context<'_>, Counts, usize, u64)>(),
         copies(size_of::<Request>(), 4)?,
-        copies(size_of::<(Counts, usize, Request)>(), 2)?,
+        copies(size_of::<(Counts, usize, Request, Protocol)>(), 2)?,
+        // Closed wire protocol extraction at planning and entry: receiver,
+        // returned/local enum, and source_max receiver/result transport.
+        copies(size_of::<(super::super::Wire<'_>,)>(), 2)?,
+        copies(size_of::<Protocol>(), 4)?,
+        copies(size_of::<(Protocol, usize)>(), 2)?,
         copies(size_of::<WorkPlan>(), 5)?,
         copies(size_of::<Result<WorkPlan, Failure>>(), 5)?,
         copies(size_of::<Option<WorkPlan>>(), 2)?,
@@ -393,7 +423,10 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<Result<&crate::frontend::ast::Program, Box<Diagnostic>>>(),
         // Run entry capture: complete helper arguments, fixed scan locals,
         // source-file lookup/conversion, and helper call/return transports.
-        copies(size_of::<(&ast::Program, &SourceFile, &hir::Program)>(), 2)?,
+        copies(
+            size_of::<(&ast::Program, &SourceFile, &hir::Program, Protocol)>(),
+            2,
+        )?,
         size_of::<(
             crate::frontend::declaration_index::SourceOwner<'_>,
             ModuleId,
@@ -463,6 +496,66 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_hir_import_v2_request_work_preserves_v1_and_row_caps() {
+        let counts = Counts([2, 2, 1, 2, 11, 5, 7, 2]);
+        for request in [Request::Verify, Request::Run, Request::Emit] {
+            let old = WorkPlan::calculate_request(counts, 29, request).unwrap();
+            let v1 =
+                WorkPlan::calculate_request_protocol(counts, 29, request, Protocol::V1).unwrap();
+            let v2 =
+                WorkPlan::calculate_request_protocol(counts, 29, request, Protocol::V2).unwrap();
+            assert_eq!((old.total, old.entry_work), (v1.total, v1.entry_work));
+            assert_eq!((v2.pass_work, v2.typed_work), (v1.pass_work, v1.typed_work));
+            if matches!(request, Request::Verify) {
+                assert_eq!(v2.entry_work, 0);
+                assert_eq!(v2.total, v1.total);
+            } else {
+                assert_eq!((v1.entry_work, v2.entry_work), (33_792, 66_304));
+                assert_eq!(v2.total - v1.total, 32_512);
+            }
+        }
+        for protocol in [Protocol::V1, Protocol::V2] {
+            assert!(WorkPlan::calculate_request_protocol(
+                Counts([MAX_ROWS + 1; 8]),
+                MAX_ROWS,
+                Request::Run,
+                protocol,
+            )
+            .is_err());
+            assert!(WorkPlan::calculate_request_protocol(
+                Counts::default(),
+                MAX_ROWS + 1,
+                Request::Run,
+                protocol,
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn checked_hir_import_v2_entry_projection_retains_versioned_source_cap() {
+        use crate::frontend::{lexer, parser};
+        let body = "fn main()->i32{return 0;}";
+        for length in [128, 129, 254, 255, 256] {
+            let mut sources = SourceMap::new();
+            let text = format!("{}{body}", " ".repeat(length - body.len()));
+            let id = sources.add("capacity.ox".into(), text);
+            let source = sources.get(id);
+            let root = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+            let candidate = hir::resolve(source, &root).unwrap();
+            assert_eq!(root_entry(&root, source, &candidate).is_ok(), length <= 128);
+            for protocol in [Protocol::V1, Protocol::V2] {
+                let result = root_entry_protocol(&root, source, &candidate, protocol);
+                if length <= protocol.source_max() {
+                    assert_eq!(result, Ok(Some(hir::DefId(0))));
+                } else {
+                    assert_eq!(result, Err(Failure::Shape));
+                }
+            }
+        }
+    }
 
     #[test]
     fn checked_hir_import_verify_work_and_layout_only() {

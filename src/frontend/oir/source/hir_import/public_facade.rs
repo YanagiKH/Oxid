@@ -77,8 +77,8 @@ fn diagnostic(error: leaf::VerifyRejected, project: &ProjectSources) -> Vec<Diag
         Rejected::Terminal(Terminal::Association(error))
         | Rejected::Terminal(Terminal::Native(private_emit::Failure::Diagnostic(error))) => vec![*error],
         Rejected::Terminal(Terminal::Oir(error)) => vec![*error.diagnostic(project.sources())],
-        Rejected::Source(Source::Boundary(Boundary::Domain)) => refusal("experimental HIR import requires one root-only scalar source of at most 128 ASCII bytes"),
-        Rejected::Source(Source::Boundary(Boundary::Frame)) => refusal("experimental HIR import requires an exact successful OPA1/STF1 observation"),
+        Rejected::Source(Source::Boundary(Boundary::Domain)) => refusal("experimental HIR import requires one root-only scalar ASCII source within its wire version capacity (v1: 128, v2: 255 bytes)"),
+        Rejected::Source(Source::Boundary(Boundary::Frame)) => refusal("experimental HIR import requires an exact successful version-matched OPA1/STF1 or OPA2/STF2 observation"),
         Rejected::Source(Source::Budget)
         | Rejected::Source(Source::Candidate(allocation::Failure::Admission))
         | Rejected::Terminal(Terminal::Candidate(allocation::Failure::Admission))

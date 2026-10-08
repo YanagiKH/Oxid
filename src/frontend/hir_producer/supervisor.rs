@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::frontend::hir_protocol::Protocol;
 pub(super) const INPUT_MAX: usize = 1692;
 pub(super) const OUTPUT_MAX: usize = 2607;
 pub(super) const STDERR_MAX: usize = 4096;
@@ -154,6 +155,7 @@ fn drain(reader: &mut impl Read, bytes: &mut [u8], used: &mut usize) -> io::Resu
     Ok(false)
 }
 
+#[cfg(test)]
 pub(super) fn run(
     program: &Path,
     directory: &Path,
@@ -161,8 +163,30 @@ pub(super) fn run(
     output_limit: usize,
     deadline: Duration,
 ) -> Capture {
+    run_versioned(
+        program,
+        directory,
+        input,
+        output_limit,
+        deadline,
+        Protocol::V1,
+    )
+}
+
+pub(super) fn run_versioned(
+    program: &Path,
+    directory: &Path,
+    input: &[u8],
+    output_limit: usize,
+    deadline: Duration,
+    protocol: Protocol,
+) -> Capture {
     let mut captured = Capture::empty();
-    if input.len() > INPUT_MAX || output_limit > OUTPUT_MAX {
+    let input_max = match protocol {
+        Protocol::V1 => INPUT_MAX,
+        Protocol::V2 => INPUT_MAX + 127,
+    };
+    if input.len() > input_max || output_limit > OUTPUT_MAX {
         captured.stop = Stop::InputLimit;
         return captured;
     }
@@ -464,6 +488,36 @@ int main(void) {
         assert_eq!(typed.code(), Some(0));
         assert_eq!(&typed.stdout[..typed.stdout_len], b"static");
         assert_eq!(bundle.static_hash(), hash);
+    }
+
+    #[test]
+    fn producer_supervisor_v2_input_limit_preserves_v1_and_refuses_1820() {
+        let f = Fixture::new(0);
+        let input = [b'x'; 1819];
+        let old = f.run(&input, OUTPUT_MAX, DEADLINE);
+        assert_eq!(old.stop, Stop::InputLimit);
+        assert!(!old.spawned);
+        let accepted = run_versioned(
+            &f.0.join("helper"),
+            &f.0,
+            &input,
+            OUTPUT_MAX,
+            DEADLINE,
+            Protocol::V2,
+        );
+        assert_eq!(accepted.stop, Stop::Exited);
+        assert_eq!(accepted.code(), Some(0));
+        assert_eq!(&accepted.stdout[..accepted.stdout_len], &input);
+        let refused = run_versioned(
+            &f.0.join("helper"),
+            &f.0,
+            &[0; 1820],
+            OUTPUT_MAX,
+            DEADLINE,
+            Protocol::V2,
+        );
+        assert_eq!(refused.stop, Stop::InputLimit);
+        assert!(!refused.spawned);
     }
 
     #[test]

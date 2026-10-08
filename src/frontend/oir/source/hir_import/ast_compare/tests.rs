@@ -417,3 +417,12 @@ fn checked_hir_import_source_opa_complete_layouts() {
         SCRATCH_BYTES >= size_of::<[Event; MAX_EVENTS]>() + 2 * MAX_ROWS + 6 * size_of::<usize>()
     );
 }
+
+#[test]
+fn checked_hir_import_v2_endpoint_255_is_compared_not_a_wildcard() {
+    assert!(endpoint_matches(Some(255), 255));
+    assert!(!endpoint_matches(Some(255), 254));
+    assert!(!endpoint_matches(Some(254), 255));
+    assert!(!endpoint_matches(Some(255), 256));
+    assert!(endpoint_matches(None, 254));
+}

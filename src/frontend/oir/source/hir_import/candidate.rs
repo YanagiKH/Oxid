@@ -401,10 +401,11 @@ fn construct(
         // Read only admitted metadata. This cannot stand in for the mandatory
         // final complete() fill/order/capacity checks below.
         let admitted = session.admitted_receipt();
-        let plan = verify_terminal::WorkPlan::calculate_request(
+        let plan = verify_terminal::WorkPlan::calculate_request_protocol(
             admitted.requested,
             usize::from(syntax.bound.wire.rows),
             context.request,
+            syntax.bound.wire.protocol(),
         )?;
         let charged = builder_work
             .checked_add(admitted.helper_work)

@@ -1,0 +1,129 @@
+{
+  "schema_version": 2,
+  "sources": {
+    "ast_block": {
+      "path": "fixtures/typed-lexer-samples/ast_block.ox",
+      "sha256": "ded6d03a0a6ae6095d667de51772437e6d6b6e0742560f14a658b364fae431cb"
+    },
+    "ast_expression": {
+      "path": "fixtures/typed-lexer-samples/ast_expression.ox",
+      "sha256": "d19a2b871dd38f9e63fa31f0aa46557b9daa3cf097328136f76a5edf197a4587"
+    },
+    "ast_input": {
+      "path": "fixtures/typed-frontend-v2/ast_input.ox",
+      "sha256": "c95992d5c1122427f52d7f1d18b6998d2fcf39987d2d78a60d5a4061ccbfffb8"
+    },
+    "ast_output": {
+      "path": "fixtures/typed-frontend-v2/ast_output.ox",
+      "sha256": "6a4ded20f99dbb88cff72e01e121fafc7d13cbe0878912ec7abdb9e01a15b30f"
+    },
+    "ast_statement": {
+      "path": "fixtures/typed-lexer-samples/ast_statement.ox",
+      "sha256": "5460f3769f69bb5b1d6560426a9b718a143f303f925ca2316a3430a235383d09"
+    },
+    "ast_static_main": {
+      "path": "fixtures/typed-frontend-v2/ast_static_main.ox",
+      "sha256": "9d7a894b69a915c37b91b5c5bfad2ecb7c34f55c37c680eadb7bd6ac4e3f25a4"
+    },
+    "ast_validate": {
+      "path": "fixtures/typed-lexer-samples/ast_validate.ox",
+      "sha256": "fe8c510c612f039c1718691824da37c2c02b3629e813f4704877875210aae3a0"
+    },
+    "buffers": {
+      "path": "fixtures/typed-lexer-samples/buffers.ox",
+      "sha256": "30dd5f1c9c886d3aebdde51bdcf498a615034800214877b0b9a3729a62eb9a45"
+    },
+    "keywords": {
+      "path": "fixtures/typed-lexer-samples/keywords.ox",
+      "sha256": "7da8b52ec3e77469f8827bdc3dff934d68d45d65b513630dc1f60e3a502cc1ce"
+    },
+    "lexer_core": {
+      "path": "fixtures/typed-frontend-v2/lexer_core.ox",
+      "sha256": "e09724e7fe292151ba44cdd21f5c5b927c31f68712e72c19fb657db00856a166"
+    },
+    "parser_atom": {
+      "path": "fixtures/typed-lexer-samples/parser_atom.ox",
+      "sha256": "36a161a406bf3c4556a600bd007caac2af4e6eeab90b6c19b1dc35da32244fde"
+    },
+    "parser_call": {
+      "path": "fixtures/typed-lexer-samples/parser_call.ox",
+      "sha256": "db31865390ad6d70305c9209c3f404cf8062c29cd133e93304b593cce83abaac"
+    },
+    "parser_control": {
+      "path": "fixtures/typed-lexer-samples/parser_control.ox",
+      "sha256": "0581800789966858ee8f246b800d1fdf9e0895359d05199c61d424179e380d00"
+    },
+    "parser_driver": {
+      "path": "fixtures/typed-lexer-samples/parser_driver.ox",
+      "sha256": "6a27b3a9acd5b7c7031ceb8c56eb03333641e96a89f5a7a7eb6626b5b9ac3bd7"
+    },
+    "parser_expression": {
+      "path": "fixtures/typed-lexer-samples/parser_expression.ox",
+      "sha256": "79e6285e6af8fb4b9992bd2840a1bcadf2a6b8f17e4492d899323ec7612382e8"
+    },
+    "parser_main": {
+      "path": "fixtures/typed-frontend-v2/parser_main.ox",
+      "sha256": "9e4a1ac7d55dd1bb3f32d22330ee67e7eff0365ce6b8ee82abb42522dca2aaa1"
+    },
+    "parser_output": {
+      "path": "fixtures/typed-frontend-v2/parser_output.ox",
+      "sha256": "323cd2982071ef831546b2cd90261fbde7098fb69a224b5a4f32131679265d7e"
+    },
+    "parser_signature": {
+      "path": "fixtures/typed-lexer-samples/parser_signature.ox",
+      "sha256": "abc68f176f192d35e0a405e5c0a3eddd37cf990eea23276b6ef53ee5b7a66e2b"
+    },
+    "parser_state": {
+      "path": "fixtures/typed-lexer-samples/parser_state.ox",
+      "sha256": "73f8fa7e6ab60a5a2fc2cf88f9af8826ddc59e7dc2c7b08e5029aeed6d0c0f48"
+    },
+    "parser_statement": {
+      "path": "fixtures/typed-lexer-samples/parser_statement.ox",
+      "sha256": "012d0e389bda537532a8d87eb453d478a296fbc7f2073511243e8d46dc30cfea"
+    },
+    "resolver_driver": {
+      "path": "fixtures/typed-lexer-samples/resolver_driver.ox",
+      "sha256": "8d4628521a8d78d73fa9544d44b84fffbeed0a562d07688eeabf9ba4dae6d711"
+    },
+    "resolver_names": {
+      "path": "fixtures/typed-lexer-samples/resolver_names.ox",
+      "sha256": "0bd51ea081f3b21fbcb8e1f7fa2f96796e3f8e9853486608b994d56ee8a6fced"
+    },
+    "source_buffer": {
+      "path": "fixtures/typed-frontend-v2/source_buffer.ox",
+      "sha256": "b6433e5c71b8e1899eeae705ac0428ea79f2761773f5d3cc9463b4bfabc4a516"
+    },
+    "static_column": {
+      "path": "fixtures/typed-lexer-samples/static_column.ox",
+      "sha256": "82faa0c1b34dc0f8a1c1b01b74c45c8b2e8afa8ab074f294964c962f92f000e8"
+    },
+    "static_common": {
+      "path": "fixtures/typed-lexer-samples/static_common.ox",
+      "sha256": "2da444fb85a47ef58061a02f16b8abcf23f60ece51832b37c6692ca6415baeab"
+    },
+    "static_state": {
+      "path": "fixtures/typed-lexer-samples/static_state.ox",
+      "sha256": "a4c2efdfbfcaa297d679d5d6bcc702916eb2a9521e9474424d9244c75f2ac41f"
+    },
+    "typed_diagnostic": {
+      "path": "fixtures/typed-frontend-v2/typed_diagnostic.ox",
+      "sha256": "ab38c55e161847a2cfd6f1ef5d1426b4a3330bc3dc8d833125216d7b8f3368e9"
+    },
+    "typed_driver": {
+      "path": "fixtures/typed-lexer-samples/typed_driver.ox",
+      "sha256": "f6178b7b2395a5bd1279d79a8785188f572b39b2f0839492770d32ec98a0b368"
+    },
+    "typed_expression": {
+      "path": "fixtures/typed-lexer-samples/typed_expression.ox",
+      "sha256": "ca121689dc4f26945dd9ef003adf6f7eaba727b5b880f37c2972744687bf6120"
+    },
+    "typed_output": {
+      "path": "fixtures/typed-frontend-v2/typed_output.ox",
+      "sha256": "c0a3961a91b4172a79b4f4ca5536cf59b9b5f5522617cf580cc8da16f0eb6b24"
+    },
+    "typed_statement": {
+      "path": "fixtures/typed-lexer-samples/typed_statement.ox",
+      "sha256": "5d828a9d5c6f9c109c2129f808f485fdb6a4ff030a74d7c2d4450c603ef2340c"
+    }
+  }
+}

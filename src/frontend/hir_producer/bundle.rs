@@ -4,10 +4,12 @@
 //! provenance claim. Only sealed memfd copies are returned for execution. The
 //! caller must keep this owner alive until both producer processes have ended.
 
+use super::super::hir_protocol::Protocol;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub(super) struct Bundle {
+    protocol: Protocol,
     workspace: Workspace,
     parser: Executable,
     static_consumer: Executable,
@@ -33,6 +35,10 @@ impl Bundle {
             let _ = root;
             Err("producer bundles require Linux x86_64")
         }
+    }
+
+    pub(super) fn protocol(&self) -> Protocol {
+        self.protocol
     }
 
     pub(super) fn parser(&self) -> &Path {
@@ -72,7 +78,7 @@ impl Drop for Workspace {
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod linux {
-    use super::{Bundle, Executable, Workspace};
+    use super::{Bundle, Executable, Protocol, Workspace};
     use sha2::{Digest, Sha256};
     use std::ffi::CStr;
     use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
@@ -96,6 +102,7 @@ mod linux {
 
     #[derive(Debug, PartialEq, Eq)]
     struct Manifest {
+        protocol: Protocol,
         parser: [u8; 32],
         static_consumer: [u8; 32],
     }
@@ -120,6 +127,7 @@ mod linux {
             executable_limit,
         )?;
         Ok(Bundle {
+            protocol: manifest.protocol,
             workspace,
             parser,
             static_consumer,
@@ -208,7 +216,9 @@ mod linux {
 
     fn parse_manifest(bytes: &[u8]) -> Result<Manifest, &'static str> {
         const INVALID: &str = "producer bundle manifest does not match the closed format";
-        if bytes.len() != MANIFEST_LEN || !bytes.starts_with(MAGIC) {
+        if bytes.len() != MANIFEST_LEN
+            || (!bytes.starts_with(MAGIC) && !bytes.starts_with(b"OXID-HIR-PRODUCERS-2\n"))
+        {
             return Err(INVALID);
         }
         let parser_line = &bytes[MAGIC.len()..MAGIC.len() + 72];
@@ -221,6 +231,11 @@ mod linux {
             return Err(INVALID);
         }
         Ok(Manifest {
+            protocol: if bytes[MAGIC.len() - 2] == b'1' {
+                Protocol::V1
+            } else {
+                Protocol::V2
+            },
             parser: decode_hash(&parser_line[7..71]).ok_or(INVALID)?,
             static_consumer: decode_hash(&static_line[7..71]).ok_or(INVALID)?,
         })
@@ -521,6 +536,7 @@ mod linux {
             assert_eq!(
                 parse_manifest(&bytes).unwrap(),
                 Manifest {
+                    protocol: Protocol::V1,
                     parser: digest(b"abc"),
                     static_consumer: digest(b"other"),
                 }

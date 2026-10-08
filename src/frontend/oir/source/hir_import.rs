@@ -1,5 +1,6 @@
 //! Source-bound checked observation import. Framing alone is never authority.
 //! The explicit experimental facade uses the complete paid Verify/Run/Emit leaves.
+use crate::frontend::hir_protocol::Protocol;
 use crate::frontend::{
     ast,
     declaration_index::SourceOwner,
@@ -52,13 +53,23 @@ struct Wire<'w> {
     rows: u8,
 }
 impl<'w> Wire<'w> {
+    fn protocol(self) -> Protocol {
+        // Only decode constructs Wire after checking the complete header.
+        if self.bytes[3] == b'1' {
+            Protocol::V1
+        } else {
+            Protocol::V2
+        }
+    }
     fn decode(bytes: &'w [u8], source_len: usize) -> Result<Self, Boundary> {
-        if bytes.len() != SUCCESS_BYTES
-            || &bytes[..4] != b"OPA1"
+        let protocol = Protocol::from_opa(bytes).ok_or(Boundary::Frame)?;
+        if source_len > protocol.source_max()
+            || bytes.len() != SUCCESS_BYTES
             || bytes[4..8] != [0; 4]
             || usize::from(bytes[8]) > MAX_ROWS
             || usize::from(bytes[10]) != source_len
-            || &bytes[OPA_BYTES..OPA_BYTES + 4] != b"STF1"
+            || &bytes[OPA_BYTES..OPA_BYTES + 3] != b"STF"
+            || bytes[OPA_BYTES + 3] != protocol.digit()
             || bytes[OPA_BYTES + 4] != 0
             || bytes[OPA_BYTES + 5] != bytes[8]
             || bytes[OPA_BYTES + 6..OPA_BYTES + 16] != [0; 10]
@@ -220,7 +231,8 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
         }
         // Reject oversized equal-length inputs before inspecting their bytes.
         // The private boundary therefore has a bounded equality/ASCII scan.
-        if captured_source.len() > MAX_ROWS {
+        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
+        if captured_source.len() > protocol.source_max() {
             return Err(Boundary::Domain);
         }
         if captured_source != source.text().as_bytes() {
@@ -357,10 +369,13 @@ struct ProbeFacts {
 // the named logical-visit model reviewed separately from the old 2,690 event
 // statistic. It includes full per-token lexical and per-number byte scans.
 fn source_work_bound() -> Result<u64, Boundary> {
+    source_work_bound_for(Protocol::V1)
+}
+fn source_work_bound_for(protocol: Protocol) -> Result<u64, Boundary> {
     let add = |a: u64, b: u64| a.checked_add(b).ok_or(Boundary::Overflow);
     let mul = |a: u64, b: u64| a.checked_mul(b).ok_or(Boundary::Overflow);
-    let b = u64::try_from(MAX_ROWS).map_err(|_| Boundary::Overflow)?;
-    let r = b;
+    let b = u64::try_from(protocol.source_max()).map_err(|_| Boundary::Overflow)?;
+    let r = u64::try_from(MAX_ROWS).map_err(|_| Boundary::Overflow)?;
     let t = u64::try_from(CELLS).map_err(|_| Boundary::Overflow)?;
     let c = t;
     let e = add(mul(16, r)?, 1)?;

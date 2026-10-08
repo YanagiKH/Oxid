@@ -20,8 +20,9 @@ const WIRE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/checked_hir_import/rich-success.bin"
 ));
-// Independently measured f44 rich main.ox endpoints, not derived from the call under test.
-const FIXED: u64 = 138_865;
+// Independently measured rich main.ox endpoints after complete versioned
+// protocol/endpoint carriers; not derived from the call under test.
+const FIXED: u64 = 139_939;
 const HIR_PAIR: u64 = 3_472 + 2_241;
 const LLVM_BYTES: u64 = 14_325;
 const WORK: u64 = 10_069_187;
@@ -45,6 +46,15 @@ fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints() {
     let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
     let defaults = IndexLimits::default();
     for (limits, expected) in [
+        // The shared named-bank successor tightens v1 byte admission too.
+        // Explicitly refuse the predecessor endpoint without allocation.
+        (
+            IndexLimits {
+                scratch: 138_865,
+                ..defaults
+            },
+            Expected::SourceBytes,
+        ),
         (
             IndexLimits {
                 work: 0,
@@ -236,4 +246,91 @@ fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints() {
         assert_eq!(observed.2, 0);
         println!("HIR_IMPORT_EMIT_LONG_PATH bytes={path_bytes} private_admitted={} ordinary_bytes={} allocation={observed:?}", path_bytes == 3_365, ordinary.len());
     }
+}
+
+#[test]
+fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints() {
+    const TEXT2: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import_v2/source-255.txt"
+    ));
+    const WIRE2: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/checked_hir_import_v2/success-255.bin"
+    ));
+    assert_eq!(TEXT2.len(), 255);
+    let mut sources = SourceMap::new();
+    let id = sources.add("main.ox".into(), TEXT2.into());
+    let source = sources.get(id);
+    let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+    let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+    let mut allocator = Allocator::default();
+    let baseline = leaf::emit(
+        owner,
+        TEXT2.as_bytes(),
+        WIRE2,
+        &mut allocator,
+        IndexLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(baseline.source_work, 190_160);
+    assert_eq!(baseline.artifact.verified.entry_work, 256 * (1 + 255 + 2));
+    let fixed = baseline.artifact.verified.candidate.allocation.fixed_bytes as u64;
+    assert_eq!(fixed, FIXED);
+    let bytes = baseline.artifact.bytes as u64;
+    let retained = (fixed + bytes).max(
+        baseline
+            .artifact
+            .verified
+            .candidate
+            .allocation
+            .affected_bytes as u64,
+    );
+    let work = baseline.total_work;
+    // Independently measured authentic v2 fixture; keep the endpoints visible.
+    assert_eq!(
+        (fixed, retained, bytes, work),
+        (139_939, 141_475, 690, 1_004_093)
+    );
+    drop(baseline);
+    let exact = IndexLimits {
+        scratch: fixed,
+        retained,
+        work,
+    };
+    let accepted = leaf::emit(
+        owner,
+        TEXT2.as_bytes(),
+        WIRE2,
+        &mut Allocator::default(),
+        exact,
+    )
+    .unwrap();
+    assert_eq!(accepted.artifact.bytes as u64, bytes);
+    assert_eq!(accepted.artifact.capacity as u64, bytes);
+    assert_eq!(accepted.total_work, work);
+    for lower in [
+        IndexLimits {
+            work: work - 1,
+            ..exact
+        },
+        IndexLimits {
+            scratch: fixed - 1,
+            ..exact
+        },
+        IndexLimits {
+            retained: exact.retained - 1,
+            ..exact
+        },
+    ] {
+        assert!(leaf::emit(
+            owner,
+            TEXT2.as_bytes(),
+            WIRE2,
+            &mut Allocator::default(),
+            lower
+        )
+        .is_err());
+    }
+    println!("HIR_IMPORT_V2 actual fixed={fixed} retained={retained} llvm={bytes} work={work}");
 }

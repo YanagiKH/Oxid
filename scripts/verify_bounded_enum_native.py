@@ -42,8 +42,8 @@ SCANNER_HASHES = {
 ELF_ENV = {"PATH": "/no-tools"}
 # Reviewed native inventory successor executes the unchanged enum roster. The exact
 # 237-member enum predecessor remains in enum-source.json; current execution
-# uses the complete 327-member authority, never a caller-supplied subset.
-REVIEWED_SOURCE_SHA256 = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
+# uses the complete 330-member authority, never a caller-supplied subset.
+REVIEWED_SOURCE_SHA256 = 'e9f92670a63edd0336bada42e03702f7e446706c9fe56fa80913c7428025da2c'
 
 
 def require(condition, message):

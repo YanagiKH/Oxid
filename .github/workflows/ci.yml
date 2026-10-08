@@ -681,7 +681,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680
+            --source-manifest-sha256 e9f92670a63edd0336bada42e03702f7e446706c9fe56fa80913c7428025da2c
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -694,7 +694,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680
+            --source-manifest-sha256 e9f92670a63edd0336bada42e03702f7e446706c9fe56fa80913c7428025da2c
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1128,7 +1128,10 @@ jobs:
         run: |
           python3 -B -m unittest discover -s scripts -p test_qualify_hir_producers.py -v
           python3 -B -m unittest discover -s scripts -p test_run_hir_producer_ci.py -v
-      - name: Build exact-head executables and qualify both ordinary profiles
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_producers_v2.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_hir_producers_v2.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_run_hir_producer_ci.py -v
+      - name: Build exact-head executables and qualify v1, v2 and edge controls in both ordinary profiles
         run: |
           python3 -B scripts/run_hir_producer_ci.py \
             --expected-head "$HIR_PRODUCER_EXPECTED_HEAD" \

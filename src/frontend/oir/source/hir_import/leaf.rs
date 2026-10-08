@@ -1,6 +1,8 @@
 //! Private comparison and fixed-facts Verify entries. No default caller is
 //! connected. The experimental facade uses fixed Verify/Run facts or owned text.
-use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
+use super::{
+    allocation, ast_compare, candidate, source_work_bound_for, BoundObservation, Boundary, Protocol,
+};
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
     diagnostic::Diagnostic,
@@ -103,6 +105,10 @@ struct SourcePlan {
 impl SourcePlan {
     #[allow(clippy::result_large_err)] // Fixed denial facts are deliberately prepaid, never boxed.
     fn calculate(limits: IndexLimits) -> Result<Self, Rejected> {
+        Self::calculate_for(limits, Protocol::V1)
+    }
+    #[allow(clippy::result_large_err)]
+    fn calculate_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
         let outside_fixed_bytes = outer_named_bytes()?
             .checked_add(ast_compare::named_bytes()?)
             .ok_or(Boundary::Overflow)?;
@@ -112,7 +118,7 @@ impl SourcePlan {
             .checked_add(builder_named)
             .and_then(|n| n.checked_add(helper_named))
             .ok_or(Boundary::Overflow)?;
-        let source_work = source_work_bound()?;
+        let source_work = source_work_bound_for(protocol)?;
         let default = IndexLimits::default();
         let bytes = u64::try_from(fixed_bytes).map_err(|_| Boundary::Overflow)?;
         if bytes > limits.scratch.min(default.scratch)
@@ -130,7 +136,11 @@ impl SourcePlan {
 
     #[allow(clippy::result_large_err)]
     fn calculate_verify(limits: IndexLimits) -> Result<Self, Rejected> {
-        let mut plan = Self::calculate(limits)?;
+        Self::calculate_verify_for(limits, Protocol::V1)
+    }
+    #[allow(clippy::result_large_err)]
+    fn calculate_verify_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
+        let mut plan = Self::calculate_for(limits, protocol)?;
         let extra = verify_outer_named_bytes()?
             .checked_add(candidate::verify_named_bytes()?)
             .ok_or(Boundary::Overflow)?;
@@ -154,7 +164,11 @@ impl SourcePlan {
 
     #[allow(clippy::result_large_err)]
     fn calculate_emit(limits: IndexLimits) -> Result<Self, Rejected> {
-        let mut plan = Self::calculate_verify(limits)?;
+        Self::calculate_emit_for(limits, Protocol::V1)
+    }
+    #[allow(clippy::result_large_err)]
+    fn calculate_emit_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
+        let mut plan = Self::calculate_verify_for(limits, protocol)?;
         let extra = emit_outer_named_bytes()?
             .checked_add(candidate::emit_named_bytes()?)
             .ok_or(Boundary::Overflow)?;
@@ -278,6 +292,7 @@ fn requested(
     if request == candidate::Request::Emit && !candidate::EMIT_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
+    let protocol = Protocol::from_opa(observation).unwrap_or(Protocol::V1);
     let (plan, work, origin) = if request == candidate::Request::Emit {
         // Explicit unmetered, constant-time bootstrap: inspect the genuine
         // owner's count/view, look up root file 0 to obtain its real empty span,
@@ -291,11 +306,12 @@ fn requested(
             .map_err(|_| Boundary::Source)?
             .span(0, 0);
         let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
-        let plan = metered_emit_plan(limits, &work, origin)?;
+        let plan = metered_emit_plan_for(limits, &work, origin, protocol)?;
         (plan, work, origin)
     } else {
         // Preserve Verify/Run's existing preflight/error order and work cost.
-        let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
+        let plan =
+            SourcePlan::calculate_verify_for(limits, protocol).map_err(VerifyRejected::Source)?;
         if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
             return Err(Boundary::Domain.into());
         }
@@ -385,6 +401,15 @@ fn metered_emit_plan(
     work: &WorkMeter,
     origin: Span,
 ) -> Result<SourcePlan, VerifyRejected> {
+    metered_emit_plan_for(limits, work, origin, Protocol::V1)
+}
+#[allow(clippy::result_large_err)]
+fn metered_emit_plan_for(
+    limits: IndexLimits,
+    work: &WorkMeter,
+    origin: Span,
+    protocol: Protocol,
+) -> Result<SourcePlan, VerifyRejected> {
     emit_work::debit(
         work,
         candidate::EMIT_CONNECTION_WORK,
@@ -399,7 +424,7 @@ fn metered_emit_plan(
             .ok_or(Boundary::Overflow)?,
         ..limits
     };
-    SourcePlan::calculate_emit(remaining).map_err(VerifyRejected::Source)
+    SourcePlan::calculate_emit_for(remaining, protocol).map_err(VerifyRejected::Source)
 }
 
 /// Not called by any production/default path. Paid controls exercise only
@@ -414,7 +439,8 @@ pub(super) fn denied(
 ) -> Result<Infallible, Rejected> {
     #[cfg(test)]
     LAST_CANDIDATE_OBSERVATION.with(|slot| slot.set(None));
-    let plan = SourcePlan::calculate(limits)?;
+    let protocol = Protocol::from_opa(observation).unwrap_or(Protocol::V1);
+    let plan = SourcePlan::calculate_for(limits, protocol)?;
     if owner.count() != 1 {
         return Err(Rejected::Boundary(Boundary::Domain));
     }
@@ -513,6 +539,10 @@ pub(super) fn denied(
 fn outer_named_bytes() -> Result<usize, Boundary> {
     let copies = |n: usize, count: usize| n.checked_mul(count).ok_or(Boundary::Overflow);
     let roles = [
+        size_of::<[Protocol; 16]>(), // Complete version-selection, call and return roles.
+        size_of::<[Option<Protocol>; 4]>(),
+        size_of::<[(IndexLimits, Protocol); 6]>(),
+        size_of::<[(IndexLimits, &WorkMeter, Span, Protocol); 3]>(),
         size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
         size_of::<SourcePlan>(),
         copies(size_of::<Result<SourcePlan, Rejected>>(), 3)?,
@@ -697,6 +727,37 @@ fn emit_outer_named_bytes() -> Result<usize, Boundary> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_hir_import_v2_source_preflight_exact_and_minus_one() {
+        let plan = SourcePlan::calculate_verify_for(IndexLimits::default(), Protocol::V2).unwrap();
+        assert_eq!(plan.source_work, 190_160);
+        let exact = IndexLimits {
+            retained: plan.fixed_bytes as u64,
+            scratch: plan.fixed_bytes as u64,
+            work: plan.source_work,
+        };
+        assert!(SourcePlan::calculate_verify_for(exact, Protocol::V2).is_ok());
+        for limit in [
+            IndexLimits {
+                work: exact.work - 1,
+                ..exact
+            },
+            IndexLimits {
+                scratch: exact.scratch - 1,
+                ..exact
+            },
+            IndexLimits {
+                retained: exact.retained - 1,
+                ..exact
+            },
+        ] {
+            assert!(matches!(
+                SourcePlan::calculate_verify_for(limit, Protocol::V2),
+                Err(Rejected::Budget)
+            ));
+        }
+    }
 
     #[test]
     fn checked_hir_import_run_carriers_reject_predecessor_private_admissions() {
