@@ -83,15 +83,38 @@ cover the untrusted source/AST boundary. The consumer admits at I = 7,741 and
 W = 3,907 under unchanged limits; the combined source-to-type candidate remains
 refused at I = 8,778.
 
-This is concrete progress toward a reusable frontend: syntax and complete bounded
-static observations now have explicit component boundaries. Integrated
-source/projection review has passed for the bounded scope, including independent
-re-projection of all 77 retained semantic pairs. The reproducible current-source
-controller passes 81 cases in each mode, 81 wire pairs and 48 I/O pairs; its
-independent review is clear. Exact-head hosted CI remains pending. Production
-provider selection, authoritative source ownership,
-`TypedProgram`/OIR construction and compiler self-rebuilds still require their own
-gates; this component does not complete a roadmap milestone.
+At that bounded-component checkpoint, integrated source/projection review passed
+for the bounded scope, including independent re-projection of all 77 retained
+semantic pairs. The reproducible then-current-source controller passed 81 cases
+in each mode, 81 wire pairs and 48 I/O pairs; its independent review was clear.
+Exact-head hosted CI was pending then. These historical component measurements
+do not describe the full current compiler frontier or complete a milestone.
+
+### Current M0/M1/M8 inventory
+
+- M0 remains incomplete. Scoped specifications, the [feature inventory](feature-status.json),
+  qualification recipes and reversible source bindings exist; they do not complete
+  the baseline's specification, ownership and evidence requirements.
+- M1 includes bounded scalar Oxid frontend components with v1's 128-byte and
+  [v2's 255-byte](architecture/bounded-frontend-v2.md) ASCII source caps. Explicit
+  [supplied-artifact](architecture/experimental-hir-import.md) and
+  [live-producer](architecture/experimental-hir-producers.md) routes reach checked
+  execution and native compilation through mandatory Rust source parsing,
+  canonical resolution, type checking, lowering and OIR verification. Live
+  producers also validate the first static diagnostic against genuine source;
+  only an exact canonical-first match returns the complete canonical diagnostic
+  vector. Supplied artifacts remain success-only.
+- M8 includes explicit [source-scale lexical component use](architecture/streaming-lexical-provider.md):
+  Oxid-produced, source-bound tokens move into the real Rust parser for each loaded
+  module, with canonical Rust lexical comparison, execution receipts and no
+  fallback. The component-use recipe rebuilds the actual v2 producer source
+  closures and lexer closure; it does not establish independent compiler rebuilds.
+
+Default compiler paths remain Rust-controlled. Independent production parsing,
+semantic checking and lowering, arbitrary-supported-input compiler self-rebuilds,
+C1/C2/C3 fixed points and a clean Rust-free rebuild remain
+[open self-hosting gates](SELF_HOSTING.md#required-future-self-hosting-evidence).
+None of M0, M1 or M8 is complete.
 
 ## Native AI work
 

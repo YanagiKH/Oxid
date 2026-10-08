@@ -21,10 +21,11 @@ Native compilation remains Linux x86_64 with LLVM/Clang/LLD 19.1.7 at O0.
 ## Accepted boundary
 
 The source is one genuine root-only `ProjectSources` input in the existing scalar
-grammar, at most 128 ASCII bytes. Public functions are supported. No multi-file
-imports, aggregates, broader grammar or language-limit increase is introduced.
-The observation must be the exact 2,607-byte successful OPA1+STF1 form, read from a
-regular file with a fixed 2,608-byte buffer (one extra byte detects trailing data).
+grammar, within the wire version's ASCII source cap: 128 bytes for v1 or 255 for
+v2. Public functions are supported. No multi-file imports, aggregates, broader
+grammar or language-limit increase is introduced. The observation must be an
+exact 2,607-byte successful, version-matched OPA1/STF1 or OPA2/STF2 form, read from
+a regular file with a fixed 2,608-byte buffer (one extra byte detects trailing data).
 Directories, devices, partial outputs, pending/diagnostic forms, larger files and
 malformed/corrupt/stale observations cannot trigger fallback or publication.
 Artifact file handling uses the existing stable-filesystem trust model; it is not
@@ -55,8 +56,10 @@ existing contracts outside the compiler's private work tariff.
 
 ## Produce a real observation without editing transport
 
-The following uses the already implemented Oxid parser and AST static consumer.
-Run from the repository root after building the compiler. Both output executables
+The following v1 example uses the already implemented Oxid parser and AST static
+consumer. See the [v2 guide](bounded-frontend-v2.md) for its version-selected
+source-capacity successor. Run from the repository root after building the
+compiler. Both output executables
 and artifacts are new files under a fresh directory. The sample's original bytes
 are preserved; it returns the Result value `1`.
 
