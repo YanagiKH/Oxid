@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -616,6 +618,23 @@ TYPED_PROJECT_SHARED_MEMBERS = {
         "fixtures/typed-lexer-samples/ast_block.ox",
     ),
 }
+# These nine language sources are overlays, not standalone projects or frozen
+# source-only data. Check their two roots only after materializing the pinned
+# closure with its 22 existing typed modules; never hide neighboring sources.
+TYPED_OVERLAY_MANIFEST = "fixtures/typed-frontend-v2/sources.json"
+TYPED_OVERLAY_MANIFEST_SHA256 = "08629aee51a25e05fd7bf4b121ff8a7d882683687425f4e5469f8b508618d608"
+TYPED_OVERLAY_FILES = (
+    "fixtures/typed-frontend-v2/ast_input.ox",
+    "fixtures/typed-frontend-v2/ast_output.ox",
+    "fixtures/typed-frontend-v2/ast_static_main.ox",
+    "fixtures/typed-frontend-v2/lexer_core.ox",
+    "fixtures/typed-frontend-v2/parser_main.ox",
+    "fixtures/typed-frontend-v2/parser_output.ox",
+    "fixtures/typed-frontend-v2/source_buffer.ox",
+    "fixtures/typed-frontend-v2/typed_diagnostic.ox",
+    "fixtures/typed-frontend-v2/typed_output.ox",
+)
+TYPED_OVERLAY_ROOTS = ("parser_main", "ast_static_main")
 READMES = ("README.md", "README_ZH.md", "README_JP.md")
 IMAGES = (
     "docs/assets/quickstart.svg",
@@ -687,6 +706,71 @@ def runnable_sources(root: Path = ROOT) -> list[Path]:
     return runnable
 
 
+def typed_overlay_sources(root: Path) -> dict[str, tuple[Path, bytes]]:
+    """Admit the exact v2 language closure before any compiler invocation."""
+    def read_regular(relative: str) -> bytes:
+        path = root
+        for part in relative.split("/"):
+            path /= part
+            if path.is_symlink():
+                raise RuntimeError(f"symlink in typed overlay input: {path}")
+        if not path.is_file():
+            raise RuntimeError(f"missing or non-file typed overlay input: {path}")
+        return path.read_bytes()
+
+    try:
+        raw = read_regular(TYPED_OVERLAY_MANIFEST)
+        if hashlib.sha256(raw).hexdigest() != TYPED_OVERLAY_MANIFEST_SHA256:
+            raise RuntimeError("typed overlay manifest digest mismatch")
+        manifest = json.loads(raw)
+        if (not isinstance(manifest, dict) or set(manifest) != {"schema_version", "sources"}
+                or type(manifest["schema_version"]) is not int or manifest["schema_version"] != 2
+                or not isinstance(manifest["sources"], dict)):
+            raise RuntimeError("malformed typed overlay manifest")
+        sources = {}
+        overlays = set()
+        for name, record in manifest["sources"].items():
+            if (not re.fullmatch(r"[a-z_]+", name) or not isinstance(record, dict)
+                    or set(record) != {"path", "sha256"}
+                    or record["path"] not in (f"fixtures/typed-lexer-samples/{name}.ox",
+                                              f"fixtures/typed-frontend-v2/{name}.ox")):
+                raise RuntimeError("invalid typed overlay source registration")
+            relative = record["path"]
+            body = read_regular(relative)
+            if hashlib.sha256(body).hexdigest() != record["sha256"]:
+                raise RuntimeError(f"typed overlay source identity mismatch: {relative}")
+            sources[name] = (root / relative, body)
+            if relative.startswith("fixtures/typed-frontend-v2/"):
+                overlays.add(relative)
+        if overlays != set(TYPED_OVERLAY_FILES) or len(overlays) != len(TYPED_OVERLAY_FILES):
+            raise RuntimeError("typed overlay inventory must match the nine explicit language sources")
+        # Derive reachability from the admitted source bytes, as the native v2
+        # builder does. Unused records and unresolved imports are both errors.
+        pending, reached = list(TYPED_OVERLAY_ROOTS), set()
+        while pending:
+            name = pending.pop()
+            if name in reached:
+                continue
+            if name not in sources:
+                raise RuntimeError(f"typed overlay closure missing module: {name}")
+            reached.add(name)
+            pending.extend(re.findall(r"\bmod\s+(\w+)\s*;", sources[name][1].decode("utf-8")))
+        if reached != set(sources):
+            raise RuntimeError("typed overlay manifest has unused sources")
+        return sources
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"unreadable typed overlay input: {error}") from error
+
+
+def check_typed_overlays(executable: Path, sources: dict[str, tuple[Path, bytes]], output: Path) -> None:
+    """Check both real projects against the admitted, byte-identical closure."""
+    output.mkdir()
+    for name, (_, body) in sources.items():
+        (output / (name + ".ox")).write_bytes(body)
+    for name in TYPED_OVERLAY_ROOTS:
+        run([str(executable), "check", str(output / (name + ".ox")), "--edition=typed-preview"])
+
+
 def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path, bool]], list[Path], int]:
     # Admission is mandatory even for direct callers. Only exact frozen paths
     # are data; an unlisted .ox in the same directories remains a legacy check.
@@ -729,7 +813,22 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
         raise RuntimeError("source-only fixture data missing from discovery")
     if fixture_data & (typed_members | set(runnable_sources(root))):
         raise RuntimeError("source-only fixture data overlaps a typed or runnable inventory")
-    legacy = [(source, False) for source in sources if source not in typed_members | fixture_data]
+    # Overlay checks are a separate category: their checked paths exist only
+    # in the materialized closure. main() requires that category even if the
+    # entire overlay directory is missing; subset-only callers remain useful
+    # for the independently tested historical project inventories.
+    overlay_members = {root / relative for relative in TYPED_OVERLAY_FILES}
+    if overlay_members & available or (root / TYPED_OVERLAY_MANIFEST).exists():
+        overlay_closure = {path for path, _ in typed_overlay_sources(root).values()}
+        if not overlay_closure <= available:
+            raise RuntimeError("typed overlay source missing from discovery")
+        if (overlay_members & (typed_members | fixture_data | set(runnable_sources(root)))
+                or (overlay_closure - overlay_members) - typed_members):
+            raise RuntimeError("typed overlay inventory overlaps or escapes existing typed projects")
+    else:
+        overlay_members = set()
+    legacy = [(source, False) for source in sources
+              if source not in typed_members | fixture_data | overlay_members]
     return legacy + [(source, True) for source in typed_entries + typed_check_only], typed_entries, len(typed_members)
 
 
@@ -765,7 +864,9 @@ def main() -> int:
     sources = sorted(path for path in ROOT.rglob("*.ox") if ".oxid" not in path.parts and "target" not in path.parts)
     checks, typed_entries, typed_member_count = source_plan(sources, ROOT)
     verify_test_fixture_registration(ROOT)
-    language_source_count = sum(not typed for _, typed in checks) + typed_member_count
+    overlay_sources = typed_overlay_sources(ROOT)
+    overlay_member_count = len(TYPED_OVERLAY_FILES)
+    language_source_count = sum(not typed for _, typed in checks) + typed_member_count + overlay_member_count
     print(
         f"fixture-data validation passed: {len(sources) - language_source_count} source-only files "
         "(frozen manifest/body identities only; no compiler checks, executions or feature claim)"
@@ -783,6 +884,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="oxid-verify-") as temp_dir:
         temp = Path(temp_dir)
+        check_typed_overlays(executable, overlay_sources, temp / "typed-frontend-v2")
         for source in runnable:
             run([str(executable), "run", str(source)], cwd=temp)
         for source in typed_entries:
@@ -792,11 +894,13 @@ def main() -> int:
     run([str(executable), "build"])
     run([str(executable), "doctor"])
     print(
-        f"repository verification passed: {language_source_count} language sources, {len(checks)} checks, "
+        f"repository verification passed: {language_source_count} language sources, "
+        f"{len(checks) + len(TYPED_OVERLAY_ROOTS)} checks, "
         f"{len(runnable) + len(typed_entries)} runnable programs "
-        f"({language_source_count - typed_member_count} legacy sources, "
+        f"({language_source_count - typed_member_count - overlay_member_count} legacy sources, "
         f"{len(runnable)} legacy runnable programs, {typed_member_count} typed source members / "
-        f"{len(typed_entries)} typed entry runs)"
+        f"{len(typed_entries)} typed entry runs; {overlay_member_count} v2 overlay source members / "
+        f"{len(TYPED_OVERLAY_ROOTS)} materialized typed checks in a {len(overlay_sources)}-module closure)"
     )
     return 0
 

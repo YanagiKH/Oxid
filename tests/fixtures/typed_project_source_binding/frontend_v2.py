@@ -3,18 +3,18 @@ import hashlib
 import json
 
 # Exact reviewed values below are generated once at the frozen source checkpoint.
-SOURCE_SHA = 'e9f92670a63edd0336bada42e03702f7e446706c9fe56fa80913c7428025da2c'
+SOURCE_SHA = 'd294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a'
 SOURCE_BYTES = 63969
-AUTHORITY_SHA = '77be4c08d5db92c2fbfdfb9451c324252a6b9b350fdd5fc63238b58bfc938232'
-AUTHORITY_BYTES = 136550
-PATCH_SHA = '78438fb9a468ecfa5a31c304793080c4f2a4618493b3e8abbda8573609fa5cb4'
-PATCH_BYTES = 61892
-SOURCE_HEAD = '36b775e5f577bd2355f8b21f7af9c427d76e1f4d'
-SOURCE_TREE = '12cb3d6d42aa5445e3f8d94ce564e942da910fa0'
+AUTHORITY_SHA = '597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6'
+AUTHORITY_BYTES = 137275
+PATCH_SHA = 'b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32'
+PATCH_BYTES = 67003
+SOURCE_HEAD = '5f5a6639db9f779bb2453695f64ea980f7ea1790'
+SOURCE_TREE = '534dbf42fafabc0a889b91ad351d5a11dd9ef8f4'
 BASE_TREE = '6a67309be29b6841f4776ed392853b36d7263e02'
 PRODUCER_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 PRODUCER_BYTES = 63220
-PATHS = ('src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/hir_protocol.rs', 'src/frontend/mod.rs', 'src/frontend/oir/native_emit_cost.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/ast_compare.rs', 'src/frontend/oir/source/hir_import/ast_compare/tests.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs', 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/frontend/oir/source/hir_import/leaf.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/oir/source/hir_import/tests.rs')
+PATHS = ('src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/hir_protocol.rs', 'src/frontend/mod.rs', 'src/frontend/oir/native_emit_cost.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/ast_compare.rs', 'src/frontend/oir/source/hir_import/ast_compare/tests.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs', 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/frontend/oir/source/hir_import/leaf.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/oir/source/hir_import/tests.rs', 'src/frontend/project/budget_real_null_observer.rs')
 FIXTURES = ({'path': 'tests/fixtures/checked_hir_import_v2/source-255.txt', 'bytes': 255, 'sha256': 'f616a9ac1025210fa1d282b06aadb8c3088b653154c64afe01d64c8d9c838ee3'}, {'path': 'tests/fixtures/checked_hir_import_v2/success-255.bin', 'bytes': 2607, 'sha256': '09a5ec7761d7da0aed5f8c94d8e374dc577f4cd649aa964c43efa79d58f10f05'})
 PRODUCER_CLOSURE = (
     {'path':'fixtures/typed-frontend-v2/sources.json','bytes':5461,

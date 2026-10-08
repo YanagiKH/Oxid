@@ -1594,11 +1594,11 @@
       "sha256": "bf3b1522f26307d1dd1ee403d146bcf19df6cc4a543098825b63c560a2dc6816"
     },
     {
-      "bytes": 38171,
-      "git_blob": "138772f1323b2a900fd5a065eb617902f39eba11",
+      "bytes": 39487,
+      "git_blob": "e310f617829089a05eddede4478ee733508bb4fd",
       "mode": "100644",
       "path": "src/frontend/hir_producer/bundle.rs",
-      "sha256": "085e6fdc7d4e88f0b1c5696af356be342c7eaf7772ccca5e63ee4a58fff87d25"
+      "sha256": "184e9994566525f9a1d8c9993daf3a4c201ababf4f1529694ad03d82a3eaef99"
     },
     {
       "bytes": 18739,
@@ -3008,11 +3008,11 @@
       "sha256": "6485f8840c21b7e753d119f9187804ed2588dc84893531f6e4c09042b13b2129"
     },
     {
-      "bytes": 34577,
-      "git_blob": "aa780e8dd60d68a94825a3ebd11ad735691c746f",
+      "bytes": 34754,
+      "git_blob": "d8bb74b1b0a0d8a30466e2ddd6d9cc309cf88a35",
       "mode": "100644",
       "path": "src/frontend/project/budget_real_null_observer.rs",
-      "sha256": "3d8552d7a40ecf91d98189d64d491f3b9267fea32961b98e69c83d370466c7d1"
+      "sha256": "7787b1ec84994d6743bdbf2216b792d6889e183f737e2480523ce12972b30c94"
     },
     {
       "bytes": 9478,
@@ -3640,7 +3640,7 @@
   ],
   "current_source_bytes": 63969,
   "current_source_members": 330,
-  "current_source_sha256": "e9f92670a63edd0336bada42e03702f7e446706c9fe56fa80913c7428025da2c",
+  "current_source_sha256": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a",
   "fixture_inputs": [
     {
       "bytes": 255,
@@ -3684,9 +3684,9 @@
     "v2_fixture_work": 1004093,
     "version": "frontend-v2-shared-bank-v1"
   },
-  "reviewed_source_head": "36b775e5f577bd2355f8b21f7af9c427d76e1f4d",
+  "reviewed_source_head": "5f5a6639db9f779bb2453695f64ea980f7ea1790",
   "schema": "oxid-frontend-v2-source-transition-v1",
-  "source_only_tree": "12cb3d6d42aa5445e3f8d94ce564e942da910fa0",
+  "source_only_tree": "534dbf42fafabc0a889b91ad351d5a11dd9ef8f4",
   "transition_inputs": [
     {
       "after": {
@@ -3707,11 +3707,11 @@
     },
     {
       "after": {
-        "bytes": 38171,
-        "git_blob": "138772f1323b2a900fd5a065eb617902f39eba11",
+        "bytes": 39487,
+        "git_blob": "e310f617829089a05eddede4478ee733508bb4fd",
         "mode": "100644",
         "path": "src/frontend/hir_producer/bundle.rs",
-        "sha256": "085e6fdc7d4e88f0b1c5696af356be342c7eaf7772ccca5e63ee4a58fff87d25"
+        "sha256": "184e9994566525f9a1d8c9993daf3a4c201ababf4f1529694ad03d82a3eaef99"
       },
       "before": {
         "bytes": 37682,
@@ -3953,10 +3953,27 @@
         "sha256": "22de9dfe627b5688c8bcb5b33b17655a6769064184c449c4f11d1b0ec3286cbf"
       },
       "path": "src/frontend/oir/source/hir_import/tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 34754,
+        "git_blob": "d8bb74b1b0a0d8a30466e2ddd6d9cc309cf88a35",
+        "mode": "100644",
+        "path": "src/frontend/project/budget_real_null_observer.rs",
+        "sha256": "7787b1ec84994d6743bdbf2216b792d6889e183f737e2480523ce12972b30c94"
+      },
+      "before": {
+        "bytes": 34577,
+        "git_blob": "aa780e8dd60d68a94825a3ebd11ad735691c746f",
+        "mode": "100644",
+        "path": "src/frontend/project/budget_real_null_observer.rs",
+        "sha256": "3d8552d7a40ecf91d98189d64d491f3b9267fea32961b98e69c83d370466c7d1"
+      },
+      "path": "src/frontend/project/budget_real_null_observer.rs"
     }
   ],
-  "transition_patch_bytes": 61892,
-  "transition_patch_sha256": "78438fb9a468ecfa5a31c304793080c4f2a4618493b3e8abbda8573609fa5cb4",
+  "transition_patch_bytes": 67003,
+  "transition_patch_sha256": "b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32",
   "transition_paths": [
     "src/frontend/hir_producer.rs",
     "src/frontend/hir_producer/bundle.rs",
@@ -3973,6 +3990,7 @@
     "src/frontend/oir/source/hir_import/emit_resource_tests.rs",
     "src/frontend/oir/source/hir_import/leaf.rs",
     "src/frontend/oir/source/hir_import/public_facade.rs",
-    "src/frontend/oir/source/hir_import/tests.rs"
+    "src/frontend/oir/source/hir_import/tests.rs",
+    "src/frontend/project/budget_real_null_observer.rs"
   ]
 }

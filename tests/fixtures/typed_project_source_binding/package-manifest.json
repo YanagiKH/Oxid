@@ -43,7 +43,7 @@
     {
       "bytes": 63969,
       "path": "current-source.json",
-      "sha256": "e9f92670a63edd0336bada42e03702f7e446706c9fe56fa80913c7428025da2c"
+      "sha256": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a"
     },
     {
       "bytes": 29723,
@@ -106,19 +106,19 @@
       "sha256": "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4"
     },
     {
-      "bytes": 136550,
+      "bytes": 137275,
       "path": "frontend-v2-authority.json",
-      "sha256": "77be4c08d5db92c2fbfdfb9451c324252a6b9b350fdd5fc63238b58bfc938232"
+      "sha256": "597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6"
     },
     {
-      "bytes": 61892,
+      "bytes": 67003,
       "path": "frontend-v2-transition.patch",
-      "sha256": "78438fb9a468ecfa5a31c304793080c4f2a4618493b3e8abbda8573609fa5cb4"
+      "sha256": "b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32"
     },
     {
-      "bytes": 7989,
+      "bytes": 8042,
       "path": "frontend_v2.py",
-      "sha256": "a2944f86fe2f2f3f373615cbac15532d77d8cc9e385946910822f24f74b41d94"
+      "sha256": "c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7"
     },
     {
       "bytes": 158041,
@@ -203,7 +203,7 @@
     {
       "bytes": 193178,
       "path": "run.py",
-      "sha256": "65b47e91740cbfc98363c59ab0882574cf6d5965305fc1194d2dd1160acd5f5b"
+      "sha256": "ccb7a73a473703a1802a9485ea7aa0b3ce9b38bebb1efbdf14dafae7053bc990"
     },
     {
       "bytes": 55961,

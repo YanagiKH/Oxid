@@ -250,8 +250,8 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 80)
-        self.assertEqual(a['current']['reviewed_source_head'], '36b775e5f577bd2355f8b21f7af9c427d76e1f4d')
-        self.assertEqual(a['current']['source_only_tree'], '12cb3d6d42aa5445e3f8d94ce564e942da910fa0')
+        self.assertEqual(a['current']['reviewed_source_head'], '5f5a6639db9f779bb2453695f64ea980f7ea1790')
+        self.assertEqual(a['current']['source_only_tree'], '534dbf42fafabc0a889b91ad351d5a11dd9ef8f4')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read

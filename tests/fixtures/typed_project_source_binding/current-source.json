@@ -205,9 +205,9 @@
       "sha256": "bf3b1522f26307d1dd1ee403d146bcf19df6cc4a543098825b63c560a2dc6816"
     },
     {
-      "bytes": 38171,
+      "bytes": 39487,
       "path": "src/frontend/hir_producer/bundle.rs",
-      "sha256": "085e6fdc7d4e88f0b1c5696af356be342c7eaf7772ccca5e63ee4a58fff87d25"
+      "sha256": "184e9994566525f9a1d8c9993daf3a4c201ababf4f1529694ad03d82a3eaef99"
     },
     {
       "bytes": 18739,
@@ -1215,9 +1215,9 @@
       "sha256": "6485f8840c21b7e753d119f9187804ed2588dc84893531f6e4c09042b13b2129"
     },
     {
-      "bytes": 34577,
+      "bytes": 34754,
       "path": "src/frontend/project/budget_real_null_observer.rs",
-      "sha256": "3d8552d7a40ecf91d98189d64d491f3b9267fea32961b98e69c83d370466c7d1"
+      "sha256": "7787b1ec84994d6743bdbf2216b792d6889e183f737e2480523ce12972b30c94"
     },
     {
       "bytes": 9478,
@@ -1681,11 +1681,11 @@
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
   "purpose": "Versioned bounded frontend v2 compiler inputs and explicit shared named-bank successor; admission is not semantic or hosted qualification.",
-  "reviewed_source_head": "36b775e5f577bd2355f8b21f7af9c427d76e1f4d",
+  "reviewed_source_head": "5f5a6639db9f779bb2453695f64ea980f7ea1790",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "12cb3d6d42aa5445e3f8d94ce564e942da910fa0",
+  "source_only_tree": "534dbf42fafabc0a889b91ad351d5a11dd9ef8f4",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

@@ -34,3 +34,6 @@ tests/fixtures/checked_hir_import/scalar-loop-source.txt -text
 tests/fixtures/checked_hir_import/scalar-loop-success.bin -text
 tests/fixtures/checked_hir_import/scalar-assignment-source.txt -text
 tests/fixtures/checked_hir_import/scalar-assignment-success.bin -text
+
+# Versioned HIR-import endpoints and provenance retain exact published bytes.
+tests/fixtures/checked_hir_import_v2/** -text
