@@ -122,7 +122,7 @@ class GitIdentityTests(unittest.TestCase):
             return actual_run(root, name, argv, **kwargs)
         with patch.object(gate, "run", side_effect=different_owner):
             old = gate.run(self.proof, "old", ["git", "rev-parse", "HEAD"],
-                           cwd=self.repo, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
+                           cwd=self.repo, env=self.git_env)
             self.assertEqual(old[0], 128)
             self.assertIn(b"dubious ownership", old[2])
             for name, args in (("git-head", ("rev-parse", "HEAD")),
@@ -142,6 +142,23 @@ class GitIdentityTests(unittest.TestCase):
                               "-C", str(sibling), "status", "--porcelain=v1"], cwd=sibling, env=self.git_env)
             self.assertEqual(denied[0], 128)
             self.assertIn(b"dubious ownership", denied[2])
+
+    def test_ownership_control_ignores_trusted_system_configuration(self):
+        from unittest.mock import patch
+        config = self.base / "system.gitconfig"
+        config.write_text("[safe]\n\tdirectory = *\n")
+        actual_run = gate.run
+        def trusted_system(root, name, argv, **kwargs):
+            # Redirect only this child's system-config read; never change the
+            # host configuration. NOSYSTEM must override this fixture.
+            kwargs["env"] = {**kwargs["env"], "GIT_CONFIG_SYSTEM": str(config)}
+            return actual_run(root, name, argv, **kwargs)
+        with patch.object(gate, "run", side_effect=trusted_system):
+            trusted = gate.run(self.proof, "ambient-trusted", ["git", "rev-parse", "HEAD"],
+                               cwd=self.repo, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                                                  "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1"})
+            self.assertEqual(trusted[0], 0)
+            self.test_exact_checkout_trust_under_simulated_ownership_mismatch()
 
     def test_stale_or_nested_root_is_rejected(self):
         from unittest.mock import patch
