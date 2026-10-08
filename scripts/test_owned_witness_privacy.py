@@ -28,8 +28,16 @@ class PrivacyCheckoutTests(unittest.TestCase):
             "tests/fixtures/bounded_enum_scanner/main.ox",
             "tests/fixtures/bounded_enum_scanner/scanner.ox",
         ))
-        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 44)
-        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 44)
+
+    def test_exact_hir_compile_time_fixture_roster(self):
+        stems = ('public', 'rich', 'scalar-arithmetic', 'scalar-assignment',
+                 'scalar-boolean', 'scalar-comparison', 'scalar-loop', 'scalar-unit',
+                 'synthetic-division', 'synthetic-overflow')
+        expected = tuple(f'tests/fixtures/checked_hir_import/{stem}-{suffix}'
+                         for stem in stems for suffix in ('source.txt', 'success.bin'))
+        self.assertEqual(privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES, expected)
+        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 64)
+        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 64)
 
     def test_materialized_checkout_has_exact_fixture_bytes_and_all_includes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -50,16 +58,30 @@ class PrivacyCheckoutTests(unittest.TestCase):
                 rooted = re.findall(
                     r'include(?:_str|_bytes)?!\(\s*concat!\(\s*env!\("CARGO_MANIFEST_DIR"\),\s*"([^"\n]+)"\s*\)\s*\)',
                     text)
-                self.assertEqual(len(literal) + len(rooted),
+                dynamic = re.findall(
+                    r'include(?:_str|_bytes)?!\(\s*concat!\(\s*env!\("CARGO_MANIFEST_DIR"\),\s*"(/tests/fixtures/checked_hir_import/(?:scalar-)?)",\s*\$name,\s*"(-source\.txt|-success\.bin)"\s*\)\s*\)',
+                    text)
+                self.assertEqual(len(literal) + len(rooted) + len(dynamic),
                                  len(re.findall(r'include(?:_str|_bytes)?!\(', text)), source)
                 for name, base in [(name, source.parent) for name in literal] + [(name.lstrip('/'), checkout) for name in rooted]:
                     target = (base / name).resolve()
                     self.assertTrue(target.is_relative_to(checkout))
                     self.assertTrue(target.is_file(), target)
-                count += len(literal) + len(rooted)
-            # 56 predecessor references, four scanner references, and the
-            # native enum harness's self-source provenance include.
-            self.assertEqual(count, 61)
+                # Only the two existing closed import macro shapes are allowed.
+                # Check literal call sites against the explicit copied roster;
+                # no directory expansion or compiler-derived fact generator.
+                for prefix, suffix in dynamic:
+                    macro = 'scalar_fixture' if prefix.endswith('scalar-') else '(?:capture|fixture)'
+                    names = re.findall(macro + r'!\(\s*"([^"\n]+)"', text)
+                    self.assertTrue(names, source)
+                    for name in names:
+                        relative = prefix.lstrip('/') + name + suffix
+                        self.assertIn(relative, privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES)
+                        self.assertTrue((checkout / relative).is_file(), relative)
+                count += len(literal) + len(rooted) + len(dynamic)
+            # 61 predecessor includes plus 60 explicit import includes/macro
+            # definitions. Real cfg(test) compilation checks their expansion.
+            self.assertEqual(count, 121)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

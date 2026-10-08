@@ -235,7 +235,7 @@ PROBES.append(("array-native-probe-absent-in-production", False, ("E0425",), """
 """))
 
 
-# Exact compile-time data dependencies of array and enum source tests.
+# Exact compile-time data dependencies of array, enum and checked-import tests.
 # These are copied inputs for cfg(test) compilation, not additional privacy probes.
 ARRAY_COMPILE_TIME_FIXTURES = (
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
@@ -287,7 +287,30 @@ ENUM_COMPILE_TIME_FIXTURES = (
     'tests/fixtures/bounded_enum_scanner/main.ox',
     'tests/fixtures/bounded_enum_scanner/scanner.ox',
 )
-COMPILE_TIME_FIXTURES = (*ARRAY_COMPILE_TIME_FIXTURES, *ENUM_COMPILE_TIME_FIXTURES)
+HIR_IMPORT_COMPILE_TIME_FIXTURES = (
+    'tests/fixtures/checked_hir_import/public-source.txt',
+    'tests/fixtures/checked_hir_import/public-success.bin',
+    'tests/fixtures/checked_hir_import/rich-source.txt',
+    'tests/fixtures/checked_hir_import/rich-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-assignment-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-assignment-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-boolean-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-boolean-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-comparison-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-comparison-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-loop-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-loop-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-unit-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-unit-success.bin',
+    'tests/fixtures/checked_hir_import/synthetic-division-source.txt',
+    'tests/fixtures/checked_hir_import/synthetic-division-success.bin',
+    'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt',
+    'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin',
+)
+COMPILE_TIME_FIXTURES = (*ARRAY_COMPILE_TIME_FIXTURES, *ENUM_COMPILE_TIME_FIXTURES,
+                         *HIR_IMPORT_COMPILE_TIME_FIXTURES)
 
 
 def materialize_checkout(root, checkout):

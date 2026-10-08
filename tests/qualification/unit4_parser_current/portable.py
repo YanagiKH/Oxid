@@ -80,9 +80,16 @@ CURRENT_PATHS = (
     'src/frontend/mod.rs',
     'src/frontend/oir/arithmetic_tests.rs',
     'src/frontend/oir/execute.rs',
+    'src/frontend/oir/execute_measurement.rs',
     'src/frontend/oir/lower.rs',
+    'src/frontend/oir/lower_measurement.rs',
     'src/frontend/oir/mod.rs',
     'src/frontend/oir/native.rs',
+    'src/frontend/oir/native_emit_cost.rs',
+    'src/frontend/oir/native_emit_observation.rs',
+    'src/frontend/oir/native_emit_work.rs',
+    'src/frontend/oir/native_private_emit.rs',
+    'src/frontend/oir/native_private_emit_tests.rs',
     'src/frontend/oir/negation_raw_tests.rs',
     'src/frontend/oir/owned/allocator_review_controls.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
@@ -206,9 +213,38 @@ CURRENT_PATHS = (
     'src/frontend/oir/owned_types/enums.rs',
     'src/frontend/oir/source.rs',
     'src/frontend/oir/source/association.rs',
+    'src/frontend/oir/source/hir_import.rs',
+    'src/frontend/oir/source/hir_import/allocation.rs',
+    'src/frontend/oir/source/hir_import/allocation/tests.rs',
+    'src/frontend/oir/source/hir_import/ast_compare.rs',
+    'src/frontend/oir/source/hir_import/ast_compare/tests.rs',
+    'src/frontend/oir/source/hir_import/candidate.rs',
+    'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs',
+    'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs',
+    'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs',
+    'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs',
+    'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs',
+    'src/frontend/oir/source/hir_import/candidate/tests.rs',
+    'src/frontend/oir/source/hir_import/candidate/typed_compare.rs',
+    'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs',
+    'src/frontend/oir/source/hir_import/emit_failure_tests.rs',
+    'src/frontend/oir/source/hir_import/emit_measurements.rs',
+    'src/frontend/oir/source/hir_import/emit_native_tests.rs',
+    'src/frontend/oir/source/hir_import/emit_resource_tests.rs',
+    'src/frontend/oir/source/hir_import/emit_tests.rs',
+    'src/frontend/oir/source/hir_import/leaf.rs',
+    'src/frontend/oir/source/hir_import/pass_measurements.rs',
+    'src/frontend/oir/source/hir_import/public_facade.rs',
+    'src/frontend/oir/source/hir_import/run_execution_tests.rs',
+    'src/frontend/oir/source/hir_import/run_measurements.rs',
+    'src/frontend/oir/source/hir_import/tests.rs',
+    'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs',
+    'src/frontend/oir/source/hir_import/verify_fact_tests.rs',
+    'src/frontend/oir/source/hir_import/verify_tests.rs',
     'src/frontend/oir/source/sealed.rs',
     'src/frontend/oir/unary_source_tests.rs',
     'src/frontend/oir/verify.rs',
+    'src/frontend/oir/verify_measurement.rs',
     'src/frontend/options.rs',
     'src/frontend/owned_syntax_tests.rs',
     'src/frontend/parser.rs',
@@ -223,6 +259,7 @@ CURRENT_PATHS = (
     'src/frontend/project/array_syntax_tests.rs',
     'src/frontend/project/budget.rs',
     'src/frontend/project/budget_real_null_observer.rs',
+    'src/frontend/project/budget_string_null_tests.rs',
     'src/frontend/project/builtin_tests.rs',
     'src/frontend/project/enum_carrier_tests.rs',
     'src/frontend/project/enum_index_tests.rs',
@@ -230,9 +267,30 @@ CURRENT_PATHS = (
     'src/frontend/source.rs',
     'src/frontend/stdin_public_tests.rs',
     'src/frontend/typeck.rs',
+    'src/frontend/typeck_measurement.rs',
     'src/main.rs',
     'tests/fixtures/bounded_enum_scanner/main.ox',
     'tests/fixtures/bounded_enum_scanner/scanner.ox',
+    'tests/fixtures/checked_hir_import/public-source.txt',
+    'tests/fixtures/checked_hir_import/public-success.bin',
+    'tests/fixtures/checked_hir_import/rich-source.txt',
+    'tests/fixtures/checked_hir_import/rich-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-assignment-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-assignment-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-boolean-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-boolean-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-comparison-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-comparison-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-loop-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-loop-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-unit-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-unit-success.bin',
+    'tests/fixtures/checked_hir_import/synthetic-division-source.txt',
+    'tests/fixtures/checked_hir_import/synthetic-division-success.bin',
+    'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt',
+    'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -292,6 +350,13 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/format/enum_candidate_tests.rs',
     'src/frontend/format/resource_tests.rs',
     'src/frontend/format_cli.rs',
+    'src/frontend/oir/execute_measurement.rs',
+    'src/frontend/oir/lower_measurement.rs',
+    'src/frontend/oir/native_emit_cost.rs',
+    'src/frontend/oir/native_emit_observation.rs',
+    'src/frontend/oir/native_emit_work.rs',
+    'src/frontend/oir/native_private_emit.rs',
+    'src/frontend/oir/native_private_emit_tests.rs',
     'src/frontend/oir/negation_raw_tests.rs',
     'src/frontend/oir/owned/array_native_resource_tests.rs',
     'src/frontend/oir/owned/array_native_tests.rs',
@@ -367,7 +432,36 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/owned_types/composition_tests.rs',
     'src/frontend/oir/owned_types/enum_integration_tests.rs',
     'src/frontend/oir/owned_types/enums.rs',
+    'src/frontend/oir/source/hir_import.rs',
+    'src/frontend/oir/source/hir_import/allocation.rs',
+    'src/frontend/oir/source/hir_import/allocation/tests.rs',
+    'src/frontend/oir/source/hir_import/ast_compare.rs',
+    'src/frontend/oir/source/hir_import/ast_compare/tests.rs',
+    'src/frontend/oir/source/hir_import/candidate.rs',
+    'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs',
+    'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs',
+    'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs',
+    'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs',
+    'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs',
+    'src/frontend/oir/source/hir_import/candidate/tests.rs',
+    'src/frontend/oir/source/hir_import/candidate/typed_compare.rs',
+    'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs',
+    'src/frontend/oir/source/hir_import/emit_failure_tests.rs',
+    'src/frontend/oir/source/hir_import/emit_measurements.rs',
+    'src/frontend/oir/source/hir_import/emit_native_tests.rs',
+    'src/frontend/oir/source/hir_import/emit_resource_tests.rs',
+    'src/frontend/oir/source/hir_import/emit_tests.rs',
+    'src/frontend/oir/source/hir_import/leaf.rs',
+    'src/frontend/oir/source/hir_import/pass_measurements.rs',
+    'src/frontend/oir/source/hir_import/public_facade.rs',
+    'src/frontend/oir/source/hir_import/run_execution_tests.rs',
+    'src/frontend/oir/source/hir_import/run_measurements.rs',
+    'src/frontend/oir/source/hir_import/tests.rs',
+    'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs',
+    'src/frontend/oir/source/hir_import/verify_fact_tests.rs',
+    'src/frontend/oir/source/hir_import/verify_tests.rs',
     'src/frontend/oir/unary_source_tests.rs',
+    'src/frontend/oir/verify_measurement.rs',
     'src/frontend/parser/array_syntax_tests.rs',
     'src/frontend/parser/arrays.rs',
     'src/frontend/parser/builtin_tests.rs',
@@ -375,12 +469,34 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/parser/enums.rs',
     'src/frontend/project/array_syntax_tests.rs',
     'src/frontend/project/budget_real_null_observer.rs',
+    'src/frontend/project/budget_string_null_tests.rs',
     'src/frontend/project/builtin_tests.rs',
     'src/frontend/project/enum_carrier_tests.rs',
     'src/frontend/project/enum_index_tests.rs',
     'src/frontend/stdin_public_tests.rs',
+    'src/frontend/typeck_measurement.rs',
     'tests/fixtures/bounded_enum_scanner/main.ox',
     'tests/fixtures/bounded_enum_scanner/scanner.ox',
+    'tests/fixtures/checked_hir_import/public-source.txt',
+    'tests/fixtures/checked_hir_import/public-success.bin',
+    'tests/fixtures/checked_hir_import/rich-source.txt',
+    'tests/fixtures/checked_hir_import/rich-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-assignment-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-assignment-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-boolean-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-boolean-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-comparison-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-comparison-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-loop-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-loop-success.bin',
+    'tests/fixtures/checked_hir_import/scalar-unit-source.txt',
+    'tests/fixtures/checked_hir_import/scalar-unit-success.bin',
+    'tests/fixtures/checked_hir_import/synthetic-division-source.txt',
+    'tests/fixtures/checked_hir_import/synthetic-division-success.bin',
+    'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt',
+    'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
     'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -434,7 +550,9 @@ PROJECTED_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.r
 ENUM_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/declaration_index/resource.rs",
                               "src/frontend/parser.rs",
                               "src/frontend/project/budget.rs", "src/frontend/source.rs")
-AUTHORITY_SHA = 'e5340abb07ea0dc8e663954ee926b876288f73303492c114e9d5459ccab96f55'
+NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842"
+HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
+AUTHORITY_SHA = 'dc41cb0cc4d213fca287be89afe43c1dd89a1ea71507a31af3861a0cf8181107'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -554,9 +672,33 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 266, "complete current source count")
+    same(len(current["files"]), 324, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
+    verify_map(REPOSITORY, [active["hir_import_authority"], active["hir_import_transition_patch"],
+                           active["native_inventory_source_manifest"]])
+    for key, filename in (("hir_import_authority", "hir-import-authority.json"),
+                          ("hir_import_transition_patch", "hir-import-transition.patch"),
+                          ("native_inventory_source_manifest", "native-inventory-source.json")):
+        same(active[key]["path"], "tests/fixtures/typed_project_source_binding/" + filename,
+             "HIR import binding path")
+    hir_import = read(REPOSITORY / active["hir_import_authority"]["path"])
+    same(active["native_inventory_source_manifest"]["sha256"], NATIVE_INVENTORY_SOURCE_SHA, "exact retained native inventory source identity")
+    inventory_source = read(REPOSITORY / active["native_inventory_source_manifest"]["path"])
+    same(hir_import["schema"], "oxid-hir-import-source-transition-v1", "HIR import authority schema")
+    same(hir_import["reviewed_source_head"], current["reviewed_source_head"], "HIR import source checkpoint")
+    same(hir_import["source_only_tree"], current["source_only_tree"], "HIR import source tree")
+    same(hir_import["predecessor_source_head"], inventory_source["reviewed_source_head"], "HIR import predecessor checkpoint")
+    same(hir_import["base_tree"], inventory_source["source_only_tree"], "HIR import exact predecessor tree")
+    same(hir_import["current_source_sha256"], active["current_source_manifest"]["sha256"], "HIR import current source identity")
+    same(hir_import["native_inventory_source_sha256"], active["native_inventory_source_manifest"]["sha256"], "HIR import exact inventory predecessor")
+    same(hir_import["native_inventory_authority_sha256"], active["native_inventory_authority"]["sha256"], "HIR import exact inventory authority")
+    same(hir_import["transition_patch_sha256"], active["hir_import_transition_patch"]["sha256"], "HIR import exact transition patch")
+    same(len(inventory_source["files"]), 266, "complete retained native inventory source count")
+    for field, expected in (("instrumentation", list(HIR_IMPORT_INSTRUMENTATION_PATHS)),
+                            ("control_instrumentation", [])):
+        same(sorted(set(hir_import["transition_paths"]).intersection(row["path"] for row in result[field])),
+             expected, "exact HIR import instrumentation overlap roster")
     verify_map(REPOSITORY, [active["native_inventory_authority"],
                            active["native_inventory_transition_patch"],
                            active["native_storage_source_manifest"]])
@@ -566,12 +708,12 @@ def authority():
     inventory = read(REPOSITORY / active["native_inventory_authority"]["path"])
     storage_source = read(REPOSITORY / active["native_storage_source_manifest"]["path"])
     same(inventory["schema"], "oxid-native-inventory-source-transition-v1", "native inventory authority schema")
-    same(inventory["reviewed_source_head"], current["reviewed_source_head"], "native inventory source checkpoint")
-    same(inventory["source_only_tree"], current["source_only_tree"], "native inventory source tree")
-    same(inventory["base_head"], current["native_inventory_base_head"], "native inventory predecessor checkpoint")
-    same(inventory["current_source_sha256"], active["current_source_manifest"]["sha256"], "native inventory current source identity")
+    same(inventory["reviewed_source_head"], inventory_source["reviewed_source_head"], "native inventory source checkpoint")
+    same(inventory["source_only_tree"], inventory_source["source_only_tree"], "native inventory source tree")
+    same(inventory["base_head"], inventory_source["native_inventory_base_head"], "native inventory predecessor checkpoint")
+    same(inventory["current_source_sha256"], active["native_inventory_source_manifest"]["sha256"], "native inventory current source identity")
     same(inventory["native_storage_source_sha256"], active["native_storage_source_manifest"]["sha256"], "native inventory exact storage predecessor")
-    same(current["native_storage_source_sha256"], active["native_storage_source_manifest"]["sha256"], "current exact storage predecessor")
+    same(inventory_source["native_storage_source_sha256"], active["native_storage_source_manifest"]["sha256"], "current exact storage predecessor")
     same(len(storage_source["files"]), 264, "complete retained native storage source count")
     same(inventory["native_storage_authority_sha256"], active["native_storage_authority"]["sha256"], "native inventory exact storage authority")
     same(inventory["transition_patch_sha256"], active["native_inventory_transition_patch"]["sha256"], "native inventory exact transition patch")
@@ -633,7 +775,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 266, "duplicate current member")
+    same(len(after), 324, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -649,7 +791,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 429, "current base count")
+    same(len(base), 487, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     result["current"] = active
     result["current_source"] = current
@@ -680,7 +822,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 432, "current derived count")
+        same(len(ordered), 490, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -1010,7 +1152,7 @@ def restore_enum_source(a, name, raw):
     selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
     same(len(selected), 1, "exact enum instrumentation source section")
     patch = selected[0]
-    enum_raw = restore_stdin_source(a, name, raw) if name in STDIN_INSTRUMENTATION_PATHS else raw
+    enum_raw = restore_stdin_source(a, name, raw) if name in STDIN_INSTRUMENTATION_PATHS else (restore_hir_import_source(a, name, raw) if name in HIR_IMPORT_INSTRUMENTATION_PATHS else raw)
     restored, touched = module.apply_inverse_patch({name: enum_raw}, patch, sha(patch), len(patch), (name,))
     same(touched, [name], "exact enum instrumentation inverse scope")
     expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
@@ -1022,6 +1164,36 @@ def restore_enum_source(a, name, raw):
 
 STDIN_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs")
 STDOUT_INSTRUMENTATION_PATHS = ("src/frontend/parser.rs",)
+
+
+def restore_hir_import_source(a, name, raw):
+    """Recover the exact native inventory budget before the unchanged predecessor chain."""
+    require(name in HIR_IMPORT_INSTRUMENTATION_PATHS, "unapproved hir_import instrumentation path")
+    active = a["current"]
+    current = next(row for row in active["source_delta"] if row["path"] == name)
+    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current hir_import identity")
+    runner, transition, predecessor = (active[key] for key in
+        ("source_binding_runner", "hir_import_transition_patch", "native_inventory_source_manifest"))
+    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
+    same(transition["path"], "tests/fixtures/typed_project_source_binding/hir-import-transition.patch", "hir_import transition path")
+    same(predecessor["path"], "tests/fixtures/typed_project_source_binding/native-inventory-source.json", "native inventory predecessor path")
+    verify_map(REPOSITORY, [runner, transition, predecessor])
+    same(predecessor["sha256"], NATIVE_INVENTORY_SOURCE_SHA, "exact retained native inventory source identity")
+    module = types.ModuleType("unit4_hir_import_source_binding")
+    module.__file__ = str(REPOSITORY / runner["path"])
+    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
+    prefix = ("a/" + name + " b/" + name + "\n").encode()
+    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
+    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
+    same(len(selected), 1, "exact hir_import instrumentation source section")
+    patch = selected[0]
+    restored, touched = module.apply_inverse_patch({name: raw}, patch, sha(patch), len(patch), (name,))
+    same(touched, [name], "exact hir_import instrumentation inverse scope")
+    expected = next(row for row in read(REPOSITORY / predecessor["path"])["files"] if row["path"] == name)
+    original = restored[name]
+    same({"path": name, "bytes": len(original), "sha256": sha(original)}, expected,
+         "hir_import transition must recover exact native inventory source")
+    return original
 
 
 def restore_stdout_source(a, name, raw):
@@ -1205,7 +1377,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 211, "current compiler body count")
+    same(len(wanted), 249, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

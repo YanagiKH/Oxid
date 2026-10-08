@@ -66,8 +66,21 @@ STDOUT_SOURCE_SHA = '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02e
 STDOUT_SOURCE_BYTES = 50310
 NATIVE_STORAGE_SOURCE_SHA = '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303'
 NATIVE_STORAGE_SOURCE_BYTES = 50842
-CURRENT_SOURCE_BYTES = 51412
-CURRENT_SOURCE_SHA = '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842'
+CURRENT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746'
+CURRENT_SOURCE_BYTES = 62558
+HIR_IMPORT_AUTHORITY_SHA = 'a4105c042d49b8145393d59482ae1e6b3872cb1de5ef6760fd098c71bb42ce34'
+HIR_IMPORT_AUTHORITY_BYTES = 158041
+HIR_IMPORT_HEAD = 'a1dc6fc823d36d8858375eb651b48c3c682ac2c4'
+HIR_IMPORT_TREE = '74ba20e2dcecb6056d4b13448a643ba289d83f75'
+HIR_IMPORT_BASE_TREE = '8a717f36016d86130ad5acc28a23f87852c76064'
+HIR_IMPORT_PATCH_SHA = 'a3a0b5f8e109e7baf6a9713418ce6bc132a9a2e481be5a6a4f42dee08efb8947'
+HIR_IMPORT_PATCH_BYTES = 656303
+HIR_IMPORT_PATHS = ('src/frontend/driver.rs', 'src/frontend/hir.rs', 'src/frontend/oir/execute.rs', 'src/frontend/oir/execute_measurement.rs', 'src/frontend/oir/lower.rs', 'src/frontend/oir/lower_measurement.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/native_emit_cost.rs', 'src/frontend/oir/native_emit_observation.rs', 'src/frontend/oir/native_emit_work.rs', 'src/frontend/oir/native_private_emit.rs', 'src/frontend/oir/native_private_emit_tests.rs', 'src/frontend/oir/owned/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/association.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/allocation.rs', 'src/frontend/oir/source/hir_import/allocation/tests.rs', 'src/frontend/oir/source/hir_import/ast_compare.rs', 'src/frontend/oir/source/hir_import/ast_compare/tests.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs', 'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs', 'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs', 'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/tests.rs', 'src/frontend/oir/source/hir_import/candidate/typed_compare.rs', 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/oir/source/hir_import/emit_measurements.rs', 'src/frontend/oir/source/hir_import/emit_native_tests.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/oir/source/hir_import/leaf.rs', 'src/frontend/oir/source/hir_import/pass_measurements.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/oir/source/hir_import/run_execution_tests.rs', 'src/frontend/oir/source/hir_import/run_measurements.rs', 'src/frontend/oir/source/hir_import/tests.rs', 'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/source/hir_import/verify_tests.rs', 'src/frontend/oir/verify.rs', 'src/frontend/oir/verify_measurement.rs', 'src/frontend/options.rs', 'src/frontend/project/budget.rs', 'src/frontend/project/budget_real_null_observer.rs', 'src/frontend/project/budget_string_null_tests.rs', 'src/frontend/typeck.rs', 'src/frontend/typeck_measurement.rs')
+HIR_IMPORT_ADDITIONS = ('src/frontend/oir/execute_measurement.rs', 'src/frontend/oir/lower_measurement.rs', 'src/frontend/oir/native_emit_cost.rs', 'src/frontend/oir/native_emit_observation.rs', 'src/frontend/oir/native_emit_work.rs', 'src/frontend/oir/native_private_emit.rs', 'src/frontend/oir/native_private_emit_tests.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/allocation.rs', 'src/frontend/oir/source/hir_import/allocation/tests.rs', 'src/frontend/oir/source/hir_import/ast_compare.rs', 'src/frontend/oir/source/hir_import/ast_compare/tests.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs', 'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs', 'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs', 'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/tests.rs', 'src/frontend/oir/source/hir_import/candidate/typed_compare.rs', 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/oir/source/hir_import/emit_measurements.rs', 'src/frontend/oir/source/hir_import/emit_native_tests.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/oir/source/hir_import/leaf.rs', 'src/frontend/oir/source/hir_import/pass_measurements.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/oir/source/hir_import/run_execution_tests.rs', 'src/frontend/oir/source/hir_import/run_measurements.rs', 'src/frontend/oir/source/hir_import/tests.rs', 'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/source/hir_import/verify_tests.rs', 'src/frontend/oir/verify_measurement.rs', 'src/frontend/project/budget_string_null_tests.rs', 'src/frontend/typeck_measurement.rs')
+HIR_IMPORT_FIXTURES = ('tests/fixtures/checked_hir_import/public-source.txt', 'tests/fixtures/checked_hir_import/public-success.bin', 'tests/fixtures/checked_hir_import/rich-source.txt', 'tests/fixtures/checked_hir_import/rich-success.bin', 'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt', 'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin', 'tests/fixtures/checked_hir_import/scalar-assignment-source.txt', 'tests/fixtures/checked_hir_import/scalar-assignment-success.bin', 'tests/fixtures/checked_hir_import/scalar-boolean-source.txt', 'tests/fixtures/checked_hir_import/scalar-boolean-success.bin', 'tests/fixtures/checked_hir_import/scalar-comparison-source.txt', 'tests/fixtures/checked_hir_import/scalar-comparison-success.bin', 'tests/fixtures/checked_hir_import/scalar-loop-source.txt', 'tests/fixtures/checked_hir_import/scalar-loop-success.bin', 'tests/fixtures/checked_hir_import/scalar-unit-source.txt', 'tests/fixtures/checked_hir_import/scalar-unit-success.bin', 'tests/fixtures/checked_hir_import/synthetic-division-source.txt', 'tests/fixtures/checked_hir_import/synthetic-division-success.bin', 'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt', 'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin')
+NATIVE_INVENTORY_SOURCE_SHA = '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842'
+NATIVE_INVENTORY_SOURCE_BYTES = 51412
+HIR_IMPORT_FIXTURE_ROWS = [{'path': 'tests/fixtures/checked_hir_import/public-source.txt', 'bytes': 117, 'sha256': '5cc21baa00b3555df83a8ac154e2e497052d6a11dac7e2e390a038efe51cf08f'}, {'path': 'tests/fixtures/checked_hir_import/public-success.bin', 'bytes': 2607, 'sha256': '8bd6c66e859cfd0692e18ef7e3ca94f01e6d280eb2aca55849d415b26862cf6c'}, {'path': 'tests/fixtures/checked_hir_import/rich-source.txt', 'bytes': 113, 'sha256': 'ebc49f61b8f3941b8aafdfa779cfdd34577c0c3a2ba0f44bf54c683f656a4522'}, {'path': 'tests/fixtures/checked_hir_import/rich-success.bin', 'bytes': 2607, 'sha256': '399a9cb43dd2e16d3e0eed1c160fb1428371e90f089d72ea23149acfee961f52'}, {'path': 'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt', 'bytes': 40, 'sha256': '45426a4f69ab245011785fc5ffa2c188ec84d1fa1f92c703978fd133e9677d11'}, {'path': 'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin', 'bytes': 2607, 'sha256': 'a4f09ea7f3143a3dd0711643e9c345b4612a10047f5fb4e4bfa1710dd47a8bbf'}, {'path': 'tests/fixtures/checked_hir_import/scalar-assignment-source.txt', 'bytes': 66, 'sha256': '069ced25a829737d0a5fa0b22afff5e0ff6bf125f40e97782ac5585969b827dc'}, {'path': 'tests/fixtures/checked_hir_import/scalar-assignment-success.bin', 'bytes': 2607, 'sha256': '67266a6ffcfc8936de9168268ebc97eee08a993b0bf821bb785556e93d9a75f3'}, {'path': 'tests/fixtures/checked_hir_import/scalar-boolean-source.txt', 'bytes': 49, 'sha256': '62d9083f423cf86ee8d3c5cf17328ebdca4eeeb35cf28a1d6c10e345201c98d0'}, {'path': 'tests/fixtures/checked_hir_import/scalar-boolean-success.bin', 'bytes': 2607, 'sha256': '8b5158aad56e24ed5aaf16aacde46c305df5dfff74151dec230d87a67f01da8f'}, {'path': 'tests/fixtures/checked_hir_import/scalar-comparison-source.txt', 'bytes': 65, 'sha256': '4ecd3203de480fd90db18b79ec2fe1488f7d5a9bd16b474b209be4be1b5c4b17'}, {'path': 'tests/fixtures/checked_hir_import/scalar-comparison-success.bin', 'bytes': 2607, 'sha256': '21aa0ebd769e1a512156da0d1c211d30d5ce8376fa0b03dee0130d71301e7ad6'}, {'path': 'tests/fixtures/checked_hir_import/scalar-loop-source.txt', 'bytes': 61, 'sha256': 'ee822fb34204aa7a35cc51a88485884f3e0c333a2ba7120ee4afe514f687873b'}, {'path': 'tests/fixtures/checked_hir_import/scalar-loop-success.bin', 'bytes': 2607, 'sha256': '7db60e88f053890b3c3b28dea3c6fac4f0cae461fbd71b388e07e4742d3ea30c'}, {'path': 'tests/fixtures/checked_hir_import/scalar-unit-source.txt', 'bytes': 40, 'sha256': '6f577d023451219fa71acb94a38b5d0d9a9ca4a881f7d4c43e24544fa1ef2570'}, {'path': 'tests/fixtures/checked_hir_import/scalar-unit-success.bin', 'bytes': 2607, 'sha256': 'f521d526e3565116ada4f5f5a034e2e81295f2e5e63638ebf56ed86632a74812'}, {'path': 'tests/fixtures/checked_hir_import/synthetic-division-source.txt', 'bytes': 27, 'sha256': 'd2c2bc9fa0c23c66e0c143b0f3df1840aadf64809cbd620892ed04e01b5593ba'}, {'path': 'tests/fixtures/checked_hir_import/synthetic-division-success.bin', 'bytes': 2607, 'sha256': 'cad0fa1af44a5a5a147945f09c46d9c3046e802e0a52e9340b0ae2201ce86dbb'}, {'path': 'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt', 'bytes': 36, 'sha256': 'be94cc8f44f475237901d1de3ca8ac9dd9856c88ea8d1bc9874e7319d9553f09'}, {'path': 'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin', 'bytes': 2607, 'sha256': 'a525797bfa202b73a1e09910bf5c2080abb73671e33e6ea9ed29f767a7226313'}]
 NATIVE_INVENTORY_ADDITIONS = ('src/frontend/oir/owned/native_inventory_admission_tests.rs', 'src/frontend/oir/owned/native_inventory_tests.rs')
 NATIVE_INVENTORY_AUTHORITY_BYTES = 104690
 NATIVE_INVENTORY_AUTHORITY_SHA = '7c8edaeea1a69abce66b40f7b59bd29584c4927584fbb3f05a633b0ebdb8ca58'
@@ -932,6 +945,91 @@ def inverse_enum_patch(inputs, patch):
     return apply_inverse_patch(inputs, patch, ENUM_PATCH_SHA, ENUM_PATCH_BYTES, ENUM_PATHS)
 
 
+def inverse_hir_import_patch(inputs, patch):
+    """Remove only verified additive fixtures, then recover the exact prior source."""
+    reduced = dict(inputs)
+    for row in HIR_IMPORT_FIXTURE_ROWS:
+        name = row["path"]
+        require(name in reduced and entry(name, reduced[name]) == row,
+                "changed HIR import fixture input: " + name)
+        del reduced[name]
+    return apply_inverse_patch(reduced, patch, HIR_IMPORT_PATCH_SHA,
+                               HIR_IMPORT_PATCH_BYTES, HIR_IMPORT_PATHS)
+
+
+def admit_hir_import(repo, package_bytes):
+    """Admit the complete opt-in compiler view before any historical inverse."""
+    current = json.loads(package_bytes["current-source.json"])
+    raw = package_bytes["hir-import-authority.json"]
+    require(digest(raw) == HIR_IMPORT_AUTHORITY_SHA and len(raw) == HIR_IMPORT_AUTHORITY_BYTES,
+            "stale HIR import authority")
+    require(digest(package_bytes["native-inventory-source.json"]) == NATIVE_INVENTORY_SOURCE_SHA
+            and len(package_bytes["native-inventory-source.json"]) == NATIVE_INVENTORY_SOURCE_BYTES,
+            "unapproved native inventory source manifest")
+    authority = json.loads(raw)
+    predecessor = json.loads(package_bytes["native-inventory-source.json"])
+    require(authority["schema"] == "oxid-hir-import-source-transition-v1"
+            and authority["recipe"] == "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS"
+            and authority["base_tree"] == current["hir_import_base_tree"] == predecessor["source_only_tree"] == HIR_IMPORT_BASE_TREE
+            and authority["predecessor_source_head"] == predecessor["reviewed_source_head"] == NATIVE_INVENTORY_HEAD
+            and authority["reviewed_source_head"] == current["reviewed_source_head"] == HIR_IMPORT_HEAD
+            and authority["source_only_tree"] == current["source_only_tree"] == HIR_IMPORT_TREE
+            and authority["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and authority["native_inventory_source_sha256"] == current["native_inventory_source_sha256"] == NATIVE_INVENTORY_SOURCE_SHA
+            and authority["native_inventory_source_bytes"] == NATIVE_INVENTORY_SOURCE_BYTES
+            and authority["native_inventory_authority_sha256"] == NATIVE_INVENTORY_AUTHORITY_SHA
+            and authority["transition_patch_sha256"] == HIR_IMPORT_PATCH_SHA
+            and authority["transition_patch_bytes"] == HIR_IMPORT_PATCH_BYTES
+            and authority["transition_paths"] == list(HIR_IMPORT_PATHS)
+            and authority["compiler_additions"] == list(HIR_IMPORT_ADDITIONS)
+            and authority["fixture_additions"] == list(HIR_IMPORT_FIXTURES)
+            and authority["removed_paths"] == []
+            and (authority["current_source_members"], authority["native_inventory_source_members"],
+                 authority["compiler_source_members"], authority["compiler_bodies"], current["hir_import_fixture_members"]) == (324, 266, 246, 249, 20),
+            "stale HIR import transition authority")
+    omit = {"files", "purpose", "reviewed_source_head", "source_only_tree", "hir_import_base_tree",
+            "native_inventory_source_sha256", "hir_import_fixture_members"}
+    require({k: v for k, v in current.items() if k not in omit}
+            == {k: v for k, v in predecessor.items() if k not in omit}, "stale HIR import provenance")
+    inputs = check_entries(repo, current["files"])
+    require([r["path"] for r in current["files"]] == sorted(inputs), "unordered HIR import source inventory")
+    before = {r["path"]: r for r in predecessor["files"]}
+    require(set(inputs) == set(before) | set(HIR_IMPORT_ADDITIONS) | set(HIR_IMPORT_FIXTURES),
+            "unexpected HIR import source membership")
+    require([r["path"] for r in current["files"] if r != before.get(r["path"])]
+            == sorted(list(HIR_IMPORT_PATHS) + list(HIR_IMPORT_FIXTURES)), "unexpected HIR import source delta")
+    identities = []
+    for name, data in inputs.items():
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, "changed input mode: " + name)
+        identities.append({**entry(name, data), "mode": "100644",
+            "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
+    require(authority["current_input_identities"] == identities
+            and authority["current_input_git_modes"] == [{"path": n, "mode": "100644"} for n in inputs],
+            "stale HIR import complete input identities")
+    require(authority["fixture_inputs"] == [r for r in identities if r["path"] in HIR_IMPORT_FIXTURES],
+            "stale HIR import fixture identities")
+    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
+    expected = [name for name in inputs if name.startswith(("src/", "native/"))]
+    require(len(expected) == 246 and sorted(actual) == expected, "missing or extra compiler source member")
+    fixture_root = "tests/fixtures/checked_hir_import"
+    actual_fixtures = [fixture_root + "/" + name for name in members(repo / fixture_root)
+                       if name.endswith(("-source.txt", "-success.bin"))]
+    require(actual_fixtures == list(HIR_IMPORT_FIXTURES), "missing or extra HIR import fixture member")
+    restored, touched = inverse_hir_import_patch(inputs, package_bytes["hir-import-transition.patch"])
+    check_bytes(restored, predecessor["files"])
+    changes = []
+    for name in HIR_IMPORT_PATHS:
+        row = {"path": name}
+        for label, source in (("before", restored), ("after", inputs)):
+            data = source.get(name)
+            row[label] = None if data is None else {**entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        changes.append(row)
+    require(authority["transition_inputs"] == changes, "stale HIR import transition input identities")
+    return current, inputs, authority, restored, touched
+
+
 def inverse_native_inventory_patch(inputs, patch):
     """Restore exactly the frozen Phase1 native storage source view."""
     return apply_inverse_patch(inputs, patch, NATIVE_INVENTORY_PATCH_SHA,
@@ -1420,7 +1518,8 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    native_inventory_current = json.loads(package_bytes["current-source.json"])
+    hir_current, hir_inputs, hir_authority, native_inventory_inputs, hir_touched = admit_hir_import(repo, package_bytes)
+    native_inventory_current = json.loads(package_bytes["native-inventory-source.json"])
     native_storage_current = json.loads(package_bytes["native-storage-source.json"])
     native_inventory = json.loads(package_bytes["native-inventory-authority.json"])
     require(native_inventory["schema"] == "oxid-native-inventory-source-transition-v1"
@@ -1429,8 +1528,8 @@ def preflight(repo, package=PACKAGE):
             and native_inventory["reviewed_source_head"] == native_inventory_current["reviewed_source_head"] == NATIVE_INVENTORY_HEAD
             and native_inventory["source_only_tree"] == native_inventory_current["source_only_tree"] == NATIVE_INVENTORY_TREE
             and native_inventory["recipe"] == SOURCE_DELTA_RECIPE
-            and native_inventory["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and native_inventory["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and native_inventory["current_source_sha256"] == NATIVE_INVENTORY_SOURCE_SHA
+            and native_inventory["current_source_bytes"] == NATIVE_INVENTORY_SOURCE_BYTES
             and native_inventory["native_storage_source_sha256"] == native_inventory_current["native_storage_source_sha256"] == NATIVE_STORAGE_SOURCE_SHA
             and native_inventory["native_storage_source_bytes"] == NATIVE_STORAGE_SOURCE_BYTES
             and native_inventory["native_storage_authority_sha256"] == NATIVE_STORAGE_AUTHORITY_SHA
@@ -1448,7 +1547,7 @@ def preflight(repo, package=PACKAGE):
             == {key: value for key, value in native_storage_current.items()
                 if key not in ("files", "purpose", "reviewed_source_head", "source_only_tree")},
             "stale native inventory checkpoint provenance")
-    native_inventory_inputs = check_entries(repo, native_inventory_current["files"])
+    check_bytes(native_inventory_inputs, native_inventory_current["files"])
     native_storage_rows = {row["path"]: row for row in native_storage_current["files"]}
     require(set(native_inventory_inputs) == set(native_storage_rows) | set(NATIVE_INVENTORY_ADDITIONS),
             "unexpected native inventory source membership")
@@ -1466,7 +1565,7 @@ def preflight(repo, package=PACKAGE):
             "stale native inventory complete input identities")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [name for name in native_inventory_inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 208 and sorted(actual) == sorted(expected),
+    require(len(expected) == 208 and sorted(actual) == sorted(n for n in hir_inputs if n.startswith(("src/", "native/"))),
             "missing or extra compiler source member")
     require(len([name for name in native_inventory_inputs if name.startswith(("src/", "native/"))
                  or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 211,
@@ -1831,7 +1930,7 @@ def preflight(repo, package=PACKAGE):
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in native_inventory_inputs if x.startswith(("src/", "native/"))]
-    require(sorted(actual) == sorted(expected), "missing or extra compiler source member")
+    require(sorted(actual) == sorted(n for n in hir_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
         "source": entry(COMPILE_FIXTURE_SOURCE, inputs[COMPILE_FIXTURE_SOURCE]),
@@ -1984,7 +2083,8 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": native_inventory_current,
+    return {"current": hir_current, "hir_import_authority": hir_authority, "hir_import_touched": hir_touched,
+            "native_inventory_source": native_inventory_current, "native_inventory_inputs": native_inventory_inputs,
             "native_inventory_authority": native_inventory, "native_inventory_touched": native_inventory_touched,
             "native_storage_source": native_storage_current, "native_storage_inputs": native_storage_inputs,
             "stdout_source": stdout_current, "stdout_inputs": stdout_inputs,
@@ -2001,7 +2101,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": native_inventory_inputs, "archived": reconstructed, "references": references,
+            "inputs": hir_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2055,6 +2155,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "hir_import_authority_sha256": HIR_IMPORT_AUTHORITY_SHA,
+            "hir_import_inverse_patch_sha256": HIR_IMPORT_PATCH_SHA,
+            "hir_import_inverse_touched": captured["hir_import_touched"],
+            "native_inventory_source_sha256": NATIVE_INVENTORY_SOURCE_SHA,
             "native_inventory_authority_sha256": NATIVE_INVENTORY_AUTHORITY_SHA,
             "native_inventory_inverse_patch_sha256": NATIVE_INVENTORY_PATCH_SHA,
             "native_inventory_inverse_touched": captured["native_inventory_touched"],
@@ -2310,6 +2414,9 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      hir_import_authority_sha256=HIR_IMPORT_AUTHORITY_SHA,
+                      hir_import_inverse_patch_sha256=HIR_IMPORT_PATCH_SHA,
+                      native_inventory_source_sha256=NATIVE_INVENTORY_SOURCE_SHA,
                       authority_sha256=digest(captured["package_bytes"]["authority.json"]),
                       formatter_authority_sha256=FORMATTER_AUTHORITY_SHA,
                       predecessor_source_sha256=PREDECESSOR_SOURCE_SHA,

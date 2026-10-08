@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact 266-input native inventory compiler manifest, the reviewed 267-input
+`authority.py` pins the exact 324-input checked-HIR import compiler manifest, the reviewed 325-input
 lifecycle overlay map and the current additive patch successor. Four exact
 enum-era substitutions preserve the logical collection, parser and owned-route
 hooks in the current execution bodies. The current `observer-stdin-v1.patch`
@@ -191,7 +191,7 @@ logical event. No frozen observer or contract is edited.
 
 The qualified-values descriptor and helper remain unchanged. Its semantic source
 authority is the exact retained 237-input `enum-source.json`; execution source
-is the 266-input `current-source.json`. The public amendment receipt records
+is the 324-input `current-source.json`. The public amendment receipt records
 both roles separately. Current executions cannot use the old compiler authority,
 and the frozen semantic amendment cannot be rebound to the new compiler. The
 final join independently validates both exact hashes and their roles.
@@ -219,3 +219,14 @@ hooks remain byte-identical. The exact 264-input Phase1 source is retained in
 authorities keep their original identities. Current execution receipts bind the
 new source while the qualified-values semantic authority remains the 237-input
 enum predecessor.
+
+
+The checked-HIR import successor binds source checkpoint
+`a1dc6fc823d36d8858375eb651b48c3c682ac2c4`, 324 current inputs and a
+325-member lifecycle view. The retained `observer-stdin-v1.patch` applies
+unchanged despite the added import facade in `driver.rs`: its sole driver hook
+still targets `process_loaded`, and removing that hook exactly restores the
+frozen driver body, including the import facade. No import-specific observer
+semantics or language oracles are added by this source-only rebind. The native
+inventory predecessor and all older semantic authorities retain their original
+identities; fresh execution receipts must bind the new current source.

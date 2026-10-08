@@ -96,9 +96,9 @@ and both current build overlays. Retained
 historical preparation manifests and the transition/current manifest copies are
 required compact evidence; they cannot be hidden as full-archive-only members.
 This includes both generated current candidate manifests even though they also
-belong to the 432-member derived maps. The reader resolves their actual bodies
-and checks the reviewed 429-member base map. Compact omission is limited to the
-other 431 derived-tree members per role and four binaries, for 866 omitted identities.
+belong to the 490-member derived maps. The reader resolves their actual bodies
+and checks the reviewed 487-member base map. Compact omission is limited to the
+other 489 derived-tree members per role and four binaries, for 982 omitted identities.
 The transport controls exercise all 14 generated provenance artifacts through
 the actual compact reader, including missing, substituted and coherently
 rehashed current candidate bodies.
@@ -146,4 +146,4 @@ transport only; fresh debug/release execution remains mandatory.
 The current stdin transition restores exact enum AST/parser bodies before the
 existing inverse chain. Public qualified-values semantics still use the immutable
 enum descriptor/helper and 237-input enum manifest, while execution receipts bind
-the 266-input current manifest. Join validation checks both roles independently.
+the 324-input current manifest. Join validation checks both roles independently.

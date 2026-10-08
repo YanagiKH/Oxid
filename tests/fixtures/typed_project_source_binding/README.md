@@ -1,3 +1,13 @@
+# Experimental supplied-artifact source successor
+
+The active source view binds compiler checkpoint `a1dc6fc823d36d8858375eb651b48c3c682ac2c4`, exact full tree `74ba20e2dcecb6056d4b13448a643ba289d83f75`: 324 selected inputs, 246 src/native members and 249 compiler/build bodies. Twenty additional source-text/binary fixture inputs close the new Rust test include dependencies.
+
+`native-inventory-source.json` preserves the former 266-input manifest byte-for-byte. `hir-import-authority.json` and `hir-import-transition.patch` bind the explicit tree-to-tree transition from its exact tree `8a717f36016d86130ad5acc28a23f87852c76064`. The declared historical checkpoint remains unchanged; its commit object was unavailable, so no substitute commit is asserted. The patch contains 52 compiler paths, including 38 additions. After verifying every current byte, mode and complete membership, admission removes exactly the 20 identity-bound additive fixtures, reverses the text compiler patch and verifies all 266 historical inputs before the unchanged earlier inverse chain. Binary artifacts are never interpreted as patches.
+
+The explicit experimental CLI does not change default grammar, provider routing, frozen language expectations or archived inputs. Source admission and preparation are not execution or full hosted qualification. Current source tests include genuine owned-source check/run/compile admission; native execution remains independently qualified.
+
+The following sections describe retained historical transitions.
+
 # Native inventory admission current-source successor
 
 The active `current-source.json` binds reviewed compiler checkpoint

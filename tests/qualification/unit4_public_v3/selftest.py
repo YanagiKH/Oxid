@@ -39,13 +39,13 @@ class SourceAuthorityControls(unittest.TestCase):
                 out=cls.output))
         cls.manifest = json.loads((cls.output / 'observer-source.json').read_bytes())
 
-    def test_native_inventory_current_and_derived_maps_are_exact(self):
+    def test_hir_import_current_and_derived_maps_are_exact(self):
         import authority
         original = json.loads((self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes())
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-        self.assertEqual(len(original['files']), 266)
+        self.assertEqual(len(original['files']), 324)
         self.assertEqual(sha(canonical(original['files'])), authority.CURRENT_FILES_SHA)
-        self.assertEqual(len(self.manifest['files']), 267)
+        self.assertEqual(len(self.manifest['files']), 325)
         self.assertEqual(sha(canonical(self.manifest['files'])), authority.OBSERVER_FILES_SHA)
         self.assertEqual(set(self.manifest['changed_paths']), {
             'src/frontend/mod.rs', 'src/frontend/project.rs', 'src/frontend/lexer.rs',
@@ -64,6 +64,17 @@ class SourceAuthorityControls(unittest.TestCase):
                         current.replace(b'parse_attempt', b'other_attempt')):
             with self.subTest(changed=sha(changed)), self.assertRaises(Reject):
                 self.builder.verify_lifecycle_successor(changed)
+
+    def test_retained_driver_overlay_preserves_import_facade(self):
+        original = (self.repo / 'src/frontend/driver.rs').read_bytes()
+        observed = (self.output / 'source/src/frontend/driver.rs').read_bytes()
+        hook = b'        crate::frontend::lifecycle_observer::event("consumer_entry", "");\n'
+        self.assertEqual(observed.count(hook), 1)
+        self.assertEqual(observed.replace(hook, b'', 1), original)
+        loaded = observed.split(b'fn process_loaded(', 1)[1]
+        self.assertIn(b'let verified = executable?;\n' + hook + b'        match operation {', loaded)
+        # The retained public gate does not invent instrumentation for the new import facade.
+        self.assertNotIn(hook, observed.split(b'fn process_loaded(', 1)[0])
 
     def test_hooks_cover_current_execution_bodies_once(self):
         source = self.output / 'source/src/frontend'
@@ -271,7 +282,7 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         self.assertEqual(receipt['source_manifest']['sha256'], authority.ENUM_SOURCE_SHA)
         self.assertEqual(receipt['source_manifest']['members'], 237)
         self.assertEqual(receipt['execution_source_manifest']['sha256'], authority.CURRENT_SOURCE_SHA)
-        self.assertEqual(receipt['execution_source_manifest']['members'], 266)
+        self.assertEqual(receipt['execution_source_manifest']['members'], 324)
         self.assertEqual(self.helper.sha(self.manifest.read_bytes()), authority.ENUM_SOURCE_SHA)
         with self.assertRaisesRegex(Reject, 'current execution source identity'):
             Predecessors(self.contracts, self.manifest, self.amendment_root)
