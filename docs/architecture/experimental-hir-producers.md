@@ -13,13 +13,16 @@ supplied-artifact option. Producer build/install stays explicit. No executable i
 downloaded or compiled implicitly, and no manifest-controlled path is accepted.
 
 The bundle has fixed filenames `parser`, `static`, and `manifest.txt`. The exact
-manifest is ASCII with a final newline and lowercase hexadecimal SHA256 values:
+v1 manifest is ASCII with a final newline and lowercase hexadecimal SHA256 values:
 
 ```
 OXID-HIR-PRODUCERS-1
 parser <64 lowercase hexadecimal characters>
 static <64 lowercase hexadecimal characters>
 ```
+
+The `OXID-HIR-PRODUCERS-2` header selects the existing
+[v2 contract](bounded-frontend-v2.md), with the same fixed filenames and hash rows.
 
 The manifest asserts byte identity, not publisher trust or a signature. Select
 only local producer programs you trust. Final root and fixed leaf lookup rejects symlinks and nonregular entries,
@@ -224,15 +227,16 @@ Python qualification recipe and this documentation, so the regression evidence
 is reused only for those unchanged inputs. No default route, source grammar,
 Result-only restriction or frozen binding authority was changed.
 
-The `local-hir-producers` CI job now independently builds ordinary debug and
-release executables on the existing pinned Linux LLVM 19.1.7/Rust 1.99.0 stack.
+At this historical qualification checkpoint, the `local-hir-producers` CI job
+was added to independently build ordinary debug and release executables on the
+existing pinned Linux LLVM 19.1.7/Rust 1.99.0 stack.
 `scripts/run_hir_producer_ci.py` selects the actual non-test executable from each
 successful Cargo JSON build receipt, joins its byte identity to the exact clean
 checkout and recipe report, and retains compiler copies and command evidence.
 Each profile uses a distinct new qualification directory. An always-upload step
 preserves failure evidence; existing jobs, triggers and permissions remain
-unchanged. Hosted execution is still pending, and this bounded recipe does not
-replace any existing gate.
+unchanged. Hosted execution was still pending at that checkpoint; this bounded
+recipe does not replace any existing gate.
 
 At pre-successor checkpoint `5871a92`, the unchanged frozen source-binding
 package intentionally did not admit these new dependency/module inputs. Broad Python discovery reported 615 tests,
