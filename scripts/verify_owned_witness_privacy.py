@@ -313,8 +313,19 @@ HIR_IMPORT_V2_COMPILE_TIME_FIXTURES = (
     'tests/fixtures/checked_hir_import_v2/source-255.txt',
     'tests/fixtures/checked_hir_import_v2/success-255.bin',
 )
+PRODUCER_DIAGNOSTIC_COMPILE_TIME_FIXTURES = (
+    'tests/fixtures/producer_diagnostic/duplicate-source.txt',
+    'tests/fixtures/producer_diagnostic/duplicate.bin',
+    'tests/fixtures/producer_diagnostic/end255-source.txt',
+    'tests/fixtures/producer_diagnostic/end255.bin',
+    'tests/fixtures/producer_diagnostic/multiple-source.txt',
+    'tests/fixtures/producer_diagnostic/multiple.bin',
+    'tests/fixtures/producer_diagnostic/unknown-type-source.txt',
+    'tests/fixtures/producer_diagnostic/unknown-type.bin',
+)
 COMPILE_TIME_FIXTURES = (*ARRAY_COMPILE_TIME_FIXTURES, *ENUM_COMPILE_TIME_FIXTURES,
-                         *HIR_IMPORT_COMPILE_TIME_FIXTURES, *HIR_IMPORT_V2_COMPILE_TIME_FIXTURES)
+                         *HIR_IMPORT_COMPILE_TIME_FIXTURES, *HIR_IMPORT_V2_COMPILE_TIME_FIXTURES,
+                         *PRODUCER_DIAGNOSTIC_COMPILE_TIME_FIXTURES)
 
 
 def materialize_checkout(root, checkout):

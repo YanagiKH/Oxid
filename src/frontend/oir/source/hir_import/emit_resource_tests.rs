@@ -21,8 +21,9 @@ const WIRE: &[u8] = include_bytes!(concat!(
     "/tests/fixtures/checked_hir_import/rich-success.bin"
 ));
 // Independently measured rich main.ox endpoints after complete versioned
-// protocol/endpoint carriers; not derived from the call under test.
-const FIXED: u64 = 139_939;
+// protocol/endpoint carriers plus 264 bytes of shared source-helper transports;
+// not derived from the call under test.
+const FIXED: u64 = 140_203;
 const HIR_PAIR: u64 = 3_472 + 2_241;
 const LLVM_BYTES: u64 = 14_325;
 const WORK: u64 = 10_069_187;
@@ -290,7 +291,7 @@ fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints() {
     // Independently measured authentic v2 fixture; keep the endpoints visible.
     assert_eq!(
         (fixed, retained, bytes, work),
-        (139_939, 141_475, 690, 1_004_093)
+        (140_203, 141_739, 690, 1_004_093)
     );
     drop(baseline);
     let exact = IndexLimits {

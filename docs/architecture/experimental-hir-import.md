@@ -36,6 +36,9 @@ reconstructs candidate-owned resolved HIR, compares canonical resolution, runs t
 genuine checker, compares every supplied type/flow fact, lowers, associates source
 and independently verifies OIR. A producer's first-diagnostic record is not a
 replacement for the compiler's full diagnostic list and is not importable success.
+The separate [live producer route](experimental-hir-producers.md#source-validated-static-diagnostics)
+can validate that first diagnostic against genuine source and return the complete
+canonical error vector; this does not admit diagnostic artifact files.
 Authentic compiler/runtime/native diagnostics retain their normal fields; new
 transport/domain/budget/mismatch refusals use E0702 at stage `hir-import`.
 

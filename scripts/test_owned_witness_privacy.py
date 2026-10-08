@@ -36,8 +36,8 @@ class PrivacyCheckoutTests(unittest.TestCase):
         expected = tuple(f'tests/fixtures/checked_hir_import/{stem}-{suffix}'
                          for stem in stems for suffix in ('source.txt', 'success.bin'))
         self.assertEqual(privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES, expected)
-        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 66)
-        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 66)
+        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 74)
+        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 74)
 
     def test_exact_v2_compile_time_fixture_roster(self):
         expected = (
@@ -50,6 +50,19 @@ class PrivacyCheckoutTests(unittest.TestCase):
         self.assertEqual(tuple(name.lstrip('/') for name in references), expected)
         self.assertEqual(len((ROOT / expected[0]).read_bytes()), 255)
         self.assertEqual(len((ROOT / expected[1]).read_bytes()), 2607)
+
+    def test_exact_producer_diagnostic_compile_time_fixture_roster(self):
+        expected = tuple(f"tests/fixtures/producer_diagnostic/{stem}{suffix}"
+                         for stem in ("duplicate", "end255", "multiple", "unknown-type")
+                         for suffix in ("-source.txt", ".bin"))
+        self.assertEqual(privacy.PRODUCER_DIAGNOSTIC_COMPILE_TIME_FIXTURES, expected)
+        includer = ROOT / "src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs"
+        references = re.findall(r'"(/tests/fixtures/producer_diagnostic/[^"\n]+)"', includer.read_text())
+        self.assertEqual(set(name.lstrip('/') for name in references), set(expected))
+        self.assertEqual(len(references), 8)
+        for name in expected:
+            self.assertEqual((ROOT / name).stat().st_size if name.endswith('.bin') else len((ROOT / name).read_bytes()),
+                             1575 if name.endswith('.bin') else {"duplicate":31, "end255":255, "multiple":48, "unknown-type":35}[Path(name).name.removesuffix('-source.txt')])
 
     def test_materialized_checkout_has_exact_fixture_bytes_and_all_includes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -92,9 +105,10 @@ class PrivacyCheckoutTests(unittest.TestCase):
                         self.assertTrue((checkout / relative).is_file(), relative)
                 count += len(literal) + len(rooted) + len(dynamic)
             # 61 predecessor includes, 60 original import includes/macro
-            # definitions, and two explicit v2 endpoint fixtures. Real cfg(test)
+            # definitions, two v2 endpoints and ten diagnostic-test include sites.
+            # Real cfg(test)
             # compilation checks their expansion without expanding probe scope.
-            self.assertEqual(count, 123)
+            self.assertEqual(count, 133)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

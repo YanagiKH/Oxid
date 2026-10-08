@@ -16,6 +16,7 @@ mod supervisor;
 const PRODUCER_PIPELINE_ADMITTED: bool = true;
 const OPA_BYTES: usize = 1559;
 const OBSERVATION_BYTES: usize = 2607;
+const DIAGNOSTIC_BYTES: usize = OPA_BYTES + 16;
 const SOURCE_MAX: usize = 255;
 const AST1_MAX: usize = 5 + SOURCE_MAX + OPA_BYTES;
 
@@ -36,8 +37,20 @@ pub(super) struct Record {
     leader_reaped: bool,
 }
 
+/// Exact observed extent is retained separately from fixed bounded storage.
+/// Unused capacity is never submitted to either checked decoder.
+pub(super) struct Observation {
+    bytes: [u8; OBSERVATION_BYTES],
+    len: usize,
+}
+impl Observation {
+    pub(super) fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
 pub(super) struct Outcome {
-    pub(super) observation: Option<[u8; OBSERVATION_BYTES]>,
+    pub(super) observation: Option<Observation>,
     pub(super) error: Option<&'static str>,
     pub(super) records: [Option<Record>; 2],
 }
@@ -166,16 +179,24 @@ pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
         if !completed(&typed, framed.len()) {
             return result.reject("static producer failed its bounded process/transport contract");
         }
-        if typed.stdout_len != OBSERVATION_BYTES
+        let tag = typed.stdout[OPA_BYTES + 4];
+        let exact = match tag {
+            0 => typed.stdout_len == OBSERVATION_BYTES,
+            1 => typed.stdout_len == DIAGNOSTIC_BYTES,
+            _ => false,
+        };
+        if !exact
             || typed.stdout[..OPA_BYTES] != parser.stdout[..OPA_BYTES]
             || &typed.stdout[OPA_BYTES..OPA_BYTES + 3] != b"STF"
             || typed.stdout[OPA_BYTES + 3] != protocol.digit()
-            || typed.stdout[OPA_BYTES + 4] != 0
         {
-            return result.reject("static producer did not return one complete successful unchanged version-matched OPA/STF observation");
+            return result.reject("static producer did not return one complete unchanged version-matched OPA/STF success or diagnostic observation");
         }
-        let mut observation = [0u8; OBSERVATION_BYTES];
-        observation.copy_from_slice(&typed.stdout[..OBSERVATION_BYTES]);
+        let mut observation = Observation {
+            bytes: [0u8; OBSERVATION_BYTES],
+            len: typed.stdout_len,
+        };
+        observation.bytes[..observation.len].copy_from_slice(&typed.stdout[..typed.stdout_len]);
         result.observation = Some(observation);
         result
         // The verified private executable snapshots drop here, after the
@@ -221,6 +242,8 @@ pub(super) fn print_records(outcome: &Outcome, json: bool) {
 pub(super) fn named_bytes() -> usize {
     use std::mem::size_of;
     let carriers = 3 * size_of::<Outcome>()
+        + 3 * size_of::<Observation>()
+        + size_of::<(usize, u8, bool)>()
         + size_of::<[Record; 8]>()
         + 3 * size_of::<[u8; AST1_MAX]>()
         + 2 * size_of::<SourceOwner<'static>>()

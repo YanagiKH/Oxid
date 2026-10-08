@@ -521,9 +521,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20761,
+      "bytes": 20777,
       "path": "src/frontend/driver.rs",
-      "sha256": "afc39512e06d7a962bc65e0b409b3d10d90e393a639b25a51637c1221b423f02"
+      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
     },
     {
       "bytes": 24124,
@@ -561,9 +561,9 @@
       "sha256": "21ab5b23d37201b1b3163506415ec03d2b93d67660963409b3ebdce9ec804b2a"
     },
     {
-      "bytes": 9699,
+      "bytes": 10409,
       "path": "src/frontend/hir_producer.rs",
-      "sha256": "bf3b1522f26307d1dd1ee403d146bcf19df6cc4a543098825b63c560a2dc6816"
+      "sha256": "3d52cbe8f0f7907ffec24c7cdce65d06edc6c2cf166df2f7617436e5344c3946"
     },
     {
       "bytes": 39487,
@@ -1336,9 +1336,9 @@
       "sha256": "2954d6a0636f5a1ee56651f10f82972903447e782013a09efc00f1ed1b813471"
     },
     {
-      "bytes": 15399,
+      "bytes": 17340,
       "path": "src/frontend/oir/source/hir_import.rs",
-      "sha256": "011a40b87616dd6e8ed8d8f04a14523f4e6a0e4f3c9f359e984e907511ffadf6"
+      "sha256": "523535ce3b933e6bc81e292e1a40331a60c6d0afd3b24a20b382840049ba3a0d"
     },
     {
       "bytes": 27362,
@@ -1421,9 +1421,9 @@
       "sha256": "b855ca249b3c2015d37102d83b54c6b069c2fd8ffce29b232cec2bff315c982f"
     },
     {
-      "bytes": 11431,
+      "bytes": 11484,
       "path": "src/frontend/oir/source/hir_import/emit_resource_tests.rs",
-      "sha256": "d17934cff7324982c4875aef2f93d2aafc8f07842dd5a906924b48fd1616b477"
+      "sha256": "ffac7baef37b0a807433ad72c49f4f2fe1a4dbc8be7d79d90cc92caeb32998ee"
     },
     {
       "bytes": 20993,
@@ -1431,9 +1431,9 @@
       "sha256": "5044a1a3910ad2cf7f529f549d240ac8ec94bf9d0aecd2735c4c9416dd0091bd"
     },
     {
-      "bytes": 41971,
+      "bytes": 42173,
       "path": "src/frontend/oir/source/hir_import/leaf.rs",
-      "sha256": "afdacd66285fe91cecb9368a09fd67afd5efe625b3bcd128189b904c6c4ef463"
+      "sha256": "1cad264331afe067dbcf1a3a3650aa104d5e8517d338453ee39ebff6dc8c35a4"
     },
     {
       "bytes": 5565,
@@ -1441,9 +1441,19 @@
       "sha256": "94225eadf94e19ced1a810d7097d9210e4fa31dec5d6e29d7a8127905afc4888"
     },
     {
-      "bytes": 10024,
+      "bytes": 11979,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic.rs",
+      "sha256": "97d3b3847285859e14e6f368be1ed3e790fc1c5aa49966349a4a1da7d6522106"
+    },
+    {
+      "bytes": 11631,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs",
+      "sha256": "1347400fa8ce7ecdcb02c9650c652975de0ec475fa167da4dd41ccec665f9b5e"
+    },
+    {
+      "bytes": 10968,
       "path": "src/frontend/oir/source/hir_import/public_facade.rs",
-      "sha256": "d149592908e9ec01daae0060707d4ff903b8697f9c89e43de5a8c6ebf4f2b8fd"
+      "sha256": "d26704aa11b19d48d8305969e9a46fabbc7d6fbda157b9b9aef26b3d64cd545e"
     },
     {
       "bytes": 12910,
@@ -2286,6 +2296,46 @@
       "sha256": "c22dcb52cc3078bf9396fc915bb26e43eb5c91930f93a7ec71b89c51e7dc71a8"
     },
     {
+      "bytes": 31,
+      "path": "tests/fixtures/producer_diagnostic/duplicate-source.txt",
+      "sha256": "b62fbb273ad1e0a884f4c1e5ddbc45886bc4e962e94ab03761ea9d0e4b40cef2"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/duplicate.bin",
+      "sha256": "d6a0707e9f0ed1351602a830166ea4a18823653457962f016913493b61fca38c"
+    },
+    {
+      "bytes": 255,
+      "path": "tests/fixtures/producer_diagnostic/end255-source.txt",
+      "sha256": "0ea89521240db1e81600391e78d2888f3f13d8c3aa945a2eb9b40577f90ecc73"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/end255.bin",
+      "sha256": "4f1b818fb3c6036c7e9d7df32dab4a7b176f0d425aeab2652a372ad3b13bbb38"
+    },
+    {
+      "bytes": 48,
+      "path": "tests/fixtures/producer_diagnostic/multiple-source.txt",
+      "sha256": "25016a9cacca43132e7c5d29f4d2f11a9719d49427b8a5a24c209e5f50cb138c"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/multiple.bin",
+      "sha256": "b3fdb49bf2f5da837121d6cdb80ac4a541e71416c6096e73d8e419c84e0e5fd0"
+    },
+    {
+      "bytes": 35,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type-source.txt",
+      "sha256": "a40af9465791100a701df35e87a9f23902eb4a2cfd14985aba05cdf1532c1ff0"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type.bin",
+      "sha256": "a9445cbcfdf920b50e960c730aa33aa2d74379d93c7f21f04d3348ce6dd7a840"
+    },
+    {
       "bytes": 241,
       "path": "tests/frontend_smoke.ox",
       "sha256": "d550b9800c143be311c00623a9d369109091bd6ecc4dc30625a50d44c013e5f9"
@@ -2496,7 +2546,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "9c2b716ca46dbf9dfc0a099515503c63e5affa4bce1216ca1c7836101d6f59e8",
+  "current_candidate_source_manifest_sha256": "2c644b2d35767dec7f22f056571f1e3ca784e32451f0fc97bfcfb61f329ad682",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2594,9 +2644,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 86924,
+      "bytes": 88800,
       "path": "candidate-source-manifest.json",
-      "sha256": "9c2b716ca46dbf9dfc0a099515503c63e5affa4bce1216ca1c7836101d6f59e8"
+      "sha256": "2c644b2d35767dec7f22f056571f1e3ca784e32451f0fc97bfcfb61f329ad682"
     },
     {
       "bytes": 1583,
@@ -2999,9 +3049,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20761,
+      "bytes": 20777,
       "path": "src/frontend/driver.rs",
-      "sha256": "afc39512e06d7a962bc65e0b409b3d10d90e393a639b25a51637c1221b423f02"
+      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
     },
     {
       "bytes": 24124,
@@ -3049,9 +3099,9 @@
       "sha256": "646af36a8e2668f7b0071047fae592dab053fea3149d75388a56f6e9acf96dd7"
     },
     {
-      "bytes": 9699,
+      "bytes": 10409,
       "path": "src/frontend/hir_producer.rs",
-      "sha256": "bf3b1522f26307d1dd1ee403d146bcf19df6cc4a543098825b63c560a2dc6816"
+      "sha256": "3d52cbe8f0f7907ffec24c7cdce65d06edc6c2cf166df2f7617436e5344c3946"
     },
     {
       "bytes": 668,
@@ -3889,9 +3939,9 @@
       "sha256": "b855ca249b3c2015d37102d83b54c6b069c2fd8ffce29b232cec2bff315c982f"
     },
     {
-      "bytes": 11431,
+      "bytes": 11484,
       "path": "src/frontend/oir/source/hir_import/emit_resource_tests.rs",
-      "sha256": "d17934cff7324982c4875aef2f93d2aafc8f07842dd5a906924b48fd1616b477"
+      "sha256": "ffac7baef37b0a807433ad72c49f4f2fe1a4dbc8be7d79d90cc92caeb32998ee"
     },
     {
       "bytes": 20993,
@@ -3899,9 +3949,9 @@
       "sha256": "5044a1a3910ad2cf7f529f549d240ac8ec94bf9d0aecd2735c4c9416dd0091bd"
     },
     {
-      "bytes": 41971,
+      "bytes": 42173,
       "path": "src/frontend/oir/source/hir_import/leaf.rs",
-      "sha256": "afdacd66285fe91cecb9368a09fd67afd5efe625b3bcd128189b904c6c4ef463"
+      "sha256": "1cad264331afe067dbcf1a3a3650aa104d5e8517d338453ee39ebff6dc8c35a4"
     },
     {
       "bytes": 5565,
@@ -3909,9 +3959,19 @@
       "sha256": "94225eadf94e19ced1a810d7097d9210e4fa31dec5d6e29d7a8127905afc4888"
     },
     {
-      "bytes": 10024,
+      "bytes": 11631,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs",
+      "sha256": "1347400fa8ce7ecdcb02c9650c652975de0ec475fa167da4dd41ccec665f9b5e"
+    },
+    {
+      "bytes": 11979,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic.rs",
+      "sha256": "97d3b3847285859e14e6f368be1ed3e790fc1c5aa49966349a4a1da7d6522106"
+    },
+    {
+      "bytes": 10968,
       "path": "src/frontend/oir/source/hir_import/public_facade.rs",
-      "sha256": "d149592908e9ec01daae0060707d4ff903b8697f9c89e43de5a8c6ebf4f2b8fd"
+      "sha256": "d26704aa11b19d48d8305969e9a46fabbc7d6fbda157b9b9aef26b3d64cd545e"
     },
     {
       "bytes": 12910,
@@ -3944,9 +4004,9 @@
       "sha256": "e6bc46cbe24afebdb0028ecf3db60ef8f40ebf4c38da8951971bf87e7a997b21"
     },
     {
-      "bytes": 15399,
+      "bytes": 17340,
       "path": "src/frontend/oir/source/hir_import.rs",
-      "sha256": "011a40b87616dd6e8ed8d8f04a14523f4e6a0e4f3c9f359e984e907511ffadf6"
+      "sha256": "523535ce3b933e6bc81e292e1a40331a60c6d0afd3b24a20b382840049ba3a0d"
     },
     {
       "bytes": 16356,
@@ -4767,6 +4827,46 @@
       "bytes": 174,
       "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox",
       "sha256": "c22dcb52cc3078bf9396fc915bb26e43eb5c91930f93a7ec71b89c51e7dc71a8"
+    },
+    {
+      "bytes": 31,
+      "path": "tests/fixtures/producer_diagnostic/duplicate-source.txt",
+      "sha256": "b62fbb273ad1e0a884f4c1e5ddbc45886bc4e962e94ab03761ea9d0e4b40cef2"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/duplicate.bin",
+      "sha256": "d6a0707e9f0ed1351602a830166ea4a18823653457962f016913493b61fca38c"
+    },
+    {
+      "bytes": 255,
+      "path": "tests/fixtures/producer_diagnostic/end255-source.txt",
+      "sha256": "0ea89521240db1e81600391e78d2888f3f13d8c3aa945a2eb9b40577f90ecc73"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/end255.bin",
+      "sha256": "4f1b818fb3c6036c7e9d7df32dab4a7b176f0d425aeab2652a372ad3b13bbb38"
+    },
+    {
+      "bytes": 48,
+      "path": "tests/fixtures/producer_diagnostic/multiple-source.txt",
+      "sha256": "25016a9cacca43132e7c5d29f4d2f11a9719d49427b8a5a24c209e5f50cb138c"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/multiple.bin",
+      "sha256": "b3fdb49bf2f5da837121d6cdb80ac4a541e71416c6096e73d8e419c84e0e5fd0"
+    },
+    {
+      "bytes": 35,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type-source.txt",
+      "sha256": "a40af9465791100a701df35e87a9f23902eb4a2cfd14985aba05cdf1532c1ff0"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type.bin",
+      "sha256": "a9445cbcfdf920b50e960c730aa33aa2d74379d93c7f21f04d3348ce6dd7a840"
     },
     {
       "bytes": 241,
@@ -7073,9 +7173,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 86924,
+      "bytes": 88800,
       "path": "candidate-source-manifest.json",
-      "sha256": "9c2b716ca46dbf9dfc0a099515503c63e5affa4bce1216ca1c7836101d6f59e8"
+      "sha256": "2c644b2d35767dec7f22f056571f1e3ca784e32451f0fc97bfcfb61f329ad682"
     },
     {
       "bytes": 1583,
@@ -7478,9 +7578,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20761,
+      "bytes": 20777,
       "path": "src/frontend/driver.rs",
-      "sha256": "afc39512e06d7a962bc65e0b409b3d10d90e393a639b25a51637c1221b423f02"
+      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
     },
     {
       "bytes": 24124,
@@ -7528,9 +7628,9 @@
       "sha256": "646af36a8e2668f7b0071047fae592dab053fea3149d75388a56f6e9acf96dd7"
     },
     {
-      "bytes": 9699,
+      "bytes": 10409,
       "path": "src/frontend/hir_producer.rs",
-      "sha256": "bf3b1522f26307d1dd1ee403d146bcf19df6cc4a543098825b63c560a2dc6816"
+      "sha256": "3d52cbe8f0f7907ffec24c7cdce65d06edc6c2cf166df2f7617436e5344c3946"
     },
     {
       "bytes": 668,
@@ -8368,9 +8468,9 @@
       "sha256": "b855ca249b3c2015d37102d83b54c6b069c2fd8ffce29b232cec2bff315c982f"
     },
     {
-      "bytes": 11431,
+      "bytes": 11484,
       "path": "src/frontend/oir/source/hir_import/emit_resource_tests.rs",
-      "sha256": "d17934cff7324982c4875aef2f93d2aafc8f07842dd5a906924b48fd1616b477"
+      "sha256": "ffac7baef37b0a807433ad72c49f4f2fe1a4dbc8be7d79d90cc92caeb32998ee"
     },
     {
       "bytes": 20993,
@@ -8378,9 +8478,9 @@
       "sha256": "5044a1a3910ad2cf7f529f549d240ac8ec94bf9d0aecd2735c4c9416dd0091bd"
     },
     {
-      "bytes": 41971,
+      "bytes": 42173,
       "path": "src/frontend/oir/source/hir_import/leaf.rs",
-      "sha256": "afdacd66285fe91cecb9368a09fd67afd5efe625b3bcd128189b904c6c4ef463"
+      "sha256": "1cad264331afe067dbcf1a3a3650aa104d5e8517d338453ee39ebff6dc8c35a4"
     },
     {
       "bytes": 5565,
@@ -8388,9 +8488,19 @@
       "sha256": "94225eadf94e19ced1a810d7097d9210e4fa31dec5d6e29d7a8127905afc4888"
     },
     {
-      "bytes": 10024,
+      "bytes": 11631,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs",
+      "sha256": "1347400fa8ce7ecdcb02c9650c652975de0ec475fa167da4dd41ccec665f9b5e"
+    },
+    {
+      "bytes": 11979,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic.rs",
+      "sha256": "97d3b3847285859e14e6f368be1ed3e790fc1c5aa49966349a4a1da7d6522106"
+    },
+    {
+      "bytes": 10968,
       "path": "src/frontend/oir/source/hir_import/public_facade.rs",
-      "sha256": "d149592908e9ec01daae0060707d4ff903b8697f9c89e43de5a8c6ebf4f2b8fd"
+      "sha256": "d26704aa11b19d48d8305969e9a46fabbc7d6fbda157b9b9aef26b3d64cd545e"
     },
     {
       "bytes": 12910,
@@ -8423,9 +8533,9 @@
       "sha256": "e6bc46cbe24afebdb0028ecf3db60ef8f40ebf4c38da8951971bf87e7a997b21"
     },
     {
-      "bytes": 15399,
+      "bytes": 17340,
       "path": "src/frontend/oir/source/hir_import.rs",
-      "sha256": "011a40b87616dd6e8ed8d8f04a14523f4e6a0e4f3c9f359e984e907511ffadf6"
+      "sha256": "523535ce3b933e6bc81e292e1a40331a60c6d0afd3b24a20b382840049ba3a0d"
     },
     {
       "bytes": 16356,
@@ -9248,6 +9358,46 @@
       "sha256": "c22dcb52cc3078bf9396fc915bb26e43eb5c91930f93a7ec71b89c51e7dc71a8"
     },
     {
+      "bytes": 31,
+      "path": "tests/fixtures/producer_diagnostic/duplicate-source.txt",
+      "sha256": "b62fbb273ad1e0a884f4c1e5ddbc45886bc4e962e94ab03761ea9d0e4b40cef2"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/duplicate.bin",
+      "sha256": "d6a0707e9f0ed1351602a830166ea4a18823653457962f016913493b61fca38c"
+    },
+    {
+      "bytes": 255,
+      "path": "tests/fixtures/producer_diagnostic/end255-source.txt",
+      "sha256": "0ea89521240db1e81600391e78d2888f3f13d8c3aa945a2eb9b40577f90ecc73"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/end255.bin",
+      "sha256": "4f1b818fb3c6036c7e9d7df32dab4a7b176f0d425aeab2652a372ad3b13bbb38"
+    },
+    {
+      "bytes": 48,
+      "path": "tests/fixtures/producer_diagnostic/multiple-source.txt",
+      "sha256": "25016a9cacca43132e7c5d29f4d2f11a9719d49427b8a5a24c209e5f50cb138c"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/multiple.bin",
+      "sha256": "b3fdb49bf2f5da837121d6cdb80ac4a541e71416c6096e73d8e419c84e0e5fd0"
+    },
+    {
+      "bytes": 35,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type-source.txt",
+      "sha256": "a40af9465791100a701df35e87a9f23902eb4a2cfd14985aba05cdf1532c1ff0"
+    },
+    {
+      "bytes": 1575,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type.bin",
+      "sha256": "a9445cbcfdf920b50e960c730aa33aa2d74379d93c7f21f04d3348ce6dd7a840"
+    },
+    {
       "bytes": 241,
       "path": "tests/frontend_smoke.ox",
       "sha256": "d550b9800c143be311c00623a9d369109091bd6ecc4dc30625a50d44c013e5f9"
@@ -9459,9 +9609,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 63969,
+    "bytes": 66021,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a"
+    "sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -9562,6 +9712,11 @@
     "bytes": 8042,
     "path": "tests/fixtures/typed_project_source_binding/frontend_v2.py",
     "sha256": "c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7"
+  },
+  "frontend_v2_source_manifest": {
+    "bytes": 63969,
+    "path": "tests/fixtures/typed_project_source_binding/frontend-v2-source.json",
+    "sha256": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a"
   },
   "frontend_v2_transition_patch": {
     "bytes": 67003,
@@ -9665,6 +9820,21 @@
     "substitutions": 1,
     "version": "unit4-direct-parser-closed-stdin-v1"
   },
+  "producer_diagnostic_authority": {
+    "bytes": 135620,
+    "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-authority.json",
+    "sha256": "fa52793cd0717dbf2bf44b819afc32258e257cb0522b0f503d8d7cefbfea0dfb"
+  },
+  "producer_diagnostic_helper": {
+    "bytes": 10369,
+    "path": "tests/fixtures/typed_project_source_binding/producer_diagnostic.py",
+    "sha256": "15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823"
+  },
+  "producer_diagnostic_transition_patch": {
+    "bytes": 37700,
+    "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-transition.patch",
+    "sha256": "c344823854314d8569d04055cd14031d2b6cd48cd95b8ea6a8301027af0ffe7e"
+  },
   "projected_source_manifest": {
     "bytes": 38636,
     "path": "tests/fixtures/typed_project_source_binding/projected-source.json",
@@ -9675,7 +9845,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "5f5a6639db9f779bb2453695f64ea980f7ea1790",
+  "reviewed_source_head": "c15465acb90e9f8bb18f5291a8931f5d5bbc6edb",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -9688,9 +9858,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 193178,
+    "bytes": 196026,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "ccb7a73a473703a1802a9485ea7aa0b3ce9b38bebb1efbdf14dafae7053bc990"
+    "sha256": "1d2b904205e29b3a466d87ad688a4678c93168f64dedd9f975425bb6003fa647"
   },
   "source_delta": [
     {
@@ -9897,9 +10067,9 @@
     },
     {
       "after": {
-        "bytes": 20761,
+        "bytes": 20777,
         "path": "src/frontend/driver.rs",
-        "sha256": "afc39512e06d7a962bc65e0b409b3d10d90e393a639b25a51637c1221b423f02"
+        "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
       },
       "before": {
         "bytes": 7381,
@@ -9977,9 +10147,9 @@
     },
     {
       "after": {
-        "bytes": 9699,
+        "bytes": 10409,
         "path": "src/frontend/hir_producer.rs",
-        "sha256": "bf3b1522f26307d1dd1ee403d146bcf19df6cc4a543098825b63c560a2dc6816"
+        "sha256": "3d52cbe8f0f7907ffec24c7cdce65d06edc6c2cf166df2f7617436e5344c3946"
       },
       "before": null,
       "path": "src/frontend/hir_producer.rs"
@@ -11466,9 +11636,9 @@
     },
     {
       "after": {
-        "bytes": 15399,
+        "bytes": 17340,
         "path": "src/frontend/oir/source/hir_import.rs",
-        "sha256": "011a40b87616dd6e8ed8d8f04a14523f4e6a0e4f3c9f359e984e907511ffadf6"
+        "sha256": "523535ce3b933e6bc81e292e1a40331a60c6d0afd3b24a20b382840049ba3a0d"
       },
       "before": null,
       "path": "src/frontend/oir/source/hir_import.rs"
@@ -11619,9 +11789,9 @@
     },
     {
       "after": {
-        "bytes": 11431,
+        "bytes": 11484,
         "path": "src/frontend/oir/source/hir_import/emit_resource_tests.rs",
-        "sha256": "d17934cff7324982c4875aef2f93d2aafc8f07842dd5a906924b48fd1616b477"
+        "sha256": "ffac7baef37b0a807433ad72c49f4f2fe1a4dbc8be7d79d90cc92caeb32998ee"
       },
       "before": null,
       "path": "src/frontend/oir/source/hir_import/emit_resource_tests.rs"
@@ -11637,9 +11807,9 @@
     },
     {
       "after": {
-        "bytes": 41971,
+        "bytes": 42173,
         "path": "src/frontend/oir/source/hir_import/leaf.rs",
-        "sha256": "afdacd66285fe91cecb9368a09fd67afd5efe625b3bcd128189b904c6c4ef463"
+        "sha256": "1cad264331afe067dbcf1a3a3650aa104d5e8517d338453ee39ebff6dc8c35a4"
       },
       "before": null,
       "path": "src/frontend/oir/source/hir_import/leaf.rs"
@@ -11655,9 +11825,27 @@
     },
     {
       "after": {
-        "bytes": 10024,
+        "bytes": 11979,
+        "path": "src/frontend/oir/source/hir_import/producer_diagnostic.rs",
+        "sha256": "97d3b3847285859e14e6f368be1ed3e790fc1c5aa49966349a4a1da7d6522106"
+      },
+      "before": null,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic.rs"
+    },
+    {
+      "after": {
+        "bytes": 11631,
+        "path": "src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs",
+        "sha256": "1347400fa8ce7ecdcb02c9650c652975de0ec475fa167da4dd41ccec665f9b5e"
+      },
+      "before": null,
+      "path": "src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 10968,
         "path": "src/frontend/oir/source/hir_import/public_facade.rs",
-        "sha256": "d149592908e9ec01daae0060707d4ff903b8697f9c89e43de5a8c6ebf4f2b8fd"
+        "sha256": "d26704aa11b19d48d8305969e9a46fabbc7d6fbda157b9b9aef26b3d64cd545e"
       },
       "before": null,
       "path": "src/frontend/oir/source/hir_import/public_facade.rs"
@@ -12616,6 +12804,78 @@
     },
     {
       "after": {
+        "bytes": 31,
+        "path": "tests/fixtures/producer_diagnostic/duplicate-source.txt",
+        "sha256": "b62fbb273ad1e0a884f4c1e5ddbc45886bc4e962e94ab03761ea9d0e4b40cef2"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/duplicate-source.txt"
+    },
+    {
+      "after": {
+        "bytes": 1575,
+        "path": "tests/fixtures/producer_diagnostic/duplicate.bin",
+        "sha256": "d6a0707e9f0ed1351602a830166ea4a18823653457962f016913493b61fca38c"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/duplicate.bin"
+    },
+    {
+      "after": {
+        "bytes": 255,
+        "path": "tests/fixtures/producer_diagnostic/end255-source.txt",
+        "sha256": "0ea89521240db1e81600391e78d2888f3f13d8c3aa945a2eb9b40577f90ecc73"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/end255-source.txt"
+    },
+    {
+      "after": {
+        "bytes": 1575,
+        "path": "tests/fixtures/producer_diagnostic/end255.bin",
+        "sha256": "4f1b818fb3c6036c7e9d7df32dab4a7b176f0d425aeab2652a372ad3b13bbb38"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/end255.bin"
+    },
+    {
+      "after": {
+        "bytes": 48,
+        "path": "tests/fixtures/producer_diagnostic/multiple-source.txt",
+        "sha256": "25016a9cacca43132e7c5d29f4d2f11a9719d49427b8a5a24c209e5f50cb138c"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/multiple-source.txt"
+    },
+    {
+      "after": {
+        "bytes": 1575,
+        "path": "tests/fixtures/producer_diagnostic/multiple.bin",
+        "sha256": "b3fdb49bf2f5da837121d6cdb80ac4a541e71416c6096e73d8e419c84e0e5fd0"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/multiple.bin"
+    },
+    {
+      "after": {
+        "bytes": 35,
+        "path": "tests/fixtures/producer_diagnostic/unknown-type-source.txt",
+        "sha256": "a40af9465791100a701df35e87a9f23902eb4a2cfd14985aba05cdf1532c1ff0"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type-source.txt"
+    },
+    {
+      "after": {
+        "bytes": 1575,
+        "path": "tests/fixtures/producer_diagnostic/unknown-type.bin",
+        "sha256": "a9445cbcfdf920b50e960c730aa33aa2d74379d93c7f21f04d3348ce6dd7a840"
+      },
+      "before": null,
+      "path": "tests/fixtures/producer_diagnostic/unknown-type.bin"
+    },
+    {
+      "after": {
         "bytes": 13218,
         "path": "tests/typed_record_composition.rs",
         "sha256": "347a35be3794ef927789a3d036e99ccb45bcb1b52c49272a8647b1924b5c8db8"
@@ -12624,7 +12884,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "534dbf42fafabc0a889b91ad351d5a11dd9ef8f4",
+  "source_only_tree": "0d843f9141f153d4c008ac860786c138165d7de3",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

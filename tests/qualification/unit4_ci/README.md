@@ -106,3 +106,12 @@ This amendment is not part of the Closed parser structural projection.
 The four-case qualified-values amendment keeps its exact 237-input enum semantic
 authority. Its receipt separately binds the 324-input current execution manifest;
 the final join rejects a changed or swapped authority in either role.
+
+
+## Current diagnostic source view
+
+The active source successor is checkpoint `c15465acb90e9f8bb18f5291a8931f5d5bbc6edb` with
+340 selected inputs, 255 compiler/build bodies and exact parser maps of 503 base
+and 506 derived members per role. The explicit diagnostic inverse restores the
+byte-identical 330-input frontend-v2 source before every retained inverse. Existing
+semantic and hosted coverage requirements remain unchanged.

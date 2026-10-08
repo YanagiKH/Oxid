@@ -185,3 +185,16 @@ packages/indexes are never copied. Both archive and extracted source identities
 are checked before copying and during build verification; build commands retain
 --offline --locked. This change supplies dependencies only and does not alter
 frozen helpers, semantic expectations, source transition maps or parser policies.
+
+
+## Source-validated producer diagnostic successor
+
+Current checkpoint `c15465acb90e9f8bb18f5291a8931f5d5bbc6edb` / tree `0d843f9141f153d4c008ac860786c138165d7de3`
+adds an explicit reversible diagnostic layer before the unchanged frontend-v2
+source transition. Current source membership is 340, with 255 compiler/build
+bodies; current parser base/derived maps contain 503/506 members per role. The
+330-input frontend-v2 predecessor and its authority/helper/patch stay exact.
+Eight included fixture bodies and two new compiler modules account for all ten
+additions. The eight-path compiler transition overlaps no parser instrumentation.
+Frozen semantics, instrumentation, dependency closure and historical authority
+remain unchanged. Admission or preparation does not qualify runtime execution.

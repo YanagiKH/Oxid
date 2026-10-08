@@ -19,6 +19,8 @@ mod candidate;
 // Paid leaves retain source ownership and fully compare untrusted observations.
 mod leaf;
 mod public_facade;
+// Error-only source validation for live producer observations.
+mod producer_diagnostic;
 pub(in crate::frontend) use public_facade::{
     import_checked, import_produced, Imported, IMPORT_BYTES,
 };
@@ -84,6 +86,35 @@ impl<'w> Wire<'w> {
         // Only reserved/inactive storage is interpreted at this precursor.
         // Active row ownership, source correspondence and semantics are pending.
         for column in 0..COLUMN_STARTS.len() {
+            for cell in usize::from(rows)..CELLS {
+                if wire.word(column, cell)? != 0 {
+                    return Err(Boundary::Frame);
+                }
+            }
+        }
+        Ok(wire)
+    }
+    /// Diagnostic frames carry only OPA rows, never synthetic typed columns.
+    fn decode_diagnostic(bytes: &'w [u8], source_len: usize) -> Result<Self, Boundary> {
+        let protocol = Protocol::from_opa(bytes).ok_or(Boundary::Frame)?;
+        if source_len > protocol.source_max()
+            || bytes.len() != OPA_BYTES + 16
+            || bytes[4..8] != [0; 4]
+            || usize::from(bytes[8]) > MAX_ROWS
+            || usize::from(bytes[10]) != source_len
+            || &bytes[OPA_BYTES..OPA_BYTES + 3] != b"STF"
+            || bytes[OPA_BYTES + 3] != protocol.digit()
+            || bytes[OPA_BYTES + 4] != 1
+            || bytes[OPA_BYTES + 5] != bytes[8]
+        {
+            return Err(Boundary::Frame);
+        }
+        let rows = bytes[8];
+        if (rows == 0) != (bytes[9] == 0) || bytes[9] > rows {
+            return Err(Boundary::Frame);
+        }
+        let wire = Self { bytes, rows };
+        for column in 0..3 {
             for cell in usize::from(rows)..CELLS {
                 if wire.word(column, cell)? != 0 {
                     return Err(Boundary::Frame);
@@ -218,6 +249,34 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
         captured_source: &[u8],
         bytes: &'w [u8],
     ) -> Result<Self, Boundary> {
+        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
+        let source = Self::source(owner, captured_source, protocol)?;
+        let wire = Wire::decode(bytes, captured_source.len())?;
+        Ok(Self {
+            owner,
+            wire,
+            source,
+        })
+    }
+    fn bind_diagnostic(
+        owner: SourceOwner<'s>,
+        captured_source: &[u8],
+        bytes: &'w [u8],
+    ) -> Result<Self, Boundary> {
+        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
+        let source = Self::source(owner, captured_source, protocol)?;
+        let wire = Wire::decode_diagnostic(bytes, captured_source.len())?;
+        Ok(Self {
+            owner,
+            wire,
+            source,
+        })
+    }
+    fn source(
+        owner: SourceOwner<'s>,
+        captured_source: &[u8],
+        protocol: Protocol,
+    ) -> Result<&'s [u8], Boundary> {
         if owner.count() != 1 {
             return Err(Boundary::Domain);
         }
@@ -231,7 +290,6 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
         }
         // Reject oversized equal-length inputs before inspecting their bytes.
         // The private boundary therefore has a bounded equality/ASCII scan.
-        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
         if captured_source.len() > protocol.source_max() {
             return Err(Boundary::Domain);
         }
@@ -253,12 +311,7 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
         {
             return Err(Boundary::Source);
         }
-        let wire = Wire::decode(bytes, captured_source.len())?;
-        Ok(Self {
-            owner,
-            wire,
-            source: source.text().as_bytes(),
-        })
+        Ok(source.text().as_bytes())
     }
 }
 

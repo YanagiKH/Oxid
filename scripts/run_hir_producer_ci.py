@@ -17,6 +17,7 @@ import sys
 import time
 
 from qualify_hir_producers_v2 import validate_summary as validate_v2_summary
+from qualify_hir_producer_diagnostics import validate_summary as validate_diagnostic_summary
 
 
 def digest(path):
@@ -164,6 +165,12 @@ class Runner:
         validate_source_manifest(v2_paths['source_manifest_sha256'])
         self.receipt["v2_inputs"] = {key: digest(path) for key, path in v2_paths.items()}
         self.receipt["edge_harness_sha256"] = digest(edge_harness)
+        diagnostic_harness = self.repo / "scripts/qualify_hir_producer_diagnostics.py"
+        diagnostic_paths = dict(harness_sha256=diagnostic_harness,
+                                builder_sha256=v2_paths['builder_sha256'],
+                                source_manifest_sha256=v2_paths['source_manifest_sha256'],
+                                roster_sha256=self.repo / 'tests/fixtures/bounded_typed_static/cases.json')
+        self.receipt['diagnostic_inputs'] = {key: digest(path) for key, path in diagnostic_paths.items()}
         rust = self.call("rust-version", ["rustc", "-Vv"]).decode()
         require(re.search(r"^release: 1\.99\.0$", rust, re.MULTILINE), "requires qualified Rust 1.99.0")
         self.call("cargo-version", [self.args.cargo, "-V"])
@@ -208,17 +215,27 @@ class Runner:
                       '--bundle', v2_evidence / 'v2-build/bundle', '--output', edge_evidence])
             validate_edge_summary(edge_evidence, executable, v2_summary['executable_sha256']['parser'])
             validate_v2_summary(v2_evidence, expected_v2)
+            diagnostic_evidence = self.output / (profile + '-diagnostic-qualification')
+            self.call(profile + '-diagnostic-qualification', [sys.executable, '-B', diagnostic_harness,
+                      '--compiler', executable, '--llvm-bin', self.args.llvm_bin,
+                      '--cc', self.args.cc, '--output', diagnostic_evidence])
+            expected_diagnostics = dict(self.receipt['diagnostic_inputs'], source_head=initial['head'],
+                                        source_tree=initial['tree'], compiler_sha256=binary_hash)
+            validate_diagnostic_summary(diagnostic_evidence, expected_diagnostics)
             require(digest(executable) == binary_hash and digest(retained) == binary_hash,
                     "compiler changed during qualification")
             require(self.identity(profile + "-final") == initial, "source changed during qualification")
             entry.update(complete=True, summary_sha256=digest(evidence / "summary.json"),
                          v2_summary_sha256=digest(v2_evidence / 'summary.json'),
-                         v2_edge_summary_sha256=digest(edge_evidence / 'summary.json'))
+                         v2_edge_summary_sha256=digest(edge_evidence / 'summary.json'),
+                         diagnostic_summary_sha256=digest(diagnostic_evidence / 'summary.json'))
             self.save()
         require(digest(harness) == self.receipt["harness_sha256"], "qualification harness changed")
         require({key: digest(path) for key, path in v2_paths.items()} == self.receipt['v2_inputs'],
                 'v2 qualification inputs changed')
         require(digest(edge_harness) == self.receipt['edge_harness_sha256'], 'v2 edge harness changed')
+        require({key: digest(path) for key, path in diagnostic_paths.items()} == self.receipt['diagnostic_inputs'],
+                'diagnostic qualification inputs changed')
         require(digest(Path(__file__)) == self.receipt['wrapper_sha256'], 'qualification wrapper changed')
         self.receipt["complete"] = True
         self.save()

@@ -192,7 +192,7 @@ class BuildReceiptControls(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'output mismatch'):
                 validate_edge_summary(root, Path('/selected-compiler'), 'p' * 64)
 
-    def test_wrapper_runs_v1_v2_and_edge_recipe_on_each_selected_profile(self):
+    def test_wrapper_runs_v1_v2_edge_and_diagnostic_recipe_on_each_selected_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             runner = Runner.__new__(Runner)
@@ -217,7 +217,7 @@ class BuildReceiptControls(unittest.TestCase):
                     return self.data([artifact])
                 output = Path(argv[-1])
                 output.mkdir()
-                if '-v2-' not in name:
+                if '-v2-' not in name and '-diagnostic-' not in name:
                     selected = Path(argv[argv.index('--compiler') + 1])
                     summary = dict(result='passed', negative_cli_probes=76, source_head=initial['head'],
                                    compiler_sha256=digest(selected), harness_sha256=runner.receipt['harness_sha256'])
@@ -228,22 +228,30 @@ class BuildReceiptControls(unittest.TestCase):
 
             with patch.object(runner, 'identity', return_value=initial), patch.object(runner, 'call', side_effect=call), \
                     patch('run_hir_producer_ci.validate_v2_summary', return_value={'executable_sha256': {'parser': 'p' * 64}}) as v2, \
-                    patch('run_hir_producer_ci.validate_edge_summary') as edge:
+                    patch('run_hir_producer_ci.validate_edge_summary') as edge, \
+                    patch('run_hir_producer_ci.validate_diagnostic_summary') as diagnostics:
                 runner.run()
             self.assertTrue(runner.receipt['complete'])
             self.assertEqual(v2.call_count, 4)
             self.assertEqual(edge.call_count, 2)
+            self.assertEqual(diagnostics.call_count, 2)
             for profile in ('debug', 'release'):
                 names = [name for name, _ in calls if name.startswith(profile)]
-                self.assertEqual(names, [profile + suffix for suffix in ('-build', '-qualification', '-v2-qualification', '-v2-edge-controls')])
+                self.assertEqual(names, [profile + suffix for suffix in ('-build', '-qualification', '-v2-qualification', '-v2-edge-controls', '-diagnostic-qualification')])
                 selected = str((runner.target / profile / 'oxid').resolve())
                 for name, argv in calls:
                     if name.startswith(profile) and name != profile + '-build':
                         self.assertEqual(str(argv[argv.index('--compiler') + 1]), selected)
                 entry = runner.receipt['profiles'][profile]
                 self.assertTrue(entry['complete'])
-                for key in ('summary_sha256', 'v2_summary_sha256', 'v2_edge_summary_sha256'):
+                for key in ('summary_sha256', 'v2_summary_sha256', 'v2_edge_summary_sha256', 'diagnostic_summary_sha256'):
                     self.assertEqual(len(entry[key]), 64)
+            for call in diagnostics.call_args_list:
+                evidence, expected = call.args
+                self.assertTrue(evidence.name.endswith('-diagnostic-qualification'))
+                self.assertEqual(expected['source_head'], initial['head'])
+                self.assertEqual(expected['source_tree'], initial['tree'])
+                self.assertEqual(expected['roster_sha256'], runner.receipt['diagnostic_inputs']['roster_sha256'])
 
     def test_workflow_keeps_exact_head_profiles_and_failure_upload(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
@@ -257,6 +265,44 @@ class BuildReceiptControls(unittest.TestCase):
         self.assertIn("cargo fetch --locked", job)
         self.assertNotIn("continue-on-error", job)
         self.assertNotIn("permissions:", job)
+
+    def test_failed_diagnostic_admission_cannot_complete_profile_or_wrapper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner = Runner.__new__(Runner)
+            runner.repo = Path(__file__).resolve().parents[1]
+            runner.output, runner.target = root, root / 'target'
+            runner.target.mkdir()
+            runner.args = SimpleNamespace(cargo='cargo', llvm_bin=Path('/llvm'), cc='cc')
+            runner.env, runner.forbidden = {}, []
+            runner.receipt = dict(complete=False, commands=[], profiles={})
+            initial = dict(head='a' * 40, tree='b' * 40)
+
+            def call(name, argv):
+                if name == 'rust-version':
+                    return b'release: 1.99.0\n'
+                if name.endswith('-version'):
+                    return b'19.1.7'
+                if name.endswith('-build'):
+                    _, artifact = self.fixture(runner.target, name.removesuffix('-build'))
+                    return self.data([artifact])
+                output = Path(argv[-1])
+                output.mkdir()
+                (output / 'summary.json').write_text('{}')
+                return b'fake controller evidence'
+
+            with patch.object(runner, 'identity', return_value=initial), \
+                    patch.object(runner, 'call', side_effect=call), \
+                    patch('run_hir_producer_ci.validate_v1_summary'), \
+                    patch('run_hir_producer_ci.validate_v2_summary', return_value={'executable_sha256': {'parser': 'p' * 64}}), \
+                    patch('run_hir_producer_ci.validate_edge_summary'), \
+                    patch('run_hir_producer_ci.validate_diagnostic_summary', side_effect=RuntimeError('incomplete diagnostics')):
+                with self.assertRaisesRegex(RuntimeError, 'incomplete diagnostics'):
+                    runner.run()
+            self.assertFalse(runner.receipt['complete'])
+            self.assertFalse(runner.receipt['profiles']['debug']['complete'])
+            self.assertNotIn('release', runner.receipt['profiles'])
+            self.assertNotIn('diagnostic_summary_sha256', runner.receipt['profiles']['debug'])
 
 
 if __name__ == "__main__":

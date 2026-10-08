@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 330)
+        self.assertEqual(len(captured["inputs"]), 340)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,6 +107,104 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_producer_diagnostic_exact_inverse_forward_and_retained_v2(self):
+        helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["producer-diagnostic-transition.patch"]
+        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        self.assertEqual(restored, self.captured["frontend_v2_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(self.captured["inputs"]), len(restored), len(touched)), (340, 330, 8))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored),
+                         set(helper.ADDITIONS) | {row["path"] for row in helper.FIXTURES})
+        binding.check_bytes(restored, self.captured["frontend_v2_source"]["files"])
+        source = self.root / "forward-diagnostic"
+        binding.materialize(source, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra,
+                                     str(self.package / "producer-diagnostic-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for row in helper.FIXTURES:
+            target = source / row["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(self.captured["inputs"][row["path"]])
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        for wrong in (restored, self.captured["hir_producer_inputs"], self.captured["archived"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(wrong, patch_bytes, binding)
+
+    def test_producer_diagnostic_preserves_all_frontend_v2_authorities(self):
+        expected = {
+            "frontend-v2-source.json": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a",
+            "frontend-v2-authority.json": "597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6",
+            "frontend-v2-transition.patch": "b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32",
+            "frontend_v2.py": "c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest)
+        self.assertEqual(len(self.captured["frontend_v2_inputs"]), 330)
+        self.assertEqual(self.captured["frontend_v2_source"]["reviewed_source_head"],
+                         "5f5a6639db9f779bb2453695f64ea980f7ea1790")
+        self.assertNotIn("producer_diagnostic_helper", self.captured)
+        binding.assert_unchanged(self.repo, self.captured, self.package)
+
+    def test_producer_diagnostic_additions_and_provenance_reject_before_v2(self):
+        helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
+        paths = [*helper.ADDITIONS, *(row["path"] for row in helper.FIXTURES),
+                 *(row["path"] for row in helper.DIAGNOSTIC_CLOSURE)]
+        for name in paths:
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                if replacement is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(replacement)
+                with self.subTest(path=name, missing=replacement is None), patch.object(
+                        binding, "load_frontend_v2", side_effect=AssertionError("v2 inverse ran")):
+                    self.rejects("missing regular input" if replacement is None else "changed input")
+                path.write_bytes(original)
+
+    def test_producer_diagnostic_coherent_package_tampering_rejects(self):
+        for name, error in (("frontend-v2-source.json", "unapproved frontend v2 source manifest"),
+                            ("producer-diagnostic-authority.json", "stale producer diagnostic authority"),
+                            ("producer-diagnostic-transition.patch", "wrong transition patch"),
+                            ("producer_diagnostic.py", "unapproved producer diagnostic source helper")):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name):
+                self.rejects_before_materialization(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_producer_diagnostic_new_modes_and_extra_compiler_are_closed(self):
+        helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
+        for name in [*helper.ADDITIONS, *(row["path"] for row in helper.FIXTURES)]:
+            path = self.repo / name
+            original_mode = path.stat().st_mode
+            path.chmod(0o755)
+            with self.subTest(path=name), patch.object(
+                    binding, "load_frontend_v2", side_effect=AssertionError("v2 inverse ran")):
+                self.rejects("changed input mode")
+            path.chmod(original_mode)
+        (self.repo / "src/diagnostic-extra.rs").write_bytes(b"// unexpected\n")
+        with patch.object(binding, "load_frontend_v2", side_effect=AssertionError("v2 inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_producer_diagnostic_archive_receipt_names_both_inverse_layers(self):
+        output = self.root / "diagnostic-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["producer_diagnostic_inverse_touched"],
+                         self.captured["producer_diagnostic_touched"])
+        self.assertEqual(receipt["frontend_v2_source_sha256"],
+                         "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a")
+        self.assertEqual(receipt["frontend_v2_inverse_touched"], self.captured["frontend_v2_touched"])
+        self.assertEqual((receipt["compiler_executions"], receipt["semantic_pass"]), (0, False))
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
     def test_frontend_v2_identity_receipt_rechecks_without_live_module_state(self):
         binding.assert_unchanged(self.repo, self.captured, self.package)
         self.assertEqual(binding.preflight(self.repo, self.package), self.captured)
@@ -115,7 +213,7 @@ class SourceBindingTests(unittest.TestCase):
     def test_frontend_v2_exact_inverse_forward_and_frozen_producer(self):
         helper = binding.load_frontend_v2(self.captured["package_bytes"], self.package)
         patch_bytes = self.captured["package_bytes"]["frontend-v2-transition.patch"]
-        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        restored, touched = helper.inverse(self.captured["frontend_v2_inputs"], patch_bytes, binding)
         self.assertEqual(restored, self.captured["hir_producer_inputs"])
         self.assertEqual(len(restored), 327)
         self.assertEqual(touched, list(helper.PATHS))
@@ -129,8 +227,8 @@ class SourceBindingTests(unittest.TestCase):
         for row in helper.FIXTURES:
             target = source / row["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(self.captured["inputs"][row["path"]])
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+            target.write_bytes(self.captured["frontend_v2_inputs"][row["path"]])
+        binding.check_entries(source, self.captured["frontend_v2_source"]["files"], exact=True)
         for wrong in (restored, self.captured["hir_import_inputs"], self.captured["archived"]):
             with self.assertRaises(binding.BindingError):
                 helper.inverse(wrong, patch_bytes, binding)
@@ -147,9 +245,9 @@ class SourceBindingTests(unittest.TestCase):
                     self.rejects("missing regular input" if replacement is None else "changed input")
                 path.write_bytes(original)
         for name, error in (("hir-producer-source.json", "unapproved HIR producer source manifest"),
-                            ("frontend-v2-authority.json", "stale frontend v2 authority"),
-                            ("frontend-v2-transition.patch", "wrong transition patch"),
-                            ("frontend_v2.py", "unapproved frontend v2 source helper")):
+                            ("frontend-v2-authority.json", "changed retained frontend v2 binding"),
+                            ("frontend-v2-transition.patch", "changed retained frontend v2 binding"),
+                            ("frontend_v2.py", "changed retained frontend v2 binding")):
             path=self.package/name; original=path.read_bytes();path.write_bytes(original+b"\n")
             self.rehash_package()
             self.rejects_before_materialization(error)
@@ -2595,7 +2693,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (330, 185, 185, 133, 129, 117))
+                         (340, 185, 185, 133, 129, 117))
         self.assertEqual(plan["native_storage_source_members"], 264)
         self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
         self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)

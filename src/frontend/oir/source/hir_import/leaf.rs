@@ -536,9 +536,12 @@ pub(super) fn denied(
 /// Already-owned source/AST/capture payload and test-observer trace backing are
 /// explicit baseline/instrumentation, not hidden candidate allocations. This
 /// does not claim a cap on inherited resolver internals, diagnostics or RSS.
-fn outer_named_bytes() -> Result<usize, Boundary> {
+pub(super) fn outer_named_bytes() -> Result<usize, Boundary> {
     let copies = |n: usize, count: usize| n.checked_mul(count).ok_or(Boundary::Overflow);
     let roles = [
+        // Shared source/domain helper input, returned and held borrowed slice.
+        3 * size_of::<(SourceOwner<'_>, &[u8], Protocol)>(),
+        3 * size_of::<Result<&[u8], Boundary>>(),
         size_of::<[Protocol; 16]>(), // Complete version-selection, call and return roles.
         size_of::<[Option<Protocol>; 4]>(),
         size_of::<[(IndexLimits, Protocol); 6]>(),

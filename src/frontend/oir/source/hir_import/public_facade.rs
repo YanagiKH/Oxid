@@ -1,6 +1,8 @@
 //! Explicit supplied-observation facade. Only authentic ProjectSources creates
 //! the source owner. Outputs carry no witness or caller-selected compiler seam.
-use super::{allocation, candidate, leaf, Boundary, SourceOwner, SUCCESS_BYTES};
+use super::{
+    allocation, candidate, leaf, producer_diagnostic, Boundary, SourceOwner, SUCCESS_BYTES,
+};
 use crate::frontend::{
     declaration_index::IndexLimits,
     diagnostic::Diagnostic,
@@ -128,6 +130,28 @@ pub(in crate::frontend) fn import_produced(
         })
     })()
     .ok_or_else(|| refusal("experimental HIR producer resource limit exceeded"))?;
+    if observation.len() == super::OPA_BYTES + 16 {
+        // The error-only branch bypasses execute, but its shared live facade
+        // carriers/dispatch still pay the same complete conservative allowance.
+        let diagnostic_limits = allowance(limited).ok_or_else(|| {
+            vec![*Diagnostic::new(
+                "E0703",
+                "hir-producer",
+                "experimental HIR producer diagnostic resource limit exceeded",
+                None,
+            )]
+        })?;
+        return match producer_diagnostic::validate(project, observation, diagnostic_limits) {
+            Ok(never) => match never {},
+            Err(producer_diagnostic::Rejected::Confirmed(errors)) => Err(errors),
+            Err(error) => Err(vec![*Diagnostic::new(
+                "E0703",
+                "hir-producer",
+                error.message(),
+                None,
+            )]),
+        };
+    }
     execute(
         project,
         observation,

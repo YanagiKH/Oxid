@@ -199,12 +199,12 @@ pub(super) fn producer_transport_bytes() -> usize {
         + 2 * size_of::<&options::ProducerOptions>()
         // Producer return/local and the complete fixed observation extraction.
         + 2 * size_of::<hir_producer::Outcome>()
-        + size_of::<Option<[u8; oir::IMPORT_BYTES]>>()
-        + size_of::<[u8; oir::IMPORT_BYTES]>()
+        + size_of::<Option<hir_producer::Observation>>()
+        + size_of::<hir_producer::Observation>()
         + 2 * size_of::<&hir_producer::Outcome>()
         + 2 * size_of::<&ProjectSources>()
         + 2 * size_of::<&Path>()
-        + 2 * size_of::<&[u8; oir::IMPORT_BYTES]>()
+        + 2 * size_of::<&hir_producer::Observation>()
         + 2 * size_of::<&[u8]>()
         // Imported call, held result and match/closure return carriers.
         + 3 * size_of::<Result<oir::Imported, Vec<Diagnostic>>>()
@@ -246,7 +246,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
                 None,
             )]);
         };
-        match oir::import_produced(&project, &observation, request.operation)? {
+        match oir::import_produced(&project, observation.as_bytes(), request.operation)? {
             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
             oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
             oir::Imported::Emitted(module) => {
