@@ -1,0 +1,61 @@
+{
+  "schema": "producer-diagnostic-captures-1",
+  "source_commit": "e9dff894303677b28810e27b4354b6e4d5e3d42f",
+  "source_tree": "f88dbbfc75e14c355be6e132bbf0db3a83e2fb31",
+  "scope": "Actual native parser/static outputs captured independently. Static stdin is exact AST version marker, source length, original source and unchanged parser stdout. These are observations, not compiler authority. Negative tests explicitly mutate copies.",
+  "compiler_sha256": "07191537a4793c0f4825789a4159f3cb5babe98a85fb5c99a147eb1f764cee3f",
+  "v1_manifest": "OXID-HIR-PRODUCERS-1\nparser 299bd8fe1e29b318b66415f66321e45ae3305e6714c5826e76d7b3865709b3e6\nstatic 3f1b3afec3b54c60793756ed37092f188dfbcc45f4ac100003f10a73a940de38\n",
+  "files": [
+    {
+      "file": "duplicate-source.txt",
+      "bytes": 31,
+      "sha256": "b62fbb273ad1e0a884f4c1e5ddbc45886bc4e962e94ab03761ea9d0e4b40cef2"
+    },
+    {
+      "file": "duplicate.bin",
+      "bytes": 1575,
+      "sha256": "d6a0707e9f0ed1351602a830166ea4a18823653457962f016913493b61fca38c"
+    },
+    {
+      "file": "unknown-type-source.txt",
+      "bytes": 35,
+      "sha256": "a40af9465791100a701df35e87a9f23902eb4a2cfd14985aba05cdf1532c1ff0"
+    },
+    {
+      "file": "unknown-type.bin",
+      "bytes": 1575,
+      "sha256": "a9445cbcfdf920b50e960c730aa33aa2d74379d93c7f21f04d3348ce6dd7a840"
+    },
+    {
+      "file": "multiple-source.txt",
+      "bytes": 48,
+      "sha256": "25016a9cacca43132e7c5d29f4d2f11a9719d49427b8a5a24c209e5f50cb138c"
+    },
+    {
+      "file": "multiple.bin",
+      "bytes": 1575,
+      "sha256": "b3fdb49bf2f5da837121d6cdb80ac4a541e71416c6096e73d8e419c84e0e5fd0"
+    },
+    {
+      "file": "end255-source.txt",
+      "bytes": 255,
+      "sha256": "0ea89521240db1e81600391e78d2888f3f13d8c3aa945a2eb9b40577f90ecc73"
+    },
+    {
+      "file": "end255.bin",
+      "bytes": 1575,
+      "sha256": "4f1b818fb3c6036c7e9d7df32dab4a7b176f0d425aeab2652a372ad3b13bbb38"
+    }
+  ],
+  "v2_manifest": "OXID-HIR-PRODUCERS-2\nparser 09000289a83ffe1215bf9736beeb4fdfc440c0f633c6a36a2cc8c58d07c2cde0\nstatic b3944bc171fe06f22528110e15406b94ecab353c9395b7b3798fbd48fd7c5f50\n",
+  "v2_build": {
+    "schema_version": 2,
+    "compiler_sha256": "07191537a4793c0f4825789a4159f3cb5babe98a85fb5c99a147eb1f764cee3f",
+    "source_manifest_sha256": "08629aee51a25e05fd7bf4b121ff8a7d882683687425f4e5469f8b508618d608",
+    "executable_sha256": {
+      "parser": "09000289a83ffe1215bf9736beeb4fdfc440c0f633c6a36a2cc8c58d07c2cde0",
+      "static": "b3944bc171fe06f22528110e15406b94ecab353c9395b7b3798fbd48fd7c5f50"
+    },
+    "source_count": 31
+  }
+}

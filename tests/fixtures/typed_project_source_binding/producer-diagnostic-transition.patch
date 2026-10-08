@@ -1,0 +1,948 @@
+diff --git a/src/frontend/driver.rs b/src/frontend/driver.rs
+index 76c32b3..5d75f2d 100644
+--- a/src/frontend/driver.rs
++++ b/src/frontend/driver.rs
+@@ -199,12 +199,12 @@ pub(super) fn producer_transport_bytes() -> usize {
+         + 2 * size_of::<&options::ProducerOptions>()
+         // Producer return/local and the complete fixed observation extraction.
+         + 2 * size_of::<hir_producer::Outcome>()
+-        + size_of::<Option<[u8; oir::IMPORT_BYTES]>>()
+-        + size_of::<[u8; oir::IMPORT_BYTES]>()
++        + size_of::<Option<hir_producer::Observation>>()
++        + size_of::<hir_producer::Observation>()
+         + 2 * size_of::<&hir_producer::Outcome>()
+         + 2 * size_of::<&ProjectSources>()
+         + 2 * size_of::<&Path>()
+-        + 2 * size_of::<&[u8; oir::IMPORT_BYTES]>()
++        + 2 * size_of::<&hir_producer::Observation>()
+         + 2 * size_of::<&[u8]>()
+         // Imported call, held result and match/closure return carriers.
+         + 3 * size_of::<Result<oir::Imported, Vec<Diagnostic>>>()
+@@ -246,7 +246,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
+                 None,
+             )]);
+         };
+-        match oir::import_produced(&project, &observation, request.operation)? {
++        match oir::import_produced(&project, observation.as_bytes(), request.operation)? {
+             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
+             oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+             oir::Imported::Emitted(module) => {
+diff --git a/src/frontend/hir_producer.rs b/src/frontend/hir_producer.rs
+index 4fa0805..d98e29c 100644
+--- a/src/frontend/hir_producer.rs
++++ b/src/frontend/hir_producer.rs
+@@ -16,6 +16,7 @@ mod supervisor;
+ const PRODUCER_PIPELINE_ADMITTED: bool = true;
+ const OPA_BYTES: usize = 1559;
+ const OBSERVATION_BYTES: usize = 2607;
++const DIAGNOSTIC_BYTES: usize = OPA_BYTES + 16;
+ const SOURCE_MAX: usize = 255;
+ const AST1_MAX: usize = 5 + SOURCE_MAX + OPA_BYTES;
+ 
+@@ -36,8 +37,20 @@ pub(super) struct Record {
+     leader_reaped: bool,
+ }
+ 
++/// Exact observed extent is retained separately from fixed bounded storage.
++/// Unused capacity is never submitted to either checked decoder.
++pub(super) struct Observation {
++    bytes: [u8; OBSERVATION_BYTES],
++    len: usize,
++}
++impl Observation {
++    pub(super) fn as_bytes(&self) -> &[u8] {
++        &self.bytes[..self.len]
++    }
++}
++
+ pub(super) struct Outcome {
+-    pub(super) observation: Option<[u8; OBSERVATION_BYTES]>,
++    pub(super) observation: Option<Observation>,
+     pub(super) error: Option<&'static str>,
+     pub(super) records: [Option<Record>; 2],
+ }
+@@ -166,16 +179,24 @@ pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
+         if !completed(&typed, framed.len()) {
+             return result.reject("static producer failed its bounded process/transport contract");
+         }
+-        if typed.stdout_len != OBSERVATION_BYTES
++        let tag = typed.stdout[OPA_BYTES + 4];
++        let exact = match tag {
++            0 => typed.stdout_len == OBSERVATION_BYTES,
++            1 => typed.stdout_len == DIAGNOSTIC_BYTES,
++            _ => false,
++        };
++        if !exact
+             || typed.stdout[..OPA_BYTES] != parser.stdout[..OPA_BYTES]
+             || &typed.stdout[OPA_BYTES..OPA_BYTES + 3] != b"STF"
+             || typed.stdout[OPA_BYTES + 3] != protocol.digit()
+-            || typed.stdout[OPA_BYTES + 4] != 0
+         {
+-            return result.reject("static producer did not return one complete successful unchanged version-matched OPA/STF observation");
++            return result.reject("static producer did not return one complete unchanged version-matched OPA/STF success or diagnostic observation");
+         }
+-        let mut observation = [0u8; OBSERVATION_BYTES];
+-        observation.copy_from_slice(&typed.stdout[..OBSERVATION_BYTES]);
++        let mut observation = Observation {
++            bytes: [0u8; OBSERVATION_BYTES],
++            len: typed.stdout_len,
++        };
++        observation.bytes[..observation.len].copy_from_slice(&typed.stdout[..typed.stdout_len]);
+         result.observation = Some(observation);
+         result
+         // The verified private executable snapshots drop here, after the
+@@ -221,6 +242,8 @@ pub(super) fn print_records(outcome: &Outcome, json: bool) {
+ pub(super) fn named_bytes() -> usize {
+     use std::mem::size_of;
+     let carriers = 3 * size_of::<Outcome>()
++        + 3 * size_of::<Observation>()
++        + size_of::<(usize, u8, bool)>()
+         + size_of::<[Record; 8]>()
+         + 3 * size_of::<[u8; AST1_MAX]>()
+         + 2 * size_of::<SourceOwner<'static>>()
+diff --git a/src/frontend/oir/source/hir_import.rs b/src/frontend/oir/source/hir_import.rs
+index fb593f0..d94e29e 100644
+--- a/src/frontend/oir/source/hir_import.rs
++++ b/src/frontend/oir/source/hir_import.rs
+@@ -19,6 +19,8 @@ mod candidate;
+ // Paid leaves retain source ownership and fully compare untrusted observations.
+ mod leaf;
+ mod public_facade;
++// Error-only source validation for live producer observations.
++mod producer_diagnostic;
+ pub(in crate::frontend) use public_facade::{
+     import_checked, import_produced, Imported, IMPORT_BYTES,
+ };
+@@ -92,6 +94,35 @@ impl<'w> Wire<'w> {
+         }
+         Ok(wire)
+     }
++    /// Diagnostic frames carry only OPA rows, never synthetic typed columns.
++    fn decode_diagnostic(bytes: &'w [u8], source_len: usize) -> Result<Self, Boundary> {
++        let protocol = Protocol::from_opa(bytes).ok_or(Boundary::Frame)?;
++        if source_len > protocol.source_max()
++            || bytes.len() != OPA_BYTES + 16
++            || bytes[4..8] != [0; 4]
++            || usize::from(bytes[8]) > MAX_ROWS
++            || usize::from(bytes[10]) != source_len
++            || &bytes[OPA_BYTES..OPA_BYTES + 3] != b"STF"
++            || bytes[OPA_BYTES + 3] != protocol.digit()
++            || bytes[OPA_BYTES + 4] != 1
++            || bytes[OPA_BYTES + 5] != bytes[8]
++        {
++            return Err(Boundary::Frame);
++        }
++        let rows = bytes[8];
++        if (rows == 0) != (bytes[9] == 0) || bytes[9] > rows {
++            return Err(Boundary::Frame);
++        }
++        let wire = Self { bytes, rows };
++        for column in 0..3 {
++            for cell in usize::from(rows)..CELLS {
++                if wire.word(column, cell)? != 0 {
++                    return Err(Boundary::Frame);
++                }
++            }
++        }
++        Ok(wire)
++    }
+     fn word(self, column: usize, cell: usize) -> Result<i32, Boundary> {
+         let start = *COLUMN_STARTS.get(column).ok_or(Boundary::Frame)?;
+         if cell >= CELLS {
+@@ -218,6 +249,34 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
+         captured_source: &[u8],
+         bytes: &'w [u8],
+     ) -> Result<Self, Boundary> {
++        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
++        let source = Self::source(owner, captured_source, protocol)?;
++        let wire = Wire::decode(bytes, captured_source.len())?;
++        Ok(Self {
++            owner,
++            wire,
++            source,
++        })
++    }
++    fn bind_diagnostic(
++        owner: SourceOwner<'s>,
++        captured_source: &[u8],
++        bytes: &'w [u8],
++    ) -> Result<Self, Boundary> {
++        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
++        let source = Self::source(owner, captured_source, protocol)?;
++        let wire = Wire::decode_diagnostic(bytes, captured_source.len())?;
++        Ok(Self {
++            owner,
++            wire,
++            source,
++        })
++    }
++    fn source(
++        owner: SourceOwner<'s>,
++        captured_source: &[u8],
++        protocol: Protocol,
++    ) -> Result<&'s [u8], Boundary> {
+         if owner.count() != 1 {
+             return Err(Boundary::Domain);
+         }
+@@ -231,7 +290,6 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
+         }
+         // Reject oversized equal-length inputs before inspecting their bytes.
+         // The private boundary therefore has a bounded equality/ASCII scan.
+-        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
+         if captured_source.len() > protocol.source_max() {
+             return Err(Boundary::Domain);
+         }
+@@ -253,12 +311,7 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
+         {
+             return Err(Boundary::Source);
+         }
+-        let wire = Wire::decode(bytes, captured_source.len())?;
+-        Ok(Self {
+-            owner,
+-            wire,
+-            source: source.text().as_bytes(),
+-        })
++        Ok(source.text().as_bytes())
+     }
+ }
+ 
+diff --git a/src/frontend/oir/source/hir_import/emit_resource_tests.rs b/src/frontend/oir/source/hir_import/emit_resource_tests.rs
+index 9161ba8..4c5ee71 100644
+--- a/src/frontend/oir/source/hir_import/emit_resource_tests.rs
++++ b/src/frontend/oir/source/hir_import/emit_resource_tests.rs
+@@ -21,8 +21,9 @@ const WIRE: &[u8] = include_bytes!(concat!(
+     "/tests/fixtures/checked_hir_import/rich-success.bin"
+ ));
+ // Independently measured rich main.ox endpoints after complete versioned
+-// protocol/endpoint carriers; not derived from the call under test.
+-const FIXED: u64 = 139_939;
++// protocol/endpoint carriers plus 264 bytes of shared source-helper transports;
++// not derived from the call under test.
++const FIXED: u64 = 140_203;
+ const HIR_PAIR: u64 = 3_472 + 2_241;
+ const LLVM_BYTES: u64 = 14_325;
+ const WORK: u64 = 10_069_187;
+@@ -290,7 +291,7 @@ fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints() {
+     // Independently measured authentic v2 fixture; keep the endpoints visible.
+     assert_eq!(
+         (fixed, retained, bytes, work),
+-        (139_939, 141_475, 690, 1_004_093)
++        (140_203, 141_739, 690, 1_004_093)
+     );
+     drop(baseline);
+     let exact = IndexLimits {
+diff --git a/src/frontend/oir/source/hir_import/leaf.rs b/src/frontend/oir/source/hir_import/leaf.rs
+index 68b1b24..a648aae 100644
+--- a/src/frontend/oir/source/hir_import/leaf.rs
++++ b/src/frontend/oir/source/hir_import/leaf.rs
+@@ -536,9 +536,12 @@ pub(super) fn denied(
+ /// Already-owned source/AST/capture payload and test-observer trace backing are
+ /// explicit baseline/instrumentation, not hidden candidate allocations. This
+ /// does not claim a cap on inherited resolver internals, diagnostics or RSS.
+-fn outer_named_bytes() -> Result<usize, Boundary> {
++pub(super) fn outer_named_bytes() -> Result<usize, Boundary> {
+     let copies = |n: usize, count: usize| n.checked_mul(count).ok_or(Boundary::Overflow);
+     let roles = [
++        // Shared source/domain helper input, returned and held borrowed slice.
++        3 * size_of::<(SourceOwner<'_>, &[u8], Protocol)>(),
++        3 * size_of::<Result<&[u8], Boundary>>(),
+         size_of::<[Protocol; 16]>(), // Complete version-selection, call and return roles.
+         size_of::<[Option<Protocol>; 4]>(),
+         size_of::<[(IndexLimits, Protocol); 6]>(),
+diff --git a/src/frontend/oir/source/hir_import/producer_diagnostic.rs b/src/frontend/oir/source/hir_import/producer_diagnostic.rs
+new file mode 100644
+index 0000000..7c2fc19
+--- /dev/null
++++ b/src/frontend/oir/source/hir_import/producer_diagnostic.rs
+@@ -0,0 +1,318 @@
++//! Error-only live-producer validation. No supplied facts construct HIR or a
++//! typed/executable witness; only the genuine source checker's errors escape.
++use super::{ast_compare, leaf, source_work_bound_for, BoundObservation, Boundary, Protocol};
++use crate::frontend::{
++    declaration_index::{IndexLimits, SourceOwner, WorkMeter},
++    diagnostic::Diagnostic,
++    oir::{project::CheckedProjectTypes, source::check_project_candidate},
++    owned_diagnostic,
++    project::{budget::Allocator, ModuleId, ProjectSources},
++    source::{SourceFile, Span},
++};
++use std::{convert::Infallible, fmt, mem::size_of};
++
++// The existing Verify terminal charges 128 logical visits for each weighted
++// scalar checker unit. Each admitted family is bounded by 128 OPA rows, so
++// 128 * ((4+3+4+4+4+4+2)*128 + 8) dominates its typecheck term. Its diagnostic
++// allowance is 1024*(functions+1). Unknown-type syntax takes the genuine owned
++// resolution schedule and necessarily fails before owned typing in this domain.
++const CHECK_WORK: u64 = 128 * (25 * 128 + 8) + 1024 * (128 + 1);
++// Fixed header/span/label checks, bounded source-name/template streaming and
++// comparison with at most 1024 message bytes. No temporary String is allocated.
++const MATCH_WORK: u64 = 4_096;
++
++#[derive(Debug)]
++pub(super) enum Rejected {
++    Boundary(Boundary),
++    Budget,
++    Mismatch,
++    Confirmed(Vec<Diagnostic>),
++}
++impl From<Boundary> for Rejected {
++    fn from(error: Boundary) -> Self {
++        Self::Boundary(error)
++    }
++}
++impl Rejected {
++    pub(super) fn message(&self) -> &'static str {
++        match self {
++            Self::Budget => "experimental HIR producer diagnostic resource limit exceeded",
++            Self::Boundary(_) => "experimental HIR producer diagnostic does not match the authoritative source and exact diagnostic frame",
++            Self::Mismatch | Self::Confirmed(_) => "experimental HIR producer first diagnostic does not match the authoritative source checker",
++        }
++    }
++}
++
++#[derive(Clone, Copy, Debug)]
++struct Plan {
++    fixed_bytes: usize,
++    prepaid_work: u64,
++    canonical_limits: IndexLimits,
++}
++impl Plan {
++    fn calculate(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
++        let fixed_bytes = leaf::outer_named_bytes()?
++            .checked_add(ast_compare::named_bytes()?)
++            .and_then(|n| n.checked_add(named_bytes()))
++            .ok_or(Boundary::Overflow)?;
++        let bytes = u64::try_from(fixed_bytes).map_err(|_| Boundary::Overflow)?;
++        let prepaid_work = source_work_bound_for(protocol)?
++            .checked_add(CHECK_WORK)
++            .and_then(|n| n.checked_add(MATCH_WORK))
++            .ok_or(Boundary::Overflow)?;
++        let defaults = IndexLimits::default();
++        let canonical_limits = IndexLimits {
++            retained: limits
++                .retained
++                .min(defaults.retained)
++                .checked_sub(bytes)
++                .ok_or(Rejected::Budget)?,
++            scratch: limits
++                .scratch
++                .min(defaults.scratch)
++                .checked_sub(bytes)
++                .ok_or(Rejected::Budget)?,
++            work: limits.work.min(defaults.work),
++        };
++        if prepaid_work > canonical_limits.work {
++            return Err(Rejected::Budget);
++        }
++        Ok(Self {
++            fixed_bytes,
++            prepaid_work,
++            canonical_limits,
++        })
++    }
++}
++
++/// Complete additional enclosing carriers, conservatively summed across phases.
++/// The shared source/OPA envelope is added separately. Genuine declaration,
++/// resolver/typechecker and diagnostic allocations keep their inherited
++/// accounting; this is not a total heap/stack/RSS or allocator-capacity bound.
++fn named_bytes() -> usize {
++    4 * size_of::<Plan>()
++        + 3 * size_of::<Result<Plan, Rejected>>()
++        + 4 * size_of::<Rejected>()
++        + 4 * size_of::<Result<Infallible, Rejected>>()
++        + 3 * size_of::<Result<CheckedProjectTypes, Vec<Diagnostic>>>()
++        + 3 * size_of::<CheckedProjectTypes>()
++        + 3 * size_of::<Vec<Diagnostic>>()
++        + 2 * size_of::<WorkMeter>()
++        + 2 * size_of::<Allocator>()
++        + 4 * size_of::<IndexLimits>()
++        + 3 * size_of::<(&ProjectSources, &[u8], IndexLimits)>()
++        + 3 * size_of::<(
++            &ProjectSources,
++            &[u8],
++            IndexLimits,
++            &WorkMeter,
++            &mut Allocator,
++        )>()
++        + 3 * size_of::<(&ProjectSources, IndexLimits, &WorkMeter, &mut Allocator)>()
++        + 3 * size_of::<Result<BoundObservation<'_, '_>, Boundary>>()
++        + 3 * size_of::<BoundObservation<'_, '_>>()
++        + 3 * size_of::<Result<&SourceFile, Box<Diagnostic>>>()
++        + 3 * size_of::<(&[u8], &SourceFile, &Diagnostic)>()
++        + 4 * size_of::<Match<'_>>()
++        + 4 * size_of::<owned_diagnostic::Name<'_>>()
++        + 4 * size_of::<fmt::Arguments<'_>>()
++        + 4 * size_of::<fmt::Result>()
++        + 4 * size_of::<[&str; 4]>()
++        + 4 * size_of::<Option<&str>>()
++        + 8 * size_of::<Span>()
++        + 4 * size_of::<Option<Span>>()
++        + 4 * size_of::<[u8; 16]>()
++        + 4 * size_of::<[usize; 16]>()
++        + 4 * size_of::<[&[u8]; 8]>()
++        + 4 * size_of::<[bool; 16]>()
++}
++
++pub(super) fn validate(
++    project: &ProjectSources,
++    observation: &[u8],
++    limits: IndexLimits,
++) -> Result<Infallible, Rejected> {
++    let work = WorkMeter::new(limits.work);
++    execute(
++        project,
++        observation,
++        limits,
++        &work,
++        &mut Allocator::default(),
++    )
++}
++
++fn execute(
++    project: &ProjectSources,
++    observation: &[u8],
++    limits: IndexLimits,
++    work: &WorkMeter,
++    allocator: &mut Allocator,
++) -> Result<Infallible, Rejected> {
++    let protocol = Protocol::from_opa(observation).unwrap_or(Protocol::V1);
++    let plan = Plan::calculate(limits, protocol)?;
++    let owner = SourceOwner::project(project);
++    let source = owner.file(ModuleId(0)).map_err(|_| Boundary::Source)?;
++    work.debit(
++        plan.prepaid_work,
++        source.span(0, 0),
++        "producer diagnostic source/check/projection",
++    )
++    .map_err(|_| Rejected::Budget)?;
++    let bound = BoundObservation::bind_diagnostic(owner, source.text().as_bytes(), observation)?;
++    let _syntax = ast_compare::compare(&bound)?;
++    // This existing Types-depth source facade selects genuine owned/scalar
++    // resolution, including global-first and full-vector diagnostic ordering.
++    // It never lowers, emits or runs anything. Successful checking invalidates
++    // the producer's claimed error and is deliberately not a fallback result.
++    let errors = match check_project_candidate(project, plan.canonical_limits, work, allocator) {
++        Ok(_) => return Err(Rejected::Mismatch),
++        Err(errors) => errors,
++    };
++    let first = errors.first().ok_or(Rejected::Mismatch)?;
++    if !matches_first(&observation[super::OPA_BYTES..], source, first) {
++        return Err(Rejected::Mismatch);
++    }
++    Err(Rejected::Confirmed(errors))
++}
++
++// Streaming equality avoids allocating a projected producer Diagnostic/String.
++// Only the actual canonical error vector can be returned by the leaf.
++struct Match<'a> {
++    remaining: &'a str,
++}
++impl fmt::Write for Match<'_> {
++    fn write_str(&mut self, text: &str) -> fmt::Result {
++        self.remaining = self.remaining.strip_prefix(text).ok_or(fmt::Error)?;
++        Ok(())
++    }
++}
++fn message(actual: &str, expected: fmt::Arguments<'_>) -> bool {
++    if actual.len() > 1024 {
++        return false;
++    }
++    let mut target = Match { remaining: actual };
++    fmt::write(&mut target, expected).is_ok() && target.remaining.is_empty()
++}
++
++fn matches_first(header: &[u8], source: &SourceFile, first: &Diagnostic) -> bool {
++    if header.len() != 16 || !first.notes.is_empty() {
++        return false;
++    }
++    let [kind, start, end, secondary_start, secondary_end, label, expected, actual, nargs, argc] =
++        <[u8; 10]>::try_from(&header[6..]).expect("exact diagnostic header");
++    if !(1..=14).contains(&kind)
++        || start >= end
++        || usize::from(end) > source.text().len()
++        || first.primary != Some(source.span(usize::from(start), usize::from(end)))
++    {
++        return false;
++    }
++    let label_text = match label {
++        0 => "",
++        1 => "first declared here",
++        2 => "function declared here",
++        3 => "binding declared here",
++        4 => "immutable binding declared here",
++        _ => return false,
++    };
++    if label == 0 {
++        if secondary_start != 0 || secondary_end != 0 || !first.secondary.is_empty() {
++            return false;
++        }
++    } else if secondary_start >= secondary_end
++        || usize::from(secondary_end) > source.text().len()
++        || first.secondary.len() != 1
++        || first.secondary[0].0
++            != source.span(usize::from(secondary_start), usize::from(secondary_end))
++        || first.secondary[0].1 != label_text
++    {
++        return false;
++    }
++    let valid_label = match kind {
++        3 => label == 1,
++        8 => matches!(label, 0 | 2 | 3),
++        10 => label == 2,
++        14 => label == 4,
++        _ => label == 0,
++    };
++    let valid_payload = match kind {
++        8 => {
++            (1..=3).contains(&expected)
++                && (1..=3).contains(&actual)
++                && expected != actual
++                && nargs == 0
++                && argc == 0
++        }
++        10 => {
++            expected == 0
++                && actual == 0
++                && nargs != argc
++                && usize::from(nargs) <= super::MAX_ROWS
++                && usize::from(argc) <= super::MAX_ROWS
++        }
++        _ => expected == 0 && actual == 0 && nargs == 0 && argc == 0,
++    };
++    if !valid_label || !valid_payload {
++        return false;
++    }
++    let code = match kind {
++        1 | 2 => "E0200",
++        3 => "E0201",
++        4 => "E0202",
++        5 => "E0203",
++        6 | 7 => "E0204",
++        8 | 9 => "E0300",
++        10 => "E0301",
++        11 => "E0302",
++        12 | 13 => "E0303",
++        14 => "E0304",
++        _ => return false,
++    };
++    if first.code != code || first.stage != if kind <= 7 { "resolve" } else { "type" } {
++        return false;
++    }
++    let name = &source.text()[usize::from(start)..usize::from(end)];
++    match kind {
++        1 => message(&first.message, format_args!("unknown local `{name}`")),
++        2 => message(
++            &first.message,
++            format_args!("unknown direct function `{name}`"),
++        ),
++        3 => first.message == "duplicate binding; shadowing is unavailable in typed-preview",
++        4 => message(
++            &first.message,
++            format_args!("unknown type `{}`", owned_diagnostic::name(name)),
++        ),
++        5 => first.message == "decimal literal is outside the i32 range [-2147483648, 2147483647]",
++        6 => first.message == "`break` requires an enclosing while in the same function",
++        7 => first.message == "`continue` requires an enclosing while in the same function",
++        8 => {
++            let types = ["", "bool", "i32", "()"];
++            message(
++                &first.message,
++                format_args!(
++                    "type mismatch: expected {}, found {}",
++                    types[usize::from(expected)],
++                    types[usize::from(actual)]
++                ),
++            )
++        }
++        9 => first.message == "equality requires i32 or bool operands, found ()",
++        10 => message(
++            &first.message,
++            format_args!("wrong argument count: expected {nargs}, found {argc}"),
++        ),
++        11 => first.message == "function requires an explicit terminal return",
++        12 => first.message == "statement after terminal return is unavailable in typed-preview",
++        13 => {
++            first.message
++                == "statement after terminal control transfer is unavailable in typed-preview"
++        }
++        14 => first.message == "assignment requires a mutable local",
++        _ => false,
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs b/src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs
+new file mode 100644
+index 0000000..56cc0c1
+--- /dev/null
++++ b/src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs
+@@ -0,0 +1,324 @@
++use super::*;
++use crate::frontend::{
++    oir::source::hir_import::{public_facade, tests::project},
++    options::Operation,
++};
++
++const CASES: [(&str, &[u8], usize); 4] = [
++    (
++        include_str!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/duplicate-source.txt"
++        )),
++        include_bytes!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/duplicate.bin"
++        )),
++        1,
++    ),
++    (
++        include_str!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/unknown-type-source.txt"
++        )),
++        include_bytes!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/unknown-type.bin"
++        )),
++        1,
++    ),
++    (
++        include_str!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/multiple-source.txt"
++        )),
++        include_bytes!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/multiple.bin"
++        )),
++        2,
++    ),
++    (
++        include_str!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/end255-source.txt"
++        )),
++        include_bytes!(concat!(
++            env!("CARGO_MANIFEST_DIR"),
++            "/tests/fixtures/producer_diagnostic/end255.bin"
++        )),
++        1,
++    ),
++];
++
++fn confirmed(result: Result<Infallible, Rejected>) -> Vec<Diagnostic> {
++    match result {
++        Err(Rejected::Confirmed(errors)) => errors,
++        other => panic!("expected confirmed source diagnostics: {other:?}"),
++    }
++}
++
++#[test]
++fn producer_diagnostic_actual_captures_preserve_full_vector_and_source_order() {
++    for &(text, bytes, count) in &CASES {
++        let project = project(text);
++        let expected = check_project_candidate(
++            &project,
++            IndexLimits::default(),
++            &WorkMeter::default(),
++            &mut Allocator::default(),
++        )
++        .unwrap_err();
++        let actual = confirmed(validate(&project, bytes, IndexLimits::default()));
++        assert_eq!(actual.len(), count);
++        assert_eq!(
++            actual
++                .iter()
++                .map(|d| d.render_json(project.sources()))
++                .collect::<Vec<_>>(),
++            expected
++                .iter()
++                .map(|d| d.render_json(project.sources()))
++                .collect::<Vec<_>>()
++        );
++        for operation in [Operation::Check, Operation::Run, Operation::Compile] {
++            let actual = public_facade::import_produced(&project, bytes, operation).unwrap_err();
++            assert_eq!(
++                actual
++                    .iter()
++                    .map(|d| d.render_json(project.sources()))
++                    .collect::<Vec<_>>(),
++                expected
++                    .iter()
++                    .map(|d| d.render_json(project.sources()))
++                    .collect::<Vec<_>>()
++            );
++            assert_eq!(
++                public_facade::import_checked(&project, bytes, operation).unwrap_err()[0].code,
++                "E0702"
++            );
++        }
++    }
++}
++
++#[test]
++fn producer_diagnostic_exact_and_minus_one_prepaid_and_canonical_work() {
++    for &(text, bytes, _) in &CASES {
++        let project = project(text);
++        let d = IndexLimits::default();
++        let protocol = Protocol::from_opa(bytes).unwrap();
++        let plan = Plan::calculate(d, protocol).unwrap();
++        let fixed = plan.fixed_bytes as u64;
++        let exact = IndexLimits {
++            retained: fixed,
++            scratch: fixed,
++            work: plan.prepaid_work,
++        };
++        assert!(Plan::calculate(exact, protocol).is_ok());
++        for short in [
++            IndexLimits {
++                retained: fixed - 1,
++                ..exact
++            },
++            IndexLimits {
++                scratch: fixed - 1,
++                ..exact
++            },
++            IndexLimits {
++                work: plan.prepaid_work - 1,
++                ..exact
++            },
++        ] {
++            let mut allocator = Allocator::default();
++            let work = WorkMeter::new(short.work);
++            assert!(matches!(
++                execute(&project, bytes, short, &work, &mut allocator),
++                Err(Rejected::Budget)
++            ));
++            assert_eq!(allocator.attempts, 0);
++            assert_eq!(work.used(), 0);
++        }
++        let work = WorkMeter::new(d.work);
++        let mut allocator = Allocator::default();
++        confirmed(execute(&project, bytes, d, &work, &mut allocator));
++        assert!(allocator.attempts > 0);
++        let used = work.used();
++        assert!(used > plan.prepaid_work);
++        // Declaration admission reserves a conservative upper work envelope;
++        // it may exceed the actual debits before a genuine early diagnostic.
++        // Measure its exact accepted limit, separately from work.used().
++        let (mut low, mut high) = (plan.prepaid_work, d.work);
++        while low < high {
++            let middle = low + (high - low) / 2;
++            if matches!(
++                validate(&project, bytes, IndexLimits { work: middle, ..d }),
++                Err(Rejected::Confirmed(_))
++            ) {
++                high = middle;
++            } else {
++                low = middle + 1;
++            }
++        }
++        confirmed(validate(&project, bytes, IndexLimits { work: low, ..d }));
++        assert!(!matches!(
++            validate(&project, bytes, IndexLimits { work: low - 1, ..d }),
++            Err(Rejected::Confirmed(_))
++        ));
++        let admitted_work = low;
++        let mut admitted_storage = [0; 2];
++        for (index, ceiling) in [d.retained, d.scratch].into_iter().enumerate() {
++            let (mut low, mut high) = (fixed, ceiling);
++            while low < high {
++                let middle = low + (high - low) / 2;
++                let limits = if index == 0 {
++                    IndexLimits {
++                        retained: middle,
++                        ..d
++                    }
++                } else {
++                    IndexLimits {
++                        scratch: middle,
++                        ..d
++                    }
++                };
++                if matches!(
++                    validate(&project, bytes, limits),
++                    Err(Rejected::Confirmed(_))
++                ) {
++                    high = middle;
++                } else {
++                    low = middle + 1;
++                }
++            }
++            let exact = if index == 0 {
++                IndexLimits { retained: low, ..d }
++            } else {
++                IndexLimits { scratch: low, ..d }
++            };
++            let short = if index == 0 {
++                IndexLimits {
++                    retained: low - 1,
++                    ..d
++                }
++            } else {
++                IndexLimits {
++                    scratch: low - 1,
++                    ..d
++                }
++            };
++            confirmed(validate(&project, bytes, exact));
++            assert!(!matches!(
++                validate(&project, bytes, short),
++                Err(Rejected::Confirmed(_))
++            ));
++            admitted_storage[index] = low;
++        }
++        println!("PRODUCER_DIAGNOSTIC protocol={} source={} fixed={} prepaid={} canonical={} total={} admitted_work={} admitted_retained={} admitted_scratch={} allocator_attempts={}", protocol.digit() as char, text.len(), fixed, plan.prepaid_work, used-plan.prepaid_work, used, admitted_work, admitted_storage[0], admitted_storage[1], allocator.attempts);
++    }
++}
++
++#[test]
++fn producer_diagnostic_payload_framing_and_source_mutations_fail_closed() {
++    for &(text, bytes, _) in &CASES {
++        let project = project(text);
++        for length in [0, 3, 1559, 1574] {
++            assert!(!matches!(
++                validate(&project, &bytes[..length], IndexLimits::default()),
++                Err(Rejected::Confirmed(_))
++            ));
++        }
++        let mut trailing = bytes.to_vec();
++        trailing.push(0);
++        assert!(!matches!(
++            validate(&project, &trailing, IndexLimits::default()),
++            Err(Rejected::Confirmed(_))
++        ));
++        // Each header/payload field and OPA structural columns are independent
++        // negative controls; none is reserialized from canonical diagnostics.
++        for offset in [
++            0, 3, 4, 8, 9, 10, 11, 527, 1043, 1559, 1562, 1563, 1564, 1565, 1566, 1567, 1568, 1569,
++            1570, 1571, 1572, 1573, 1574,
++        ] {
++            let mut bad = bytes.to_vec();
++            bad[offset] ^= 1;
++            assert!(
++                !matches!(
++                    validate(&project, &bad, IndexLimits::default()),
++                    Err(Rejected::Confirmed(_))
++                ),
++                "offset {offset}"
++            );
++        }
++        let mut bad = bytes.to_vec();
++        bad[11 + 128] = 1; // inactive OPA cell
++        assert!(!matches!(
++            validate(&project, &bad, IndexLimits::default()),
++            Err(Rejected::Confirmed(_))
++        ));
++        let changed = text.replacen("fn", "xx", 1);
++        let owner = SourceOwner::project(&project);
++        assert!(BoundObservation::bind_diagnostic(owner, changed.as_bytes(), bytes).is_err());
++    }
++}
++
++#[test]
++fn producer_diagnostic_first_error_identity_and_metadata_are_exact() {
++    let (text, bytes, _) = CASES[2];
++    let project = project(text);
++    let errors = confirmed(validate(&project, bytes, IndexLimits::default()));
++    let source = project.sources().files().first().unwrap();
++    let header = &bytes[1559..];
++    assert!(matches_first(header, source, &errors[0]));
++    assert!(!matches_first(header, source, &errors[1]));
++    let mut different = errors[0].clone();
++    different.code = "E0200";
++    assert!(!matches_first(header, source, &different));
++    different = errors[0].clone();
++    different.stage = "resolve";
++    assert!(!matches_first(header, source, &different));
++    different = errors[0].clone();
++    different.message.push('!');
++    assert!(!matches_first(header, source, &different));
++    different = errors[0].clone();
++    different.notes.push("extra".into());
++    assert!(!matches_first(header, source, &different));
++    different = errors[0].clone();
++    different.primary.as_mut().unwrap().start += 1;
++    assert!(!matches_first(header, source, &different));
++    different = errors[0].clone();
++    different.primary.as_mut().unwrap().file.0 += 1;
++    assert!(!matches_first(header, source, &different));
++    different = errors[0].clone();
++    different
++        .secondary
++        .push((source.span(0, 1), "extra".into()));
++    assert!(!matches_first(header, source, &different));
++}
++
++#[test]
++fn producer_diagnostic_claim_on_valid_source_cannot_fall_back_to_success() {
++    let text = include_str!(concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/tests/fixtures/checked_hir_import/rich-source.txt"
++    ));
++    let mut bytes = include_bytes!(concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/tests/fixtures/checked_hir_import/rich-success.bin"
++    ))[..1575]
++        .to_vec();
++    bytes[1563] = 1;
++    bytes[1565] = 11;
++    bytes[1566] = 3;
++    bytes[1567] = 4;
++    let project = project(text);
++    assert!(matches!(
++        validate(&project, &bytes, IndexLimits::default()),
++        Err(Rejected::Mismatch)
++    ));
++    for operation in [Operation::Check, Operation::Run, Operation::Compile] {
++        assert_eq!(
++            public_facade::import_produced(&project, &bytes, operation).unwrap_err()[0].code,
++            "E0703"
++        );
++    }
++}
+diff --git a/src/frontend/oir/source/hir_import/public_facade.rs b/src/frontend/oir/source/hir_import/public_facade.rs
+index e114476..8bd0203 100644
+--- a/src/frontend/oir/source/hir_import/public_facade.rs
++++ b/src/frontend/oir/source/hir_import/public_facade.rs
+@@ -1,6 +1,8 @@
+ //! Explicit supplied-observation facade. Only authentic ProjectSources creates
+ //! the source owner. Outputs carry no witness or caller-selected compiler seam.
+-use super::{allocation, candidate, leaf, Boundary, SourceOwner, SUCCESS_BYTES};
++use super::{
++    allocation, candidate, leaf, producer_diagnostic, Boundary, SourceOwner, SUCCESS_BYTES,
++};
+ use crate::frontend::{
+     declaration_index::IndexLimits,
+     diagnostic::Diagnostic,
+@@ -128,6 +130,28 @@ pub(in crate::frontend) fn import_produced(
+         })
+     })()
+     .ok_or_else(|| refusal("experimental HIR producer resource limit exceeded"))?;
++    if observation.len() == super::OPA_BYTES + 16 {
++        // The error-only branch bypasses execute, but its shared live facade
++        // carriers/dispatch still pay the same complete conservative allowance.
++        let diagnostic_limits = allowance(limited).ok_or_else(|| {
++            vec![*Diagnostic::new(
++                "E0703",
++                "hir-producer",
++                "experimental HIR producer diagnostic resource limit exceeded",
++                None,
++            )]
++        })?;
++        return match producer_diagnostic::validate(project, observation, diagnostic_limits) {
++            Ok(never) => match never {},
++            Err(producer_diagnostic::Rejected::Confirmed(errors)) => Err(errors),
++            Err(error) => Err(vec![*Diagnostic::new(
++                "E0703",
++                "hir-producer",
++                error.message(),
++                None,
++            )]),
++        };
++    }
+     execute(
+         project,
+         observation,

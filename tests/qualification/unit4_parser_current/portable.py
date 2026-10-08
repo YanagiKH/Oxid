@@ -240,6 +240,8 @@ CURRENT_PATHS = (
     'src/frontend/oir/source/hir_import/emit_tests.rs',
     'src/frontend/oir/source/hir_import/leaf.rs',
     'src/frontend/oir/source/hir_import/pass_measurements.rs',
+    'src/frontend/oir/source/hir_import/producer_diagnostic.rs',
+    'src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs',
     'src/frontend/oir/source/hir_import/public_facade.rs',
     'src/frontend/oir/source/hir_import/run_execution_tests.rs',
     'src/frontend/oir/source/hir_import/run_measurements.rs',
@@ -341,6 +343,14 @@ CURRENT_PATHS = (
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
+    'tests/fixtures/producer_diagnostic/duplicate-source.txt',
+    'tests/fixtures/producer_diagnostic/duplicate.bin',
+    'tests/fixtures/producer_diagnostic/end255-source.txt',
+    'tests/fixtures/producer_diagnostic/end255.bin',
+    'tests/fixtures/producer_diagnostic/multiple-source.txt',
+    'tests/fixtures/producer_diagnostic/multiple.bin',
+    'tests/fixtures/producer_diagnostic/unknown-type-source.txt',
+    'tests/fixtures/producer_diagnostic/unknown-type.bin',
     'tests/typed_record_composition.rs',
 )
 CURRENT_ADDED_PATHS = (
@@ -465,6 +475,8 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/oir/source/hir_import/emit_tests.rs',
     'src/frontend/oir/source/hir_import/leaf.rs',
     'src/frontend/oir/source/hir_import/pass_measurements.rs',
+    'src/frontend/oir/source/hir_import/producer_diagnostic.rs',
+    'src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs',
     'src/frontend/oir/source/hir_import/public_facade.rs',
     'src/frontend/oir/source/hir_import/run_execution_tests.rs',
     'src/frontend/oir/source/hir_import/run_measurements.rs',
@@ -553,6 +565,14 @@ CURRENT_ADDED_PATHS = (
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox',
     'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
+    'tests/fixtures/producer_diagnostic/duplicate-source.txt',
+    'tests/fixtures/producer_diagnostic/duplicate.bin',
+    'tests/fixtures/producer_diagnostic/end255-source.txt',
+    'tests/fixtures/producer_diagnostic/end255.bin',
+    'tests/fixtures/producer_diagnostic/multiple-source.txt',
+    'tests/fixtures/producer_diagnostic/multiple.bin',
+    'tests/fixtures/producer_diagnostic/unknown-type-source.txt',
+    'tests/fixtures/producer_diagnostic/unknown-type.bin',
     'tests/typed_record_composition.rs',
 )
 ARRAY_INSTRUMENTATION_PATHS = ("src/frontend/ast.rs", "src/frontend/parser.rs", "src/frontend/project/budget.rs")
@@ -568,7 +588,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '2d86f42aba1354370f7688f54635f9eae777630fc310fd04a250198168d3ca8d'
+AUTHORITY_SHA = 'ecc09429f644abeaa9f92db9b65b73a181c6ee259472d94660a61861ee0360c9'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -670,8 +690,67 @@ def verify_map(root, records, exact=False, extras=()):
         same(sorted(files), sorted(names + list(extras)), "complete file inventory differs")
 
 
+def restore_producer_diagnostic_source(active, inputs):
+    """Recover and verify the exact 330-input frontend-v2 predecessor first."""
+    fields = ("source_binding_runner", "producer_diagnostic_helper",
+              "producer_diagnostic_transition_patch", "frontend_v2_source_manifest")
+    verify_map(REPOSITORY, [active[key] for key in fields])
+    runner = REPOSITORY / active["source_binding_runner"]["path"]
+    api = types.ModuleType("unit4_diagnostic_binding")
+    api.__file__ = str(runner)
+    exec(compile(runner.read_bytes(), str(runner), "exec"), api.__dict__)
+    helper_path = REPOSITORY / active["producer_diagnostic_helper"]["path"]
+    same(sha(helper_path.read_bytes()), api.PRODUCER_DIAGNOSTIC_HELPER_SHA,
+         "exact producer diagnostic helper identity")
+    helper = types.ModuleType("unit4_diagnostic_inverse")
+    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
+    try:
+        restored, touched = helper.inverse(inputs,
+            (REPOSITORY / active["producer_diagnostic_transition_patch"]["path"]).read_bytes(), api)
+    except api.BindingError as error:
+        raise Rejected("producer diagnostic inverse rejected: " + str(error)) from error
+    same(touched, list(helper.PATHS), "exact producer diagnostic inverse scope")
+    predecessor = read(REPOSITORY / active["frontend_v2_source_manifest"]["path"])
+    same(active["frontend_v2_source_manifest"]["sha256"], helper.FRONTEND_V2_SHA,
+         "exact retained frontend v2 identity")
+    actual = [{"path": name, "bytes": len(raw), "sha256": sha(raw)}
+              for name, raw in sorted(restored.items())]
+    same(actual, predecessor["files"], "producer diagnostic inverse must recover exact frontend v2 source")
+    return restored
+
+
+def validate_producer_diagnostic_transition(active, current, historical):
+    fields = (("producer_diagnostic_authority", "producer-diagnostic-authority.json"),
+              ("producer_diagnostic_transition_patch", "producer-diagnostic-transition.patch"),
+              ("producer_diagnostic_helper", "producer_diagnostic.py"),
+              ("frontend_v2_source_manifest", "frontend-v2-source.json"))
+    for key, filename in fields:
+        same(active[key]["path"], "tests/fixtures/typed_project_source_binding/" + filename,
+             "producer diagnostic binding path")
+    verify_map(REPOSITORY, [active[key] for key, _ in fields])
+    predecessor = read(REPOSITORY / active["frontend_v2_source_manifest"]["path"])
+    successor = read(REPOSITORY / active["producer_diagnostic_authority"]["path"])
+    same(successor["schema"], "oxid-producer-diagnostic-source-transition-v1", "producer diagnostic authority schema")
+    same(successor["reviewed_source_head"], current["reviewed_source_head"], "producer diagnostic source checkpoint")
+    same(successor["source_only_tree"], current["source_only_tree"], "producer diagnostic source tree")
+    same(successor["base_tree"], predecessor["source_only_tree"], "producer diagnostic exact predecessor tree")
+    same(successor["predecessor_source_head"], predecessor["reviewed_source_head"], "producer diagnostic predecessor checkpoint")
+    for field, key in (("current_source_sha256", "current_source_manifest"),
+                       ("frontend_v2_source_sha256", "frontend_v2_source_manifest"),
+                       ("transition_patch_sha256", "producer_diagnostic_transition_patch")):
+        same(successor[field], active[key]["sha256"], "producer diagnostic exact " + field)
+    same(len(predecessor["files"]), 330, "complete retained frontend v2 source count")
+    same(successor["current_source_members"], 340, "complete diagnostic source count")
+    verify_map(REPOSITORY, successor["diagnostic_closure"])
+    for field in ("instrumentation", "control_instrumentation"):
+        same(sorted(set(successor["transition_paths"]).intersection(row["path"] for row in historical[field])),
+             [], "producer diagnostic transition must not overlap parser instrumentation")
+    return predecessor
+
+
 def restore_frontend_v2_source(active, inputs):
     """Recover the exact producer predecessor before its historical inverse."""
+    inputs = restore_producer_diagnostic_source(active, inputs)
     fields = ("source_binding_runner", "frontend_v2_helper", "frontend_v2_transition_patch", "hir_producer_source_manifest")
     verify_map(REPOSITORY, [active[key] for key in fields])
     runner = REPOSITORY / active["source_binding_runner"]["path"]
@@ -708,7 +787,7 @@ def validate_frontend_v2_transition(active, current, historical):
     same(successor["reviewed_source_head"], current["reviewed_source_head"], "frontend v2 source checkpoint")
     same(successor["source_only_tree"], current["source_only_tree"], "frontend v2 source tree")
     same(successor["base_tree"], predecessor["source_only_tree"], "frontend v2 exact predecessor tree")
-    for field,key in (("current_source_sha256","current_source_manifest"),
+    for field,key in (("current_source_sha256","frontend_v2_source_manifest"),
                       ("hir_producer_source_sha256","hir_producer_source_manifest"),
                       ("transition_patch_sha256","frontend_v2_transition_patch")):
         same(successor[field], active[key]["sha256"], "frontend v2 exact " + field)
@@ -792,10 +871,11 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 330, "complete current source count")
+    same(len(current["files"]), 340, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
-    producer_source = validate_frontend_v2_transition(active, current, result)
+    v2_source = validate_producer_diagnostic_transition(active, current, result)
+    producer_source = validate_frontend_v2_transition(active, v2_source, result)
     hir_source = validate_hir_producer_transition(active, producer_source, result)
     verify_map(REPOSITORY, [active["hir_import_authority"], active["hir_import_transition_patch"],
                            active["native_inventory_source_manifest"]])
@@ -897,7 +977,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 330, "duplicate current member")
+    same(len(after), 340, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -914,7 +994,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 493, "current base count")
+    same(len(base), 503, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     verify_map(REPOSITORY, current["files"])
     restore_hir_producer_source(active, {row["path"]: (REPOSITORY / row["path"]).read_bytes()
@@ -948,7 +1028,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 496, "current derived count")
+        same(len(ordered), 506, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -1503,7 +1583,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 253, "current compiler body count")
+    same(len(wanted), 255, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

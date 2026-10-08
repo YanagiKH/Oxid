@@ -47,9 +47,10 @@ fall back to a mutable executable. See the Linux
 ## Source and bounded process transport
 
 The source/AST is loaded once as genuine ProjectSources and retained throughout.
-One root-only source of at most128ASCII bytes feeds the parser. A successful
-1,559-byte OPA1 frame and those same original bytes are framed as AST1, at most
-1,692bytes, for the static consumer. Its 2,607-byte OPA1/STF1 success must preserve
+For v1, one root-only source of at most 128 ASCII bytes feeds the parser. A
+successful 1,559-byte OPA1 frame and those same original bytes are framed as AST1,
+at most 1,692 bytes, for the static consumer. V2 retains its separately selected
+255-byte source cap and matching OPA2/AST2/STF2 markers. The version-matched 2,607-byte success must preserve
 the complete parser prefix. No host semantic facts, repaired rows or normalized
 source bytes are introduced. The existing paid compiler import still performs
 all source/AST, canonical HIR, checker, type/flow, lowering, association and OIR
@@ -57,10 +58,12 @@ verification before any runtime result or native publication.
 
 Children use argv directly, an empty environment plus PATH=/no-tools and LC_ALL=C,
 and fixed nonblocking stdin/stdout/stderr pipes. The parser stdout cap is1,559;
-static stdout is2,607; stderr is4,096. One extra byte witnesses overflow. Success
-requires complete input writes, status0, empty stderr, exact success framing and
-closed streams. Diagnostic/refusal observations grant no executable authority.
-No child failure silently falls back to ordinary compilation.
+static stdout is2,607; stderr is4,096. One extra byte witnesses overflow. A complete
+observation requires complete input writes, status0, empty stderr, exact framing
+and closed streams. The static result is either the 2,607-byte tag-0 success or
+the 1,575-byte tag-1 diagnostic described below. Diagnostic/refusal observations
+grant no executable authority. No child failure silently falls back to ordinary
+compilation.
 
 Each child has a five-second supervision deadline. It starts a fresh session so
 its leader cannot join the compiler's process group. Cleanup signals the original
@@ -75,6 +78,71 @@ descendant cleanup. Kernel stalls, host scheduling and arbitrary process RSS or
 filesystem effects are not bounded by this supervisor. It is not an OS sandbox.
 No claim of unconditional cleanup after SIGKILL or of containing hostile local
 software is made. An incomplete cleanup is reported rather than called success.
+
+
+## Source-validated static diagnostics
+
+The explicit live-producer route also admits the existing 1,575-byte tag-1
+OPA1/STF1 or OPA2/STF2 observation. This changes neither wire format nor producer
+program. The selected manifest still determines v1's 128-byte or v2's 255-byte
+ASCII source cap. The unchanged supervisor must first accept complete transport,
+exact length, matching version and an unchanged complete parser prefix.
+
+A separate private error-only leaf then validates every OPA row and inactive
+cell against the retained genuine source/AST. It calls the existing Types-depth
+source checker, retaining the ordinary scalar, public-function and owned
+unknown-type phase schedules. All 14 existing diagnostic kinds require exact
+canonical-first code, stage, message, root source identity, primary and secondary
+spans, secondary label, empty notes and kind-specific payload. Reserved/unused
+fields must be zero. Type and arity payloads are checked rather than inferred.
+Source name spelling retains the canonical distinction between scalar names and
+the owned unknown-type display's 64-byte truncation rule.
+
+Only an exact match returns the genuine checker's complete diagnostic vector in
+its original order. A canonical success, different first error, malformed frame
+or source mismatch returns E0703/`hir-producer`; it cannot reach lowering,
+execution or native publication. Check, Run and Compile retain normal failure
+summaries, and failed Compile leaves absent/existing output untouched. Supplied
+artifact import remains success-only and rejects diagnostic records with E0702.
+The live path's two existing provenance records are unchanged.
+
+The observation carrier holds the exact captured length separately from its
+fixed 2,607-byte storage; unused capacity is never submitted to either decoder.
+The producer and shared import facade still debit their complete named transport
+carriers. The error leaf separately prepays its complete source/OPA envelope,
+additional enclosing carriers, 542,720 conservative scalar-checker/diagnostic
+work units and 4,096 header/message comparison units. Source/OPA work remains
+124,501 for v1 and 190,160 for v2. The canonical declaration/resolution checker
+uses the same remaining work meter and reduced retained/scratch limits. No
+ceiling changes. Streaming first-message equality allocates no projected
+Diagnostic or temporary String. Inherited compiler/diagnostic allocations retain
+their original accounting; these tariffs are not a whole-route heap/RSS bound.
+
+Private controls retain actual native diagnostic captures, compare complete
+canonical vectors and reject independent field/source mutations. They measure
+both actual debits and conservative admission thresholds, with exact/minus-one
+controls for work, retained bytes and scratch bytes. Existing success-leaf
+source-helper transport accounting increases by 264 bytes on the qualified
+64-bit test build; its source-work, runtime/native behavior and ceilings stay
+unchanged. Actual process replay and exact-head hosted qualification remain
+separate evidence layers. This is a bounded diagnostic integration, not a
+compiler self-rebuild or self-hosting claim.
+
+The independent replay recipe is:
+
+```sh
+python3 -B scripts/qualify_hir_producer_diagnostics.py \
+  --compiler target/debug/oxid \
+  --llvm-bin /usr/lib/llvm-19/bin \
+  --output /tmp/oxid-producer-diagnostics-new
+```
+
+It builds genuine v1/v2 producer pairs, checks all 14 diagnostic kinds, full
+vectors/order, text/JSON Check/Run/Compile parity, and transport/source/payload
+refusals. It retains command/stream identities and re-admits those exact records;
+compile failure guards require no native-tool launch or output replacement.
+The existing CI wrapper runs this gate separately for both ordinary profiles,
+in addition to all its prior v1, v2 and edge recipes.
 
 ## Records and resource scope
 

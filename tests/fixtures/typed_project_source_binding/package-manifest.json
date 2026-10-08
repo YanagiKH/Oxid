@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 32136,
+      "bytes": 34041,
       "path": "README.md",
-      "sha256": "c41122696e261553ce68a3445a0bc657d39565510718b67a49cfb960df90dd71"
+      "sha256": "480d0ca48ef5dcdc71b67d78b117e4129eb451c3a2cb3005e7c9e7d5c73580a9"
     },
     {
       "bytes": 9916,
@@ -41,9 +41,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 63969,
+      "bytes": 66021,
       "path": "current-source.json",
-      "sha256": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a"
+      "sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29"
     },
     {
       "bytes": 29723,
@@ -109,6 +109,11 @@
       "bytes": 137275,
       "path": "frontend-v2-authority.json",
       "sha256": "597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6"
+    },
+    {
+      "bytes": 63969,
+      "path": "frontend-v2-source.json",
+      "sha256": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a"
     },
     {
       "bytes": 67003,
@@ -186,6 +191,21 @@
       "sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8"
     },
     {
+      "bytes": 135620,
+      "path": "producer-diagnostic-authority.json",
+      "sha256": "fa52793cd0717dbf2bf44b819afc32258e257cb0522b0f503d8d7cefbfea0dfb"
+    },
+    {
+      "bytes": 37700,
+      "path": "producer-diagnostic-transition.patch",
+      "sha256": "c344823854314d8569d04055cd14031d2b6cd48cd95b8ea6a8301027af0ffe7e"
+    },
+    {
+      "bytes": 10369,
+      "path": "producer_diagnostic.py",
+      "sha256": "15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823"
+    },
+    {
       "bytes": 48552,
       "path": "projected-authority.json",
       "sha256": "f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc"
@@ -201,9 +221,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 193178,
+      "bytes": 196026,
       "path": "run.py",
-      "sha256": "ccb7a73a473703a1802a9485ea7aa0b3ce9b38bebb1efbdf14dafae7053bc990"
+      "sha256": "1d2b904205e29b3a466d87ad688a4678c93168f64dedd9f975425bb6003fa647"
     },
     {
       "bytes": 55961,

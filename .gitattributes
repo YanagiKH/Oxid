@@ -37,3 +37,6 @@ tests/fixtures/checked_hir_import/scalar-assignment-success.bin -text
 
 # Versioned HIR-import endpoints and provenance retain exact published bytes.
 tests/fixtures/checked_hir_import_v2/** -text
+
+# Genuine producer diagnostic captures preserve source and wire bytes on every host.
+tests/fixtures/producer_diagnostic/** -text

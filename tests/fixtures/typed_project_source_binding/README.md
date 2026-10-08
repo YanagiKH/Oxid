@@ -1,3 +1,31 @@
+# Source-validated producer diagnostic successor
+
+The active source view binds checkpoint `c15465acb90e9f8bb18f5291a8931f5d5bbc6edb`, exact full tree
+`0d843f9141f153d4c008ac860786c138165d7de3`: 340 selected inputs, 252 src/native members and
+255 compiler/build bodies. The source manifest SHA-256 is `35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29`.
+
+`frontend-v2-source.json` preserves the previous 330-input manifest byte-for-byte
+(SHA-256 `d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a`). The existing frontend-v2 authority, helper and
+transition patch, including its shared-bank resource successor, remain unchanged.
+`producer-diagnostic-authority.json`, `producer_diagnostic.py` and the exact
+`producer-diagnostic-transition.patch` bind eight compiler paths, including two
+new Rust modules, and eight explicit compile-time diagnostic fixture inputs.
+The fixture provenance is separately identity-bound noncompiler closure; its
+historical captures are observations, never compiler or semantic authority.
+
+Admission checks complete current membership, bytes, modes, Git blobs, checkpoint,
+tree, literal include closure and the exact inverse. It removes only the eight
+verified fixture additions and reverses the compiler patch, then verifies every
+one of the 330 predecessor inputs. The unchanged frontend-v2 helper executes in
+a private temporary materialization of that exact predecessor plus its already
+pinned producer closure. Only byte dictionaries enter receipts. The full retained
+inverse chain then restores 327 producer, 324 HIR-import and every earlier view,
+ending at the unchanged 117-member archive. Current execution always receives the
+340-input diagnostic view. Admission and preparation execute no compiler and do
+not establish semantic, runtime, native, or hosted qualification.
+
+The following sections describe retained historical transitions.
+
 # Experimental HIR producer source successor
 
 The active source view binds compiler checkpoint `5871a92e8d5d6cd1995ca1b12296e8bd83da57ca`, exact full tree `6a67309be29b6841f4776ed392853b36d7263e02`: 327 selected inputs, 249 src/native members and 252 compiler/build bodies. The source manifest SHA-256 is `17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680`.
