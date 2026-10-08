@@ -78,6 +78,18 @@ def run(root: Path, name: str, argv: list[str], *, cwd: Path,
     return status, paths[0].read_bytes(), paths[1].read_bytes()
 
 
+def git_read(root: Path, name: str, *arguments: str) -> tuple[int, bytes, bytes]:
+    """Trust only the validated checkout, for this isolated read-only child."""
+    repo = ROOT.resolve(strict=True)
+    if not (repo / ".git").exists():
+        raise RuntimeError("Git identity requires the checkout root")
+    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C",
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_OPTIONAL_LOCKS": "0"}
+    return run(root, name, ["/usr/bin/git", "-c", "safe.directory=" + str(repo),
+                           "-C", str(repo), *arguments], cwd=repo, env=env)
+
+
 def success(result: tuple[int, bytes, bytes], label: str) -> None:
     if result[0] != 0:
         raise RuntimeError(f"{label} failed with status {result[0]}; inspect retained stderr")
@@ -108,8 +120,8 @@ def qualify(binary: Path, llvm: Path, root: Path) -> None:
                                  "llvm_bin": str(llvm), "scope": "private test-only; not public provider qualification"}
     save(root / "driver.py", Path(__file__).read_bytes())
     try:
-        head = run(root, "git-head", ["git", "rev-parse", "HEAD"], cwd=ROOT, env=env)
-        status = run(root, "git-status", ["git", "status", "--porcelain=v1"], cwd=ROOT, env=env)
+        head = git_read(root, "git-head", "rev-parse", "HEAD")
+        status = git_read(root, "git-status", "status", "--porcelain=v1")
         success(head, "Git identity")
         success(status, "Git status")
         metadata["head"] = head[1].decode().strip()
@@ -169,8 +181,8 @@ def qualify(binary: Path, llvm: Path, root: Path) -> None:
             result = run(directory, "malformed-verify", [opt, "-passes=verify", "-disable-output", str(malformed)], cwd=directory, env=env)
             if result[0] <= 0 or b"error:" not in result[2] or result[1]:
                 raise RuntimeError("malformed LLVM did not produce a nonzero diagnostic-only rejection")
-        final_head = run(root, "git-head-after", ["git", "rev-parse", "HEAD"], cwd=ROOT, env=env)
-        final_status = run(root, "git-status-after", ["git", "status", "--porcelain=v1"], cwd=ROOT, env=env)
+        final_head = git_read(root, "git-head-after", "rev-parse", "HEAD")
+        final_status = git_read(root, "git-status-after", "status", "--porcelain=v1")
         if final_head != head or final_status != status or digest(binary) != metadata["test_binary_sha256"]:
             raise RuntimeError("source or test executable changed during qualification")
         metadata["result"] = "passed"

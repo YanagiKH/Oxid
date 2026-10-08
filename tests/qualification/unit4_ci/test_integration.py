@@ -21,6 +21,64 @@ from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only,
 REPO = Path(__file__).resolve().parents[3]
 
 
+class GitDiffBatchControls(unittest.TestCase):
+    def test_windows_length_unicode_quoting_order_and_duplicates(self):
+        # Astral characters count as two UTF-16 units; quoting and backslashes
+        # also consume CreateProcess space. No path may disappear at a boundary.
+        names = [('nested space/' + '\U0001f600' * 30 + '/file\\"' + str(i)) for i in range(900)]
+        names += names[:3]
+        with patch.object(q, 'git') as git:
+            q.git_diff_paths(Path('C:/checkout with spaces'), 'a' * 40, names)
+        self.assertGreater(len(git.call_args_list), 1)
+        actual = []
+        for call in git.call_args_list:
+            repo, *args = call.args
+            self.assertEqual(args[:4], ['diff', '--exit-code', 'a' * 40, '--'])
+            actual.extend(args[4:])
+            command = ['git', '-C', str(repo), *args]
+            self.assertLessEqual(len(subprocess.list2cmdline(command).encode('utf-16-le')) // 2 + 1, 16000)
+        self.assertEqual(actual, names)
+
+    def test_empty_paths_do_not_diff_the_whole_checkout(self):
+        with patch.object(q, 'git') as git:
+            q.git_diff_paths(Path('repo'), 'a' * 40, [])
+        git.assert_not_called()
+
+    def test_single_oversized_path_fails_closed(self):
+        with patch.object(q, 'git') as git, self.assertRaises(q.Reject):
+            q.git_diff_paths(Path('repo'), 'a' * 40, ['x' * 16000])
+        git.assert_not_called()
+
+    def test_later_batch_failure_propagates_and_stops(self):
+        with patch.object(q, 'git', side_effect=['', q.Reject('changed later input')]) as git:
+            with self.assertRaisesRegex(q.Reject, 'changed later input'):
+                q.git_diff_paths(Path('repo'), 'a' * 40, ['x' * 8000] * 4)
+        self.assertEqual(git.call_count, 2)
+
+    def test_real_git_preserves_selected_dirty_and_staged_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            q.git(repo, 'init', '--quiet')
+            names = ['first', 'nested space/last']
+            (repo / 'nested space').mkdir()
+            for name in names + ['unrelated']:
+                (repo / name).write_text('original\n')
+            q.git(repo, 'add', '.')
+            q.git(repo, '-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'diff fixture')
+            head = q.git(repo, 'rev-parse', 'HEAD')
+            (repo / 'unrelated').write_text('outside selected scope\n')
+            q.git_diff_paths(repo, head, names)
+            for name in names:
+                for staged in (False, True):
+                    with self.subTest(name=name, staged=staged):
+                        (repo / name).write_text('changed\n')
+                        if staged:
+                            q.git(repo, 'add', '--', name)
+                        with self.assertRaises(q.Reject):
+                            q.git_diff_paths(repo, head, names)
+                        q.git(repo, 'checkout', head, '--', name)
+
+
 class FrozenRosterControls(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

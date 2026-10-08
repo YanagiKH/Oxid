@@ -126,6 +126,28 @@ def git(repo, *args):
     return result.stdout.decode().strip()
 
 
+def git_diff_paths(repo, head, names):
+    """Check every path against HEAD without exceeding Windows' argv limit."""
+    args = ['diff', '--exit-code', head, '--']
+    # CreateProcess allows 32767 UTF-16 units including the terminating NUL.
+    # Use a conservative bound on every host, including Python's exact Windows
+    # quoting, the checkout path, and astral characters (two UTF-16 units).
+    def units(argv):
+        return len(subprocess.list2cmdline(argv).encode('utf-16-le')) // 2
+    base = units(['git', '-C', str(repo), *args]) + 1
+    batch, size = [], base
+    for name in names:
+        cost = 1 + units([name])
+        need(base + cost <= 16000, 'qualification path exceeds Git command bound')
+        if size + cost > 16000:
+            git(repo, *args, *batch)
+            batch, size = [], base
+        batch.append(name)
+        size += cost
+    if batch:
+        git(repo, *args, *batch)
+
+
 def measured_host():
     system = {'Darwin': 'macOS'}.get(platform.system(), platform.system())
     machine = {'AMD64': 'x86_64', 'aarch64': 'arm64'}.get(platform.machine(), platform.machine())
@@ -191,7 +213,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     if committed:
         tracked = set(git(repo, 'ls-tree', '-r', '--name-only', head).splitlines())
         need(set(names) <= tracked, 'uncommitted qualification input')
-        git(repo, 'diff', '--exit-code', head, '--', *names)
+        git_diff_paths(repo, head, names)
     publication_root = repo / 'tests/fixtures/typed_project_unit4_parser_portable'
     publication = module('_unit4_parser_publication', publication_root / 'verify_publication.py').verify(publication_root)
     need(publication['status'] == 'pass', 'portable original checkpoint/projection rejected')
