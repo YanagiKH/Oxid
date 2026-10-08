@@ -72,7 +72,7 @@ Only actual executed host controls support host-specific runtime qualification.
 
 ## Reviewed admission and portable denial collection
 
-`authority.py` pins the exact 324-input checked-HIR import compiler manifest, the reviewed 325-input
+`authority.py` pins the exact 327-input HIR producer compiler manifest, the reviewed 328-input
 lifecycle overlay map and the current additive patch successor. Four exact
 enum-era substitutions preserve the logical collection, parser and owned-route
 hooks in the current execution bodies. The current `observer-stdin-v1.patch`
@@ -191,7 +191,7 @@ logical event. No frozen observer or contract is edited.
 
 The qualified-values descriptor and helper remain unchanged. Its semantic source
 authority is the exact retained 237-input `enum-source.json`; execution source
-is the 324-input `current-source.json`. The public amendment receipt records
+is the 327-input `current-source.json`. The public amendment receipt records
 both roles separately. Current executions cannot use the old compiler authority,
 and the frozen semantic amendment cannot be rebound to the new compiler. The
 final join independently validates both exact hashes and their roles.
@@ -230,3 +230,11 @@ frozen driver body, including the import facade. No import-specific observer
 semantics or language oracles are added by this source-only rebind. The native
 inventory predecessor and all older semantic authorities retain their original
 identities; fresh execution receipts must bind the new current source.
+
+The producer successor retains that HIR import authority as a separate predecessor.
+Current execution now binds checkpoint `5871a92e8d5d6cd1995ca1b12296e8bd83da57ca`,
+327 source inputs and 328 lifecycle observer inputs. The lifecycle patch and
+its historical inversions remain byte-identical; the map changes only for the
+12 producer compiler/build paths and three additive module members. Removing
+the existing driver hook restores the exact producer-enabled driver. No
+producer-specific lifecycle events or semantic expectations are inferred.

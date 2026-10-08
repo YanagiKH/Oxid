@@ -15,14 +15,14 @@
   "enum_source_sha256": "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669",
   "files": [
     {
-      "bytes": 3026,
+      "bytes": 797,
       "path": "Cargo.lock",
-      "sha256": "6c25157082fded430e7f50621af590602cbd3b466eb66355c96b155aaff3b67a"
+      "sha256": "d2302c0736c5b442f8d463cc1b7620158df191b315e59497992c57692b7eddb6"
     },
     {
-      "bytes": 304,
+      "bytes": 269,
       "path": "Cargo.toml",
-      "sha256": "e6759d31c81be52f2e0974f19bd48fa2a2216f9017274b96a52673750a68635f"
+      "sha256": "6bf13ee298c5779c4ad960baa5903596068c4f2014c817ece69dd42a9e9f930e"
     },
     {
       "bytes": 364,
@@ -160,9 +160,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20761,
+      "bytes": 16621,
       "path": "src/frontend/driver.rs",
-      "sha256": "afc39512e06d7a962bc65e0b409b3d10d90e393a639b25a51637c1221b423f02"
+      "sha256": "42f619a127c9aac7000dd08076829ad0794b6cff9e955c2a73e64a9f7065e612"
     },
     {
       "bytes": 24124,
@@ -200,29 +200,14 @@
       "sha256": "21ab5b23d37201b1b3163506415ec03d2b93d67660963409b3ebdce9ec804b2a"
     },
     {
-      "bytes": 9125,
-      "path": "src/frontend/hir_producer.rs",
-      "sha256": "3bb61fbfee39065c68f56a9eeb732e978feab17281f9f78cfcaf7688e270a67b"
-    },
-    {
-      "bytes": 37682,
-      "path": "src/frontend/hir_producer/bundle.rs",
-      "sha256": "a39877d70da0e036ae80a46baba633dc3e0cc7669022280a879daeb6aeef7904"
-    },
-    {
-      "bytes": 17309,
-      "path": "src/frontend/hir_producer/supervisor.rs",
-      "sha256": "9b9e2c2b87baf4867a6b7179447051354a4e1258b58775f7289bf42c6b9b9607"
-    },
-    {
       "bytes": 8931,
       "path": "src/frontend/lexer.rs",
       "sha256": "1c282ff02383bf390105c7f6bcf5d7f58cc769c571ed3b8ca1bfc217740971b8"
     },
     {
-      "bytes": 500,
+      "bytes": 482,
       "path": "src/frontend/mod.rs",
-      "sha256": "6bd810b07e92b22e54c1ed617d508539d69d8d1967dd0f6f4fc9174b4993207e"
+      "sha256": "22d2487fe5b6a0498ca26a7d42655c8da3b4ba2084d9df87ec1ed36dcbb00b87"
     },
     {
       "bytes": 7505,
@@ -290,9 +275,9 @@
       "sha256": "b8fa2444a5f61c219af81a638eeef5f52044b6bb26dbe998fa6fdd84b050252d"
     },
     {
-      "bytes": 10410,
+      "bytes": 10389,
       "path": "src/frontend/oir/mod.rs",
-      "sha256": "99cc6c4860a1aee967b257e50a370b848fccd40d4d6e64e2c4276b29ac5f8429"
+      "sha256": "dbc19809904a9da75a0a55b9b3087c55733f3e859eba2e261ba3f97ffaf6ee49"
     },
     {
       "bytes": 18721,
@@ -960,9 +945,9 @@
       "sha256": "6009bb0789ec1ded0b73caf13a52217e33e1fa006813393a6ded7568f60c8b3f"
     },
     {
-      "bytes": 9940,
+      "bytes": 9923,
       "path": "src/frontend/oir/source.rs",
-      "sha256": "9d03d9d9c4e078cab29561f24366097b16493162a91519ea2c29c9ded5dfead4"
+      "sha256": "e9ba04c8c27c695179584e17dbfc498baaef2f5ff1481f7b86ef86b2a56e8e49"
     },
     {
       "bytes": 12200,
@@ -970,9 +955,9 @@
       "sha256": "2954d6a0636f5a1ee56651f10f82972903447e782013a09efc00f1ed1b813471"
     },
     {
-      "bytes": 14715,
+      "bytes": 14691,
       "path": "src/frontend/oir/source/hir_import.rs",
-      "sha256": "a61fbe3ca60a0a840bc7af6f8f47599d17f23d2529f739091cc1a34d7d10dde5"
+      "sha256": "08f4742d88623c9401518887d282a242c8d08c72f25302775b90fa70aa2deb7e"
     },
     {
       "bytes": 27362,
@@ -1075,9 +1060,9 @@
       "sha256": "94225eadf94e19ced1a810d7097d9210e4fa31dec5d6e29d7a8127905afc4888"
     },
     {
-      "bytes": 9958,
+      "bytes": 8641,
       "path": "src/frontend/oir/source/hir_import/public_facade.rs",
-      "sha256": "204f81ec8efd931da0286e4a0610b968da23fd44bd29e240e49edc0585834c52"
+      "sha256": "710782761726dda45c0c2e86d287df671c74a026f7c0def6416f564d98e16aa0"
     },
     {
       "bytes": 12910,
@@ -1140,9 +1125,9 @@
       "sha256": "5eeecbebd9ce5a7bac22fe80d012bca00b6fff08b6bffb73fad41d2675ed88f4"
     },
     {
-      "bytes": 57409,
+      "bytes": 42749,
       "path": "src/frontend/options.rs",
-      "sha256": "3e2397564afd531cc46f332c9b0ab284dcd124e22c02bb5f82aeb7a74eb901e0"
+      "sha256": "7814dbe17f46ae519ec82c392d8a7ab7453058b73fcd57559dde67fe72bde97f"
     },
     {
       "bytes": 33156,
@@ -1654,8 +1639,6 @@
   "formatter_source_sha256": "69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06",
   "hir_import_base_tree": "8a717f36016d86130ad5acc28a23f87852c76064",
   "hir_import_fixture_members": 20,
-  "hir_import_source_sha256": "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746",
-  "hir_producer_base_tree": "74ba20e2dcecb6056d4b13448a643ba289d83f75",
   "native_inventory_base_head": "cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050",
   "native_inventory_source_sha256": "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842",
   "native_storage_base_head": "63db2c290031d76b5925fdd672c38eac2ca50578",
@@ -1663,12 +1646,12 @@
   "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
-  "purpose": "Explicit opt-in HIR producer compiler inputs; admission is not semantic or hosted qualification.",
-  "reviewed_source_head": "5871a92e8d5d6cd1995ca1b12296e8bd83da57ca",
+  "purpose": "Explicit experimental supplied-artifact compiler inputs; source admission is not semantic or hosted qualification.",
+  "reviewed_source_head": "a1dc6fc823d36d8858375eb651b48c3c682ac2c4",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "6a67309be29b6841f4776ed392853b36d7263e02",
+  "source_only_tree": "74ba20e2dcecb6056d4b13448a643ba289d83f75",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

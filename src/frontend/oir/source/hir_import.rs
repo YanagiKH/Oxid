@@ -18,7 +18,9 @@ mod candidate;
 // Paid leaves retain source ownership and fully compare untrusted observations.
 mod leaf;
 mod public_facade;
-pub(in crate::frontend) use public_facade::{import_checked, Imported, IMPORT_BYTES};
+pub(in crate::frontend) use public_facade::{
+    import_checked, import_produced, Imported, IMPORT_BYTES,
+};
 
 const CELLS: usize = 129;
 const MAX_ROWS: usize = 128;

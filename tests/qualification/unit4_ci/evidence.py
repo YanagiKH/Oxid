@@ -309,7 +309,17 @@ def full_archive(output, path):
         for role in ('build-', 'build-control-'):
             recipe = parser_root / (role + profile) / 'result/build-receipt.json'
             if recipe.is_file():
-                binaries.add(Path(q.read(recipe)['binary']['path']))
+                receipt = q.read(recipe)
+                q.need(receipt['schema'] == 'oxid-unit4-parser-build-v1' and
+                       receipt['status'] in ('built', 'build-failure'), 'unexpected parser build receipt')
+                # The frozen helper omits binary on build-failure, even when
+                # Cargo exited zero but did not produce exactly one executable.
+                q.need(receipt['status'] != 'built' or 'binary' in receipt,
+                       'successful parser build lacks binary identity')
+                if 'binary' in receipt:
+                    binary = receipt['binary']
+                    q.verify(binary['path'], binary)
+                    binaries.add(Path(binary['path']))
     selected = set(binaries)
     for directory, subdirs, names in os.walk(output):
         subdirs[:] = [name for name in subdirs if not name.startswith('cache-target-') and name not in ('target', 'rust-bin', 'cargo-home', 'home')]

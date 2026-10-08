@@ -15,6 +15,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
         Route::TypedImport { request } => Some(process_import(&request[0])),
+        Route::TypedProducer { request } => Some(process_producer(&request[0])),
         Route::ProcessError { message } => Some(process_option_error(&message)),
         Route::TypedRun {
             json: true,
@@ -161,6 +162,98 @@ fn process_import(request: &options::ImportOptions) -> i32 {
                     .output
                     .as_deref()
                     .expect("import compile validates output");
+                super::native::compile(&module, output).map_err(|error| vec![*error])?;
+                Ok(Summary::Compile(Some(output.to_string())))
+            }
+        }
+    })();
+    match result {
+        Ok(summary) => report(project.sources(), Vec::new(), request.json, summary),
+        Err(errors) => report(
+            project.sources(),
+            errors,
+            request.json,
+            Summary::empty(request.operation),
+        ),
+    }
+}
+
+/// New producer-only CLI and driver carriers, debited by its import facade.
+/// Complete types name conservative local, moved and result transport roles;
+/// this is requested storage accounting, not a physical stack or RSS estimate.
+/// The loaded ProjectSources and ordinary reporting keep their prior baseline.
+pub(super) fn producer_transport_bytes() -> usize {
+    use super::hir_producer;
+    use std::{mem::size_of, path::Path};
+
+    // New classifier selection/local extraction, options input/local/moved box
+    // payload, and exact reserve/box-conversion transports. The already owned
+    // argv String payloads retain their baseline; these headers are additional.
+    2 * size_of::<Option<String>>()
+        + size_of::<String>()
+        + 3 * size_of::<options::ProducerOptions>()
+        + size_of::<Vec<options::ProducerOptions>>()
+        + 2 * size_of::<Box<[options::ProducerOptions; 1]>>()
+        + size_of::<Box<[options::ProducerOptions]>>()
+        + size_of::<Result<Box<[options::ProducerOptions; 1]>, Box<[options::ProducerOptions]>>>()
+        + 2 * size_of::<&options::ProducerOptions>()
+        // Producer return/local and the complete fixed observation extraction.
+        + 2 * size_of::<hir_producer::Outcome>()
+        + size_of::<Option<[u8; oir::IMPORT_BYTES]>>()
+        + size_of::<[u8; oir::IMPORT_BYTES]>()
+        + 2 * size_of::<&hir_producer::Outcome>()
+        + 2 * size_of::<&ProjectSources>()
+        + 2 * size_of::<&Path>()
+        + 2 * size_of::<&[u8; oir::IMPORT_BYTES]>()
+        + 2 * size_of::<&[u8]>()
+        // Imported call, held result and match/closure return carriers.
+        + 3 * size_of::<Result<oir::Imported, Vec<Diagnostic>>>()
+        + 3 * size_of::<oir::Imported>()
+        + 3 * size_of::<Result<Summary, Vec<Diagnostic>>>()
+        + 2 * size_of::<Option<&'static str>>()
+        + 2 * size_of::<Operation>()
+        + 2 * size_of::<bool>()
+}
+
+/// Explicit producer Result route. Load genuine source once, run the producer
+/// pipeline, and submit its unchanged fixed observation to the checked importer.
+fn process_producer(request: &options::ProducerOptions) -> i32 {
+    use super::hir_producer;
+    use std::path::Path;
+
+    let project = match ProjectSources::load_typed(&request.path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report(
+                &failure.sources,
+                failure.diagnostics,
+                request.json,
+                Summary::empty(request.operation),
+            )
+        }
+    };
+    let outcome = hir_producer::produce(&project, Path::new(&request.bundle));
+    hir_producer::print_records(&outcome, request.json);
+    let result = (|| {
+        if let Some(error) = outcome.error {
+            return Err(vec![*Diagnostic::new("E0703", "hir-producer", error, None)]);
+        }
+        let Some(observation) = outcome.observation else {
+            return Err(vec![*Diagnostic::new(
+                "E0703",
+                "hir-producer",
+                "experimental HIR producers returned no observation",
+                None,
+            )]);
+        };
+        match oir::import_produced(&project, &observation, request.operation)? {
+            oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
+            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+            oir::Imported::Emitted(module) => {
+                let output = request
+                    .output
+                    .as_deref()
+                    .expect("producer compile validates output");
                 super::native::compile(&module, output).map_err(|error| vec![*error])?;
                 Ok(Summary::Compile(Some(output.to_string())))
             }

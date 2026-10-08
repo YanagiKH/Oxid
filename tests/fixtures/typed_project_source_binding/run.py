@@ -66,8 +66,19 @@ STDOUT_SOURCE_SHA = '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02e
 STDOUT_SOURCE_BYTES = 50310
 NATIVE_STORAGE_SOURCE_SHA = '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303'
 NATIVE_STORAGE_SOURCE_BYTES = 50842
-CURRENT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746'
-CURRENT_SOURCE_BYTES = 62558
+HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746'
+HIR_IMPORT_SOURCE_BYTES = 62558
+CURRENT_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
+CURRENT_SOURCE_BYTES = 63220
+HIR_PRODUCER_AUTHORITY_SHA = 'b6054a027220f74d8a6c5210b033569c51ea2e1ff991c73e70488a548060806d'
+HIR_PRODUCER_AUTHORITY_BYTES = 130362
+HIR_PRODUCER_HEAD = '5871a92e8d5d6cd1995ca1b12296e8bd83da57ca'
+HIR_PRODUCER_TREE = '6a67309be29b6841f4776ed392853b36d7263e02'
+HIR_PRODUCER_BASE_TREE = '74ba20e2dcecb6056d4b13448a643ba289d83f75'
+HIR_PRODUCER_PATCH_SHA = '3ebdfff79cc4b4cc2b8c73c8efdf5b8532af33b2d6375e3e509027e8cd43ecdb'
+HIR_PRODUCER_PATCH_BYTES = 96326
+HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
+HIR_PRODUCER_ADDITIONS = ('src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs')
 HIR_IMPORT_AUTHORITY_SHA = 'a4105c042d49b8145393d59482ae1e6b3872cb1de5ef6760fd098c71bb42ce34'
 HIR_IMPORT_AUTHORITY_BYTES = 158041
 HIR_IMPORT_HEAD = 'a1dc6fc823d36d8858375eb651b48c3c682ac2c4'
@@ -957,9 +968,80 @@ def inverse_hir_import_patch(inputs, patch):
                                HIR_IMPORT_PATCH_BYTES, HIR_IMPORT_PATHS)
 
 
-def admit_hir_import(repo, package_bytes):
-    """Admit the complete opt-in compiler view before any historical inverse."""
+def inverse_hir_producer_patch(inputs, patch):
+    """Restore the exact retained HIR import view, including both Cargo inputs."""
+    return apply_inverse_patch(inputs, patch, HIR_PRODUCER_PATCH_SHA,
+                               HIR_PRODUCER_PATCH_BYTES, HIR_PRODUCER_PATHS)
+
+
+def admit_hir_producer(repo, package_bytes):
+    """Admit dependency and complete compiler membership before historical inversion."""
     current = json.loads(package_bytes["current-source.json"])
+    old_raw = package_bytes["hir-import-source.json"]
+    require(digest(old_raw) == HIR_IMPORT_SOURCE_SHA and len(old_raw) == HIR_IMPORT_SOURCE_BYTES,
+            "unapproved HIR import source manifest")
+    predecessor = json.loads(old_raw)
+    raw = package_bytes["hir-producer-authority.json"]
+    require(digest(raw) == HIR_PRODUCER_AUTHORITY_SHA and len(raw) == HIR_PRODUCER_AUTHORITY_BYTES,
+            "stale HIR producer authority")
+    authority = json.loads(raw)
+    require(authority["schema"] == "oxid-hir-producer-source-transition-v1"
+            and authority["recipe"] == "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS"
+            and authority["base_tree"] == current["hir_producer_base_tree"] == predecessor["source_only_tree"] == HIR_PRODUCER_BASE_TREE
+            and authority["predecessor_source_head"] == predecessor["reviewed_source_head"] == HIR_IMPORT_HEAD
+            and authority["reviewed_source_head"] == current["reviewed_source_head"] == HIR_PRODUCER_HEAD
+            and authority["source_only_tree"] == current["source_only_tree"] == HIR_PRODUCER_TREE
+            and authority["current_source_sha256"] == CURRENT_SOURCE_SHA
+            and authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and authority["hir_import_source_sha256"] == current["hir_import_source_sha256"] == HIR_IMPORT_SOURCE_SHA
+            and authority["hir_import_source_bytes"] == HIR_IMPORT_SOURCE_BYTES
+            and authority["hir_import_authority_sha256"] == HIR_IMPORT_AUTHORITY_SHA
+            and authority["transition_patch_sha256"] == HIR_PRODUCER_PATCH_SHA
+            and authority["transition_patch_bytes"] == HIR_PRODUCER_PATCH_BYTES
+            and authority["transition_paths"] == list(HIR_PRODUCER_PATHS)
+            and authority["compiler_additions"] == list(HIR_PRODUCER_ADDITIONS)
+            and authority["fixture_additions"] == authority["removed_paths"] == []
+            and (authority["current_source_members"], authority["hir_import_source_members"],
+                 authority["compiler_source_members"], authority["compiler_bodies"]) == (327, 324, 249, 252),
+            "stale HIR producer transition authority")
+    omit = {"files", "purpose", "reviewed_source_head", "source_only_tree", "hir_producer_base_tree",
+            "hir_import_source_sha256"}
+    require({k: v for k, v in current.items() if k not in omit}
+            == {k: v for k, v in predecessor.items() if k not in omit}, "stale HIR producer provenance")
+    inputs = check_entries(repo, current["files"])
+    require([r["path"] for r in current["files"]] == sorted(inputs), "unordered HIR producer source inventory")
+    before = {r["path"]: r for r in predecessor["files"]}
+    require(set(inputs) == set(before) | set(HIR_PRODUCER_ADDITIONS), "unexpected HIR producer source membership")
+    require([r["path"] for r in current["files"] if r != before.get(r["path"])] == list(HIR_PRODUCER_PATHS),
+            "unexpected HIR producer source delta")
+    identities = []
+    for name, data in inputs.items():
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, "changed input mode: " + name)
+        identities.append({**entry(name, data), "mode": "100644",
+            "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()})
+    require(authority["current_input_identities"] == identities
+            and authority["current_input_git_modes"] == [{"path": n, "mode": "100644"} for n in inputs],
+            "stale HIR producer complete input identities")
+    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
+    expected = [name for name in inputs if name.startswith(("src/", "native/"))]
+    require(len(expected) == 249 and sorted(actual) == expected, "missing or extra compiler source member")
+    restored, touched = inverse_hir_producer_patch(inputs, package_bytes["hir-producer-transition.patch"])
+    check_bytes(restored, predecessor["files"])
+    changes = []
+    for name in HIR_PRODUCER_PATHS:
+        row = {"path": name}
+        for label, source in (("before", restored), ("after", inputs)):
+            data = source.get(name)
+            row[label] = None if data is None else {**entry(name, data), "mode": "100644",
+                "git_blob": hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()}
+        changes.append(row)
+    require(authority["transition_inputs"] == changes, "stale HIR producer transition input identities")
+    return current, inputs, authority, restored, touched
+
+
+def admit_hir_import(repo, package_bytes, inputs):
+    """Admit the complete opt-in compiler view before any historical inverse."""
+    current = json.loads(package_bytes["hir-import-source.json"])
     raw = package_bytes["hir-import-authority.json"]
     require(digest(raw) == HIR_IMPORT_AUTHORITY_SHA and len(raw) == HIR_IMPORT_AUTHORITY_BYTES,
             "stale HIR import authority")
@@ -974,8 +1056,8 @@ def admit_hir_import(repo, package_bytes):
             and authority["predecessor_source_head"] == predecessor["reviewed_source_head"] == NATIVE_INVENTORY_HEAD
             and authority["reviewed_source_head"] == current["reviewed_source_head"] == HIR_IMPORT_HEAD
             and authority["source_only_tree"] == current["source_only_tree"] == HIR_IMPORT_TREE
-            and authority["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and authority["current_source_sha256"] == HIR_IMPORT_SOURCE_SHA
+            and authority["current_source_bytes"] == HIR_IMPORT_SOURCE_BYTES
             and authority["native_inventory_source_sha256"] == current["native_inventory_source_sha256"] == NATIVE_INVENTORY_SOURCE_SHA
             and authority["native_inventory_source_bytes"] == NATIVE_INVENTORY_SOURCE_BYTES
             and authority["native_inventory_authority_sha256"] == NATIVE_INVENTORY_AUTHORITY_SHA
@@ -992,7 +1074,7 @@ def admit_hir_import(repo, package_bytes):
             "native_inventory_source_sha256", "hir_import_fixture_members"}
     require({k: v for k, v in current.items() if k not in omit}
             == {k: v for k, v in predecessor.items() if k not in omit}, "stale HIR import provenance")
-    inputs = check_entries(repo, current["files"])
+    check_bytes(inputs, current["files"])
     require([r["path"] for r in current["files"]] == sorted(inputs), "unordered HIR import source inventory")
     before = {r["path"]: r for r in predecessor["files"]}
     require(set(inputs) == set(before) | set(HIR_IMPORT_ADDITIONS) | set(HIR_IMPORT_FIXTURES),
@@ -1009,7 +1091,7 @@ def admit_hir_import(repo, package_bytes):
             "stale HIR import complete input identities")
     require(authority["fixture_inputs"] == [r for r in identities if r["path"] in HIR_IMPORT_FIXTURES],
             "stale HIR import fixture identities")
-    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
+    actual = sorted(name for name in inputs if name.startswith(("src/", "native/")))
     expected = [name for name in inputs if name.startswith(("src/", "native/"))]
     require(len(expected) == 246 and sorted(actual) == expected, "missing or extra compiler source member")
     fixture_root = "tests/fixtures/checked_hir_import"
@@ -1518,7 +1600,8 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    hir_current, hir_inputs, hir_authority, native_inventory_inputs, hir_touched = admit_hir_import(repo, package_bytes)
+    producer_current, producer_inputs, producer_authority, hir_inputs, producer_touched = admit_hir_producer(repo, package_bytes)
+    hir_current, hir_inputs, hir_authority, native_inventory_inputs, hir_touched = admit_hir_import(repo, package_bytes, hir_inputs)
     native_inventory_current = json.loads(package_bytes["native-inventory-source.json"])
     native_storage_current = json.loads(package_bytes["native-storage-source.json"])
     native_inventory = json.loads(package_bytes["native-inventory-authority.json"])
@@ -1565,7 +1648,7 @@ def preflight(repo, package=PACKAGE):
             "stale native inventory complete input identities")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [name for name in native_inventory_inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 208 and sorted(actual) == sorted(n for n in hir_inputs if n.startswith(("src/", "native/"))),
+    require(len(expected) == 208 and sorted(actual) == sorted(n for n in producer_inputs if n.startswith(("src/", "native/"))),
             "missing or extra compiler source member")
     require(len([name for name in native_inventory_inputs if name.startswith(("src/", "native/"))
                  or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 211,
@@ -1930,7 +2013,7 @@ def preflight(repo, package=PACKAGE):
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in native_inventory_inputs if x.startswith(("src/", "native/"))]
-    require(sorted(actual) == sorted(n for n in hir_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
+    require(sorted(actual) == sorted(n for n in producer_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
         "source": entry(COMPILE_FIXTURE_SOURCE, inputs[COMPILE_FIXTURE_SOURCE]),
@@ -2083,7 +2166,9 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": hir_current, "hir_import_authority": hir_authority, "hir_import_touched": hir_touched,
+    return {"current": producer_current, "hir_producer_authority": producer_authority, "hir_producer_touched": producer_touched,
+            "hir_import_source": hir_current, "hir_import_inputs": hir_inputs,
+            "hir_import_authority": hir_authority, "hir_import_touched": hir_touched,
             "native_inventory_source": native_inventory_current, "native_inventory_inputs": native_inventory_inputs,
             "native_inventory_authority": native_inventory, "native_inventory_touched": native_inventory_touched,
             "native_storage_source": native_storage_current, "native_storage_inputs": native_storage_inputs,
@@ -2101,7 +2186,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": hir_inputs, "archived": reconstructed, "references": references,
+            "inputs": producer_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2155,6 +2240,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "hir_producer_authority_sha256": HIR_PRODUCER_AUTHORITY_SHA,
+            "hir_producer_inverse_patch_sha256": HIR_PRODUCER_PATCH_SHA,
+            "hir_producer_inverse_touched": captured["hir_producer_touched"],
+            "hir_import_source_sha256": HIR_IMPORT_SOURCE_SHA,
             "hir_import_authority_sha256": HIR_IMPORT_AUTHORITY_SHA,
             "hir_import_inverse_patch_sha256": HIR_IMPORT_PATCH_SHA,
             "hir_import_inverse_touched": captured["hir_import_touched"],
@@ -2414,6 +2503,9 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      hir_producer_authority_sha256=HIR_PRODUCER_AUTHORITY_SHA,
+                      hir_producer_inverse_patch_sha256=HIR_PRODUCER_PATCH_SHA,
+                      hir_import_source_sha256=HIR_IMPORT_SOURCE_SHA,
                       hir_import_authority_sha256=HIR_IMPORT_AUTHORITY_SHA,
                       hir_import_inverse_patch_sha256=HIR_IMPORT_PATCH_SHA,
                       native_inventory_source_sha256=NATIVE_INVENTORY_SOURCE_SHA,

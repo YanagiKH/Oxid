@@ -10,7 +10,8 @@ mod verify;
 
 pub(in crate::frontend) use owned::process;
 pub(super) use source::{
-    check_source, import_checked, CheckedSourceProgram, Imported, ProcessFailure, IMPORT_BYTES,
+    check_source, import_checked, import_produced, CheckedSourceProgram, Imported, ProcessFailure,
+    IMPORT_BYTES,
 };
 
 use super::{

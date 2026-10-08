@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 324)
+        self.assertEqual(len(captured["inputs"]), 327)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,17 +107,91 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_producer_inverse_restores_exact_hir_and_dependency_closure(self):
+        restored, touched = binding.inverse_hir_producer_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["hir-producer-transition.patch"])
+        self.assertEqual(restored, self.captured["hir_import_inputs"])
+        self.assertEqual(touched, list(binding.HIR_PRODUCER_PATHS))
+        self.assertEqual((len(self.captured["inputs"]), len(restored), len(touched)), (327, 324, 12))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), {
+            "src/frontend/hir_producer.rs", "src/frontend/hir_producer/bundle.rs",
+            "src/frontend/hir_producer/supervisor.rs"})
+        self.assertEqual(len([n for n in self.captured["inputs"] if n.startswith(("src/", "native/"))]), 249)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], binding.HIR_PRODUCER_HEAD)
+        self.assertEqual(self.captured["current"]["source_only_tree"], binding.HIR_PRODUCER_TREE)
+        for name in ("Cargo.toml", "Cargo.lock"):
+            self.assertNotEqual(self.captured["inputs"][name], restored[name])
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["hir-import-source.json"]),
+                         "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746")
+
+    def test_producer_forward_patch_recreates_exact_current(self):
+        source = self.root / "forward-producer"
+        binding.materialize(source, self.captured["hir_import_inputs"])
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+                                     "apply", *extra, str(self.package / "hir-producer-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+
+    def test_producer_dependencies_and_modules_reject_before_inverse(self):
+        for name in ("Cargo.toml", "Cargo.lock", *binding.HIR_PRODUCER_ADDITIONS):
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                with self.subTest(name=name, missing=replacement is None):
+                    if replacement is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(replacement)
+                    with patch.object(binding, "inverse_hir_producer_patch", side_effect=AssertionError("inverse ran")):
+                        self.rejects("missing regular input" if replacement is None else "changed input")
+                    path.write_bytes(original)
+        extra = self.repo / "src/frontend/hir_producer/unapproved.rs"
+        extra.write_bytes(b"")
+        with patch.object(binding, "inverse_hir_producer_patch", side_effect=AssertionError("inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_producer_coherent_metadata_and_member_omission_reject(self):
+        for name, error in (("hir-producer-authority.json", "stale HIR producer authority"),
+                            ("hir-import-source.json", "unapproved HIR import source manifest"),
+                            ("hir-producer-transition.patch", "wrong transition patch")):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            self.rejects_before_materialization(error)
+            path.write_bytes(original)
+            self.rehash_package()
+        path = self.package / "current-source.json"
+        current = binding.json.loads(path.read_bytes())
+        current["files"] = [r for r in current["files"] if r["path"] != binding.HIR_PRODUCER_ADDITIONS[0]]
+        binding.write_json(path, current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_producer_wrong_stage_and_recovery_reject_before_hir_inverse(self):
+        raw = self.captured["package_bytes"]["hir-producer-transition.patch"]
+        for key in ("hir_import_inputs", "native_inventory_inputs", "archived"):
+            with self.subTest(key=key), self.assertRaises(binding.BindingError):
+                binding.inverse_hir_producer_patch(self.captured[key], raw)
+        damaged = dict(self.captured["hir_import_inputs"])
+        damaged["Cargo.lock"] += b"\n"
+        with patch.object(binding, "inverse_hir_producer_patch", return_value=(damaged, list(binding.HIR_PRODUCER_PATHS))), \
+                patch.object(binding, "inverse_hir_import_patch", side_effect=AssertionError("HIR inverse ran")):
+            self.rejects("changed reconstructed input")
+
     def test_hir_import_inverse_restores_exact_native_inventory_and_archive(self):
         restored, touched = binding.inverse_hir_import_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["hir-import-transition.patch"])
+            self.captured["hir_import_inputs"], self.captured["package_bytes"]["hir-import-transition.patch"])
         self.assertEqual(restored, self.captured["native_inventory_inputs"])
         self.assertEqual(touched, list(binding.HIR_IMPORT_PATHS))
         self.assertEqual((len(restored), len(touched), len(binding.HIR_IMPORT_ADDITIONS),
                           len(binding.HIR_IMPORT_FIXTURES)), (266, 52, 38, 20))
-        self.assertEqual(len(self.captured["inputs"]), 324)
-        self.assertEqual(len([n for n in self.captured["inputs"] if n.startswith(("src/", "native/"))]), 246)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], binding.HIR_IMPORT_HEAD)
-        self.assertEqual(self.captured["current"]["source_only_tree"], binding.HIR_IMPORT_TREE)
+        self.assertEqual(len(self.captured["hir_import_inputs"]), 324)
+        self.assertEqual(len([n for n in self.captured["hir_import_inputs"] if n.startswith(("src/", "native/"))]), 246)
+        self.assertEqual(self.captured["hir_import_source"]["reviewed_source_head"], binding.HIR_IMPORT_HEAD)
+        self.assertEqual(self.captured["hir_import_source"]["source_only_tree"], binding.HIR_IMPORT_TREE)
         self.assertEqual(binding.digest(self.captured["package_bytes"]["native-inventory-source.json"]),
                          "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842")
         self.assertEqual(self.captured["hir_import_authority"]["recipe"],
@@ -134,8 +208,8 @@ class SourceBindingTests(unittest.TestCase):
         for name in binding.HIR_IMPORT_FIXTURES:
             path = source / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(self.captured["inputs"][name])
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+            path.write_bytes(self.captured["hir_import_inputs"][name])
+        binding.check_entries(source, self.captured["hir_import_source"]["files"], exact=True)
 
     def test_hir_import_fixtures_verified_before_any_removal_or_inverse(self):
         original_patch = self.captured["package_bytes"]["hir-import-transition.patch"]
@@ -2471,7 +2545,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (324, 185, 185, 133, 129, 117))
+                         (327, 185, 185, 133, 129, 117))
         self.assertEqual(plan["native_storage_source_members"], 264)
         self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
         self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)

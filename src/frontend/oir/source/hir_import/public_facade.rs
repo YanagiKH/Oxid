@@ -105,6 +105,38 @@ pub(in crate::frontend) fn import_checked(
     )
 }
 
+/// Producer orchestration has additional complete transport carriers. Only
+/// this closed entry derives their debit; no external caller supplies a byte
+/// allowance, source owner, witness, fuel or producer-derived compiler fact.
+pub(in crate::frontend) fn import_produced(
+    project: &ProjectSources,
+    observation: &[u8],
+    operation: Operation,
+) -> Result {
+    let defaults = IndexLimits::default();
+    let extra = crate::frontend::hir_producer::named_bytes()
+        .checked_add(crate::frontend::driver::producer_transport_bytes())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| refusal("experimental HIR producer carrier accounting overflow"))?;
+    let limited = (|| {
+        Some(IndexLimits {
+            retained: defaults.retained.checked_sub(extra)?,
+            scratch: defaults.scratch.checked_sub(extra)?,
+            // Source-independent dispatch/projection only. Bounded hashing/I/O and
+            // external process costs have their own limits, not this work tariff.
+            work: defaults.work.checked_sub(8_192)?,
+        })
+    })()
+    .ok_or_else(|| refusal("experimental HIR producer resource limit exceeded"))?;
+    execute(
+        project,
+        observation,
+        operation,
+        limited,
+        &mut Allocator::default(),
+    )
+}
+
 fn execute(
     project: &ProjectSources,
     observation: &[u8],

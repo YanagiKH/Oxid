@@ -16,7 +16,7 @@ from unittest.mock import patch
 import common as q
 import gate
 import join
-from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only, stage_compact_upload
+from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only, full_archive, stage_compact_upload
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -221,7 +221,7 @@ class HostPreparationControls(unittest.TestCase):
             observer = q.read(root / 'observer-source/observer-source.json')
             self.assertEqual(observer['observer_patch'], patch_identity)
             self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
-            self.assertEqual(len(observer['files']), 325)
+            self.assertEqual(len(observer['files']), 328)
             runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
             self.assertFalse((root / 'ordinary-build').exists())
             self.assertFalse((root / 'observer-build').exists())
@@ -317,7 +317,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 325)
+        self.assertEqual(len(self.manifest['files']), 328)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -808,6 +808,111 @@ class WindowsToolchainControls(unittest.TestCase):
         self.assertEqual(q.read(self.root / 'commands/04-build-ordinary/receipt.json')['status'], 1100)
 
 
+class FullArchiveControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.output = self.root / 'output'; self.output.mkdir()
+        self.archive = self.root / 'full-evidence.tar.gz'
+        q.save(self.output / 'driver.json', {'status': 'fail'})
+
+    def parser_build(self, profile='debug', control=False, status='build-failure', exit_code=101):
+        # Frozen helpers/build.py emits no binary on build-failure, including
+        # Cargo exit zero when its executable inventory is not exactly one.
+        result = self.output / 'parser' / (('build-control-' if control else 'build-') + profile) / 'result'
+        result.mkdir(parents=True)
+        stdout = result / 'stdout.jsonl'; stdout.write_bytes(b'{"reason":"build-finished"}\n')
+        stderr = result / 'stderr.txt'; stderr.write_bytes(b'retained raw build diagnostic\n')
+        receipt = {'schema': 'oxid-unit4-parser-build-v1', 'status': status, 'exit_code': exit_code,
+                   'profile': profile, 'control': control, 'stdout': q.identity(stdout), 'stderr': q.identity(stderr)}
+        target = result / 'target/x86_64-unknown-linux-gnu' / profile / 'deps'
+        target.mkdir(parents=True)
+        (target / 'regenerable-cache').write_bytes(b'not evidence')
+        if status == 'built':
+            binary = target / 'oxid-a1b2c3'
+            binary.write_bytes(('synthetic executable ' + profile + str(control)).encode())
+            receipt['binary'] = q.identity(binary)
+        path = result / 'build-receipt.json'
+        q.save(path, receipt)
+        return path, receipt
+
+    def archive_members(self):
+        with tarfile.open(self.archive, 'r:gz') as archive:
+            return {member.name: archive.extractfile(member).read() for member in archive.getmembers()}
+
+    def assert_retained(self, members, path):
+        self.assertEqual(members[Path(path).relative_to(self.output).as_posix()], Path(path).read_bytes())
+
+    def test_failed_parser_export_preserves_raw_evidence_without_qualifying(self):
+        path, receipt = self.parser_build()
+        archives = self.root / 'archives'
+        process = subprocess.run([sys.executable, '-B', str(REPO / 'tests/qualification/unit4_ci/evidence.py'),
+                                  '--output', str(self.output), '--archives', str(archives)],
+                                 capture_output=True, timeout=30)
+        self.assertEqual(process.returncode, 1)
+        self.assertIn(b'evidence preserved; qualification remains failed/incomplete', process.stderr)
+        report = q.read(archives / 'export.json')
+        self.assertEqual(report['status'], 'exported')
+        self.assertEqual(report['qualification_status'], 'fail')
+        self.assertEqual(set(report['archives']), {'full'})
+        self.assertFalse((archives / 'compact.tar.xz').exists())
+        self.assertFalse((archives / 'capsule').exists())
+        self.archive = archives / 'full-evidence.tar.gz'
+        q.verify(self.archive, report['archives']['full'])
+        members = self.archive_members()
+        for retained in (path, receipt['stdout']['path'], receipt['stderr']['path'], self.output / 'driver.json'):
+            self.assert_retained(members, retained)
+        archived = q.loads(members[path.relative_to(self.output).as_posix()])
+        self.assertEqual(archived['status'], 'build-failure')
+        self.assertNotIn('binary', archived)
+        self.assertFalse(any('/target/' in name for name in members))
+
+    def test_zero_exit_failed_receipt_does_not_require_or_invent_binary(self):
+        path, receipt = self.parser_build(exit_code=0)
+        full_archive(self.output, self.archive)
+        members = self.archive_members()
+        self.assert_retained(members, path)
+        self.assertEqual(q.loads(members[path.relative_to(self.output).as_posix()]), receipt)
+        self.assertFalse(any('/target/' in name for name in members))
+
+    def test_successful_binaries_are_retained_for_every_profile_and_role(self):
+        receipts = [self.parser_build(profile, control, status='built', exit_code=0)
+                    for profile in q.PROFILES for control in (False, True)]
+        full_archive(self.output, self.archive)
+        members = self.archive_members()
+        for path, receipt in receipts:
+            for retained in (path, receipt['binary']['path'], receipt['stdout']['path'], receipt['stderr']['path']):
+                self.assert_retained(members, retained)
+        self.assertEqual(sum('/target/' in name for name in members), 4)
+        self.assertEqual(q.read(self.output / 'driver.json')['status'], 'fail')
+
+    def test_earlier_successful_binary_survives_a_later_failed_build(self):
+        built_path, built = self.parser_build(status='built', exit_code=0)
+        failed_path, failed = self.parser_build(control=True)
+        full_archive(self.output, self.archive)
+        members = self.archive_members()
+        for retained in (built_path, built['binary']['path'], failed_path, failed['stderr']['path']):
+            self.assert_retained(members, retained)
+        self.assertEqual(sum('/target/' in name for name in members), 1)
+
+    def test_successful_receipt_requires_unchanged_binary_identity(self):
+        path, receipt = self.parser_build(status='built', exit_code=0)
+        binary = Path(receipt['binary']['path']); original = binary.read_bytes()
+        for mutation in ('missing-identity', 'missing-file', 'bytes', 'sha256', 'content'):
+            with self.subTest(mutation=mutation):
+                binary.write_bytes(original)
+                changed = copy.deepcopy(receipt)
+                if mutation == 'missing-identity': changed.pop('binary')
+                elif mutation == 'missing-file': binary.unlink()
+                elif mutation == 'bytes': changed['binary']['bytes'] += 1
+                elif mutation == 'sha256': changed['binary']['sha256'] = '0' * 64
+                else: binary.write_bytes(b'x' * len(original))
+                q.save(path, changed)
+                with self.assertRaises(q.Reject): full_archive(self.output, self.archive)
+                self.assertFalse(self.archive.exists())
+
+
 class CompactUploadControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -1091,7 +1196,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 982)
+        self.assertEqual(report['full_archive_only'], 988)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1306,7 +1411,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 249)
+        self.assertEqual(len(compiler), 252)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
