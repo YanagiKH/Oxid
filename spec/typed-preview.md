@@ -1488,3 +1488,15 @@ artifact hashes are not source-integration results. Ownership foundations are
 one experimental capability; stored-reference lifetimes, partial moves,
 field-disjoint loans, heap/drop semantics, unsafe/FFI contracts and complete
 static-core or v1.0 qualification remain open.
+
+## Experimental source-scale lexical provider
+
+Explicit `--experimental-lexical-provider BUNDLE` on typed-preview check/run/compile
+selects an Oxid-authored ASCII streaming lexer for each genuinely loaded source.
+Its validated, source-bound token Vec reaches the real Rust parser after a
+separately traced canonical lexical comparison. Process compile/run remain
+available; Process Run JSON and combination with HIR import/producer selectors
+are rejected. Default routing is unchanged and failures have no fallback.
+See the [complete LXI1/LXS1 contract](streaming-lexical-provider.md),
+[actual source component](../fixtures/typed-streaming-lexer/README.md) and
+[qualification boundary](../docs/architecture/streaming-lexical-provider.md).

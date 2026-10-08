@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 340)
+        self.assertEqual(len(captured["inputs"]), 345)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,14 +107,124 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_lexical_provider_exact_inverse_forward_and_wrong_stages(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["lexical-provider-transition.patch"]
+        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        self.assertEqual(restored, self.captured["producer_diagnostic_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(self.captured["inputs"]), len(restored), len(touched)), (345, 340, 9))
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(helper.ADDITIONS))
+        binding.check_bytes(restored, self.captured["producer_diagnostic_source"]["files"])
+        source = self.root / "forward-lexical"
+        binding.materialize(source, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra,
+                                     str(self.package / "lexical-provider-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        for wrong in (restored, self.captured["frontend_v2_inputs"], self.captured["archived"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(wrong, patch_bytes, binding)
+
+    def test_lexical_provider_preserves_all_historical_package_members(self):
+        expected = {'authority.json': '73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce', 'combined-authority.json': 'f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670', 'combined-source.json': '221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487', 'combined-transition.patch': '8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683', 'composition-authority.json': 'f387deb3d73643cf51109e1aee7a59717c12cfe1ac70cd3a6e14f1aafa01ee8a', 'composition-source.json': 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16', 'composition-transition.patch': '5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6', 'division-authority.json': 'f2a848cf361ba2907d1f1e437256a28c0996189de9228de148f041a0ce9c0164', 'division-source.json': 'd3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33', 'division-transition.patch': '65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1', 'enum-authority.json': 'e539957635eaa99b1ca806f73ecc04e99a05d7319231f2385c213c63902a9923', 'enum-enabled-qualified-values-v1.json': 'aad90776af8cda1a305efc9581d8fcbb40e4eedb8da0ca9aef703fc4fd8af425', 'enum-resource-authority.json': '9e81f265f1cef93ee41ca326580d19f2728133569d4453310a4a086545031527', 'enum-source.json': '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669', 'enum-transition.patch': '57b5f94476c5c419c66dae9dd609de4350a1e224209290221bf80190c8b39204', 'enum_enabled_qualified_values_v1.py': '999e9f8cd75ae2010a11d20a40c357bf28d42b658d6293e93cb73a36cb665288', 'formatter-authority.json': 'f060dd4e264a7261517f496176d9d3def438a1e151616e313972db0545f9b4d2', 'formatter-source.json': '69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06', 'formatter-transition.patch': '8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4', 'frontend-v2-authority.json': '597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6', 'frontend-v2-source.json': 'd294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a', 'frontend-v2-transition.patch': 'b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32', 'frontend_v2.py': 'c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7', 'hir-import-authority.json': 'a4105c042d49b8145393d59482ae1e6b3872cb1de5ef6760fd098c71bb42ce34', 'hir-import-source.json': '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746', 'hir-import-transition.patch': 'a3a0b5f8e109e7baf6a9713418ce6bc132a9a2e481be5a6a4f42dee08efb8947', 'hir-producer-authority.json': 'b6054a027220f74d8a6c5210b033569c51ea2e1ff991c73e70488a548060806d', 'hir-producer-source.json': '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680', 'hir-producer-transition.patch': '3ebdfff79cc4b4cc2b8c73c8efdf5b8532af33b2d6375e3e509027e8cd43ecdb', 'native-inventory-authority.json': '7c8edaeea1a69abce66b40f7b59bd29584c4927584fbb3f05a633b0ebdb8ca58', 'native-inventory-source.json': '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842', 'native-inventory-transition.patch': '4be68264904f4c059d98f49fb86de16dc9f9af6332801a175b0e118bf2277f76', 'native-storage-authority.json': '1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da', 'native-storage-source.json': '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303', 'native-storage-transition.patch': '9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c', 'predecessor-source.json': '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8', 'producer-diagnostic-authority.json': 'fa52793cd0717dbf2bf44b819afc32258e257cb0522b0f503d8d7cefbfea0dfb', 'producer-diagnostic-transition.patch': 'c344823854314d8569d04055cd14031d2b6cd48cd95b8ea6a8301027af0ffe7e', 'producer_diagnostic.py': '15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823', 'projected-authority.json': 'f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc', 'projected-source.json': '850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304', 'projected-transition.patch': '55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73', 'slices-authority.json': '2e8dc2ab5506e179ffe5628e8a46eb6ec362ddb2e26a8a007800eb7029f3069f', 'slices-source.json': 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660', 'slices-transition.patch': '7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20', 'source-transition.patch': '63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18', 'stdin-authority.json': 'ff9f806e0211367c8c31d1084ce5aa80f3175b0e65c54a0d3860df0ced8cac08', 'stdin-source.json': 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f', 'stdin-transition.patch': '3bebb1cb45dab0cc5a24c6d1f7aac0b011ef543f35cab984b51fa2dd91e518e8', 'stdout-authority.json': '3015dfb1237578b4903b5a865f3ae7daf7819485c3399c2bfd589b8749d4066e', 'stdout-source.json': '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936', 'stdout-transition.patch': '80dad62cc0e9fa87b026753401b3e5bb59e0bc200696b1fa825676cd662fb1ea', 'unary-authority.json': 'ed2d16dd5b24a55005e399630f3ad7402017fca9e8615b98d232d273ec418a31', 'unary-source.json': 'd9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220', 'unary-transition.patch': '4a1e4bfa577ff02bb3c5320eb1994b281831929692acd347daf243b15ae31796'}
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["producer-diagnostic-source.json"]),
+                         "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
+        self.assertEqual(len(self.captured["producer_diagnostic_inputs"]), 340)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+                         "41c73d527f5518e09877544fa5820f3129f55b42")
+        self.assertEqual(self.captured["current"]["source_only_tree"],
+                         "ea05a2c15672bdef5b596b4f9d4494e1134d6e76")
+        self.assertEqual(len([n for n in self.captured["inputs"] if n.startswith(("src/", "native/"))]), 257)
+        self.assertNotIn("lexical_provider_helper", self.captured)
+        binding.assert_unchanged(self.repo, self.captured, self.package)
+
+    def test_lexical_provider_paths_and_producer_closure_reject_before_history(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        for name in [*helper.PATHS, *(row["path"] for row in helper.PRODUCER_CLOSURE)]:
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                if replacement is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(replacement)
+                with self.subTest(path=name, missing=replacement is None), patch.object(
+                        binding, "load_producer_diagnostic", side_effect=AssertionError("historical inverse ran")):
+                    self.rejects("missing regular input" if replacement is None else "changed input")
+                path.write_bytes(original)
+
+    def test_lexical_provider_coherent_package_tampering_rejects(self):
+        for name, error in (("producer-diagnostic-source.json", "unapproved producer diagnostic source manifest"),
+                            ("lexical-provider-authority.json", "stale lexical provider authority"),
+                            ("lexical-provider-transition.patch", "wrong transition patch"),
+                            ("lexical_provider.py", "unapproved lexical provider source helper")):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name):
+                self.rejects_before_materialization(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_lexical_provider_modes_membership_and_symlinks_are_closed(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        for name in [*helper.ADDITIONS, *(row["path"] for row in helper.PRODUCER_CLOSURE)]:
+            path = self.repo / name
+            original_mode = path.stat().st_mode
+            path.chmod(0o755)
+            with self.subTest(path=name), patch.object(
+                    binding, "load_producer_diagnostic", side_effect=AssertionError("historical inverse ran")):
+                self.rejects("changed input mode")
+            path.chmod(original_mode)
+        extra = self.repo / "src/frontend/lexical_provider/unapproved.rs"
+        extra.write_bytes(b"// unapproved\n")
+        self.rejects("missing or extra compiler source member")
+        extra.unlink()
+        extra = self.repo / "fixtures/typed-streaming-lexer/unapproved.ox"
+        extra.write_bytes(b"// unapproved\n")
+        self.rejects("lexical producer source closure differs")
+        extra.unlink()
+        path = self.repo / helper.ADDITIONS[0]
+        raw = path.read_bytes()
+        target = self.root / "aliased-source.rs"
+        target.write_bytes(raw)
+        path.unlink()
+        path.symlink_to(target)
+        self.rejects("symlink input")
+
+    def test_lexical_provider_inverse_output_is_checked_before_history(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["producer_diagnostic_inputs"])
+        damaged["src/frontend/driver.rs"] += b"\n"
+        with patch.object(binding, "load_lexical_provider", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, list(helper.PATHS))), \
+             patch.object(binding, "load_producer_diagnostic", side_effect=AssertionError("historical inverse ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_lexical_provider_archive_receipt_names_exact_current_and_predecessor(self):
+        output = self.root / "lexical-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["lexical_provider_inverse_touched"], self.captured["lexical_provider_touched"])
+        self.assertEqual(receipt["producer_diagnostic_source_sha256"],
+                         "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
+        self.assertEqual((receipt["compiler_executions"], receipt["semantic_pass"]), (0, False))
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
     def test_producer_diagnostic_exact_inverse_forward_and_retained_v2(self):
         helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
         patch_bytes = self.captured["package_bytes"]["producer-diagnostic-transition.patch"]
-        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        restored, touched = helper.inverse(self.captured["producer_diagnostic_inputs"], patch_bytes, binding)
         self.assertEqual(restored, self.captured["frontend_v2_inputs"])
         self.assertEqual(touched, list(helper.PATHS))
-        self.assertEqual((len(self.captured["inputs"]), len(restored), len(touched)), (340, 330, 8))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored),
+        self.assertEqual((len(self.captured["producer_diagnostic_inputs"]), len(restored), len(touched)), (340, 330, 8))
+        self.assertEqual(set(self.captured["producer_diagnostic_inputs"]) - set(restored),
                          set(helper.ADDITIONS) | {row["path"] for row in helper.FIXTURES})
         binding.check_bytes(restored, self.captured["frontend_v2_source"]["files"])
         source = self.root / "forward-diagnostic"
@@ -127,8 +237,8 @@ class SourceBindingTests(unittest.TestCase):
         for row in helper.FIXTURES:
             target = source / row["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(self.captured["inputs"][row["path"]])
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+            target.write_bytes(self.captured["producer_diagnostic_inputs"][row["path"]])
+        binding.check_entries(source, self.captured["producer_diagnostic_source"]["files"], exact=True)
         for wrong in (restored, self.captured["hir_producer_inputs"], self.captured["archived"]):
             with self.assertRaises(binding.BindingError):
                 helper.inverse(wrong, patch_bytes, binding)
@@ -167,9 +277,9 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_producer_diagnostic_coherent_package_tampering_rejects(self):
         for name, error in (("frontend-v2-source.json", "unapproved frontend v2 source manifest"),
-                            ("producer-diagnostic-authority.json", "stale producer diagnostic authority"),
-                            ("producer-diagnostic-transition.patch", "wrong transition patch"),
-                            ("producer_diagnostic.py", "unapproved producer diagnostic source helper")):
+                            ("producer-diagnostic-authority.json", "changed retained producer diagnostic binding"),
+                            ("producer-diagnostic-transition.patch", "changed retained producer diagnostic binding"),
+                            ("producer_diagnostic.py", "changed retained producer diagnostic binding")):
             path = self.package / name
             original = path.read_bytes()
             path.write_bytes(original + b"\n")
@@ -2693,7 +2803,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (340, 185, 185, 133, 129, 117))
+                         (345, 185, 185, 133, 129, 117))
         self.assertEqual(plan["native_storage_source_members"], 264)
         self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
         self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)

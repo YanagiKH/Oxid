@@ -28,7 +28,7 @@ use super::{
     ast,
     diagnostic::Diagnostic,
     lexer, owned_diagnostic, parser,
-    source::{SourceFileId, SourceMap, Span, MAX_SOURCE_BYTES},
+    source::{SourceFile, SourceFileId, SourceMap, Span, MAX_SOURCE_BYTES},
 };
 use budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
@@ -158,6 +158,113 @@ pub(super) struct LoadFailure {
     pub allocator: Allocator,
 }
 
+/// Dependency-light transient loader seam. Standalone canonical observers do not
+/// need the external process implementation or its cryptographic dependencies.
+/// Implementations cannot select parser tokens without the comparison below.
+pub(super) trait LexicalProvider {
+    fn begin_module(
+        &mut self,
+        source: &SourceFile,
+        usage: SourceUsage,
+    ) -> Result<(), Box<Diagnostic>>;
+    fn observe(
+        &mut self,
+        source: &SourceFile,
+        limit: usize,
+        inventory: &Inventory,
+        allocator: &mut Allocator,
+    ) -> Result<LexicalObservation, Box<Diagnostic>>;
+    fn comparison_started(&mut self);
+    fn comparison_finished(&mut self, matched: bool);
+    fn selected_for_parser(
+        &mut self,
+        source: &SourceFile,
+        tokens: &[lexer::Token],
+        capacity: usize,
+    ) -> Result<(), Box<Diagnostic>>;
+}
+
+/// Immutable source association travels with the actual returned allocation.
+/// It is revalidated when consuming it at the parser boundary, independently
+/// of any provider receipt or later parser-minted provenance.
+pub(super) struct LexicalObservation {
+    identity: u64,
+    file: SourceFileId,
+    source_len: usize,
+    value: Result<Vec<lexer::Token>, Box<Diagnostic>>,
+}
+impl LexicalObservation {
+    pub(super) fn new(
+        source: &SourceFile,
+        value: Result<Vec<lexer::Token>, Box<Diagnostic>>,
+    ) -> Self {
+        Self {
+            identity: source.identity(),
+            file: source.span(0, 0).file,
+            source_len: source.text().len(),
+            value,
+        }
+    }
+    fn compare_and_consume(
+        self,
+        source: &SourceFile,
+        canonical: Result<Vec<lexer::Token>, Box<Diagnostic>>,
+        limit: usize,
+    ) -> Result<Result<Vec<lexer::Token>, Box<Diagnostic>>, &'static str> {
+        if self.identity != source.identity()
+            || self.file != source.span(0, 0).file
+            || self.source_len != source.text().len()
+        {
+            return Err("lexical observation belongs to another retained source");
+        }
+        match (self.value, canonical) {
+            (Ok(tokens), Ok(canonical)) => {
+                // Accounted before the unchanged canonical lexer's infallible
+                // growth. Check actual capacity too; no old allocation claim is
+                // silently promoted to fallible allocation.
+                let capacity = (source.text().len().min(limit) + 1)
+                    .max(4)
+                    .next_power_of_two();
+                if canonical.capacity() > capacity {
+                    return Err("canonical token capacity exceeded admitted bound");
+                }
+                if tokens.len() != canonical.len()
+                    || !tokens
+                        .iter()
+                        .zip(&canonical)
+                        .all(|(a, b)| a.kind == b.kind && a.span == b.span)
+                {
+                    return Err("lexical provider disagrees with canonical tokens");
+                }
+                drop(canonical);
+                Ok(Ok(tokens))
+            }
+            (Err(observed), Err(canonical)) => {
+                if observed.code != canonical.code
+                    || observed.stage != canonical.stage
+                    || observed.message != canonical.message
+                    || observed.primary != canonical.primary
+                    || observed.secondary != canonical.secondary
+                    || observed.notes != canonical.notes
+                {
+                    return Err("lexical provider disagrees with canonical diagnostic");
+                }
+                drop(canonical);
+                Ok(Err(observed))
+            }
+            _ => Err("lexical provider disagrees with canonical outcome"),
+        }
+    }
+}
+fn lexical_failure(source: &SourceFile, message: &'static str) -> Box<Diagnostic> {
+    owned_diagnostic::diagnostic(
+        "E0703",
+        "lexical-provider",
+        format_args!("{message}"),
+        Some(source.span(0, 0)),
+    )
+}
+
 // Test-only reserve traces enlarge LoadFailure; do not allocate while handling failure.
 #[cfg_attr(test, allow(clippy::result_large_err))]
 impl ProjectSources {
@@ -186,6 +293,21 @@ impl ProjectSources {
             &mut Allocator::default(),
             parser::ArraySyntaxPolicy::Enabled,
             ProjectEnumSyntax::Enabled,
+        )
+    }
+    pub(super) fn load_typed_with_provider(
+        entry: &str,
+        limits: ProjectLimits,
+        provider: &mut dyn LexicalProvider,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax_provider(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            &mut Allocator::default(),
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::Enabled,
+            Some(provider),
         )
     }
     /// Preserve the typed grammar before standard imports for gate controls.
@@ -304,6 +426,18 @@ impl ProjectSources {
         arrays: parser::ArraySyntaxPolicy,
         enums: ProjectEnumSyntax,
     ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax_provider(entry, limits, mode, allocator, arrays, enums, None)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn load_with_syntax_provider(
+        entry: &str,
+        limits: ProjectLimits,
+        mode: parser::SourceMode,
+        allocator: &mut Allocator,
+        arrays: parser::ArraySyntaxPolicy,
+        enums: ProjectEnumSyntax,
+        mut provider: Option<&mut dyn LexicalProvider>,
+    ) -> Result<Self, LoadFailure> {
         let mut builder = SourceSetBuilder {
             entry,
             limits,
@@ -320,7 +454,7 @@ impl ProjectSources {
                 syntax_flavor: SyntaxFlavor::OriginalSingleFile,
             },
         };
-        match builder.load_all() {
+        match builder.load_all_with_provider(&mut provider) {
             Ok(()) => Ok(builder.project),
             Err(diagnostics) => Err(LoadFailure {
                 sources: builder.project.sources,
@@ -658,6 +792,12 @@ struct Frame {
 
 impl SourceSetBuilder<'_> {
     fn load_all(&mut self) -> Result<(), Errors> {
+        self.load_all_with_provider(&mut None)
+    }
+    fn load_all_with_provider(
+        &mut self,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+    ) -> Result<(), Errors> {
         let text = self
             .read_source(Path::new(self.entry), self.entry, None)
             .map_err(one)?;
@@ -666,7 +806,7 @@ impl SourceSetBuilder<'_> {
             .string(&mut display, self.entry.len(), "entry display")
             .map_err(|error| one(reserve_error(error, None)))?;
         display.push_str(self.entry);
-        let program = self.parse_file(display, text, None)?;
+        let program = self.parse_file_with_provider(display, text, None, provider)?;
         let root = self.project.root_eof();
         if self.limits.modules == 0 {
             return Err(one(resource("module count limit exceeded", Some(root))));
@@ -744,7 +884,7 @@ impl SourceSetBuilder<'_> {
                 continue;
             }
             stack[height - 1].next += 1;
-            let child = self.load_child(frame.module, frame.next)?;
+            let child = self.load_child_with_provider(frame.module, frame.next, provider)?;
             if height == stack.len() {
                 return Err(one(Diagnostic::new(
                     "E0500",
@@ -864,6 +1004,15 @@ impl SourceSetBuilder<'_> {
         text: String,
         origin: Option<Span>,
     ) -> Result<ast::Program, Errors> {
+        self.parse_file_with_provider(display, text, origin, &mut None)
+    }
+    fn parse_file_with_provider(
+        &mut self,
+        display: String,
+        text: String,
+        origin: Option<Span>,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+    ) -> Result<ast::Program, Errors> {
         let path_bytes = add(
             self.project.usage.retained_path_bytes,
             display.len(),
@@ -885,7 +1034,27 @@ impl SourceSetBuilder<'_> {
             .min(lexer::MAX_TOKENS)
             .checked_sub(self.project.usage.non_eof_tokens)
             .ok_or_else(|| one(overflow(origin)))?;
-        let tokens = lexer::lex_with_limit(source, remaining_tokens).map_err(one)?;
+        let tokens = if let Some(provider) = provider.as_deref_mut() {
+            provider
+                .begin_module(source, self.project.usage)
+                .map_err(one)?;
+            let inventory = self
+                .project
+                .inventory()
+                .ok_or_else(|| one(overflow(origin)))?;
+            let observed = provider
+                .observe(source, remaining_tokens, &inventory, self.allocator)
+                .map_err(one)?;
+            provider.comparison_started();
+            let canonical = lexer::lex_with_limit(source, remaining_tokens);
+            let result = observed.compare_and_consume(source, canonical, remaining_tokens);
+            provider.comparison_finished(result.is_ok());
+            result
+                .map_err(|message| one(lexical_failure(source, message)))?
+                .map_err(one)?
+        } else {
+            lexer::lex_with_limit(source, remaining_tokens).map_err(one)?
+        };
         self.project.usage.non_eof_tokens =
             add(self.project.usage.non_eof_tokens, tokens.len() - 1, origin).map_err(one)?;
         let remaining_nodes = self
@@ -894,6 +1063,11 @@ impl SourceSetBuilder<'_> {
             .min(parser::MAX_NODES)
             .checked_sub(self.project.usage.syntax_nodes)
             .ok_or_else(|| one(overflow(origin)))?;
+        if let Some(provider) = provider.as_deref_mut() {
+            provider
+                .selected_for_parser(source, &tokens, tokens.capacity())
+                .map_err(one)?;
+        }
         let (program, nodes) = match self.enums {
             #[cfg(test)]
             ProjectEnumSyntax::StdClosed => parser::parse_typed_closed_std_counted(
@@ -969,6 +1143,14 @@ impl SourceSetBuilder<'_> {
     }
 
     fn load_child(&mut self, parent: ModuleId, local: usize) -> Result<ModuleId, Errors> {
+        self.load_child_with_provider(parent, local, &mut None)
+    }
+    fn load_child_with_provider(
+        &mut self,
+        parent: ModuleId,
+        local: usize,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+    ) -> Result<ModuleId, Errors> {
         let declaration = self.project.programs[parent.0].modules[local];
         let at = Some(declaration.name);
         let name = self.project.text(declaration.name);
@@ -1096,7 +1278,7 @@ impl SourceSetBuilder<'_> {
             add(self.project.usage.retained_path_bytes, relative.len(), at)
                 .and_then(|n| add(n, filesystem::path_units(&canonical), at))
                 .map_err(one)?;
-        let program = self.parse_file(display, text, at)?;
+        let program = self.parse_file_with_provider(display, text, at, provider)?;
         let id = ModuleId(self.project.programs.len());
         self.project.programs.push(program);
         self.project.modules.push(ModuleHeader {
@@ -1225,4 +1407,57 @@ fn bounded_enum_production_project_policy_layout() {
         std::mem::size_of::<ProjectSources>()
     );
     assert_eq!(std::mem::size_of::<ProjectEnumSyntax>(), 1);
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod lexical_loader_layout_tests {
+    use super::*;
+    use std::mem::{align_of, size_of};
+    // Exact retained baseline carriers. The optional mutable provider belongs
+    // only to call frames; changing these layouts is not part of this route.
+    struct BaselineProjectSources {
+        sources: SourceMap,
+        programs: Vec<ast::Program>,
+        modules: Vec<ModuleHeader>,
+        canonical_root: Option<PathBuf>,
+        usage: SourceUsage,
+        syntax_flavor: SyntaxFlavor,
+    }
+    struct BaselineLoadFailure {
+        sources: SourceMap,
+        diagnostics: Vec<Diagnostic>,
+        usage: SourceUsage,
+        allocator: Allocator,
+    }
+    struct BaselineBuilder<'a> {
+        entry: &'a str,
+        limits: ProjectLimits,
+        allocator: &'a mut Allocator,
+        mode: parser::SourceMode,
+        arrays: parser::ArraySyntaxPolicy,
+        enums: ProjectEnumSyntax,
+        project: ProjectSources,
+    }
+    #[test]
+    fn lexical_provider_keeps_all_retained_loader_layouts_unchanged() {
+        assert_eq!(
+            size_of::<ProjectSources>(),
+            size_of::<BaselineProjectSources>()
+        );
+        assert_eq!(
+            align_of::<ProjectSources>(),
+            align_of::<BaselineProjectSources>()
+        );
+        assert_eq!(size_of::<LoadFailure>(), size_of::<BaselineLoadFailure>());
+        assert_eq!(align_of::<LoadFailure>(), align_of::<BaselineLoadFailure>());
+        assert_eq!(
+            size_of::<SourceSetBuilder<'_>>(),
+            size_of::<BaselineBuilder<'_>>()
+        );
+        assert_eq!(
+            align_of::<SourceSetBuilder<'_>>(),
+            align_of::<BaselineBuilder<'_>>()
+        );
+    }
 }

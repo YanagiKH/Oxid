@@ -43,9 +43,9 @@ class SourceAuthorityControls(unittest.TestCase):
         import authority
         original = json.loads((self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes())
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-        self.assertEqual(len(original['files']), 340)
+        self.assertEqual(len(original['files']), 345)
         self.assertEqual(sha(canonical(original['files'])), authority.CURRENT_FILES_SHA)
-        self.assertEqual(len(self.manifest['files']), 341)
+        self.assertEqual(len(self.manifest['files']), 346)
         self.assertEqual(sha(canonical(self.manifest['files'])), authority.OBSERVER_FILES_SHA)
         self.assertEqual(set(self.manifest['changed_paths']), {
             'src/frontend/mod.rs', 'src/frontend/project.rs', 'src/frontend/lexer.rs',
@@ -53,6 +53,17 @@ class SourceAuthorityControls(unittest.TestCase):
             'src/frontend/declaration_index/sealed.rs', 'src/frontend/driver.rs',
             'src/frontend/lifecycle_observer.rs'})
         self.assertEqual(json.loads((self.output / 'prepared.json').read_bytes())['compiler_invocations'], 0)
+
+    def test_lexical_source_successor_preserves_prior_public_authority(self):
+        retained = self.package / 'producer_diagnostic_authority.py'
+        self.assertEqual(sha(retained.read_bytes()), '7224b8a3b760a339e35a57df8821f299fc48a4e3bbab09ce38731314434cbbf5')
+        import authority
+        old = {}
+        exec(compile(retained.read_bytes(), str(retained), 'exec'), old)
+        for key in ('LIFECYCLE_PATCH_SHA', 'PROJECTED_LIFECYCLE_PATCH_SHA',
+                    'HISTORICAL_LIFECYCLE_PATCH_SHA', 'ENUM_LIFECYCLE_PATCH_SHA',
+                    'LLVM_CONTENT_SHA', 'ENUM_SOURCE_SHA'):
+            self.assertEqual(getattr(authority, key), old[key], key)
 
     def test_lifecycle_successor_restores_exact_historical_patch(self):
         current = (self.package / 'observer-stdin-v1.patch').read_bytes()
@@ -282,7 +293,7 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         self.assertEqual(receipt['source_manifest']['sha256'], authority.ENUM_SOURCE_SHA)
         self.assertEqual(receipt['source_manifest']['members'], 237)
         self.assertEqual(receipt['execution_source_manifest']['sha256'], authority.CURRENT_SOURCE_SHA)
-        self.assertEqual(receipt['execution_source_manifest']['members'], 340)
+        self.assertEqual(receipt['execution_source_manifest']['members'], 345)
         self.assertEqual(self.helper.sha(self.manifest.read_bytes()), authority.ENUM_SOURCE_SHA)
         with self.assertRaisesRegex(Reject, 'current execution source identity'):
             Predecessors(self.contracts, self.manifest, self.amendment_root)

@@ -106,21 +106,32 @@
     },
     {
       "id": "provider-dispatch",
-      "summary": "Production component dispatch, trace and no-fallback enforcement",
-      "status": "proposed",
-      "classification": "planned",
-      "edition": "legacy-0.9",
-      "backend": "planned",
-      "target_scope": "Proposed scope; no target validated",
+      "summary": "Explicit source-scale Oxid lexical provider feeding the real typed-project parser with source binding, canonical comparison, tracing and no fallback",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "Rust parser/semantic/OIR/LLVM authority with an Oxid lexical component",
+      "target_scope": "Explicit local Linux x86_64 route; exact-head hosted qualification remains separate",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
-        "docs/architecture/current-baseline.md"
+        "spec/streaming-lexical-provider.md"
       ],
-      "implementation": [],
-      "tests": [],
-      "evidence": [],
-      "limitations": "Current manifest is declaration-only with substring validation; no actual provider dispatch."
+      "implementation": [
+        "src/frontend/lexical_provider.rs",
+        "src/frontend/project.rs",
+        "fixtures/typed-streaming-lexer/main.ox"
+      ],
+      "tests": [
+        "src/frontend/lexical_provider/tests.rs",
+        "scripts/test_streaming_lexer_protocol.py",
+        "scripts/qualify_streaming_lexer.py",
+        "scripts/qualify_streaming_lexer_controls.py"
+      ],
+      "evidence": [
+        "docs/architecture/streaming-lexical-provider.md"
+      ],
+      "limitations": "ASCII lexical component only; canonical Rust lexical comparison and all parser/semantic/backend authorities remain. Default routing and legacy declaration-only manifest unchanged. Fuel can refuse admitted sources; no general width-boundary completion or independent self-hosting claim."
     },
     {
       "id": "lazy-tasks",
@@ -328,7 +339,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [

@@ -1,0 +1,3981 @@
+diff --git a/src/frontend/driver.rs b/src/frontend/driver.rs
+index 5d75f2d..bc0d4be 100644
+--- a/src/frontend/driver.rs
++++ b/src/frontend/driver.rs
+@@ -14,6 +14,23 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
+ 
+ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
+     match route {
++        Route::TypedLexical { request }
++            if request[0].operation == Operation::Run
++                && request[0].entry_policy == EntryPolicy::Process
++                && request[0].json =>
++        {
++            Some(process_option_error(
++                "process-mode run does not support --message-format=json",
++            ))
++        }
++        Route::TypedLexical { request } => Some(process_file_with_lexical(
++            &request[0].path,
++            request[0].json,
++            request[0].operation,
++            request[0].output.as_deref(),
++            request[0].entry_policy,
++            Some(&request[0].bundle),
++        )),
+         Route::TypedImport { request } => Some(process_import(&request[0])),
+         Route::TypedProducer { request } => Some(process_producer(&request[0])),
+         Route::ProcessError { message } => Some(process_option_error(&message)),
+@@ -370,6 +387,17 @@ fn process_file(
+     operation: Operation,
+     output: Option<&str>,
+     entry_policy: EntryPolicy,
++) -> i32 {
++    process_file_with_lexical(path, json, operation, output, entry_policy, None)
++}
++
++fn process_file_with_lexical(
++    path: &str,
++    json: bool,
++    operation: Operation,
++    output: Option<&str>,
++    entry_policy: EntryPolicy,
++    lexical_bundle: Option<&str>,
+ ) -> i32 {
+     let process_run = operation == Operation::Run && entry_policy == EntryPolicy::Process;
+     // Pure argv classification already finished. Setup must precede even source
+@@ -395,7 +423,41 @@ fn process_file(
+             )
+         };
+     }
+-    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
++    let loaded = if let Some(directory) = lexical_bundle {
++        let mut provider =
++            match super::lexical_provider::Provider::load(std::path::Path::new(directory)) {
++                Ok(provider) => provider,
++                Err(message) => {
++                    let diagnostic = *Diagnostic::new("E0703", "lexical-provider", message, None);
++                    return if process_run {
++                        report_process(&SourceMap::new(), &[diagnostic])
++                    } else {
++                        report(
++                            &SourceMap::new(),
++                            vec![diagnostic],
++                            json,
++                            Summary::empty(operation),
++                        )
++                    };
++                }
++            };
++        let result =
++            ProjectSources::load_typed_with_provider(path, ProjectLimits::default(), &mut provider);
++        let sources = match &result {
++            Ok(project) => project.sources(),
++            Err(failure) => &failure.sources,
++        };
++        if !provider.print_receipts(sources, json, process_run) {
++            return 74;
++        }
++        // Drop executable ownership, transport accounting and receipt storage
++        // before canonical HIR checking or native output publication begins.
++        drop(provider);
++        result
++    } else {
++        ProjectSources::load_typed(path, ProjectLimits::default())
++    };
++    let project = match loaded {
+         Ok(project) => project,
+         Err(failure) => {
+             return if process_run {
+diff --git a/src/frontend/lexical_provider.rs b/src/frontend/lexical_provider.rs
+new file mode 100644
+index 0000000..8a91c10
+--- /dev/null
++++ b/src/frontend/lexical_provider.rs
+@@ -0,0 +1,611 @@
++//! Explicit, source-bound experimental lexical provider. External observations
++//! are compared with the unchanged canonical lexer; only the provider's owned
++//! token allocation is moved into the unchanged parser. There is no fallback.
++use super::{
++    declaration_index::IndexLimits,
++    diagnostic::Diagnostic,
++    lexer::Token,
++    project::{budget::Allocator, Inventory, LexicalObservation, LexicalProvider, SourceUsage},
++    source::{SourceFile, SourceFileId, SourceMap},
++};
++use sha2::{Digest, Sha256};
++use std::{fmt, mem::size_of, path::Path};
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++mod bundle;
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++mod supervisor;
++#[cfg(test)]
++mod tests;
++mod wire;
++
++const RECEIPTS: usize = 256;
++// Prepay bounded source hashing and receipt formatting for a whole default
++// project, including its final failed module. No failed allocation/transport
++// requires spending work that was available only on the success path.
++const RECEIPT_WORK: u64 =
++    8 * super::source::MAX_SOURCE_BYTES as u64 + 8 * 4 * 1024 * 1024 + RECEIPTS as u64 * 4096;
++
++#[derive(Debug)]
++struct Receipt {
++    file: SourceFileId,
++    identity: u64,
++    source_len: usize,
++    source_sha256: [u8; 32],
++    executable_sha256: [u8; 32],
++    input_sha256: [u8; 32],
++    stdout_sha256: [u8; 32],
++    stderr_sha256: [u8; 32],
++    input_bytes: usize,
++    input_written: usize,
++    stdout_bytes: usize,
++    stderr_bytes: usize,
++    status: Option<i32>,
++    signal: Option<i32>,
++    stop: &'static str,
++    spawned: bool,
++    leader_reaped: bool,
++    stdin_closed: bool,
++    stdout_eof: bool,
++    stderr_eof: bool,
++    comparison_attempted: bool,
++    comparison_matched: bool,
++    selected_for_parser: bool,
++    #[cfg(test)]
++    producer_allocation: usize,
++}
++impl Receipt {
++    fn new(source: &SourceFile, executable_sha256: [u8; 32]) -> Self {
++        Self {
++            file: source.span(0, 0).file,
++            identity: source.identity(),
++            source_len: source.text().len(),
++            source_sha256: Sha256::digest(source.text().as_bytes()).into(),
++            executable_sha256,
++            input_sha256: Sha256::digest([]).into(),
++            stdout_sha256: Sha256::digest([]).into(),
++            stderr_sha256: Sha256::digest([]).into(),
++            input_bytes: 0,
++            input_written: 0,
++            stdout_bytes: 0,
++            stderr_bytes: 0,
++            status: None,
++            signal: None,
++            stop: "not-started",
++            spawned: false,
++            leader_reaped: false,
++            stdin_closed: false,
++            stdout_eof: false,
++            stderr_eof: false,
++            comparison_attempted: false,
++            comparison_matched: false,
++            selected_for_parser: false,
++            #[cfg(test)]
++            producer_allocation: 0,
++        }
++    }
++}
++
++/// Transient external owner; never embedded in ProjectSources, LoadFailure,
++/// SourceSetBuilder or a checked HIR program. Drop before ordinary HIR checking.
++pub(super) struct Provider {
++    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++    bundle: Option<bundle::Bundle>,
++    receipts: Vec<Receipt>,
++    budget: Budget,
++    #[cfg(test)]
++    fixture: Option<fn(&SourceFile, usize) -> Vec<u8>>,
++}
++
++#[derive(Clone, Copy)]
++struct Budget {
++    limits: IndexLimits,
++    work: u64,
++    selected_capacity: usize,
++    receipt_work_left: u64,
++    fixed_retained: usize,
++    fixed_scratch: usize,
++}
++#[derive(Debug)]
++struct Plan {
++    output: usize,
++    retained: usize,
++    scratch: usize,
++    work: u64,
++}
++impl Budget {
++    fn new(extra_retained: usize, extra_scratch: usize) -> Result<Self, &'static str> {
++        let fixed_retained = (size_of::<Provider>() + size_of::<super::options::LexicalOptions>())
++            .checked_add(RECEIPTS * size_of::<Receipt>())
++            .and_then(|n| n.checked_add(extra_retained))
++            .ok_or("lexical provider storage overflow")?;
++        let fixed_scratch = fixed_bytes()
++            .checked_add(extra_scratch)
++            .ok_or("lexical provider storage overflow")?;
++        let limits = IndexLimits::default();
++        if fixed_retained as u64 > limits.retained || fixed_scratch as u64 > limits.scratch {
++            return Err("lexical provider fixed storage limit exceeded");
++        }
++        Ok(Self {
++            limits,
++            work: RECEIPT_WORK,
++            receipt_work_left: RECEIPT_WORK,
++            selected_capacity: 0,
++            fixed_retained,
++            fixed_scratch,
++        })
++    }
++    fn admit_receipt(&mut self, source: &SourceFile) -> Result<(), &'static str> {
++        let work = (source.text().len() as u64)
++            .checked_mul(8)
++            .and_then(|n| n.checked_add((source.path().len() as u64).checked_mul(8)?))
++            .and_then(|n| n.checked_add(4096))
++            .ok_or("lexical receipt work overflow")?;
++        self.receipt_work_left = self
++            .receipt_work_left
++            .checked_sub(work)
++            .ok_or("lexical receipt work limit exceeded")?;
++        Ok(())
++    }
++    fn admit_inventory_work(&mut self, usage: SourceUsage) -> Result<(), &'static str> {
++        // inventory() visits prior programs, declarations, blocks, statements
++        // and expressions. Parser nodes plus tokens conservatively cover all
++        // those visits; pay before the loader walks them for this module.
++        let visits = (usage.syntax_nodes as u64)
++            .checked_add(usage.non_eof_tokens as u64)
++            .and_then(|n| n.checked_add(usage.modules as u64 + 1))
++            .and_then(|n| n.checked_mul(8))
++            .ok_or("lexical inventory work overflow")?;
++        let total = self
++            .work
++            .checked_add(visits)
++            .ok_or("lexical inventory work overflow")?;
++        if total > self.limits.work {
++            return Err("lexical provider inventory work limit exceeded");
++        }
++        self.work = total;
++        Ok(())
++    }
++    fn admit(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        inventory: &Inventory,
++    ) -> Result<Plan, &'static str> {
++        let n = source.text().len();
++        let output = wire::output_bound(n, limit)?;
++        let token_slots = n.min(limit) + 1;
++        // The existing infallible canonical Vec starts at four slots and doubles.
++        // Charge its full next-power-of-two capacity AND the old allocation that
++        // may coexist during growth. This does not make old lexing fallible.
++        let canonical_capacity = token_slots
++            .max(4)
++            .checked_next_power_of_two()
++            .ok_or("lexical canonical capacity overflow")?;
++        let canonical_peak = canonical_capacity
++            .checked_add(canonical_capacity / 2)
++            .and_then(|n| n.checked_mul(size_of::<Token>()))
++            .ok_or("lexical canonical capacity overflow")?;
++        let token_bytes = token_slots
++            .checked_mul(size_of::<Token>())
++            .ok_or("lexical token storage overflow")?;
++        let mut retained = self.fixed_retained;
++        // Existing source/AST inventory keeps its established requested-storage
++        // model. Replace its token lengths with actual exact provider capacity.
++        for value in [
++            inventory.owner_bytes,
++            inventory.source_bytes,
++            inventory.source_headers,
++            inventory.line_starts,
++            inventory.ast_headers,
++            inventory.ast_payload,
++            inventory.module_headers,
++            inventory.path_bytes,
++            self.selected_capacity,
++            token_bytes,
++        ] {
++            retained = retained
++                .checked_add(value)
++                .ok_or("lexical retained storage overflow")?;
++        }
++        // Conservatively charge all these allocations together even though input
++        // and output are released before canonical lexing and parser transfer.
++        let mut scratch = self.fixed_scratch;
++        for value in [
++            inventory.fixed_loader_scratch,
++            n + 12,
++            output + 1,
++            token_bytes,
++            canonical_peak,
++        ] {
++            scratch = scratch
++                .checked_add(value)
++                .ok_or("lexical scratch storage overflow")?;
++        }
++        // Named logical work: 56 per source byte for input/hash/canonical
++        // passes, 16 per bounded output byte (8 for each strict decode pass),
++        // and 16 per possible token for materialization/comparison. Receipt
++        // hashing/formatting and prior-AST inventory walks were prepaid above.
++        // External CPU/RSS are not this meter; lifetime is separately supervised.
++        let work = (n as u64)
++            .checked_mul(56)
++            .and_then(|v| v.checked_add((output as u64) * 16))
++            .and_then(|v| v.checked_add((token_slots as u64) * 16))
++            .ok_or("lexical work overflow")?;
++        let total_work = self.work.checked_add(work).ok_or("lexical work overflow")?;
++        if retained as u64 > self.limits.retained {
++            return Err("lexical provider retained byte limit exceeded");
++        }
++        if scratch as u64 > self.limits.scratch {
++            return Err("lexical provider scratch byte limit exceeded");
++        }
++        if total_work > self.limits.work {
++            return Err("lexical provider work limit exceeded");
++        }
++        self.work = total_work;
++        Ok(Plan {
++            output,
++            retained,
++            scratch,
++            work,
++        })
++    }
++}
++fn fixed_bytes() -> usize {
++    wire::named_bytes()
++        + 3 * size_of::<LexicalObservation>()
++        + 3 * size_of::<Receipt>()
++        + 3 * size_of::<Budget>()
++        + 3 * size_of::<Plan>()
++        + 3 * size_of::<Diagnostic>()
++        + 3 * size_of::<[u8; 1024]>()
++        + size_of::<[usize; 64]>()
++        + 4 * size_of::<Sha256>()
++        + 3 * size_of::<Option<&mut dyn LexicalProvider>>()
++}
++fn failure(source: &SourceFile, message: &'static str) -> Box<Diagnostic> {
++    super::owned_diagnostic::diagnostic(
++        "E0703",
++        "lexical-provider",
++        format_args!("{message}"),
++        Some(source.span(0, 0)),
++    )
++}
++
++impl Provider {
++    pub(super) fn load(directory: &Path) -> Result<Self, &'static str> {
++        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++        {
++            let _ = (directory, Budget::new(0, 0)?);
++            Err("experimental lexical provider requires Linux x86_64")
++        }
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        {
++            // Admit bounded bundle-loading carriers and logical copy/hash work
++            // before opening/copying an executable. Kernel-backed sealed bytes
++            // have their separate executable bound, not a Rust/RSS claim.
++            // The named loader model excludes standard-library temporary-parent
++            // lookup/canonicalization setup allocations; retained admitted
++            // workspace-path capacity is still accounted separately.
++            let mut budget = Budget::new(4096, bundle::named_bytes() + supervisor::named_bytes())?;
++            let copy_bound = (bundle::EXECUTABLE_MAX as u64) * 8 + 4096;
++            if budget
++                .work
++                .checked_add(copy_bound)
++                .is_none_or(|work| work > budget.limits.work)
++            {
++                return Err("lexical executable copy work limit exceeded");
++            }
++            let bundle = bundle::Bundle::load(directory)?;
++            budget = Budget::new(
++                bundle.named_bytes(),
++                bundle::named_bytes() + supervisor::named_bytes(),
++            )?;
++            budget.work += (bundle.executable_bytes() as u64) * 8 + 4096;
++            let mut receipts = Vec::new();
++            wire::reserve(
++                &mut receipts,
++                RECEIPTS,
++                &mut Allocator::default(),
++                "lexical provider receipts",
++            )?;
++            Ok(Self {
++                bundle: Some(bundle),
++                receipts,
++                budget,
++                #[cfg(test)]
++                fixture: None,
++            })
++        }
++    }
++    fn lex(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        inventory: &Inventory,
++        allocator: &mut Allocator,
++    ) -> Result<LexicalObservation, Box<Diagnostic>> {
++        let index = self
++            .receipts
++            .len()
++            .checked_sub(1)
++            .ok_or_else(|| failure(source, "lexical module was not admitted"))?;
++        let receipt = &self.receipts[index];
++        if receipt.identity != source.identity()
++            || receipt.file != source.span(0, 0).file
++            || receipt.source_len != source.text().len()
++            || receipt.stop != "not-started"
++        {
++            return Err(failure(
++                source,
++                "lexical module admission identity mismatch",
++            ));
++        }
++        let result = self.lex_inner(source, limit, inventory, allocator, index);
++        if result.is_err() && self.receipts[index].stop == "not-started" {
++            self.receipts[index].stop = "host-refused";
++        }
++        result.map_err(|e| failure(source, e))
++    }
++    fn lex_inner(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        inventory: &Inventory,
++        allocator: &mut Allocator,
++        index: usize,
++    ) -> Result<LexicalObservation, &'static str> {
++        let plan = self.budget.admit(source, limit, inventory)?;
++        debug_assert!(plan.retained as u64 <= self.budget.limits.retained);
++        debug_assert!(plan.scratch as u64 <= self.budget.limits.scratch);
++        debug_assert!(plan.work <= self.budget.work);
++        let input = wire::request(source, limit, allocator)?;
++        self.receipts[index].input_sha256 = Sha256::digest(&input).into();
++        self.receipts[index].input_bytes = input.len();
++        let observation = self.capture(source, limit, input, plan.output, allocator, index)?;
++        let value = match observation {
++            wire::Observation::Tokens(tokens) => {
++                #[cfg(test)]
++                {
++                    self.receipts[index].producer_allocation = tokens.as_ptr() as usize;
++                }
++                Ok(tokens)
++            }
++            wire::Observation::Diagnostic(observed) => {
++                let (code, message) = observed.fields();
++                Err(Diagnostic::new(
++                    code,
++                    "lex",
++                    message,
++                    Some(source.span(observed.start, observed.end)),
++                ))
++            }
++        };
++        Ok(LexicalObservation::new(source, value))
++    }
++    fn capture(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        input: Vec<u8>,
++        output_bound: usize,
++        allocator: &mut Allocator,
++        index: usize,
++    ) -> Result<wire::Observation, &'static str> {
++        #[cfg(test)]
++        if let Some(fixture) = self.fixture {
++            let bytes = fixture(source, limit);
++            let receipt = &mut self.receipts[index];
++            receipt.input_written = input.len();
++            receipt.stdout_sha256 = Sha256::digest(&bytes).into();
++            receipt.stdout_bytes = bytes.len();
++            receipt.stop = "test-observation";
++            drop(input);
++            return wire::decode(source, limit, &bytes, allocator);
++        }
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        {
++            let bundle = self
++                .bundle
++                .as_ref()
++                .ok_or("lexical executable unavailable")?;
++            let captured = supervisor::run(
++                bundle.lexer(),
++                bundle.directory(),
++                &input,
++                output_bound,
++                supervisor::DEADLINE,
++            );
++            let receipt = &mut self.receipts[index];
++            receipt.input_written = captured.input_written;
++            receipt.stdout_bytes = captured.stdout.len();
++            receipt.stderr_bytes = captured.stderr_len;
++            receipt.stdout_sha256 = Sha256::digest(&captured.stdout).into();
++            receipt.stderr_sha256 = Sha256::digest(&captured.stderr[..captured.stderr_len]).into();
++            receipt.status = captured.code();
++            receipt.signal = captured.signal();
++            receipt.stop = captured.stop.name();
++            receipt.spawned = captured.spawned;
++            receipt.leader_reaped = captured.status.is_some();
++            receipt.stdin_closed = captured.stdin_closed;
++            receipt.stdout_eof = captured.stdout_eof;
++            receipt.stderr_eof = captured.stderr_eof;
++            let completed = captured.stop == supervisor::Stop::Exited
++                && captured.status.is_some()
++                && captured.code() == Some(0)
++                && captured.input_written == input.len()
++                && captured.stdin_closed
++                && captured.stderr_len == 0
++                && captured.stdout_eof
++                && captured.stderr_eof;
++            drop(input);
++            if !completed {
++                return Err("lexical provider failed bounded process/transport contract");
++            }
++            wire::decode(source, limit, &captured.stdout, allocator)
++        }
++        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++        {
++            let _ = (source, limit, input, output_bound, allocator, index);
++            Err("experimental lexical provider requires Linux x86_64")
++        }
++    }
++    pub(super) fn print_receipts(&self, sources: &SourceMap, json: bool, process: bool) -> bool {
++        use fmt::Write;
++        let mut sink = ReceiptSink { json, process };
++        for receipt in &self.receipts {
++            let Some(source) = sources.files().get(receipt.file.0) else {
++                return false;
++            };
++            if source.identity() != receipt.identity || source.text().len() != receipt.source_len {
++                return false;
++            }
++            if writeln!(sink, "{}", ReceiptDisplay { receipt, source }).is_err() {
++                return false;
++            }
++        }
++        true
++    }
++}
++
++impl LexicalProvider for Provider {
++    fn begin_module(
++        &mut self,
++        source: &SourceFile,
++        usage: SourceUsage,
++    ) -> Result<(), Box<Diagnostic>> {
++        if self.receipts.len() == self.receipts.capacity() {
++            return Err(failure(source, "lexical provider receipt limit exceeded"));
++        }
++        self.budget
++            .admit_receipt(source)
++            .map_err(|message| failure(source, message))?;
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        let executable_hash = self
++            .bundle
++            .as_ref()
++            .map_or([0; 32], bundle::Bundle::lexer_hash);
++        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++        let executable_hash = [0; 32];
++        self.receipts.push(Receipt::new(source, executable_hash));
++        if let Err(message) = self.budget.admit_inventory_work(usage) {
++            self.receipts
++                .last_mut()
++                .expect("just admitted receipt")
++                .stop = "host-refused";
++            return Err(failure(source, message));
++        }
++        Ok(())
++    }
++
++    fn observe(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        inventory: &Inventory,
++        allocator: &mut Allocator,
++    ) -> Result<LexicalObservation, Box<Diagnostic>> {
++        self.lex(source, limit, inventory, allocator)
++    }
++    fn comparison_started(&mut self) {
++        if let Some(receipt) = self.receipts.last_mut() {
++            receipt.comparison_attempted = true;
++        }
++    }
++    fn comparison_finished(&mut self, matched: bool) {
++        if let Some(receipt) = self.receipts.last_mut() {
++            receipt.comparison_matched = matched;
++        }
++    }
++    fn selected_for_parser(
++        &mut self,
++        source: &SourceFile,
++        _tokens: &[Token],
++        capacity: usize,
++    ) -> Result<(), Box<Diagnostic>> {
++        let receipt = self
++            .receipts
++            .last_mut()
++            .ok_or_else(|| failure(source, "missing lexical receipt"))?;
++        if receipt.identity != source.identity()
++            || receipt.file != source.span(0, 0).file
++            || receipt.source_len != source.text().len()
++            || !receipt.comparison_matched
++            || receipt.selected_for_parser
++        {
++            return Err(failure(source, "invalid lexical parser transfer"));
++        }
++        self.budget.selected_capacity = capacity
++            .checked_mul(size_of::<Token>())
++            .and_then(|bytes| self.budget.selected_capacity.checked_add(bytes))
++            .ok_or_else(|| failure(source, "lexical selected capacity overflow"))?;
++        receipt.selected_for_parser = true;
++        Ok(())
++    }
++}
++
++struct ReceiptSink {
++    json: bool,
++    process: bool,
++}
++impl fmt::Write for ReceiptSink {
++    fn write_str(&mut self, text: &str) -> fmt::Result {
++        use std::io::Write;
++        if self.process {
++            return (super::oir::process::diagnostic(text.as_bytes()) == 1)
++                .then_some(())
++                .ok_or(fmt::Error);
++        }
++        if self.json {
++            std::io::stdout().lock().write_all(text.as_bytes())
++        } else {
++            std::io::stderr().lock().write_all(text.as_bytes())
++        }
++        .map_err(|_| fmt::Error)
++    }
++}
++struct Hex<'a>(&'a [u8; 32]);
++impl fmt::Display for Hex<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        for byte in self.0 {
++            write!(f, "{byte:02x}")?;
++        }
++        Ok(())
++    }
++}
++struct Number(Option<i32>);
++impl fmt::Display for Number {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            Some(n) => write!(f, "{n}"),
++            None => f.write_str("null"),
++        }
++    }
++}
++struct JsonText<'a>(&'a str);
++impl fmt::Display for JsonText<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str("\"")?;
++        for ch in self.0.chars() {
++            match ch {
++                '"' => f.write_str("\\\"")?,
++                '\\' => f.write_str("\\\\")?,
++                ch if ch.is_control() => write!(f, "\\u{:04x}", ch as u32)?,
++                _ => write!(f, "{ch}")?,
++            }
++        }
++        f.write_str("\"")
++    }
++}
++struct ReceiptDisplay<'a> {
++    receipt: &'a Receipt,
++    source: &'a SourceFile,
++}
++impl fmt::Display for ReceiptDisplay<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        let r = self.receipt;
++        write!(f, "{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"lexical-provider\",\"file_id\":{},\"source_identity\":{},\"path\":{},\"source_bytes\":{},\"source_sha256\":\"{}\",\"executable_sha256\":\"{}\",\"input_sha256\":\"{}\",\"input_bytes\":{},\"input_written\":{},\"captured_stdout_bytes\":{},\"captured_stdout_sha256\":\"{}\",\"captured_stderr_bytes\":{},\"captured_stderr_sha256\":\"{}\",\"spawned\":{},\"leader_reaped\":{},\"stdin_closed\":{},\"stdout_eof\":{},\"stderr_eof\":{},\"stop\":\"{}\",\"exit_status\":{},\"signal\":{},\"comparison_attempted\":{},\"comparison_matched\":{},\"producer_tokens_reached_parser\":{},\"fallback\":false}}",
++            r.file.0, r.identity, JsonText(self.source.path()), r.source_len, Hex(&r.source_sha256), Hex(&r.executable_sha256), Hex(&r.input_sha256), r.input_bytes, r.input_written,
++            r.stdout_bytes, Hex(&r.stdout_sha256), r.stderr_bytes, Hex(&r.stderr_sha256), r.spawned, r.leader_reaped, r.stdin_closed,
++            r.stdout_eof, r.stderr_eof, r.stop, Number(r.status), Number(r.signal), r.comparison_attempted, r.comparison_matched, r.selected_for_parser)
++    }
++}
+diff --git a/src/frontend/lexical_provider/bundle.rs b/src/frontend/lexical_provider/bundle.rs
+new file mode 100644
+index 0000000..9b73126
+--- /dev/null
++++ b/src/frontend/lexical_provider/bundle.rs
+@@ -0,0 +1,896 @@
++//! Closed local lexical-provider bundles and owned executable snapshots.
++//!
++//! Digests assert byte identity, not provenance. The Linux x86_64 execution
++//! route accepts only a sealed memfd copy, with no pathname-execution fallback.
++use std::{
++    fs::File,
++    path::{Path, PathBuf},
++};
++
++pub(super) const EXECUTABLE_MAX: usize = 16 * 1024 * 1024;
++
++/// Fixed named carriers and bounded bundle-loading scratch. Dynamic retained
++/// workspace-path capacity is reported separately by Bundle::named_bytes.
++pub(super) fn named_bytes() -> usize {
++    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++    {
++        linux::named_bytes()
++    }
++    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++    {
++        std::mem::size_of::<Bundle>()
++    }
++}
++
++#[derive(Debug)]
++pub(super) struct Bundle {
++    workspace: Workspace,
++    lexer: Executable,
++}
++
++#[derive(Debug)]
++struct Executable {
++    file: File,
++    hash: [u8; 32],
++    bytes: usize,
++}
++
++impl Bundle {
++    pub(super) fn load(root: &Path) -> Result<Self, &'static str> {
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        {
++            linux::load(root, &std::env::temp_dir(), linux::EXECUTABLE_LIMIT)
++        }
++        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++        {
++            let _ = root;
++            Err("lexical provider bundles require Linux x86_64")
++        }
++    }
++    pub(super) fn directory(&self) -> &File {
++        &self.workspace.file
++    }
++    pub(super) fn lexer(&self) -> &File {
++        &self.lexer.file
++    }
++    pub(super) fn lexer_hash(&self) -> [u8; 32] {
++        self.lexer.hash
++    }
++    pub(super) fn executable_bytes(&self) -> usize {
++        self.lexer.bytes
++    }
++    /// Retained dynamic path storage; the caller accounts for Bundle itself.
++    pub(super) fn named_bytes(&self) -> usize {
++        self.workspace.path.capacity()
++    }
++}
++
++/// The path was created exclusively; the descriptor fixes the working-directory
++/// identity even if the directory's name is subsequently replaced.
++#[derive(Debug)]
++struct Workspace {
++    path: PathBuf,
++    file: File,
++}
++impl Drop for Workspace {
++    fn drop(&mut self) {
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        {
++            use std::os::unix::fs::MetadataExt;
++            // Check ownership before attempting nonrecursive cleanup. An
++            // executable can populate its private cwd, so leave any nonempty
++            // directory untouched rather than traverse executable-created
++            // contents after supervision ends. This is not a sandbox or a
++            // recursively bounded cleanup guarantee.
++            let owned = self.file.metadata();
++            let named = std::fs::symlink_metadata(&self.path);
++            if let (Ok(owned), Ok(named)) = (owned, named) {
++                if named.is_dir() && (owned.dev(), owned.ino()) == (named.dev(), named.ino()) {
++                    let _ = std::fs::remove_dir(&self.path);
++                }
++            }
++        }
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++mod linux {
++    use super::{Bundle, Executable, Workspace};
++    use sha2::{Digest, Sha256};
++    use std::ffi::{CStr, OsStr};
++    use std::fmt::Write as FmtWrite;
++    use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
++    use std::io::{self, Read, Write};
++    use std::os::fd::{AsRawFd, FromRawFd};
++    use std::os::unix::{
++        ffi::OsStrExt,
++        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
++    };
++    use std::path::{Path, PathBuf};
++    use std::sync::atomic::{AtomicU64, Ordering};
++    use std::time::{SystemTime, UNIX_EPOCH};
++
++    pub(super) const EXECUTABLE_LIMIT: usize = super::EXECUTABLE_MAX;
++    const MAGIC: &[u8] = b"oxid-lexical-provider-v1\n";
++    const HASH_PREFIX: &[u8] = b"lexer_sha256=";
++    const MANIFEST_LEN: usize = MAGIC.len() + HASH_PREFIX.len() + 64 + 1;
++    const ELF_HEADER_LEN: usize = 64;
++    const COPY_BUFFER_BYTES: usize = 8192;
++    const PATH_BYTES: usize = 4096;
++    const WORKSPACE_NAME_BYTES: usize = 96;
++
++    pub(super) fn named_bytes() -> usize {
++        // Sum named carriers conservatively even when their lifetimes do not
++        // overlap. This is not an allocator/RSS or OS filesystem-memory claim.
++        std::mem::size_of::<Bundle>() + COPY_BUFFER_BYTES + ELF_HEADER_LEN
++            + MANIFEST_LEN + 1 + 3 * 32
++            + 2 * std::mem::size_of::<Sha256>()
++            + 4 * std::mem::size_of::<File>()
++            + 4 * std::mem::size_of::<std::fs::Metadata>()
++            + 4 * std::mem::size_of::<PathBuf>()
++            + std::mem::size_of::<String>()
++            + std::mem::size_of::<libc::stat>()
++            + std::mem::size_of::<DescriptorPath>() + 10
++            + 32 * std::mem::size_of::<usize>()
++            // Fixed normalized path plus checked canonical-parent capacity
++            // and exact fallible temporary name allocation.
++            + 2 * PATH_BYTES + WORKSPACE_NAME_BYTES
++    }
++    const REQUIRED_SEALS: libc::c_int = libc::F_SEAL_WRITE
++        | libc::F_SEAL_GROW
++        | libc::F_SEAL_SHRINK
++        | libc::F_SEAL_SEAL
++        | libc::F_SEAL_EXEC;
++    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
++
++    pub(super) fn load(
++        root: &Path,
++        temporary_parent: &Path,
++        executable_limit: usize,
++    ) -> Result<Bundle, &'static str> {
++        let executable_limit = executable_limit.min(EXECUTABLE_LIMIT);
++        let root = open_directory(root)?;
++        let declared = read_manifest(&root)?;
++        let workspace = create_workspace(temporary_parent)?;
++        let lexer = snapshot(
++            open_regular_at(&root, c"lexer")?,
++            declared,
++            executable_limit,
++        )?;
++        Ok(Bundle { workspace, lexer })
++    }
++
++    fn open_directory(path: &Path) -> Result<File, &'static str> {
++        if path.as_os_str().len() > PATH_BYTES {
++            return Err("lexical provider bundle path exceeds fixed capacity");
++        }
++        // Lexically remove trailing slashes and dot components without resolving
++        // links. Otherwise link/ and link/. bypass O_NOFOLLOW on the final link.
++        let mut normalized = [0u8; PATH_BYTES];
++        let mut used = 0usize;
++        for component in path.components() {
++            let bytes = component.as_os_str().as_bytes();
++            let separator = usize::from(used != 0 && normalized[used - 1] != b'/');
++            if bytes.len() + separator > normalized.len() - used {
++                return Err("lexical provider bundle path exceeds fixed capacity");
++            }
++            if separator != 0 {
++                normalized[used] = b'/';
++                used += 1;
++            }
++            normalized[used..used + bytes.len()].copy_from_slice(bytes);
++            used += bytes.len();
++        }
++        let file = OpenOptions::new()
++            .read(true)
++            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
++            .open(Path::new(OsStr::from_bytes(&normalized[..used])))
++            .map_err(|_| {
++                "lexical provider bundle root must be an accessible nonsymlink directory"
++            })?;
++        if !file
++            .metadata()
++            .map_err(|_| "cannot inspect opened lexical provider bundle directory")?
++            .is_dir()
++        {
++            return Err("opened lexical provider bundle root must be a directory");
++        }
++        Ok(file)
++    }
++
++    fn open_regular_at(directory: &File, name: &CStr) -> Result<File, &'static str> {
++        // Names are fixed call-site constants, never data read from a manifest.
++        // SAFETY: stat is caller-owned writable storage; the live directory
++        // descriptor and NUL-terminated name remain valid for both syscalls.
++        let mut metadata: libc::stat = unsafe { std::mem::zeroed() };
++        if unsafe {
++            libc::fstatat(
++                directory.as_raw_fd(),
++                name.as_ptr(),
++                &mut metadata,
++                libc::AT_SYMLINK_NOFOLLOW,
++            )
++        } != 0
++        {
++            return Err("cannot inspect lexical provider bundle file");
++        }
++        if metadata.st_mode & libc::S_IFMT != libc::S_IFREG {
++            return Err("lexical provider bundle files must be regular nonsymlink files");
++        }
++        // O_NONBLOCK prevents a raced-in FIFO from blocking. O_NOFOLLOW rejects
++        // a raced-in symlink. fstat then checks the opened object itself.
++        let descriptor = unsafe {
++            libc::openat(
++                directory.as_raw_fd(),
++                name.as_ptr(),
++                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
++            )
++        };
++        if descriptor < 0 {
++            return Err("cannot safely open lexical provider bundle file");
++        }
++        // SAFETY: successful openat returned a new descriptor owned only here.
++        let file = unsafe { File::from_raw_fd(descriptor) };
++        let opened = file
++            .metadata()
++            .map_err(|_| "cannot inspect opened lexical provider file")?;
++        if !opened.file_type().is_file() {
++            return Err("opened lexical provider file must be regular");
++        }
++        if opened.dev() != metadata.st_dev || opened.ino() != metadata.st_ino {
++            return Err("lexical provider file changed during directory-relative open");
++        }
++        Ok(file)
++    }
++
++    fn read_manifest(directory: &File) -> Result<[u8; 32], &'static str> {
++        let mut file = open_regular_at(directory, c"manifest.txt")?;
++        // One extra byte detects trailing data without an unbounded allocation
++        // or read, even when the manifest grows after open.
++        let mut bytes = [0u8; MANIFEST_LEN + 1];
++        let mut used = 0;
++        while used < bytes.len() {
++            let count = read_retry(&mut file, &mut bytes[used..])
++                .map_err(|_| "cannot read lexical provider bundle manifest")?;
++            if count == 0 {
++                break;
++            }
++            used += count;
++        }
++        parse_manifest(&bytes[..used])
++    }
++
++    fn parse_manifest(bytes: &[u8]) -> Result<[u8; 32], &'static str> {
++        const INVALID: &str = "lexical provider manifest does not match the closed format";
++        if bytes.len() != MANIFEST_LEN || !bytes.starts_with(MAGIC) {
++            return Err(INVALID);
++        }
++        let line = &bytes[MAGIC.len()..];
++        if !line.starts_with(HASH_PREFIX) || line[HASH_PREFIX.len() + 64] != b'\n' {
++            return Err(INVALID);
++        }
++        decode_hash(&line[HASH_PREFIX.len()..HASH_PREFIX.len() + 64]).ok_or(INVALID)
++    }
++
++    fn decode_hash(bytes: &[u8]) -> Option<[u8; 32]> {
++        fn digit(byte: u8) -> Option<u8> {
++            match byte {
++                b'0'..=b'9' => Some(byte - b'0'),
++                b'a'..=b'f' => Some(byte - b'a' + 10),
++                _ => None,
++            }
++        }
++        if bytes.len() != 64 {
++            return None;
++        }
++        let mut hash = [0u8; 32];
++        for (index, result) in hash.iter_mut().enumerate() {
++            *result = (digit(bytes[index * 2])? << 4) | digit(bytes[index * 2 + 1])?;
++        }
++        Some(hash)
++    }
++
++    fn create_workspace(parent: &Path) -> Result<Workspace, &'static str> {
++        if parent.as_os_str().len() > PATH_BYTES {
++            return Err("private lexical provider parent path exceeds fixed capacity");
++        }
++        // TMPDIR may be relative. Snapshot paths must remain absolute when the
++        // supervisor selects a different working directory for the processes.
++        let parent = fs::canonicalize(parent)
++            .map_err(|_| "cannot resolve private lexical provider workspace parent")?;
++        if parent.capacity() > PATH_BYTES {
++            return Err("private lexical provider parent path exceeds fixed capacity");
++        }
++        let timestamp = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap_or_default()
++            .as_nanos();
++        // Name unpredictability is not the isolation boundary: atomic mkdir
++        // must succeed, and mode 0700 is applied at creation, never afterward.
++        for _ in 0..128 {
++            let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
++            let mut name = String::new();
++            name.try_reserve_exact(WORKSPACE_NAME_BYTES)
++                .map_err(|_| "cannot allocate private lexical provider workspace name")?;
++            if name.capacity() != WORKSPACE_NAME_BYTES {
++                return Err("private lexical provider workspace name allocation is not exact");
++            }
++            // The fixed prefix, 32-bit PID, 128-bit timestamp and 64-bit
++            // sequence occupy at most 95 bytes, including separators.
++            write!(
++                &mut name,
++                "oxid-lexical-provider-{}-{timestamp}-{sequence}",
++                std::process::id()
++            )
++            .map_err(|_| "cannot format private lexical provider workspace name")?;
++            let capacity = parent.as_os_str().len() + 1 + name.len();
++            if capacity > PATH_BYTES {
++                return Err("private lexical provider workspace path exceeds fixed capacity");
++            }
++            let mut path = PathBuf::new();
++            path.try_reserve_exact(capacity)
++                .map_err(|_| "cannot allocate private lexical provider workspace path")?;
++            if path.capacity() != capacity {
++                return Err("private lexical provider workspace path allocation is not exact");
++            }
++            path.push(&parent);
++            path.push(name);
++            match DirBuilder::new().mode(0o700).create(&path) {
++                Ok(()) => {
++                    let file = match open_directory(&path).and_then(avoid_stdio) {
++                        Ok(file) => file,
++                        Err(error) => {
++                            let _ = fs::remove_dir(&path);
++                            return Err(error);
++                        }
++                    };
++                    return Ok(Workspace { path, file });
++                }
++                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
++                Err(_) => return Err("cannot create private lexical provider workspace"),
++            }
++        }
++        Err("cannot allocate a unique private lexical provider workspace")
++    }
++
++    fn snapshot(
++        mut input: File,
++        declared: [u8; 32],
++        limit: usize,
++    ) -> Result<Executable, &'static str> {
++        if input
++            .metadata()
++            .map_err(|_| "cannot inspect lexical provider executable size")?
++            .len()
++            > limit as u64
++        {
++            return Err("lexical provider executable exceeds size limit");
++        }
++        let mut output = create_memfd()?;
++        let mut buffer = [0u8; COPY_BUFFER_BYTES];
++        let mut header = [0u8; ELF_HEADER_LEN];
++        let mut copied = 0usize;
++        let mut digest = Sha256::new();
++        loop {
++            // Read at most the remaining allowance plus one overflow byte.
++            // The fixed stack buffer also bounds memory for large executables.
++            let read_limit = buffer.len().min(limit.saturating_sub(copied) + 1);
++            let count = read_retry(&mut input, &mut buffer[..read_limit])
++                .map_err(|_| "cannot read lexical provider executable")?;
++            if count == 0 {
++                break;
++            }
++            if count > limit.saturating_sub(copied) {
++                return Err("lexical provider executable exceeds size limit");
++            }
++            if copied < header.len() {
++                let header_count = count.min(header.len() - copied);
++                header[copied..copied + header_count].copy_from_slice(&buffer[..header_count]);
++            }
++            output
++                .write_all(&buffer[..count])
++                .map_err(|_| "cannot write private lexical provider snapshot")?;
++            digest.update(&buffer[..count]);
++            copied += count;
++        }
++        check_elf(&header, copied)?;
++        let actual: [u8; 32] = digest.finalize().into();
++        if actual != declared {
++            return Err("lexical provider executable digest does not match the bundle manifest");
++        }
++        output
++            .flush()
++            .map_err(|_| "cannot flush private lexical provider snapshot")?;
++        output
++            .set_permissions(Permissions::from_mode(0o500))
++            .map_err(|_| "cannot make private lexical provider snapshot executable")?;
++        // Seals protect the bytes even from another process with the same UID
++        // that chmods/reopens /proc/<pid>/fd/<fd>. F_SEAL_EXEC also freezes the
++        // executable bits. No permission/unsupported-kernel fallback is used.
++        // SAFETY: output owns a live memfd and fcntl receives integer arguments.
++        if unsafe { libc::fcntl(output.as_raw_fd(), libc::F_ADD_SEALS, REQUIRED_SEALS) } < 0 {
++            return Err("cannot seal lexical provider executable snapshot");
++        }
++        let seals = unsafe { libc::fcntl(output.as_raw_fd(), libc::F_GET_SEALS) };
++        if seals < 0 || seals & REQUIRED_SEALS != REQUIRED_SEALS {
++            return Err("lexical provider executable snapshot seals are incomplete");
++        }
++        // Reopen this kernel-owned descriptor link read-only, then close the
++        // writable handle before execution. This is not a bundle/workspace
++        // pathname and cannot be redirected by renaming any user-owned file.
++        let readonly = File::open(descriptor_path(&output).as_path())
++            .map_err(|_| "cannot retain sealed lexical provider executable snapshot")?;
++        let mut readonly = avoid_stdio(readonly)?;
++        // Record the bytes after immutability is established as well as checking
++        // the streaming copy. This also detects a same-UID modification made
++        // before sealing; subsequent pathname/permission changes cannot alter
++        // these sealed bytes. The readback has the same fixed-buffer bound.
++        let mut sealed_digest = Sha256::new();
++        let mut verified = 0usize;
++        loop {
++            let read_limit = buffer.len().min(copied.saturating_sub(verified) + 1);
++            let count = read_retry(&mut readonly, &mut buffer[..read_limit])
++                .map_err(|_| "cannot verify sealed lexical provider executable snapshot")?;
++            if count == 0 {
++                break;
++            }
++            if count > copied.saturating_sub(verified) {
++                return Err("sealed lexical provider snapshot size differs from copied bytes");
++            }
++            sealed_digest.update(&buffer[..count]);
++            verified += count;
++        }
++        let sealed_hash: [u8; 32] = sealed_digest.finalize().into();
++        if verified != copied || sealed_hash != actual {
++            return Err("sealed lexical provider snapshot differs from copied bytes");
++        }
++        drop(output);
++        Ok(Executable {
++            file: readonly,
++            hash: sealed_hash,
++            bytes: copied,
++        })
++    }
++
++    fn create_memfd() -> Result<File, &'static str> {
++        // MFD_EXEC is explicit. A kernel/policy that does not support or allow
++        // executable memfds makes this experimental route unavailable.
++        // SAFETY: the fixed name is NUL terminated; flags are valid constants.
++        let descriptor = unsafe {
++            libc::memfd_create(
++                c"oxid-lexical-provider".as_ptr(),
++                libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING | libc::MFD_EXEC,
++            )
++        };
++        if descriptor < 0 {
++            return Err("cannot create executable memfd lexical provider snapshot");
++        }
++        // SAFETY: successful memfd_create returned an exclusively owned fd.
++        let file = unsafe { File::from_raw_fd(descriptor) };
++        file.set_permissions(Permissions::from_mode(0o600))
++            .map_err(|_| "cannot set lexical provider snapshot build permissions")?;
++        avoid_stdio(file)
++    }
++
++    fn avoid_stdio(file: File) -> Result<File, &'static str> {
++        if file.as_raw_fd() >= 3 {
++            return Ok(file);
++        }
++        // SAFETY: this live owned descriptor is duplicated at fd >= 3 with
++        // CLOEXEC. The original remains owned and is closed by ordinary Drop.
++        let descriptor = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
++        if descriptor < 0 {
++            return Err("cannot retain lexical provider snapshot outside standard descriptors");
++        }
++        // SAFETY: fcntl returned a fresh, valid descriptor owned only here.
++        Ok(unsafe { File::from_raw_fd(descriptor) })
++    }
++
++    struct DescriptorPath {
++        bytes: [u8; 32],
++        len: usize,
++    }
++    impl DescriptorPath {
++        fn as_path(&self) -> &Path {
++            Path::new(OsStr::from_bytes(&self.bytes[..self.len]))
++        }
++    }
++    impl AsRef<Path> for DescriptorPath {
++        fn as_ref(&self) -> &Path {
++            self.as_path()
++        }
++    }
++    fn descriptor_path(file: &File) -> DescriptorPath {
++        let mut path = DescriptorPath {
++            bytes: [0; 32],
++            len: 0,
++        };
++        let prefix = b"/proc/self/fd/";
++        path.bytes[..prefix.len()].copy_from_slice(prefix);
++        let mut value = file.as_raw_fd() as u32;
++        let mut reversed = [0; 10];
++        let mut count = 0;
++        loop {
++            reversed[count] = b'0' + (value % 10) as u8;
++            count += 1;
++            value /= 10;
++            if value == 0 {
++                break;
++            }
++        }
++        for index in 0..count {
++            path.bytes[prefix.len() + index] = reversed[count - index - 1];
++        }
++        path.len = prefix.len() + count;
++        path
++    }
++
++    fn read_retry(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
++        loop {
++            match reader.read(buffer) {
++                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
++                result => return result,
++            }
++        }
++    }
++
++    fn check_elf(header: &[u8; ELF_HEADER_LEN], copied: usize) -> Result<(), &'static str> {
++        // This is a target/header check, not a complete ELF verifier. The OS
++        // loader can still reject malformed program headers or missing loaders.
++        if copied < ELF_HEADER_LEN
++            || &header[..4] != b"\x7fELF"
++            || header[4] != 2 // ELFCLASS64
++            || header[5] != 1 // ELFDATA2LSB
++            || header[6] != 1 // EV_CURRENT
++            || !matches!(u16::from_le_bytes([header[16], header[17]]), 2 | 3)
++            || u16::from_le_bytes([header[18], header[19]]) != 62 // EM_X86_64
++            || header[20..24] != [1, 0, 0, 0]
++            || u16::from_le_bytes([header[52], header[53]]) != ELF_HEADER_LEN as u16
++        {
++            return Err("lexical provider executable must have a Linux x86_64 ELF64 header");
++        }
++        Ok(())
++    }
++
++    #[cfg(test)]
++    mod tests {
++        use super::*;
++        use std::os::unix::fs::{symlink, FileExt};
++
++        struct Fixture {
++            _owner: Workspace,
++            root: PathBuf,
++            temporary: PathBuf,
++            lexer: [u8; 91],
++        }
++        impl Fixture {
++            fn new() -> Self {
++                let owner = create_workspace(&std::env::temp_dir()).unwrap();
++                let root = owner.path.join("input");
++                let temporary = owner.path.join("snapshots");
++                fs::create_dir(&root).unwrap();
++                fs::create_dir(&temporary).unwrap();
++                let lexer = fake_elf::<91>();
++                fs::write(root.join("lexer"), lexer).unwrap();
++                fs::write(root.join("manifest.txt"), manifest_bytes(&lexer)).unwrap();
++                Self {
++                    _owner: owner,
++                    root,
++                    temporary,
++                    lexer,
++                }
++            }
++            fn load(&self) -> Result<Bundle, &'static str> {
++                load(&self.root, &self.temporary, EXECUTABLE_LIMIT)
++            }
++            fn assert_no_snapshots(&self) {
++                assert_eq!(fs::read_dir(&self.temporary).unwrap().count(), 0);
++                assert!(self.root.join("manifest.txt").exists());
++            }
++        }
++        impl Drop for Fixture {
++            fn drop(&mut self) {
++                // Only these fixed test-created entries belong to the fixture.
++                // Workspace itself deliberately leaves nonempty directories.
++                for directory in [&self.root, &self.temporary.join("original-input")] {
++                    for name in ["manifest.txt", "lexer", "original"] {
++                        let _ = fs::remove_file(directory.join(name));
++                    }
++                    let _ = fs::remove_dir(directory);
++                }
++                let _ = fs::remove_file(self.temporary.join("link"));
++                let _ = fs::remove_dir(&self.temporary);
++            }
++        }
++        // These ELF-shaped bytes validate the closed bundle and seals only.
++        // Actual ELF execution is exercised by supervisor's native helpers.
++        fn fake_elf<const N: usize>() -> [u8; N] {
++            assert!(N >= ELF_HEADER_LEN);
++            let mut bytes = [0; N];
++            bytes[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
++            bytes[16..18].copy_from_slice(&2u16.to_le_bytes());
++            bytes[18..20].copy_from_slice(&62u16.to_le_bytes());
++            bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
++            bytes[52..54].copy_from_slice(&(ELF_HEADER_LEN as u16).to_le_bytes());
++            bytes
++        }
++        fn digest(bytes: &[u8]) -> [u8; 32] {
++            Sha256::digest(bytes).into()
++        }
++        fn manifest_bytes(bytes: &[u8]) -> [u8; MANIFEST_LEN] {
++            let mut manifest = [0; MANIFEST_LEN];
++            manifest[..MAGIC.len()].copy_from_slice(MAGIC);
++            manifest[MAGIC.len()..MAGIC.len() + HASH_PREFIX.len()].copy_from_slice(HASH_PREFIX);
++            const HEX: &[u8] = b"0123456789abcdef";
++            for (index, byte) in digest(bytes).iter().enumerate() {
++                let at = MAGIC.len() + HASH_PREFIX.len() + index * 2;
++                manifest[at] = HEX[usize::from(byte >> 4)];
++                manifest[at + 1] = HEX[usize::from(byte & 15)];
++            }
++            manifest[MANIFEST_LEN - 1] = b'\n';
++            manifest
++        }
++        #[test]
++        fn lexical_bundle_cleanup_removes_empty_owned_workspace() {
++            let workspace = create_workspace(&std::env::temp_dir()).unwrap();
++            let path = workspace.path.clone();
++            assert!(path.is_dir());
++            drop(workspace);
++            assert!(!path.exists());
++        }
++        #[test]
++        fn lexical_bundle_cleanup_retains_populated_owned_workspace_and_link_targets() {
++            let owner = create_workspace(&std::env::temp_dir()).unwrap();
++            let workspace = create_workspace(&owner.path).unwrap();
++            let path = workspace.path.clone();
++            let local = path.join("keep");
++            let target = owner.path.join("target");
++            let target_file = target.join("keep");
++            let link = path.join("link");
++            fs::write(&local, b"local contents").unwrap();
++            fs::create_dir(&target).unwrap();
++            fs::write(&target_file, b"target contents").unwrap();
++            symlink(&target, &link).unwrap();
++
++            drop(workspace);
++            assert!(path.is_dir());
++            assert_eq!(fs::read(&local).unwrap(), b"local contents");
++            assert!(fs::symlink_metadata(&link)
++                .unwrap()
++                .file_type()
++                .is_symlink());
++            assert_eq!(fs::read_link(&link).unwrap(), target);
++            assert_eq!(fs::read(&target_file).unwrap(), b"target contents");
++
++            // Test-owned fixture cleanup names every entry; it never traverses
++            // the link or an executable-created directory tree.
++            fs::remove_file(&link).unwrap();
++            fs::remove_file(&local).unwrap();
++            fs::remove_dir(&path).unwrap();
++            fs::remove_file(&target_file).unwrap();
++            fs::remove_dir(&target).unwrap();
++        }
++        #[test]
++        fn lexical_bundle_exact_manifest_and_known_sha256() {
++            assert_eq!(
++                decode_hash(b"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
++                    .unwrap(),
++                digest(b"abc")
++            );
++            let valid = manifest_bytes(b"abc");
++            assert_eq!(parse_manifest(&valid).unwrap(), digest(b"abc"));
++            for (at, value) in [
++                (0, b'O'),
++                (MAGIC.len() - 2, b'2'),
++                (MAGIC.len(), b'p'),
++                (MAGIC.len() + HASH_PREFIX.len(), b'B'),
++                (MAGIC.len() + HASH_PREFIX.len(), b'g'),
++                (MAGIC.len() + HASH_PREFIX.len(), 0),
++                (MANIFEST_LEN - 1, b'\r'),
++            ] {
++                let mut changed = valid;
++                changed[at] = value;
++                assert!(parse_manifest(&changed).is_err());
++            }
++            for len in 0..MANIFEST_LEN {
++                assert!(parse_manifest(&valid[..len]).is_err());
++            }
++            let mut trailing = [0; MANIFEST_LEN + 1];
++            trailing[..MANIFEST_LEN].copy_from_slice(&valid);
++            assert!(parse_manifest(&trailing).is_err());
++        }
++        #[test]
++        fn lexical_bundle_manifest_overflow_is_bounded() {
++            let f = Fixture::new();
++            let mut file = OpenOptions::new()
++                .append(true)
++                .open(f.root.join("manifest.txt"))
++                .unwrap();
++            file.write_all(&[b'x'; 8192]).unwrap();
++            assert!(f.load().is_err());
++            f.assert_no_snapshots();
++        }
++        #[test]
++        fn lexical_bundle_rejects_symlinks_directories_and_fifo() {
++            for name in ["manifest.txt", "lexer"] {
++                let f = Fixture::new();
++                let original = f.root.join("original");
++                fs::rename(f.root.join(name), &original).unwrap();
++                symlink(&original, f.root.join(name)).unwrap();
++                assert!(f.load().is_err());
++                f.assert_no_snapshots();
++                fs::remove_file(f.root.join(name)).unwrap();
++                fs::create_dir(f.root.join(name)).unwrap();
++                assert!(f.load().is_err());
++                f.assert_no_snapshots();
++                fs::remove_dir(f.root.join(name)).unwrap();
++                let root = open_directory(&f.root).unwrap();
++                let name = if name == "lexer" {
++                    c"lexer"
++                } else {
++                    c"manifest.txt"
++                };
++                // SAFETY: live directory and fixed NUL-terminated basename.
++                assert_eq!(
++                    unsafe { libc::mkfifoat(root.as_raw_fd(), name.as_ptr(), 0o600) },
++                    0
++                );
++                assert!(f.load().is_err());
++            }
++        }
++        #[test]
++        fn lexical_bundle_rejects_root_link_spellings() {
++            let f = Fixture::new();
++            let link = f.temporary.join("link");
++            symlink(&f.root, &link).unwrap();
++            for spelling in [
++                link.clone(),
++                link.join("."),
++                PathBuf::from(format!("{}//./", link.display())),
++            ] {
++                assert!(load(&spelling, &f.temporary, EXECUTABLE_LIMIT).is_err());
++            }
++            assert!(load(&f.root.join("lexer"), &f.temporary, EXECUTABLE_LIMIT).is_err());
++        }
++        #[test]
++        fn lexical_bundle_checks_digest_elf_and_inclusive_size() {
++            let f = Fixture::new();
++            let mut changed = f.lexer;
++            changed[64] = 1;
++            fs::write(f.root.join("lexer"), changed).unwrap();
++            assert!(f.load().unwrap_err().contains("digest"));
++            f.assert_no_snapshots();
++            for (at, value) in [
++                (0, 0),
++                (4, 1),
++                (5, 2),
++                (6, 0),
++                (16, 1),
++                (18, 3),
++                (20, 0),
++                (52, 0),
++            ] {
++                let mut changed = f.lexer;
++                changed[at] = value;
++                fs::write(f.root.join("lexer"), changed).unwrap();
++                fs::write(f.root.join("manifest.txt"), manifest_bytes(&changed)).unwrap();
++                assert!(f.load().unwrap_err().contains("ELF64"));
++                f.assert_no_snapshots();
++            }
++            fs::write(f.root.join("lexer"), f.lexer).unwrap();
++            fs::write(f.root.join("manifest.txt"), manifest_bytes(&f.lexer)).unwrap();
++            assert!(load(&f.root, &f.temporary, 90)
++                .unwrap_err()
++                .contains("size limit"));
++            f.assert_no_snapshots();
++            let bundle = load(&f.root, &f.temporary, 91).unwrap();
++            assert_eq!(bundle.executable_bytes(), 91);
++            drop(bundle);
++            f.assert_no_snapshots();
++            fs::write(f.root.join("lexer"), &f.lexer[..63]).unwrap();
++            fs::write(f.root.join("manifest.txt"), manifest_bytes(&f.lexer[..63])).unwrap();
++            assert!(f.load().unwrap_err().contains("ELF64"));
++        }
++        #[test]
++        fn lexical_bundle_snapshots_stream_and_survive_path_replacement() {
++            let f = Fixture::new();
++            let mut bytes = fake_elf::<16511>();
++            for (i, byte) in bytes[64..].iter_mut().enumerate() {
++                *byte = (i % 251) as u8;
++            }
++            fs::write(f.root.join("lexer"), bytes).unwrap();
++            fs::write(f.root.join("manifest.txt"), manifest_bytes(&bytes)).unwrap();
++            let bundle = f.load().unwrap();
++            fs::remove_file(f.root.join("lexer")).unwrap();
++            fs::write(f.root.join("lexer"), b"replacement").unwrap();
++            assert_eq!(fs::read(descriptor_path(bundle.lexer())).unwrap(), bytes);
++            assert_eq!(bundle.lexer_hash(), digest(&bytes));
++            assert!(bundle.lexer().as_raw_fd() >= 3 && bundle.directory().as_raw_fd() >= 3);
++            assert_eq!(
++                bundle.directory().metadata().unwrap().permissions().mode() & 0o777,
++                0o700
++            );
++            assert_eq!(
++                bundle.lexer().metadata().unwrap().permissions().mode() & 0o777,
++                0o500
++            );
++            assert_eq!(bundle.named_bytes(), bundle.workspace.path.capacity());
++            let private = bundle.workspace.path.clone();
++            drop(bundle);
++            assert!(!private.exists());
++            f.assert_no_snapshots();
++        }
++        #[test]
++        fn lexical_bundle_seals_forbid_mutation_and_permission_relaxation() {
++            let f = Fixture::new();
++            let bundle = f.load().unwrap();
++            let path = descriptor_path(bundle.lexer());
++            fs::set_permissions(&path, Permissions::from_mode(0o700)).unwrap();
++            let reopened = OpenOptions::new()
++                .read(true)
++                .write(true)
++                .open(&path)
++                .unwrap();
++            for result in [
++                reopened.write_at(b"changed", 0).map(|_| ()),
++                reopened.set_len(1),
++                reopened.set_len(999),
++            ] {
++                assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::EPERM));
++            }
++            assert_eq!(
++                reopened
++                    .set_permissions(Permissions::from_mode(0o400))
++                    .unwrap_err()
++                    .raw_os_error(),
++                Some(libc::EPERM)
++            );
++            // SAFETY: seal/descriptor queries use a currently owned fd.
++            assert_eq!(
++                unsafe { libc::fcntl(reopened.as_raw_fd(), libc::F_GET_SEALS) } & REQUIRED_SEALS,
++                REQUIRED_SEALS
++            );
++            assert_ne!(
++                unsafe { libc::fcntl(bundle.lexer().as_raw_fd(), libc::F_GETFD) }
++                    & libc::FD_CLOEXEC,
++                0
++            );
++            assert_eq!(fs::read(path).unwrap(), f.lexer);
++        }
++        #[test]
++        fn lexical_bundle_directory_relative_identity_and_cleanup_preserve_replacements() {
++            let f = Fixture::new();
++            let root = open_directory(&f.root).unwrap();
++            let moved = f.temporary.join("original-input");
++            fs::rename(&f.root, &moved).unwrap();
++            fs::create_dir(&f.root).unwrap();
++            fs::write(f.root.join("manifest.txt"), b"replacement").unwrap();
++            assert_eq!(read_manifest(&root).unwrap(), digest(&f.lexer));
++            let executable = snapshot(
++                open_regular_at(&root, c"lexer").unwrap(),
++                digest(&f.lexer),
++                EXECUTABLE_LIMIT,
++            )
++            .unwrap();
++            assert_eq!(
++                fs::read(descriptor_path(&executable.file)).unwrap(),
++                f.lexer
++            );
++            let bundle = load(&moved, &f.temporary, EXECUTABLE_LIMIT).unwrap();
++            let old = bundle.workspace.path.clone();
++            let renamed = f.temporary.join("renamed-private");
++            fs::rename(&old, &renamed).unwrap();
++            fs::create_dir(&old).unwrap();
++            fs::write(old.join("keep"), b"keep").unwrap();
++            assert_eq!(
++                bundle.directory().metadata().unwrap().ino(),
++                fs::metadata(&renamed).unwrap().ino()
++            );
++            drop(bundle);
++            assert_eq!(fs::read(old.join("keep")).unwrap(), b"keep");
++            fs::remove_file(old.join("keep")).unwrap();
++            fs::remove_dir(&old).unwrap();
++            fs::remove_dir(&renamed).unwrap();
++        }
++    }
++}
+diff --git a/src/frontend/lexical_provider/supervisor.rs b/src/frontend/lexical_provider/supervisor.rs
+new file mode 100644
+index 0000000..ce96378
+--- /dev/null
++++ b/src/frontend/lexical_provider/supervisor.rs
+@@ -0,0 +1,673 @@
++//! Bounded, nonblocking full-duplex lexical-provider transport on Linux.
++//! Process lifetime control is not an OS sandbox or a child-RSS limit.
++use std::{
++    ffi::OsStr,
++    fs::File,
++    io::{self, Read, Write},
++    os::{
++        fd::AsRawFd,
++        unix::{
++            ffi::OsStrExt,
++            process::{CommandExt, ExitStatusExt},
++        },
++    },
++    process::{Child, Command, ExitStatus, Stdio},
++    thread,
++    time::{Duration, Instant},
++};
++
++/// Fixed named transport carriers; stdout's actual allocation is separate.
++/// Standard-library Command internals and OS pipe/process memory are not a
++/// claim about allocator usage or child RSS.
++pub(super) fn named_bytes() -> usize {
++    std::mem::size_of::<Capture>()
++        + std::mem::size_of::<ChildGroup>()
++        + std::mem::size_of::<Command>()
++        + std::mem::size_of::<Option<std::process::ChildStdin>>()
++        + std::mem::size_of::<std::process::ChildStdout>()
++        + std::mem::size_of::<std::process::ChildStderr>()
++        + std::mem::size_of::<libc::siginfo_t>()
++        + 3 * std::mem::size_of::<Instant>()
++        + 16 * std::mem::size_of::<usize>()
++        + 42 // executable descriptor spelling and reversed decimal digits
++}
++
++pub(super) const OUTPUT_MAX: usize = 2_133_666;
++pub(super) const STDERR_MAX: usize = 4096;
++pub(super) const DEADLINE: Duration = Duration::from_secs(5);
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(super) enum Stop {
++    Exited,
++    Spawn,
++    Io,
++    Timeout,
++    StdoutLimit,
++    StderrLimit,
++    OutputBudget,
++    Allocation,
++}
++impl Stop {
++    pub(super) fn name(self) -> &'static str {
++        match self {
++            Self::Exited => "exited",
++            Self::Spawn => "spawn-failed",
++            Self::Io => "transport-failed",
++            Self::Timeout => "deadline",
++            Self::StdoutLimit => "stdout-limit",
++            Self::StderrLimit => "stderr-limit",
++            Self::OutputBudget => "output-budget",
++            Self::Allocation => "allocation-failed",
++        }
++    }
++}
++
++pub(super) struct Capture {
++    /// Length is bytes actually received; capacity is the checked cap plus one.
++    /// Even an unexpected allocator over-reservation remains visible here.
++    pub(super) stdout: Vec<u8>,
++    pub(super) stderr: [u8; STDERR_MAX + 1],
++    pub(super) stderr_len: usize,
++    pub(super) input_written: usize,
++    pub(super) stdin_closed: bool,
++    pub(super) stdout_eof: bool,
++    pub(super) stderr_eof: bool,
++    pub(super) status: Option<ExitStatus>,
++    pub(super) stop: Stop,
++    pub(super) spawned: bool,
++}
++impl Capture {
++    fn empty() -> Self {
++        Self {
++            stdout: Vec::new(),
++            stderr: [0; STDERR_MAX + 1],
++            stderr_len: 0,
++            input_written: 0,
++            stdin_closed: false,
++            stdout_eof: false,
++            stderr_eof: false,
++            status: None,
++            stop: Stop::Spawn,
++            spawned: false,
++        }
++    }
++    fn allocate_stdout(&mut self, reserved: usize) -> bool {
++        if self.stdout.try_reserve_exact(reserved).is_err() || self.stdout.capacity() != reserved {
++            self.stop = Stop::Allocation;
++            return false;
++        }
++        self.stdout.resize(reserved, 0);
++        true
++    }
++    pub(super) fn code(&self) -> Option<i32> {
++        self.status.and_then(|status| status.code())
++    }
++    pub(super) fn signal(&self) -> Option<i32> {
++        self.status.and_then(|status| status.signal())
++    }
++}
++
++struct ChildGroup {
++    child: Child,
++    finished: bool,
++}
++impl ChildGroup {
++    fn finish(&mut self) -> Option<ExitStatus> {
++        // WNOWAIT retained the leader PID. Kill both its original group and
++        // the owned leader individually; never rely solely on group membership.
++        // SAFETY: this is our unreaped child PID, not the caller's group.
++        unsafe {
++            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
++        }
++        let _ = self.child.kill();
++        self.finished = true;
++        let cleanup_started = Instant::now();
++        loop {
++            match self.child.try_wait() {
++                Ok(Some(status)) => return Some(status),
++                Ok(None) => (),
++                Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
++                Err(_) => return None,
++            }
++            if cleanup_started.elapsed() >= Duration::from_millis(500) {
++                // Do not turn a failed/undeliverable kill into an unbounded
++                // wait. The caller reports missing leader-reap evidence as a
++                // failed contract. Kernel-stalled processes are not concealed.
++                return None;
++            }
++            thread::sleep(Duration::from_millis(1));
++        }
++    }
++}
++impl Drop for ChildGroup {
++    fn drop(&mut self) {
++        if !self.finished {
++            self.finish();
++        }
++    }
++}
++
++fn nonblocking(pipe: &impl AsRawFd) -> io::Result<()> {
++    let fd = pipe.as_raw_fd();
++    // SAFETY: fd is a live owned child pipe. Only its status flags are changed;
++    // ownership, descriptor lifetime and inherited process policy are untouched.
++    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
++    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
++        return Err(io::Error::last_os_error());
++    }
++    Ok(())
++}
++
++fn exited(child: &Child) -> io::Result<bool> {
++    // SAFETY: zero is a valid empty siginfo value; waitid fills this caller-owned
++    // value. WNOWAIT observes only our child and does not reap/release its PID.
++    let mut information: libc::siginfo_t = unsafe { std::mem::zeroed() };
++    let result = unsafe {
++        libc::waitid(
++            libc::P_PID,
++            child.id(),
++            &mut information,
++            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
++        )
++    };
++    if result != 0 {
++        return Err(io::Error::last_os_error());
++    }
++    Ok(unsafe { information.si_pid() } != 0)
++}
++
++#[derive(Clone, Copy)]
++enum Drain {
++    Pending,
++    Eof,
++    Deadline,
++}
++
++fn drain(
++    reader: &mut impl Read,
++    bytes: &mut [u8],
++    used: &mut usize,
++    started: Instant,
++    deadline: Duration,
++) -> io::Result<Drain> {
++    // Fairness keeps a continuously readable stdout from starving input or
++    // stderr. Check time inside the loop, including repeated interruptions.
++    let quantum_end = bytes.len().min(used.saturating_add(64 * 1024));
++    while *used < quantum_end {
++        if started.elapsed() >= deadline {
++            return Ok(Drain::Deadline);
++        }
++        match reader.read(&mut bytes[*used..quantum_end]) {
++            Ok(0) => return Ok(Drain::Eof),
++            Ok(count) => *used += count,
++            Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(Drain::Pending),
++            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
++            Err(error) => return Err(error),
++        }
++    }
++    Ok(Drain::Pending)
++}
++
++/// File descriptors must remain alive throughout the call. Bundle guarantees
++/// descriptors outside 0..=2, immutable executable bytes, and a private cwd.
++pub(super) fn run(
++    program: &File,
++    directory: &File,
++    input: &[u8],
++    output_limit: usize,
++    deadline: Duration,
++) -> Capture {
++    let mut captured = Capture::empty();
++    if output_limit > OUTPUT_MAX {
++        captured.stop = Stop::OutputBudget;
++        return captured;
++    }
++    let reserved = output_limit + 1;
++    if !captured.allocate_stdout(reserved) {
++        return captured;
++    }
++    // No later stdout operation grows this allocation. Truncation below retains
++    // its actual capacity for the coordinator's named-storage accounting.
++    let mut stdout_len = 0;
++    let started = Instant::now();
++    let program_fd = program.as_raw_fd();
++    let directory_fd = directory.as_raw_fd();
++    if program_fd < 3 || directory_fd < 3 {
++        captured.stdout.clear();
++        return captured;
++    }
++    // Avoid constructing a second dynamically sized executable-path carrier.
++    let mut path = [0u8; 32];
++    let prefix = b"/proc/self/fd/";
++    path[..prefix.len()].copy_from_slice(prefix);
++    let mut reversed = [0u8; 10];
++    let mut digits = 0;
++    let mut value = program_fd as u32;
++    loop {
++        reversed[digits] = b'0' + (value % 10) as u8;
++        digits += 1;
++        value /= 10;
++        if value == 0 {
++            break;
++        }
++    }
++    for index in 0..digits {
++        path[prefix.len() + index] = reversed[digits - 1 - index];
++    }
++    let mut command = Command::new(OsStr::from_bytes(&path[..prefix.len() + digits]));
++    command
++        .arg0("lexer")
++        .env_clear()
++        .env("PATH", "/no-tools")
++        .env("LC_ALL", "C")
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::piped());
++    let parent = std::process::id() as libc::pid_t;
++    // SAFETY: this closure uses only async-signal-safe Linux syscalls; both
++    // borrowed File descriptors stay alive until spawn has completed.
++    unsafe {
++        command.pre_exec(move || {
++            if libc::fchdir(directory_fd) != 0 {
++                return Err(io::Error::last_os_error());
++            }
++            if libc::setsid() < 0 {
++                return Err(io::Error::last_os_error());
++            }
++            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
++                return Err(io::Error::last_os_error());
++            }
++            if libc::getppid() != parent {
++                return Err(io::Error::from_raw_os_error(libc::ESRCH));
++            }
++            Ok(())
++        });
++    }
++    let Ok(child) = command.spawn() else {
++        captured.stdout.clear();
++        return captured;
++    };
++    let mut group = ChildGroup {
++        child,
++        finished: false,
++    };
++    captured.spawned = true;
++    captured.stop = Stop::Io;
++    let mut stdin = group.child.stdin.take();
++    let mut stdout = group.child.stdout.take().expect("piped stdout");
++    let mut stderr = group.child.stderr.take().expect("piped stderr");
++    if nonblocking(stdin.as_ref().expect("piped stdin")).is_err()
++        || nonblocking(&stdout).is_err()
++        || nonblocking(&stderr).is_err()
++    {
++        stdin.take();
++        captured.stdin_closed = true;
++        captured.status = group.finish();
++        captured.stdout.clear();
++        return captured;
++    }
++    loop {
++        if started.elapsed() >= deadline {
++            captured.stop = Stop::Timeout;
++            break;
++        }
++        if captured.input_written == input.len() {
++            stdin.take();
++            captured.stdin_closed = true;
++        }
++        if let Some(pipe) = &mut stdin {
++            match pipe.write(&input[captured.input_written..]) {
++                Ok(0) => break,
++                Ok(count) => captured.input_written += count,
++                Err(error)
++                    if matches!(
++                        error.kind(),
++                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
++                    ) => {}
++                Err(_) => break,
++            }
++        }
++        if !captured.stdout_eof {
++            match drain(
++                &mut stdout,
++                &mut captured.stdout,
++                &mut stdout_len,
++                started,
++                deadline,
++            ) {
++                Ok(Drain::Eof) => captured.stdout_eof = true,
++                Ok(Drain::Pending) => (),
++                Ok(Drain::Deadline) => {
++                    captured.stop = Stop::Timeout;
++                    break;
++                }
++                Err(_) => break,
++            }
++        }
++        if stdout_len > output_limit {
++            captured.stop = Stop::StdoutLimit;
++            break;
++        }
++        if !captured.stderr_eof {
++            match drain(
++                &mut stderr,
++                &mut captured.stderr,
++                &mut captured.stderr_len,
++                started,
++                deadline,
++            ) {
++                Ok(Drain::Eof) => captured.stderr_eof = true,
++                Ok(Drain::Pending) => (),
++                Ok(Drain::Deadline) => {
++                    captured.stop = Stop::Timeout;
++                    break;
++                }
++                Err(_) => break,
++            }
++        }
++        if captured.stderr_len > STDERR_MAX {
++            captured.stop = Stop::StderrLimit;
++            break;
++        }
++        match exited(&group.child) {
++            Ok(true)
++                if captured.stdout_eof
++                    && captured.stderr_eof
++                    && captured.input_written == input.len()
++                    && captured.stdin_closed =>
++            {
++                captured.stop = Stop::Exited;
++                break;
++            }
++            Ok(_) => (),
++            Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
++            Err(_) => break,
++        }
++        thread::sleep(Duration::from_millis(1));
++    }
++    stdin.take();
++    captured.stdin_closed = true;
++    captured.status = group.finish();
++    if captured.stop == Stop::Exited {
++        // EOF is checked again after the leader is reaped and ordinary group
++        // descendants are killed. An earlier EOF alone never admits output.
++        let final_out = drain(
++            &mut stdout,
++            &mut captured.stdout,
++            &mut stdout_len,
++            started,
++            deadline,
++        );
++        let final_err = drain(
++            &mut stderr,
++            &mut captured.stderr,
++            &mut captured.stderr_len,
++            started,
++            deadline,
++        );
++        captured.stdout_eof = matches!(final_out, Ok(Drain::Eof));
++        captured.stderr_eof = matches!(final_err, Ok(Drain::Eof));
++        if stdout_len > output_limit {
++            captured.stop = Stop::StdoutLimit;
++        } else if captured.stderr_len > STDERR_MAX {
++            captured.stop = Stop::StderrLimit;
++        } else if matches!(final_out, Ok(Drain::Deadline))
++            || matches!(final_err, Ok(Drain::Deadline))
++        {
++            captured.stop = Stop::Timeout;
++        } else if !captured.stdout_eof || !captured.stderr_eof || captured.status.is_none() {
++            captured.stop = Stop::Io;
++        }
++    }
++    captured.stdout.truncate(stdout_len);
++    captured
++}
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{
++        fs,
++        path::PathBuf,
++        sync::atomic::{AtomicUsize, Ordering},
++    };
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    struct Fixture(PathBuf);
++    impl Fixture {
++        fn new(mode: i32) -> Self {
++            let path = std::env::temp_dir().join(format!(
++                "oxid-lexical-supervisor-{}-{}",
++                std::process::id(),
++                NEXT.fetch_add(1, Ordering::Relaxed)
++            ));
++            fs::create_dir(&path).unwrap();
++            fs::write(path.join("mode"), mode.to_string()).unwrap();
++            fs::write(path.join("helper.c"), r#"
++#include <unistd.h>
++#include <signal.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <sys/types.h>
++int main(void) {
++  FILE *mode_file=fopen("mode","r"); int mode=-1;
++  if (!mode_file || fscanf(mode_file,"%d",&mode)!=1) return 80;
++  fclose(mode_file);
++  if (mode==7) { FILE*f=fopen("static","w"); if(!f)return 85; fputs("replaced cwd executable",f); fclose(f); mode=0; }
++  if (mode==0) { char b; while(read(0,&b,1)==1) { if(write(1,&b,1)!=1)return 81; usleep(1000); } return 0; }
++  if (mode==1 || mode==2) { char bytes[256]={0}; for(;;) { if(write(mode,bytes,sizeof bytes)<0)return 82; } }
++  if (mode==3) { for(;;)pause(); }
++  if (mode==4) { int result=setpgid(0,getpgid(getppid())); FILE*f=fopen("join-result","w"); fprintf(f,"%d",result); fclose(f); for(;;)pause(); }
++  if (mode==5 || mode==6) {
++    pid_t pid=fork(); if(pid<0)return 83;
++    if(pid==0) { FILE*f=fopen("descendant.pid","w"); fprintf(f,"%d",getpid()); fclose(f); close(0); if(mode==5){close(1);close(2);} for(;;)pause(); }
++    while(access("descendant.pid",F_OK))usleep(1000);
++    return 0;
++  }
++  if (mode==8) {
++    char bytes[4096]; for(size_t i=0;i<sizeof bytes;i++)bytes[i]='o';
++    for(int i=0;i<32;i++)if(write(1,bytes,sizeof bytes)!=sizeof bytes)return 86;
++    if(write(2,bytes,sizeof bytes)!=sizeof bytes)return 87;
++    size_t count=0; ssize_t got;
++    while((got=read(0,bytes,sizeof bytes))>0)count+=(size_t)got;
++    return count==131072?0:88;
++  }
++  if (mode==9) { close(0); close(1); close(2); return 0; }
++  if (mode==10) { close(1); close(2); for(;;)pause(); }
++  return 84;
++}
++"#).unwrap();
++            let output = Command::new("cc")
++                .args(["-O0", "helper.c", "-o", "helper"])
++                .current_dir(&path)
++                .output()
++                .unwrap();
++            assert!(output.status.success(), "{output:?}");
++            Self(path)
++        }
++        fn run(&self, input: &[u8], cap: usize, deadline: Duration) -> Capture {
++            let program = File::open(self.0.join("helper")).unwrap();
++            let directory = File::open(&self.0).unwrap();
++            run(&program, &directory, input, cap, deadline)
++        }
++        fn descendant_dead(&self) {
++            let pid: i32 = fs::read_to_string(self.0.join("descendant.pid"))
++                .unwrap()
++                .parse()
++                .unwrap();
++            for _ in 0..100 {
++                match fs::read_to_string(format!("/proc/{pid}/stat")) {
++                    Ok(state) if state.split_once(") ").unwrap().1.starts_with('Z') => return,
++                    Err(error) if error.kind() == io::ErrorKind::NotFound => return,
++                    _ => thread::sleep(Duration::from_millis(1)),
++                }
++            }
++            // A failed test must not leave its own synthetic child running.
++            unsafe {
++                libc::kill(pid, libc::SIGKILL);
++            }
++            panic!("ordinary process-group descendant survived cleanup");
++        }
++    }
++    impl Drop for Fixture {
++        fn drop(&mut self) {
++            let _ = fs::remove_dir_all(&self.0);
++        }
++    }
++
++    #[test]
++    fn lexical_supervisor_fragmented_stdio_is_exact_and_leader_reaped() {
++        let f = Fixture::new(0);
++        let output = f.run(b"hello", 5, DEADLINE);
++        assert_eq!(output.stop, Stop::Exited);
++        assert_eq!(output.code(), Some(0));
++        assert_eq!(&output.stdout, b"hello");
++        assert_eq!(output.stderr_len, 0);
++        assert_eq!(output.input_written, 5);
++        assert!(output.stdin_closed && output.stdout_eof && output.stderr_eof);
++        assert_eq!(output.stdout.capacity(), 6);
++    }
++    #[test]
++    fn lexical_supervisor_stream_caps_use_one_witness_and_fail_closed() {
++        let output = Fixture::new(1).run(b"", 8, DEADLINE);
++        assert_eq!(output.stop, Stop::StdoutLimit);
++        assert_eq!(output.stdout.len(), 9);
++        assert!(output.status.is_some());
++        let output = Fixture::new(2).run(b"", 8, DEADLINE);
++        assert_eq!(output.stop, Stop::StderrLimit);
++        assert_eq!(output.stderr_len, STDERR_MAX + 1);
++        assert!(output.status.is_some());
++    }
++    #[test]
++    fn lexical_supervisor_timeout_cannot_be_defeated_by_joining_parent_group() {
++        for mode in [3, 4] {
++            let f = Fixture::new(mode);
++            let started = Instant::now();
++            let output = f.run(b"", 0, Duration::from_millis(250));
++            assert_eq!(output.stop, Stop::Timeout);
++            assert_eq!(output.signal(), Some(libc::SIGKILL));
++            assert!(started.elapsed() < Duration::from_secs(2));
++            if mode == 4 {
++                assert_eq!(fs::read_to_string(f.0.join("join-result")).unwrap(), "-1");
++            }
++        }
++    }
++    #[test]
++    fn lexical_supervisor_kills_group_descendants_after_success_and_timeout() {
++        for mode in [5, 6] {
++            let f = Fixture::new(mode);
++            let output = f.run(b"", 0, Duration::from_millis(250));
++            assert_eq!(
++                output.stop,
++                if mode == 5 {
++                    Stop::Exited
++                } else {
++                    Stop::Timeout
++                }
++            );
++            assert_eq!(output.code(), Some(0));
++            f.descendant_dead();
++        }
++    }
++
++    #[test]
++    fn lexical_supervisor_full_duplex_stderr_boundary_and_large_input() {
++        let f = Fixture::new(8);
++        let input = [b'i'; 131072];
++        let output = f.run(&input, 131072, DEADLINE);
++        assert_eq!(output.stop, Stop::Exited);
++        assert_eq!(output.code(), Some(0));
++        assert_eq!(output.input_written, input.len());
++        assert!(output.stdin_closed && output.stdout_eof && output.stderr_eof);
++        assert_eq!(output.stdout.len(), 131072);
++        assert_eq!(output.stdout.capacity(), 131073);
++        assert!(output.stdout.iter().all(|byte| *byte == b'o'));
++        assert_eq!(output.stderr_len, STDERR_MAX);
++    }
++    #[test]
++    fn lexical_supervisor_empty_input_zero_cap_and_exact_maximum_reservation() {
++        let f = Fixture::new(0);
++        for cap in [0, OUTPUT_MAX] {
++            let output = f.run(b"", cap, DEADLINE);
++            assert_eq!(output.stop, Stop::Exited);
++            assert_eq!(output.code(), Some(0));
++            assert_eq!(output.stdout.capacity(), cap + 1);
++            assert!(output.stdout.is_empty());
++            assert!(output.stdin_closed && output.stdout_eof && output.stderr_eof);
++        }
++        let refused = f.run(b"", OUTPUT_MAX + 1, DEADLINE);
++        assert_eq!(refused.stop, Stop::OutputBudget);
++        assert!(!refused.spawned);
++        assert_eq!(refused.stdout.capacity(), 0);
++    }
++    #[test]
++    fn lexical_supervisor_eof_does_not_replace_exit_or_complete_input() {
++        let output = Fixture::new(9).run(&[b'x'; 131072], 0, DEADLINE);
++        assert_ne!(output.stop, Stop::Exited);
++        assert!(output.input_written < 131072);
++        assert!(output.stdin_closed && output.status.is_some());
++        let output = Fixture::new(10).run(b"", 0, Duration::from_millis(250));
++        assert_eq!(output.stop, Stop::Timeout);
++        assert_eq!(output.signal(), Some(libc::SIGKILL));
++        assert!(output.stdout_eof && output.stderr_eof);
++    }
++    #[test]
++    fn lexical_supervisor_descriptor_cwd_and_sealed_program_survive_renaming() {
++        use sha2::{Digest, Sha256};
++        let f = Fixture::new(0);
++        let executable = fs::read(f.0.join("helper")).unwrap();
++        fs::write(f.0.join("lexer"), &executable).unwrap();
++        let hash: [u8; 32] = Sha256::digest(&executable).into();
++        let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
++        fs::write(
++            f.0.join("manifest.txt"),
++            format!("oxid-lexical-provider-v1\nlexer_sha256={hex}\n"),
++        )
++        .unwrap();
++        let bundle = super::super::bundle::Bundle::load(&f.0).unwrap();
++        let cwd = PathBuf::from(format!("/proc/self/fd/{}", bundle.directory().as_raw_fd()));
++        fs::write(cwd.join("mode"), b"0").unwrap();
++        fs::remove_file(f.0.join("lexer")).unwrap();
++        fs::write(f.0.join("lexer"), b"replaced executable").unwrap();
++        let output = run(bundle.lexer(), bundle.directory(), b"sealed", 6, DEADLINE);
++        assert_eq!(output.stop, Stop::Exited);
++        assert_eq!(output.code(), Some(0));
++        assert_eq!(&output.stdout, b"sealed");
++        assert_eq!(bundle.lexer_hash(), hash);
++        // Keep the directory descriptor while replacing its former pathname.
++        let moved = f.0.join("renamed");
++        fs::create_dir(&moved).unwrap();
++        fs::write(moved.join("mode"), b"0").unwrap();
++        let directory = File::open(&moved).unwrap();
++        let retained = f.0.join("retained");
++        fs::rename(&moved, &retained).unwrap();
++        fs::create_dir(&moved).unwrap();
++        fs::write(moved.join("mode"), b"3").unwrap();
++        let output = run(bundle.lexer(), &directory, b"identity", 8, DEADLINE);
++        assert_eq!(output.stop, Stop::Exited);
++        assert_eq!(&output.stdout, b"identity");
++    }
++    #[test]
++    fn lexical_supervisor_spawn_failure_and_zero_deadline_are_not_success() {
++        let f = Fixture::new(0);
++        let program = File::open(f.0.join("mode")).unwrap();
++        let directory = File::open(&f.0).unwrap();
++        let failed = run(&program, &directory, b"", 0, DEADLINE);
++        assert_eq!(failed.stop, Stop::Spawn);
++        assert!(!failed.spawned && failed.status.is_none());
++        assert!(failed.stdout.is_empty());
++        assert_eq!(failed.stdout.capacity(), 1);
++        let output = f.run(b"", 0, Duration::ZERO);
++        assert_eq!(output.stop, Stop::Timeout);
++        assert!(output.status.is_some());
++    }
++    #[test]
++    fn lexical_supervisor_reports_allocation_failure_name() {
++        let mut capture = Capture::empty();
++        assert!(!capture.allocate_stdout(usize::MAX));
++        assert_eq!(capture.stop, Stop::Allocation);
++        assert!(!capture.spawned);
++        assert!(capture.stdout.is_empty());
++        assert_eq!(capture.stdout.capacity(), 0);
++        assert_eq!(Stop::Allocation.name(), "allocation-failed");
++        assert!(named_bytes() >= std::mem::size_of::<Capture>());
++    }
++}
+diff --git a/src/frontend/lexical_provider/tests.rs b/src/frontend/lexical_provider/tests.rs
+new file mode 100644
+index 0000000..0901228
+--- /dev/null
++++ b/src/frontend/lexical_provider/tests.rs
+@@ -0,0 +1,667 @@
++use super::*;
++use crate::frontend::{
++    lexer,
++    project::{ProjectLimits, ProjectSources},
++    source::SourceMap,
++};
++
++fn source(text: &str) -> SourceMap {
++    let mut sources = SourceMap::new();
++    sources.add("test.ox".into(), text.into());
++    sources
++}
++
++/// Independent test encoder implementing the written groups/echo rules. The
++/// production decoder never calls this and the production lexer is unchanged.
++fn encode(source: &SourceFile, limit: usize) -> Vec<u8> {
++    let (tokens, diagnostic) = match lexer::lex_with_limit(source, limit) {
++        Ok(tokens) => (tokens, None),
++        Err(diagnostic) => {
++            let at = diagnostic.primary.unwrap();
++            let prefix_source = self::source(&source.text()[..at.start]);
++            let mut prefix = lexer::lex(prefix_source.get(SourceFileId(0))).unwrap();
++            prefix.pop();
++            let tag = match diagnostic.message.as_str() {
++                "unterminated string literal" => 1,
++                "unterminated block comment" => 2,
++                "token resource limit exceeded" => 3,
++                _ => panic!("unexpected diagnostic"),
++            };
++            (prefix, Some((tag, at.start, at.end)))
++        }
++    };
++    let mut out = b"LXS1".to_vec();
++    let mut echo = [0u8; 128];
++    let mut buffer = [0u8; 100];
++    let mut token = 0;
++    let n = source.text().len();
++    for base in (0..=n / 128).map(|chunk| chunk * 128) {
++        let used = (n - base).min(128);
++        echo[..used].copy_from_slice(&source.text().as_bytes()[base..base + used]);
++        out.push(b'E');
++        out.push(used as u8);
++        out.extend_from_slice(&(base as u32).to_le_bytes());
++        out.extend_from_slice(&echo);
++        let mut used_tokens = 0;
++        while let Some(current) = tokens.get(token) {
++            if current.span.end > base + used || (current.kind == lexer::Kind::Eof && used == 128) {
++                break;
++            }
++            buffer[used_tokens] = current.kind as u8 + 1;
++            buffer[used_tokens + 1] = (current.span.end - base) as u8;
++            used_tokens += 2;
++            token += 1;
++            if used_tokens == 100 {
++                out.extend_from_slice(&buffer);
++                used_tokens = 0;
++            }
++        }
++        if used_tokens != 0 {
++            out.push(b'B');
++            out.push(used_tokens as u8);
++            out.extend_from_slice(&buffer);
++        }
++    }
++    assert_eq!(token, tokens.len());
++    if let Some((tag, start, end)) = diagnostic {
++        out.extend_from_slice(&[b'D', tag]);
++        out.extend_from_slice(&(start as u32).to_le_bytes());
++        out.extend_from_slice(&(end as u32).to_le_bytes());
++    } else {
++        out.push(b'S');
++        out.extend_from_slice(&(tokens.len() as u32).to_le_bytes());
++        out.extend_from_slice(&(n as u32).to_le_bytes());
++    }
++    out
++}
++
++fn decode(
++    source: &SourceFile,
++    bytes: &[u8],
++    limit: usize,
++) -> Result<wire::Observation, &'static str> {
++    wire::decode(source, limit, bytes, &mut Allocator::default())
++}
++fn fixture(encoder: fn(&SourceFile, usize) -> Vec<u8>) -> Provider {
++    let mut receipts = Vec::new();
++    wire::reserve(
++        &mut receipts,
++        RECEIPTS,
++        &mut Allocator::default(),
++        "lexical provider receipts",
++    )
++    .unwrap();
++    Provider {
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        bundle: None,
++        receipts,
++        budget: Budget::new(0, 0).unwrap(),
++        fixture: Some(encoder),
++    }
++}
++
++#[test]
++fn lexical_wire_roundtrips_full_width_chunks_groups_and_all_kinds() {
++    let language = "fn struct mod use pub & . let mut return break continue if while else true false (){}:,;= == != ! && || < <= > >= -> - + * / % enum @ 123 \"ok\" ";
++    for text in [
++        "".into(),
++        language.into(),
++        ";".repeat(49),
++        ";".repeat(50),
++        ";".repeat(51),
++        ";".repeat(127),
++        ";".repeat(128),
++        ";".repeat(129),
++        " ".repeat(65536),
++        format!("{};", " ".repeat(65536)),
++    ] {
++        let sources = source(&text);
++        let file = sources.get(SourceFileId(0));
++        let bytes = encode(file, lexer::MAX_TOKENS);
++        let wire::Observation::Tokens(tokens) = decode(file, &bytes, lexer::MAX_TOKENS).unwrap()
++        else {
++            panic!("tokens");
++        };
++        let canonical = lexer::lex(file).unwrap();
++        assert_eq!(tokens.len(), canonical.len());
++        assert_eq!(tokens.capacity(), tokens.len());
++        assert!(tokens
++            .iter()
++            .zip(canonical)
++            .all(|(a, b)| a.kind == b.kind && a.span == b.span));
++        assert!(bytes.len() <= wire::output_bound(text.len(), lexer::MAX_TOKENS).unwrap());
++    }
++}
++#[test]
++fn lexical_wire_rejects_every_truncation_and_all_trailing_data() {
++    for text in ["", "fn main() -> i32 { return 42; }", &";".repeat(129)] {
++        let sources = source(text);
++        let file = sources.get(SourceFileId(0));
++        let bytes = encode(file, lexer::MAX_TOKENS);
++        for length in 0..bytes.len() {
++            assert!(
++                decode(file, &bytes[..length], lexer::MAX_TOKENS).is_err(),
++                "length {length}"
++            );
++        }
++        for suffix in [&[0][..], b"S", b"LXS1", b"\n"] {
++            let mut corrupted = bytes.clone();
++            corrupted.extend_from_slice(suffix);
++            assert!(decode(file, &corrupted, lexer::MAX_TOKENS).is_err());
++        }
++    }
++}
++#[test]
++fn lexical_wire_checks_same_kind_same_length_source_and_padding() {
++    let sources = source("first");
++    let file = sources.get(SourceFileId(0));
++    let bytes = encode(file, lexer::MAX_TOKENS);
++    let stale_sources = source("other");
++    let stale = stale_sources.get(SourceFileId(0));
++    assert!(decode(stale, &bytes, lexer::MAX_TOKENS).is_err());
++    for index in [
++        4, 5, 6, 10, 15, 137, 138, 139, 140, 141, 144, 239, 240, 241, 245,
++    ] {
++        if index < bytes.len() {
++            let mut corrupted = bytes.clone();
++            corrupted[index] ^= 128;
++            assert!(
++                decode(file, &corrupted, lexer::MAX_TOKENS).is_err(),
++                "offset {index}"
++            );
++        }
++    }
++}
++#[test]
++fn lexical_wire_rejects_raw_partial_groups_and_duplicate_partial() {
++    let sources = source("x");
++    let file = sources.get(SourceFileId(0));
++    let bytes = encode(file, 100);
++    let mut raw_partial = bytes[..138].to_vec();
++    raw_partial.extend_from_slice(&[2, 1, 47, 1]);
++    raw_partial.extend_from_slice(&bytes[240..]);
++    assert!(decode(file, &raw_partial, 100).is_err());
++    let mut duplicate = bytes[..240].to_vec();
++    duplicate.extend_from_slice(&bytes[138..240]);
++    duplicate.extend_from_slice(&bytes[240..]);
++    assert!(decode(file, &duplicate, 100).is_err());
++    let mut after_partial = bytes[..240].to_vec();
++    after_partial.extend_from_slice(&[2, 1]);
++    after_partial.extend_from_slice(&bytes[240..]);
++    assert!(decode(file, &after_partial, 100).is_err());
++}
++#[test]
++fn lexical_wire_exact_diagnostics_token_budget_and_precedence() {
++    for (text, limit, tag) in [
++        ("x", 0, 3),
++        ("x x", 1, 3),
++        ("\"unfinished", 0, 1),
++        ("/*unfinished", 0, 2),
++        (&" ".repeat(65537), 100000, 3),
++    ] {
++        let sources = source(text);
++        let file = sources.get(SourceFileId(0));
++        let bytes = encode(file, limit);
++        let wire::Observation::Diagnostic(observed) = decode(file, &bytes, limit).unwrap() else {
++            panic!("diagnostic");
++        };
++        let expected = lexer::lex_with_limit(file, limit).unwrap_err();
++        assert_eq!(observed.tag, tag);
++        assert_eq!(
++            observed.fields(),
++            (expected.code, expected.message.as_str())
++        );
++        let span = expected.primary.unwrap();
++        assert_eq!((observed.start, observed.end), (span.start, span.end));
++        let mut corrupt = bytes.clone();
++        let end = corrupt.len();
++        corrupt[end - 1] = 255;
++        assert!(decode(file, &corrupt, limit).is_err());
++    }
++    let sources = source("");
++    let file = sources.get(SourceFileId(0));
++    assert!(
++        matches!(decode(file, &encode(file, 0),0),Ok(wire::Observation::Tokens(tokens)) if tokens.len()==1)
++    );
++}
++#[test]
++fn lexical_wire_domain_exact_allocation_failures_and_bound() {
++    assert_eq!(wire::output_bound(1048576, 100000).unwrap(), 2133666);
++    assert!(wire::output_bound(1048577, 100000).is_err());
++    assert!(wire::output_bound(1, 100001).is_err());
++    for text in ["", "fn", "é"] {
++        let sources = source(text);
++        let file = sources.get(SourceFileId(0));
++        let mut allocator = Allocator {
++            fail_at: Some(1),
++            ..Allocator::default()
++        };
++        assert!(wire::request(file, 100, &mut allocator).is_err());
++        if text.is_ascii() {
++            let mut allocator = Allocator {
++                fail_at: Some(1),
++                ..Allocator::default()
++            };
++            assert!(wire::decode(file, 100, &encode(file, 100), &mut allocator).is_err());
++        }
++    }
++}
++#[test]
++fn lexical_budget_charges_capacity_canonical_peak_and_existing_ceilings() {
++    let sources = source(&" ".repeat(1048576));
++    let file = sources.get(SourceFileId(0));
++    let mut budget = Budget::new(0, 0).unwrap();
++    let inventory = Inventory::default();
++    let plan = budget.admit(file, 100000, &inventory).unwrap();
++    assert!(plan.scratch > 12_000_000);
++    assert!(plan.scratch < 16 * 1024 * 1024);
++    assert!(plan.retained >= 100001 * size_of::<Token>());
++    assert!(plan.work > 90_000_000);
++    for which in 0..3 {
++        let mut budget = Budget::new(0, 0).unwrap();
++        match which {
++            0 => budget.limits.retained = 0,
++            1 => budget.limits.scratch = 0,
++            _ => budget.limits.work = 0,
++        };
++        assert!(budget.admit(file, 100000, &inventory).is_err());
++    }
++    let mut budget = Budget::new(0, 0).unwrap();
++    budget.selected_capacity = 32 * 1024 * 1024;
++    assert!(budget.admit(file, 100000, &inventory).is_err());
++}
++
++struct Files(std::path::PathBuf);
++impl Files {
++    fn new() -> Self {
++        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++        let path = std::env::temp_dir().join(format!(
++            "oxid-lexical-loader-{}-{}",
++            std::process::id(),
++            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
++        ));
++        std::fs::create_dir(&path).unwrap();
++        Self(path)
++    }
++    fn write(&self, name: &str, text: &str) -> String {
++        let path = self.0.join(name);
++        std::fs::write(&path, text).unwrap();
++        path.to_str().unwrap().to_string()
++    }
++}
++impl Drop for Files {
++    fn drop(&mut self) {
++        let _ = std::fs::remove_dir_all(&self.0);
++    }
++}
++
++#[test]
++fn lexical_loader_moves_actual_provider_allocation_into_root_parser_on_every_host() {
++    let files = Files::new();
++    let root = files.write("main.ox", "fn main() -> i32 { return 42; }");
++    let mut provider = fixture(encode);
++    let project =
++        ProjectSources::load_typed_with_provider(&root, ProjectLimits::default(), &mut provider)
++            .unwrap();
++    assert_eq!(project.sources().files().len(), 1);
++    assert_eq!(provider.receipts.len(), 1);
++    let receipt = &provider.receipts[0];
++    assert_eq!(receipt.file, SourceFileId(0));
++    assert_eq!(receipt.stop, "test-observation");
++    assert!(!receipt.spawned);
++    assert!(
++        receipt.comparison_attempted && receipt.comparison_matched && receipt.selected_for_parser
++    );
++    let program = project.try_file_ast(receipt.file).unwrap();
++    assert_eq!(program.tokens.capacity(), program.tokens.len());
++    assert_eq!(
++        program.tokens.as_ptr() as usize,
++        receipt.producer_allocation
++    );
++    assert_eq!(
++        project.sources().get(receipt.file).identity(),
++        receipt.identity
++    );
++}
++
++#[cfg(target_os = "linux")]
++#[test]
++fn lexical_loader_moves_actual_provider_allocation_into_each_module_parser() {
++    let files = Files::new();
++    let root = files.write(
++        "main.ox",
++        "mod child; fn main() -> i32 { return child::value(); }",
++    );
++    files.write("child.ox", "pub fn value() -> i32 { return 42; }");
++    let mut provider = fixture(encode);
++    let project =
++        ProjectSources::load_typed_with_provider(&root, ProjectLimits::default(), &mut provider)
++            .unwrap();
++    assert_eq!(provider.receipts.len(), 2);
++    for receipt in &provider.receipts {
++        assert!(
++            receipt.comparison_attempted
++                && receipt.comparison_matched
++                && receipt.selected_for_parser
++        );
++        let program = project.try_file_ast(receipt.file).unwrap();
++        assert_eq!(program.tokens.capacity(), program.tokens.len());
++        assert_eq!(
++            program.tokens.as_ptr() as usize,
++            receipt.producer_allocation
++        );
++        assert_eq!(
++            project.sources().get(receipt.file).identity(),
++            receipt.identity
++        );
++    }
++}
++
++#[cfg(not(target_os = "linux"))]
++#[test]
++fn lexical_loader_declared_child_refuses_unqualified_host_without_child_fallback() {
++    let files = Files::new();
++    let root = files.write("main.ox", "mod child;");
++    files.write("child.ox", "pub fn value() -> i32 { return 42; }");
++    let mut provider = fixture(encode);
++    let failure =
++        ProjectSources::load_typed_with_provider(&root, ProjectLimits::default(), &mut provider)
++            .unwrap_err();
++    assert_eq!(failure.diagnostics.len(), 1);
++    let diagnostic = &failure.diagnostics[0];
++    assert_eq!((diagnostic.code, diagnostic.stage), ("E0005", "source"));
++    assert_eq!(
++        diagnostic.message,
++        "module source policy is not qualified on this host"
++    );
++    assert_eq!(failure.sources.text(diagnostic.primary.unwrap()), "child");
++    assert_eq!(failure.sources.files().len(), 1);
++    assert_eq!(failure.usage.modules, 1);
++    assert_eq!(failure.usage.probes, 0);
++    assert_eq!(provider.receipts.len(), 1);
++    let receipt = &provider.receipts[0];
++    assert_eq!(receipt.file, SourceFileId(0));
++    assert_eq!(receipt.stop, "test-observation");
++    assert!(!receipt.spawned);
++    assert!(
++        receipt.comparison_attempted && receipt.comparison_matched && receipt.selected_for_parser
++    );
++    assert_eq!(
++        failure.sources.get(receipt.file).identity(),
++        receipt.identity
++    );
++}
++
++fn corrupted_tokens(source: &SourceFile, limit: usize) -> Vec<u8> {
++    let mut bytes = encode(source, limit);
++    // First token starts in the final partial group for the short source below.
++    let first = 138;
++    assert_eq!(bytes[first], b'B');
++    bytes[first + 2] = 2; // fn -> ident, same byte span, valid framing.
++    bytes
++}
++#[test]
++fn lexical_loader_mismatch_refuses_before_parser_without_canonical_fallback() {
++    let files = Files::new();
++    let root = files.write("main.ox", "fn main() -> i32 { return 42; }");
++    let mut provider = fixture(corrupted_tokens);
++    let failure =
++        ProjectSources::load_typed_with_provider(&root, ProjectLimits::default(), &mut provider)
++            .unwrap_err();
++    assert_eq!(failure.diagnostics[0].code, "E0703");
++    assert!(failure.diagnostics[0].message.contains("canonical tokens"));
++    let receipt = &provider.receipts[0];
++    assert!(
++        receipt.comparison_attempted && !receipt.comparison_matched && !receipt.selected_for_parser
++    );
++    assert_eq!(failure.sources.files().len(), 1);
++}
++#[test]
++fn lexical_loader_diagnostic_and_parser_failure_keep_receipts() {
++    for (text, code, selected) in [("\"unterminated", "E0100", false), ("fn", "E0101", true)] {
++        let files = Files::new();
++        let root = files.write("main.ox", text);
++        let mut provider = fixture(encode);
++        let failed = ProjectSources::load_typed_with_provider(
++            &root,
++            ProjectLimits::default(),
++            &mut provider,
++        )
++        .unwrap_err();
++        if selected {
++            assert_eq!(failed.diagnostics[0].stage, "parse");
++        } else {
++            assert_eq!(failed.diagnostics[0].code, code);
++        }
++        let receipt = &provider.receipts[0];
++        assert!(receipt.comparison_attempted && receipt.comparison_matched);
++        assert_eq!(receipt.selected_for_parser, selected);
++    }
++}
++#[cfg(target_os = "linux")]
++#[test]
++fn lexical_loader_passes_remaining_aggregate_limit_and_accepts_exact_diagnostic() {
++    let files = Files::new();
++    let root_text = "mod child;";
++    let root = files.write("main.ox", root_text);
++    files.write("child.ox", "fn value() -> i32 { return 1; }");
++    let root_sources = source(root_text);
++    let root_tokens = lexer::lex(root_sources.get(SourceFileId(0))).unwrap().len() - 1;
++    let mut provider = fixture(encode);
++    let limits = ProjectLimits {
++        tokens: root_tokens,
++        ..ProjectLimits::default()
++    };
++    let failed =
++        ProjectSources::load_typed_with_provider(&root, limits, &mut provider).unwrap_err();
++    assert_eq!(failed.diagnostics[0].code, "E0400");
++    assert_eq!(failed.diagnostics[0].stage, "lex");
++    assert_eq!(provider.receipts.len(), 2);
++    assert!(provider.receipts[1].comparison_matched);
++    assert!(!provider.receipts[1].selected_for_parser);
++}
++
++struct ForeignProvider {
++    other: SourceMap,
++    selected: bool,
++    matched: bool,
++}
++impl LexicalProvider for ForeignProvider {
++    fn begin_module(&mut self, _: &SourceFile, _: SourceUsage) -> Result<(), Box<Diagnostic>> {
++        Ok(())
++    }
++    fn observe(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        _: &Inventory,
++        _: &mut Allocator,
++    ) -> Result<LexicalObservation, Box<Diagnostic>> {
++        let tokens = lexer::lex_with_limit(source, limit);
++        Ok(LexicalObservation::new(
++            self.other.get(SourceFileId(0)),
++            tokens,
++        ))
++    }
++    fn comparison_started(&mut self) {}
++    fn comparison_finished(&mut self, matched: bool) {
++        self.matched = matched;
++    }
++    fn selected_for_parser(
++        &mut self,
++        _: &SourceFile,
++        _: &[Token],
++        _: usize,
++    ) -> Result<(), Box<Diagnostic>> {
++        self.selected = true;
++        Ok(())
++    }
++}
++#[test]
++fn lexical_loader_consuming_carrier_rejects_wrong_identity_same_path_id_length() {
++    let files = Files::new();
++    let text = "fn main() -> i32 { return 42; }";
++    let root = files.write("main.ox", text);
++    let mut other = SourceMap::new();
++    other.add(root.clone(), text.into());
++    let mut provider = ForeignProvider {
++        other,
++        selected: false,
++        matched: false,
++    };
++    let failed =
++        ProjectSources::load_typed_with_provider(&root, ProjectLimits::default(), &mut provider)
++            .unwrap_err();
++    assert_eq!(failed.diagnostics[0].code, "E0703");
++    assert!(failed.diagnostics[0]
++        .message
++        .contains("another retained source"));
++    assert!(!provider.selected && !provider.matched);
++}
++
++#[test]
++fn lexical_provider_new_input_token_and_receipt_reserves_fail_closed() {
++    let sources = source("fn main() -> i32 { return 42; }");
++    let file = sources.get(SourceFileId(0));
++    for ordinal in [1, 2] {
++        let mut provider = fixture(encode);
++        let mut allocator = Allocator {
++            fail_at: Some(ordinal),
++            ..Allocator::default()
++        };
++        provider.begin_module(file, SourceUsage::default()).unwrap();
++        let error = provider
++            .observe(file, 100000, &Inventory::default(), &mut allocator)
++            .err()
++            .expect("fallible allocation refusal");
++        assert_eq!(error.code, "E0703");
++        assert!(error.message.contains("allocation"));
++        assert_eq!(provider.receipts.len(), 1);
++        assert!(!provider.receipts[0].comparison_attempted);
++        assert!(!provider.receipts[0].selected_for_parser);
++    }
++    let mut allocator = Allocator {
++        fail_at: Some(1),
++        ..Allocator::default()
++    };
++    assert!(wire::reserve(
++        &mut Vec::<Receipt>::new(),
++        RECEIPTS,
++        &mut allocator,
++        "lexical provider receipts"
++    )
++    .is_err());
++}
++fn wrong_diagnostic(source: &SourceFile, limit: usize) -> Vec<u8> {
++    let mut bytes = encode(source, limit);
++    let n = bytes.len();
++    assert_eq!(bytes[n - 10], b'D');
++    bytes[n - 9] = 2;
++    bytes
++}
++#[test]
++fn lexical_loader_structurally_valid_wrong_diagnostic_fails_comparison() {
++    let files = Files::new();
++    let root = files.write("main.ox", "\"unfinished");
++    let mut provider = fixture(wrong_diagnostic);
++    let failed =
++        ProjectSources::load_typed_with_provider(&root, ProjectLimits::default(), &mut provider)
++            .unwrap_err();
++    assert_eq!(failed.diagnostics[0].code, "E0703");
++    assert!(failed.diagnostics[0]
++        .message
++        .contains("canonical diagnostic"));
++    assert!(
++        provider.receipts[0].comparison_attempted
++            && !provider.receipts[0].comparison_matched
++            && !provider.receipts[0].selected_for_parser
++    );
++}
++#[test]
++fn lexical_wire_rejects_noncanonical_counters_eof_base_padding_and_sizes() {
++    let sources = source("x");
++    let file = sources.get(SourceFileId(0));
++    let bytes = encode(file, 100);
++    // One E, one B(two pairs), S. Exact record offsets are part of the contract.
++    assert_eq!(bytes.len(), 249);
++    for (offset, value) in [
++        (4, 0),
++        (5, 0),
++        (6, 1),
++        (138, b'E'),
++        (139, 0),
++        (139, 1),
++        (139, 3),
++        (139, 100),
++        (140, 0),
++        (140, 48),
++        (141, 0),
++        (141, 129),
++        (142, 2),
++        (143, 0),
++        (144, 1),
++        (240, b'D'),
++        (241, 1),
++        (245, 2),
++    ] {
++        let mut bad = bytes.clone();
++        bad[offset] = value;
++        assert!(
++            decode(file, &bad, 100).is_err(),
++            "mutation {offset}={value}"
++        );
++    }
++    // Every emitted byte in later echo padding must preserve the previous read.
++    let sources = source(&format!("{}x", " ".repeat(128)));
++    let file = sources.get(SourceFileId(0));
++    let bytes = encode(file, 100);
++    let second_echo = 138 + 102;
++    assert_eq!(bytes[second_echo], b'E');
++    let mut bad = bytes.clone();
++    bad[second_echo + 7] ^= 1;
++    assert!(decode(file, &bad, 100).is_err());
++}
++
++#[test]
++fn lexical_receipts_escape_all_terminal_control_characters() {
++    let input = "path\u{1b}[31m\n\u{7f}\u{85}\u{9b}é";
++    let encoded = format!("{}", JsonText(input));
++    assert!(!encoded.chars().any(char::is_control));
++    assert!(encoded.contains("\\u001b"));
++    assert!(encoded.contains("\\u009b"));
++    assert!(encoded.ends_with("é\""));
++}
++#[test]
++fn lexical_budget_prepays_failure_receipts_and_reports_full_carriers() {
++    let sources = source(&" ".repeat(1048576));
++    let file = sources.get(SourceFileId(0));
++    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++    let extra = bundle::named_bytes() + supervisor::named_bytes();
++    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++    let extra = 0;
++    let mut budget = Budget::new(4096, extra).unwrap();
++    let initial = budget.work;
++    budget.admit_receipt(file).unwrap();
++    assert_eq!(budget.work, initial);
++    assert!(budget.receipt_work_left < RECEIPT_WORK);
++    let plan = budget.admit(file, 100000, &Inventory::default()).unwrap();
++    assert!(budget.work < 256_000_000);
++    println!("LEXICAL_BUDGET token_bytes={} receipt_bytes={} fixed_retained={} fixed_scratch={} max_source_retained={} max_source_scratch={} receipt_work={} source_work={} total_work={} canonical_capacity={} canonical_growth_peak={}",
++        size_of::<Token>(), size_of::<Receipt>(), budget.fixed_retained, budget.fixed_scratch,
++        plan.retained, plan.scratch, RECEIPT_WORK, plan.work, budget.work,
++        131072 * size_of::<Token>(), 196608 * size_of::<Token>());
++}
++
++#[test]
++fn lexical_budget_refuses_inventory_work_before_traversal_and_keeps_receipt() {
++    let sources = source("x");
++    let file = sources.get(SourceFileId(0));
++    let mut provider = fixture(encode);
++    provider.budget.limits.work = provider.budget.work;
++    assert!(provider.begin_module(file, SourceUsage::default()).is_err());
++    assert_eq!(provider.receipts.len(), 1);
++    assert_eq!(provider.receipts[0].stop, "host-refused");
++    assert!(
++        !provider.receipts[0].comparison_attempted && !provider.receipts[0].selected_for_parser
++    );
++}
+diff --git a/src/frontend/lexical_provider/wire.rs b/src/frontend/lexical_provider/wire.rs
+new file mode 100644
+index 0000000..8f75a65
+--- /dev/null
++++ b/src/frontend/lexical_provider/wire.rs
+@@ -0,0 +1,346 @@
++//! Strict contextual LXI1/LXS1 framing. The source owner, never wire bytes,
++//! supplies span provenance. This decoder does not decide lexical correctness.
++use crate::frontend::{
++    lexer::{Kind, Token, MAX_TOKENS, MAX_TOKEN_BYTES},
++    project::budget::Allocator,
++    source::{SourceFile, MAX_SOURCE_BYTES},
++};
++
++pub(super) fn output_bound(n: usize, limit: usize) -> Result<usize, &'static str> {
++    if n > MAX_SOURCE_BYTES || limit > MAX_TOKENS {
++        return Err("lexical provider input domain exceeded");
++    }
++    let chunks = n / 128 + 1;
++    Ok(4 + 134 * chunks + 2 * (n.min(limit) + 1) + 102 * (chunks + 1) + 10)
++}
++
++pub(super) fn request(
++    source: &SourceFile,
++    limit: usize,
++    allocator: &mut Allocator,
++) -> Result<Vec<u8>, &'static str> {
++    output_bound(source.text().len(), limit)?;
++    if !source.text().is_ascii() {
++        return Err("lexical provider requires ASCII source");
++    }
++    let length = source.text().len() + 12;
++    let mut bytes = Vec::new();
++    reserve(&mut bytes, length, allocator, "lexical provider input")?;
++    bytes.extend_from_slice(b"LXI1");
++    bytes.extend_from_slice(&(source.text().len() as u32).to_le_bytes());
++    bytes.extend_from_slice(&(limit as u32).to_le_bytes());
++    bytes.extend_from_slice(source.text().as_bytes());
++    Ok(bytes)
++}
++
++pub(super) fn reserve<T>(
++    vector: &mut Vec<T>,
++    count: usize,
++    allocator: &mut Allocator,
++    name: &'static str,
++) -> Result<(), &'static str> {
++    allocator
++        .vector_exact(vector, count, name)
++        .map_err(|_| "lexical provider allocation failed")?;
++    if vector.capacity() != count {
++        return Err("lexical provider allocation capacity mismatch");
++    }
++    Ok(())
++}
++
++#[derive(Debug, Clone, Copy)]
++pub(super) struct LexicalDiagnostic {
++    pub tag: u8,
++    pub start: usize,
++    pub end: usize,
++}
++impl LexicalDiagnostic {
++    pub(super) fn fields(self) -> (&'static str, &'static str) {
++        match self.tag {
++            1 => ("E0100", "unterminated string literal"),
++            2 => ("E0100", "unterminated block comment"),
++            3 => ("E0400", "token resource limit exceeded"),
++            _ => unreachable!("decoder validates diagnostic tag"),
++        }
++    }
++}
++#[derive(Debug)]
++pub(super) enum Observation {
++    Tokens(Vec<Token>),
++    Diagnostic(LexicalDiagnostic),
++}
++
++// Protocol numbers are explicitly one-based. Never transmute Rust discriminants.
++fn kind(id: u8) -> Option<Kind> {
++    use Kind::*;
++    Some(match id {
++        1 => Trivia,
++        2 => Ident,
++        3 => Number,
++        4 => String,
++        5 => Fn,
++        6 => Struct,
++        7 => Mod,
++        8 => Use,
++        9 => Pub,
++        10 => Ampersand,
++        11 => Dot,
++        12 => Let,
++        13 => Mut,
++        14 => Return,
++        15 => Break,
++        16 => Continue,
++        17 => If,
++        18 => While,
++        19 => Else,
++        20 => True,
++        21 => False,
++        22 => LParen,
++        23 => RParen,
++        24 => LBrace,
++        25 => RBrace,
++        26 => Colon,
++        27 => Comma,
++        28 => Semi,
++        29 => Equal,
++        30 => EqualEqual,
++        31 => NotEqual,
++        32 => Not,
++        33 => AndAnd,
++        34 => OrOr,
++        35 => Less,
++        36 => LessEqual,
++        37 => Greater,
++        38 => GreaterEqual,
++        39 => Arrow,
++        40 => Minus,
++        41 => Plus,
++        42 => Star,
++        43 => Slash,
++        44 => Percent,
++        45 => Unsupported,
++        46 => Invalid,
++        47 => Eof,
++        _ => return None,
++    })
++}
++
++struct Decoder<'a> {
++    source: &'a SourceFile,
++    bytes: &'a [u8],
++    offset: usize,
++    limit: usize,
++    base: Option<usize>,
++    echoed: usize,
++    final_echo: bool,
++    echo_count: usize,
++    echo_buffer: [u8; 128],
++    token_buffer: [u8; 100],
++    raw_group: [u8; 100],
++    raw_used: usize,
++    partial_seen: bool,
++    previous: usize,
++    eof: bool,
++    tokens: Vec<Token>,
++    token_count: usize,
++    collect: bool,
++}
++impl Decoder<'_> {
++    fn take(&mut self, n: usize) -> Result<&[u8], &'static str> {
++        let end = self.offset.checked_add(n).ok_or("lexical frame overflow")?;
++        let part = self
++            .bytes
++            .get(self.offset..end)
++            .ok_or("truncated lexical frame")?;
++        self.offset = end;
++        Ok(part)
++    }
++    fn pair(&mut self, id: u8, relative: u8) -> Result<(), &'static str> {
++        let base = self.base.ok_or("lexical token precedes source echo")?;
++        let kind = kind(id).ok_or("invalid lexical token kind")?;
++        let end = base
++            .checked_add(usize::from(relative))
++            .ok_or("lexical token overflow")?;
++        if self.eof || relative > 128 || end < self.previous || end > self.echoed {
++            return Err("invalid lexical token extent");
++        }
++        if kind == Kind::Eof {
++            if !self.final_echo || self.previous != end || end != self.source.text().len() {
++                return Err("invalid lexical EOF");
++            }
++            self.eof = true;
++        } else if end == self.previous
++            || end - self.previous > MAX_TOKEN_BYTES
++            || self.token_count >= self.limit
++        {
++            return Err("invalid lexical token width or count");
++        }
++        if self.collect {
++            if self.tokens.len() == self.tokens.capacity() {
++                return Err("lexical token capacity exceeded");
++            }
++            self.tokens.push(Token {
++                kind,
++                span: self.source.span(self.previous, end),
++            });
++        }
++        self.token_count += 1;
++        self.previous = end;
++        Ok(())
++    }
++    fn finish(mut self) -> Result<(Observation, usize), &'static str> {
++        while let Some(&tag) = self.bytes.get(self.offset) {
++            match tag {
++                1..=47 => {
++                    if self.partial_seen {
++                        return Err("lexical tokens after partial group");
++                    }
++                    let pair: [u8; 2] = self.take(2)?.try_into().unwrap();
++                    self.raw_group[self.raw_used..self.raw_used + 2].copy_from_slice(&pair);
++                    self.raw_used += 2;
++                    self.pair(pair[0], pair[1])?;
++                    if self.raw_used == 100 {
++                        self.token_buffer = self.raw_group;
++                        self.raw_used = 0;
++                    }
++                }
++                b'B' => {
++                    if self.base.is_none() || self.raw_used != 0 || self.eof || self.partial_seen {
++                        return Err("invalid lexical partial group state");
++                    }
++                    let record: [u8; 102] = self.take(102)?.try_into().unwrap();
++                    let used = usize::from(record[1]);
++                    if !(2..=98).contains(&used)
++                        || used % 2 != 0
++                        || record[2 + used..] != self.token_buffer[used..]
++                    {
++                        return Err("invalid lexical partial group size or padding");
++                    }
++                    for pair in record[2..2 + used].as_chunks::<2>().0 {
++                        self.pair(pair[0], pair[1])?;
++                    }
++                    self.token_buffer.copy_from_slice(&record[2..]);
++                    self.partial_seen = true;
++                }
++                b'E' => {
++                    if self.raw_used != 0 || self.eof || self.final_echo {
++                        return Err("invalid lexical source echo state");
++                    }
++                    let record: [u8; 134] = self.take(134)?.try_into().unwrap();
++                    let used = usize::from(record[1]);
++                    let base = u32::from_le_bytes(record[2..6].try_into().unwrap()) as usize;
++                    let expected = 128.min(self.source.text().len() - self.echoed);
++                    if base != self.echoed || used != expected {
++                        return Err("invalid lexical source echo extent");
++                    }
++                    if record[6..6 + used]
++                        != self.source.text().as_bytes()[self.echoed..self.echoed + used]
++                        || record[6 + used..] != self.echo_buffer[used..]
++                    {
++                        return Err("lexical source echo or deterministic padding mismatch");
++                    }
++                    self.echo_buffer.copy_from_slice(&record[6..]);
++                    self.base = Some(base);
++                    self.echoed += used;
++                    self.echo_count += 1;
++                    self.partial_seen = false;
++                    self.final_echo = used < 128;
++                }
++                b'S' | b'D' => {
++                    let n = self.source.text().len();
++                    if self.raw_used != 0
++                        || !self.final_echo
++                        || self.echoed != n
++                        || self.echo_count != n / 128 + 1
++                    {
++                        return Err("incomplete lexical source or token group");
++                    }
++                    let observation = if tag == b'S' {
++                        let record: [u8; 9] = self.take(9)?.try_into().unwrap();
++                        let count = u32::from_le_bytes(record[1..5].try_into().unwrap()) as usize;
++                        let extent = u32::from_le_bytes(record[5..9].try_into().unwrap()) as usize;
++                        if !self.eof || count != self.token_count || extent != n {
++                            return Err("invalid lexical success counters");
++                        }
++                        Observation::Tokens(self.tokens)
++                    } else {
++                        let record: [u8; 10] = self.take(10)?.try_into().unwrap();
++                        let start = u32::from_le_bytes(record[2..6].try_into().unwrap()) as usize;
++                        let end = u32::from_le_bytes(record[6..10].try_into().unwrap()) as usize;
++                        let tag = record[1];
++                        if self.eof
++                            || !(1..=3).contains(&tag)
++                            || start != self.previous
++                            || start >= end
++                            || end > n
++                            || (tag != 3 && end != n)
++                        {
++                            return Err("invalid lexical diagnostic fields");
++                        }
++                        Observation::Diagnostic(LexicalDiagnostic { tag, start, end })
++                    };
++                    if self.offset != self.bytes.len() {
++                        return Err("trailing lexical output");
++                    }
++                    return Ok((observation, self.token_count));
++                }
++                _ => return Err("unknown lexical frame tag"),
++            }
++        }
++        Err("missing lexical terminal")
++    }
++}
++
++pub(super) fn decode(
++    source: &SourceFile,
++    limit: usize,
++    bytes: &[u8],
++    allocator: &mut Allocator,
++) -> Result<Observation, &'static str> {
++    let bound = output_bound(source.text().len(), limit)?;
++    if !source.text().is_ascii() || bytes.len() > bound || bytes.get(..4) != Some(b"LXS1") {
++        return Err("invalid lexical frame domain, magic or extent");
++    }
++    let decoder = |tokens, collect| Decoder {
++        source,
++        bytes,
++        offset: 4,
++        limit,
++        base: None,
++        echoed: 0,
++        final_echo: false,
++        echo_count: 0,
++        echo_buffer: [0; 128],
++        token_buffer: [0; 100],
++        raw_group: [0; 100],
++        raw_used: 0,
++        partial_seen: false,
++        previous: 0,
++        eof: false,
++        tokens,
++        token_count: 0,
++        collect,
++    };
++    // A strict allocation-free pass establishes the actual complete count.
++    // Allocate exactly those slots, so the producer Vec moved into the AST has
++    // no new unaccounted spare capacity after transient provider state drops.
++    // Both passes use the same immutable captured bytes and retained source.
++    let (preflight, count) = decoder(Vec::new(), false).finish()?;
++    if matches!(preflight, Observation::Diagnostic(_)) {
++        return Ok(preflight);
++    }
++    let mut tokens = Vec::new();
++    reserve(&mut tokens, count, allocator, "lexical provider tokens")?;
++    let (observation, decoded_count) = decoder(tokens, true).finish()?;
++    if decoded_count != count {
++        return Err("lexical token preflight changed");
++    }
++    Ok(observation)
++}
++
++pub(super) fn named_bytes() -> usize {
++    3 * std::mem::size_of::<Decoder<'static>>()
++        + 3 * std::mem::size_of::<Observation>()
++        + 3 * std::mem::size_of::<[u8; 134]>()
++        + 3 * std::mem::size_of::<[u8; 102]>()
++}
+diff --git a/src/frontend/mod.rs b/src/frontend/mod.rs
+index 14be50c..dff8877 100644
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -10,6 +10,7 @@ mod hir;
+ mod hir_producer;
+ mod hir_protocol;
+ mod lexer;
++mod lexical_provider;
+ mod native;
+ mod oir;
+ mod options;
+diff --git a/src/frontend/options.rs b/src/frontend/options.rs
+index 08382a7..16178d5 100644
+--- a/src/frontend/options.rs
++++ b/src/frontend/options.rs
+@@ -11,6 +11,9 @@
+ #[derive(Debug, PartialEq, Eq)]
+ pub enum Route {
+     Legacy(Vec<String>),
++    TypedLexical {
++        request: Box<[LexicalOptions; 1]>,
++    },
+     TypedImport {
+         request: Box<[ImportOptions; 1]>,
+     },
+@@ -73,6 +76,17 @@ pub struct ProducerOptions {
+     pub operation: Operation,
+ }
+ 
++/// Explicit lexical route, boxed so the stable default Route layout is unchanged.
++#[derive(Debug, PartialEq, Eq)]
++pub struct LexicalOptions {
++    pub path: String,
++    pub bundle: String,
++    pub output: Option<String>,
++    pub json: bool,
++    pub operation: Operation,
++    pub entry_policy: EntryPolicy,
++}
++
+ /// Transient entry selection, never retained in a checked source program.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub enum EntryPolicy {
+@@ -195,6 +209,15 @@ pub fn route(args: &[String]) -> Route {
+         Route::Error { message, .. } | Route::FormatError { message } if entry.process_errors => {
+             Route::ProcessError { message }
+         }
++        Route::TypedLexical { request }
++            if request[0].operation == Operation::Run
++                && request[0].json
++                && request[0].entry_policy == EntryPolicy::Process =>
++        {
++            Route::ProcessError {
++                message: "process-mode run does not support --message-format=json".into(),
++            }
++        }
+         Route::TypedRun {
+             json: true,
+             entry_policy: EntryPolicy::Process,
+@@ -235,6 +258,8 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+     let mut import = None;
+     let mut producer_seen = false;
+     let mut producer = None;
++    let mut lexical_seen = false;
++    let mut lexical = None;
+     let mut json = false;
+     let mut error = None;
+     let mut index = 0;
+@@ -257,6 +282,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             "--entry-mode",
+             "--experimental-hir-import",
+             "--experimental-hir-producers",
++            "--experimental-lexical-provider",
+         ]
+         .into_iter()
+         .find(|name| {
+@@ -277,6 +303,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             "--entry-mode" => &mut entry.seen,
+             "--experimental-hir-import" => &mut import_seen,
+             "--experimental-hir-producers" => &mut producer_seen,
++            "--experimental-lexical-provider" => &mut lexical_seen,
+             _ => unreachable!("the option name is selected from a closed list"),
+         };
+         if *seen {
+@@ -300,6 +327,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             }
+             ("--experimental-hir-import", Some(value)) => import = Some(value.to_string()),
+             ("--experimental-hir-producers", Some(value)) => producer = Some(value.to_string()),
++            ("--experimental-lexical-provider", Some(value)) => lexical = Some(value.to_string()),
+             ("--edition", Some(value @ ("legacy-0.9" | "typed-preview"))) => {
+                 edition = Some(value);
+             }
+@@ -384,6 +412,17 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+                 .into()
+         });
+     }
++    if lexical_seen
++        && (edition != Some("typed-preview")
++            || !matches!(command, Some("check" | "run" | "compile")))
++    {
++        error.get_or_insert_with(|| "--experimental-lexical-provider requires explicit typed-preview check, run or compile".into());
++    }
++    if lexical_seen && (import_seen || producer_seen) {
++        error.get_or_insert_with(|| {
++            "--experimental-lexical-provider cannot be combined with HIR import or producers".into()
++        });
++    }
+     if format_seen && edition != Some("typed-preview") {
+         error
+             .get_or_insert_with(|| "--message-format requires --edition typed-preview".to_string());
+@@ -489,6 +528,26 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             };
+         }
+     }
++    if let Some(bundle) = lexical {
++        let Some(path) = path else {
++            return Route::Error {
++                message: format!("typed-preview {command} requires exactly one source path"),
++                json,
++                operation,
++            };
++        };
++        return lexical_route(
++            LexicalOptions {
++                path,
++                bundle,
++                output,
++                json,
++                operation,
++                entry_policy: entry.policy,
++            },
++            &mut super::project::budget::Allocator::default(),
++        );
++    }
+     if let Some(bundle) = producer {
+         let Some(path) = path else {
+             return Route::Error {
+@@ -608,6 +667,34 @@ fn producer_route(
+     Route::TypedProducer { request }
+ }
+ 
++fn lexical_route(
++    options: LexicalOptions,
++    allocator: &mut super::project::budget::Allocator,
++) -> Route {
++    let json = options.json;
++    let operation = options.operation;
++    let mut storage = Vec::new();
++    if std::mem::size_of::<LexicalOptions>() as u64
++        > super::declaration_index::IndexLimits::default().retained
++        || allocator
++            .vector_exact(&mut storage, 1, "experimental lexical options")
++            .is_err()
++        || storage.capacity() != 1
++    {
++        return Route::Error {
++            message: "cannot allocate experimental lexical options".into(),
++            json,
++            operation,
++        };
++    }
++    storage.push(options);
++    let request = storage
++        .into_boxed_slice()
++        .try_into()
++        .expect("one admitted lexical option");
++    Route::TypedLexical { request }
++}
++
+ /// A selected formatter has its own text-only, exit-2 error contract.
+ /// Keep it outside Operation so it cannot enter semantic loading or summaries.
+ fn route_format(forwarded: Vec<String>, json: bool) -> Route {
+@@ -1740,3 +1827,149 @@ mod producer_options_tests {
+         assert_eq!(std::mem::size_of::<Route>(), 56);
+     }
+ }
++
++#[cfg(test)]
++mod lexical_options_tests {
++    use super::*;
++    fn classify(values: &[&str]) -> Route {
++        route(&values.iter().map(|s| (*s).into()).collect::<Vec<_>>())
++    }
++    #[test]
++    fn lexical_options_are_explicit_boxed_typed_routes() {
++        for command in ["check", "run"] {
++            let Route::TypedLexical { request } = classify(&[
++                command,
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=bundle",
++            ]) else {
++                panic!("lexical route");
++            };
++            assert_eq!(request[0].path, "file.ox");
++            assert_eq!(request[0].bundle, "bundle");
++            assert_eq!(request[0].entry_policy, EntryPolicy::Result);
++        }
++        let Route::TypedLexical { request } = classify(&[
++            "compile",
++            "--edition=typed-preview",
++            "--experimental-lexical-provider",
++            "bundle",
++            "--backend=llvm",
++            "--entry-mode=process",
++            "--output=out",
++            "file.ox",
++        ]) else {
++            panic!("process compile");
++        };
++        assert_eq!(request[0].entry_policy, EntryPolicy::Process);
++        assert_eq!(request[0].output.as_deref(), Some("out"));
++        assert!(matches!(
++            classify(&[
++                "run",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=b",
++                "--entry-mode=process"
++            ]),
++            Route::TypedLexical { .. }
++        ));
++        assert!(matches!(
++            classify(&[
++                "run",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=b",
++                "--entry-mode=process",
++                "--message-format=json"
++            ]),
++            Route::ProcessError { .. }
++        ));
++    }
++    #[test]
++    fn lexical_options_preserve_script_separator_and_default_behavior() {
++        let args = ["script", "build", "--experimental-lexical-provider=b"];
++        assert_eq!(
++            classify(&args),
++            Route::Legacy(args.iter().map(|s| (*s).into()).collect())
++        );
++        assert_eq!(
++            classify(&[
++                "check",
++                "--edition=typed-preview",
++                "--",
++                "--experimental-lexical-provider=b"
++            ]),
++            Route::TypedCheck {
++                path: "--experimental-lexical-provider=b".into(),
++                json: false
++            }
++        );
++        assert_eq!(
++            classify(&["check", "--edition=typed-preview", "file.ox"]),
++            Route::TypedCheck {
++                path: "file.ox".into(),
++                json: false
++            }
++        );
++        for args in [
++            vec!["check", "file.ox", "--experimental-lexical-provider=b"],
++            vec![
++                "fmt",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=b",
++            ],
++            vec![
++                "check",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=b",
++                "--experimental-hir-import=x",
++            ],
++            vec![
++                "check",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=b",
++                "--experimental-hir-producers=x",
++            ],
++            vec![
++                "check",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=b",
++                "--experimental-lexical-provider=c",
++            ],
++            vec![
++                "check",
++                "file.ox",
++                "--edition=typed-preview",
++                "--experimental-lexical-provider=",
++            ],
++        ] {
++            assert!(matches!(classify(&args), Route::Error { .. }));
++        }
++    }
++    #[test]
++    fn lexical_options_one_exact_fallible_carrier() {
++        let mut allocator = super::super::project::budget::Allocator {
++            fail_at: Some(1),
++            ..Default::default()
++        };
++        let result = lexical_route(
++            LexicalOptions {
++                path: "x".into(),
++                bundle: "b".into(),
++                output: None,
++                json: true,
++                operation: Operation::Check,
++                entry_policy: EntryPolicy::Result,
++            },
++            &mut allocator,
++        );
++        assert!(matches!(result, Route::Error { json: true, .. }));
++        assert_eq!(allocator.attempts, 1);
++        #[cfg(target_pointer_width = "64")]
++        assert_eq!(std::mem::size_of::<Route>(), 56);
++    }
++}
+diff --git a/src/frontend/project.rs b/src/frontend/project.rs
+index 141d02c..58b8fe5 100644
+--- a/src/frontend/project.rs
++++ b/src/frontend/project.rs
+@@ -28,7 +28,7 @@ use super::{
+     ast,
+     diagnostic::Diagnostic,
+     lexer, owned_diagnostic, parser,
+-    source::{SourceFileId, SourceMap, Span, MAX_SOURCE_BYTES},
++    source::{SourceFile, SourceFileId, SourceMap, Span, MAX_SOURCE_BYTES},
+ };
+ use budget::{Allocator, ReserveFailure};
+ use std::mem::size_of;
+@@ -158,6 +158,113 @@ pub(super) struct LoadFailure {
+     pub allocator: Allocator,
+ }
+ 
++/// Dependency-light transient loader seam. Standalone canonical observers do not
++/// need the external process implementation or its cryptographic dependencies.
++/// Implementations cannot select parser tokens without the comparison below.
++pub(super) trait LexicalProvider {
++    fn begin_module(
++        &mut self,
++        source: &SourceFile,
++        usage: SourceUsage,
++    ) -> Result<(), Box<Diagnostic>>;
++    fn observe(
++        &mut self,
++        source: &SourceFile,
++        limit: usize,
++        inventory: &Inventory,
++        allocator: &mut Allocator,
++    ) -> Result<LexicalObservation, Box<Diagnostic>>;
++    fn comparison_started(&mut self);
++    fn comparison_finished(&mut self, matched: bool);
++    fn selected_for_parser(
++        &mut self,
++        source: &SourceFile,
++        tokens: &[lexer::Token],
++        capacity: usize,
++    ) -> Result<(), Box<Diagnostic>>;
++}
++
++/// Immutable source association travels with the actual returned allocation.
++/// It is revalidated when consuming it at the parser boundary, independently
++/// of any provider receipt or later parser-minted provenance.
++pub(super) struct LexicalObservation {
++    identity: u64,
++    file: SourceFileId,
++    source_len: usize,
++    value: Result<Vec<lexer::Token>, Box<Diagnostic>>,
++}
++impl LexicalObservation {
++    pub(super) fn new(
++        source: &SourceFile,
++        value: Result<Vec<lexer::Token>, Box<Diagnostic>>,
++    ) -> Self {
++        Self {
++            identity: source.identity(),
++            file: source.span(0, 0).file,
++            source_len: source.text().len(),
++            value,
++        }
++    }
++    fn compare_and_consume(
++        self,
++        source: &SourceFile,
++        canonical: Result<Vec<lexer::Token>, Box<Diagnostic>>,
++        limit: usize,
++    ) -> Result<Result<Vec<lexer::Token>, Box<Diagnostic>>, &'static str> {
++        if self.identity != source.identity()
++            || self.file != source.span(0, 0).file
++            || self.source_len != source.text().len()
++        {
++            return Err("lexical observation belongs to another retained source");
++        }
++        match (self.value, canonical) {
++            (Ok(tokens), Ok(canonical)) => {
++                // Accounted before the unchanged canonical lexer's infallible
++                // growth. Check actual capacity too; no old allocation claim is
++                // silently promoted to fallible allocation.
++                let capacity = (source.text().len().min(limit) + 1)
++                    .max(4)
++                    .next_power_of_two();
++                if canonical.capacity() > capacity {
++                    return Err("canonical token capacity exceeded admitted bound");
++                }
++                if tokens.len() != canonical.len()
++                    || !tokens
++                        .iter()
++                        .zip(&canonical)
++                        .all(|(a, b)| a.kind == b.kind && a.span == b.span)
++                {
++                    return Err("lexical provider disagrees with canonical tokens");
++                }
++                drop(canonical);
++                Ok(Ok(tokens))
++            }
++            (Err(observed), Err(canonical)) => {
++                if observed.code != canonical.code
++                    || observed.stage != canonical.stage
++                    || observed.message != canonical.message
++                    || observed.primary != canonical.primary
++                    || observed.secondary != canonical.secondary
++                    || observed.notes != canonical.notes
++                {
++                    return Err("lexical provider disagrees with canonical diagnostic");
++                }
++                drop(canonical);
++                Ok(Err(observed))
++            }
++            _ => Err("lexical provider disagrees with canonical outcome"),
++        }
++    }
++}
++fn lexical_failure(source: &SourceFile, message: &'static str) -> Box<Diagnostic> {
++    owned_diagnostic::diagnostic(
++        "E0703",
++        "lexical-provider",
++        format_args!("{message}"),
++        Some(source.span(0, 0)),
++    )
++}
++
+ // Test-only reserve traces enlarge LoadFailure; do not allocate while handling failure.
+ #[cfg_attr(test, allow(clippy::result_large_err))]
+ impl ProjectSources {
+@@ -188,6 +295,21 @@ impl ProjectSources {
+             ProjectEnumSyntax::Enabled,
+         )
+     }
++    pub(super) fn load_typed_with_provider(
++        entry: &str,
++        limits: ProjectLimits,
++        provider: &mut dyn LexicalProvider,
++    ) -> Result<Self, LoadFailure> {
++        Self::load_with_syntax_provider(
++            entry,
++            limits,
++            parser::SourceMode::ProjectCandidate,
++            &mut Allocator::default(),
++            parser::ArraySyntaxPolicy::Enabled,
++            ProjectEnumSyntax::Enabled,
++            Some(provider),
++        )
++    }
+     /// Preserve the typed grammar before standard imports for gate controls.
+     #[cfg(test)]
+     pub(super) fn load_typed_closed_std(
+@@ -303,6 +425,18 @@ impl ProjectSources {
+         allocator: &mut Allocator,
+         arrays: parser::ArraySyntaxPolicy,
+         enums: ProjectEnumSyntax,
++    ) -> Result<Self, LoadFailure> {
++        Self::load_with_syntax_provider(entry, limits, mode, allocator, arrays, enums, None)
++    }
++    #[allow(clippy::too_many_arguments)]
++    fn load_with_syntax_provider(
++        entry: &str,
++        limits: ProjectLimits,
++        mode: parser::SourceMode,
++        allocator: &mut Allocator,
++        arrays: parser::ArraySyntaxPolicy,
++        enums: ProjectEnumSyntax,
++        mut provider: Option<&mut dyn LexicalProvider>,
+     ) -> Result<Self, LoadFailure> {
+         let mut builder = SourceSetBuilder {
+             entry,
+@@ -320,7 +454,7 @@ impl ProjectSources {
+                 syntax_flavor: SyntaxFlavor::OriginalSingleFile,
+             },
+         };
+-        match builder.load_all() {
++        match builder.load_all_with_provider(&mut provider) {
+             Ok(()) => Ok(builder.project),
+             Err(diagnostics) => Err(LoadFailure {
+                 sources: builder.project.sources,
+@@ -658,6 +792,12 @@ struct Frame {
+ 
+ impl SourceSetBuilder<'_> {
+     fn load_all(&mut self) -> Result<(), Errors> {
++        self.load_all_with_provider(&mut None)
++    }
++    fn load_all_with_provider(
++        &mut self,
++        provider: &mut Option<&mut dyn LexicalProvider>,
++    ) -> Result<(), Errors> {
+         let text = self
+             .read_source(Path::new(self.entry), self.entry, None)
+             .map_err(one)?;
+@@ -666,7 +806,7 @@ impl SourceSetBuilder<'_> {
+             .string(&mut display, self.entry.len(), "entry display")
+             .map_err(|error| one(reserve_error(error, None)))?;
+         display.push_str(self.entry);
+-        let program = self.parse_file(display, text, None)?;
++        let program = self.parse_file_with_provider(display, text, None, provider)?;
+         let root = self.project.root_eof();
+         if self.limits.modules == 0 {
+             return Err(one(resource("module count limit exceeded", Some(root))));
+@@ -744,7 +884,7 @@ impl SourceSetBuilder<'_> {
+                 continue;
+             }
+             stack[height - 1].next += 1;
+-            let child = self.load_child(frame.module, frame.next)?;
++            let child = self.load_child_with_provider(frame.module, frame.next, provider)?;
+             if height == stack.len() {
+                 return Err(one(Diagnostic::new(
+                     "E0500",
+@@ -863,6 +1003,15 @@ impl SourceSetBuilder<'_> {
+         display: String,
+         text: String,
+         origin: Option<Span>,
++    ) -> Result<ast::Program, Errors> {
++        self.parse_file_with_provider(display, text, origin, &mut None)
++    }
++    fn parse_file_with_provider(
++        &mut self,
++        display: String,
++        text: String,
++        origin: Option<Span>,
++        provider: &mut Option<&mut dyn LexicalProvider>,
+     ) -> Result<ast::Program, Errors> {
+         let path_bytes = add(
+             self.project.usage.retained_path_bytes,
+@@ -885,7 +1034,27 @@ impl SourceSetBuilder<'_> {
+             .min(lexer::MAX_TOKENS)
+             .checked_sub(self.project.usage.non_eof_tokens)
+             .ok_or_else(|| one(overflow(origin)))?;
+-        let tokens = lexer::lex_with_limit(source, remaining_tokens).map_err(one)?;
++        let tokens = if let Some(provider) = provider.as_deref_mut() {
++            provider
++                .begin_module(source, self.project.usage)
++                .map_err(one)?;
++            let inventory = self
++                .project
++                .inventory()
++                .ok_or_else(|| one(overflow(origin)))?;
++            let observed = provider
++                .observe(source, remaining_tokens, &inventory, self.allocator)
++                .map_err(one)?;
++            provider.comparison_started();
++            let canonical = lexer::lex_with_limit(source, remaining_tokens);
++            let result = observed.compare_and_consume(source, canonical, remaining_tokens);
++            provider.comparison_finished(result.is_ok());
++            result
++                .map_err(|message| one(lexical_failure(source, message)))?
++                .map_err(one)?
++        } else {
++            lexer::lex_with_limit(source, remaining_tokens).map_err(one)?
++        };
+         self.project.usage.non_eof_tokens =
+             add(self.project.usage.non_eof_tokens, tokens.len() - 1, origin).map_err(one)?;
+         let remaining_nodes = self
+@@ -894,6 +1063,11 @@ impl SourceSetBuilder<'_> {
+             .min(parser::MAX_NODES)
+             .checked_sub(self.project.usage.syntax_nodes)
+             .ok_or_else(|| one(overflow(origin)))?;
++        if let Some(provider) = provider.as_deref_mut() {
++            provider
++                .selected_for_parser(source, &tokens, tokens.capacity())
++                .map_err(one)?;
++        }
+         let (program, nodes) = match self.enums {
+             #[cfg(test)]
+             ProjectEnumSyntax::StdClosed => parser::parse_typed_closed_std_counted(
+@@ -969,6 +1143,14 @@ impl SourceSetBuilder<'_> {
+     }
+ 
+     fn load_child(&mut self, parent: ModuleId, local: usize) -> Result<ModuleId, Errors> {
++        self.load_child_with_provider(parent, local, &mut None)
++    }
++    fn load_child_with_provider(
++        &mut self,
++        parent: ModuleId,
++        local: usize,
++        provider: &mut Option<&mut dyn LexicalProvider>,
++    ) -> Result<ModuleId, Errors> {
+         let declaration = self.project.programs[parent.0].modules[local];
+         let at = Some(declaration.name);
+         let name = self.project.text(declaration.name);
+@@ -1096,7 +1278,7 @@ impl SourceSetBuilder<'_> {
+             add(self.project.usage.retained_path_bytes, relative.len(), at)
+                 .and_then(|n| add(n, filesystem::path_units(&canonical), at))
+                 .map_err(one)?;
+-        let program = self.parse_file(display, text, at)?;
++        let program = self.parse_file_with_provider(display, text, at, provider)?;
+         let id = ModuleId(self.project.programs.len());
+         self.project.programs.push(program);
+         self.project.modules.push(ModuleHeader {
+@@ -1226,3 +1408,56 @@ fn bounded_enum_production_project_policy_layout() {
+     );
+     assert_eq!(std::mem::size_of::<ProjectEnumSyntax>(), 1);
+ }
++
++#[cfg(test)]
++#[allow(dead_code)]
++mod lexical_loader_layout_tests {
++    use super::*;
++    use std::mem::{align_of, size_of};
++    // Exact retained baseline carriers. The optional mutable provider belongs
++    // only to call frames; changing these layouts is not part of this route.
++    struct BaselineProjectSources {
++        sources: SourceMap,
++        programs: Vec<ast::Program>,
++        modules: Vec<ModuleHeader>,
++        canonical_root: Option<PathBuf>,
++        usage: SourceUsage,
++        syntax_flavor: SyntaxFlavor,
++    }
++    struct BaselineLoadFailure {
++        sources: SourceMap,
++        diagnostics: Vec<Diagnostic>,
++        usage: SourceUsage,
++        allocator: Allocator,
++    }
++    struct BaselineBuilder<'a> {
++        entry: &'a str,
++        limits: ProjectLimits,
++        allocator: &'a mut Allocator,
++        mode: parser::SourceMode,
++        arrays: parser::ArraySyntaxPolicy,
++        enums: ProjectEnumSyntax,
++        project: ProjectSources,
++    }
++    #[test]
++    fn lexical_provider_keeps_all_retained_loader_layouts_unchanged() {
++        assert_eq!(
++            size_of::<ProjectSources>(),
++            size_of::<BaselineProjectSources>()
++        );
++        assert_eq!(
++            align_of::<ProjectSources>(),
++            align_of::<BaselineProjectSources>()
++        );
++        assert_eq!(size_of::<LoadFailure>(), size_of::<BaselineLoadFailure>());
++        assert_eq!(align_of::<LoadFailure>(), align_of::<BaselineLoadFailure>());
++        assert_eq!(
++            size_of::<SourceSetBuilder<'_>>(),
++            size_of::<BaselineBuilder<'_>>()
++        );
++        assert_eq!(
++            align_of::<SourceSetBuilder<'_>>(),
++            align_of::<BaselineBuilder<'_>>()
++        );
++    }
++}

@@ -1,5 +1,6 @@
 """Controller failure controls; stdlib only, no Rust or LLVM compilation."""
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -124,12 +125,32 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "seal differs"):
             gate.source_manifest(self.root, gate.REVIEWED_SOURCE_SHA256)
 
+    def test_stale_and_coherently_rehashed_current_manifests_are_rejected(self):
+        path = self.root / gate.MANIFEST_PATH
+        path.parent.mkdir(parents=True)
+        current = gate.source_manifest(ROOT, gate.REVIEWED_SOURCE_SHA256)
+        old_path = ROOT / "tests/fixtures/typed_project_source_binding/producer-diagnostic-source.json"
+        stale = old_path.read_bytes()
+        reduced = dict(current, files=current["files"][:-1])
+        wrong_head = dict(current, reviewed_source_head="c15465acb90e9f8bb18f5291a8931f5d5bbc6edb")
+        for label, raw in (("stale predecessor", stale),
+                           ("coherent omission", (json.dumps(reduced, sort_keys=True, indent=2) + "\n").encode()),
+                           ("same-count wrong head", (json.dumps(wrong_head, sort_keys=True, indent=2) + "\n").encode())):
+            path.write_bytes(raw)
+            rehashed = hashlib.sha256(raw).hexdigest()
+            self.assertNotEqual(rehashed, gate.REVIEWED_SOURCE_SHA256)
+            with self.subTest(label=label, seal="caller rehash"), self.assertRaisesRegex(ValueError, "reviewed current authority"):
+                gate.source_manifest(self.root, rehashed)
+            with self.subTest(label=label, seal="approved digest"), self.assertRaisesRegex(ValueError, "seal differs"):
+                gate.source_manifest(self.root, gate.REVIEWED_SOURCE_SHA256)
+
     def test_real_current_source_authority_and_full_core_closure(self):
         manifest = gate.source_manifest(ROOT, gate.REVIEWED_SOURCE_SHA256)
         core = [row["path"] for row in manifest["files"] if row["path"].startswith(("src/", "native/"))
                 or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")]
         listing = b"\0".join(name.encode() for name in core) + b"\0"
-        self.assertEqual(len(gate.source_identity(ROOT, manifest, listing)), 340)
+        self.assertEqual((len(manifest["files"]), len(core)), (345, 260))
+        self.assertEqual(len(gate.source_identity(ROOT, manifest, listing)), 345)
         for invalid in (listing + b"src/extra.rs\0", listing.split(b"\0", 1)[1], listing + b"src/cli.rs\0"):
             with self.subTest(invalid=invalid[-30:]), self.assertRaisesRegex(ValueError, "closure"):
                 gate.source_identity(ROOT, manifest, invalid)

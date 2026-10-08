@@ -7,6 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 import verify_repo
 
+STREAMING_ROOT = "fixtures/typed-streaming-lexer/main.ox"
+STREAMING_FILES = tuple("fixtures/typed-streaming-lexer/" + name + ".ox"
+                        for name in ("main", "data", "frame", "keywords", "scanner"))
+
 SCANNER_MEMBERS = (
     'tests/fixtures/bounded_enum_scanner/main.ox',
     'tests/fixtures/bounded_enum_scanner/scanner.ox',
@@ -100,6 +104,13 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members = sorted(set(self.members))
 
     def assert_static_addition(self, checks, entries, count):
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[0], STREAMING_ROOT)
+        self.assertEqual(verify_repo.TYPED_PROJECTS[STREAMING_ROOT], STREAMING_FILES)
+        streaming = {self.root / name for name in STREAMING_FILES}
+        self.assertEqual([row for row in checks if row[0] in streaming], [(self.root / STREAMING_ROOT, True)])
+        self.assertFalse(any(entry in streaming for entry in entries))
+        checks = [row for row in checks if row[0] not in streaming]
+        count -= len(STREAMING_FILES)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[-5:], STATIC_ROOTS)
         added = {self.root / name for name in STATIC_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in added],
@@ -109,7 +120,7 @@ class ProjectRegistrationTests(unittest.TestCase):
 
     def assert_parser_addition(self, checks, entries, count):
         checks, entries, count = self.assert_static_addition(checks, entries, count)
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[:-5],
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[1:-5],
                          (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
                           LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[PARSER_MAIN_ENTRY], PARSER_MEMBERS)

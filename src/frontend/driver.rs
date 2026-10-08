@@ -14,6 +14,23 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::TypedLexical { request }
+            if request[0].operation == Operation::Run
+                && request[0].entry_policy == EntryPolicy::Process
+                && request[0].json =>
+        {
+            Some(process_option_error(
+                "process-mode run does not support --message-format=json",
+            ))
+        }
+        Route::TypedLexical { request } => Some(process_file_with_lexical(
+            &request[0].path,
+            request[0].json,
+            request[0].operation,
+            request[0].output.as_deref(),
+            request[0].entry_policy,
+            Some(&request[0].bundle),
+        )),
         Route::TypedImport { request } => Some(process_import(&request[0])),
         Route::TypedProducer { request } => Some(process_producer(&request[0])),
         Route::ProcessError { message } => Some(process_option_error(&message)),
@@ -371,6 +388,17 @@ fn process_file(
     output: Option<&str>,
     entry_policy: EntryPolicy,
 ) -> i32 {
+    process_file_with_lexical(path, json, operation, output, entry_policy, None)
+}
+
+fn process_file_with_lexical(
+    path: &str,
+    json: bool,
+    operation: Operation,
+    output: Option<&str>,
+    entry_policy: EntryPolicy,
+    lexical_bundle: Option<&str>,
+) -> i32 {
     let process_run = operation == Operation::Run && entry_policy == EntryPolicy::Process;
     // Pure argv classification already finished. Setup must precede even source
     // loading, because all subsequent failures use the process stderr channel.
@@ -395,7 +423,41 @@ fn process_file(
             )
         };
     }
-    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
+    let loaded = if let Some(directory) = lexical_bundle {
+        let mut provider =
+            match super::lexical_provider::Provider::load(std::path::Path::new(directory)) {
+                Ok(provider) => provider,
+                Err(message) => {
+                    let diagnostic = *Diagnostic::new("E0703", "lexical-provider", message, None);
+                    return if process_run {
+                        report_process(&SourceMap::new(), &[diagnostic])
+                    } else {
+                        report(
+                            &SourceMap::new(),
+                            vec![diagnostic],
+                            json,
+                            Summary::empty(operation),
+                        )
+                    };
+                }
+            };
+        let result =
+            ProjectSources::load_typed_with_provider(path, ProjectLimits::default(), &mut provider);
+        let sources = match &result {
+            Ok(project) => project.sources(),
+            Err(failure) => &failure.sources,
+        };
+        if !provider.print_receipts(sources, json, process_run) {
+            return 74;
+        }
+        // Drop executable ownership, transport accounting and receipt storage
+        // before canonical HIR checking or native output publication begins.
+        drop(provider);
+        result
+    } else {
+        ProjectSources::load_typed(path, ProjectLimits::default())
+    };
+    let project = match loaded {
         Ok(project) => project,
         Err(failure) => {
             return if process_run {

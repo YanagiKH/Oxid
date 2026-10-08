@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entry": "main",
+  "sources": {
+    "data": {
+      "path": "fixtures/typed-streaming-lexer/data.ox",
+      "sha256": "fcdcbb04a6a82d241655d04aa2a11fe56720d9e243dddb8dafaab9376a98d7b0",
+      "bytes": 934
+    },
+    "frame": {
+      "path": "fixtures/typed-streaming-lexer/frame.ox",
+      "sha256": "abead8c5ab6cd0207b32b20ee00a724a060a3652a1224ad3fbec6545bac8d636",
+      "bytes": 1690
+    },
+    "keywords": {
+      "path": "fixtures/typed-streaming-lexer/keywords.ox",
+      "sha256": "73a0070f751f74c076708cc8458c09ed1d7f8cbd30220c0f2d2c3038a1249e11",
+      "bytes": 2066
+    },
+    "main": {
+      "path": "fixtures/typed-streaming-lexer/main.ox",
+      "sha256": "5fb8fba3182c364e0e00048270a30c6315161505b18cbf312026952bd81514b3",
+      "bytes": 1604
+    },
+    "scanner": {
+      "path": "fixtures/typed-streaming-lexer/scanner.ox",
+      "sha256": "b30888d125fd4a560369828b365812b27a34f993caefc22fe1cbb17e4f49d555",
+      "bytes": 4176
+    }
+  }
+}

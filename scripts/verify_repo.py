@@ -37,6 +37,13 @@ TYPED_CHECK_ONLY_FILES = (
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
 TYPED_PROJECTS = {
+    "fixtures/typed-streaming-lexer/main.ox": (
+        "fixtures/typed-streaming-lexer/main.ox",
+        "fixtures/typed-streaming-lexer/data.ox",
+        "fixtures/typed-streaming-lexer/frame.ox",
+        "fixtures/typed-streaming-lexer/keywords.ox",
+        "fixtures/typed-streaming-lexer/scanner.ox",
+    ),
     "tests/fixtures/bounded_enum_scanner/main.ox": (
         "tests/fixtures/bounded_enum_scanner/main.ox",
         "tests/fixtures/bounded_enum_scanner/scanner.ox",
@@ -249,6 +256,7 @@ TYPED_PROJECTS = {
 # Effectful projects retain exact module inventories, but only their roots are
 # checked here. Dedicated controllers supply input and choose the entry mode.
 TYPED_CHECK_ONLY_PROJECTS = (
+    "fixtures/typed-streaming-lexer/main.ox",
     "fixtures/typed-expression-samples/artifact_main.ox",
     "fixtures/typed-expression-samples/artifact_load.ox",
     "fixtures/typed-lexer-samples/main.ox",

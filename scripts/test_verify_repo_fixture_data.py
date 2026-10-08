@@ -16,6 +16,10 @@ import build_hir_producers_v2
 import verify_fixture_data
 import verify_repo
 
+STREAMING_ROOT = "fixtures/typed-streaming-lexer/main.ox"
+STREAMING_FILES = tuple("fixtures/typed-streaming-lexer/" + name + ".ox"
+                        for name in ("main", "data", "frame", "keywords", "scanner"))
+
 
 DATA = Path("tests/fixtures/fixed_array_source_unit3")
 SAMPLE_MEMBERS = (
@@ -138,6 +142,19 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # The genuine streaming lexer is five new language files and one
+        # check-only root. Subtract only this exact successor before replaying
+        # every historical inventory and fingerprint below.
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[0], STREAMING_ROOT)
+        self.assertEqual(verify_repo.TYPED_PROJECTS[STREAMING_ROOT], STREAMING_FILES)
+        self.assertEqual([name for name in language if name in STREAMING_FILES], sorted(STREAMING_FILES))
+        self.assertEqual([row for row in check_inventory if row[0] in STREAMING_FILES], [(STREAMING_ROOT, True)])
+        self.assertFalse(any(row[0] in STREAMING_FILES for row in run_inventory))
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (209, 143, 75, 79, 8))
+        language = [name for name in language if name not in STREAMING_FILES]
+        check_inventory = [row for row in check_inventory if row[0] not in STREAMING_FILES]
+        typed_members -= len(STREAMING_FILES)
         # Exactly nine new language members belong to the materialized v2
         # category. Every old language/check/run identity remains unchanged.
         self.assertEqual(verify_repo.TYPED_OVERLAY_FILES, V2_OVERLAY_FILES)
@@ -149,7 +166,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                          (204, 142, 75, 74, 8))
         self.assertEqual(len(check_inventory) + len(V2_ROOTS), 144)
         language = [name for name in language if name not in V2_OVERLAY_FILES]
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[:-5],
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[1:-5],
                          (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
                           LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY))
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[-5:], STATIC_ROOTS)
@@ -294,13 +311,13 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertFalse(Path(command[2]).is_relative_to(verify_repo.ROOT))
         self.assertFalse(any(str(verify_repo.ROOT / name) in command
                              for name in V2_OVERLAY_FILES for command in commands))
-        for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
+        for relative in (STREAMING_ROOT, STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
                          LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS:
             stdin_root = str(verify_repo.ROOT / relative)
             self.assertEqual([command for command in commands if stdin_root in command],
                              [[str(Path(sys.executable).resolve()), "check", stdin_root, "--edition=typed-preview"]])
         added_roots = {str(verify_repo.ROOT / name) for name in
-                       (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
+                       (STREAMING_ROOT, STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
                         ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY,
                         PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS}
         predecessor_commands = [command for command in commands
@@ -323,7 +340,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
-                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES)
+                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
         self.assertIn(f"{146 + len(additional_members) + len(V2_OVERLAY_FILES)} language sources, "
                       f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS)} checks, "
                       "75 runnable programs", output.getvalue())
@@ -434,6 +451,11 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        streaming = {self.root / name for name in STREAMING_FILES}
+        self.assertEqual([row for row in checks if row[0] in streaming], [(self.root / STREAMING_ROOT, True)])
+        self.assertFalse(any(entry in streaming for entry in entries))
+        checks = [row for row in checks if row[0] not in streaming]
+        count -= len(STREAMING_FILES)
         static_files = {self.root / name for name in STATIC_ADDED_FILES}
         self.assertEqual([row for row in checks if row[0] in static_files],
                          [(self.root / root, True) for root in STATIC_ROOTS])
@@ -745,7 +767,7 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
         self.assertIn((extra, False), checks)
         self.assertNotIn(extra, entries)
-        self.assertEqual(count, 74)
+        self.assertEqual(count, 79)
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in V2_OVERLAY_FILES))
 
     def test_overlay_cannot_also_be_a_standalone_typed_source_or_legacy_run(self):
