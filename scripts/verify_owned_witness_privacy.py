@@ -309,8 +309,12 @@ HIR_IMPORT_COMPILE_TIME_FIXTURES = (
     'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt',
     'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin',
 )
+HIR_IMPORT_V2_COMPILE_TIME_FIXTURES = (
+    'tests/fixtures/checked_hir_import_v2/source-255.txt',
+    'tests/fixtures/checked_hir_import_v2/success-255.bin',
+)
 COMPILE_TIME_FIXTURES = (*ARRAY_COMPILE_TIME_FIXTURES, *ENUM_COMPILE_TIME_FIXTURES,
-                         *HIR_IMPORT_COMPILE_TIME_FIXTURES)
+                         *HIR_IMPORT_COMPILE_TIME_FIXTURES, *HIR_IMPORT_V2_COMPILE_TIME_FIXTURES)
 
 
 def materialize_checkout(root, checkout):

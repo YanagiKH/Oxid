@@ -16,6 +16,8 @@ import subprocess
 import sys
 import time
 
+from qualify_hir_producers_v2 import validate_summary as validate_v2_summary
+
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -47,6 +49,53 @@ def select_executable(stdout, target_dir, profile):
             "Cargo executable escaped this profile's isolated target directory")
     require(executable.is_file(), "Cargo executable is not a regular file")
     return executable.resolve(), record
+
+
+# Reviewed af436c1 source closure. An internally consistent edited manifest is
+# still a different recipe and must not silently broaden this qualification.
+V2_SOURCE_MANIFEST_SHA256 = '08629aee51a25e05fd7bf4b121ff8a7d882683687425f4e5469f8b508618d608'
+V2_SOURCE_MANIFEST_BYTES = 5461
+
+
+def validate_source_manifest(path):
+    require(path.stat().st_size == V2_SOURCE_MANIFEST_BYTES and digest(path) == V2_SOURCE_MANIFEST_SHA256,
+            'v2 source manifest differs from the reviewed frozen closure')
+
+
+def validate_v1_summary(summary, source, compiler_hash, harness_hash):
+    require(isinstance(summary, dict) and summary.get('result') == 'passed'
+            and type(summary.get('negative_cli_probes')) is int
+            and summary['negative_cli_probes'] == 76,
+            'v1 qualification summary did not complete its exact recipe')
+    require(summary.get('source_head') == source['head']
+            and summary.get('compiler_sha256') == compiler_hash
+            and summary.get('harness_sha256') == harness_hash,
+            'v1 qualification identities differ from the selected build')
+
+
+def validate_edge_summary(evidence, compiler, parser_hash):
+    summary = json.loads((evidence / 'summary.json').read_text())
+    require(isinstance(summary, dict) and summary.get('status') == 'passed', 'invalid v2 edge summary')
+    probe = summary.get('actual_parser_probe_io_error')
+    require(isinstance(probe, dict) and probe.get('parser_sha256') == parser_hash,
+            'v2 edge parser identity mismatch')
+    for key, value in (('unread_bytes', 0), ('fd', 0), ('requested_bytes', 1), ('status', 74)):
+        require(type(probe.get(key)) is int and probe[key] == value, 'incomplete v2 EOF-probe evidence')
+    require(probe.get('syscall') == 'read', 'v2 EOF-probe did not observe read')
+    span = summary.get('synthetic_secondary_span')
+    require(isinstance(span, dict) and type(span.get('start')) is int and span['start'] == 254
+            and type(span.get('end')) is int and span['end'] == 255, 'incomplete v2 secondary-span evidence')
+    require(span.get('executable_sha256') == digest(evidence / 'secondary-boundary')
+            and span.get('source_sha256') == digest(evidence / 'sources/secondary_boundary.ox'),
+            'v2 secondary-span identity mismatch')
+    command = span.get('argv')
+    require(isinstance(command, list) and command and command[0] == str(compiler),
+            'v2 edge selected compiler mismatch')
+    require((evidence / 'secondary.stdout').read_bytes() == b'STF2' + bytes([1, 0, 3, 1, 2, 254, 255, 1, 0, 0, 0, 0]),
+            'v2 secondary-span output mismatch')
+    for name in ('probe-error.stdout', 'probe-error.stderr', 'secondary.stderr'):
+        require(not (evidence / name).read_bytes(), 'v2 edge emitted unexpected output')
+    return summary
 
 
 class Runner:
@@ -107,6 +156,14 @@ class Runner:
         harness = self.repo / "scripts/qualify_hir_producers.py"
         self.receipt["harness_sha256"] = digest(harness)
         self.receipt["wrapper_sha256"] = digest(Path(__file__))
+        v2_harness = self.repo / "scripts/qualify_hir_producers_v2.py"
+        edge_harness = self.repo / "scripts/verify_hir_v2_edge_controls.py"
+        v2_paths = dict(harness_sha256=v2_harness,
+                        builder_sha256=self.repo / "scripts/build_hir_producers_v2.py",
+                        source_manifest_sha256=self.repo / "fixtures/typed-frontend-v2/sources.json")
+        validate_source_manifest(v2_paths['source_manifest_sha256'])
+        self.receipt["v2_inputs"] = {key: digest(path) for key, path in v2_paths.items()}
+        self.receipt["edge_harness_sha256"] = digest(edge_harness)
         rust = self.call("rust-version", ["rustc", "-Vv"]).decode()
         require(re.search(r"^release: 1\.99\.0$", rust, re.MULTILINE), "requires qualified Rust 1.99.0")
         self.call("cargo-version", [self.args.cargo, "-V"])
@@ -137,18 +194,32 @@ class Runner:
                       "--compiler", executable, "--llvm-bin", self.args.llvm_bin,
                       "--cc", self.args.cc, "--output", evidence])
             summary = json.loads((evidence / "summary.json").read_text())
-            require(summary.get("result") == "passed" and summary.get("negative_cli_probes") == 76,
-                    "qualification summary did not complete its exact recipe")
-            require(summary.get("source_head") == initial["head"]
-                    and summary.get("compiler_sha256") == binary_hash
-                    and summary.get("harness_sha256") == self.receipt["harness_sha256"],
-                    "qualification identities differ from the selected build")
+            validate_v1_summary(summary, initial, binary_hash, self.receipt['harness_sha256'])
+            v2_evidence = self.output / (profile + '-v2-qualification')
+            self.call(profile + '-v2-qualification', [sys.executable, '-B', v2_harness,
+                      '--compiler', executable, '--llvm-bin', self.args.llvm_bin,
+                      '--output', v2_evidence])
+            expected_v2 = dict(self.receipt['v2_inputs'], source_head=initial['head'],
+                               source_tree=initial['tree'], compiler_sha256=binary_hash)
+            v2_summary = validate_v2_summary(v2_evidence, expected_v2)
+            edge_evidence = self.output / (profile + '-v2-edge-controls')
+            self.call(profile + '-v2-edge-controls', [sys.executable, '-B', edge_harness,
+                      '--compiler', executable, '--llvm-bin', self.args.llvm_bin,
+                      '--bundle', v2_evidence / 'v2-build/bundle', '--output', edge_evidence])
+            validate_edge_summary(edge_evidence, executable, v2_summary['executable_sha256']['parser'])
+            validate_v2_summary(v2_evidence, expected_v2)
             require(digest(executable) == binary_hash and digest(retained) == binary_hash,
                     "compiler changed during qualification")
             require(self.identity(profile + "-final") == initial, "source changed during qualification")
-            entry.update(complete=True, summary_sha256=digest(evidence / "summary.json"))
+            entry.update(complete=True, summary_sha256=digest(evidence / "summary.json"),
+                         v2_summary_sha256=digest(v2_evidence / 'summary.json'),
+                         v2_edge_summary_sha256=digest(edge_evidence / 'summary.json'))
             self.save()
         require(digest(harness) == self.receipt["harness_sha256"], "qualification harness changed")
+        require({key: digest(path) for key, path in v2_paths.items()} == self.receipt['v2_inputs'],
+                'v2 qualification inputs changed')
+        require(digest(edge_harness) == self.receipt['edge_harness_sha256'], 'v2 edge harness changed')
+        require(digest(Path(__file__)) == self.receipt['wrapper_sha256'], 'qualification wrapper changed')
         self.receipt["complete"] = True
         self.save()
 

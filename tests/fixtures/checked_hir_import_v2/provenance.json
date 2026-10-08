@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "description": "Actual Oxid v2 parser/static output; not synthetic semantic facts",
+  "source_sha256": "f616a9ac1025210fa1d282b06aadb8c3088b653154c64afe01d64c8d9c838ee3",
+  "observation_sha256": "09a5ec7761d7da0aed5f8c94d8e374dc577f4cd649aa964c43efa79d58f10f05",
+  "build_evidence": {
+    "schema_version": 2,
+    "compiler_sha256": "6b93eb75807545df9e593a817ea2827f06ad8135ed5c168ccc16ddd97c7ccad9",
+    "source_manifest_sha256": "08629aee51a25e05fd7bf4b121ff8a7d882683687425f4e5469f8b508618d608",
+    "executable_sha256": {
+      "parser": "87feb888ba6957ce672fd79c691e0d99216214805305d73f820546387e6c517a",
+      "static": "d4492ba390420e5c759cc87401eb52a27737aa8141f9ed84c3ea073299ad68d3"
+    },
+    "source_count": 31
+  }
+}

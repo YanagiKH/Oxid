@@ -68,8 +68,11 @@ NATIVE_STORAGE_SOURCE_SHA = '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde
 NATIVE_STORAGE_SOURCE_BYTES = 50842
 HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746'
 HIR_IMPORT_SOURCE_BYTES = 62558
-CURRENT_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
-CURRENT_SOURCE_BYTES = 63220
+PRODUCER_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
+PRODUCER_SOURCE_BYTES = 63220
+CURRENT_SOURCE_SHA = 'd294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a'
+CURRENT_SOURCE_BYTES = 63969
+FRONTEND_V2_HELPER_SHA = 'c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7'
 HIR_PRODUCER_AUTHORITY_SHA = 'b6054a027220f74d8a6c5210b033569c51ea2e1ff991c73e70488a548060806d'
 HIR_PRODUCER_AUTHORITY_BYTES = 130362
 HIR_PRODUCER_HEAD = '5871a92e8d5d6cd1995ca1b12296e8bd83da57ca'
@@ -974,9 +977,9 @@ def inverse_hir_producer_patch(inputs, patch):
                                HIR_PRODUCER_PATCH_BYTES, HIR_PRODUCER_PATHS)
 
 
-def admit_hir_producer(repo, package_bytes):
+def admit_hir_producer(repo, package_bytes, inputs):
     """Admit dependency and complete compiler membership before historical inversion."""
-    current = json.loads(package_bytes["current-source.json"])
+    current = json.loads(package_bytes["hir-producer-source.json"])
     old_raw = package_bytes["hir-import-source.json"]
     require(digest(old_raw) == HIR_IMPORT_SOURCE_SHA and len(old_raw) == HIR_IMPORT_SOURCE_BYTES,
             "unapproved HIR import source manifest")
@@ -991,8 +994,8 @@ def admit_hir_producer(repo, package_bytes):
             and authority["predecessor_source_head"] == predecessor["reviewed_source_head"] == HIR_IMPORT_HEAD
             and authority["reviewed_source_head"] == current["reviewed_source_head"] == HIR_PRODUCER_HEAD
             and authority["source_only_tree"] == current["source_only_tree"] == HIR_PRODUCER_TREE
-            and authority["current_source_sha256"] == CURRENT_SOURCE_SHA
-            and authority["current_source_bytes"] == CURRENT_SOURCE_BYTES
+            and authority["current_source_sha256"] == PRODUCER_SOURCE_SHA
+            and authority["current_source_bytes"] == PRODUCER_SOURCE_BYTES
             and authority["hir_import_source_sha256"] == current["hir_import_source_sha256"] == HIR_IMPORT_SOURCE_SHA
             and authority["hir_import_source_bytes"] == HIR_IMPORT_SOURCE_BYTES
             and authority["hir_import_authority_sha256"] == HIR_IMPORT_AUTHORITY_SHA
@@ -1008,7 +1011,7 @@ def admit_hir_producer(repo, package_bytes):
             "hir_import_source_sha256"}
     require({k: v for k, v in current.items() if k not in omit}
             == {k: v for k, v in predecessor.items() if k not in omit}, "stale HIR producer provenance")
-    inputs = check_entries(repo, current["files"])
+    check_bytes(inputs, current["files"])
     require([r["path"] for r in current["files"]] == sorted(inputs), "unordered HIR producer source inventory")
     before = {r["path"]: r for r in predecessor["files"]}
     require(set(inputs) == set(before) | set(HIR_PRODUCER_ADDITIONS), "unexpected HIR producer source membership")
@@ -1022,9 +1025,8 @@ def admit_hir_producer(repo, package_bytes):
     require(authority["current_input_identities"] == identities
             and authority["current_input_git_modes"] == [{"path": n, "mode": "100644"} for n in inputs],
             "stale HIR producer complete input identities")
-    actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [name for name in inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 249 and sorted(actual) == expected, "missing or extra compiler source member")
+    require(len(expected) == 249, "missing or extra restored producer compiler source member")
     restored, touched = inverse_hir_producer_patch(inputs, package_bytes["hir-producer-transition.patch"])
     check_bytes(restored, predecessor["files"])
     changes = []
@@ -1369,6 +1371,16 @@ def compile_fixture_paths(source, *, combined=False):
     return paths
 
 
+def load_frontend_v2(package_bytes, package=PACKAGE):
+    """Load exact pinned helper code; never retain live modules in identity receipts."""
+    require(digest(package_bytes["frontend_v2.py"]) == FRONTEND_V2_HELPER_SHA,
+            "unapproved frontend v2 source helper")
+    module = types.ModuleType("frontend_v2_source_binding")
+    module.__file__ = str(package / "frontend_v2.py")
+    exec(compile(package_bytes["frontend_v2.py"], module.__file__, "exec"), module.__dict__)
+    return module
+
+
 def preflight(repo, package=PACKAGE):
     require(sys.flags.optimize == 0 and __debug__, "optimized Python is not supported")
     package_manifest = regular(package, "package-manifest.json").read_bytes()
@@ -1600,7 +1612,11 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    producer_current, producer_inputs, producer_authority, hir_inputs, producer_touched = admit_hir_producer(repo, package_bytes)
+    frontend_v2 = load_frontend_v2(package_bytes, package)
+    v2_current, v2_inputs, v2_authority, producer_inputs, v2_touched = frontend_v2.admit(
+        repo, package_bytes, types.SimpleNamespace(**globals()))
+    references.update(check_entries(repo, list(frontend_v2.PRODUCER_CLOSURE)))
+    producer_current, producer_inputs, producer_authority, hir_inputs, producer_touched = admit_hir_producer(repo, package_bytes, producer_inputs)
     hir_current, hir_inputs, hir_authority, native_inventory_inputs, hir_touched = admit_hir_import(repo, package_bytes, hir_inputs)
     native_inventory_current = json.loads(package_bytes["native-inventory-source.json"])
     native_storage_current = json.loads(package_bytes["native-storage-source.json"])
@@ -1648,7 +1664,7 @@ def preflight(repo, package=PACKAGE):
             "stale native inventory complete input identities")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [name for name in native_inventory_inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 208 and sorted(actual) == sorted(n for n in producer_inputs if n.startswith(("src/", "native/"))),
+    require(len(expected) == 208 and sorted(actual) == sorted(n for n in v2_inputs if n.startswith(("src/", "native/"))),
             "missing or extra compiler source member")
     require(len([name for name in native_inventory_inputs if name.startswith(("src/", "native/"))
                  or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 211,
@@ -2013,7 +2029,7 @@ def preflight(repo, package=PACKAGE):
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in native_inventory_inputs if x.startswith(("src/", "native/"))]
-    require(sorted(actual) == sorted(n for n in producer_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
+    require(sorted(actual) == sorted(n for n in v2_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
         "source": entry(COMPILE_FIXTURE_SOURCE, inputs[COMPILE_FIXTURE_SOURCE]),
@@ -2166,7 +2182,8 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": producer_current, "hir_producer_authority": producer_authority, "hir_producer_touched": producer_touched,
+    return {"current": v2_current, "frontend_v2_authority": v2_authority, "frontend_v2_touched": v2_touched,
+            "hir_producer_source": producer_current, "hir_producer_inputs": producer_inputs, "hir_producer_authority": producer_authority, "hir_producer_touched": producer_touched,
             "hir_import_source": hir_current, "hir_import_inputs": hir_inputs,
             "hir_import_authority": hir_authority, "hir_import_touched": hir_touched,
             "native_inventory_source": native_inventory_current, "native_inventory_inputs": native_inventory_inputs,
@@ -2186,7 +2203,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": producer_inputs, "archived": reconstructed, "references": references,
+            "inputs": v2_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2240,6 +2257,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "frontend_v2_authority_sha256": digest(captured["package_bytes"]["frontend-v2-authority.json"]),
+            "frontend_v2_inverse_patch_sha256": digest(captured["package_bytes"]["frontend-v2-transition.patch"]),
+            "frontend_v2_inverse_touched": captured["frontend_v2_touched"],
+            "hir_producer_source_sha256": PRODUCER_SOURCE_SHA,
             "hir_producer_authority_sha256": HIR_PRODUCER_AUTHORITY_SHA,
             "hir_producer_inverse_patch_sha256": HIR_PRODUCER_PATCH_SHA,
             "hir_producer_inverse_touched": captured["hir_producer_touched"],
@@ -2503,6 +2524,9 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      frontend_v2_authority_sha256=digest(captured["package_bytes"]["frontend-v2-authority.json"]),
+                      frontend_v2_inverse_patch_sha256=digest(captured["package_bytes"]["frontend-v2-transition.patch"]),
+                      hir_producer_source_sha256=PRODUCER_SOURCE_SHA,
                       hir_producer_authority_sha256=HIR_PRODUCER_AUTHORITY_SHA,
                       hir_producer_inverse_patch_sha256=HIR_PRODUCER_PATCH_SHA,
                       hir_import_source_sha256=HIR_IMPORT_SOURCE_SHA,

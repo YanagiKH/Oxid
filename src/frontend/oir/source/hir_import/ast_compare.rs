@@ -14,7 +14,7 @@ const NONE: u8 = u8::MAX;
 // No event recursively calls the walker.
 const MAX_EVENTS: usize = 16 * MAX_ROWS + 1;
 // Event visits, row reads (at most three per row), token slots and source bytes.
-pub(super) const MAX_WORK: usize = MAX_EVENTS + 5 * MAX_ROWS + 1;
+pub(super) const MAX_WORK: usize = MAX_EVENTS + 4 * MAX_ROWS + 1 + 255;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Row {
@@ -43,7 +43,7 @@ impl Row {
         let values = [ab & 255, ab >> 8, cd & 255, cd >> 8];
         if !(1..=36).contains(&kind)
             || start > end
-            || usize::from(end) > MAX_ROWS
+            || usize::from(end) > wire.protocol().source_max()
             || next > u32::from(wire.rows)
             || values.iter().any(|&value| value > MAX_ROWS as u32)
         {
@@ -111,8 +111,8 @@ enum Event {
     Token {
         kind: Kind,
         reference: u8,
-        start: u8,
-        end: u8,
+        start: Option<u8>,
+        end: Option<u8>,
     },
     Allocate(u8),
     Function {
@@ -246,6 +246,10 @@ pub(super) fn named_bytes() -> Result<usize, Boundary> {
         size_of::<std::array::IntoIter<(&[u8; 2], Kind), 7>>(),
         copies(size_of::<usize>(), 16)?,
         copies(size_of::<u8>(), 12)?,
+        copies(size_of::<Option<u8>>(), 12)?, // Span helper inputs and destructured endpoints.
+        size_of::<[super::Protocol; 4]>(),
+        size_of::<[(Option<u8>, usize); 4]>(),
+        size_of::<[bool; 4]>(),
     ];
     let bank = size_of_val(&roles)
         .checked_mul(2)
@@ -261,6 +265,10 @@ struct Walker<'b, 's, 'w> {
     program: &'s ast::Program,
     file: crate::frontend::source::SourceFileId,
     scratch: Scratch,
+}
+// An endpoint of 255 is data, never an absent-boundary sentinel.
+fn endpoint_matches(expected: Option<u8>, actual: usize) -> bool {
+    expected.is_none_or(|expected| usize::from(expected) == actual)
 }
 fn require(condition: bool) -> Result<(), Boundary> {
     if condition {
@@ -283,8 +291,8 @@ impl Walker<'_, '_, '_> {
         self.push(Event::Token {
             kind,
             reference: 0,
-            start: NONE,
-            end: NONE,
+            start: None,
+            end: None,
         })
     }
     fn token_span(&mut self, kind: Kind, reference: u8, span: Span) -> Result<(), Boundary> {
@@ -292,11 +300,16 @@ impl Walker<'_, '_, '_> {
         self.push(Event::Token {
             kind,
             reference,
-            start: span.start as u8,
-            end: span.end as u8,
+            start: Some(span.start as u8),
+            end: Some(span.end as u8),
         })
     }
-    fn edge_token(&mut self, kind: Kind, start: u8, end: u8) -> Result<(), Boundary> {
+    fn edge_token(
+        &mut self,
+        kind: Kind,
+        start: Option<u8>,
+        end: Option<u8>,
+    ) -> Result<(), Boundary> {
         self.push(Event::Token {
             kind,
             reference: 0,
@@ -385,8 +398,8 @@ impl Walker<'_, '_, '_> {
                         token.kind == kind
                             && (reference == 0
                                 || usize::from(reference) == self.scratch.cursor + 1)
-                            && (start == NONE || usize::from(start) == token.span.start)
-                            && (end == NONE || usize::from(end) == token.span.end),
+                            && endpoint_matches(start, token.span.start)
+                            && endpoint_matches(end, token.span.end),
                     )?;
                     self.scratch.cursor += 1;
                 }
@@ -577,8 +590,8 @@ impl Walker<'_, '_, '_> {
             self.token_span(Kind::Ident, row.a, name)?;
         } else {
             require(row.a == 0)?;
-            self.edge_token(Kind::RParen, NONE, row.end)?;
-            self.edge_token(Kind::LParen, row.start, NONE)?;
+            self.edge_token(Kind::RParen, None, Some(row.end))?;
+            self.edge_token(Kind::LParen, Some(row.start), None)?;
         }
         self.push(Event::Allocate(reference))
     }
@@ -604,7 +617,7 @@ impl Walker<'_, '_, '_> {
             row: row.b,
             depth,
         })?;
-        self.edge_token(Kind::LBrace, row.start, NONE)?;
+        self.edge_token(Kind::LBrace, Some(row.start), None)?;
         self.push(Event::Allocate(reference))
     }
     fn statement(
@@ -657,7 +670,7 @@ impl Walker<'_, '_, '_> {
             self.push(Event::Allocate(reference))?;
         }
         if tag < 13 {
-            self.edge_token(Kind::Semi, NONE, row.end)?;
+            self.edge_token(Kind::Semi, None, Some(row.end))?;
         }
         match statement.kind {
             ast::StmtKind::Let {
@@ -684,7 +697,7 @@ impl Walker<'_, '_, '_> {
                 if mutable {
                     self.token(Kind::Mut)?;
                 }
-                self.edge_token(Kind::Let, row.start, NONE)?;
+                self.edge_token(Kind::Let, Some(row.start), None)?;
             }
             ast::StmtKind::Assign {
                 name,
@@ -711,7 +724,7 @@ impl Walker<'_, '_, '_> {
                 } else {
                     require(row.a == 0)?;
                 }
-                self.edge_token(Kind::Return, row.start, NONE)?;
+                self.edge_token(Kind::Return, Some(row.start), None)?;
             }
             ast::StmtKind::Break | ast::StmtKind::Continue => {
                 require(row.a == 0 && row.b == 0 && row.c == 0)?;
@@ -721,8 +734,8 @@ impl Walker<'_, '_, '_> {
                     } else {
                         Kind::Continue
                     },
-                    row.start,
-                    NONE,
+                    Some(row.start),
+                    None,
                 )?;
             }
             ast::StmtKind::If {
@@ -756,7 +769,7 @@ impl Walker<'_, '_, '_> {
                     depth: depth + 1,
                 })?;
                 self.expression_event(condition, row.a, false, 0, 1)?;
-                self.edge_token(Kind::If, row.start, NONE)?;
+                self.edge_token(Kind::If, Some(row.start), None)?;
             }
             ast::StmtKind::While { condition, body } => {
                 require(
@@ -777,7 +790,7 @@ impl Walker<'_, '_, '_> {
                     depth: depth + 1,
                 })?;
                 self.expression_event(condition, row.a, false, 0, 1)?;
-                self.edge_token(Kind::While, row.start, NONE)?;
+                self.edge_token(Kind::While, Some(row.start), None)?;
             }
             _ => return Err(Boundary::Frame),
         }
@@ -857,7 +870,7 @@ impl Walker<'_, '_, '_> {
                 )?;
                 self.token_span(Kind::Number, row.a, *digits)?;
                 if *negative {
-                    self.edge_token(Kind::Minus, row.start, NONE)?;
+                    self.edge_token(Kind::Minus, Some(row.start), None)?;
                 } else {
                     require(*digits == expression.span)?;
                 }
@@ -872,8 +885,8 @@ impl Walker<'_, '_, '_> {
             }
             ast::ExprKind::Unit => {
                 require(row.a == 0 && row.b == 0)?;
-                self.edge_token(Kind::RParen, NONE, row.end)?;
-                self.edge_token(Kind::LParen, row.start, NONE)?;
+                self.edge_token(Kind::RParen, None, Some(row.end))?;
+                self.edge_token(Kind::LParen, Some(row.start), None)?;
             }
             ast::ExprKind::Name(name) => {
                 require(row.a != 0 && row.b == 0 && *name == expression.span)?;
@@ -884,7 +897,7 @@ impl Walker<'_, '_, '_> {
                 ..
             } => {
                 require(row.a != 0 && name.start == expression.span.start)?;
-                self.edge_token(Kind::RParen, NONE, row.end)?;
+                self.edge_token(Kind::RParen, None, Some(row.end))?;
                 self.push(Event::Arguments {
                     expression: id,
                     index: 0,
@@ -896,9 +909,9 @@ impl Walker<'_, '_, '_> {
             }
             ast::ExprKind::Group(inner) => {
                 require(row.b == 0)?;
-                self.edge_token(Kind::RParen, NONE, row.end)?;
+                self.edge_token(Kind::RParen, None, Some(row.end))?;
                 self.expression_event(*inner, row.a, false, 0, depth + 1)?;
-                self.edge_token(Kind::LParen, row.start, NONE)?;
+                self.edge_token(Kind::LParen, Some(row.start), None)?;
             }
             ast::ExprKind::Negate {
                 operand,

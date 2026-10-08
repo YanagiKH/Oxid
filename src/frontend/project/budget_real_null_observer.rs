@@ -460,7 +460,9 @@ fn mismatch_calibration(operation: Operation) -> Result<MismatchFacts, SetupErro
                     dealloc(old, old_layout);
                 }
             }
-            let ordinary = unsafe { alloc(ordinary_layout) };
+            // Keep this measured allocation observable in optimized builds;
+            // an unused alloc/dealloc pair can otherwise disappear entirely.
+            let ordinary = std::hint::black_box(unsafe { alloc(ordinary_layout) });
             let ordinary_succeeded = !ordinary.is_null();
             if ordinary_succeeded {
                 unsafe { dealloc(ordinary, ordinary_layout) };

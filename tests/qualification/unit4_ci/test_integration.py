@@ -221,7 +221,7 @@ class HostPreparationControls(unittest.TestCase):
             observer = q.read(root / 'observer-source/observer-source.json')
             self.assertEqual(observer['observer_patch'], patch_identity)
             self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
-            self.assertEqual(len(observer['files']), 328)
+            self.assertEqual(len(observer['files']), 331)
             runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
             self.assertFalse((root / 'ordinary-build').exists())
             self.assertFalse((root / 'observer-build').exists())
@@ -317,7 +317,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 328)
+        self.assertEqual(len(self.manifest['files']), 331)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -1196,7 +1196,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 988)
+        self.assertEqual(report['full_archive_only'], 994)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1411,7 +1411,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 252)
+        self.assertEqual(len(compiler), 253)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,

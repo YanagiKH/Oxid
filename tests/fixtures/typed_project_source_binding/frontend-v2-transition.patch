@@ -1,0 +1,1556 @@
+diff --git a/src/frontend/hir_producer.rs b/src/frontend/hir_producer.rs
+index 23646ae..4fa0805 100644
+--- a/src/frontend/hir_producer.rs
++++ b/src/frontend/hir_producer.rs
+@@ -16,7 +16,7 @@ mod supervisor;
+ const PRODUCER_PIPELINE_ADMITTED: bool = true;
+ const OPA_BYTES: usize = 1559;
+ const OBSERVATION_BYTES: usize = 2607;
+-const SOURCE_MAX: usize = 128;
++const SOURCE_MAX: usize = 255;
+ const AST1_MAX: usize = 5 + SOURCE_MAX + OPA_BYTES;
+ 
+ #[derive(Clone, Copy)]
+@@ -112,46 +112,55 @@ pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
+         let input = source.text().as_bytes();
+         if input.len() > SOURCE_MAX || !input.is_ascii() {
+             return result
+-                .reject("experimental HIR producers require at most 128 ASCII source bytes");
++                .reject("experimental HIR producers require at most 255 ASCII source bytes");
+         }
+         let selected = match bundle::Bundle::load(directory) {
+             Ok(bundle) => bundle,
+             Err(message) => return result.reject(message),
+         };
+-        let parser = supervisor::run(
++        let protocol = selected.protocol();
++        if input.len() > protocol.source_max() {
++            return result.reject("v1 HIR producers require at most 128 ASCII source bytes");
++        }
++        let parser = supervisor::run_versioned(
+             selected.parser(),
+             selected.directory(),
+             input,
+             OPA_BYTES,
+             supervisor::DEADLINE,
++            protocol,
+         );
+         result.records[0] = Some(record("parser", selected.parser_hash(), input, &parser));
+         if !completed(&parser, input.len()) {
+             return result.reject("parser producer failed its bounded process/transport contract");
+         }
+         if parser.stdout_len != OPA_BYTES
+-            || &parser.stdout[..4] != b"OPA1"
++            || &parser.stdout[..3] != b"OPA"
++            || parser.stdout[3] != protocol.digit()
+             || parser.stdout[4..8] != [0; 4]
+             || usize::from(parser.stdout[10]) != input.len()
+         {
+-            return result
+-                .reject("parser producer did not return one complete successful OPA1 frame");
++            return result.reject(
++                "parser producer did not return one complete successful version-matched OPA frame",
++            );
+         }
+         // Transport exact original bytes and unchanged OPA1. No host-derived
+         // name/type/flow data, repaired row or substituted source is introduced.
+         let mut ast1 = [0u8; AST1_MAX];
+-        ast1[..4].copy_from_slice(b"AST1");
++        ast1[..3].copy_from_slice(b"AST");
++        ast1[3] = protocol.digit();
+         ast1[4] = input.len() as u8;
+         ast1[5..5 + input.len()].copy_from_slice(input);
+         ast1[5 + input.len()..5 + input.len() + OPA_BYTES]
+             .copy_from_slice(&parser.stdout[..OPA_BYTES]);
+         let framed = &ast1[..5 + input.len() + OPA_BYTES];
+-        let typed = supervisor::run(
++        let typed = supervisor::run_versioned(
+             selected.static_consumer(),
+             selected.directory(),
+             framed,
+             OBSERVATION_BYTES,
+             supervisor::DEADLINE,
++            protocol,
+         );
+         result.records[1] = Some(record("static", selected.static_hash(), framed, &typed));
+         if !completed(&typed, framed.len()) {
+@@ -159,9 +168,11 @@ pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
+         }
+         if typed.stdout_len != OBSERVATION_BYTES
+             || typed.stdout[..OPA_BYTES] != parser.stdout[..OPA_BYTES]
+-            || &typed.stdout[OPA_BYTES..OPA_BYTES + 5] != b"STF1\0"
++            || &typed.stdout[OPA_BYTES..OPA_BYTES + 3] != b"STF"
++            || typed.stdout[OPA_BYTES + 3] != protocol.digit()
++            || typed.stdout[OPA_BYTES + 4] != 0
+         {
+-            return result.reject("static producer did not return one complete successful unchanged OPA1/STF1 observation");
++            return result.reject("static producer did not return one complete successful unchanged version-matched OPA/STF observation");
+         }
+         let mut observation = [0u8; OBSERVATION_BYTES];
+         observation.copy_from_slice(&typed.stdout[..OBSERVATION_BYTES]);
+@@ -214,6 +225,7 @@ pub(super) fn named_bytes() -> usize {
+         + 3 * size_of::<[u8; AST1_MAX]>()
+         + 2 * size_of::<SourceOwner<'static>>()
+         + size_of::<[usize; 16]>()
++        + size_of::<[(usize, crate::frontend::hir_protocol::Protocol); 4]>()
+         + size_of::<[&[u8]; 8]>();
+     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+     {
+diff --git a/src/frontend/hir_producer/bundle.rs b/src/frontend/hir_producer/bundle.rs
+index eff87ec..e310f61 100644
+--- a/src/frontend/hir_producer/bundle.rs
++++ b/src/frontend/hir_producer/bundle.rs
+@@ -4,10 +4,12 @@
+ //! provenance claim. Only sealed memfd copies are returned for execution. The
+ //! caller must keep this owner alive until both producer processes have ended.
+ 
++use super::super::hir_protocol::Protocol;
+ use std::path::{Path, PathBuf};
+ 
+ #[derive(Debug)]
+ pub(super) struct Bundle {
++    protocol: Protocol,
+     workspace: Workspace,
+     parser: Executable,
+     static_consumer: Executable,
+@@ -35,6 +37,10 @@ impl Bundle {
+         }
+     }
+ 
++    pub(super) fn protocol(&self) -> Protocol {
++        self.protocol
++    }
++
+     pub(super) fn parser(&self) -> &Path {
+         &self.parser.path
+     }
+@@ -72,7 +78,7 @@ impl Drop for Workspace {
+ 
+ #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+ mod linux {
+-    use super::{Bundle, Executable, Workspace};
++    use super::{Bundle, Executable, Protocol, Workspace};
+     use sha2::{Digest, Sha256};
+     use std::ffi::CStr;
+     use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
+@@ -96,6 +102,7 @@ mod linux {
+ 
+     #[derive(Debug, PartialEq, Eq)]
+     struct Manifest {
++        protocol: Protocol,
+         parser: [u8; 32],
+         static_consumer: [u8; 32],
+     }
+@@ -120,6 +127,7 @@ mod linux {
+             executable_limit,
+         )?;
+         Ok(Bundle {
++            protocol: manifest.protocol,
+             workspace,
+             parser,
+             static_consumer,
+@@ -208,7 +216,9 @@ mod linux {
+ 
+     fn parse_manifest(bytes: &[u8]) -> Result<Manifest, &'static str> {
+         const INVALID: &str = "producer bundle manifest does not match the closed format";
+-        if bytes.len() != MANIFEST_LEN || !bytes.starts_with(MAGIC) {
++        if bytes.len() != MANIFEST_LEN
++            || (!bytes.starts_with(MAGIC) && !bytes.starts_with(b"OXID-HIR-PRODUCERS-2\n"))
++        {
+             return Err(INVALID);
+         }
+         let parser_line = &bytes[MAGIC.len()..MAGIC.len() + 72];
+@@ -221,6 +231,11 @@ mod linux {
+             return Err(INVALID);
+         }
+         Ok(Manifest {
++            protocol: if bytes[MAGIC.len() - 2] == b'1' {
++                Protocol::V1
++            } else {
++                Protocol::V2
++            },
+             parser: decode_hash(&parser_line[7..71]).ok_or(INVALID)?,
+             static_consumer: decode_hash(&static_line[7..71]).ok_or(INVALID)?,
+         })
+@@ -516,41 +531,69 @@ mod linux {
+         fn exact_manifest_grammar_and_known_sha256() {
+             let known = b"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+             assert_eq!(decode_hash(known).unwrap(), digest(b"abc"));
+-            let bytes = manifest_bytes(b"abc", b"other");
+-            assert_eq!(bytes.len(), MANIFEST_LEN);
+-            assert_eq!(
+-                parse_manifest(&bytes).unwrap(),
+-                Manifest {
+-                    parser: digest(b"abc"),
+-                    static_consumer: digest(b"other"),
++            for (version, protocol) in [(b'1', Protocol::V1), (b'2', Protocol::V2)] {
++                let mut bytes = manifest_bytes(b"abc", b"other");
++                bytes[MAGIC.len() - 2] = version;
++                assert_eq!(bytes.len(), MANIFEST_LEN);
++                assert_eq!(
++                    parse_manifest(&bytes).unwrap(),
++                    Manifest {
++                        protocol,
++                        parser: digest(b"abc"),
++                        static_consumer: digest(b"other"),
++                    }
++                );
++            }
++        }
++
++        #[test]
++        fn rejects_unsupported_manifest_versions() {
++            let mut bytes = manifest_bytes(b"abc", b"other");
++            for version in u8::MIN..=u8::MAX {
++                if matches!(version, b'1' | b'2') {
++                    continue;
+                 }
+-            );
++                bytes[MAGIC.len() - 2] = version;
++                assert!(parse_manifest(&bytes).is_err(), "version byte {version}");
++            }
+         }
+ 
+         #[test]
+         fn rejects_noncanonical_manifest_variants() {
+-            let valid = manifest_bytes(b"abc", b"other");
+-            let text = String::from_utf8(valid.clone()).unwrap();
+-            let variants = [
+-                text.replace("PRODUCERS-1", "PRODUCERS-2"),
+-                text.replace("parser ", "parser\t"),
+-                text.replace("parser ", "static "),
+-                text.replace("static ", "parser "),
+-                text.replace('\n', "\r\n"),
+-                text.trim_end().to_owned(),
+-                format!("{text}\n"),
+-                format!("{text}ignored"),
+-                text.replace("ba7816", "BA7816"),
+-                text.replace("ba7816", "ga7816"),
+-                text.replace("parser ", "parser ../"),
+-                text.replace("parser ", "parser  "),
+-            ];
+-            for variant in variants {
+-                assert!(parse_manifest(variant.as_bytes()).is_err(), "{variant:?}");
++            for version in *b"12" {
++                let mut valid = manifest_bytes(b"abc", b"other");
++                valid[MAGIC.len() - 2] = version;
++                let text = String::from_utf8(valid.clone()).unwrap();
++                let magic = format!("PRODUCERS-{}", char::from(version));
++                let variants = [
++                    text.replace(&magic, "PRODUCERS-"),
++                    text.replace(&magic, "PRODUCERS-01"),
++                    text.replace(&magic, "PRODUCERS-02"),
++                    text.replace(&magic, "PRODUCERS-12"),
++                    text.replace(&magic, "PRODUCERS-21"),
++                    text.replace("parser ", "parser\t"),
++                    text.replace("parser ", "static "),
++                    text.replace("static ", "parser "),
++                    text.replace('\n', "\r\n"),
++                    text.trim_end().to_owned(),
++                    format!("{text}\n"),
++                    format!("{text}ignored"),
++                    text.replace("ba7816", "BA7816"),
++                    text.replace("ba7816", "ga7816"),
++                    text.replace("d9298a", "D9298A"),
++                    text.replace("d9298a", "g9298a"),
++                    text.replace("parser ", "parser ../"),
++                    text.replace("parser ", "parser  "),
++                ];
++                for variant in variants {
++                    assert!(parse_manifest(variant.as_bytes()).is_err(), "{variant:?}");
++                }
++                for offset in [MAGIC.len() + 7, MAGIC.len() + 72 + 7] {
++                    let mut nul = valid.clone();
++                    nul[offset] = 0;
++                    assert!(parse_manifest(&nul).is_err());
++                }
+             }
+-            let mut nul = valid;
+-            nul[MAGIC.len() + 7] = 0;
+-            assert!(parse_manifest(&nul).is_err());
+         }
+ 
+         #[test]
+diff --git a/src/frontend/hir_producer/supervisor.rs b/src/frontend/hir_producer/supervisor.rs
+index e5e0c83..3b55f91 100644
+--- a/src/frontend/hir_producer/supervisor.rs
++++ b/src/frontend/hir_producer/supervisor.rs
+@@ -12,6 +12,7 @@ use std::{
+     time::{Duration, Instant},
+ };
+ 
++use crate::frontend::hir_protocol::Protocol;
+ pub(super) const INPUT_MAX: usize = 1692;
+ pub(super) const OUTPUT_MAX: usize = 2607;
+ pub(super) const STDERR_MAX: usize = 4096;
+@@ -154,15 +155,38 @@ fn drain(reader: &mut impl Read, bytes: &mut [u8], used: &mut usize) -> io::Resu
+     Ok(false)
+ }
+ 
++#[cfg(test)]
+ pub(super) fn run(
+     program: &Path,
+     directory: &Path,
+     input: &[u8],
+     output_limit: usize,
+     deadline: Duration,
++) -> Capture {
++    run_versioned(
++        program,
++        directory,
++        input,
++        output_limit,
++        deadline,
++        Protocol::V1,
++    )
++}
++
++pub(super) fn run_versioned(
++    program: &Path,
++    directory: &Path,
++    input: &[u8],
++    output_limit: usize,
++    deadline: Duration,
++    protocol: Protocol,
+ ) -> Capture {
+     let mut captured = Capture::empty();
+-    if input.len() > INPUT_MAX || output_limit > OUTPUT_MAX {
++    let input_max = match protocol {
++        Protocol::V1 => INPUT_MAX,
++        Protocol::V2 => INPUT_MAX + 127,
++    };
++    if input.len() > input_max || output_limit > OUTPUT_MAX {
+         captured.stop = Stop::InputLimit;
+         return captured;
+     }
+@@ -466,6 +490,36 @@ int main(void) {
+         assert_eq!(bundle.static_hash(), hash);
+     }
+ 
++    #[test]
++    fn producer_supervisor_v2_input_limit_preserves_v1_and_refuses_1820() {
++        let f = Fixture::new(0);
++        let input = [b'x'; 1819];
++        let old = f.run(&input, OUTPUT_MAX, DEADLINE);
++        assert_eq!(old.stop, Stop::InputLimit);
++        assert!(!old.spawned);
++        let accepted = run_versioned(
++            &f.0.join("helper"),
++            &f.0,
++            &input,
++            OUTPUT_MAX,
++            DEADLINE,
++            Protocol::V2,
++        );
++        assert_eq!(accepted.stop, Stop::Exited);
++        assert_eq!(accepted.code(), Some(0));
++        assert_eq!(&accepted.stdout[..accepted.stdout_len], &input);
++        let refused = run_versioned(
++            &f.0.join("helper"),
++            &f.0,
++            &[0; 1820],
++            OUTPUT_MAX,
++            DEADLINE,
++            Protocol::V2,
++        );
++        assert_eq!(refused.stop, Stop::InputLimit);
++        assert!(!refused.spawned);
++    }
++
+     #[test]
+     fn producer_supervisor_input_limit_and_spawn_failure_are_not_success() {
+         let f = Fixture::new(0);
+diff --git a/src/frontend/hir_protocol.rs b/src/frontend/hir_protocol.rs
+new file mode 100644
+index 0000000..9b04e2b
+--- /dev/null
++++ b/src/frontend/hir_protocol.rs
+@@ -0,0 +1,27 @@
++//! Closed scalar observation versions. Only source capacity changes in v2.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(super) enum Protocol {
++    V1,
++    V2,
++}
++impl Protocol {
++    pub(super) fn source_max(self) -> usize {
++        match self {
++            Self::V1 => 128,
++            Self::V2 => 255,
++        }
++    }
++    pub(super) fn digit(self) -> u8 {
++        match self {
++            Self::V1 => b'1',
++            Self::V2 => b'2',
++        }
++    }
++    pub(super) fn from_opa(bytes: &[u8]) -> Option<Self> {
++        match bytes.get(..4)? {
++            b"OPA1" => Some(Self::V1),
++            b"OPA2" => Some(Self::V2),
++            _ => None,
++        }
++    }
++}
+diff --git a/src/frontend/mod.rs b/src/frontend/mod.rs
+index f942977..14be50c 100644
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -8,6 +8,7 @@ mod format;
+ mod format_cli;
+ mod hir;
+ mod hir_producer;
++mod hir_protocol;
+ mod lexer;
+ mod native;
+ mod oir;
+diff --git a/src/frontend/oir/native_emit_cost.rs b/src/frontend/oir/native_emit_cost.rs
+index c456cd3..f602ba4 100644
+--- a/src/frontend/oir/native_emit_cost.rs
++++ b/src/frontend/oir/native_emit_cost.rs
+@@ -4,12 +4,14 @@
+ //! model, not a CPU, elapsed-time, allocator-backend, storage, or RSS bound.
+ //! Inputs must be the actual immutable scan dimensions and the already-owned
+ //! root display path's UTF-8 byte length. Genuine association with one verified
+-//! source of at most 128 bytes and Result policy remain caller obligations.
++//! source within the selected protocol cap and Result policy remain caller
++//! obligations. The v1 compatibility entry retains its 128-byte tariff.
+ //! No scan, path walk, emitter, owner, witness, allocation, or meter is used here.
+ //! A successful calculation grants neither native nor output admission. Its
+ //! complete named carrier inventory needs outside payment before entry, and its
+ //! body charge needs a later debit on the original meter before native entry.
+ use super::emit_work::{Dimensions, Failure};
++use crate::frontend::hir_protocol::Protocol;
+ use std::mem::{size_of, size_of_val};
+ 
+ /// Fixed work breakdown. The separately paid dimension scan is excluded.
+@@ -69,10 +71,21 @@ fn validate(dimensions: Dimensions) -> Result<(), Failure> {
+     Ok(())
+ }
+ 
+-fn diagnostic_cost(path_utf8_len: usize) -> Result<DiagnosticCost, Failure> {
++fn diagnostic_cost(path_utf8_len: usize, protocol: Protocol) -> Result<DiagnosticCost, Failure> {
+     let path = u64::try_from(path_utf8_len).map_err(|_| Failure::Overflow)?;
++    // Both source caps give at most three decimal digits for each one-based
++    // location (v2 <=256). The human byte/escape envelope is unchanged.
+     let human_bytes = add(71, mul(6, path)?)?;
+-    let render = add(4_096, mul(128, add(path, human_bytes)?)?)?;
++    // SourceFile::location searches at most B+1 line starts and counts at most
++    // B ASCII scalars. For B=255 both bounds are less than twice their v1
++    // bounds (129 entries/128 scalars); binary-search visits grow by at most
++    // one. Double the complete old fixed-location/setup allowance, retaining
++    // the separately weighted path/output work and all native dimensions.
++    let fixed_render = match protocol {
++        Protocol::V1 => 4_096,
++        Protocol::V2 => 8_192,
++    };
++    let render = add(fixed_render, mul(128, add(path, human_bytes)?)?)?;
+     let escape = mul(128, human_bytes)?;
+     Ok(DiagnosticCost {
+         human_bytes,
+@@ -125,9 +138,18 @@ fn mode_cost(dimensions: Dimensions, guards: u64, diagnostics: u64) -> Result<Mo
+ /// q merely selects max(Wu, Wg); it asserts neither an actual cycle nor native
+ /// admission. When q is false and K is zero, even usize::MAX is an irrelevant
+ /// path length: no path conversion or H/R/X term is evaluated.
++#[cfg(test)]
+ pub(in crate::frontend::oir) fn calculate(
+     dimensions: Dimensions,
+     path_utf8_len: usize,
++) -> Result<Cost, Failure> {
++    calculate_protocol(dimensions, path_utf8_len, Protocol::V1)
++}
++
++pub(in crate::frontend::oir) fn calculate_protocol(
++    dimensions: Dimensions,
++    path_utf8_len: usize,
++    protocol: Protocol,
+ ) -> Result<Cost, Failure> {
+     validate(dimensions)?;
+     let admission = add(
+@@ -147,7 +169,7 @@ pub(in crate::frontend::oir) fn calculate(
+         )?,
+     )?;
+     let message = if dimensions.maybe_cyclic || dimensions.arithmetic_failures != 0 {
+-        Some(diagnostic_cost(path_utf8_len)?)
++        Some(diagnostic_cost(path_utf8_len, protocol)?)
+     } else {
+         None
+     };
+@@ -227,7 +249,7 @@ pub(in crate::frontend::oir) fn calculate(
+     })
+ }
+ 
+-type FormulaInputs = (Dimensions, usize);
++type FormulaInputs = (Dimensions, usize, Protocol);
+ type BinaryInputs = (u64, u64);
+ 
+ /// Inventory only: distinct named source roles, without assuming stack-slot
+@@ -277,6 +299,7 @@ struct WeightedRoles<const N: usize> {
+ struct FormulaLocals {
+     dimensions: Dimensions,
+     path_utf8_len: usize,
++    protocol: Protocol,
+     admission: u64,
+     message: Option<DiagnosticCost>,
+     unguarded_mode: ModeCost,
+@@ -299,15 +322,18 @@ struct FormulaLocals {
+ 
+ #[allow(dead_code)]
+ struct DiagnosticLocals {
+-    caller_arguments: (usize,),
++    caller_arguments: (usize, Protocol),
+     caller_result: Result<DiagnosticCost, Failure>,
++    inputs: (usize, Protocol),
+     path_utf8_len: usize,
++    protocol: Protocol,
+     conversion_arguments: (usize,),
+     conversion_result: Result<u64, std::num::TryFromIntError>,
+     conversion_error: std::num::TryFromIntError,
+     mapped_result: Result<u64, Failure>,
+     path: u64,
+     human_bytes: u64,
++    fixed_render: u64,
+     render: u64,
+     escape: u64,
+     constructed: DiagnosticCost,
+@@ -463,6 +489,62 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn v2_emit_cost_prices_only_expanded_source_location_work() {
++        for path in [0, 7, 1_024, 4_096, usize::MAX] {
++            assert_eq!(
++                calculate_protocol(literal(), path, Protocol::V2),
++                calculate(literal(), path),
++            );
++        }
++        for path in [0, 7, 1_024, 4_096] {
++            let old = calculate(rich(), path).unwrap();
++            let v1 = calculate_protocol(rich(), path, Protocol::V1).unwrap();
++            let v2 = calculate_protocol(rich(), path, Protocol::V2).unwrap();
++            assert_eq!(v1, old);
++            assert_eq!((v2.admission, v2.finish), (v1.admission, v1.finish));
++            // Rich has K=1 and G+K=22. Only each human render's fixed
++            // location allowance grows: 4K renders unguarded, 2(G+K) guarded.
++            assert_eq!(v2.unguarded - v1.unguarded, 16_384);
++            assert_eq!(v2.guarded.unwrap() - v1.guarded.unwrap(), 180_224);
++            assert_eq!(v2.body - v1.body, 180_224);
++            let d1 = diagnostic_cost(path, Protocol::V1).unwrap();
++            let d2 = diagnostic_cost(path, Protocol::V2).unwrap();
++            assert_eq!((d2.human_bytes, d2.escape), (d1.human_bytes, d1.escape));
++            assert_eq!(d2.render - d1.render, 4_096);
++        }
++        if usize::BITS == 64 {
++            assert_eq!(
++                calculate_protocol(division(), usize::MAX, Protocol::V2),
++                Err(Failure::Overflow)
++            );
++            assert_eq!(
++                calculate_protocol(simple_loop(), usize::MAX, Protocol::V2),
++                Err(Failure::Overflow)
++            );
++        }
++    }
++
++    #[test]
++    fn v2_emit_diagnostic_byte_bound_covers_maximum_source_locations() {
++        use crate::frontend::{oir::RunFailure, source::SourceMap};
++        for text in [" ".repeat(255), "\n".repeat(255)] {
++            let mut sources = SourceMap::new();
++            let id = sources.add(String::new(), text);
++            let source = sources.get(id);
++            let span = source.span(255, 255);
++            for failure in [
++                RunFailure::Fuel(span),
++                RunFailure::Overflow(span),
++                RunFailure::DivisionByZero(span),
++            ] {
++                let rendered = failure.diagnostic(&sources).render_human(&sources);
++                assert!(rendered.len() <= 71);
++                assert!(rendered.ends_with(":1:256\n") || rendered.ends_with(":256:1\n"));
++            }
++        }
++    }
++
+     #[test]
+     fn disconnected_emit_cost_literal_path_is_never_evaluated() {
+         // Independent report total 580,096 less its separately paid 4,608
+diff --git a/src/frontend/oir/source/hir_import.rs b/src/frontend/oir/source/hir_import.rs
+index 328176c..fb593f0 100644
+--- a/src/frontend/oir/source/hir_import.rs
++++ b/src/frontend/oir/source/hir_import.rs
+@@ -1,5 +1,6 @@
+ //! Source-bound checked observation import. Framing alone is never authority.
+ //! The explicit experimental facade uses the complete paid Verify/Run/Emit leaves.
++use crate::frontend::hir_protocol::Protocol;
+ use crate::frontend::{
+     ast,
+     declaration_index::SourceOwner,
+@@ -52,13 +53,23 @@ struct Wire<'w> {
+     rows: u8,
+ }
+ impl<'w> Wire<'w> {
++    fn protocol(self) -> Protocol {
++        // Only decode constructs Wire after checking the complete header.
++        if self.bytes[3] == b'1' {
++            Protocol::V1
++        } else {
++            Protocol::V2
++        }
++    }
+     fn decode(bytes: &'w [u8], source_len: usize) -> Result<Self, Boundary> {
+-        if bytes.len() != SUCCESS_BYTES
+-            || &bytes[..4] != b"OPA1"
++        let protocol = Protocol::from_opa(bytes).ok_or(Boundary::Frame)?;
++        if source_len > protocol.source_max()
++            || bytes.len() != SUCCESS_BYTES
+             || bytes[4..8] != [0; 4]
+             || usize::from(bytes[8]) > MAX_ROWS
+             || usize::from(bytes[10]) != source_len
+-            || &bytes[OPA_BYTES..OPA_BYTES + 4] != b"STF1"
++            || &bytes[OPA_BYTES..OPA_BYTES + 3] != b"STF"
++            || bytes[OPA_BYTES + 3] != protocol.digit()
+             || bytes[OPA_BYTES + 4] != 0
+             || bytes[OPA_BYTES + 5] != bytes[8]
+             || bytes[OPA_BYTES + 6..OPA_BYTES + 16] != [0; 10]
+@@ -220,7 +231,8 @@ impl<'s, 'w> BoundObservation<'s, 'w> {
+         }
+         // Reject oversized equal-length inputs before inspecting their bytes.
+         // The private boundary therefore has a bounded equality/ASCII scan.
+-        if captured_source.len() > MAX_ROWS {
++        let protocol = Protocol::from_opa(bytes).unwrap_or(Protocol::V1);
++        if captured_source.len() > protocol.source_max() {
+             return Err(Boundary::Domain);
+         }
+         if captured_source != source.text().as_bytes() {
+@@ -357,10 +369,13 @@ struct ProbeFacts {
+ // the named logical-visit model reviewed separately from the old 2,690 event
+ // statistic. It includes full per-token lexical and per-number byte scans.
+ fn source_work_bound() -> Result<u64, Boundary> {
++    source_work_bound_for(Protocol::V1)
++}
++fn source_work_bound_for(protocol: Protocol) -> Result<u64, Boundary> {
+     let add = |a: u64, b: u64| a.checked_add(b).ok_or(Boundary::Overflow);
+     let mul = |a: u64, b: u64| a.checked_mul(b).ok_or(Boundary::Overflow);
+-    let b = u64::try_from(MAX_ROWS).map_err(|_| Boundary::Overflow)?;
+-    let r = b;
++    let b = u64::try_from(protocol.source_max()).map_err(|_| Boundary::Overflow)?;
++    let r = u64::try_from(MAX_ROWS).map_err(|_| Boundary::Overflow)?;
+     let t = u64::try_from(CELLS).map_err(|_| Boundary::Overflow)?;
+     let c = t;
+     let e = add(mul(16, r)?, 1)?;
+diff --git a/src/frontend/oir/source/hir_import/ast_compare.rs b/src/frontend/oir/source/hir_import/ast_compare.rs
+index dcc3350..d5fe05b 100644
+--- a/src/frontend/oir/source/hir_import/ast_compare.rs
++++ b/src/frontend/oir/source/hir_import/ast_compare.rs
+@@ -14,7 +14,7 @@ const NONE: u8 = u8::MAX;
+ // No event recursively calls the walker.
+ const MAX_EVENTS: usize = 16 * MAX_ROWS + 1;
+ // Event visits, row reads (at most three per row), token slots and source bytes.
+-pub(super) const MAX_WORK: usize = MAX_EVENTS + 5 * MAX_ROWS + 1;
++pub(super) const MAX_WORK: usize = MAX_EVENTS + 4 * MAX_ROWS + 1 + 255;
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(super) struct Row {
+@@ -43,7 +43,7 @@ impl Row {
+         let values = [ab & 255, ab >> 8, cd & 255, cd >> 8];
+         if !(1..=36).contains(&kind)
+             || start > end
+-            || usize::from(end) > MAX_ROWS
++            || usize::from(end) > wire.protocol().source_max()
+             || next > u32::from(wire.rows)
+             || values.iter().any(|&value| value > MAX_ROWS as u32)
+         {
+@@ -111,8 +111,8 @@ enum Event {
+     Token {
+         kind: Kind,
+         reference: u8,
+-        start: u8,
+-        end: u8,
++        start: Option<u8>,
++        end: Option<u8>,
+     },
+     Allocate(u8),
+     Function {
+@@ -246,6 +246,10 @@ pub(super) fn named_bytes() -> Result<usize, Boundary> {
+         size_of::<std::array::IntoIter<(&[u8; 2], Kind), 7>>(),
+         copies(size_of::<usize>(), 16)?,
+         copies(size_of::<u8>(), 12)?,
++        copies(size_of::<Option<u8>>(), 12)?, // Span helper inputs and destructured endpoints.
++        size_of::<[super::Protocol; 4]>(),
++        size_of::<[(Option<u8>, usize); 4]>(),
++        size_of::<[bool; 4]>(),
+     ];
+     let bank = size_of_val(&roles)
+         .checked_mul(2)
+@@ -262,6 +266,10 @@ struct Walker<'b, 's, 'w> {
+     file: crate::frontend::source::SourceFileId,
+     scratch: Scratch,
+ }
++// An endpoint of 255 is data, never an absent-boundary sentinel.
++fn endpoint_matches(expected: Option<u8>, actual: usize) -> bool {
++    expected.is_none_or(|expected| usize::from(expected) == actual)
++}
+ fn require(condition: bool) -> Result<(), Boundary> {
+     if condition {
+         Ok(())
+@@ -283,8 +291,8 @@ impl Walker<'_, '_, '_> {
+         self.push(Event::Token {
+             kind,
+             reference: 0,
+-            start: NONE,
+-            end: NONE,
++            start: None,
++            end: None,
+         })
+     }
+     fn token_span(&mut self, kind: Kind, reference: u8, span: Span) -> Result<(), Boundary> {
+@@ -292,11 +300,16 @@ impl Walker<'_, '_, '_> {
+         self.push(Event::Token {
+             kind,
+             reference,
+-            start: span.start as u8,
+-            end: span.end as u8,
++            start: Some(span.start as u8),
++            end: Some(span.end as u8),
+         })
+     }
+-    fn edge_token(&mut self, kind: Kind, start: u8, end: u8) -> Result<(), Boundary> {
++    fn edge_token(
++        &mut self,
++        kind: Kind,
++        start: Option<u8>,
++        end: Option<u8>,
++    ) -> Result<(), Boundary> {
+         self.push(Event::Token {
+             kind,
+             reference: 0,
+@@ -385,8 +398,8 @@ impl Walker<'_, '_, '_> {
+                         token.kind == kind
+                             && (reference == 0
+                                 || usize::from(reference) == self.scratch.cursor + 1)
+-                            && (start == NONE || usize::from(start) == token.span.start)
+-                            && (end == NONE || usize::from(end) == token.span.end),
++                            && endpoint_matches(start, token.span.start)
++                            && endpoint_matches(end, token.span.end),
+                     )?;
+                     self.scratch.cursor += 1;
+                 }
+@@ -577,8 +590,8 @@ impl Walker<'_, '_, '_> {
+             self.token_span(Kind::Ident, row.a, name)?;
+         } else {
+             require(row.a == 0)?;
+-            self.edge_token(Kind::RParen, NONE, row.end)?;
+-            self.edge_token(Kind::LParen, row.start, NONE)?;
++            self.edge_token(Kind::RParen, None, Some(row.end))?;
++            self.edge_token(Kind::LParen, Some(row.start), None)?;
+         }
+         self.push(Event::Allocate(reference))
+     }
+@@ -604,7 +617,7 @@ impl Walker<'_, '_, '_> {
+             row: row.b,
+             depth,
+         })?;
+-        self.edge_token(Kind::LBrace, row.start, NONE)?;
++        self.edge_token(Kind::LBrace, Some(row.start), None)?;
+         self.push(Event::Allocate(reference))
+     }
+     fn statement(
+@@ -657,7 +670,7 @@ impl Walker<'_, '_, '_> {
+             self.push(Event::Allocate(reference))?;
+         }
+         if tag < 13 {
+-            self.edge_token(Kind::Semi, NONE, row.end)?;
++            self.edge_token(Kind::Semi, None, Some(row.end))?;
+         }
+         match statement.kind {
+             ast::StmtKind::Let {
+@@ -684,7 +697,7 @@ impl Walker<'_, '_, '_> {
+                 if mutable {
+                     self.token(Kind::Mut)?;
+                 }
+-                self.edge_token(Kind::Let, row.start, NONE)?;
++                self.edge_token(Kind::Let, Some(row.start), None)?;
+             }
+             ast::StmtKind::Assign {
+                 name,
+@@ -711,7 +724,7 @@ impl Walker<'_, '_, '_> {
+                 } else {
+                     require(row.a == 0)?;
+                 }
+-                self.edge_token(Kind::Return, row.start, NONE)?;
++                self.edge_token(Kind::Return, Some(row.start), None)?;
+             }
+             ast::StmtKind::Break | ast::StmtKind::Continue => {
+                 require(row.a == 0 && row.b == 0 && row.c == 0)?;
+@@ -721,8 +734,8 @@ impl Walker<'_, '_, '_> {
+                     } else {
+                         Kind::Continue
+                     },
+-                    row.start,
+-                    NONE,
++                    Some(row.start),
++                    None,
+                 )?;
+             }
+             ast::StmtKind::If {
+@@ -756,7 +769,7 @@ impl Walker<'_, '_, '_> {
+                     depth: depth + 1,
+                 })?;
+                 self.expression_event(condition, row.a, false, 0, 1)?;
+-                self.edge_token(Kind::If, row.start, NONE)?;
++                self.edge_token(Kind::If, Some(row.start), None)?;
+             }
+             ast::StmtKind::While { condition, body } => {
+                 require(
+@@ -777,7 +790,7 @@ impl Walker<'_, '_, '_> {
+                     depth: depth + 1,
+                 })?;
+                 self.expression_event(condition, row.a, false, 0, 1)?;
+-                self.edge_token(Kind::While, row.start, NONE)?;
++                self.edge_token(Kind::While, Some(row.start), None)?;
+             }
+             _ => return Err(Boundary::Frame),
+         }
+@@ -857,7 +870,7 @@ impl Walker<'_, '_, '_> {
+                 )?;
+                 self.token_span(Kind::Number, row.a, *digits)?;
+                 if *negative {
+-                    self.edge_token(Kind::Minus, row.start, NONE)?;
++                    self.edge_token(Kind::Minus, Some(row.start), None)?;
+                 } else {
+                     require(*digits == expression.span)?;
+                 }
+@@ -872,8 +885,8 @@ impl Walker<'_, '_, '_> {
+             }
+             ast::ExprKind::Unit => {
+                 require(row.a == 0 && row.b == 0)?;
+-                self.edge_token(Kind::RParen, NONE, row.end)?;
+-                self.edge_token(Kind::LParen, row.start, NONE)?;
++                self.edge_token(Kind::RParen, None, Some(row.end))?;
++                self.edge_token(Kind::LParen, Some(row.start), None)?;
+             }
+             ast::ExprKind::Name(name) => {
+                 require(row.a != 0 && row.b == 0 && *name == expression.span)?;
+@@ -884,7 +897,7 @@ impl Walker<'_, '_, '_> {
+                 ..
+             } => {
+                 require(row.a != 0 && name.start == expression.span.start)?;
+-                self.edge_token(Kind::RParen, NONE, row.end)?;
++                self.edge_token(Kind::RParen, None, Some(row.end))?;
+                 self.push(Event::Arguments {
+                     expression: id,
+                     index: 0,
+@@ -896,9 +909,9 @@ impl Walker<'_, '_, '_> {
+             }
+             ast::ExprKind::Group(inner) => {
+                 require(row.b == 0)?;
+-                self.edge_token(Kind::RParen, NONE, row.end)?;
++                self.edge_token(Kind::RParen, None, Some(row.end))?;
+                 self.expression_event(*inner, row.a, false, 0, depth + 1)?;
+-                self.edge_token(Kind::LParen, row.start, NONE)?;
++                self.edge_token(Kind::LParen, Some(row.start), None)?;
+             }
+             ast::ExprKind::Negate {
+                 operand,
+diff --git a/src/frontend/oir/source/hir_import/ast_compare/tests.rs b/src/frontend/oir/source/hir_import/ast_compare/tests.rs
+index d2e864f..282291c 100644
+--- a/src/frontend/oir/source/hir_import/ast_compare/tests.rs
++++ b/src/frontend/oir/source/hir_import/ast_compare/tests.rs
+@@ -417,3 +417,12 @@ fn checked_hir_import_source_opa_complete_layouts() {
+         SCRATCH_BYTES >= size_of::<[Event; MAX_EVENTS]>() + 2 * MAX_ROWS + 6 * size_of::<usize>()
+     );
+ }
++
++#[test]
++fn checked_hir_import_v2_endpoint_255_is_compared_not_a_wildcard() {
++    assert!(endpoint_matches(Some(255), 255));
++    assert!(!endpoint_matches(Some(255), 254));
++    assert!(!endpoint_matches(Some(254), 255));
++    assert!(!endpoint_matches(Some(255), 256));
++    assert!(endpoint_matches(None, 254));
++}
+diff --git a/src/frontend/oir/source/hir_import/candidate.rs b/src/frontend/oir/source/hir_import/candidate.rs
+index 3ffbd61..37b748b 100644
+--- a/src/frontend/oir/source/hir_import/candidate.rs
++++ b/src/frontend/oir/source/hir_import/candidate.rs
+@@ -401,10 +401,11 @@ fn construct(
+         // Read only admitted metadata. This cannot stand in for the mandatory
+         // final complete() fill/order/capacity checks below.
+         let admitted = session.admitted_receipt();
+-        let plan = verify_terminal::WorkPlan::calculate_request(
++        let plan = verify_terminal::WorkPlan::calculate_request_protocol(
+             admitted.requested,
+             usize::from(syntax.bound.wire.rows),
+             context.request,
++            syntax.bound.wire.protocol(),
+         )?;
+         let charged = builder_work
+             .checked_add(admitted.helper_work)
+diff --git a/src/frontend/oir/source/hir_import/candidate/emit_terminal.rs b/src/frontend/oir/source/hir_import/candidate/emit_terminal.rs
+index 77e1195..5093abc 100644
+--- a/src/frontend/oir/source/hir_import/candidate/emit_terminal.rs
++++ b/src/frontend/oir/source/hir_import/candidate/emit_terminal.rs
+@@ -7,6 +7,7 @@ use crate::frontend::{
+     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
+     diagnostic::Diagnostic,
+     hir,
++    hir_protocol::Protocol,
+     oir::{
+         native::{emit_cost, emit_work, private_emit},
+         VerifiedProgram,
+@@ -18,12 +19,12 @@ use std::mem::{size_of, size_of_val};
+ 
+ /// Finite connection work, paid in the leaf before any new bank calculation:
+ /// inventory construction, array moves and checked summation receive 32 units
+-/// per concrete row: at most 64 outer, 94 here, 65 scan, 41 formula, 29 native,
+-/// and 29 repeated native rows = 322 rows / 10,304 units. A row's at-most-one
++/// per concrete row: at most 64 outer, 97 here, 65 scan, 41 formula, 29 native,
++/// and 29 repeated native rows = 325 rows / 10,400 units. A row's at-most-one
+ /// checked copies call plus its moves/iterator/checked addition fits that 32.
+ /// Eight fixed inventory/plan prologues receive 128 each. The remaining
+ /// fixed handlers receive 128 each: 64 terminal/path/Upper setup, 48 budget/
+-/// meter/results, and 32 artifact/drop/outer moves. Total <=29,760, below
++/// meter/results, and 32 artifact/drop/outer moves. Total <=29,856, below
+ /// 32,768. Existing common preflight work is inherited, not charged twice.
+ /// No path bytes, OIR loops, formula body, native body, allocator internals or
+ /// physical-memory claim belongs here. Re-audit these concrete bodies if changed.
+@@ -71,7 +72,13 @@ pub(super) fn run(
+     // Exact immutable owned display-path UTF-8 length, not capacity, source
+     // length, a caller length, normalized text, or a new formatted allocation.
+     let path_utf8_len = source.path().len();
+-    let cost = prepay_body(dimensions, path_utf8_len, context.work, context.origin)?;
++    let cost = prepay_body_protocol(
++        dimensions,
++        path_utf8_len,
++        syntax.bound.wire.protocol(),
++        context.work,
++        context.origin,
++    )?;
+     // The source plan included this exact native bank inside the complete F
+     // carried by the completed Session receipt. Native preflight adds it once.
+     let native_bytes = private_emit::named_bytes()?;
+@@ -105,14 +112,25 @@ pub(super) fn run(
+ 
+ /// Fixed scalar data only. This private helper creates no owner/witness and
+ /// cannot enter native emission; it keeps each debit before its paid phase.
++#[cfg(test)]
+ fn prepay_body(
+     dimensions: emit_work::Dimensions,
+     path_utf8_len: usize,
+     work: &WorkMeter,
+     origin: Span,
++) -> Result<emit_cost::Cost, emit_work::Failure> {
++    prepay_body_protocol(dimensions, path_utf8_len, Protocol::V1, work, origin)
++}
++
++fn prepay_body_protocol(
++    dimensions: emit_work::Dimensions,
++    path_utf8_len: usize,
++    protocol: Protocol,
++    work: &WorkMeter,
++    origin: Span,
+ ) -> Result<emit_cost::Cost, emit_work::Failure> {
+     emit_work::debit(work, FORMULA_WORK, origin, "private Emit formula setup")?;
+-    let cost = emit_cost::calculate(dimensions, path_utf8_len)?;
++    let cost = emit_cost::calculate_protocol(dimensions, path_utf8_len, protocol)?;
+     emit_work::debit(work, cost.body, origin, "private Emit native body")?;
+     Ok(cost)
+ }
+@@ -128,7 +146,7 @@ type Inputs<'a> = (
+     IndexLimits,
+ );
+ type DebitInputs<'a> = (&'a WorkMeter, u64, Span, &'static str);
+-type CostInputs<'a> = (emit_work::Dimensions, usize, &'a WorkMeter, Span);
++type CostInputs<'a> = (emit_work::Dimensions, usize, Protocol, &'a WorkMeter, Span);
+ 
+ /// Full real call/input/local/result roles, conservatively summed across moves
+ /// and branches. These inventory types are not runtime allocations or alternate
+@@ -178,6 +196,10 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
+         size_of::<&str>(),
+         size_of::<(&str,)>(),
+         size_of::<usize>(),
++        // Closed, source-bound protocol extraction and result/local transport.
++        size_of::<(super::super::super::Wire<'_>,)>(),
++        size_of::<Protocol>(),
++        size_of::<Protocol>(),
+         // Distinct formula setup and native-body debit calls. Reused helper
+         // internals are also completely paid by emit_work's own bank below.
+         size_of::<[DebitInputs<'_>; 2]>(),
+@@ -186,7 +208,7 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
+         size_of::<CostInputs<'_>>(),
+         size_of::<CostInputs<'_>>(),
+         size_of::<CostInputs<'_>>(),
+-        size_of::<(emit_work::Dimensions, usize)>(),
++        size_of::<(emit_work::Dimensions, usize, Protocol)>(),
+         size_of::<Result<emit_cost::Cost, emit_work::Failure>>(),
+         size_of::<Result<emit_cost::Cost, emit_work::Failure>>(),
+         size_of::<Result<emit_cost::Cost, emit_work::Failure>>(),
+@@ -343,6 +365,42 @@ mod tests {
+         assert_eq!(exact, 10_069_187);
+     }
+ 
++    #[test]
++    fn v2_emit_formula_and_body_debits_preserve_the_original_meter() {
++        let (verified, sources) = ordinary("main.ox");
++        let source = sources.get(SourceFileId(0));
++        let origin = source.span(0, 0);
++        // v1 rich body 8,713,600 plus 44 human renders * 4,096.
++        let body = 8_893_824;
++        let prior = RICH_PRIOR + 65_659 + 32_512;
++        let prefix = prior + RICH_SCAN;
++        let exact = prefix + FORMULA_WORK + body;
++        for (limit, expected_used, expected) in [
++            (
++                prefix + FORMULA_WORK - 1,
++                prefix,
++                Err(emit_work::Failure::Work),
++            ),
++            (
++                exact - 1,
++                prefix + FORMULA_WORK,
++                Err(emit_work::Failure::Work),
++            ),
++            (exact, exact, Ok(body)),
++        ] {
++            let work = WorkMeter::new(limit);
++            emit_work::debit(&work, prior, origin, "already paid v2 source/check/glue").unwrap();
++            let dimensions = emit_work::scan(&verified, RICH_UPPER, &work, origin).unwrap();
++            assert_eq!(work.used(), prefix);
++            assert_eq!(
++                prepay_body_protocol(dimensions, source.path().len(), Protocol::V2, &work, origin)
++                    .map(|cost| cost.body),
++                expected,
++            );
++            assert_eq!(work.used(), expected_used);
++        }
++    }
++
+     #[test]
+     fn denied_emit_rich_work_ceiling_includes_both_new_setup_fees() {
+         for (path_len, expected_total, fits) in
+diff --git a/src/frontend/oir/source/hir_import/candidate/verify_terminal.rs b/src/frontend/oir/source/hir_import/candidate/verify_terminal.rs
+index 09fe669..b7a86e7 100644
+--- a/src/frontend/oir/source/hir_import/candidate/verify_terminal.rs
++++ b/src/frontend/oir/source/hir_import/candidate/verify_terminal.rs
+@@ -6,6 +6,7 @@ use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, R
+ use crate::frontend::{
+     declaration_index::{IndexLimits, WorkMeter},
+     diagnostic::Diagnostic,
++    hir_protocol::Protocol,
+     oir::{
+         self, lower,
+         native::{emit_work, private_emit},
+@@ -196,20 +197,32 @@ impl WorkPlan {
+         })
+     }
+ 
++    #[cfg(test)]
+     pub(super) fn calculate_request(
+         counts: Counts,
+         rows: usize,
+         request: Request,
++    ) -> Result<Self, Failure> {
++        Self::calculate_request_protocol(counts, rows, request, Protocol::V1)
++    }
++
++    pub(super) fn calculate_request_protocol(
++        counts: Counts,
++        rows: usize,
++        request: Request,
++        protocol: Protocol,
+     ) -> Result<Self, Failure> {
+         let mut plan = Self::calculate(counts, rows)?;
+         if matches!(request, Request::Run | Request::Emit) {
+-            // Complete source/OPA admission has bounded functions and source
+-            // bytes by MAX_ROWS. Each function's identity/name check plus all
+-            // name-byte comparisons fit functions + MAX_ROWS visits; two
++            // Complete source/OPA admission bounds functions by MAX_ROWS and
++            // source bytes by the wire's closed protocol. Each function's
++            // identity/name check plus all name-byte comparisons fit
++            // functions + source_max visits; two
+             // visits cover entry/exit. 256 covers fixed checked field access.
+             // This is shared compile work, never runtime fuel.
+             let functions = u64::try_from(counts.0[1]).map_err(|_| Failure::Overflow)?;
+-            let source_bytes = u64::try_from(MAX_ROWS).map_err(|_| Failure::Overflow)?;
++            let source_bytes =
++                u64::try_from(protocol.source_max()).map_err(|_| Failure::Overflow)?;
+             plan.entry_work = mul(256, add(add(functions, source_bytes)?, 2)?)?;
+             plan.total = add(plan.total, plan.entry_work)?;
+         }
+@@ -223,13 +236,25 @@ impl WorkPlan {
+ /// candidate/canonical equality. The caller never supplies an entry ordinal.
+ /// The returned DefId is captured from the corresponding candidate function
+ /// before genuine typechecking consumes that candidate.
++#[cfg(test)]
+ pub(super) fn root_entry(
+     root: &ast::Program,
+     source: &SourceFile,
+     candidate: &hir::Program,
++) -> Result<Option<hir::DefId>, Failure> {
++    root_entry_protocol(root, source, candidate, Protocol::V1)
++}
++
++fn root_entry_protocol(
++    root: &ast::Program,
++    source: &SourceFile,
++    candidate: &hir::Program,
++    protocol: Protocol,
+ ) -> Result<Option<hir::DefId>, Failure> {
+     super::require(root.modules.is_empty() && root.imports.is_empty())?;
+-    super::require(source.text().len() <= MAX_ROWS && root.functions.len() <= MAX_ROWS)?;
++    super::require(
++        source.text().len() <= protocol.source_max() && root.functions.len() <= MAX_ROWS,
++    )?;
+     super::require(
+         root.functions.len() == candidate.functions.len()
+             && root.functions.len() == candidate.signatures.len(),
+@@ -282,7 +307,7 @@ pub(super) fn run(
+     let entry = if matches!(request, Request::Run | Request::Emit) {
+         let source_result = owner.file(ModuleId(0));
+         let source = source_result.map_err(|_| Failure::Shape)?;
+-        root_entry(root, source, &candidate)?
++        root_entry_protocol(root, source, &candidate, syntax.bound.wire.protocol())?
+     } else {
+         None
+     };
+@@ -349,7 +374,12 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
+         size_of::<Context<'_>>(),
+         size_of::<(&Context<'_>, Counts, usize, u64)>(),
+         copies(size_of::<Request>(), 4)?,
+-        copies(size_of::<(Counts, usize, Request)>(), 2)?,
++        copies(size_of::<(Counts, usize, Request, Protocol)>(), 2)?,
++        // Closed wire protocol extraction at planning and entry: receiver,
++        // returned/local enum, and source_max receiver/result transport.
++        copies(size_of::<(super::super::Wire<'_>,)>(), 2)?,
++        copies(size_of::<Protocol>(), 4)?,
++        copies(size_of::<(Protocol, usize)>(), 2)?,
+         copies(size_of::<WorkPlan>(), 5)?,
+         copies(size_of::<Result<WorkPlan, Failure>>(), 5)?,
+         copies(size_of::<Option<WorkPlan>>(), 2)?,
+@@ -393,7 +423,10 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
+         size_of::<Result<&crate::frontend::ast::Program, Box<Diagnostic>>>(),
+         // Run entry capture: complete helper arguments, fixed scan locals,
+         // source-file lookup/conversion, and helper call/return transports.
+-        copies(size_of::<(&ast::Program, &SourceFile, &hir::Program)>(), 2)?,
++        copies(
++            size_of::<(&ast::Program, &SourceFile, &hir::Program, Protocol)>(),
++            2,
++        )?,
+         size_of::<(
+             crate::frontend::declaration_index::SourceOwner<'_>,
+             ModuleId,
+@@ -464,6 +497,66 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn checked_hir_import_v2_request_work_preserves_v1_and_row_caps() {
++        let counts = Counts([2, 2, 1, 2, 11, 5, 7, 2]);
++        for request in [Request::Verify, Request::Run, Request::Emit] {
++            let old = WorkPlan::calculate_request(counts, 29, request).unwrap();
++            let v1 =
++                WorkPlan::calculate_request_protocol(counts, 29, request, Protocol::V1).unwrap();
++            let v2 =
++                WorkPlan::calculate_request_protocol(counts, 29, request, Protocol::V2).unwrap();
++            assert_eq!((old.total, old.entry_work), (v1.total, v1.entry_work));
++            assert_eq!((v2.pass_work, v2.typed_work), (v1.pass_work, v1.typed_work));
++            if matches!(request, Request::Verify) {
++                assert_eq!(v2.entry_work, 0);
++                assert_eq!(v2.total, v1.total);
++            } else {
++                assert_eq!((v1.entry_work, v2.entry_work), (33_792, 66_304));
++                assert_eq!(v2.total - v1.total, 32_512);
++            }
++        }
++        for protocol in [Protocol::V1, Protocol::V2] {
++            assert!(WorkPlan::calculate_request_protocol(
++                Counts([MAX_ROWS + 1; 8]),
++                MAX_ROWS,
++                Request::Run,
++                protocol,
++            )
++            .is_err());
++            assert!(WorkPlan::calculate_request_protocol(
++                Counts::default(),
++                MAX_ROWS + 1,
++                Request::Run,
++                protocol,
++            )
++            .is_err());
++        }
++    }
++
++    #[test]
++    fn checked_hir_import_v2_entry_projection_retains_versioned_source_cap() {
++        use crate::frontend::{lexer, parser};
++        let body = "fn main()->i32{return 0;}";
++        for length in [128, 129, 254, 255, 256] {
++            let mut sources = SourceMap::new();
++            let text = format!("{}{body}", " ".repeat(length - body.len()));
++            let id = sources.add("capacity.ox".into(), text);
++            let source = sources.get(id);
++            let root = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
++            let candidate = hir::resolve(source, &root).unwrap();
++            assert_eq!(root_entry(&root, source, &candidate).is_ok(), length <= 128);
++            for protocol in [Protocol::V1, Protocol::V2] {
++                let result = root_entry_protocol(&root, source, &candidate, protocol);
++                if length <= protocol.source_max() {
++                    assert_eq!(result, Ok(Some(hir::DefId(0))));
++                } else {
++                    assert_eq!(result, Err(Failure::Shape));
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn checked_hir_import_verify_work_and_layout_only() {
+         let rich = WorkPlan::calculate(Counts([2, 2, 1, 2, 11, 5, 7, 2]), 29).unwrap();
+diff --git a/src/frontend/oir/source/hir_import/emit_resource_tests.rs b/src/frontend/oir/source/hir_import/emit_resource_tests.rs
+index e155e44..9161ba8 100644
+--- a/src/frontend/oir/source/hir_import/emit_resource_tests.rs
++++ b/src/frontend/oir/source/hir_import/emit_resource_tests.rs
+@@ -20,8 +20,9 @@ const WIRE: &[u8] = include_bytes!(concat!(
+     env!("CARGO_MANIFEST_DIR"),
+     "/tests/fixtures/checked_hir_import/rich-success.bin"
+ ));
+-// Independently measured f44 rich main.ox endpoints, not derived from the call under test.
+-const FIXED: u64 = 138_865;
++// Independently measured rich main.ox endpoints after complete versioned
++// protocol/endpoint carriers; not derived from the call under test.
++const FIXED: u64 = 139_939;
+ const HIR_PAIR: u64 = 3_472 + 2_241;
+ const LLVM_BYTES: u64 = 14_325;
+ const WORK: u64 = 10_069_187;
+@@ -45,6 +46,15 @@ fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints() {
+     let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+     let defaults = IndexLimits::default();
+     for (limits, expected) in [
++        // The shared named-bank successor tightens v1 byte admission too.
++        // Explicitly refuse the predecessor endpoint without allocation.
++        (
++            IndexLimits {
++                scratch: 138_865,
++                ..defaults
++            },
++            Expected::SourceBytes,
++        ),
+         (
+             IndexLimits {
+                 work: 0,
+@@ -237,3 +247,90 @@ fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints() {
+         println!("HIR_IMPORT_EMIT_LONG_PATH bytes={path_bytes} private_admitted={} ordinary_bytes={} allocation={observed:?}", path_bytes == 3_365, ordinary.len());
+     }
+ }
++
++#[test]
++fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints() {
++    const TEXT2: &str = include_str!(concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/tests/fixtures/checked_hir_import_v2/source-255.txt"
++    ));
++    const WIRE2: &[u8] = include_bytes!(concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/tests/fixtures/checked_hir_import_v2/success-255.bin"
++    ));
++    assert_eq!(TEXT2.len(), 255);
++    let mut sources = SourceMap::new();
++    let id = sources.add("main.ox".into(), TEXT2.into());
++    let source = sources.get(id);
++    let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
++    let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
++    let mut allocator = Allocator::default();
++    let baseline = leaf::emit(
++        owner,
++        TEXT2.as_bytes(),
++        WIRE2,
++        &mut allocator,
++        IndexLimits::default(),
++    )
++    .unwrap();
++    assert_eq!(baseline.source_work, 190_160);
++    assert_eq!(baseline.artifact.verified.entry_work, 256 * (1 + 255 + 2));
++    let fixed = baseline.artifact.verified.candidate.allocation.fixed_bytes as u64;
++    assert_eq!(fixed, FIXED);
++    let bytes = baseline.artifact.bytes as u64;
++    let retained = (fixed + bytes).max(
++        baseline
++            .artifact
++            .verified
++            .candidate
++            .allocation
++            .affected_bytes as u64,
++    );
++    let work = baseline.total_work;
++    // Independently measured authentic v2 fixture; keep the endpoints visible.
++    assert_eq!(
++        (fixed, retained, bytes, work),
++        (139_939, 141_475, 690, 1_004_093)
++    );
++    drop(baseline);
++    let exact = IndexLimits {
++        scratch: fixed,
++        retained,
++        work,
++    };
++    let accepted = leaf::emit(
++        owner,
++        TEXT2.as_bytes(),
++        WIRE2,
++        &mut Allocator::default(),
++        exact,
++    )
++    .unwrap();
++    assert_eq!(accepted.artifact.bytes as u64, bytes);
++    assert_eq!(accepted.artifact.capacity as u64, bytes);
++    assert_eq!(accepted.total_work, work);
++    for lower in [
++        IndexLimits {
++            work: work - 1,
++            ..exact
++        },
++        IndexLimits {
++            scratch: fixed - 1,
++            ..exact
++        },
++        IndexLimits {
++            retained: exact.retained - 1,
++            ..exact
++        },
++    ] {
++        assert!(leaf::emit(
++            owner,
++            TEXT2.as_bytes(),
++            WIRE2,
++            &mut Allocator::default(),
++            lower
++        )
++        .is_err());
++    }
++    println!("HIR_IMPORT_V2 actual fixed={fixed} retained={retained} llvm={bytes} work={work}");
++}
+diff --git a/src/frontend/oir/source/hir_import/leaf.rs b/src/frontend/oir/source/hir_import/leaf.rs
+index 9cfb80d..68b1b24 100644
+--- a/src/frontend/oir/source/hir_import/leaf.rs
++++ b/src/frontend/oir/source/hir_import/leaf.rs
+@@ -1,6 +1,8 @@
+ //! Private comparison and fixed-facts Verify entries. No default caller is
+ //! connected. The experimental facade uses fixed Verify/Run facts or owned text.
+-use super::{allocation, ast_compare, candidate, source_work_bound, BoundObservation, Boundary};
++use super::{
++    allocation, ast_compare, candidate, source_work_bound_for, BoundObservation, Boundary, Protocol,
++};
+ use crate::frontend::{
+     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
+     diagnostic::Diagnostic,
+@@ -103,6 +105,10 @@ struct SourcePlan {
+ impl SourcePlan {
+     #[allow(clippy::result_large_err)] // Fixed denial facts are deliberately prepaid, never boxed.
+     fn calculate(limits: IndexLimits) -> Result<Self, Rejected> {
++        Self::calculate_for(limits, Protocol::V1)
++    }
++    #[allow(clippy::result_large_err)]
++    fn calculate_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
+         let outside_fixed_bytes = outer_named_bytes()?
+             .checked_add(ast_compare::named_bytes()?)
+             .ok_or(Boundary::Overflow)?;
+@@ -112,7 +118,7 @@ impl SourcePlan {
+             .checked_add(builder_named)
+             .and_then(|n| n.checked_add(helper_named))
+             .ok_or(Boundary::Overflow)?;
+-        let source_work = source_work_bound()?;
++        let source_work = source_work_bound_for(protocol)?;
+         let default = IndexLimits::default();
+         let bytes = u64::try_from(fixed_bytes).map_err(|_| Boundary::Overflow)?;
+         if bytes > limits.scratch.min(default.scratch)
+@@ -130,7 +136,11 @@ impl SourcePlan {
+ 
+     #[allow(clippy::result_large_err)]
+     fn calculate_verify(limits: IndexLimits) -> Result<Self, Rejected> {
+-        let mut plan = Self::calculate(limits)?;
++        Self::calculate_verify_for(limits, Protocol::V1)
++    }
++    #[allow(clippy::result_large_err)]
++    fn calculate_verify_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
++        let mut plan = Self::calculate_for(limits, protocol)?;
+         let extra = verify_outer_named_bytes()?
+             .checked_add(candidate::verify_named_bytes()?)
+             .ok_or(Boundary::Overflow)?;
+@@ -154,7 +164,11 @@ impl SourcePlan {
+ 
+     #[allow(clippy::result_large_err)]
+     fn calculate_emit(limits: IndexLimits) -> Result<Self, Rejected> {
+-        let mut plan = Self::calculate_verify(limits)?;
++        Self::calculate_emit_for(limits, Protocol::V1)
++    }
++    #[allow(clippy::result_large_err)]
++    fn calculate_emit_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
++        let mut plan = Self::calculate_verify_for(limits, protocol)?;
+         let extra = emit_outer_named_bytes()?
+             .checked_add(candidate::emit_named_bytes()?)
+             .ok_or(Boundary::Overflow)?;
+@@ -278,6 +292,7 @@ fn requested(
+     if request == candidate::Request::Emit && !candidate::EMIT_ADMITTED {
+         return Err(VerifyRejected::Disabled);
+     }
++    let protocol = Protocol::from_opa(observation).unwrap_or(Protocol::V1);
+     let (plan, work, origin) = if request == candidate::Request::Emit {
+         // Explicit unmetered, constant-time bootstrap: inspect the genuine
+         // owner's count/view, look up root file 0 to obtain its real empty span,
+@@ -291,11 +306,12 @@ fn requested(
+             .map_err(|_| Boundary::Source)?
+             .span(0, 0);
+         let work = WorkMeter::new(limits.work.min(IndexLimits::default().work));
+-        let plan = metered_emit_plan(limits, &work, origin)?;
++        let plan = metered_emit_plan_for(limits, &work, origin, protocol)?;
+         (plan, work, origin)
+     } else {
+         // Preserve Verify/Run's existing preflight/error order and work cost.
+-        let plan = SourcePlan::calculate_verify(limits).map_err(VerifyRejected::Source)?;
++        let plan =
++            SourcePlan::calculate_verify_for(limits, protocol).map_err(VerifyRejected::Source)?;
+         if owner.count() != 1 || !matches!(owner.view(), SourceView::Map(_)) {
+             return Err(Boundary::Domain.into());
+         }
+@@ -384,6 +400,15 @@ fn metered_emit_plan(
+     limits: IndexLimits,
+     work: &WorkMeter,
+     origin: Span,
++) -> Result<SourcePlan, VerifyRejected> {
++    metered_emit_plan_for(limits, work, origin, Protocol::V1)
++}
++#[allow(clippy::result_large_err)]
++fn metered_emit_plan_for(
++    limits: IndexLimits,
++    work: &WorkMeter,
++    origin: Span,
++    protocol: Protocol,
+ ) -> Result<SourcePlan, VerifyRejected> {
+     emit_work::debit(
+         work,
+@@ -399,7 +424,7 @@ fn metered_emit_plan(
+             .ok_or(Boundary::Overflow)?,
+         ..limits
+     };
+-    SourcePlan::calculate_emit(remaining).map_err(VerifyRejected::Source)
++    SourcePlan::calculate_emit_for(remaining, protocol).map_err(VerifyRejected::Source)
+ }
+ 
+ /// Not called by any production/default path. Paid controls exercise only
+@@ -414,7 +439,8 @@ pub(super) fn denied(
+ ) -> Result<Infallible, Rejected> {
+     #[cfg(test)]
+     LAST_CANDIDATE_OBSERVATION.with(|slot| slot.set(None));
+-    let plan = SourcePlan::calculate(limits)?;
++    let protocol = Protocol::from_opa(observation).unwrap_or(Protocol::V1);
++    let plan = SourcePlan::calculate_for(limits, protocol)?;
+     if owner.count() != 1 {
+         return Err(Rejected::Boundary(Boundary::Domain));
+     }
+@@ -513,6 +539,10 @@ pub(super) fn denied(
+ fn outer_named_bytes() -> Result<usize, Boundary> {
+     let copies = |n: usize, count: usize| n.checked_mul(count).ok_or(Boundary::Overflow);
+     let roles = [
++        size_of::<[Protocol; 16]>(), // Complete version-selection, call and return roles.
++        size_of::<[Option<Protocol>; 4]>(),
++        size_of::<[(IndexLimits, Protocol); 6]>(),
++        size_of::<[(IndexLimits, &WorkMeter, Span, Protocol); 3]>(),
+         size_of::<(SourceOwner<'_>, &[u8], &[u8], &mut Allocator, IndexLimits)>(),
+         size_of::<SourcePlan>(),
+         copies(size_of::<Result<SourcePlan, Rejected>>(), 3)?,
+@@ -698,6 +728,37 @@ fn emit_outer_named_bytes() -> Result<usize, Boundary> {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn checked_hir_import_v2_source_preflight_exact_and_minus_one() {
++        let plan = SourcePlan::calculate_verify_for(IndexLimits::default(), Protocol::V2).unwrap();
++        assert_eq!(plan.source_work, 190_160);
++        let exact = IndexLimits {
++            retained: plan.fixed_bytes as u64,
++            scratch: plan.fixed_bytes as u64,
++            work: plan.source_work,
++        };
++        assert!(SourcePlan::calculate_verify_for(exact, Protocol::V2).is_ok());
++        for limit in [
++            IndexLimits {
++                work: exact.work - 1,
++                ..exact
++            },
++            IndexLimits {
++                scratch: exact.scratch - 1,
++                ..exact
++            },
++            IndexLimits {
++                retained: exact.retained - 1,
++                ..exact
++            },
++        ] {
++            assert!(matches!(
++                SourcePlan::calculate_verify_for(limit, Protocol::V2),
++                Err(Rejected::Budget)
++            ));
++        }
++    }
++
+     #[test]
+     fn checked_hir_import_run_carriers_reject_predecessor_private_admissions() {
+         // Measured private predecessor envelopes. The current complete
+diff --git a/src/frontend/oir/source/hir_import/public_facade.rs b/src/frontend/oir/source/hir_import/public_facade.rs
+index 29a3a19..e114476 100644
+--- a/src/frontend/oir/source/hir_import/public_facade.rs
++++ b/src/frontend/oir/source/hir_import/public_facade.rs
+@@ -77,8 +77,8 @@ fn diagnostic(error: leaf::VerifyRejected, project: &ProjectSources) -> Vec<Diag
+         Rejected::Terminal(Terminal::Association(error))
+         | Rejected::Terminal(Terminal::Native(private_emit::Failure::Diagnostic(error))) => vec![*error],
+         Rejected::Terminal(Terminal::Oir(error)) => vec![*error.diagnostic(project.sources())],
+-        Rejected::Source(Source::Boundary(Boundary::Domain)) => refusal("experimental HIR import requires one root-only scalar source of at most 128 ASCII bytes"),
+-        Rejected::Source(Source::Boundary(Boundary::Frame)) => refusal("experimental HIR import requires an exact successful OPA1/STF1 observation"),
++        Rejected::Source(Source::Boundary(Boundary::Domain)) => refusal("experimental HIR import requires one root-only scalar ASCII source within its wire version capacity (v1: 128, v2: 255 bytes)"),
++        Rejected::Source(Source::Boundary(Boundary::Frame)) => refusal("experimental HIR import requires an exact successful version-matched OPA1/STF1 or OPA2/STF2 observation"),
+         Rejected::Source(Source::Budget)
+         | Rejected::Source(Source::Candidate(allocation::Failure::Admission))
+         | Rejected::Terminal(Terminal::Candidate(allocation::Failure::Admission))
+diff --git a/src/frontend/oir/source/hir_import/tests.rs b/src/frontend/oir/source/hir_import/tests.rs
+index 3e19103..0c47350 100644
+--- a/src/frontend/oir/source/hir_import/tests.rs
++++ b/src/frontend/oir/source/hir_import/tests.rs
+@@ -514,3 +514,20 @@ fn checked_hir_import_public_candidate_uses_genuine_project_and_stays_denied() {
+     assert_eq!(allocator.attempts, 16);
+     assert!(leaf::take_candidate_observation().is_none());
+ }
++
++#[test]
++fn checked_hir_import_v2_version_capacity_and_tariffs_are_independent() {
++    assert_eq!(source_work_bound_for(Protocol::V1).unwrap(), 124_501);
++    assert_eq!(source_work_bound_for(Protocol::V2).unwrap(), 190_160);
++    for n in [0, 128, 129, 254, 255] {
++        let mut bytes = frame(n);
++        assert_eq!(Wire::decode(&bytes, n).is_ok(), n <= 128);
++        bytes[3] = b'2';
++        assert!(Wire::decode(&bytes, n).is_err()); // Mixed OPA2/STF1.
++        bytes[OPA_BYTES + 3] = b'2';
++        assert_eq!(Wire::decode(&bytes, n).unwrap().protocol(), Protocol::V2);
++        assert!(Wire::decode(&bytes, 256).is_err());
++        bytes[3] = b'1';
++        assert!(Wire::decode(&bytes, n).is_err()); // Mixed OPA1/STF2.
++    }
++}
+diff --git a/src/frontend/project/budget_real_null_observer.rs b/src/frontend/project/budget_real_null_observer.rs
+index aa780e8..d8bb74b 100644
+--- a/src/frontend/project/budget_real_null_observer.rs
++++ b/src/frontend/project/budget_real_null_observer.rs
+@@ -460,7 +460,9 @@ fn mismatch_calibration(operation: Operation) -> Result<MismatchFacts, SetupErro
+                     dealloc(old, old_layout);
+                 }
+             }
+-            let ordinary = unsafe { alloc(ordinary_layout) };
++            // Keep this measured allocation observable in optimized builds;
++            // an unused alloc/dealloc pair can otherwise disappear entirely.
++            let ordinary = std::hint::black_box(unsafe { alloc(ordinary_layout) });
+             let ordinary_succeeded = !ordinary.is_null();
+             if ordinary_succeeded {
+                 unsafe { dealloc(ordinary, ordinary_layout) };

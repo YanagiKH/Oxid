@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import build_hir_producers_v2
 import verify_fixture_data
 import verify_repo
 
@@ -91,6 +93,10 @@ STATIC_ADDED_FILES = tuple("fixtures/typed-lexer-samples/" + name + ".ox" for na
     "ast_static_main ast_validate resolver_driver resolver_main resolver_names resolver_output "
     "static_column static_common static_main static_output static_probe static_state "
     "typed_diagnostic typed_driver typed_expression typed_main typed_output typed_statement").split())
+V2_OVERLAY_FILES = tuple("fixtures/typed-frontend-v2/" + name + ".ox" for name in (
+    "ast_input ast_output ast_static_main lexer_core parser_main parser_output "
+    "source_buffer typed_diagnostic typed_output").split())
+V2_ROOTS = ("parser_main", "ast_static_main")
 SAMPLE_PROJECTS = (
     ("tests/fixtures/bounded_enum_scanner/main.ox",
      "tests/fixtures/bounded_enum_scanner/scanner.ox"),
@@ -132,6 +138,17 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Exactly nine new language members belong to the materialized v2
+        # category. Every old language/check/run identity remains unchanged.
+        self.assertEqual(verify_repo.TYPED_OVERLAY_FILES, V2_OVERLAY_FILES)
+        self.assertEqual(verify_repo.TYPED_OVERLAY_ROOTS, V2_ROOTS)
+        self.assertEqual([name for name in language if name in V2_OVERLAY_FILES], list(V2_OVERLAY_FILES))
+        self.assertFalse(any(name in V2_OVERLAY_FILES for name, _ in check_inventory + run_inventory))
+        self.assertTrue(all(root / name not in data_sources for name in V2_OVERLAY_FILES))
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (204, 142, 75, 74, 8))
+        self.assertEqual(len(check_inventory) + len(V2_ROOTS), 144)
+        language = [name for name in language if name not in V2_OVERLAY_FILES]
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[:-5],
                          (ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY,
                           LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY))
@@ -267,6 +284,16 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
+        overlay_commands = [command for command in commands if len(command) > 2
+                            and Path(command[2]).parent.name == "typed-frontend-v2"]
+        self.assertEqual(len(overlay_commands), 2)
+        self.assertEqual([Path(command[2]).stem for command in overlay_commands], list(V2_ROOTS))
+        for command in overlay_commands:
+            self.assertEqual(command[:2], [str(Path(sys.executable).resolve()), "check"])
+            self.assertEqual(command[3:], ["--edition=typed-preview"])
+            self.assertFalse(Path(command[2]).is_relative_to(verify_repo.ROOT))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in command
+                             for name in V2_OVERLAY_FILES for command in commands))
         for relative in (STDIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY, ARTIFACT_LOAD_ENTRY,
                          LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY, PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS:
             stdin_root = str(verify_repo.ROOT / relative)
@@ -276,7 +303,8 @@ class PublishedRegistrationTests(unittest.TestCase):
                        (STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
                         ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY,
                         PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS}
-        predecessor_commands = [command for command in commands if not added_roots.intersection(command)]
+        predecessor_commands = [command for command in commands
+                                if command not in overlay_commands and not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
         self.assertEqual(sum("--edition=typed-preview" in command for command in predecessor_commands), 14)
         for members in SAMPLE_PROJECTS + (STACK_SAMPLE_MEMBERS,):
@@ -296,11 +324,55 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES)
-        self.assertIn(f"{146 + len(additional_members)} language sources, "
-                      f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS)} checks, 75 runnable programs", output.getvalue())
+        self.assertIn(f"{146 + len(additional_members) + len(V2_OVERLAY_FILES)} language sources, "
+                      f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS)} checks, "
+                      "75 runnable programs", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
                       f"{25 + len(additional_members)} typed source members / "
                       "8 typed entry runs", output.getvalue())
+        self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
+                      output.getvalue())
+
+    def test_v2_closure_matches_builder_and_checks_materialized_byte_identities(self):
+        root = verify_repo.ROOT
+        sources = verify_repo.typed_overlay_sources(root)
+        self.assertEqual(len(sources), 31)
+        overlay_paths = {root / name for name in V2_OVERLAY_FILES}
+        closure_paths = {path for path, _ in sources.values()}
+        self.assertEqual(len(closure_paths & overlay_paths), 9)
+        self.assertEqual(len(closure_paths - overlay_paths), 22)
+        self.assertTrue(closure_paths - overlay_paths <= {
+            root / name for members in verify_repo.TYPED_PROJECTS.values() for name in members})
+        # Independent declaration walk and the real v2 builder both identify
+        # the same closed source set. Neither compiler mock creates this proof.
+        pending, reached = list(V2_ROOTS), set()
+        while pending:
+            name = pending.pop()
+            if name in reached:
+                continue
+            reached.add(name)
+            pending.extend(re.findall(r"\bmod\s+([A-Za-z_]\w*)\s*;", sources[name][1].decode()))
+        self.assertEqual(reached, set(sources))
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "checked"
+            built = Path(temporary) / "built"
+            build_hir_producers_v2.materialize(built)
+            called = []
+
+            def inspect_check(command):
+                called.append(command)
+                self.assertEqual(command[1], "check")
+                self.assertEqual(command[3:], ["--edition=typed-preview"])
+                self.assertEqual({path.name for path in destination.iterdir()},
+                                 {name + ".ox" for name in sources})
+                for name, (original, body) in sources.items():
+                    self.assertEqual((destination / (name + ".ox")).read_bytes(), body)
+                    self.assertEqual(body, original.read_bytes())
+                    self.assertEqual(body, (built / (name + ".ox")).read_bytes())
+
+            with patch.object(verify_repo, "run", side_effect=inspect_check):
+                verify_repo.check_typed_overlays(Path(sys.executable), sources, destination)
+            self.assertEqual([Path(command[2]).stem for command in called], list(V2_ROOTS))
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for checkout conversion control")
     def test_git_autocrlf_preserves_frozen_bytes_and_converts_other_text(self):
@@ -591,6 +663,133 @@ class FixtureAdmissionTests(unittest.TestCase):
         except (OSError, NotImplementedError) as error:
             self.skipTest(f"symlinks unavailable: {error}")
         self.assert_no_compiler("symlink")
+
+
+class TypedOverlayAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
+        members = set(verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES)
+        members.update(name for project in verify_repo.TYPED_PROJECTS.values() for name in project)
+        members.update(V2_OVERLAY_FILES)
+        for name in members | {verify_repo.TYPED_OVERLAY_MANIFEST, "oxid.toml"}:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(verify_repo.ROOT / name, path)
+        self.manifest = self.root / verify_repo.TYPED_OVERLAY_MANIFEST
+        self.document = json.loads(self.manifest.read_bytes())
+
+    def assert_no_compiler(self, pattern):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(verify_repo, "ROOT", self.root))
+            stack.enter_context(patch.object(sys, "argv", ["verify_repo.py", sys.executable]))
+            for name in ("verify_feature_status", "verify_versions", "verify_readmes", "verify_assets",
+                         "verify_local_markdown_links"):
+                stack.enter_context(patch.object(verify_repo, name))
+            compiler = stack.enter_context(patch.object(verify_repo.subprocess, "run"))
+            formatter = stack.enter_context(patch.object(verify_repo, "verify_typed_formatter"))
+            with self.assertRaisesRegex(RuntimeError, pattern):
+                verify_repo.main()
+            compiler.assert_not_called()
+            formatter.assert_not_called()
+
+    def repinned(self, document):
+        # Reach structural/closure validation behind the immutable production
+        # identity barrier without changing any checked-in manifest or source.
+        raw = json.dumps(document).encode()
+        self.manifest.write_bytes(raw)
+        return patch.object(verify_repo, "TYPED_OVERLAY_MANIFEST_SHA256", hashlib.sha256(raw).hexdigest())
+
+    def test_manifest_is_required_even_if_entire_overlay_directory_is_absent(self):
+        shutil.rmtree(self.manifest.parent)
+        self.assert_no_compiler("missing or non-file typed overlay input")
+
+    def test_missing_manifest_with_present_overlays_fails_before_compiler(self):
+        self.manifest.unlink()
+        self.assert_no_compiler("missing or non-file typed overlay input")
+
+    def test_stale_manifest_fails_before_compiler(self):
+        self.manifest.write_bytes(self.manifest.read_bytes() + b"\n")
+        self.assert_no_compiler("typed overlay manifest digest mismatch")
+
+    def test_changed_overlay_and_shared_module_fail_before_compiler(self):
+        for name in ("source_buffer", "parser_atom"):
+            path = self.root / self.document["sources"][name]["path"]
+            original = path.read_bytes()
+            with self.subTest(name=name):
+                path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+                self.assert_no_compiler("typed overlay source identity mismatch")
+            path.write_bytes(original)
+
+    def test_missing_overlay_and_shared_module_fail_before_compiler(self):
+        for name in ("source_buffer", "parser_atom"):
+            path = self.root / self.document["sources"][name]["path"]
+            original = path.read_bytes()
+            with self.subTest(name=name):
+                path.unlink()
+                self.assert_no_compiler("missing")
+            path.write_bytes(original)
+
+    def test_every_registered_source_must_be_discovered(self):
+        sources = discover(self.root)
+        for name in self.document["sources"]:
+            excluded = self.root / self.document["sources"][name]["path"]
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, "missing from discovery"):
+                verify_repo.source_plan([source for source in sources if source != excluded], self.root)
+
+    def test_unlisted_overlay_neighbor_remains_a_legacy_check(self):
+        extra = self.manifest.parent / "unregistered.ox"
+        extra.write_bytes(b"invalid candidate\n")
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertIn((extra, False), checks)
+        self.assertNotIn(extra, entries)
+        self.assertEqual(count, 74)
+        self.assertFalse(any(path == self.root / name for path, _ in checks for name in V2_OVERLAY_FILES))
+
+    def test_overlay_cannot_also_be_a_standalone_typed_source_or_legacy_run(self):
+        for attribute in ("TYPED_SOURCE_FILES", "TYPED_CHECK_ONLY_FILES", "RUNNABLE_PACKAGE_FILES"):
+            with self.subTest(attribute=attribute), patch.object(
+                    verify_repo, attribute, getattr(verify_repo, attribute) + (V2_OVERLAY_FILES[0],)):
+                self.assert_no_compiler("typed overlay inventory overlaps")
+
+    def test_missing_import_and_unused_registration_are_rejected(self):
+        del self.document["sources"]["parser_atom"]
+        with self.repinned(self.document):
+            self.assert_no_compiler("typed overlay closure missing module: parser_atom")
+        self.document = json.loads((verify_repo.ROOT / verify_repo.TYPED_OVERLAY_MANIFEST).read_bytes())
+        original = verify_repo.ROOT / "fixtures/typed-lexer-samples/tape.ox"
+        relative = original.relative_to(verify_repo.ROOT).as_posix()
+        (self.root / relative).write_bytes(original.read_bytes())
+        self.document["sources"]["tape"] = {"path": relative,
+                                             "sha256": hashlib.sha256(original.read_bytes()).hexdigest()}
+        with self.repinned(self.document):
+            self.assert_no_compiler("typed overlay manifest has unused sources")
+
+    def test_paths_cannot_escape_the_exact_module_source_directories(self):
+        for relative in ("../source_buffer.ox", "/tmp/source_buffer.ox",
+                         "fixtures/typed-frontend-v2/../typed-frontend-v2/source_buffer.ox",
+                         "fixtures/typed-frontend-v2/source_buffer2.ox"):
+            self.document["sources"]["source_buffer"]["path"] = relative
+            with self.subTest(relative=relative), self.repinned(self.document):
+                self.assert_no_compiler("invalid typed overlay source registration")
+
+    def test_overlay_inventory_cannot_be_incomplete(self):
+        del self.document["sources"]["source_buffer"]
+        with self.repinned(self.document):
+            self.assert_no_compiler("typed overlay inventory must match")
+
+    def test_symlinked_source_is_rejected_with_matching_bytes(self):
+        path = self.root / V2_OVERLAY_FILES[0]
+        target = self.root / "elsewhere.ox"
+        target.write_bytes(path.read_bytes())
+        path.unlink()
+        try:
+            path.symlink_to(target)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+        self.assert_no_compiler("symlink in typed overlay input")
 
 
 if __name__ == "__main__":

@@ -4,12 +4,14 @@
 //! model, not a CPU, elapsed-time, allocator-backend, storage, or RSS bound.
 //! Inputs must be the actual immutable scan dimensions and the already-owned
 //! root display path's UTF-8 byte length. Genuine association with one verified
-//! source of at most 128 bytes and Result policy remain caller obligations.
+//! source within the selected protocol cap and Result policy remain caller
+//! obligations. The v1 compatibility entry retains its 128-byte tariff.
 //! No scan, path walk, emitter, owner, witness, allocation, or meter is used here.
 //! A successful calculation grants neither native nor output admission. Its
 //! complete named carrier inventory needs outside payment before entry, and its
 //! body charge needs a later debit on the original meter before native entry.
 use super::emit_work::{Dimensions, Failure};
+use crate::frontend::hir_protocol::Protocol;
 use std::mem::{size_of, size_of_val};
 
 /// Fixed work breakdown. The separately paid dimension scan is excluded.
@@ -69,10 +71,21 @@ fn validate(dimensions: Dimensions) -> Result<(), Failure> {
     Ok(())
 }
 
-fn diagnostic_cost(path_utf8_len: usize) -> Result<DiagnosticCost, Failure> {
+fn diagnostic_cost(path_utf8_len: usize, protocol: Protocol) -> Result<DiagnosticCost, Failure> {
     let path = u64::try_from(path_utf8_len).map_err(|_| Failure::Overflow)?;
+    // Both source caps give at most three decimal digits for each one-based
+    // location (v2 <=256). The human byte/escape envelope is unchanged.
     let human_bytes = add(71, mul(6, path)?)?;
-    let render = add(4_096, mul(128, add(path, human_bytes)?)?)?;
+    // SourceFile::location searches at most B+1 line starts and counts at most
+    // B ASCII scalars. For B=255 both bounds are less than twice their v1
+    // bounds (129 entries/128 scalars); binary-search visits grow by at most
+    // one. Double the complete old fixed-location/setup allowance, retaining
+    // the separately weighted path/output work and all native dimensions.
+    let fixed_render = match protocol {
+        Protocol::V1 => 4_096,
+        Protocol::V2 => 8_192,
+    };
+    let render = add(fixed_render, mul(128, add(path, human_bytes)?)?)?;
     let escape = mul(128, human_bytes)?;
     Ok(DiagnosticCost {
         human_bytes,
@@ -125,9 +138,18 @@ fn mode_cost(dimensions: Dimensions, guards: u64, diagnostics: u64) -> Result<Mo
 /// q merely selects max(Wu, Wg); it asserts neither an actual cycle nor native
 /// admission. When q is false and K is zero, even usize::MAX is an irrelevant
 /// path length: no path conversion or H/R/X term is evaluated.
+#[cfg(test)]
 pub(in crate::frontend::oir) fn calculate(
     dimensions: Dimensions,
     path_utf8_len: usize,
+) -> Result<Cost, Failure> {
+    calculate_protocol(dimensions, path_utf8_len, Protocol::V1)
+}
+
+pub(in crate::frontend::oir) fn calculate_protocol(
+    dimensions: Dimensions,
+    path_utf8_len: usize,
+    protocol: Protocol,
 ) -> Result<Cost, Failure> {
     validate(dimensions)?;
     let admission = add(
@@ -147,7 +169,7 @@ pub(in crate::frontend::oir) fn calculate(
         )?,
     )?;
     let message = if dimensions.maybe_cyclic || dimensions.arithmetic_failures != 0 {
-        Some(diagnostic_cost(path_utf8_len)?)
+        Some(diagnostic_cost(path_utf8_len, protocol)?)
     } else {
         None
     };
@@ -227,7 +249,7 @@ pub(in crate::frontend::oir) fn calculate(
     })
 }
 
-type FormulaInputs = (Dimensions, usize);
+type FormulaInputs = (Dimensions, usize, Protocol);
 type BinaryInputs = (u64, u64);
 
 /// Inventory only: distinct named source roles, without assuming stack-slot
@@ -277,6 +299,7 @@ struct WeightedRoles<const N: usize> {
 struct FormulaLocals {
     dimensions: Dimensions,
     path_utf8_len: usize,
+    protocol: Protocol,
     admission: u64,
     message: Option<DiagnosticCost>,
     unguarded_mode: ModeCost,
@@ -299,15 +322,18 @@ struct FormulaLocals {
 
 #[allow(dead_code)]
 struct DiagnosticLocals {
-    caller_arguments: (usize,),
+    caller_arguments: (usize, Protocol),
     caller_result: Result<DiagnosticCost, Failure>,
+    inputs: (usize, Protocol),
     path_utf8_len: usize,
+    protocol: Protocol,
     conversion_arguments: (usize,),
     conversion_result: Result<u64, std::num::TryFromIntError>,
     conversion_error: std::num::TryFromIntError,
     mapped_result: Result<u64, Failure>,
     path: u64,
     human_bytes: u64,
+    fixed_render: u64,
     render: u64,
     escape: u64,
     constructed: DiagnosticCost,
@@ -460,6 +486,62 @@ mod tests {
             edges: 8,
             arithmetic_failures: 1,
             maybe_cyclic: true,
+        }
+    }
+
+    #[test]
+    fn v2_emit_cost_prices_only_expanded_source_location_work() {
+        for path in [0, 7, 1_024, 4_096, usize::MAX] {
+            assert_eq!(
+                calculate_protocol(literal(), path, Protocol::V2),
+                calculate(literal(), path),
+            );
+        }
+        for path in [0, 7, 1_024, 4_096] {
+            let old = calculate(rich(), path).unwrap();
+            let v1 = calculate_protocol(rich(), path, Protocol::V1).unwrap();
+            let v2 = calculate_protocol(rich(), path, Protocol::V2).unwrap();
+            assert_eq!(v1, old);
+            assert_eq!((v2.admission, v2.finish), (v1.admission, v1.finish));
+            // Rich has K=1 and G+K=22. Only each human render's fixed
+            // location allowance grows: 4K renders unguarded, 2(G+K) guarded.
+            assert_eq!(v2.unguarded - v1.unguarded, 16_384);
+            assert_eq!(v2.guarded.unwrap() - v1.guarded.unwrap(), 180_224);
+            assert_eq!(v2.body - v1.body, 180_224);
+            let d1 = diagnostic_cost(path, Protocol::V1).unwrap();
+            let d2 = diagnostic_cost(path, Protocol::V2).unwrap();
+            assert_eq!((d2.human_bytes, d2.escape), (d1.human_bytes, d1.escape));
+            assert_eq!(d2.render - d1.render, 4_096);
+        }
+        if usize::BITS == 64 {
+            assert_eq!(
+                calculate_protocol(division(), usize::MAX, Protocol::V2),
+                Err(Failure::Overflow)
+            );
+            assert_eq!(
+                calculate_protocol(simple_loop(), usize::MAX, Protocol::V2),
+                Err(Failure::Overflow)
+            );
+        }
+    }
+
+    #[test]
+    fn v2_emit_diagnostic_byte_bound_covers_maximum_source_locations() {
+        use crate::frontend::{oir::RunFailure, source::SourceMap};
+        for text in [" ".repeat(255), "\n".repeat(255)] {
+            let mut sources = SourceMap::new();
+            let id = sources.add(String::new(), text);
+            let source = sources.get(id);
+            let span = source.span(255, 255);
+            for failure in [
+                RunFailure::Fuel(span),
+                RunFailure::Overflow(span),
+                RunFailure::DivisionByZero(span),
+            ] {
+                let rendered = failure.diagnostic(&sources).render_human(&sources);
+                assert!(rendered.len() <= 71);
+                assert!(rendered.ends_with(":1:256\n") || rendered.ends_with(":256:1\n"));
+            }
         }
     }
 

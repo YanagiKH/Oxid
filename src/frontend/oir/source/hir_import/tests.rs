@@ -514,3 +514,20 @@ fn checked_hir_import_public_candidate_uses_genuine_project_and_stays_denied() {
     assert_eq!(allocator.attempts, 16);
     assert!(leaf::take_candidate_observation().is_none());
 }
+
+#[test]
+fn checked_hir_import_v2_version_capacity_and_tariffs_are_independent() {
+    assert_eq!(source_work_bound_for(Protocol::V1).unwrap(), 124_501);
+    assert_eq!(source_work_bound_for(Protocol::V2).unwrap(), 190_160);
+    for n in [0, 128, 129, 254, 255] {
+        let mut bytes = frame(n);
+        assert_eq!(Wire::decode(&bytes, n).is_ok(), n <= 128);
+        bytes[3] = b'2';
+        assert!(Wire::decode(&bytes, n).is_err()); // Mixed OPA2/STF1.
+        bytes[OPA_BYTES + 3] = b'2';
+        assert_eq!(Wire::decode(&bytes, n).unwrap().protocol(), Protocol::V2);
+        assert!(Wire::decode(&bytes, 256).is_err());
+        bytes[3] = b'1';
+        assert!(Wire::decode(&bytes, n).is_err()); // Mixed OPA1/STF2.
+    }
+}

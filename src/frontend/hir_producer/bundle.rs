@@ -4,10 +4,12 @@
 //! provenance claim. Only sealed memfd copies are returned for execution. The
 //! caller must keep this owner alive until both producer processes have ended.
 
+use super::super::hir_protocol::Protocol;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub(super) struct Bundle {
+    protocol: Protocol,
     workspace: Workspace,
     parser: Executable,
     static_consumer: Executable,
@@ -33,6 +35,10 @@ impl Bundle {
             let _ = root;
             Err("producer bundles require Linux x86_64")
         }
+    }
+
+    pub(super) fn protocol(&self) -> Protocol {
+        self.protocol
     }
 
     pub(super) fn parser(&self) -> &Path {
@@ -72,7 +78,7 @@ impl Drop for Workspace {
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod linux {
-    use super::{Bundle, Executable, Workspace};
+    use super::{Bundle, Executable, Protocol, Workspace};
     use sha2::{Digest, Sha256};
     use std::ffi::CStr;
     use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
@@ -96,6 +102,7 @@ mod linux {
 
     #[derive(Debug, PartialEq, Eq)]
     struct Manifest {
+        protocol: Protocol,
         parser: [u8; 32],
         static_consumer: [u8; 32],
     }
@@ -120,6 +127,7 @@ mod linux {
             executable_limit,
         )?;
         Ok(Bundle {
+            protocol: manifest.protocol,
             workspace,
             parser,
             static_consumer,
@@ -208,7 +216,9 @@ mod linux {
 
     fn parse_manifest(bytes: &[u8]) -> Result<Manifest, &'static str> {
         const INVALID: &str = "producer bundle manifest does not match the closed format";
-        if bytes.len() != MANIFEST_LEN || !bytes.starts_with(MAGIC) {
+        if bytes.len() != MANIFEST_LEN
+            || (!bytes.starts_with(MAGIC) && !bytes.starts_with(b"OXID-HIR-PRODUCERS-2\n"))
+        {
             return Err(INVALID);
         }
         let parser_line = &bytes[MAGIC.len()..MAGIC.len() + 72];
@@ -221,6 +231,11 @@ mod linux {
             return Err(INVALID);
         }
         Ok(Manifest {
+            protocol: if bytes[MAGIC.len() - 2] == b'1' {
+                Protocol::V1
+            } else {
+                Protocol::V2
+            },
             parser: decode_hash(&parser_line[7..71]).ok_or(INVALID)?,
             static_consumer: decode_hash(&static_line[7..71]).ok_or(INVALID)?,
         })
@@ -516,41 +531,69 @@ mod linux {
         fn exact_manifest_grammar_and_known_sha256() {
             let known = b"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
             assert_eq!(decode_hash(known).unwrap(), digest(b"abc"));
-            let bytes = manifest_bytes(b"abc", b"other");
-            assert_eq!(bytes.len(), MANIFEST_LEN);
-            assert_eq!(
-                parse_manifest(&bytes).unwrap(),
-                Manifest {
-                    parser: digest(b"abc"),
-                    static_consumer: digest(b"other"),
+            for (version, protocol) in [(b'1', Protocol::V1), (b'2', Protocol::V2)] {
+                let mut bytes = manifest_bytes(b"abc", b"other");
+                bytes[MAGIC.len() - 2] = version;
+                assert_eq!(bytes.len(), MANIFEST_LEN);
+                assert_eq!(
+                    parse_manifest(&bytes).unwrap(),
+                    Manifest {
+                        protocol,
+                        parser: digest(b"abc"),
+                        static_consumer: digest(b"other"),
+                    }
+                );
+            }
+        }
+
+        #[test]
+        fn rejects_unsupported_manifest_versions() {
+            let mut bytes = manifest_bytes(b"abc", b"other");
+            for version in u8::MIN..=u8::MAX {
+                if matches!(version, b'1' | b'2') {
+                    continue;
                 }
-            );
+                bytes[MAGIC.len() - 2] = version;
+                assert!(parse_manifest(&bytes).is_err(), "version byte {version}");
+            }
         }
 
         #[test]
         fn rejects_noncanonical_manifest_variants() {
-            let valid = manifest_bytes(b"abc", b"other");
-            let text = String::from_utf8(valid.clone()).unwrap();
-            let variants = [
-                text.replace("PRODUCERS-1", "PRODUCERS-2"),
-                text.replace("parser ", "parser\t"),
-                text.replace("parser ", "static "),
-                text.replace("static ", "parser "),
-                text.replace('\n', "\r\n"),
-                text.trim_end().to_owned(),
-                format!("{text}\n"),
-                format!("{text}ignored"),
-                text.replace("ba7816", "BA7816"),
-                text.replace("ba7816", "ga7816"),
-                text.replace("parser ", "parser ../"),
-                text.replace("parser ", "parser  "),
-            ];
-            for variant in variants {
-                assert!(parse_manifest(variant.as_bytes()).is_err(), "{variant:?}");
+            for version in *b"12" {
+                let mut valid = manifest_bytes(b"abc", b"other");
+                valid[MAGIC.len() - 2] = version;
+                let text = String::from_utf8(valid.clone()).unwrap();
+                let magic = format!("PRODUCERS-{}", char::from(version));
+                let variants = [
+                    text.replace(&magic, "PRODUCERS-"),
+                    text.replace(&magic, "PRODUCERS-01"),
+                    text.replace(&magic, "PRODUCERS-02"),
+                    text.replace(&magic, "PRODUCERS-12"),
+                    text.replace(&magic, "PRODUCERS-21"),
+                    text.replace("parser ", "parser\t"),
+                    text.replace("parser ", "static "),
+                    text.replace("static ", "parser "),
+                    text.replace('\n', "\r\n"),
+                    text.trim_end().to_owned(),
+                    format!("{text}\n"),
+                    format!("{text}ignored"),
+                    text.replace("ba7816", "BA7816"),
+                    text.replace("ba7816", "ga7816"),
+                    text.replace("d9298a", "D9298A"),
+                    text.replace("d9298a", "g9298a"),
+                    text.replace("parser ", "parser ../"),
+                    text.replace("parser ", "parser  "),
+                ];
+                for variant in variants {
+                    assert!(parse_manifest(variant.as_bytes()).is_err(), "{variant:?}");
+                }
+                for offset in [MAGIC.len() + 7, MAGIC.len() + 72 + 7] {
+                    let mut nul = valid.clone();
+                    nul[offset] = 0;
+                    assert!(parse_manifest(&nul).is_err());
+                }
             }
-            let mut nul = valid;
-            nul[MAGIC.len() + 7] = 0;
-            assert!(parse_manifest(&nul).is_err());
         }
 
         #[test]

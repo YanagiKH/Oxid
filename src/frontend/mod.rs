@@ -8,6 +8,7 @@ mod format;
 mod format_cli;
 mod hir;
 mod hir_producer;
+mod hir_protocol;
 mod lexer;
 mod native;
 mod oir;

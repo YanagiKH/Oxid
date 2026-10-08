@@ -36,8 +36,20 @@ class PrivacyCheckoutTests(unittest.TestCase):
         expected = tuple(f'tests/fixtures/checked_hir_import/{stem}-{suffix}'
                          for stem in stems for suffix in ('source.txt', 'success.bin'))
         self.assertEqual(privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES, expected)
-        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 64)
-        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 64)
+        self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 66)
+        self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 66)
+
+    def test_exact_v2_compile_time_fixture_roster(self):
+        expected = (
+            "tests/fixtures/checked_hir_import_v2/source-255.txt",
+            "tests/fixtures/checked_hir_import_v2/success-255.bin",
+        )
+        self.assertEqual(privacy.HIR_IMPORT_V2_COMPILE_TIME_FIXTURES, expected)
+        includer = ROOT / "src/frontend/oir/source/hir_import/emit_resource_tests.rs"
+        references = re.findall(r'"(/tests/fixtures/checked_hir_import_v2/[^"\n]+)"', includer.read_text())
+        self.assertEqual(tuple(name.lstrip('/') for name in references), expected)
+        self.assertEqual(len((ROOT / expected[0]).read_bytes()), 255)
+        self.assertEqual(len((ROOT / expected[1]).read_bytes()), 2607)
 
     def test_materialized_checkout_has_exact_fixture_bytes_and_all_includes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -79,9 +91,10 @@ class PrivacyCheckoutTests(unittest.TestCase):
                         self.assertIn(relative, privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES)
                         self.assertTrue((checkout / relative).is_file(), relative)
                 count += len(literal) + len(rooted) + len(dynamic)
-            # 61 predecessor includes plus 60 explicit import includes/macro
-            # definitions. Real cfg(test) compilation checks their expansion.
-            self.assertEqual(count, 121)
+            # 61 predecessor includes, 60 original import includes/macro
+            # definitions, and two explicit v2 endpoint fixtures. Real cfg(test)
+            # compilation checks their expansion without expanding probe scope.
+            self.assertEqual(count, 123)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

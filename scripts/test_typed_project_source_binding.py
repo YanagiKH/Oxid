@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 327)
+        self.assertEqual(len(captured["inputs"]), 330)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,22 +107,71 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_frontend_v2_identity_receipt_rechecks_without_live_module_state(self):
+        binding.assert_unchanged(self.repo, self.captured, self.package)
+        self.assertEqual(binding.preflight(self.repo, self.package), self.captured)
+        self.assertNotIn("frontend_v2_helper", self.captured)
+
+    def test_frontend_v2_exact_inverse_forward_and_frozen_producer(self):
+        helper = binding.load_frontend_v2(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["frontend-v2-transition.patch"]
+        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        self.assertEqual(restored, self.captured["hir_producer_inputs"])
+        self.assertEqual(len(restored), 327)
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["hir-producer-source.json"]), binding.PRODUCER_SOURCE_SHA)
+        source = self.root / "forward-v2"
+        binding.materialize(source, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "frontend-v2-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for row in helper.FIXTURES:
+            target = source / row["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(self.captured["inputs"][row["path"]])
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        for wrong in (restored, self.captured["hir_import_inputs"], self.captured["archived"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(wrong, patch_bytes, binding)
+
+    def test_frontend_v2_new_inputs_and_predecessor_are_closed(self):
+        helper = binding.load_frontend_v2(self.captured["package_bytes"], self.package)
+        for name in ("src/frontend/hir_protocol.rs", *(row["path"] for row in helper.FIXTURES)):
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                if replacement is None: path.unlink()
+                else: path.write_bytes(replacement)
+                with patch.object(binding, "inverse_hir_producer_patch", side_effect=AssertionError("historical inverse ran")):
+                    self.rejects("missing regular input" if replacement is None else "changed input")
+                path.write_bytes(original)
+        for name, error in (("hir-producer-source.json", "unapproved HIR producer source manifest"),
+                            ("frontend-v2-authority.json", "stale frontend v2 authority"),
+                            ("frontend-v2-transition.patch", "wrong transition patch"),
+                            ("frontend_v2.py", "unapproved frontend v2 source helper")):
+            path=self.package/name; original=path.read_bytes();path.write_bytes(original+b"\n")
+            self.rehash_package()
+            self.rejects_before_materialization(error)
+            path.write_bytes(original);self.rehash_package()
+
     def test_producer_inverse_restores_exact_hir_and_dependency_closure(self):
         restored, touched = binding.inverse_hir_producer_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["hir-producer-transition.patch"])
+            self.captured["hir_producer_inputs"], self.captured["package_bytes"]["hir-producer-transition.patch"])
         self.assertEqual(restored, self.captured["hir_import_inputs"])
         self.assertEqual(touched, list(binding.HIR_PRODUCER_PATHS))
-        self.assertEqual((len(self.captured["inputs"]), len(restored), len(touched)), (327, 324, 12))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored), {
+        self.assertEqual((len(self.captured["hir_producer_inputs"]), len(restored), len(touched)), (327, 324, 12))
+        self.assertEqual(set(self.captured["hir_producer_inputs"]) - set(restored), {
             "src/frontend/hir_producer.rs", "src/frontend/hir_producer/bundle.rs",
             "src/frontend/hir_producer/supervisor.rs"})
-        self.assertEqual(len([n for n in self.captured["inputs"] if n.startswith(("src/", "native/"))]), 249)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], binding.HIR_PRODUCER_HEAD)
-        self.assertEqual(self.captured["current"]["source_only_tree"], binding.HIR_PRODUCER_TREE)
+        self.assertEqual(len([n for n in self.captured["hir_producer_inputs"] if n.startswith(("src/", "native/"))]), 249)
+        self.assertEqual(self.captured["hir_producer_source"]["reviewed_source_head"], binding.HIR_PRODUCER_HEAD)
+        self.assertEqual(self.captured["hir_producer_source"]["source_only_tree"], binding.HIR_PRODUCER_TREE)
         for name in ("Cargo.toml", "Cargo.lock"):
-            self.assertNotEqual(self.captured["inputs"][name], restored[name])
+            self.assertNotEqual(self.captured["hir_producer_inputs"][name], restored[name])
         self.assertEqual(binding.digest(self.captured["package_bytes"]["hir-import-source.json"]),
                          "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746")
+
 
     def test_producer_forward_patch_recreates_exact_current(self):
         source = self.root / "forward-producer"
@@ -132,7 +181,8 @@ class SourceBindingTests(unittest.TestCase):
                                      "apply", *extra, str(self.package / "hir-producer-transition.patch")],
                                     cwd=source, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        binding.check_entries(source, self.captured["hir_producer_source"]["files"], exact=True)
+
 
     def test_producer_dependencies_and_modules_reject_before_inverse(self):
         for name in ("Cargo.toml", "Cargo.lock", *binding.HIR_PRODUCER_ADDITIONS):
@@ -2545,7 +2595,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (327, 185, 185, 133, 129, 117))
+                         (330, 185, 185, 133, 129, 117))
         self.assertEqual(plan["native_storage_source_members"], 264)
         self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
         self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)

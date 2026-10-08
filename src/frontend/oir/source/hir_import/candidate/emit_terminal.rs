@@ -7,6 +7,7 @@ use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
     diagnostic::Diagnostic,
     hir,
+    hir_protocol::Protocol,
     oir::{
         native::{emit_cost, emit_work, private_emit},
         VerifiedProgram,
@@ -18,12 +19,12 @@ use std::mem::{size_of, size_of_val};
 
 /// Finite connection work, paid in the leaf before any new bank calculation:
 /// inventory construction, array moves and checked summation receive 32 units
-/// per concrete row: at most 64 outer, 94 here, 65 scan, 41 formula, 29 native,
-/// and 29 repeated native rows = 322 rows / 10,304 units. A row's at-most-one
+/// per concrete row: at most 64 outer, 97 here, 65 scan, 41 formula, 29 native,
+/// and 29 repeated native rows = 325 rows / 10,400 units. A row's at-most-one
 /// checked copies call plus its moves/iterator/checked addition fits that 32.
 /// Eight fixed inventory/plan prologues receive 128 each. The remaining
 /// fixed handlers receive 128 each: 64 terminal/path/Upper setup, 48 budget/
-/// meter/results, and 32 artifact/drop/outer moves. Total <=29,760, below
+/// meter/results, and 32 artifact/drop/outer moves. Total <=29,856, below
 /// 32,768. Existing common preflight work is inherited, not charged twice.
 /// No path bytes, OIR loops, formula body, native body, allocator internals or
 /// physical-memory claim belongs here. Re-audit these concrete bodies if changed.
@@ -71,7 +72,13 @@ pub(super) fn run(
     // Exact immutable owned display-path UTF-8 length, not capacity, source
     // length, a caller length, normalized text, or a new formatted allocation.
     let path_utf8_len = source.path().len();
-    let cost = prepay_body(dimensions, path_utf8_len, context.work, context.origin)?;
+    let cost = prepay_body_protocol(
+        dimensions,
+        path_utf8_len,
+        syntax.bound.wire.protocol(),
+        context.work,
+        context.origin,
+    )?;
     // The source plan included this exact native bank inside the complete F
     // carried by the completed Session receipt. Native preflight adds it once.
     let native_bytes = private_emit::named_bytes()?;
@@ -105,14 +112,25 @@ pub(super) fn run(
 
 /// Fixed scalar data only. This private helper creates no owner/witness and
 /// cannot enter native emission; it keeps each debit before its paid phase.
+#[cfg(test)]
 fn prepay_body(
     dimensions: emit_work::Dimensions,
     path_utf8_len: usize,
     work: &WorkMeter,
     origin: Span,
 ) -> Result<emit_cost::Cost, emit_work::Failure> {
+    prepay_body_protocol(dimensions, path_utf8_len, Protocol::V1, work, origin)
+}
+
+fn prepay_body_protocol(
+    dimensions: emit_work::Dimensions,
+    path_utf8_len: usize,
+    protocol: Protocol,
+    work: &WorkMeter,
+    origin: Span,
+) -> Result<emit_cost::Cost, emit_work::Failure> {
     emit_work::debit(work, FORMULA_WORK, origin, "private Emit formula setup")?;
-    let cost = emit_cost::calculate(dimensions, path_utf8_len)?;
+    let cost = emit_cost::calculate_protocol(dimensions, path_utf8_len, protocol)?;
     emit_work::debit(work, cost.body, origin, "private Emit native body")?;
     Ok(cost)
 }
@@ -128,7 +146,7 @@ type Inputs<'a> = (
     IndexLimits,
 );
 type DebitInputs<'a> = (&'a WorkMeter, u64, Span, &'static str);
-type CostInputs<'a> = (emit_work::Dimensions, usize, &'a WorkMeter, Span);
+type CostInputs<'a> = (emit_work::Dimensions, usize, Protocol, &'a WorkMeter, Span);
 
 /// Full real call/input/local/result roles, conservatively summed across moves
 /// and branches. These inventory types are not runtime allocations or alternate
@@ -178,6 +196,10 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<&str>(),
         size_of::<(&str,)>(),
         size_of::<usize>(),
+        // Closed, source-bound protocol extraction and result/local transport.
+        size_of::<(super::super::super::Wire<'_>,)>(),
+        size_of::<Protocol>(),
+        size_of::<Protocol>(),
         // Distinct formula setup and native-body debit calls. Reused helper
         // internals are also completely paid by emit_work's own bank below.
         size_of::<[DebitInputs<'_>; 2]>(),
@@ -186,7 +208,7 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<CostInputs<'_>>(),
         size_of::<CostInputs<'_>>(),
         size_of::<CostInputs<'_>>(),
-        size_of::<(emit_work::Dimensions, usize)>(),
+        size_of::<(emit_work::Dimensions, usize, Protocol)>(),
         size_of::<Result<emit_cost::Cost, emit_work::Failure>>(),
         size_of::<Result<emit_cost::Cost, emit_work::Failure>>(),
         size_of::<Result<emit_cost::Cost, emit_work::Failure>>(),
@@ -341,6 +363,42 @@ mod tests {
             assert_eq!(work.used(), expected_used);
         }
         assert_eq!(exact, 10_069_187);
+    }
+
+    #[test]
+    fn v2_emit_formula_and_body_debits_preserve_the_original_meter() {
+        let (verified, sources) = ordinary("main.ox");
+        let source = sources.get(SourceFileId(0));
+        let origin = source.span(0, 0);
+        // v1 rich body 8,713,600 plus 44 human renders * 4,096.
+        let body = 8_893_824;
+        let prior = RICH_PRIOR + 65_659 + 32_512;
+        let prefix = prior + RICH_SCAN;
+        let exact = prefix + FORMULA_WORK + body;
+        for (limit, expected_used, expected) in [
+            (
+                prefix + FORMULA_WORK - 1,
+                prefix,
+                Err(emit_work::Failure::Work),
+            ),
+            (
+                exact - 1,
+                prefix + FORMULA_WORK,
+                Err(emit_work::Failure::Work),
+            ),
+            (exact, exact, Ok(body)),
+        ] {
+            let work = WorkMeter::new(limit);
+            emit_work::debit(&work, prior, origin, "already paid v2 source/check/glue").unwrap();
+            let dimensions = emit_work::scan(&verified, RICH_UPPER, &work, origin).unwrap();
+            assert_eq!(work.used(), prefix);
+            assert_eq!(
+                prepay_body_protocol(dimensions, source.path().len(), Protocol::V2, &work, origin)
+                    .map(|cost| cost.body),
+                expected,
+            );
+            assert_eq!(work.used(), expected_used);
+        }
     }
 
     #[test]

@@ -25,7 +25,7 @@ controls = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(controls)
 c = stdin_gate.controls
 require = c.require
-REVIEWED_SOURCE_SHA256 = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
+REVIEWED_SOURCE_SHA256 = 'd294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a'
 
 
 def admit_source_receipt(previous, head, tree, event_sha, manifest_id, reviewed):
