@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -349,12 +350,12 @@ class BoundedEnumNativeControls(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         original = repo / "tests/fixtures/typed_project_source_binding/current-source.json"
         manifest = gate.read_reviewed_manifest(original)
-        self.assertEqual(len(manifest["files"]), 340)
+        self.assertEqual(len(manifest["files"]), 345)
         reduced = dict(manifest, files=[row for row in manifest["files"]
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
-        self.assertEqual(len(reduced["files"]), 257)
-        self.assertEqual(reduced["reviewed_source_head"], "c15465acb90e9f8bb18f5291a8931f5d5bbc6edb")
+        self.assertEqual(len(reduced["files"]), 262)
+        self.assertEqual(reduced["reviewed_source_head"], "41c73d527f5518e09877544fa5820f3129f55b42")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")
@@ -368,6 +369,42 @@ class BoundedEnumNativeControls(unittest.TestCase):
             candidate.write_bytes(b"not JSON")
             with self.assertRaisesRegex(ValueError, "approved authority"):
                 gate.read_reviewed_manifest(candidate)
+
+    def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
+        import verify_bounded_stdin_native as stdin_gate
+        import verify_bounded_stdout_native as stdout_gate
+        expected = "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
+        self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
+                          stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
+        repo = Path(__file__).resolve().parents[1]
+        workflow = (repo / ".github/workflows/ci.yml").read_text()
+        self.assertEqual(re.findall(r"--source-manifest-sha256 ([0-9a-f]{64})", workflow),
+                         [expected, expected])
+        for script in ("verify_bounded_stdin_native.py", "verify_bounded_stdout_native.py"):
+            invocation = workflow.split("python3 -B scripts/" + script, 1)[1].split("\n      - name:", 1)[0]
+            self.assertEqual(invocation.count("--source-manifest-sha256 " + expected), 1)
+
+    def test_stale_predecessor_and_rehashed_same_count_manifest_remain_unapproved(self):
+        repo = Path(__file__).resolve().parents[1]
+        package = repo / "tests/fixtures/typed_project_source_binding"
+        current = gate.read_reviewed_manifest(package / "current-source.json")
+        stale = (package / "producer-diagnostic-source.json").read_bytes()
+        self.assertEqual(hashlib.sha256(stale).hexdigest(),
+                         "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
+        forged_head = dict(current, reviewed_source_head="c15465acb90e9f8bb18f5291a8931f5d5bbc6edb")
+        forged_rows = dict(current, files=[dict(row) for row in current["files"]])
+        forged_rows["files"][0]["sha256"] = "0" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "source.json"
+            for label, raw in (("stale predecessor", stale),
+                               ("same-count wrong head", (json.dumps(forged_head, sort_keys=True, indent=2) + "\n").encode()),
+                               ("same-count wrong input", (json.dumps(forged_rows, sort_keys=True, indent=2) + "\n").encode())):
+                candidate.write_bytes(raw)
+                receipt = gate.identity(candidate)
+                self.assertEqual(receipt["sha256"], hashlib.sha256(raw).hexdigest())
+                self.assertNotEqual(receipt["sha256"], gate.REVIEWED_SOURCE_SHA256)
+                with self.subTest(label=label), self.assertRaisesRegex(ValueError, "approved authority"):
+                    gate.read_reviewed_manifest(candidate)
 
     def test_cargo_artifact_is_unambiguous_and_standard_profile(self):
         with tempfile.TemporaryDirectory() as directory:

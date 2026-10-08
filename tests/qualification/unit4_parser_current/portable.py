@@ -83,6 +83,11 @@ CURRENT_PATHS = (
     'src/frontend/hir_producer/supervisor.rs',
     'src/frontend/hir_protocol.rs',
     'src/frontend/lexer.rs',
+    'src/frontend/lexical_provider.rs',
+    'src/frontend/lexical_provider/bundle.rs',
+    'src/frontend/lexical_provider/supervisor.rs',
+    'src/frontend/lexical_provider/tests.rs',
+    'src/frontend/lexical_provider/wire.rs',
     'src/frontend/mod.rs',
     'src/frontend/oir/arithmetic_tests.rs',
     'src/frontend/oir/execute.rs',
@@ -372,6 +377,11 @@ CURRENT_ADDED_PATHS = (
     'src/frontend/hir_producer/bundle.rs',
     'src/frontend/hir_producer/supervisor.rs',
     'src/frontend/hir_protocol.rs',
+    'src/frontend/lexical_provider.rs',
+    'src/frontend/lexical_provider/bundle.rs',
+    'src/frontend/lexical_provider/supervisor.rs',
+    'src/frontend/lexical_provider/tests.rs',
+    'src/frontend/lexical_provider/wire.rs',
     'src/frontend/oir/execute_measurement.rs',
     'src/frontend/oir/lower_measurement.rs',
     'src/frontend/oir/native_emit_cost.rs',
@@ -588,7 +598,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = 'ecc09429f644abeaa9f92db9b65b73a181c6ee259472d94660a61861ee0360c9'
+AUTHORITY_SHA = '209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -690,8 +700,80 @@ def verify_map(root, records, exact=False, extras=()):
         same(sorted(files), sorted(names + list(extras)), "complete file inventory differs")
 
 
+def restore_lexical_provider_source(active, inputs):
+    """Recover every diagnostic predecessor byte before its immutable inverse."""
+    fields = ("source_binding_runner", "lexical_provider_helper", "lexical_provider_transition_patch",
+              "producer_diagnostic_source_manifest")
+    verify_map(REPOSITORY, [active[key] for key in fields])
+    runner = REPOSITORY / active["source_binding_runner"]["path"]
+    api = types.ModuleType("unit4_lexical_binding")
+    api.__file__ = str(runner)
+    exec(compile(runner.read_bytes(), str(runner), "exec"), api.__dict__)
+    helper_path = REPOSITORY / active["lexical_provider_helper"]["path"]
+    same(sha(helper_path.read_bytes()), api.LEXICAL_PROVIDER_HELPER_SHA,
+         "exact lexical provider helper identity")
+    helper = types.ModuleType("unit4_lexical_inverse")
+    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
+    try:
+        restored, touched = helper.inverse(inputs,
+            (REPOSITORY / active["lexical_provider_transition_patch"]["path"]).read_bytes(), api)
+    except api.BindingError as error:
+        raise Rejected("lexical provider inverse rejected: " + str(error)) from error
+    same(touched, list(helper.PATHS), "exact lexical provider inverse scope")
+    predecessor = read(REPOSITORY / active["producer_diagnostic_source_manifest"]["path"])
+    same(active["producer_diagnostic_source_manifest"]["sha256"], helper.PRODUCER_DIAGNOSTIC_SHA,
+         "exact retained producer diagnostic identity")
+    actual = [{"path": name, "bytes": len(raw), "sha256": sha(raw)}
+              for name, raw in sorted(restored.items())]
+    same(actual, predecessor["files"], "lexical provider inverse must recover exact diagnostic source")
+    return restored
+
+
+def validate_lexical_provider_transition(active, current, historical):
+    fields = (("lexical_provider_authority", "lexical-provider-authority.json"),
+              ("lexical_provider_transition_patch", "lexical-provider-transition.patch"),
+              ("lexical_provider_helper", "lexical_provider.py"),
+              ("producer_diagnostic_source_manifest", "producer-diagnostic-source.json"))
+    for key, filename in fields:
+        same(active[key]["path"], "tests/fixtures/typed_project_source_binding/" + filename,
+             "lexical provider binding path")
+    verify_map(REPOSITORY, [active[key] for key, _ in fields])
+    predecessor = read(REPOSITORY / active["producer_diagnostic_source_manifest"]["path"])
+    successor = read(REPOSITORY / active["lexical_provider_authority"]["path"])
+    same(successor["schema"], "oxid-lexical-provider-source-transition-v1", "lexical provider authority schema")
+    same(successor["reviewed_source_head"], current["reviewed_source_head"], "lexical provider source checkpoint")
+    same(successor["source_only_tree"], current["source_only_tree"], "lexical provider source tree")
+    same(successor["base_tree"], predecessor["source_only_tree"], "lexical provider exact predecessor tree")
+    same(successor["predecessor_source_head"], predecessor["reviewed_source_head"], "lexical provider predecessor checkpoint")
+    for field, key in (("current_source_sha256", "current_source_manifest"),
+                       ("producer_diagnostic_source_sha256", "producer_diagnostic_source_manifest"),
+                       ("transition_patch_sha256", "lexical_provider_transition_patch")):
+        same(successor[field], active[key]["sha256"], "lexical provider exact " + field)
+    same(len(predecessor["files"]), 340, "complete retained diagnostic source count")
+    same(successor["current_source_members"], 345, "complete lexical source count")
+    verify_map(REPOSITORY, successor["producer_closure"])
+    for field in ("instrumentation", "control_instrumentation"):
+        same(sorted(set(successor["transition_paths"]).intersection(row["path"] for row in historical[field])),
+             [], "lexical provider transition must not overlap parser instrumentation")
+    retained = active["producer_diagnostic_parser_authority"]
+    same(retained, {"path": "tests/qualification/unit4_parser_current/producer-diagnostic-authority.json",
+                    "bytes": 477258, "sha256": "ecc09429f644abeaa9f92db9b65b73a181c6ee259472d94660a61861ee0360c9"},
+         "retained diagnostic parser authority identity")
+    verify_map(REPOSITORY, [retained])
+    old = read(REPOSITORY / retained["path"])
+    omit = {"current_base_files", "current_derived_files", "current_control_derived_files",
+            "current_candidate_source_manifest_sha256", "current_source_manifest", "reviewed_source_head",
+            "source_only_tree", "source_binding_runner", "source_delta", "producer_diagnostic_parser_authority",
+            *(key for key, _ in fields)}
+    same({k: v for k, v in active.items() if k not in omit},
+         {k: v for k, v in old.items() if k not in omit},
+         "lexical provider changes unrelated parser authority")
+    return predecessor
+
+
 def restore_producer_diagnostic_source(active, inputs):
     """Recover and verify the exact 330-input frontend-v2 predecessor first."""
+    inputs = restore_lexical_provider_source(active, inputs)
     fields = ("source_binding_runner", "producer_diagnostic_helper",
               "producer_diagnostic_transition_patch", "frontend_v2_source_manifest")
     verify_map(REPOSITORY, [active[key] for key in fields])
@@ -735,7 +817,7 @@ def validate_producer_diagnostic_transition(active, current, historical):
     same(successor["source_only_tree"], current["source_only_tree"], "producer diagnostic source tree")
     same(successor["base_tree"], predecessor["source_only_tree"], "producer diagnostic exact predecessor tree")
     same(successor["predecessor_source_head"], predecessor["reviewed_source_head"], "producer diagnostic predecessor checkpoint")
-    for field, key in (("current_source_sha256", "current_source_manifest"),
+    for field, key in (("current_source_sha256", "producer_diagnostic_source_manifest"),
                        ("frontend_v2_source_sha256", "frontend_v2_source_manifest"),
                        ("transition_patch_sha256", "producer_diagnostic_transition_patch")):
         same(successor[field], active[key]["sha256"], "producer diagnostic exact " + field)
@@ -871,10 +953,11 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 340, "complete current source count")
+    same(len(current["files"]), 345, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
-    v2_source = validate_producer_diagnostic_transition(active, current, result)
+    diagnostic_source = validate_lexical_provider_transition(active, current, result)
+    v2_source = validate_producer_diagnostic_transition(active, diagnostic_source, result)
     producer_source = validate_frontend_v2_transition(active, v2_source, result)
     hir_source = validate_hir_producer_transition(active, producer_source, result)
     verify_map(REPOSITORY, [active["hir_import_authority"], active["hir_import_transition_patch"],
@@ -977,7 +1060,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 340, "duplicate current member")
+    same(len(after), 345, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -994,7 +1077,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 503, "current base count")
+    same(len(base), 508, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     verify_map(REPOSITORY, current["files"])
     restore_hir_producer_source(active, {row["path"]: (REPOSITORY / row["path"]).read_bytes()
@@ -1028,7 +1111,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 506, "current derived count")
+        same(len(ordered), 511, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -1583,7 +1666,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 255, "current compiler body count")
+    same(len(wanted), 260, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

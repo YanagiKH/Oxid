@@ -263,3 +263,12 @@ per reference/native mode against their distinct expectations.
 This component does not switch production providers or perform semantic checking;
 its input remains at most 128 ASCII bytes. Hosted qualification is recorded
 separately from local results.
+
+## Source-scale lexical provider
+
+An explicit [experimental lexical provider](streaming-lexical-provider.md) feeds
+validated Oxid-produced ASCII tokens into the real typed-project parser for every
+loaded module. Exact retained-source binding and canonical lexical comparison
+remain mandatory; no fallback occurs. The actual v2 parser/static sources and
+new modular lexer define the component-use target. Default selection and all
+semantic/backend authorities remain unchanged. This is not self-hosting.

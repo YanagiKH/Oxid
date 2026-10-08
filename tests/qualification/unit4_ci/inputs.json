@@ -11,14 +11,49 @@
   ],
   "files": [
     {
+      "bytes": 934,
+      "path": "fixtures/typed-streaming-lexer/data.ox",
+      "sha256": "fcdcbb04a6a82d241655d04aa2a11fe56720d9e243dddb8dafaab9376a98d7b0"
+    },
+    {
+      "bytes": 1690,
+      "path": "fixtures/typed-streaming-lexer/frame.ox",
+      "sha256": "abead8c5ab6cd0207b32b20ee00a724a060a3652a1224ad3fbec6545bac8d636"
+    },
+    {
+      "bytes": 2066,
+      "path": "fixtures/typed-streaming-lexer/keywords.ox",
+      "sha256": "73a0070f751f74c076708cc8458c09ed1d7f8cbd30220c0f2d2c3038a1249e11"
+    },
+    {
+      "bytes": 1604,
+      "path": "fixtures/typed-streaming-lexer/main.ox",
+      "sha256": "5fb8fba3182c364e0e00048270a30c6315161505b18cbf312026952bd81514b3"
+    },
+    {
+      "bytes": 4176,
+      "path": "fixtures/typed-streaming-lexer/scanner.ox",
+      "sha256": "b30888d125fd4a560369828b365812b27a34f993caefc22fe1cbb17e4f49d555"
+    },
+    {
+      "bytes": 984,
+      "path": "fixtures/typed-streaming-lexer/sources.json",
+      "sha256": "c591fab7de5fc47578566f9b85dfd088506f07a6e2f6202af0c05646142063a4"
+    },
+    {
+      "bytes": 4505,
+      "path": "scripts/build_streaming_lexer.py",
+      "sha256": "2a5f6c5eef9fd95bfdda90bd888d5496ac1833d4f831b5a5af0c480d3c01adcd"
+    },
+    {
       "bytes": 2584,
       "path": "tests/fixtures/producer_diagnostic/provenance.json",
       "sha256": "ddf68e898be3895717461388368122f00eb31c3b3b27fd8677e652b263438155"
     },
     {
-      "bytes": 34041,
+      "bytes": 35830,
       "path": "tests/fixtures/typed_project_source_binding/README.md",
-      "sha256": "480d0ca48ef5dcdc71b67d78b117e4129eb451c3a2cb3005e7c9e7d5c73580a9"
+      "sha256": "678faea2ef25f5c80b46544d4db3bf7e6afeb5cbda8b6b398e5ed8c99315ed2a"
     },
     {
       "bytes": 9916,
@@ -56,9 +91,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 66021,
+      "bytes": 67100,
       "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-      "sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29"
+      "sha256": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
     },
     {
       "bytes": 29723,
@@ -171,6 +206,21 @@
       "sha256": "3ebdfff79cc4b4cc2b8c73c8efdf5b8532af33b2d6375e3e509027e8cd43ecdb"
     },
     {
+      "bytes": 136523,
+      "path": "tests/fixtures/typed_project_source_binding/lexical-provider-authority.json",
+      "sha256": "69ea522493ab027b8dfcb3b1fb158f8dde14e7ff283e85d8e1ae6c29dc256a02"
+    },
+    {
+      "bytes": 156583,
+      "path": "tests/fixtures/typed_project_source_binding/lexical-provider-transition.patch",
+      "sha256": "400270e547f1214abd9885d724641427fb8b0871f69f25176818446218d0d458"
+    },
+    {
+      "bytes": 9638,
+      "path": "tests/fixtures/typed_project_source_binding/lexical_provider.py",
+      "sha256": "7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c"
+    },
+    {
       "bytes": 104690,
       "path": "tests/fixtures/typed_project_source_binding/native-inventory-authority.json",
       "sha256": "7c8edaeea1a69abce66b40f7b59bd29584c4927584fbb3f05a633b0ebdb8ca58"
@@ -201,9 +251,9 @@
       "sha256": "9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c"
     },
     {
-      "bytes": 9300,
+      "bytes": 9959,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "87dd6be7fcb918e0f7b75fa1ba5b27e91ca233542953b1aa292855cb5030f33e"
+      "sha256": "7267d8f44b3cf112530d82b33f2a8191a6cedab1298347c834da874cf7b0afc1"
     },
     {
       "bytes": 22314,
@@ -214,6 +264,11 @@
       "bytes": 135620,
       "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-authority.json",
       "sha256": "fa52793cd0717dbf2bf44b819afc32258e257cb0522b0f503d8d7cefbfea0dfb"
+    },
+    {
+      "bytes": 66021,
+      "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-source.json",
+      "sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29"
     },
     {
       "bytes": 37700,
@@ -241,9 +296,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 196026,
+      "bytes": 198778,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "1d2b904205e29b3a466d87ad688a4678c93168f64dedd9f975425bb6003fa647"
+      "sha256": "4d8a7c06f9050e50c17152bcf1e2e6eb9f72cb72dbd773560515b680502329d8"
     },
     {
       "bytes": 55961,
@@ -991,19 +1046,24 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 12346,
+      "bytes": 13300,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "e85d839cc1f63168bd472273b0d849b8e627ffd9e49d5a3c5a407d9e0da06b8d"
+      "sha256": "ec55c932dd01772c05b2c09dca611c81d7b98e9a14e236dd37256a978b5469c9"
+    },
+    {
+      "bytes": 482448,
+      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f"
+    },
+    {
+      "bytes": 170682,
+      "path": "tests/qualification/unit4_parser_current/portable.py",
+      "sha256": "70e0e3ecebb4d724702cc6f2358f0d26939b374dcb763e28a06a521077dd681d"
     },
     {
       "bytes": 477258,
-      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "path": "tests/qualification/unit4_parser_current/producer-diagnostic-authority.json",
       "sha256": "ecc09429f644abeaa9f92db9b65b73a181c6ee259472d94660a61861ee0360c9"
-    },
-    {
-      "bytes": 165078,
-      "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "3beb4f8898ed85f2918fd0ea5487159989ebe1d15d3297e81942bd972674bdb7"
     },
     {
       "bytes": 28188,
@@ -1016,9 +1076,9 @@
       "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
     },
     {
-      "bytes": 99478,
+      "bytes": 103080,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "314868d378f23398a5f71438349278ef2e6bc4c49306c85874631562c37136fc"
+      "sha256": "055cfa251d7b0c590ede16ed076d4bbfb6de1960c147d616f173a3053a2add34"
     },
     {
       "bytes": 8920,
@@ -1038,7 +1098,7 @@
     {
       "bytes": 945,
       "path": "tests/qualification/unit4_public_v3/authority.py",
-      "sha256": "7224b8a3b760a339e35a57df8821f299fc48a4e3bbab09ce38731314434cbbf5"
+      "sha256": "2eb19f470bb5d002257800e4f4ea34091e3ba2f6d17a031e77da990584d3f11c"
     },
     {
       "bytes": 7004,
@@ -1088,7 +1148,7 @@
     {
       "bytes": 15004,
       "path": "tests/qualification/unit4_public_v3/predecessors.py",
-      "sha256": "ad32b9f9c39a536b01874236799d1f18dd33ede832ad5002b1a98d9d63367fbf"
+      "sha256": "58986dd8dca60dae1545788dd144c7a2c98b7f69c437c4f13d5bfea0184c5b0b"
     },
     {
       "bytes": 6141,
@@ -1096,19 +1156,24 @@
       "sha256": "6b53900e18b33a26c5949bf8905f742e9abe5b67e74748585bbb24b6e4091454"
     },
     {
-      "bytes": 30394,
+      "bytes": 945,
+      "path": "tests/qualification/unit4_public_v3/producer_diagnostic_authority.py",
+      "sha256": "7224b8a3b760a339e35a57df8821f299fc48a4e3bbab09ce38731314434cbbf5"
+    },
+    {
+      "bytes": 30430,
       "path": "tests/qualification/unit4_public_v3/run.py",
-      "sha256": "5ce2a19c6bb27a99d003f5256df4da7386cda454ec23ef2f52e59257c00eba64"
+      "sha256": "0a3957c1445bcfcd9c9a88f62feeb444652724da60c6068b0aa5521d4880e1de"
     },
     {
       "bytes": 18540,
       "path": "tests/qualification/unit4_public_v3/runtime.py",
-      "sha256": "d1203abdeca407b0b447faa44e6c1b127028936e5f8481187d64e0d95bba7ddc"
+      "sha256": "dd924dd35aec0b72f3680ca4e9a9cff8b0d0d69ad3ddc5e1b3c3935b004c752c"
     },
     {
-      "bytes": 30776,
+      "bytes": 31447,
       "path": "tests/qualification/unit4_public_v3/selftest.py",
-      "sha256": "132e9c3894faca33e8817bfde60a1914f91d19ed9c2cf9f3cc891614e76a5990"
+      "sha256": "544374994f2880e0be20b29b21833e3ebdf6dbb0be5b531b3aa03f17fbc30a88"
     },
     {
       "bytes": 3197,

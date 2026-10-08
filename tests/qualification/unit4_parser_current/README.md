@@ -198,3 +198,19 @@ Eight included fixture bodies and two new compiler modules account for all ten
 additions. The eight-path compiler transition overlaps no parser instrumentation.
 Frozen semantics, instrumentation, dependency closure and historical authority
 remain unchanged. Admission or preparation does not qualify runtime execution.
+
+
+## Source-bound streaming lexical provider successor
+
+Current checkpoint `41c73d527f5518e09877544fa5820f3129f55b42` / tree
+`ea05a2c15672bdef5b596b4f9d4494e1134d6e76` advances the exact current source
+view to 345 members and 260 compiler/build bodies. Base/derived maps contain
+508/511 members per role. The new outer lexical inverse removes five Rust
+modules and restores all 340 diagnostic predecessor inputs before the existing
+inverse chain. Its nine-path delta overlaps no frozen parser instrumentation.
+`producer-diagnostic-authority.json` preserves the complete former current
+parser authority byte-for-byte. The active authority binds this retained
+snapshot, and all unrelated semantic, dependency and resource fields must
+match it. Historical parser authority, helpers, oracles and resource caps are
+unchanged. The seven-member lexical producer closure is noncompiler evidence.
+Admission or preparation alone never qualifies runtime execution.

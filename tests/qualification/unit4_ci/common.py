@@ -17,8 +17,8 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '01d45e670b4b2ad7308ad7a04a86cdd6ab1c3fc76e069f997f5a38e226e090c4'
-CURRENT_SHA = '35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29'
+INPUTS_SHA = '1bf3b02e2657781321d88a54c05b4a2c0cac88b8216f208dafe187d8b6350a4d'
+CURRENT_SHA = '952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db'
 ENUM_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
@@ -198,7 +198,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     source_path = repo / SOURCE / 'current-source.json'
     need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved current source manifest')
     source = read(source_path)
-    need(len(source['files']) == 340, 'current source count')
+    need(len(source['files']) == 345, 'current source count')
     for row in source['files']:
         verify(repo / relative(row['path']), row)
     actual = sorted(p.relative_to(repo).as_posix() for sub in ('src', 'native') for p in (repo / sub).rglob('*') if p.is_file())

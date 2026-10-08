@@ -33,12 +33,12 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [503, 506, 506])
-        self.assertEqual(len(a['current_source']['files']), 340)
-        self.assertEqual(len(p.compiler_map(a)), 255)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [508, 511, 511])
+        self.assertEqual(len(a['current_source']['files']), 345)
+        self.assertEqual(len(p.compiler_map(a)), 260)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 300)
+        self.assertEqual(len(a['current']['source_delta']), 305)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
@@ -57,6 +57,11 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/hir_producer/bundle.rs',
  'src/frontend/hir_producer/supervisor.rs',
  'src/frontend/hir_protocol.rs',
+ 'src/frontend/lexical_provider.rs',
+ 'src/frontend/lexical_provider/bundle.rs',
+ 'src/frontend/lexical_provider/supervisor.rs',
+ 'src/frontend/lexical_provider/tests.rs',
+ 'src/frontend/lexical_provider/wire.rs',
  'src/frontend/oir/execute_measurement.rs',
  'src/frontend/oir/lower_measurement.rs',
  'src/frontend/oir/native_emit_cost.rs',
@@ -260,8 +265,8 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/producer_diagnostic/unknown-type.bin',
  'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 80)
-        self.assertEqual(a['current']['reviewed_source_head'], 'c15465acb90e9f8bb18f5291a8931f5d5bbc6edb')
-        self.assertEqual(a['current']['source_only_tree'], '0d843f9141f153d4c008ac860786c138165d7de3')
+        self.assertEqual(a['current']['reviewed_source_head'], '41c73d527f5518e09877544fa5820f3129f55b42')
+        self.assertEqual(a['current']['source_only_tree'], 'ea05a2c15672bdef5b596b4f9d4494e1134d6e76')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read
@@ -309,7 +314,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'verify_build', 'cargo_cache', 'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -348,7 +353,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 503)
+        self.assertEqual(len(candidate['files']), 508)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -540,7 +545,7 @@ class SourceReadCompositionControls(unittest.TestCase):
         original_read = p.read
         historical_path = p.FROZEN / 'authority.json'
         for role, name, message in (
-            ('instrumentation', 'src/frontend/driver.rs', 'producer diagnostic transition must not overlap parser instrumentation'),
+            ('instrumentation', 'src/frontend/driver.rs', 'lexical provider transition must not overlap parser instrumentation'),
             ('control_instrumentation', 'src/frontend/source.rs', 'exact enum control overlap roster')):
             historical = copy.deepcopy(original_read(historical_path))
             historical[role].append({'path': name, 'before_sha256': '0' * 64, 'after_sha256': '1' * 64})
@@ -1391,7 +1396,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 255)
+        self.assertEqual(len(bound['compiler_files']), 260)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())
@@ -1439,6 +1444,60 @@ class CheckoutControls(unittest.TestCase):
             p.verify_checkout(self.root, self.a)
 
 
+
+
+class LexicalProviderTransitionControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a = p.authority()
+        cls.active = cls.a['current']
+        cls.inputs = {row['path']: (p.REPOSITORY / row['path']).read_bytes()
+                      for row in cls.a['current_source']['files']}
+
+    def test_exact_lexical_inverse_recovers_retained_diagnostic(self):
+        restored = p.restore_lexical_provider_source(self.active, self.inputs)
+        predecessor = p.read(p.REPOSITORY / self.active['producer_diagnostic_source_manifest']['path'])
+        self.assertEqual(len(restored), 340)
+        self.assertEqual([{'path': name, 'bytes': len(data), 'sha256': p.sha(data)}
+                          for name, data in sorted(restored.items())], predecessor['files'])
+        self.assertEqual(set(self.inputs) - set(restored), {
+            'src/frontend/lexical_provider.rs', 'src/frontend/lexical_provider/bundle.rs',
+            'src/frontend/lexical_provider/supervisor.rs', 'src/frontend/lexical_provider/tests.rs',
+            'src/frontend/lexical_provider/wire.rs'})
+        with self.assertRaises(p.Rejected):
+            p.restore_lexical_provider_source(self.active, restored)
+        retained = self.active['producer_diagnostic_parser_authority']
+        self.assertEqual(p.sha((p.REPOSITORY / retained['path']).read_bytes()),
+                         'ecc09429f644abeaa9f92db9b65b73a181c6ee259472d94660a61861ee0360c9')
+
+    def test_lexical_inputs_and_binding_pins_reject(self):
+        successor = p.read(p.REPOSITORY / self.active['lexical_provider_authority']['path'])
+        for name in successor['transition_paths']:
+            altered = dict(self.inputs)
+            altered[name] += b'\n'
+            with self.subTest(path=name), self.assertRaises(p.Rejected):
+                p.restore_lexical_provider_source(self.active, altered)
+        for key in ('lexical_provider_helper', 'lexical_provider_transition_patch',
+                    'producer_diagnostic_source_manifest'):
+            altered = copy.deepcopy(self.active)
+            altered[key]['sha256'] = '0' * 64
+            with self.subTest(field=key), self.assertRaises(p.Rejected):
+                p.restore_lexical_provider_source(altered, self.inputs)
+
+    def test_lexical_cannot_overlap_either_historical_hook_set(self):
+        for field in ('instrumentation', 'control_instrumentation'):
+            altered = copy.deepcopy(self.a)
+            altered[field].append({'path': 'src/frontend/project.rs'})
+            with self.subTest(field=field), self.assertRaisesRegex(p.Rejected, 'must not overlap parser instrumentation'):
+                p.validate_lexical_provider_transition(self.active, self.a['current_source'], altered)
+
+    def test_lexical_preserves_historical_parser_authority_and_dependencies(self):
+        old = p.read(p.REPOSITORY / self.active['producer_diagnostic_parser_authority']['path'])
+        for key in ('current_dependency_closure', 'historical_authority', 'historical_portable',
+                    'enum_ast_schema_adapter', 'enum_parser_instrumentation_adapter',
+                    'observer_initializer_adapter', 'composition_parser_amendment',
+                    'composition_parser_amendment_module'):
+            self.assertEqual(self.active[key], old[key], key)
 
 
 class ProducerDiagnosticTransitionControls(unittest.TestCase):

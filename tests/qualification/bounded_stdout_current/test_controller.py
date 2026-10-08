@@ -1,10 +1,14 @@
 """Bounded controller refusal controls; no Rust or LLVM builds."""
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -108,14 +112,30 @@ class EvidenceTests(unittest.TestCase):
         manifest = gate.stdin_gate.source_manifest(ROOT, gate.REVIEWED_SOURCE_SHA256)
         core = [row['path'] for row in manifest['files'] if row['path'].startswith(('src/', 'native/'))
                 or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual((len(manifest['files']), len(core)), (340, 255))
+        self.assertEqual((len(manifest['files']), len(core)), (345, 260))
         listing = b'\0'.join(name.encode() for name in core) + b'\0'
-        self.assertEqual(len(gate.stdin_gate.source_identity(ROOT, manifest, listing)), 340)
+        self.assertEqual(len(gate.stdin_gate.source_identity(ROOT, manifest, listing)), 345)
         for bad in (listing + b'src/extra.rs\0', listing + b'src/cli.rs\0', listing.split(b'\0', 1)[1]):
             with self.assertRaises(ValueError):
                 gate.stdin_gate.source_identity(ROOT, manifest, bad)
         with self.assertRaises(ValueError):
             gate.stdin_gate.source_manifest(ROOT, '0' * 64)
+
+    def test_stale_and_rehashed_source_seals_reject_before_git_or_native_execution(self):
+        current = gate.stdin_gate.source_manifest(ROOT, gate.REVIEWED_SOURCE_SHA256)
+        wrong = dict(current, reviewed_source_head="c15465acb90e9f8bb18f5291a8931f5d5bbc6edb")
+        forged = hashlib.sha256((json.dumps(wrong, sort_keys=True, indent=2) + "\n").encode()).hexdigest()
+        for digest in ("35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29", forged):
+            args = SimpleNamespace(repo=self.root, llvm_bin=self.root, build_evidence=self.root,
+                                   target_dir=self.root, source_manifest_sha256=digest)
+            with self.subTest(digest=digest), \
+                 mock.patch.object(gate.platform, "system", return_value="Linux"), \
+                 mock.patch.object(gate.platform, "machine", return_value="x86_64"), \
+                 mock.patch.dict(os.environ, {"RUSTFLAGS": "", "CARGO_ENCODED_RUSTFLAGS": ""}), \
+                 mock.patch.object(gate.enum_gate, "git_command", side_effect=AssertionError("Git must not run")), \
+                 mock.patch.object(c, "run", side_effect=AssertionError("native process must not run")), \
+                 self.assertRaisesRegex(ValueError, "unreviewed stdout source seal"):
+                gate.verify(args, self.root)
 
     def build_evidence(self):
         repo, target, evidence = self.root / 'repo', self.root / 'target', self.root / 'evidence'

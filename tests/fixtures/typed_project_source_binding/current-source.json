@@ -160,9 +160,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20777,
+      "bytes": 23085,
       "path": "src/frontend/driver.rs",
-      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
+      "sha256": "a7ca715aeb959d64cb6802f9379ab0fadabccf6d440cf60d1fc527d183b5955a"
     },
     {
       "bytes": 24124,
@@ -225,9 +225,34 @@
       "sha256": "1c282ff02383bf390105c7f6bcf5d7f58cc769c571ed3b8ca1bfc217740971b8"
     },
     {
-      "bytes": 518,
+      "bytes": 23720,
+      "path": "src/frontend/lexical_provider.rs",
+      "sha256": "07fc4a9bff1daa48b2d7d720a96dabacbd9a8b1a4fb7b13f18a1d2178d8ae403"
+    },
+    {
+      "bytes": 37806,
+      "path": "src/frontend/lexical_provider/bundle.rs",
+      "sha256": "b5d1582e58effcf087e91d7b5794b4580c9b498a41c764ad5075353412d825d5"
+    },
+    {
+      "bytes": 24999,
+      "path": "src/frontend/lexical_provider/supervisor.rs",
+      "sha256": "2cff4ba67c560743d4bde8395cd5c7acab2363676f4d91b491060d283fe4107c"
+    },
+    {
+      "bytes": 24392,
+      "path": "src/frontend/lexical_provider/tests.rs",
+      "sha256": "2b878284268ce4e666564b64b9c26f13ff30af3da4b96a46370023718ef13221"
+    },
+    {
+      "bytes": 12654,
+      "path": "src/frontend/lexical_provider/wire.rs",
+      "sha256": "29e64aad438345e9b5bfaeb45ce25ed2c145db3b0705704670715733f4d8cdcb"
+    },
+    {
+      "bytes": 540,
       "path": "src/frontend/mod.rs",
-      "sha256": "267a4bbe799db19168f75935f2584374a914359ab1f70c69489388fe0369bd88"
+      "sha256": "e1b402ca37401989ebe7244d731c54c68acd2fad1aa89b7f1117f645eda6bf8c"
     },
     {
       "bytes": 7505,
@@ -1155,9 +1180,9 @@
       "sha256": "5eeecbebd9ce5a7bac22fe80d012bca00b6fff08b6bffb73fad41d2675ed88f4"
     },
     {
-      "bytes": 57409,
+      "bytes": 65162,
       "path": "src/frontend/options.rs",
-      "sha256": "3e2397564afd531cc46f332c9b0ab284dcd124e22c02bb5f82aeb7a74eb901e0"
+      "sha256": "e3fe01d971920d6446a8605e6da5d7d81e87a87ab2f451392ca8a5d91737cccf"
     },
     {
       "bytes": 33156,
@@ -1210,9 +1235,9 @@
       "sha256": "c44b66b619286a59cd6ca658281557ef2f755f3b84d787551c08dbe7ff6813a1"
     },
     {
-      "bytes": 42640,
+      "bytes": 51291,
       "path": "src/frontend/project.rs",
-      "sha256": "753b9f7bb7303747857e4739c3be9bc5b99904fd7a7015e4e163d968f4235dcb"
+      "sha256": "43f8a51f0af649f446f7bedd48c41a396e4d7902a77f02edd421e67daec707d5"
     },
     {
       "bytes": 7105,
@@ -1724,20 +1749,22 @@
   "hir_import_source_sha256": "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746",
   "hir_producer_base_tree": "74ba20e2dcecb6056d4b13448a643ba289d83f75",
   "hir_producer_source_sha256": "17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680",
+  "lexical_provider_base_tree": "0d843f9141f153d4c008ac860786c138165d7de3",
   "native_inventory_base_head": "cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050",
   "native_inventory_source_sha256": "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842",
   "native_storage_base_head": "63db2c290031d76b5925fdd672c38eac2ca50578",
   "native_storage_source_sha256": "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303",
   "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
   "producer_diagnostic_base_tree": "534dbf42fafabc0a889b91ad351d5a11dd9ef8f4",
+  "producer_diagnostic_source_sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29",
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
-  "purpose": "Source-validated producer diagnostics with an exact retained frontend-v2 predecessor; admission is not semantic or hosted qualification.",
-  "reviewed_source_head": "c15465acb90e9f8bb18f5291a8931f5d5bbc6edb",
+  "purpose": "Source-bound streaming lexical provider with an exact retained producer-diagnostic predecessor; admission is not semantic, runtime, native or hosted qualification.",
+  "reviewed_source_head": "41c73d527f5518e09877544fa5820f3129f55b42",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "0d843f9141f153d4c008ac860786c138165d7de3",
+  "source_only_tree": "ea05a2c15672bdef5b596b4f9d4494e1134d6e76",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

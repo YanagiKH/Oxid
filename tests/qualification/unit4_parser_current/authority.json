@@ -521,9 +521,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20777,
+      "bytes": 23085,
       "path": "src/frontend/driver.rs",
-      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
+      "sha256": "a7ca715aeb959d64cb6802f9379ab0fadabccf6d440cf60d1fc527d183b5955a"
     },
     {
       "bytes": 24124,
@@ -586,9 +586,34 @@
       "sha256": "1c282ff02383bf390105c7f6bcf5d7f58cc769c571ed3b8ca1bfc217740971b8"
     },
     {
-      "bytes": 518,
+      "bytes": 23720,
+      "path": "src/frontend/lexical_provider.rs",
+      "sha256": "07fc4a9bff1daa48b2d7d720a96dabacbd9a8b1a4fb7b13f18a1d2178d8ae403"
+    },
+    {
+      "bytes": 37806,
+      "path": "src/frontend/lexical_provider/bundle.rs",
+      "sha256": "b5d1582e58effcf087e91d7b5794b4580c9b498a41c764ad5075353412d825d5"
+    },
+    {
+      "bytes": 24999,
+      "path": "src/frontend/lexical_provider/supervisor.rs",
+      "sha256": "2cff4ba67c560743d4bde8395cd5c7acab2363676f4d91b491060d283fe4107c"
+    },
+    {
+      "bytes": 24392,
+      "path": "src/frontend/lexical_provider/tests.rs",
+      "sha256": "2b878284268ce4e666564b64b9c26f13ff30af3da4b96a46370023718ef13221"
+    },
+    {
+      "bytes": 12654,
+      "path": "src/frontend/lexical_provider/wire.rs",
+      "sha256": "29e64aad438345e9b5bfaeb45ce25ed2c145db3b0705704670715733f4d8cdcb"
+    },
+    {
+      "bytes": 540,
       "path": "src/frontend/mod.rs",
-      "sha256": "267a4bbe799db19168f75935f2584374a914359ab1f70c69489388fe0369bd88"
+      "sha256": "e1b402ca37401989ebe7244d731c54c68acd2fad1aa89b7f1117f645eda6bf8c"
     },
     {
       "bytes": 7505,
@@ -1516,9 +1541,9 @@
       "sha256": "5eeecbebd9ce5a7bac22fe80d012bca00b6fff08b6bffb73fad41d2675ed88f4"
     },
     {
-      "bytes": 57409,
+      "bytes": 65162,
       "path": "src/frontend/options.rs",
-      "sha256": "3e2397564afd531cc46f332c9b0ab284dcd124e22c02bb5f82aeb7a74eb901e0"
+      "sha256": "e3fe01d971920d6446a8605e6da5d7d81e87a87ab2f451392ca8a5d91737cccf"
     },
     {
       "bytes": 33156,
@@ -1571,9 +1596,9 @@
       "sha256": "c44b66b619286a59cd6ca658281557ef2f755f3b84d787551c08dbe7ff6813a1"
     },
     {
-      "bytes": 42640,
+      "bytes": 51291,
       "path": "src/frontend/project.rs",
-      "sha256": "753b9f7bb7303747857e4739c3be9bc5b99904fd7a7015e4e163d968f4235dcb"
+      "sha256": "43f8a51f0af649f446f7bedd48c41a396e4d7902a77f02edd421e67daec707d5"
     },
     {
       "bytes": 7105,
@@ -2546,7 +2571,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "2c644b2d35767dec7f22f056571f1e3ca784e32451f0fc97bfcfb61f329ad682",
+  "current_candidate_source_manifest_sha256": "9c57b3bdc8497ea1b68e83347716161b7c3ce70e04d2d2ed6ade41c6dc2239e9",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2644,9 +2669,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 88800,
+      "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "2c644b2d35767dec7f22f056571f1e3ca784e32451f0fc97bfcfb61f329ad682"
+      "sha256": "9c57b3bdc8497ea1b68e83347716161b7c3ce70e04d2d2ed6ade41c6dc2239e9"
     },
     {
       "bytes": 1583,
@@ -3049,9 +3074,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20777,
+      "bytes": 23085,
       "path": "src/frontend/driver.rs",
-      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
+      "sha256": "a7ca715aeb959d64cb6802f9379ab0fadabccf6d440cf60d1fc527d183b5955a"
     },
     {
       "bytes": 24124,
@@ -3114,9 +3139,34 @@
       "sha256": "1c282ff02383bf390105c7f6bcf5d7f58cc769c571ed3b8ca1bfc217740971b8"
     },
     {
-      "bytes": 518,
+      "bytes": 37806,
+      "path": "src/frontend/lexical_provider/bundle.rs",
+      "sha256": "b5d1582e58effcf087e91d7b5794b4580c9b498a41c764ad5075353412d825d5"
+    },
+    {
+      "bytes": 24999,
+      "path": "src/frontend/lexical_provider/supervisor.rs",
+      "sha256": "2cff4ba67c560743d4bde8395cd5c7acab2363676f4d91b491060d283fe4107c"
+    },
+    {
+      "bytes": 24392,
+      "path": "src/frontend/lexical_provider/tests.rs",
+      "sha256": "2b878284268ce4e666564b64b9c26f13ff30af3da4b96a46370023718ef13221"
+    },
+    {
+      "bytes": 12654,
+      "path": "src/frontend/lexical_provider/wire.rs",
+      "sha256": "29e64aad438345e9b5bfaeb45ce25ed2c145db3b0705704670715733f4d8cdcb"
+    },
+    {
+      "bytes": 23720,
+      "path": "src/frontend/lexical_provider.rs",
+      "sha256": "07fc4a9bff1daa48b2d7d720a96dabacbd9a8b1a4fb7b13f18a1d2178d8ae403"
+    },
+    {
+      "bytes": 540,
       "path": "src/frontend/mod.rs",
-      "sha256": "267a4bbe799db19168f75935f2584374a914359ab1f70c69489388fe0369bd88"
+      "sha256": "e1b402ca37401989ebe7244d731c54c68acd2fad1aa89b7f1117f645eda6bf8c"
     },
     {
       "bytes": 7505,
@@ -4044,9 +4094,9 @@
       "sha256": "5eeecbebd9ce5a7bac22fe80d012bca00b6fff08b6bffb73fad41d2675ed88f4"
     },
     {
-      "bytes": 57409,
+      "bytes": 65162,
       "path": "src/frontend/options.rs",
-      "sha256": "3e2397564afd531cc46f332c9b0ab284dcd124e22c02bb5f82aeb7a74eb901e0"
+      "sha256": "e3fe01d971920d6446a8605e6da5d7d81e87a87ab2f451392ca8a5d91737cccf"
     },
     {
       "bytes": 33156,
@@ -4154,9 +4204,9 @@
       "sha256": "36cf09544b605cc140ca0ed5cc811501c97ba8ceed14584ed890a1cf29e05e4f"
     },
     {
-      "bytes": 42640,
+      "bytes": 51291,
       "path": "src/frontend/project.rs",
-      "sha256": "753b9f7bb7303747857e4739c3be9bc5b99904fd7a7015e4e163d968f4235dcb"
+      "sha256": "43f8a51f0af649f446f7bedd48c41a396e4d7902a77f02edd421e67daec707d5"
     },
     {
       "bytes": 15666,
@@ -7173,9 +7223,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 88800,
+      "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "2c644b2d35767dec7f22f056571f1e3ca784e32451f0fc97bfcfb61f329ad682"
+      "sha256": "9c57b3bdc8497ea1b68e83347716161b7c3ce70e04d2d2ed6ade41c6dc2239e9"
     },
     {
       "bytes": 1583,
@@ -7578,9 +7628,9 @@
       "sha256": "5e7ae2a1063615c47429da50ad422cb0623b0cdc1ff9e23e45bc0aa48bfed169"
     },
     {
-      "bytes": 20777,
+      "bytes": 23085,
       "path": "src/frontend/driver.rs",
-      "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
+      "sha256": "a7ca715aeb959d64cb6802f9379ab0fadabccf6d440cf60d1fc527d183b5955a"
     },
     {
       "bytes": 24124,
@@ -7643,9 +7693,34 @@
       "sha256": "e2b497e31a2729702ede6d73cce9694f4f70f8368e3fffa8b8125acc3a4f89d4"
     },
     {
-      "bytes": 518,
+      "bytes": 37806,
+      "path": "src/frontend/lexical_provider/bundle.rs",
+      "sha256": "b5d1582e58effcf087e91d7b5794b4580c9b498a41c764ad5075353412d825d5"
+    },
+    {
+      "bytes": 24999,
+      "path": "src/frontend/lexical_provider/supervisor.rs",
+      "sha256": "2cff4ba67c560743d4bde8395cd5c7acab2363676f4d91b491060d283fe4107c"
+    },
+    {
+      "bytes": 24392,
+      "path": "src/frontend/lexical_provider/tests.rs",
+      "sha256": "2b878284268ce4e666564b64b9c26f13ff30af3da4b96a46370023718ef13221"
+    },
+    {
+      "bytes": 12654,
+      "path": "src/frontend/lexical_provider/wire.rs",
+      "sha256": "29e64aad438345e9b5bfaeb45ce25ed2c145db3b0705704670715733f4d8cdcb"
+    },
+    {
+      "bytes": 23720,
+      "path": "src/frontend/lexical_provider.rs",
+      "sha256": "07fc4a9bff1daa48b2d7d720a96dabacbd9a8b1a4fb7b13f18a1d2178d8ae403"
+    },
+    {
+      "bytes": 540,
       "path": "src/frontend/mod.rs",
-      "sha256": "267a4bbe799db19168f75935f2584374a914359ab1f70c69489388fe0369bd88"
+      "sha256": "e1b402ca37401989ebe7244d731c54c68acd2fad1aa89b7f1117f645eda6bf8c"
     },
     {
       "bytes": 7505,
@@ -8573,9 +8648,9 @@
       "sha256": "5eeecbebd9ce5a7bac22fe80d012bca00b6fff08b6bffb73fad41d2675ed88f4"
     },
     {
-      "bytes": 57409,
+      "bytes": 65162,
       "path": "src/frontend/options.rs",
-      "sha256": "3e2397564afd531cc46f332c9b0ab284dcd124e22c02bb5f82aeb7a74eb901e0"
+      "sha256": "e3fe01d971920d6446a8605e6da5d7d81e87a87ab2f451392ca8a5d91737cccf"
     },
     {
       "bytes": 33156,
@@ -8683,9 +8758,9 @@
       "sha256": "36cf09544b605cc140ca0ed5cc811501c97ba8ceed14584ed890a1cf29e05e4f"
     },
     {
-      "bytes": 42640,
+      "bytes": 51291,
       "path": "src/frontend/project.rs",
-      "sha256": "753b9f7bb7303747857e4739c3be9bc5b99904fd7a7015e4e163d968f4235dcb"
+      "sha256": "43f8a51f0af649f446f7bedd48c41a396e4d7902a77f02edd421e67daec707d5"
     },
     {
       "bytes": 15844,
@@ -9609,9 +9684,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 66021,
+    "bytes": 67100,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29"
+    "sha256": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -9763,6 +9838,21 @@
     "path": "tests/fixtures/typed_project_unit4_parser_portable/frozen/v3/portable.py",
     "sha256": "cbbd81c6461dc26498fa1551efacb23b219d0fed78048e4ead5929154b823eed"
   },
+  "lexical_provider_authority": {
+    "bytes": 136523,
+    "path": "tests/fixtures/typed_project_source_binding/lexical-provider-authority.json",
+    "sha256": "69ea522493ab027b8dfcb3b1fb158f8dde14e7ff283e85d8e1ae6c29dc256a02"
+  },
+  "lexical_provider_helper": {
+    "bytes": 9638,
+    "path": "tests/fixtures/typed_project_source_binding/lexical_provider.py",
+    "sha256": "7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c"
+  },
+  "lexical_provider_transition_patch": {
+    "bytes": 156583,
+    "path": "tests/fixtures/typed_project_source_binding/lexical-provider-transition.patch",
+    "sha256": "400270e547f1214abd9885d724641427fb8b0871f69f25176818446218d0d458"
+  },
   "native_inventory_authority": {
     "bytes": 104690,
     "path": "tests/fixtures/typed_project_source_binding/native-inventory-authority.json",
@@ -9830,6 +9920,16 @@
     "path": "tests/fixtures/typed_project_source_binding/producer_diagnostic.py",
     "sha256": "15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823"
   },
+  "producer_diagnostic_parser_authority": {
+    "bytes": 477258,
+    "path": "tests/qualification/unit4_parser_current/producer-diagnostic-authority.json",
+    "sha256": "ecc09429f644abeaa9f92db9b65b73a181c6ee259472d94660a61861ee0360c9"
+  },
+  "producer_diagnostic_source_manifest": {
+    "bytes": 66021,
+    "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-source.json",
+    "sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29"
+  },
   "producer_diagnostic_transition_patch": {
     "bytes": 37700,
     "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-transition.patch",
@@ -9845,7 +9945,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "c15465acb90e9f8bb18f5291a8931f5d5bbc6edb",
+  "reviewed_source_head": "41c73d527f5518e09877544fa5820f3129f55b42",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -9858,9 +9958,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 196026,
+    "bytes": 198778,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "1d2b904205e29b3a466d87ad688a4678c93168f64dedd9f975425bb6003fa647"
+    "sha256": "4d8a7c06f9050e50c17152bcf1e2e6eb9f72cb72dbd773560515b680502329d8"
   },
   "source_delta": [
     {
@@ -10067,9 +10167,9 @@
     },
     {
       "after": {
-        "bytes": 20777,
+        "bytes": 23085,
         "path": "src/frontend/driver.rs",
-        "sha256": "a26461f544b8f39c234a4e5a241d45c2755d88b8f1557a1c9fc638ef88a7a5c4"
+        "sha256": "a7ca715aeb959d64cb6802f9379ab0fadabccf6d440cf60d1fc527d183b5955a"
       },
       "before": {
         "bytes": 7381,
@@ -10196,9 +10296,54 @@
     },
     {
       "after": {
-        "bytes": 518,
+        "bytes": 23720,
+        "path": "src/frontend/lexical_provider.rs",
+        "sha256": "07fc4a9bff1daa48b2d7d720a96dabacbd9a8b1a4fb7b13f18a1d2178d8ae403"
+      },
+      "before": null,
+      "path": "src/frontend/lexical_provider.rs"
+    },
+    {
+      "after": {
+        "bytes": 37806,
+        "path": "src/frontend/lexical_provider/bundle.rs",
+        "sha256": "b5d1582e58effcf087e91d7b5794b4580c9b498a41c764ad5075353412d825d5"
+      },
+      "before": null,
+      "path": "src/frontend/lexical_provider/bundle.rs"
+    },
+    {
+      "after": {
+        "bytes": 24999,
+        "path": "src/frontend/lexical_provider/supervisor.rs",
+        "sha256": "2cff4ba67c560743d4bde8395cd5c7acab2363676f4d91b491060d283fe4107c"
+      },
+      "before": null,
+      "path": "src/frontend/lexical_provider/supervisor.rs"
+    },
+    {
+      "after": {
+        "bytes": 24392,
+        "path": "src/frontend/lexical_provider/tests.rs",
+        "sha256": "2b878284268ce4e666564b64b9c26f13ff30af3da4b96a46370023718ef13221"
+      },
+      "before": null,
+      "path": "src/frontend/lexical_provider/tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 12654,
+        "path": "src/frontend/lexical_provider/wire.rs",
+        "sha256": "29e64aad438345e9b5bfaeb45ce25ed2c145db3b0705704670715733f4d8cdcb"
+      },
+      "before": null,
+      "path": "src/frontend/lexical_provider/wire.rs"
+    },
+    {
+      "after": {
+        "bytes": 540,
         "path": "src/frontend/mod.rs",
-        "sha256": "267a4bbe799db19168f75935f2584374a914359ab1f70c69489388fe0369bd88"
+        "sha256": "e1b402ca37401989ebe7244d731c54c68acd2fad1aa89b7f1117f645eda6bf8c"
       },
       "before": {
         "bytes": 359,
@@ -11950,9 +12095,9 @@
     },
     {
       "after": {
-        "bytes": 57409,
+        "bytes": 65162,
         "path": "src/frontend/options.rs",
-        "sha256": "3e2397564afd531cc46f332c9b0ab284dcd124e22c02bb5f82aeb7a74eb901e0"
+        "sha256": "e3fe01d971920d6446a8605e6da5d7d81e87a87ab2f451392ca8a5d91737cccf"
       },
       "before": {
         "bytes": 15461,
@@ -12060,9 +12205,9 @@
     },
     {
       "after": {
-        "bytes": 42640,
+        "bytes": 51291,
         "path": "src/frontend/project.rs",
-        "sha256": "753b9f7bb7303747857e4739c3be9bc5b99904fd7a7015e4e163d968f4235dcb"
+        "sha256": "43f8a51f0af649f446f7bedd48c41a396e4d7902a77f02edd421e67daec707d5"
       },
       "before": {
         "bytes": 34117,
@@ -12884,7 +13029,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "0d843f9141f153d4c008ac860786c138165d7de3",
+  "source_only_tree": "ea05a2c15672bdef5b596b4f9d4494e1134d6e76",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

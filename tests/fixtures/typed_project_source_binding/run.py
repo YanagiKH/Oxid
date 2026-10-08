@@ -71,8 +71,9 @@ HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e
 HIR_IMPORT_SOURCE_BYTES = 62558
 PRODUCER_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 PRODUCER_SOURCE_BYTES = 63220
-CURRENT_SOURCE_SHA = '35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29'
-CURRENT_SOURCE_BYTES = 66021
+CURRENT_SOURCE_SHA = '952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db'
+CURRENT_SOURCE_BYTES = 67100
+LEXICAL_PROVIDER_HELPER_SHA = '7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c'
 FRONTEND_V2_HELPER_SHA = 'c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7'
 PRODUCER_DIAGNOSTIC_HELPER_SHA = '15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823'
 HIR_PRODUCER_AUTHORITY_SHA = 'b6054a027220f74d8a6c5210b033569c51ea2e1ff991c73e70488a548060806d'
@@ -1373,6 +1374,16 @@ def compile_fixture_paths(source, *, combined=False):
     return paths
 
 
+def load_lexical_provider(package_bytes, package=PACKAGE):
+    """Load only the separately pinned lexical-provider successor helper."""
+    require(digest(package_bytes["lexical_provider.py"]) == LEXICAL_PROVIDER_HELPER_SHA,
+            "unapproved lexical provider source helper")
+    module = types.ModuleType("lexical_provider_source_binding")
+    module.__file__ = str(package / "lexical_provider.py")
+    exec(compile(package_bytes["lexical_provider.py"], module.__file__, "exec"), module.__dict__)
+    return module
+
+
 def load_producer_diagnostic(package_bytes, package=PACKAGE):
     """Load only the separately pinned diagnostic successor helper."""
     require(digest(package_bytes["producer_diagnostic.py"]) == PRODUCER_DIAGNOSTIC_HELPER_SHA,
@@ -1624,10 +1635,21 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    diagnostic = load_producer_diagnostic(package_bytes, package)
-    diagnostic_current, diagnostic_inputs, diagnostic_authority, v2_inputs, diagnostic_touched = diagnostic.admit(
+    lexical = load_lexical_provider(package_bytes, package)
+    lexical_current, lexical_inputs, lexical_authority, diagnostic_inputs, lexical_touched = lexical.admit(
         repo, package_bytes, types.SimpleNamespace(**globals()))
-    references.update(check_entries(repo, list(diagnostic.DIAGNOSTIC_CLOSURE)))
+    references.update(check_entries(repo, list(lexical.PRODUCER_CLOSURE)))
+    diagnostic = load_producer_diagnostic(package_bytes, package)
+    diagnostic_closure = check_entries(repo, list(diagnostic.DIAGNOSTIC_CLOSURE))
+    references.update(diagnostic_closure)
+    diagnostic_package = dict(package_bytes, **{"current-source.json": package_bytes["producer-diagnostic-source.json"]})
+    with tempfile.TemporaryDirectory(prefix="oxid-retained-producer-diagnostic-") as directory:
+        diagnostic_repo = Path(directory) / "source"
+        materialize(diagnostic_repo, {**diagnostic_inputs, **diagnostic_closure})
+        diagnostic_current, admitted_diagnostic_inputs, diagnostic_authority, v2_inputs, diagnostic_touched = diagnostic.admit(
+            diagnostic_repo, diagnostic_package, types.SimpleNamespace(**globals()))
+    require(admitted_diagnostic_inputs == diagnostic_inputs,
+            "retained producer diagnostic admission changed its input view")
     frontend_v2 = load_frontend_v2(package_bytes, package)
     producer_closure = check_entries(repo, list(frontend_v2.PRODUCER_CLOSURE))
     references.update(producer_closure)
@@ -1688,7 +1710,7 @@ def preflight(repo, package=PACKAGE):
             "stale native inventory complete input identities")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [name for name in native_inventory_inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 208 and sorted(actual) == sorted(n for n in diagnostic_inputs if n.startswith(("src/", "native/"))),
+    require(len(expected) == 208 and sorted(actual) == sorted(n for n in lexical_inputs if n.startswith(("src/", "native/"))),
             "missing or extra compiler source member")
     require(len([name for name in native_inventory_inputs if name.startswith(("src/", "native/"))
                  or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 211,
@@ -2053,7 +2075,7 @@ def preflight(repo, package=PACKAGE):
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in native_inventory_inputs if x.startswith(("src/", "native/"))]
-    require(sorted(actual) == sorted(n for n in diagnostic_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
+    require(sorted(actual) == sorted(n for n in lexical_inputs if n.startswith(("src/", "native/"))), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
         "source": entry(COMPILE_FIXTURE_SOURCE, inputs[COMPILE_FIXTURE_SOURCE]),
@@ -2206,7 +2228,10 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": diagnostic_current, "producer_diagnostic_authority": diagnostic_authority,
+    return {"current": lexical_current, "lexical_provider_authority": lexical_authority,
+            "lexical_provider_touched": lexical_touched,
+            "producer_diagnostic_source": diagnostic_current, "producer_diagnostic_inputs": diagnostic_inputs,
+            "producer_diagnostic_authority": diagnostic_authority,
             "producer_diagnostic_touched": diagnostic_touched,
             "frontend_v2_source": v2_current, "frontend_v2_inputs": v2_inputs,
             "frontend_v2_authority": v2_authority, "frontend_v2_touched": v2_touched,
@@ -2230,7 +2255,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": diagnostic_inputs, "archived": reconstructed, "references": references,
+            "inputs": lexical_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2284,6 +2309,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "lexical_provider_authority_sha256": digest(captured["package_bytes"]["lexical-provider-authority.json"]),
+            "lexical_provider_inverse_patch_sha256": digest(captured["package_bytes"]["lexical-provider-transition.patch"]),
+            "lexical_provider_inverse_touched": captured["lexical_provider_touched"],
+            "producer_diagnostic_source_sha256": digest(captured["package_bytes"]["producer-diagnostic-source.json"]),
             "producer_diagnostic_authority_sha256": digest(captured["package_bytes"]["producer-diagnostic-authority.json"]),
             "producer_diagnostic_inverse_patch_sha256": digest(captured["package_bytes"]["producer-diagnostic-transition.patch"]),
             "producer_diagnostic_inverse_touched": captured["producer_diagnostic_touched"],
@@ -2555,6 +2584,9 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      lexical_provider_authority_sha256=digest(captured["package_bytes"]["lexical-provider-authority.json"]),
+                      lexical_provider_inverse_patch_sha256=digest(captured["package_bytes"]["lexical-provider-transition.patch"]),
+                      producer_diagnostic_source_sha256=digest(captured["package_bytes"]["producer-diagnostic-source.json"]),
                       producer_diagnostic_authority_sha256=digest(captured["package_bytes"]["producer-diagnostic-authority.json"]),
                       producer_diagnostic_inverse_patch_sha256=digest(captured["package_bytes"]["producer-diagnostic-transition.patch"]),
                       frontend_v2_source_sha256=digest(captured["package_bytes"]["frontend-v2-source.json"]),
@@ -2599,6 +2631,8 @@ def main():
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
                 "current_source_members": len(captured["inputs"]),
+                "producer_diagnostic_source_members": len(captured["producer_diagnostic_inputs"]),
+                "lexical_provider_compiler_additions": 5, "lexical_provider_producer_closure_members": 7,
                 "frontend_v2_source_members": len(captured["frontend_v2_inputs"]),
                 "producer_diagnostic_fixture_members": 8,
                 "native_storage_source_members": len(captured["native_storage_inputs"]),

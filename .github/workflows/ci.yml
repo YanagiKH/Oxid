@@ -681,7 +681,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29
+            --source-manifest-sha256 952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -694,7 +694,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29
+            --source-manifest-sha256 952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1148,3 +1148,54 @@ jobs:
           path: |
             ${{ runner.temp }}/local-hir-producers
             !${{ runner.temp }}/local-hir-producers/target/**
+
+  streaming-lexical-provider:
+    name: Source-scale lexical component (ordinary debug and release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: lexical-current
+    env:
+      LEXICAL_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      LEXICAL_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux lexical environment
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+          mkdir "$GITHUB_WORKSPACE/lexical-current"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: lexical-current
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch exact locked dependencies
+        run: cargo fetch --locked
+      - name: Test lexical framing and qualification admission
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_streaming_lexer_protocol.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_streaming_lexer.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_streaming_lexer.py -v
+      - name: Rebuild actual producer closures through selected lexical tokens and test failures
+        run: |
+          python3 -B scripts/run_streaming_lexer_ci.py \
+            --expected-head "$LEXICAL_EXPECTED_HEAD" --event-sha "$LEXICAL_EVENT_SHA" \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/streaming-lexical-provider"
+      - name: Retain complete lexical source, token, provenance and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streaming-lexical-provider-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/streaming-lexical-provider
+            !${{ runner.temp }}/streaming-lexical-provider/target/**

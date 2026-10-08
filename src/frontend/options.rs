@@ -11,6 +11,9 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    TypedLexical {
+        request: Box<[LexicalOptions; 1]>,
+    },
     TypedImport {
         request: Box<[ImportOptions; 1]>,
     },
@@ -71,6 +74,17 @@ pub struct ProducerOptions {
     pub output: Option<String>,
     pub json: bool,
     pub operation: Operation,
+}
+
+/// Explicit lexical route, boxed so the stable default Route layout is unchanged.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LexicalOptions {
+    pub path: String,
+    pub bundle: String,
+    pub output: Option<String>,
+    pub json: bool,
+    pub operation: Operation,
+    pub entry_policy: EntryPolicy,
 }
 
 /// Transient entry selection, never retained in a checked source program.
@@ -195,6 +209,15 @@ pub fn route(args: &[String]) -> Route {
         Route::Error { message, .. } | Route::FormatError { message } if entry.process_errors => {
             Route::ProcessError { message }
         }
+        Route::TypedLexical { request }
+            if request[0].operation == Operation::Run
+                && request[0].json
+                && request[0].entry_policy == EntryPolicy::Process =>
+        {
+            Route::ProcessError {
+                message: "process-mode run does not support --message-format=json".into(),
+            }
+        }
         Route::TypedRun {
             json: true,
             entry_policy: EntryPolicy::Process,
@@ -235,6 +258,8 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     let mut import = None;
     let mut producer_seen = false;
     let mut producer = None;
+    let mut lexical_seen = false;
+    let mut lexical = None;
     let mut json = false;
     let mut error = None;
     let mut index = 0;
@@ -257,6 +282,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             "--entry-mode",
             "--experimental-hir-import",
             "--experimental-hir-producers",
+            "--experimental-lexical-provider",
         ]
         .into_iter()
         .find(|name| {
@@ -277,6 +303,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             "--entry-mode" => &mut entry.seen,
             "--experimental-hir-import" => &mut import_seen,
             "--experimental-hir-producers" => &mut producer_seen,
+            "--experimental-lexical-provider" => &mut lexical_seen,
             _ => unreachable!("the option name is selected from a closed list"),
         };
         if *seen {
@@ -300,6 +327,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             }
             ("--experimental-hir-import", Some(value)) => import = Some(value.to_string()),
             ("--experimental-hir-producers", Some(value)) => producer = Some(value.to_string()),
+            ("--experimental-lexical-provider", Some(value)) => lexical = Some(value.to_string()),
             ("--edition", Some(value @ ("legacy-0.9" | "typed-preview"))) => {
                 edition = Some(value);
             }
@@ -382,6 +410,17 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
         error.get_or_insert_with(|| {
             "--experimental-hir-import and --experimental-hir-producers are mutually exclusive"
                 .into()
+        });
+    }
+    if lexical_seen
+        && (edition != Some("typed-preview")
+            || !matches!(command, Some("check" | "run" | "compile")))
+    {
+        error.get_or_insert_with(|| "--experimental-lexical-provider requires explicit typed-preview check, run or compile".into());
+    }
+    if lexical_seen && (import_seen || producer_seen) {
+        error.get_or_insert_with(|| {
+            "--experimental-lexical-provider cannot be combined with HIR import or producers".into()
         });
     }
     if format_seen && edition != Some("typed-preview") {
@@ -488,6 +527,26 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
                 operation,
             };
         }
+    }
+    if let Some(bundle) = lexical {
+        let Some(path) = path else {
+            return Route::Error {
+                message: format!("typed-preview {command} requires exactly one source path"),
+                json,
+                operation,
+            };
+        };
+        return lexical_route(
+            LexicalOptions {
+                path,
+                bundle,
+                output,
+                json,
+                operation,
+                entry_policy: entry.policy,
+            },
+            &mut super::project::budget::Allocator::default(),
+        );
     }
     if let Some(bundle) = producer {
         let Some(path) = path else {
@@ -606,6 +665,34 @@ fn producer_route(
         .try_into()
         .expect("one admitted producer option");
     Route::TypedProducer { request }
+}
+
+fn lexical_route(
+    options: LexicalOptions,
+    allocator: &mut super::project::budget::Allocator,
+) -> Route {
+    let json = options.json;
+    let operation = options.operation;
+    let mut storage = Vec::new();
+    if std::mem::size_of::<LexicalOptions>() as u64
+        > super::declaration_index::IndexLimits::default().retained
+        || allocator
+            .vector_exact(&mut storage, 1, "experimental lexical options")
+            .is_err()
+        || storage.capacity() != 1
+    {
+        return Route::Error {
+            message: "cannot allocate experimental lexical options".into(),
+            json,
+            operation,
+        };
+    }
+    storage.push(options);
+    let request = storage
+        .into_boxed_slice()
+        .try_into()
+        .expect("one admitted lexical option");
+    Route::TypedLexical { request }
 }
 
 /// A selected formatter has its own text-only, exit-2 error contract.
@@ -1736,6 +1823,152 @@ mod producer_options_tests {
                 request[0].output.as_ref().unwrap().as_ptr(),
             )
         );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(std::mem::size_of::<Route>(), 56);
+    }
+}
+
+#[cfg(test)]
+mod lexical_options_tests {
+    use super::*;
+    fn classify(values: &[&str]) -> Route {
+        route(&values.iter().map(|s| (*s).into()).collect::<Vec<_>>())
+    }
+    #[test]
+    fn lexical_options_are_explicit_boxed_typed_routes() {
+        for command in ["check", "run"] {
+            let Route::TypedLexical { request } = classify(&[
+                command,
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=bundle",
+            ]) else {
+                panic!("lexical route");
+            };
+            assert_eq!(request[0].path, "file.ox");
+            assert_eq!(request[0].bundle, "bundle");
+            assert_eq!(request[0].entry_policy, EntryPolicy::Result);
+        }
+        let Route::TypedLexical { request } = classify(&[
+            "compile",
+            "--edition=typed-preview",
+            "--experimental-lexical-provider",
+            "bundle",
+            "--backend=llvm",
+            "--entry-mode=process",
+            "--output=out",
+            "file.ox",
+        ]) else {
+            panic!("process compile");
+        };
+        assert_eq!(request[0].entry_policy, EntryPolicy::Process);
+        assert_eq!(request[0].output.as_deref(), Some("out"));
+        assert!(matches!(
+            classify(&[
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=b",
+                "--entry-mode=process"
+            ]),
+            Route::TypedLexical { .. }
+        ));
+        assert!(matches!(
+            classify(&[
+                "run",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=b",
+                "--entry-mode=process",
+                "--message-format=json"
+            ]),
+            Route::ProcessError { .. }
+        ));
+    }
+    #[test]
+    fn lexical_options_preserve_script_separator_and_default_behavior() {
+        let args = ["script", "build", "--experimental-lexical-provider=b"];
+        assert_eq!(
+            classify(&args),
+            Route::Legacy(args.iter().map(|s| (*s).into()).collect())
+        );
+        assert_eq!(
+            classify(&[
+                "check",
+                "--edition=typed-preview",
+                "--",
+                "--experimental-lexical-provider=b"
+            ]),
+            Route::TypedCheck {
+                path: "--experimental-lexical-provider=b".into(),
+                json: false
+            }
+        );
+        assert_eq!(
+            classify(&["check", "--edition=typed-preview", "file.ox"]),
+            Route::TypedCheck {
+                path: "file.ox".into(),
+                json: false
+            }
+        );
+        for args in [
+            vec!["check", "file.ox", "--experimental-lexical-provider=b"],
+            vec![
+                "fmt",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=b",
+            ],
+            vec![
+                "check",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=b",
+                "--experimental-hir-import=x",
+            ],
+            vec![
+                "check",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=b",
+                "--experimental-hir-producers=x",
+            ],
+            vec![
+                "check",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=b",
+                "--experimental-lexical-provider=c",
+            ],
+            vec![
+                "check",
+                "file.ox",
+                "--edition=typed-preview",
+                "--experimental-lexical-provider=",
+            ],
+        ] {
+            assert!(matches!(classify(&args), Route::Error { .. }));
+        }
+    }
+    #[test]
+    fn lexical_options_one_exact_fallible_carrier() {
+        let mut allocator = super::super::project::budget::Allocator {
+            fail_at: Some(1),
+            ..Default::default()
+        };
+        let result = lexical_route(
+            LexicalOptions {
+                path: "x".into(),
+                bundle: "b".into(),
+                output: None,
+                json: true,
+                operation: Operation::Check,
+                entry_policy: EntryPolicy::Result,
+            },
+            &mut allocator,
+        );
+        assert!(matches!(result, Route::Error { json: true, .. }));
+        assert_eq!(allocator.attempts, 1);
         #[cfg(target_pointer_width = "64")]
         assert_eq!(std::mem::size_of::<Route>(), 56);
     }

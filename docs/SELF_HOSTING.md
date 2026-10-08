@@ -62,3 +62,14 @@ producing C3. C2/C3 comparison must hold with the same target, dependencies, and
 options. A clean environment without Rust/Cargo must rebuild the designated
 compiler and standard library from a published Oxid seed. None of those gates
 is satisfied by the current serialization round-trip.
+
+## Explicit lexical component use
+
+The experimental [source-scale lexical route](architecture/streaming-lexical-provider.md)
+now provides a separate actual provider seam. An Oxid streaming lexer supplies
+source-bound tokens to the real typed-project parser, with per-module execution
+receipts, explicit canonical Rust lexical comparison and no fallback. The target
+is the complete existing v2 producer source closures and the new lexer itself.
+Parsing, semantic analysis, ownership, OIR and backend authority remain Rust-owned.
+This component-use gate does not satisfy the C1/C2/C3 or Rust-free rebuild gates
+above; the legacy providers.toml substring check is unchanged.

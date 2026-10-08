@@ -1,3 +1,31 @@
+# Source-bound streaming lexical provider successor
+
+The active source view binds checkpoint `41c73d527f5518e09877544fa5820f3129f55b42`, exact full tree
+`ea05a2c15672bdef5b596b4f9d4494e1134d6e76`: 345 selected inputs, 257 src/native members and
+260 compiler/build bodies. Its source manifest SHA-256 is
+`952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db`.
+
+`producer-diagnostic-source.json` preserves the former 340-input manifest byte-for-byte
+(SHA-256 `35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29`).
+Every previous authority, transition, helper and retained source manifest stays unchanged.
+The separate lexical-provider authority/helper/patch bind nine compiler paths:
+five added Rust modules and four existing frontend seams. There are no new
+compile-time include inputs. Five Oxid producer modules, their source manifest
+and builder form a seven-member identity-bound noncompiler closure.
+
+Admission checks all current bytes, modes, Git blob identities, complete source
+membership, literal checkpoint/tree, producer closure and exact inverse recovery.
+The first inverse removes the five additions and restores all 340 diagnostic inputs.
+The unchanged diagnostic helper runs against that exact temporary predecessor
+plus its pinned provenance, before unchanged frontend-v2 and all older inverses
+recover the final 117-member archive. Current execution receives only the new
+345-input view. Receipts contain byte dictionaries, never live helper modules.
+No language oracle, historical semantic expectation, native/fuel limit or parser
+instrumentation is amended. Admission and source-only preparation execute no
+compiler and do not establish runtime, native or hosted qualification.
+
+The following sections describe retained historical transitions.
+
 # Source-validated producer diagnostic successor
 
 The active source view binds checkpoint `c15465acb90e9f8bb18f5291a8931f5d5bbc6edb`, exact full tree

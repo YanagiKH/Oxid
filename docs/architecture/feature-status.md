@@ -176,3 +176,11 @@ This is an experimental production path under [RFC 0023](../../rfcs/0023-bounded
 separate current-source qualification and exact-head hosted CI remain pending.
 Historical ledgers keep their original identities; no production compiler-provider,
 self-hosting or milestone-completion claim follows.
+
+The `provider-dispatch` item now describes one experimental production-path
+subset: the [source-scale lexical provider](streaming-lexical-provider.md).
+It explicitly selects Oxid-produced tokens for the real typed-project parser,
+with source binding, canonical comparison, per-module receipts and no fallback.
+Other compiler components remain Rust-controlled; the legacy manifest remains
+declaration-only. Component-use evidence does not complete M8 or establish
+independent self-hosting.
