@@ -1,0 +1,1 @@
+fn f(x:i32)->i32{let mut y:i32=- /*min*/ 2147483648;y=x;return y;}

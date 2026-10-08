@@ -1,0 +1,448 @@
+//! Supplied STF1 facts are compared only against genuinely checked candidate HIR.
+//! These controls use private Verify/Run leaves and return fixed facts/rejections.
+//! Original-owner fixtures apply on every host. Genuine ProjectSources loading
+//! is qualified on Linux only; the public fixture is explicitly ignored elsewhere.
+use super::{candidate, leaf, verify_tests::LeafMode, SourceOwner, Wire, CELLS, COLUMN_STARTS};
+use crate::frontend::{
+    declaration_index::IndexLimits,
+    lexer,
+    oir::{execute, lower, verify, RunFailure, Scalar},
+    parser,
+    project::budget::Allocator,
+    source::{SourceMap, SourceView},
+    typeck,
+};
+
+macro_rules! fixture {
+    ($name:literal, $rows:literal, $reserves:literal) => {
+        Fixture {
+            name: $name,
+            source: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/checked_hir_import/",
+                $name,
+                "-source.txt"
+            )),
+            bytes: include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/checked_hir_import/",
+                $name,
+                "-success.bin"
+            )),
+            rows: $rows,
+            reserves: $reserves,
+        }
+    };
+}
+
+#[derive(Clone, Copy)]
+struct Fixture {
+    name: &'static str,
+    source: &'static str,
+    bytes: &'static [u8],
+    rows: usize,
+    reserves: usize,
+}
+
+const ORIGINALS: &[Fixture] = &[
+    fixture!("rich", 29, 16),
+    fixture!("scalar-arithmetic", 19, 7),
+    fixture!("scalar-boolean", 15, 7),
+    fixture!("scalar-comparison", 31, 7),
+    fixture!("scalar-unit", 13, 7),
+    fixture!("scalar-loop", 15, 10),
+    fixture!("scalar-assignment", 12, 7),
+];
+
+fn allocator() -> Allocator {
+    let mut allocator = Allocator::default();
+    allocator.observer_trace_bound(32).unwrap();
+    allocator
+}
+
+fn assert_reserves(observed: &Allocator, expected: usize, trace_capacity: usize) {
+    assert_eq!(observed.attempts, expected);
+    assert_eq!(observed.trace.len(), expected);
+    assert!(observed.trace.iter().all(|event| event.success));
+    assert_eq!(observed.trace.capacity(), trace_capacity);
+    assert!(!observed.observer_trace_overflow);
+}
+
+fn assert_no_lower_observations(snapshot: lower::measurement::Snapshot) {
+    assert_eq!(snapshot.local_map_capacity_max, 0);
+    assert_eq!(snapshot.expression_map_capacity_max, 0);
+    assert_eq!(snapshot.loop_targets_capacity_max, 0);
+    assert_eq!(snapshot.active_loops_capacity_max, 0);
+    assert_eq!(snapshot.frames_capacity_max, 0);
+    assert_eq!(snapshot.expression_frames_capacity_max, 0);
+    assert_eq!(snapshot.scratch_payload_envelope_bytes, 0);
+}
+
+fn changed_fact(fixture: Fixture, cell: usize, value: i32) -> Vec<u8> {
+    let original = Wire::decode(fixture.bytes, fixture.source.len()).unwrap();
+    assert!(cell < usize::from(original.rows));
+    assert_ne!(original.word(4, cell).unwrap(), value);
+    let mut changed = fixture.bytes.to_vec();
+    for (plane, byte) in value.to_le_bytes().into_iter().enumerate() {
+        changed[COLUMN_STARTS[4] + plane * CELLS + cell] = byte;
+    }
+    let decoded = Wire::decode(&changed, fixture.source.len()).unwrap();
+    assert_eq!(decoded.rows, original.rows);
+    assert_eq!(decoded.word(4, cell).unwrap(), value);
+    // Preserve source/OPA framing, all resolution cells, every other active
+    // fact, and all inactive storage. Only one complete supplied fact changes.
+    for (index, (&before, &after)) in fixture.bytes.iter().zip(&changed).enumerate() {
+        if !(0..4).any(|plane| index == COLUMN_STARTS[4] + plane * CELLS + cell) {
+            assert_eq!(before, after, "{} byte {index}", fixture.name);
+        }
+    }
+    changed
+}
+
+fn reject_changed_fact(
+    mode: LeafMode,
+    fixture: Fixture,
+    owner: SourceOwner<'_>,
+    baseline: &Allocator,
+    cell: usize,
+    value: i32,
+    emit: bool,
+) {
+    let changed = changed_fact(fixture, cell, value);
+    let mut observed = allocator();
+    let trace_capacity = observed.trace.capacity();
+    let type_guard = typeck::measurement::begin();
+    let lower_guard = lower::measurement::begin();
+    let verify_guard = verify::measurement::begin();
+    let runtime_guard = execute::measurement::begin();
+    let result = if emit {
+        leaf::emit(
+            owner,
+            fixture.source.as_bytes(),
+            &changed,
+            &mut observed,
+            IndexLimits::default(),
+        )
+        .map(|_| ())
+    } else {
+        mode.call(
+            owner,
+            fixture.source.as_bytes(),
+            &changed,
+            &mut observed,
+            IndexLimits::default(),
+        )
+        .map(|_| ())
+    };
+    let typed = type_guard.finish();
+    let lowered = lower_guard.finish();
+    let verified = verify_guard.finish();
+    let executed = runtime_guard.finish();
+    match result {
+        Err(leaf::VerifyRejected::Terminal(candidate::VerifyRejected::TypedMismatch {
+            cells,
+        })) => assert_eq!(cells, fixture.rows, "{} cell {cell}", fixture.name),
+        other => panic!(
+            "emit={emit} {mode:?} {} fact cell {cell} changed to {value} must reach complete typed comparison: {other:?}",
+            fixture.name
+        ),
+    }
+    assert_reserves(&observed, fixture.reserves, trace_capacity);
+    for (actual, expected) in observed.trace.iter().zip(&baseline.trace) {
+        assert_eq!(
+            (
+                actual.kind,
+                actual.length,
+                actual.element_bytes,
+                actual.success
+            ),
+            (
+                expected.kind,
+                expected.length,
+                expected.element_bytes,
+                expected.success
+            ),
+            "{} cell {cell}: fact changes must preserve candidate reserves",
+            fixture.name
+        );
+    }
+    // The exact terminal rejection is emitted before lower::lower and runtime.
+    // Genuine checker observations must exist, while inherited lower/verify
+    // observations remain empty. These are stage controls, not heap-peak claims.
+    assert!(typed.frame_bytes > 0);
+    assert!(typed.bodies_capacity_max > 0);
+    assert_no_lower_observations(lowered);
+    assert_eq!(verified.successful_functions, 0);
+    assert_eq!(verified.excluded_failed_functions, 0);
+    assert_eq!(verified.per_function_capacity_max_bytes, 0);
+    assert_eq!(executed, execute::measurement::Snapshot::default());
+}
+
+struct Coverage {
+    kinds: [bool; 37],
+    types: [bool; 4],
+    flow_masks: [bool; 16],
+    cells: usize,
+    typed: usize,
+    flows: usize,
+    unused: usize,
+    mutations: usize,
+}
+
+impl Default for Coverage {
+    fn default() -> Self {
+        Self {
+            kinds: [false; 37],
+            types: [false; 4],
+            flow_masks: [false; 16],
+            cells: 0,
+            typed: 0,
+            flows: 0,
+            unused: 0,
+            mutations: 0,
+        }
+    }
+}
+
+fn exercise_fixture(
+    mode: LeafMode,
+    fixture: Fixture,
+    owner: SourceOwner<'_>,
+    coverage: &mut Coverage,
+) {
+    let wire = Wire::decode(fixture.bytes, fixture.source.len()).unwrap();
+    assert_eq!(usize::from(wire.rows), fixture.rows);
+    let mut baseline = allocator();
+    let trace_capacity = baseline.trace.capacity();
+    let lower_guard = lower::measurement::begin();
+    let verify_guard = verify::measurement::begin();
+    let runtime_guard = execute::measurement::begin();
+    let facts = mode
+        .call(
+            owner,
+            fixture.source.as_bytes(),
+            fixture.bytes,
+            &mut baseline,
+            IndexLimits::default(),
+        )
+        .unwrap();
+    let lowered = lower_guard.finish();
+    let verified = verify_guard.finish();
+    let executed = runtime_guard.finish();
+    assert!(facts.verified.candidate.equal);
+    assert_eq!(facts.verified.typed_cells, fixture.rows);
+    assert_eq!(
+        facts.verified.candidate.allocation.reserves,
+        fixture.reserves
+    );
+    assert_reserves(&baseline, fixture.reserves, trace_capacity);
+    // Positive controls establish that the same fixtures reach both stages
+    // with their original facts and that the observers are active.
+    assert!(lowered.scratch_payload_envelope_bytes > 0);
+    assert_eq!(verified.successful_functions, facts.verified.functions);
+    assert!(verified.successful_functions > 0);
+    assert_eq!(verified.excluded_failed_functions, 0);
+    match mode {
+        LeafMode::Verify => {
+            assert_eq!(facts.verified.runtime, None);
+            assert_eq!(executed, execute::measurement::Snapshot::default());
+        }
+        LeafMode::Run if matches!(fixture.name, "rich" | "public") => {
+            assert_eq!(facts.verified.runtime, Some(Ok(Scalar::I32(1))));
+            assert!(executed.frames_len_max > 0);
+            assert!(executed.simultaneous_vector_payload_bytes_max > 0);
+            assert!(!executed.observation_overflowed);
+        }
+        LeafMode::Run => {
+            // These captures are libraries: successful import still produces
+            // the fixed missing-entry outcome without executing any frames.
+            assert_eq!(facts.verified.runtime, Some(Err(RunFailure::Entry(None))));
+            assert_eq!(executed, execute::measurement::Snapshot::default());
+        }
+    }
+
+    let before = coverage.mutations;
+    for cell in 0..fixture.rows {
+        let kind = usize::try_from(wire.word(0, cell).unwrap() & 63).unwrap();
+        let supplied = wire.word(4, cell).unwrap();
+        coverage.kinds[kind] = true;
+        coverage.cells += 1;
+        match kind {
+            1 | 2 | 6 | 7 | 15..=36 => {
+                assert!((1..=3).contains(&supplied));
+                coverage.typed += 1;
+                coverage.types[usize::try_from(supplied).unwrap()] = true;
+                // Every other scalar type is plausible framing, but neither
+                // a function, local nor expression fact may be substituted.
+                for value in 1..=3 {
+                    if value != supplied {
+                        reject_changed_fact(mode, fixture, owner, &baseline, cell, value, false);
+                        coverage.mutations += 1;
+                    }
+                }
+            }
+            5 => {
+                assert!((0..=15).contains(&supplied));
+                coverage.flows += 1;
+                coverage.flow_masks[usize::try_from(supplied).unwrap()] = true;
+                // Exercise all sixteen complete outcome masks, including
+                // changes that preserve fallthrough but flip exit outcomes.
+                for value in 0..=15 {
+                    if value != supplied {
+                        reject_changed_fact(mode, fixture, owner, &baseline, cell, value, false);
+                        coverage.mutations += 1;
+                        coverage.flow_masks[usize::try_from(value).unwrap()] = true;
+                    }
+                }
+            }
+            3 | 4 | 8..=14 => {
+                assert_eq!(supplied, 0);
+                coverage.unused += 1;
+                reject_changed_fact(mode, fixture, owner, &baseline, cell, 1, false);
+                coverage.mutations += 1;
+            }
+            _ => panic!("unexpected scalar row kind {kind}"),
+        }
+        // Wire words are signed and planar. Every active role also rejects
+        // high-plane/sign changes; comparing only a low byte cannot pass.
+        for value in [256, -1, i32::MIN, i32::MAX] {
+            reject_changed_fact(mode, fixture, owner, &baseline, cell, value, false);
+            coverage.mutations += 1;
+        }
+    }
+    println!(
+        "HIR_IMPORT_FACTS {mode:?} {} rows={} mutations={} reserves={}",
+        fixture.name,
+        fixture.rows,
+        coverage.mutations - before,
+        fixture.reserves
+    );
+}
+
+#[test]
+fn checked_hir_import_verify_and_run_every_active_scalar_fact_rejects_before_lower_and_runtime() {
+    for mode in [LeafMode::Verify, LeafMode::Run] {
+        let mut coverage = Coverage::default();
+        for &fixture in ORIGINALS {
+            let mut sources = SourceMap::new();
+            let id = sources.add(format!("verify-{}.ox", fixture.name), fixture.source.into());
+            let source = sources.get(id);
+            let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+            let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+            exercise_fixture(mode, fixture, owner, &mut coverage);
+        }
+        assert_eq!(coverage.cells, 134);
+        assert_eq!(
+            (coverage.typed, coverage.flows, coverage.unused),
+            (82, 14, 38)
+        );
+        assert_eq!(coverage.mutations, 948);
+        assert!(coverage.kinds[1..=36].iter().all(|&seen| seen));
+        assert!(coverage.types[1..=3].iter().all(|&seen| seen));
+        assert!(coverage.flow_masks.iter().all(|&seen| seen));
+    }
+}
+
+#[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "genuine ProjectSources admission is Linux-only; no original-owner substitution qualifies public syntax"
+)]
+fn checked_hir_import_verify_and_run_public_project_facts_reject_before_lower_and_runtime() {
+    let fixture = fixture!("public", 29, 16);
+    let project = super::tests::project(fixture.source);
+    assert_eq!(
+        project.syntax_flavor(),
+        crate::frontend::project::SyntaxFlavor::ProjectSyntax
+    );
+    let owner = SourceOwner::project(&project);
+    assert_eq!(owner.count(), 1);
+    for mode in [LeafMode::Verify, LeafMode::Run] {
+        let mut coverage = Coverage::default();
+        exercise_fixture(mode, fixture, owner, &mut coverage);
+        assert_eq!(coverage.cells, 29);
+        assert_eq!(
+            (coverage.typed, coverage.flows, coverage.unused),
+            (15, 5, 9)
+        );
+        assert_eq!(coverage.mutations, 230);
+    }
+}
+
+// The shared complete comparison already has the exhaustive Verify/Run value
+// matrix above. Emit independently mutates every active cell twice, including
+// every unused fact and a high plane, and proves rejection before lowering.
+fn exercise_emit_rejections(fixture: Fixture, owner: SourceOwner<'_>) -> usize {
+    let wire = Wire::decode(fixture.bytes, fixture.source.len()).unwrap();
+    let mut baseline = allocator();
+    let facts = leaf::verify(
+        owner,
+        fixture.source.as_bytes(),
+        fixture.bytes,
+        &mut baseline,
+        IndexLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(facts.verified.typed_cells, fixture.rows);
+    assert_eq!(baseline.attempts, fixture.reserves);
+    for cell in 0..fixture.rows {
+        let kind = wire.word(0, cell).unwrap() & 63;
+        let supplied = wire.word(4, cell).unwrap();
+        let replacement = match kind {
+            1 | 2 | 6 | 7 | 15..=36 => {
+                if supplied == 1 {
+                    2
+                } else {
+                    1
+                }
+            }
+            5 => (supplied + 1) % 16,
+            3 | 4 | 8..=14 => 1,
+            _ => panic!("unexpected scalar row kind {kind}"),
+        };
+        for value in [replacement, supplied ^ 256] {
+            reject_changed_fact(
+                LeafMode::Verify,
+                fixture,
+                owner,
+                &baseline,
+                cell,
+                value,
+                true,
+            );
+        }
+    }
+    println!(
+        "HIR_IMPORT_FACTS Emit {} rows={} mutations={} no_native_final_reserve=true",
+        fixture.name,
+        fixture.rows,
+        2 * fixture.rows
+    );
+    2 * fixture.rows
+}
+
+#[test]
+fn checked_hir_import_emit_every_active_fact_rejects_before_lowering() {
+    let mut mutations = 0;
+    for &fixture in ORIGINALS {
+        let mut sources = SourceMap::new();
+        let id = sources.add("emit-facts.ox".into(), fixture.source.into());
+        let source = sources.get(id);
+        let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+        mutations += exercise_emit_rejections(fixture, owner);
+    }
+    assert_eq!(mutations, 268);
+}
+
+#[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "genuine ProjectSources admission is Linux-only; public Emit host denial is tested separately"
+)]
+fn checked_hir_import_emit_public_facts_reject_before_lowering() {
+    let fixture = fixture!("public", 29, 16);
+    let project = super::tests::project(fixture.source);
+    let owner = SourceOwner::project(&project);
+    assert_eq!(exercise_emit_rejections(fixture, owner), 58);
+}

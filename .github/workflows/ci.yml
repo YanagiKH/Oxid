@@ -487,6 +487,53 @@ jobs:
           cargo test --release --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
           cargo test --locked --bin oxid frontend::oir::owned::source::array_consumer_tests::source_array_consumers_use_real_llvm -- --ignored --exact
           cargo test --release --locked --bin oxid frontend::oir::owned::source::array_consumer_tests::source_array_consumers_use_real_llvm -- --ignored --exact
+      - name: Qualify experimental checked-HIR import native paths in both profiles
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof_root="$RUNNER_TEMP/checked-hir-import-native"
+          mkdir "$proof_root"
+          for profile in debug release; do
+            mkdir "$proof_root/$profile"
+            profile_args=()
+            if [[ "$profile" == release ]]; then profile_args=(--release); fi
+            cargo test "${profile_args[@]}" --locked --test typed_hir_import \
+              imported_public_compile_produces_source_independent_executable \
+              -- --ignored --exact --nocapture \
+              > "$proof_root/$profile/public.stdout" \
+              2> "$proof_root/$profile/public.stderr"
+            cargo test "${profile_args[@]}" --locked --bin oxid --no-run \
+              --message-format=json \
+              > "$proof_root/$profile/build.jsonl" \
+              2> "$proof_root/$profile/build.stderr"
+            binary="$(python3 - "$proof_root/$profile/build.jsonl" <<'PY'
+          import json
+          import sys
+          rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+          assert [row.get('success') for row in rows if row.get('reason') == 'build-finished'] == [True]
+          matches = [row['executable'] for row in rows
+                     if row.get('reason') == 'compiler-artifact'
+                     and row.get('target', {}).get('name') == 'oxid'
+                     and row.get('target', {}).get('kind') == ['bin']
+                     and row.get('profile', {}).get('test') is True
+                     and row.get('executable')]
+          assert len(matches) == 1, matches
+          print(matches[0])
+          PY
+            )"
+            python3 -B scripts/verify_checked_hir_import_native.py \
+              --test-binary "$binary" --llvm-bin "$OXID_LLVM_BIN" \
+              --evidence "$proof_root/$profile/private"
+          done
+      - name: Retain checked-HIR import native build and execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checked-hir-import-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/checked-hir-import-native
       - name: Verify public fixed-array CLI native parity in both profiles
         run: |
           cargo test --locked --test typed_fixed_arrays public_array_cli_compiles_source_free_native_parity -- --ignored --exact
@@ -634,7 +681,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842
+            --source-manifest-sha256 8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -647,7 +694,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842
+            --source-manifest-sha256 8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4

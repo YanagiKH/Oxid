@@ -1,0 +1,30 @@
+{
+  "source_sha256": "5cc21baa00b3555df83a8ac154e2e497052d6a11dac7e2e390a038efe51cf08f",
+  "observation_sha256": "8bd6c66e859cfd0692e18ef7e3ca94f01e6d280eb2aca55849d415b26862cf6c",
+  "source_bytes": 117,
+  "observation_bytes": 2607,
+  "row_count": 29,
+  "item_head": 1,
+  "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+  "commands": [
+    {
+      "command": [
+        "parser"
+      ],
+      "status": 0,
+      "input_sha256": "5cc21baa00b3555df83a8ac154e2e497052d6a11dac7e2e390a038efe51cf08f",
+      "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+      "stdout_sha256": "d4f624802b1fa3261b454e13dbe70e234d035005a00dc371c0154b0c3cf53a7f"
+    },
+    {
+      "command": [
+        "consumer"
+      ],
+      "status": 0,
+      "input_sha256": "18f7ce8411ffcd4d7787cdd996bda8a72b5144fac58e229de0e73e4fe2c376c7",
+      "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+      "stdout_sha256": "8bd6c66e859cfd0692e18ef7e3ca94f01e6d280eb2aca55849d415b26862cf6c"
+    }
+  ],
+  "scope": "Actual unchanged Oxid parser and static consumer output"
+}

@@ -51,7 +51,7 @@ pub(in crate::frontend) enum Reason {
 pub(in crate::frontend) struct Report {
     pub target: Target,
     pub selected: bool,
-    /// True only after all request and fresh-vector checks admitted the gate.
+    /// True only after all request and fresh-storage checks admitted the gate.
     pub matched: bool,
     pub fired: bool,
     pub rejection: Option<Reason>,
@@ -187,8 +187,8 @@ pub(in crate::frontend) fn with_selected<R>(
     Ok((result, report))
 }
 
-/// Only vector_exact and this module's internal calibrations can call the gate.
-/// All original checked request arithmetic precedes it. No owner, Vec or action
+/// Only vector_exact, string and this module's internal calibrations call the gate.
+/// All original checked request arithmetic precedes it. No owner, storage or action
 /// enters the gate; only independently comparable fixed request facts do.
 pub(super) fn enter_exact<T>(
     identity: AllocatorIdentity,

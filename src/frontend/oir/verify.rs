@@ -4,6 +4,9 @@ const STAGE: &str = "oir-verify";
 #[cfg(test)]
 #[path = "cyclic_tests.rs"]
 mod cyclic_tests;
+#[cfg(test)]
+#[path = "verify_measurement.rs"]
+pub(in crate::frontend::oir) mod measurement;
 fn failure(kind: FailureKind, span: Span) -> OirFailure {
     OirFailure::new(kind, STAGE, Some(span))
 }
@@ -792,6 +795,8 @@ fn predecessors(function: &impl CfgView) -> Result<Predecessors, OirFailure> {
             Budget::add(cursor, 1, edges, "CFG offsets", STAGE, Some(span))?;
         }
     }
+    #[cfg(test)]
+    measurement::predecessors(count, edges, &counts, &offsets, &blocks);
     Ok(Predecessors { offsets, blocks })
 }
 
@@ -843,6 +848,8 @@ fn depth_first(function: &impl CfgView) -> Result<DepthFirst, OirFailure> {
     if result.order.len() != count {
         return Err(failure(FailureKind::Unreachable, origin));
     }
+    #[cfg(test)]
+    measurement::depth_first(&result, &next_edge);
     Ok(result)
 }
 
@@ -944,6 +951,16 @@ fn immediate_dominators(
         }
     }
     *at_mut(&mut dominator, function.entry().0, origin)? = function.entry().0;
+    #[cfg(test)]
+    measurement::immediate_dominators(
+        predecessors,
+        dfs,
+        &semi,
+        &forest,
+        &bucket,
+        &next_member,
+        &dominator,
+    );
     Ok(dominator)
 }
 struct Dominance {
@@ -1012,6 +1029,15 @@ fn dominance(
                 Some(origin),
             )?;
             if current == function.entry().0 {
+                #[cfg(test)]
+                measurement::dominance_tree(
+                    predecessors,
+                    dfs,
+                    &dominator,
+                    &first_child,
+                    &next_sibling,
+                    &result,
+                );
                 return Ok(result);
             }
             let sibling = *at(&next_sibling, current, origin)?;
@@ -1059,10 +1085,14 @@ fn read(
     }
 }
 pub(super) fn cfg(function: &impl CfgView) -> Result<(), OirFailure> {
+    #[cfg(test)]
+    let measurement = measurement::begin_function();
     let predecessors = predecessors(function)?;
     let dfs = depth_first(function)?;
     let definitions = definitions(function)?;
     let initializations = initializations(function)?;
+    #[cfg(test)]
+    measurement::definitions(&predecessors, &dfs, &definitions, &initializations);
     let dominance = dominance(function, &predecessors, &dfs)?;
     for block in 0..function.block_count() {
         if let Some(merge) = function.merge(block)? {
@@ -1118,6 +1148,8 @@ pub(super) fn cfg(function: &impl CfgView) -> Result<(), OirFailure> {
             )
         })?;
     }
+    #[cfg(test)]
+    measurement.succeed();
     Ok(())
 }
 fn read_scalar_use(

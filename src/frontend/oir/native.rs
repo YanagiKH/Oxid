@@ -3,6 +3,30 @@
 use super::*;
 use std::fmt::Write;
 
+// Private text admission remains separate from default source consumers.
+#[allow(dead_code)]
+#[path = "native_private_emit.rs"]
+pub(super) mod private_emit;
+use private_emit::{Failure as EmitFailure, OutputMode, RenderLimit};
+
+// Paid immutable dimensions for the private importer only.
+#[allow(dead_code)]
+#[path = "native_emit_work.rs"]
+pub(super) mod emit_work;
+
+// Passive checked body-work bound; payment stays with the private importer.
+#[allow(dead_code)]
+#[path = "native_emit_cost.rs"]
+pub(super) mod emit_cost;
+
+#[cfg(test)]
+#[path = "native_private_emit_tests.rs"]
+mod private_emit_tests;
+
+#[cfg(test)]
+#[path = "native_emit_observation.rs"]
+mod emit_observation;
+
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_LOCALS: usize = 256;
@@ -140,6 +164,33 @@ impl VerifiedProgram {
         ir_limit: usize,
         policy: EntryPolicy,
     ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits_mode(
+            entry,
+            sources,
+            fuel,
+            diagnostic_limit,
+            ir_limit,
+            policy,
+            OutputMode::Default,
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            // Only the closed Private mode can produce a fixed failure.
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn native_module_policy_limits_mode(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
+        policy: EntryPolicy,
+        mode: OutputMode<'_>,
+    ) -> Result<String, EmitFailure> {
         let id = entry.ok_or_else(|| {
             reject(
                 "native compile requires a declared zero-argument main",
@@ -160,13 +211,10 @@ impl VerifiedProgram {
                 )
             })?;
         if root.param_count != 0 {
-            return Err(reject(
-                "native main must have no parameters",
-                Some(root.span),
-            ));
+            return Err(reject("native main must have no parameters", Some(root.span)).into());
         }
         if policy == EntryPolicy::Process && root.result != hir::Ty::I32 {
-            return Err(reject("process main must return i32", Some(root.span)));
+            return Err(reject("process main must return i32", Some(root.span)).into());
         }
         let bounds = self.admit()?;
         let guarded = bounds.iter().any(|bound| bound.cyclic);
@@ -184,11 +232,16 @@ impl VerifiedProgram {
                 )
             })
             .transpose()?;
-        // Count the exact emitted UTF-8 bytes without allocating LLVM text.
+        #[cfg(test)]
+        emit_observation::retained(&bounds, diagnostics.as_ref(), guarded);
+        // Count the exact emitted UTF-8 bytes without allocating the final LLVM
+        // text buffer. Inherited native metadata/temporary Strings still allocate.
         let mut count = Emission {
             policy,
             ..Emission::default()
         };
+        #[cfg(test)]
+        emit_observation::start_pass(false, &count);
         emit(
             &self.program,
             id,
@@ -198,14 +251,14 @@ impl VerifiedProgram {
             fuel,
             &mut count,
         );
+        #[cfg(test)]
+        emit_observation::finish_pass(false, &count);
         if guarded || policy == EntryPolicy::Process {
             limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
         }
-        let mut output = Emission {
-            len: 0,
-            text: Some(String::with_capacity(count.len)),
-            policy,
-        };
+        let mut output = mode.allocate(count.len, policy)?;
+        #[cfg(test)]
+        emit_observation::start_pass(true, &output);
         emit(
             &self.program,
             id,
@@ -215,8 +268,9 @@ impl VerifiedProgram {
             fuel,
             &mut output,
         );
-        debug_assert_eq!(output.len, count.len);
-        Ok(output.text.expect("render pass"))
+        #[cfg(test)]
+        emit_observation::finish_pass(true, &output);
+        output.finish(count.len)
     }
 
     fn admit(&self) -> Result<Vec<Bound>, Box<Diagnostic>> {
@@ -398,9 +452,35 @@ struct Emission {
     len: usize,
     text: Option<String>,
     policy: EntryPolicy,
+    private: Option<RenderLimit>,
 }
 impl Emission {
     fn push_str(&mut self, text: &str) {
+        if let Some(limit) = &mut self.private {
+            // Existing serializer callers unwrap fmt::Result. Latch a fixed
+            // private failure and suppress writes, rather than panic or grow.
+            if limit.failed {
+                return;
+            }
+            let next = self.len.checked_add(text.len());
+            let Some(buffer) = self.text.as_mut() else {
+                limit.failed = true;
+                return;
+            };
+            match next {
+                Some(next)
+                    if next <= limit.expected
+                        && next <= buffer.capacity()
+                        && buffer.capacity() == limit.expected
+                        && buffer.len() == self.len =>
+                {
+                    buffer.push_str(text);
+                    self.len = next;
+                }
+                _ => limit.failed = true,
+            }
+            return;
+        }
         // Saturation cannot admit an overflow: the guarded count is compared
         // with 64MiB before allocation, and unguarded inputs retain old bounds.
         self.len = self.len.saturating_add(text.len());
@@ -438,6 +518,8 @@ enum FailureKind {
 }
 impl FailureKind {
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
+        #[cfg(test)]
+        emit_observation::event(emit_observation::Event::Construct, 1);
         if self == Self::ProcessStatus {
             return Diagnostic::new(
                 "E0600",
@@ -513,20 +595,34 @@ impl GuardedDiagnostics {
         let mut count = LimitedCount { len: 0, maximum };
         let mut add = |kind: FailureKind, span: Span| -> Result<(), Box<Diagnostic>> {
             let key = (kind, span.file.0, span.start, span.end);
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::Contains, 1);
             if result.ids.contains_key(&key) {
                 return Ok(());
             }
             let diagnostic = kind.diagnostic(span, sources);
             // The renderer streams escaped paths while counting: no oversize
             // intermediate diagnostic is allocated before this preflight.
+            #[cfg(test)]
+            let before = count.len;
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::HumanCount, 1);
             diagnostic.write_human(sources, &mut count).map_err(|_| {
                 reject(
                     format!("native preview guarded diagnostic bytes limit exceeded ({maximum})"),
                     Some(span),
                 )
             })?;
+            #[cfg(test)]
+            emit_observation::human_bytes(false, count.len - before);
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::Insert, 1);
             result.ids.insert(key, result.messages.len());
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::HumanRender, 1);
             result.messages.push(diagnostic.render_human(sources));
+            #[cfg(test)]
+            emit_observation::human_bytes(true, result.messages.last().unwrap().len());
             Ok(())
         };
         if guarded {
@@ -566,6 +662,8 @@ impl GuardedDiagnostics {
         Ok(result)
     }
     fn get(&self, kind: FailureKind, span: Span) -> (usize, &str) {
+        #[cfg(test)]
+        emit_observation::event(emit_observation::Event::Get, 1);
         let id = self.ids[&(kind, span.file.0, span.start, span.end)];
         (id, &self.messages[id])
     }
@@ -621,7 +719,11 @@ fn emit_arithmetic_failure(
         .unwrap();
     } else {
         let symbol = kind.arithmetic_symbol();
+        #[cfg(test)]
+        emit_observation::event(emit_observation::Event::HumanRender, 1);
         let length = kind.diagnostic(span, sources).render_human(sources).len();
+        #[cfg(test)]
+        emit_observation::human_bytes(true, length);
         writeln!(
             out,
             "  call void @{failure}(ptr @{symbol}_{function}_{destination}, i64 {length})"
@@ -653,8 +755,12 @@ fn emit(
                 message.len()
             )
             .unwrap();
+            #[cfg(test)]
+            emit_observation::event(emit_observation::Event::Escape, 1);
             for byte in message.bytes() {
                 write!(out, "\\{byte:02X}").unwrap();
+                #[cfg(test)]
+                emit_observation::event(emit_observation::Event::EscapedByte, 1);
             }
             out.push_str("\"\n");
         }
@@ -668,9 +774,13 @@ fn emit(
                     }
                     for &kind in failures {
                         let symbol = kind.arithmetic_symbol();
+                        #[cfg(test)]
+                        emit_observation::event(emit_observation::Event::HumanRender, 1);
                         let message = kind
                             .diagnostic(operator_span, sources)
                             .render_human(sources);
+                        #[cfg(test)]
+                        emit_observation::human_bytes(true, message.len());
                         write!(
                             out,
                             "@{symbol}_{}_{} = private unnamed_addr constant [{} x i8] c\"",
@@ -679,8 +789,12 @@ fn emit(
                             message.len()
                         )
                         .unwrap();
+                        #[cfg(test)]
+                        emit_observation::event(emit_observation::Event::Escape, 1);
                         for byte in message.bytes() {
                             write!(out, "\\{byte:02X}").unwrap();
+                            #[cfg(test)]
+                            emit_observation::event(emit_observation::Event::EscapedByte, 1);
                         }
                         out.push_str("\"\n");
                     }
@@ -733,6 +847,8 @@ fn emit(
                     )
             })
             .collect();
+        #[cfg(test)]
+        emit_observation::labels(&exits);
         for (i, b) in f.blocks.iter().enumerate() {
             writeln!(out, "b{i}:").unwrap();
             if let Some(merge) = &b.merge {
@@ -1051,7 +1167,7 @@ fn emit(
 mod tests {
     use super::*;
     use crate::frontend::{lexer, parser};
-    fn verified_with_sources(text: &str) -> (VerifiedProgram, SourceMap) {
+    pub(super) fn verified_with_sources(text: &str) -> (VerifiedProgram, SourceMap) {
         verified_at("native-unit.ox", text)
     }
     fn verified_at(path: &str, text: &str) -> (VerifiedProgram, SourceMap) {
@@ -1300,12 +1416,13 @@ mod tests {
     fn process_native_changed_carriers_have_measured_finite_layouts() {
         use std::mem::{align_of, size_of};
         // This is the actual local emitter carrier, not a stack-size claim.
-        // Its old len + Option<String> layout was 32 bytes; policy adds 8.
+        // Its old len + Option<String> layout was 32 bytes; policy added 8.
+        // The denied private render guard adds a complete measured carrier.
         assert_eq!(
             (size_of::<EntryPolicy>(), align_of::<EntryPolicy>()),
             (1, 1)
         );
-        assert_eq!((size_of::<Emission>(), align_of::<Emission>()), (40, 8));
+        assert_eq!((size_of::<Emission>(), align_of::<Emission>()), (56, 8));
         assert_eq!(
             (size_of::<FailureKind>(), align_of::<FailureKind>()),
             (1, 1)

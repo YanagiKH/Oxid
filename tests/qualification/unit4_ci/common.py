@@ -17,8 +17,8 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = 'b3d845feb1bb0061baac1f1d262b38f16943e0d80340ba67895e2bb3eb8698f5'
-CURRENT_SHA = '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842'
+INPUTS_SHA = '3ea5a7051e5d9e8d2b0d525b92edc341c71c92442f44e7ba0ba4ebb187cfc1bf'
+CURRENT_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746'
 ENUM_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
@@ -126,6 +126,28 @@ def git(repo, *args):
     return result.stdout.decode().strip()
 
 
+def git_diff_paths(repo, head, names):
+    """Check every path against HEAD without exceeding Windows' argv limit."""
+    args = ['diff', '--exit-code', head, '--']
+    # CreateProcess allows 32767 UTF-16 units including the terminating NUL.
+    # Use a conservative bound on every host, including Python's exact Windows
+    # quoting, the checkout path, and astral characters (two UTF-16 units).
+    def units(argv):
+        return len(subprocess.list2cmdline(argv).encode('utf-16-le')) // 2
+    base = units(['git', '-C', str(repo), *args]) + 1
+    batch, size = [], base
+    for name in names:
+        cost = 1 + units([name])
+        need(base + cost <= 16000, 'qualification path exceeds Git command bound')
+        if size + cost > 16000:
+            git(repo, *args, *batch)
+            batch, size = [], base
+        batch.append(name)
+        size += cost
+    if batch:
+        git(repo, *args, *batch)
+
+
 def measured_host():
     system = {'Darwin': 'macOS'}.get(platform.system(), platform.system())
     machine = {'AMD64': 'x86_64', 'aarch64': 'arm64'}.get(platform.machine(), platform.machine())
@@ -141,6 +163,8 @@ def verify_package(repo, manifest):
     rows = manifest['files']
     names = [r['path'] for r in rows]
     need(names == sorted(set(names)) and rows, 'empty/duplicate/unordered package inventory')
+    need(all('__pycache__' not in Path(name).parts and not name.endswith(('.pyc', '.pyo'))
+             for name in names), 'generated Python cache is not a qualification input')
     for row in rows:
         verify(Path(repo) / relative(row['path']), row)
     for root in manifest['closed_roots']:
@@ -174,7 +198,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     source_path = repo / SOURCE / 'current-source.json'
     need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved current source manifest')
     source = read(source_path)
-    need(len(source['files']) == 266, 'current source count')
+    need(len(source['files']) == 324, 'current source count')
     for row in source['files']:
         verify(repo / relative(row['path']), row)
     actual = sorted(p.relative_to(repo).as_posix() for sub in ('src', 'native') for p in (repo / sub).rglob('*') if p.is_file())
@@ -189,7 +213,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     if committed:
         tracked = set(git(repo, 'ls-tree', '-r', '--name-only', head).splitlines())
         need(set(names) <= tracked, 'uncommitted qualification input')
-        git(repo, 'diff', '--exit-code', head, '--', *names)
+        git_diff_paths(repo, head, names)
     publication_root = repo / 'tests/fixtures/typed_project_unit4_parser_portable'
     publication = module('_unit4_parser_publication', publication_root / 'verify_publication.py').verify(publication_root)
     need(publication['status'] == 'pass', 'portable original checkpoint/projection rejected')

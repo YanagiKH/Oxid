@@ -2,6 +2,10 @@
 //! can enter here. Fuel counts abstract-machine work, not wall-clock time.
 use super::*;
 
+#[cfg(test)]
+#[path = "execute_measurement.rs"]
+pub(in crate::frontend) mod measurement;
+
 pub(super) const MAX_FUEL: usize = 1_000_000;
 const MAX_FRAMES: usize = 1_024;
 const MAX_LIVE_SLOTS: usize = 200_000;
@@ -257,7 +261,11 @@ fn execute(
     )?;
     // Header capacity is bounded separately from live scalar slot storage.
     let mut frames = Vec::with_capacity(limits.frames);
+    #[cfg(test)]
+    measurement::storage(&frames, frames.capacity(), 0);
     frames.push(frame(entry, args, None)?);
+    #[cfg(test)]
+    measurement::storage(&frames, frames.capacity(), 0);
     #[cfg(test)]
     observe(Event::Enter(entry.id));
     loop {
@@ -423,6 +431,8 @@ fn execute(
                     .iter()
                     .map(|&arg| read(active, arg))
                     .collect::<Result<Vec<_>, _>>()?;
+                #[cfg(test)]
+                measurement::storage(&frames, frames.capacity(), values.capacity());
                 let child = frame(
                     callee,
                     &values,
@@ -433,6 +443,8 @@ fn execute(
                     }),
                 )?;
                 frames.push(child);
+                #[cfg(test)]
+                measurement::storage(&frames, frames.capacity(), values.capacity());
                 #[cfg(test)]
                 observe(Event::Enter(callee.id));
                 live_slots = next_slots;

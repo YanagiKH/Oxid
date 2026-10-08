@@ -1,0 +1,1 @@
+pub fn f(x:i32)->i32{return x;}fn main()->i32{let mut n=f(1);while false{n=n+1;}if true{return n;}else{return f(2);}}

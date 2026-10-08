@@ -11,6 +11,9 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    TypedImport {
+        request: Box<[ImportOptions; 1]>,
+    },
     TypedFormat {
         path: String,
         check: bool,
@@ -42,6 +45,18 @@ pub enum Route {
     ProcessError {
         message: String,
     },
+}
+
+/// Explicit bridge-only CLI ownership, never stored in a checked source program.
+/// The one-element box is built with a fallible exact reservation; default Route
+/// remains unchanged in size. String payloads retain ordinary argv ownership.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ImportOptions {
+    pub path: String,
+    pub observation: String,
+    pub output: Option<String>,
+    pub json: bool,
+    pub operation: Operation,
 }
 
 /// Transient entry selection, never retained in a checked source program.
@@ -202,6 +217,8 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     let mut edition = None;
     let mut edition_seen = false;
     let mut format_seen = false;
+    let mut import_seen = false;
+    let mut import = None;
     let mut json = false;
     let mut error = None;
     let mut index = 0;
@@ -218,14 +235,19 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             forwarded.extend_from_slice(&args[index..]);
             break;
         }
-        let option = ["--edition", "--message-format", "--entry-mode"]
-            .into_iter()
-            .find(|name| {
-                argument == *name
-                    || argument
-                        .strip_prefix(name)
-                        .is_some_and(|suffix| suffix.starts_with('='))
-            });
+        let option = [
+            "--edition",
+            "--message-format",
+            "--entry-mode",
+            "--experimental-hir-import",
+        ]
+        .into_iter()
+        .find(|name| {
+            argument == *name
+                || argument
+                    .strip_prefix(name)
+                    .is_some_and(|suffix| suffix.starts_with('='))
+        });
         let Some(name) = option else {
             forwarded.push(args[index].clone());
             index += 1;
@@ -236,6 +258,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             "--edition" => &mut edition_seen,
             "--message-format" => &mut format_seen,
             "--entry-mode" => &mut entry.seen,
+            "--experimental-hir-import" => &mut import_seen,
             _ => unreachable!("the option name is selected from a closed list"),
         };
         if *seen {
@@ -257,6 +280,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
                 entry.malformed |= name == "--entry-mode";
                 error.get_or_insert_with(|| format!("{name} requires a value"));
             }
+            ("--experimental-hir-import", Some(value)) => import = Some(value.to_string()),
             ("--edition", Some(value @ ("legacy-0.9" | "typed-preview"))) => {
                 edition = Some(value);
             }
@@ -306,6 +330,19 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     {
         error.get_or_insert_with(|| {
             "--entry-mode requires typed-preview run or compile".to_string()
+        });
+    }
+    if import_seen
+        && (edition != Some("typed-preview")
+            || !matches!(command, Some("check" | "run" | "compile")))
+    {
+        error.get_or_insert_with(|| {
+            "--experimental-hir-import requires explicit typed-preview check, run or compile".into()
+        });
+    }
+    if import_seen && entry.policy == EntryPolicy::Process {
+        error.get_or_insert_with(|| {
+            "--experimental-hir-import supports only Result entry mode".into()
         });
     }
     if format_seen && edition != Some("typed-preview") {
@@ -413,6 +450,24 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             };
         }
     }
+    if let Some(observation) = import {
+        let Some(path) = path else {
+            return Route::Error {
+                message: format!("typed-preview {command} requires exactly one source path"),
+                json,
+                operation,
+            };
+        };
+        let options = ImportOptions {
+            path,
+            observation,
+            output,
+            json,
+            operation,
+        };
+        return import_route(options, &mut super::project::budget::Allocator::default());
+    }
+
     match path {
         Some(path) => match operation {
             Operation::Check => Route::TypedCheck { path, json },
@@ -434,6 +489,37 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             operation,
         },
     }
+}
+
+fn import_route(
+    options: ImportOptions,
+    allocator: &mut super::project::budget::Allocator,
+) -> Route {
+    let json = options.json;
+    let operation = options.operation;
+    // Stable Rust has no fallible Box::new. This bridge-specific allocation is
+    // a single actual carrier, admitted before reserve under the unchanged cap.
+    // String ownership is moved from argv; no source/artifact bytes are loaded.
+    let mut storage = Vec::new();
+    if std::mem::size_of::<ImportOptions>() as u64
+        > super::declaration_index::IndexLimits::default().retained
+        || allocator
+            .vector_exact(&mut storage, 1, "experimental import options")
+            .is_err()
+        || storage.capacity() != 1
+    {
+        return Route::Error {
+            message: "cannot allocate experimental import options".into(),
+            json,
+            operation,
+        };
+    }
+    storage.push(options);
+    let request = storage
+        .into_boxed_slice()
+        .try_into()
+        .expect("one admitted import option");
+    Route::TypedImport { request }
 }
 
 /// A selected formatter has its own text-only, exit-2 error contract.
@@ -1127,5 +1213,114 @@ mod tests {
             route(&arguments(&["fmt", "file.ox", "--edition=legacy-0.9"])),
             Route::Legacy(arguments(&["fmt", "file.ox"]))
         );
+    }
+}
+
+#[cfg(test)]
+mod import_options_tests {
+    use super::*;
+    fn parse(args: &[&str]) -> Route {
+        route(
+            &args
+                .iter()
+                .map(|arg| (*arg).to_string())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn experimental_import_requires_typed_result_semantic_operation() {
+        for operation in ["check", "run", "compile"] {
+            let mut args = vec![
+                operation,
+                "source.ox",
+                "--edition=typed-preview",
+                "--experimental-hir-import=wire.bin",
+            ];
+            if operation == "compile" {
+                args.extend(["--backend=llvm", "--output=new.elf"]);
+            }
+            assert!(
+                matches!(parse(&args), Route::TypedImport { request } if request[0].path == "source.ox" && request[0].observation == "wire.bin")
+            );
+        }
+        for args in [
+            vec!["run", "x", "--experimental-hir-import=wire"],
+            vec![
+                "run",
+                "x",
+                "--edition=legacy-0.9",
+                "--experimental-hir-import=wire",
+            ],
+            vec![
+                "fmt",
+                "x",
+                "--edition=typed-preview",
+                "--experimental-hir-import=wire",
+            ],
+            vec![
+                "run",
+                "x",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+                "--experimental-hir-import=wire",
+            ],
+            vec![
+                "check",
+                "x",
+                "--edition=typed-preview",
+                "--experimental-hir-import=",
+            ],
+            vec![
+                "check",
+                "x",
+                "--edition=typed-preview",
+                "--experimental-hir-import=a",
+                "--experimental-hir-import=b",
+            ],
+        ] {
+            assert!(matches!(
+                parse(&args),
+                Route::Error { .. } | Route::ProcessError { .. }
+            ));
+        }
+        assert!(matches!(
+            parse(&["script", "test", "--experimental-hir-import=wire"]),
+            Route::Legacy(_)
+        ));
+        assert!(
+            matches!(parse(&["run", "--edition=typed-preview", "--", "--experimental-hir-import=wire"]), Route::TypedRun { path, .. } if path == "--experimental-hir-import=wire")
+        );
+    }
+
+    #[test]
+    fn experimental_import_box_is_fallible_and_default_route_layout_stable() {
+        let options = || ImportOptions {
+            path: "source.ox".into(),
+            observation: "wire.bin".into(),
+            output: None,
+            json: false,
+            operation: Operation::Check,
+        };
+        let mut allocator = super::super::project::budget::Allocator {
+            fail_at: Some(1),
+            ..Default::default()
+        };
+        assert!(matches!(
+            import_route(options(), &mut allocator),
+            Route::Error { .. }
+        ));
+        assert_eq!(allocator.attempts, 1);
+        let mut allocator = super::super::project::budget::Allocator::default();
+        allocator.observer_trace_bound(1).unwrap();
+        assert!(matches!(
+            import_route(options(), &mut allocator),
+            Route::TypedImport { .. }
+        ));
+        assert_eq!(allocator.attempts, 1);
+        assert_eq!(allocator.trace[0].kind, "experimental import options");
+        assert_eq!(allocator.trace[0].length, 1);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(std::mem::size_of::<Route>(), 56);
     }
 }

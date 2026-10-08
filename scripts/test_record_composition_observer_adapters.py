@@ -81,7 +81,7 @@ class RecordObserverPackageControls(unittest.TestCase):
 
     def test_normal_and_optimized_reversal_and_scope_controls(self):
         with admitted_composition_view() as (view, captured):
-            self.assertEqual(len(captured['inputs']), 266)
+            self.assertEqual(len(captured['inputs']), 324)
             self.assertEqual(len(captured['enum_inputs']), 237)
             self.assertEqual(len(captured['projected_inputs']), 201)
             self.assertEqual(len(captured['composition_inputs']), 196)

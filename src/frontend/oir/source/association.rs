@@ -249,3 +249,108 @@ pub(super) fn scalar(
     }
     visitor.finish(count)
 }
+
+#[cfg(test)]
+mod root_projection_tests {
+    use super::*;
+    use crate::frontend::{
+        declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
+        project::{budget::Allocator, ModuleId, ProjectLimits, ProjectSources, SyntaxFlavor},
+    };
+
+    fn project(text: &str) -> ProjectSources {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "oxid-root-projection-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(directory.clone());
+        let file = directory.join("main.ox");
+        std::fs::write(&file, text).unwrap();
+        ProjectSources::load_typed(file.to_str().unwrap(), ProjectLimits::default()).unwrap()
+    }
+
+    fn equivalent(text: &str, names: &[&str], flavor: SyntaxFlavor) {
+        let project = project(text);
+        assert_eq!(project.syntax_flavor(), flavor);
+        assert_eq!(project.modules().len(), 1);
+        let owner = SourceOwner::project(&project);
+        let root = owner.ast(ModuleId(0)).unwrap();
+        assert!(root.modules.is_empty());
+        assert!(root.imports.is_empty());
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let frozen = collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
+
+        // This is only a count/order/name projection of a genuine root AST.
+        // It neither constructs an original source owner nor runs verification.
+        let original = Declarations::Original(root);
+        let indexed = Declarations::Project(&frozen);
+        assert_eq!(original.count(), names.len());
+        assert_eq!(indexed.count(), original.count());
+        for (ordinal, name) in names.iter().enumerate() {
+            let id = hir::DefId(ordinal);
+            let span = original.name(id).unwrap();
+            assert_eq!(span, root.functions[ordinal].name);
+            assert_eq!(indexed.name(id).unwrap(), span);
+            assert_eq!(project.try_text(span), Some(*name));
+        }
+        for ordinal in [names.len(), usize::MAX] {
+            let original = original.name(hir::DefId(ordinal)).unwrap_err();
+            let indexed = indexed.name(hir::DefId(ordinal)).unwrap_err();
+            assert_eq!(
+                (original.code, original.stage),
+                ("E0500", "oir-project-bind")
+            );
+            assert_eq!(
+                (indexed.code, indexed.stage),
+                (original.code, original.stage)
+            );
+            assert_eq!(indexed.message, original.message);
+            assert_eq!(indexed.primary, original.primary);
+        }
+    }
+
+    #[test]
+    fn checked_hir_import_root_declarations_public_main() {
+        equivalent(
+            "pub fn main()->i32{return 7;}",
+            &["main"],
+            SyntaxFlavor::ProjectSyntax,
+        );
+    }
+
+    #[test]
+    fn checked_hir_import_root_declarations_private_helper_before_main() {
+        equivalent(
+            "fn helper()->i32{return 7;} pub fn main()->i32{return helper();}",
+            &["helper", "main"],
+            SyntaxFlavor::ProjectSyntax,
+        );
+    }
+
+    #[test]
+    fn checked_hir_import_root_declarations_library_without_main() {
+        equivalent(
+            "pub fn library()->i32{return helper();} fn helper()->i32{return 7;}",
+            &["library", "helper"],
+            SyntaxFlavor::ProjectSyntax,
+        );
+    }
+
+    #[test]
+    fn checked_hir_import_root_declarations_empty() {
+        equivalent("", &[], SyntaxFlavor::OriginalSingleFile);
+    }
+}

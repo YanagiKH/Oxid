@@ -67,7 +67,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 266)
+        self.assertEqual(len(captured["inputs"]), 324)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,18 +107,142 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_hir_import_inverse_restores_exact_native_inventory_and_archive(self):
+        restored, touched = binding.inverse_hir_import_patch(
+            self.captured["inputs"], self.captured["package_bytes"]["hir-import-transition.patch"])
+        self.assertEqual(restored, self.captured["native_inventory_inputs"])
+        self.assertEqual(touched, list(binding.HIR_IMPORT_PATHS))
+        self.assertEqual((len(restored), len(touched), len(binding.HIR_IMPORT_ADDITIONS),
+                          len(binding.HIR_IMPORT_FIXTURES)), (266, 52, 38, 20))
+        self.assertEqual(len(self.captured["inputs"]), 324)
+        self.assertEqual(len([n for n in self.captured["inputs"] if n.startswith(("src/", "native/"))]), 246)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], binding.HIR_IMPORT_HEAD)
+        self.assertEqual(self.captured["current"]["source_only_tree"], binding.HIR_IMPORT_TREE)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["native-inventory-source.json"]),
+                         "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842")
+        self.assertEqual(self.captured["hir_import_authority"]["recipe"],
+                         "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS")
+
+    def test_hir_import_forward_patch_and_additive_fixtures_recreate_current(self):
+        source = self.root / "forward-hir-import"
+        binding.materialize(source, self.captured["native_inventory_inputs"])
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(self.package / 'hir-import-transition.patch')],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for name in binding.HIR_IMPORT_FIXTURES:
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(self.captured["inputs"][name])
+        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+
+    def test_hir_import_fixtures_verified_before_any_removal_or_inverse(self):
+        original_patch = self.captured["package_bytes"]["hir-import-transition.patch"]
+        for name in binding.HIR_IMPORT_FIXTURES:
+            with self.subTest(name=name):
+                original = self.captured["inputs"][name]
+                for replacement in (None, original + b'X'):
+                    inputs = dict(self.captured["inputs"])
+                    if replacement is None:
+                        del inputs[name]
+                    else:
+                        inputs[name] = replacement
+                    with patch.object(binding, 'apply_inverse_patch', side_effect=AssertionError('inverse ran')):
+                        with self.assertRaisesRegex(binding.BindingError, 'changed HIR import fixture input'):
+                            binding.inverse_hir_import_patch(inputs, original_patch)
+                    self.assertEqual(self.captured["inputs"][name], original)
+        extra = self.repo / 'tests/fixtures/checked_hir_import/unapproved-success.bin'
+        extra.write_bytes(b'')
+        with patch.object(binding, 'inverse_hir_import_patch', side_effect=AssertionError('inverse ran')):
+            self.rejects('missing or extra HIR import fixture member')
+
+    def test_hir_import_fixture_modes_and_missing_members_reject_before_inverse(self):
+        name = binding.HIR_IMPORT_FIXTURES[0]
+        path = self.repo / name
+        raw = path.read_bytes()
+        path.unlink()
+        self.rejects('missing regular input')
+        path.write_bytes(raw)
+        if sys.platform != 'win32':
+            path.chmod(0o755)
+            with patch.object(binding, 'inverse_hir_import_patch', side_effect=AssertionError('inverse ran')):
+                self.rejects('changed input mode')
+
+    def test_hir_import_coherent_authority_and_source_mutations_reject(self):
+        path = self.package / 'hir-import-authority.json'
+        original = path.read_bytes()
+        for key, value in (('base_tree', '0' * 40), ('predecessor_source_head', '0' * 40),
+                           ('source_only_tree', '0' * 40), ('current_source_members', 323),
+                           ('compiler_bodies', 248), ('fixture_additions', []), ('fixture_inputs', []),
+                           ('compiler_additions', []), ('current_input_identities', []),
+                           ('transition_inputs', []), ('removed_paths', ['src/main.rs'])):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization('stale HIR import authority')
+        path.write_bytes(original)
+        manifest = self.package / 'current-source.json'
+        current = binding.json.loads(manifest.read_bytes())
+        current['files'] = [r for r in current['files'] if r['path'] != binding.HIR_IMPORT_FIXTURES[0]]
+        binding.write_json(manifest, current)
+        self.rehash_package()
+        self.rejects_before_materialization('unapproved current source manifest')
+
+    def test_hir_import_predecessor_patch_and_wrong_stage_reject(self):
+        for name, error in (('native-inventory-source.json', 'unapproved native inventory source manifest'),
+                            ('hir-import-transition.patch', 'wrong transition patch')):
+            path = self.package / name
+            raw = path.read_bytes()
+            path.write_bytes(raw + b'\n')
+            self.rehash_package()
+            self.rejects_before_materialization(error)
+            path.write_bytes(raw)
+        self.rehash_package()
+        original = self.captured['package_bytes']['hir-import-transition.patch']
+        for stage in ('native_inventory_inputs', 'native_storage_inputs', 'archived'):
+            with self.subTest(stage=stage), self.assertRaises(binding.BindingError):
+                binding.inverse_hir_import_patch(self.captured[stage], original)
+
+    def test_hir_import_recovery_verified_before_older_inverse(self):
+        damaged = dict(self.captured['native_inventory_inputs'])
+        damaged['src/frontend/driver.rs'] += b'// invalid recovery\n'
+        with patch.object(binding, 'inverse_hir_import_patch', return_value=(damaged, list(binding.HIR_IMPORT_PATHS))), \
+                patch.object(binding, 'inverse_native_inventory_patch', side_effect=AssertionError('older inverse ran')):
+            self.rejects('changed reconstructed input')
+
+    def test_hir_import_compiler_patch_scope_and_context_reject(self):
+        original = self.captured['package_bytes']['hir-import-transition.patch']
+        sections = [b'diff --git ' + item for item in original.split(b'diff --git ')[1:]]
+        reduced = {n: b for n, b in self.captured['inputs'].items() if n not in binding.HIR_IMPORT_FIXTURES}
+        for changed in (b''.join(reversed(sections)), b''.join(sections[:-1]),
+                        original + sections[0], original + b'unexpected tail\n'):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(reduced, changed, binding.digest(changed), len(changed), binding.HIR_IMPORT_PATHS)
+        for name, section in zip(binding.HIR_IMPORT_PATHS, sections):
+            inputs = dict(self.captured['inputs'])
+            hunk = next(line for line in section.splitlines() if line.startswith(b'@@ '))
+            offset = max(int(hunk.split(b' +', 1)[1].split(b' ', 1)[0].split(b',', 1)[0]) - 1, 0)
+            lines = inputs[name].splitlines(keepends=True)
+            lines[offset] = b'X' + lines[offset]
+            inputs[name] = b''.join(lines)
+            with self.subTest(name=name), self.assertRaises(binding.BindingError):
+                binding.inverse_hir_import_patch(inputs, original)
+
     def test_native_inventory_inverse_restores_complete_native_storage_and_archive(self):
         restored, touched = binding.inverse_native_inventory_patch(
-            self.captured["inputs"], self.captured["package_bytes"]["native-inventory-transition.patch"])
+            self.captured["native_inventory_inputs"], self.captured["package_bytes"]["native-inventory-transition.patch"])
         self.assertEqual(restored, self.captured["native_storage_inputs"])
         binding.check_bytes(restored, self.captured["native_storage_source"]["files"])
         self.assertEqual(touched, list(binding.NATIVE_INVENTORY_PATHS))
         self.assertEqual((len(touched), len(restored), len(binding.NATIVE_INVENTORY_ADDITIONS)), (7, 264, 2))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(binding.NATIVE_INVENTORY_ADDITIONS))
-        self.assertEqual(len([name for name in self.captured["inputs"]
+        self.assertEqual(set(self.captured["native_inventory_inputs"]) - set(restored), set(binding.NATIVE_INVENTORY_ADDITIONS))
+        self.assertEqual(len([name for name in self.captured["native_inventory_inputs"]
                               if name.startswith(("src/", "native/"))]), 208)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], binding.NATIVE_INVENTORY_HEAD)
-        self.assertEqual(self.captured["current"]["source_only_tree"], binding.NATIVE_INVENTORY_TREE)
+        self.assertEqual(self.captured["native_inventory_source"]["reviewed_source_head"], binding.NATIVE_INVENTORY_HEAD)
+        self.assertEqual(self.captured["native_inventory_source"]["source_only_tree"], binding.NATIVE_INVENTORY_TREE)
         output = self.root / "native-inventory-archive"
         output.mkdir()
         receipt = binding.prepare_archived(output, self.captured)
@@ -136,7 +260,7 @@ class SourceBindingTests(unittest.TestCase):
                                      'apply', *extra, str(patch_path)], cwd=source,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        binding.check_entries(source, self.captured["native_inventory_source"]["files"], exact=True)
 
     def test_native_inventory_members_bound_before_any_inverse(self):
         for name in binding.NATIVE_INVENTORY_PATHS:
@@ -201,7 +325,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(len(sections), 7)
         for name, section in zip(binding.NATIVE_INVENTORY_PATHS, sections):
             with self.subTest(name=name):
-                inputs = dict(self.captured["inputs"])
+                inputs = dict(self.captured["native_inventory_inputs"])
                 hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
                 offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
                 lines = inputs[name].splitlines(keepends=True)
@@ -213,7 +337,7 @@ class SourceBindingTests(unittest.TestCase):
             with self.subTest(stage=stage), self.assertRaises(binding.BindingError):
                 binding.inverse_native_inventory_patch(self.captured[stage], original)
         with self.assertRaises(binding.BindingError):
-            binding.inverse_native_storage_patch(self.captured["inputs"], self.captured["package_bytes"]["native-storage-transition.patch"])
+            binding.inverse_native_storage_patch(self.captured["native_inventory_inputs"], self.captured["package_bytes"]["native-storage-transition.patch"])
 
     def test_native_inventory_inverse_scope_order_duplicates_and_extra_tail_reject(self):
         original = self.captured["package_bytes"]["native-inventory-transition.patch"]
@@ -222,7 +346,7 @@ class SourceBindingTests(unittest.TestCase):
         for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
                         original + sections[0], original + unknown, original + b"unexpected tail\n"):
             with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
-                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                binding.apply_inverse_patch(self.captured["native_inventory_inputs"], changed, binding.digest(changed),
                                             len(changed), binding.NATIVE_INVENTORY_PATHS)
 
     def test_native_inventory_recovered_phase1_is_verified_before_older_inverse(self):
@@ -245,13 +369,13 @@ class SourceBindingTests(unittest.TestCase):
                          "cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050")
         self.assertEqual(self.captured["native_inventory_authority"]["base_tree"],
                          "4c315696f1e7d324dcf3f00f077fbf9e17f9a722")
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(self.captured["native_inventory_source"]["reviewed_source_head"],
                          "ffa2e00543b7a1958321b719677ed3b48f42bc74")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["native_inventory_source"]["source_only_tree"],
                          "8a717f36016d86130ad5acc28a23f87852c76064")
         self.assertEqual(self.captured["native_inventory_authority"]["compiler_bodies"], 211)
         self.assertEqual(self.captured["native_storage_authority"]["compiler_bodies"], 209)
-        self.assertNotEqual(self.captured["inputs"]["src/frontend/oir/owned/native.rs"],
+        self.assertNotEqual(self.captured["native_inventory_inputs"]["src/frontend/oir/owned/native.rs"],
                             self.captured["native_storage_inputs"]["src/frontend/oir/owned/native.rs"])
 
     def test_native_storage_inverse_restores_complete_stdout_and_archive(self):
@@ -2347,7 +2471,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (266, 185, 185, 133, 129, 117))
+                         (324, 185, 185, 133, 129, 117))
         self.assertEqual(plan["native_storage_source_members"], 264)
         self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
         self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)

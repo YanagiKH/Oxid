@@ -14,6 +14,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::TypedImport { request } => Some(process_import(&request[0])),
         Route::ProcessError { message } => Some(process_option_error(&message)),
         Route::TypedRun {
             json: true,
@@ -70,6 +71,112 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         )),
     }
 }
+/// Actual bridge-only I/O/result carriers, debited by the import facade. The
+/// already loaded ProjectSources and ordinary reporting infrastructure retain
+/// their existing baseline. This sum is conservative, not a stack/RSS claim.
+pub(super) fn import_transport_bytes() -> usize {
+    use std::{
+        fs::{File, Metadata},
+        io,
+        mem::size_of,
+    };
+    size_of::<[u8; oir::IMPORT_BYTES + 1]>()
+        + 3 * size_of::<Result<Summary, Vec<Diagnostic>>>()
+        + 3 * size_of::<oir::Imported>()
+        + 2 * size_of::<File>()
+        + 2 * size_of::<io::Result<Metadata>>()
+        + 2 * size_of::<io::Result<usize>>()
+        + size_of::<[usize; 4]>()
+        + 2 * size_of::<&options::ImportOptions>()
+        + 2 * size_of::<&[u8]>()
+}
+
+/// Explicit imported Result route; ordinary loading/reporting/publication stay
+/// shared. Read at most the exact wire plus one trailing-byte witness.
+fn process_import(request: &options::ImportOptions) -> i32 {
+    use std::io::Read;
+    let project = match ProjectSources::load_typed(&request.path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report(
+                &failure.sources,
+                failure.diagnostics,
+                request.json,
+                Summary::empty(request.operation),
+            )
+        }
+    };
+    let mut observation = [0u8; oir::IMPORT_BYTES + 1];
+    let result = (|| {
+        // Same stable-filesystem model as source loading, not a TOCTOU
+        // sandbox. Reject ordinary FIFOs/devices/directories before opening.
+        if !std::fs::metadata(&request.observation).is_ok_and(|meta| meta.is_file()) {
+            return Err(vec![*Diagnostic::new(
+                "E0702",
+                "hir-import",
+                "experimental HIR observation must be a readable regular file",
+                None,
+            )]);
+        }
+        let mut file = std::fs::File::open(&request.observation).map_err(|_| {
+            vec![*Diagnostic::new(
+                "E0702",
+                "hir-import",
+                "cannot open experimental HIR observation",
+                None,
+            )]
+        })?;
+        if !file.metadata().is_ok_and(|meta| meta.is_file()) {
+            return Err(vec![*Diagnostic::new(
+                "E0702",
+                "hir-import",
+                "experimental HIR observation must be a readable regular file",
+                None,
+            )]);
+        }
+        let mut length = 0;
+        while length < observation.len() {
+            match file.read(&mut observation[length..]) {
+                Ok(0) => break,
+                Ok(count) => length += count,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => {
+                    return Err(vec![*Diagnostic::new(
+                        "E0702",
+                        "hir-import",
+                        "cannot read experimental HIR observation",
+                        None,
+                    )])
+                }
+            }
+        }
+        if length != oir::IMPORT_BYTES {
+            return Err(vec![*Diagnostic::new("E0702", "hir-import", "experimental HIR observation must contain exactly 2607 bytes with no trailing data", None)]);
+        }
+        match oir::import_checked(&project, &observation[..length], request.operation)? {
+            oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
+            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+            oir::Imported::Emitted(module) => {
+                let output = request
+                    .output
+                    .as_deref()
+                    .expect("import compile validates output");
+                super::native::compile(&module, output).map_err(|error| vec![*error])?;
+                Ok(Summary::Compile(Some(output.to_string())))
+            }
+        }
+    })();
+    match result {
+        Ok(summary) => report(project.sources(), Vec::new(), request.json, summary),
+        Err(errors) => report(
+            project.sources(),
+            errors,
+            request.json,
+            Summary::empty(request.operation),
+        ),
+    }
+}
+
 enum Summary {
     Check(Option<usize>),
     Run(Option<oir::Scalar>),

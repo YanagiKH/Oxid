@@ -33,12 +33,12 @@ class CurrentAuthorityControls(unittest.TestCase):
         historical = p.read(p.FROZEN / 'authority.json')
         self.assertEqual({k: v for k, v in a.items() if k not in ('current', 'current_source')}, historical)
         self.assertEqual([len(a[k]) for k in ('original_files', 'derived_files', 'control_derived_files')], [283, 286, 286])
-        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [429, 432, 432])
-        self.assertEqual(len(a['current_source']['files']), 266)
-        self.assertEqual(len(p.compiler_map(a)), 211)
+        self.assertEqual([len(a['current'][k]) for k in ('current_base_files', 'current_derived_files', 'current_control_derived_files')], [487, 490, 490])
+        self.assertEqual(len(a['current_source']['files']), 324)
+        self.assertEqual(len(p.compiler_map(a)), 249)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 224)
+        self.assertEqual(len(a['current']['source_delta']), 282)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
@@ -53,6 +53,13 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/format/enum_candidate_tests.rs',
  'src/frontend/format/resource_tests.rs',
  'src/frontend/format_cli.rs',
+ 'src/frontend/oir/execute_measurement.rs',
+ 'src/frontend/oir/lower_measurement.rs',
+ 'src/frontend/oir/native_emit_cost.rs',
+ 'src/frontend/oir/native_emit_observation.rs',
+ 'src/frontend/oir/native_emit_work.rs',
+ 'src/frontend/oir/native_private_emit.rs',
+ 'src/frontend/oir/native_private_emit_tests.rs',
  'src/frontend/oir/negation_raw_tests.rs',
  'src/frontend/oir/owned/array_native_resource_tests.rs',
  'src/frontend/oir/owned/array_native_tests.rs',
@@ -128,7 +135,36 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/oir/owned_types/composition_tests.rs',
  'src/frontend/oir/owned_types/enum_integration_tests.rs',
  'src/frontend/oir/owned_types/enums.rs',
+ 'src/frontend/oir/source/hir_import.rs',
+ 'src/frontend/oir/source/hir_import/allocation.rs',
+ 'src/frontend/oir/source/hir_import/allocation/tests.rs',
+ 'src/frontend/oir/source/hir_import/ast_compare.rs',
+ 'src/frontend/oir/source/hir_import/ast_compare/tests.rs',
+ 'src/frontend/oir/source/hir_import/candidate.rs',
+ 'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs',
+ 'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs',
+ 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs',
+ 'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs',
+ 'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs',
+ 'src/frontend/oir/source/hir_import/candidate/tests.rs',
+ 'src/frontend/oir/source/hir_import/candidate/typed_compare.rs',
+ 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs',
+ 'src/frontend/oir/source/hir_import/emit_failure_tests.rs',
+ 'src/frontend/oir/source/hir_import/emit_measurements.rs',
+ 'src/frontend/oir/source/hir_import/emit_native_tests.rs',
+ 'src/frontend/oir/source/hir_import/emit_resource_tests.rs',
+ 'src/frontend/oir/source/hir_import/emit_tests.rs',
+ 'src/frontend/oir/source/hir_import/leaf.rs',
+ 'src/frontend/oir/source/hir_import/pass_measurements.rs',
+ 'src/frontend/oir/source/hir_import/public_facade.rs',
+ 'src/frontend/oir/source/hir_import/run_execution_tests.rs',
+ 'src/frontend/oir/source/hir_import/run_measurements.rs',
+ 'src/frontend/oir/source/hir_import/tests.rs',
+ 'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs',
+ 'src/frontend/oir/source/hir_import/verify_fact_tests.rs',
+ 'src/frontend/oir/source/hir_import/verify_tests.rs',
  'src/frontend/oir/unary_source_tests.rs',
+ 'src/frontend/oir/verify_measurement.rs',
  'src/frontend/parser/array_syntax_tests.rs',
  'src/frontend/parser/arrays.rs',
  'src/frontend/parser/builtin_tests.rs',
@@ -136,12 +172,34 @@ class CurrentAuthorityControls(unittest.TestCase):
  'src/frontend/parser/enums.rs',
  'src/frontend/project/array_syntax_tests.rs',
  'src/frontend/project/budget_real_null_observer.rs',
+ 'src/frontend/project/budget_string_null_tests.rs',
  'src/frontend/project/builtin_tests.rs',
  'src/frontend/project/enum_carrier_tests.rs',
  'src/frontend/project/enum_index_tests.rs',
  'src/frontend/stdin_public_tests.rs',
+ 'src/frontend/typeck_measurement.rs',
  'tests/fixtures/bounded_enum_scanner/main.ox',
  'tests/fixtures/bounded_enum_scanner/scanner.ox',
+ 'tests/fixtures/checked_hir_import/public-source.txt',
+ 'tests/fixtures/checked_hir_import/public-success.bin',
+ 'tests/fixtures/checked_hir_import/rich-source.txt',
+ 'tests/fixtures/checked_hir_import/rich-success.bin',
+ 'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt',
+ 'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin',
+ 'tests/fixtures/checked_hir_import/scalar-assignment-source.txt',
+ 'tests/fixtures/checked_hir_import/scalar-assignment-success.bin',
+ 'tests/fixtures/checked_hir_import/scalar-boolean-source.txt',
+ 'tests/fixtures/checked_hir_import/scalar-boolean-success.bin',
+ 'tests/fixtures/checked_hir_import/scalar-comparison-source.txt',
+ 'tests/fixtures/checked_hir_import/scalar-comparison-success.bin',
+ 'tests/fixtures/checked_hir_import/scalar-loop-source.txt',
+ 'tests/fixtures/checked_hir_import/scalar-loop-success.bin',
+ 'tests/fixtures/checked_hir_import/scalar-unit-source.txt',
+ 'tests/fixtures/checked_hir_import/scalar-unit-success.bin',
+ 'tests/fixtures/checked_hir_import/synthetic-division-source.txt',
+ 'tests/fixtures/checked_hir_import/synthetic-division-success.bin',
+ 'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt',
+ 'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox',
  'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox',
@@ -186,8 +244,8 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox',
  'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 78)
-        self.assertEqual(a['current']['reviewed_source_head'], 'ffa2e00543b7a1958321b719677ed3b48f42bc74')
-        self.assertEqual(a['current']['source_only_tree'], '8a717f36016d86130ad5acc28a23f87852c76064')
+        self.assertEqual(a['current']['reviewed_source_head'], 'a1dc6fc823d36d8858375eb651b48c3c682ac2c4')
+        self.assertEqual(a['current']['source_only_tree'], '74ba20e2dcecb6056d4b13448a643ba289d83f75')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read
@@ -235,7 +293,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -274,7 +332,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         a = p.authority()
         candidate = p.current_candidate(a)
         raw = (json.dumps(candidate, sort_keys=True, indent=2) + '\n').encode()
-        self.assertEqual(len(candidate['files']), 429)
+        self.assertEqual(len(candidate['files']), 487)
         self.assertEqual(p.sha(raw), a['current']['current_candidate_source_manifest_sha256'])
         for role in ('current_derived_files', 'current_control_derived_files'):
             self.assertEqual(next(r for r in a['current'][role] if r['path'] == 'candidate-source-manifest.json'),
@@ -399,7 +457,7 @@ class SourceReadCompositionControls(unittest.TestCase):
         original_read = p.read
         historical_path = p.FROZEN / 'authority.json'
         for role, name, message in (
-            ('instrumentation', 'src/frontend/driver.rs', 'exact stdout observer overlap roster'),
+            ('instrumentation', 'src/frontend/driver.rs', 'exact HIR import instrumentation overlap roster'),
             ('control_instrumentation', 'src/frontend/source.rs', 'exact enum control overlap roster')):
             historical = copy.deepcopy(original_read(historical_path))
             historical[role].append({'path': name, 'before_sha256': '0' * 64, 'after_sha256': '1' * 64})
@@ -445,6 +503,7 @@ class ArrayCompositionControls(unittest.TestCase):
             next(row for row in a['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
             message = (('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source' if name in p.DIVISION_INSTRUMENTATION_PATHS
+                       else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
                        else 'enum transition must recover exact projected source')
             with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, message):
                 p.compose_array_instrumentation(a, name, raw)
@@ -576,7 +635,8 @@ class SlicesCompositionControls(unittest.TestCase):
                 p.restore_slices_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
+                       else 'enum transition must recover exact projected source'):
                 p.restore_slices_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -618,7 +678,8 @@ class RecordCompositionControls(unittest.TestCase):
                 p.restore_composition_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
+                       else 'enum transition must recover exact projected source'):
                 p.restore_composition_source(altered, name, raw)
 
     def test_slices_patch_and_predecessor_identity_reject_before_transform(self):
@@ -660,7 +721,8 @@ class UnaryCompositionControls(unittest.TestCase):
                 p.restore_unary_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
+                       else 'enum transition must recover exact projected source'):
                 p.restore_unary_source(altered, name, raw)
 
     def test_unary_patch_and_predecessor_identity_reject_before_transform(self):
@@ -702,7 +764,8 @@ class ProjectedCompositionControls(unittest.TestCase):
                 p.restore_projected_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
+                       else 'enum transition must recover exact projected source'):
                 p.restore_projected_source(altered, name, raw)
 
     def test_projected_patch_and_predecessor_identity_reject_before_transform(self):
@@ -755,8 +818,10 @@ class StdoutCompositionControls(unittest.TestCase):
         inventory = p.read(p.REPOSITORY / current['native_inventory_authority']['path'])
         storage_source = p.read(p.REPOSITORY / current['native_storage_source_manifest']['path'])
         native_storage = p.read(p.REPOSITORY / current['native_storage_authority']['path'])
-        self.assertEqual(inventory['reviewed_source_head'], current['reviewed_source_head'])
-        self.assertEqual(inventory['current_source_sha256'], current['current_source_manifest']['sha256'])
+        inventory_source = p.read(p.REPOSITORY / current['native_inventory_source_manifest']['path'])
+        self.assertEqual(inventory['reviewed_source_head'], inventory_source['reviewed_source_head'])
+        self.assertNotEqual(inventory['reviewed_source_head'], current['reviewed_source_head'])
+        self.assertEqual(inventory['current_source_sha256'], current['native_inventory_source_manifest']['sha256'])
         self.assertEqual(inventory['native_storage_source_sha256'], current['native_storage_source_manifest']['sha256'])
         self.assertEqual(native_storage['reviewed_source_head'], storage_source['reviewed_source_head'])
         self.assertEqual(native_storage['current_source_sha256'], current['native_storage_source_manifest']['sha256'])
@@ -903,7 +968,8 @@ class EnumCompositionControls(unittest.TestCase):
                 p.restore_enum_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'enum transition must recover exact projected source'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, ('stdout transition must recover exact stdin source' if name in p.STDOUT_INSTRUMENTATION_PATHS else 'composition retained stdin identity') if name in p.STDIN_INSTRUMENTATION_PATHS else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
+                       else 'enum transition must recover exact projected source'):
                 p.restore_enum_source(altered, name, raw)
 
     def test_enum_transition_predecessor_and_runner_identity_reject_before_transform(self):
@@ -1095,6 +1161,74 @@ class EnumStructuralProjectionControls(unittest.TestCase):
         self.assertEqual(projected[0]['ast'], original[0]['ast'])
 
 
+
+class HirImportOverlapControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a = p.authority()
+        cls.name = 'src/frontend/project/budget.rs'
+        cls.raw = (p.REPOSITORY / cls.name).read_bytes()
+
+    def test_exact_inverse_and_current_reserve_hook(self):
+        self.assertEqual(p.HIR_IMPORT_INSTRUMENTATION_PATHS, (self.name,))
+        restored = p.restore_hir_import_source(self.a, self.name, self.raw)
+        predecessor = p.read(p.REPOSITORY / self.a['current']['native_inventory_source_manifest']['path'])
+        self.assertEqual(len(predecessor['files']), 266)
+        self.assertEqual({'path': self.name, 'bytes': len(restored), 'sha256': p.sha(restored)},
+                         next(row for row in predecessor['files'] if row['path'] == self.name))
+        composed = p.compose_array_instrumentation(self.a, self.name, self.raw)
+        self.assertIn(b'let _guard = real_null_observer::enter_exact::<u8>', composed)
+        hook = b'        #[cfg(test)]\n        crate::frontend::parser::unit4_observer::reserve(kind, length, element_bytes, success);\n'
+        self.assertEqual(composed.count(hook), 1)
+        self.assertEqual(composed.replace(hook, b'', 1), self.raw)
+        current_control = next(r for r in self.a['current']['current_control_derived_files'] if r['path'] == self.name)
+        self.assertEqual(current_control, {'path': self.name, 'bytes': len(self.raw), 'sha256': p.sha(self.raw)})
+
+    def test_changed_and_coherently_rehashed_tail_rejects(self):
+        raw = self.raw + b'// unauthorized HIR import tail\n'
+        with self.assertRaisesRegex(p.Rejected, 'composition current hir_import identity'):
+            p.restore_hir_import_source(self.a, self.name, raw)
+        altered = copy.deepcopy(self.a)
+        next(row for row in altered['current']['source_delta'] if row['path'] == self.name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
+        with self.assertRaisesRegex(p.Rejected, 'hir_import transition must recover exact native inventory source'):
+            p.restore_hir_import_source(altered, self.name, raw)
+
+    def test_double_inverse_and_wrong_path_reject(self):
+        restored = p.restore_hir_import_source(self.a, self.name, self.raw)
+        with self.assertRaisesRegex(p.Rejected, 'composition current hir_import identity'):
+            p.restore_hir_import_source(self.a, self.name, restored)
+        with self.assertRaisesRegex(p.Rejected, 'unapproved hir_import instrumentation path'):
+            p.restore_hir_import_source(self.a, 'src/frontend/parser.rs', b'')
+
+    def test_predecessor_pin_cannot_be_rebased(self):
+        altered = copy.deepcopy(self.a)
+        altered['current']['native_inventory_source_manifest']['sha256'] = '0' * 64
+        with self.assertRaises(p.Rejected):
+            p.restore_hir_import_source(altered, self.name, self.raw)
+
+    def test_unexpected_observer_and_control_overlap_reject(self):
+        original_read = p.read
+        path = p.REPOSITORY / self.a['current']['hir_import_authority']['path']
+        for name in ('src/frontend/parser.rs', 'src/frontend/lexer.rs'):
+            altered = copy.deepcopy(original_read(path))
+            altered['transition_paths'].append(name)
+            with self.subTest(path=name), patch.object(p, 'read', side_effect=lambda candidate: altered if Path(candidate) == path else original_read(candidate)):
+                with self.assertRaisesRegex(p.Rejected, 'exact HIR import instrumentation overlap roster'):
+                    p.authority()
+
+    def test_transition_predecessor_and_runner_drift_reject(self):
+        fields = ('source_binding_runner', 'hir_import_transition_patch', 'native_inventory_source_manifest')
+        for field in fields:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for key in fields:
+                    relative = self.a['current'][key]['path']
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((p.REPOSITORY / relative).read_bytes() + (b'\n' if key == field else b''))
+                with patch.object(p, 'REPOSITORY', root), self.assertRaisesRegex(p.Rejected, 'file bytes differ'):
+                    p.restore_hir_import_source(self.a, self.name, self.raw)
+
 class CheckoutControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='oxid-current-parser-')
@@ -1118,7 +1252,7 @@ class CheckoutControls(unittest.TestCase):
 
     def test_exact_current_bodies_and_git_are_admitted(self):
         bound = p.verify_checkout(self.root, self.a)
-        self.assertEqual(len(bound['compiler_files']), 211)
+        self.assertEqual(len(bound['compiler_files']), 249)
         self.assertIs(bound['historical_source_equivalent'], False)
         self.assertIs(bound['current_source_bound'], True)
         self.assertEqual(bound['head'], self.git('rev-parse', 'HEAD').decode().strip())

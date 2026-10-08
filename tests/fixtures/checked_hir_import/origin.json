@@ -1,0 +1,30 @@
+{
+  "source_sha256": "ebc49f61b8f3941b8aafdfa779cfdd34577c0c3a2ba0f44bf54c683f656a4522",
+  "observation_sha256": "399a9cb43dd2e16d3e0eed1c160fb1428371e90f089d72ea23149acfee961f52",
+  "source_bytes": 113,
+  "observation_bytes": 2607,
+  "row_count": 29,
+  "item_head": 1,
+  "producer_tree": "b2b4e2fc5d5968454536ae984cc95d2331eb0c62",
+  "commands": [
+    {
+      "command": [
+        "parser"
+      ],
+      "status": 0,
+      "input_sha256": "ebc49f61b8f3941b8aafdfa779cfdd34577c0c3a2ba0f44bf54c683f656a4522",
+      "binary_sha256": "1500b492043250441c1ff825cbdab9a48a54e6c4a3013e4521a15c8f94ffb9d9",
+      "stdout_sha256": "b797934be5d524b4798dbb6741f297347b56c8dea3e25785362957b7a3f360fc"
+    },
+    {
+      "command": [
+        "consumer"
+      ],
+      "status": 0,
+      "input_sha256": "25ac789f1228fc3141f4d75159ce5530b5994ce95ec0949759aad54f8d5be6b0",
+      "binary_sha256": "5583f87b5c8d5f1c69f39a0164aeb9ae7b11212b99bfbda880b53045d1b2bd7e",
+      "stdout_sha256": "399a9cb43dd2e16d3e0eed1c160fb1428371e90f089d72ea23149acfee961f52"
+    }
+  ],
+  "scope": "Actual unchanged Oxid parser and static consumer output, not a host-reconstructed observation"
+}

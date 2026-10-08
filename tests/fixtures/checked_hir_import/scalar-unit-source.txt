@@ -1,0 +1,1 @@
+fn f(u:())->(){let  x:()=();u;x;return;}

@@ -21,6 +21,64 @@ from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only,
 REPO = Path(__file__).resolve().parents[3]
 
 
+class GitDiffBatchControls(unittest.TestCase):
+    def test_windows_length_unicode_quoting_order_and_duplicates(self):
+        # Astral characters count as two UTF-16 units; quoting and backslashes
+        # also consume CreateProcess space. No path may disappear at a boundary.
+        names = [('nested space/' + '\U0001f600' * 30 + '/file\\"' + str(i)) for i in range(900)]
+        names += names[:3]
+        with patch.object(q, 'git') as git:
+            q.git_diff_paths(Path('C:/checkout with spaces'), 'a' * 40, names)
+        self.assertGreater(len(git.call_args_list), 1)
+        actual = []
+        for call in git.call_args_list:
+            repo, *args = call.args
+            self.assertEqual(args[:4], ['diff', '--exit-code', 'a' * 40, '--'])
+            actual.extend(args[4:])
+            command = ['git', '-C', str(repo), *args]
+            self.assertLessEqual(len(subprocess.list2cmdline(command).encode('utf-16-le')) // 2 + 1, 16000)
+        self.assertEqual(actual, names)
+
+    def test_empty_paths_do_not_diff_the_whole_checkout(self):
+        with patch.object(q, 'git') as git:
+            q.git_diff_paths(Path('repo'), 'a' * 40, [])
+        git.assert_not_called()
+
+    def test_single_oversized_path_fails_closed(self):
+        with patch.object(q, 'git') as git, self.assertRaises(q.Reject):
+            q.git_diff_paths(Path('repo'), 'a' * 40, ['x' * 16000])
+        git.assert_not_called()
+
+    def test_later_batch_failure_propagates_and_stops(self):
+        with patch.object(q, 'git', side_effect=['', q.Reject('changed later input')]) as git:
+            with self.assertRaisesRegex(q.Reject, 'changed later input'):
+                q.git_diff_paths(Path('repo'), 'a' * 40, ['x' * 8000] * 4)
+        self.assertEqual(git.call_count, 2)
+
+    def test_real_git_preserves_selected_dirty_and_staged_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            q.git(repo, 'init', '--quiet')
+            names = ['first', 'nested space/last']
+            (repo / 'nested space').mkdir()
+            for name in names + ['unrelated']:
+                (repo / name).write_text('original\n')
+            q.git(repo, 'add', '.')
+            q.git(repo, '-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'diff fixture')
+            head = q.git(repo, 'rev-parse', 'HEAD')
+            (repo / 'unrelated').write_text('outside selected scope\n')
+            q.git_diff_paths(repo, head, names)
+            for name in names:
+                for staged in (False, True):
+                    with self.subTest(name=name, staged=staged):
+                        (repo / name).write_text('changed\n')
+                        if staged:
+                            q.git(repo, 'add', '--', name)
+                        with self.assertRaises(q.Reject):
+                            q.git_diff_paths(repo, head, names)
+                        q.git(repo, 'checkout', head, '--', name)
+
+
 class FrozenRosterControls(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -163,7 +221,7 @@ class HostPreparationControls(unittest.TestCase):
             observer = q.read(root / 'observer-source/observer-source.json')
             self.assertEqual(observer['observer_patch'], patch_identity)
             self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
-            self.assertEqual(len(observer['files']), 267)
+            self.assertEqual(len(observer['files']), 325)
             runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
             self.assertFalse((root / 'ordinary-build').exists())
             self.assertFalse((root / 'observer-build').exists())
@@ -259,7 +317,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 267)
+        self.assertEqual(len(self.manifest['files']), 325)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -398,6 +456,21 @@ class PackageControls(unittest.TestCase):
     def tearDown(self): self.temp.cleanup()
 
     def test_approved_package(self): q.verify_package(self.root, self.manifest)
+
+    def test_coherently_bound_python_cache_is_rejected(self):
+        for name in ('package/__pycache__/member.cpython-312.pyc', 'package/member.pyc', 'package/member.pyo'):
+            with self.subTest(name=name):
+                path = self.root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'generated cache')
+                row = q.identity(path)
+                row['path'] = name
+                manifest = {'closed_roots': ['package'],
+                            'files': sorted(self.manifest['files'] + [row], key=lambda r: r['path'])}
+                with self.assertRaisesRegex(q.Reject, 'generated Python cache'):
+                    q.verify_package(self.root, manifest)
+                path.unlink()
+                if path.parent.name == '__pycache__': path.parent.rmdir()
 
     def test_omitted_member(self):
         (self.root / 'package/member').unlink()
@@ -1018,7 +1091,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 866)
+        self.assertEqual(report['full_archive_only'], 982)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1233,7 +1306,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 211)
+        self.assertEqual(len(compiler), 249)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,
