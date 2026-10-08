@@ -294,9 +294,9 @@ class CurrentAuthorityControls(unittest.TestCase):
         new_text = Path(p.__file__).read_text()
         functions = lambda text: {n.name: ast.get_source_segment(text, n) for n in ast.parse(text).body if isinstance(n, ast.FunctionDef)}
         old, new = functions(old_text), functions(new_text)
-        allowed = {'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
+        allowed = {'verify_build', 'cargo_cache', 'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'validate_current_dependencies', 'dependency_files', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -382,6 +382,73 @@ class CurrentAuthorityControls(unittest.TestCase):
                 next(row for row in files if row['path'] == name)['sha256'] = '0' * 64
             with self.subTest(path=name):
                 self.mutated_current_rejects(change_identity, 'current transition before/after identities')
+
+
+class CurrentDependencyControls(unittest.TestCase):
+    def test_exact_current_closure_preserves_historical_dependencies(self):
+        a = p.authority()
+        closure = a['current']['current_dependency_closure']
+        self.assertEqual([(r['name'], r['version']) for r in closure['packages']], [
+            ('block-buffer', '0.10.4'), ('cc', '1.4.0'), ('cfg-if', '1.0.5'),
+            ('cpufeatures', '0.2.17'), ('crypto-common', '0.1.7'), ('digest', '0.10.7'),
+            ('find-msvc-tools', '0.1.9'), ('generic-array', '0.14.7'), ('libc', '0.2.177'),
+            ('sha2', '0.10.9'), ('shlex', '2.0.1'), ('typenum', '1.20.1'), ('version_check', '0.9.5')])
+        self.assertEqual(a['dependency_files'], p.read(p.FROZEN / 'authority.json')['dependency_files'])
+        self.assertEqual(len(a['dependency_files']), 64)
+        self.assertEqual(len(closure['additional_files']), 384)
+        self.assertEqual(len(p.dependency_files(a)), 448)
+
+    def test_lock_or_archive_identity_changes_reject(self):
+        a = p.authority()
+        for field in ('cargo_lock', 'packages'):
+            active = copy.deepcopy(a['current'])
+            if field == 'cargo_lock':
+                active['current_dependency_closure'][field]['sha256'] = '0' * 64
+            else:
+                active['current_dependency_closure'][field][0]['checksum'] = '0' * 64
+            with self.subTest(field=field), self.assertRaises(p.Rejected):
+                p.validate_current_dependencies(active, a['current_source'], a)
+
+    def fixture(self, root):
+        source = root / 'source'; source.mkdir()
+        records = []
+        for name, raw in [('registry/cache/index.crates.io-1949cf8c6b5b557f/fake-1.0.0.crate', b'archive'),
+                          ('registry/src/index.crates.io-1949cf8c6b5b557f/fake-1.0.0/src/lib.rs', b'source')]:
+            path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
+            records.append({'path': name, 'bytes': len(raw), 'sha256': p.sha(raw)})
+        for name in ('config.json', '.cache/fa/ke/fake'):
+            path = source / 'registry/index/index.crates.io-1949cf8c6b5b557f' / name
+            path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'index')
+        return source, {'dependency_files': records[:1], 'current': {'current_dependency_closure': {
+            'additional_files': records[1:], 'packages': [{'name': 'fake'}]}}}
+
+    def test_cache_copies_only_closed_files_and_required_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source, a = self.fixture(root)
+            for name in ('credentials.toml', 'config.toml', 'registry/index/unrelated/secret'):
+                path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'never copy')
+            dest = root / 'copied'; p.cargo_cache(source, dest, a)
+            self.assertEqual(sorted(x.relative_to(dest).as_posix() for x in dest.rglob('*') if x.is_file()), sorted([
+                *(row['path'] for row in p.dependency_files(a)),
+                'registry/index/index.crates.io-1949cf8c6b5b557f/config.json',
+                'registry/index/index.crates.io-1949cf8c6b5b557f/.cache/fa/ke/fake']))
+
+    def test_cache_rejects_missing_or_changed_current_dependency(self):
+        for missing in (False, True):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); source, a = self.fixture(root)
+                path = source / p.dependency_files(a)[-1]['path']
+                if missing: path.unlink()
+                else: path.write_bytes(b'changed')
+                with self.assertRaises(p.Rejected): p.cargo_cache(source, root / 'copied', a)
+                self.assertFalse((root / 'copied').exists())
+
+    def test_cache_rejects_symlink_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source, a = self.fixture(root)
+            path = source / 'registry/index/index.crates.io-1949cf8c6b5b557f/config.json'
+            path.unlink(); path.symlink_to(source / p.dependency_files(a)[0]['path'])
+            with self.assertRaisesRegex(p.Rejected, 'symlink'): p.cargo_cache(source, root / 'copied', a)
 
 
 class SourceReadCompositionControls(unittest.TestCase):

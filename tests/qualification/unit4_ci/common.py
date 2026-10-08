@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '0397ccbe784cd955ef95a1ab537e41328ef1e7eb8255e0f09bf1f9aeee1ffa02'
+INPUTS_SHA = 'e473638eda58cccd34e01237f1b27280d8958f0bbf9c16aed322a1319dc6aaf7'
 CURRENT_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 ENUM_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
@@ -126,6 +126,28 @@ def git(repo, *args):
     return result.stdout.decode().strip()
 
 
+def git_diff_paths(repo, head, names):
+    """Check every path against HEAD without exceeding Windows' argv limit."""
+    args = ['diff', '--exit-code', head, '--']
+    # CreateProcess allows 32767 UTF-16 units including the terminating NUL.
+    # Use a conservative bound on every host, including Python's exact Windows
+    # quoting, the checkout path, and astral characters (two UTF-16 units).
+    def units(argv):
+        return len(subprocess.list2cmdline(argv).encode('utf-16-le')) // 2
+    base = units(['git', '-C', str(repo), *args]) + 1
+    batch, size = [], base
+    for name in names:
+        cost = 1 + units([name])
+        need(base + cost <= 16000, 'qualification path exceeds Git command bound')
+        if size + cost > 16000:
+            git(repo, *args, *batch)
+            batch, size = [], base
+        batch.append(name)
+        size += cost
+    if batch:
+        git(repo, *args, *batch)
+
+
 def measured_host():
     system = {'Darwin': 'macOS'}.get(platform.system(), platform.system())
     machine = {'AMD64': 'x86_64', 'aarch64': 'arm64'}.get(platform.machine(), platform.machine())
@@ -191,7 +213,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     if committed:
         tracked = set(git(repo, 'ls-tree', '-r', '--name-only', head).splitlines())
         need(set(names) <= tracked, 'uncommitted qualification input')
-        git(repo, 'diff', '--exit-code', head, '--', *names)
+        git_diff_paths(repo, head, names)
     publication_root = repo / 'tests/fixtures/typed_project_unit4_parser_portable'
     publication = module('_unit4_parser_publication', publication_root / 'verify_publication.py').verify(publication_root)
     need(publication['status'] == 'pass', 'portable original checkpoint/projection rejected')

@@ -562,7 +562,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = 'c1949f97e90a709bae95c54b7d3e9e8e7f47c906ac7939dee2c753c4e4237767'
+AUTHORITY_SHA = 'd68755d44dc1e210c70ecdc157ad57f0038ff1913f5b8946292298f1b373026b'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -848,6 +848,7 @@ def authority():
                for name, row in after.items() if before.get(name) != row]
     same([row["path"] for row in changes], list(CURRENT_PATHS), "unexpected current transition scope")
     same(changes, active["source_delta"], "current transition before/after identities")
+    validate_current_dependencies(active, current, result)
     same(sorted(set(CURRENT_PATHS).intersection(row["path"] for row in result["instrumentation"])),
          sorted([*ARRAY_INSTRUMENTATION_PATHS, "src/frontend/lexer.rs", "src/frontend/source.rs",
                  "src/frontend/declaration_index/resource.rs"]), "transition overlaps instrumentation outside exact current composition")
@@ -1727,18 +1728,58 @@ def session_at(path, a):
     return session, root
 
 
+def validate_current_dependencies(active, current, historical):
+    closure = active["current_dependency_closure"]
+    same(closure["schema"], "oxid-current-parser-dependencies-v1", "current dependency schema")
+    same(closure["cargo_lock"], next(row for row in current["files"] if row["path"] == "Cargo.lock"),
+         "current dependency lock binding")
+    verify_map(REPOSITORY, [closure["cargo_lock"]])
+    records = historical["dependency_files"] + closure["additional_files"]
+    names = [safe_relative(row["path"]) for row in records]
+    same(len(names), len(set(names)), "duplicate current dependency file")
+    packages = closure["packages"]
+    same(len(packages), len({row["name"] for row in packages}), "duplicate current dependency package")
+    allowed_roots = []
+    expected_archives = {}
+    for package in packages:
+        require(re.fullmatch(r"[a-zA-Z0-9_-]+", package["name"]) is not None, "unsafe dependency name")
+        require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", package["version"]) is not None, "unsafe dependency version")
+        stem = package["name"] + "-" + package["version"]
+        expected_archives["registry/cache/index.crates.io-1949cf8c6b5b557f/" + stem + ".crate"] = package["checksum"]
+        allowed_roots.append("registry/src/index.crates.io-1949cf8c6b5b557f/" + stem + "/")
+    archives = {row["path"]: row["sha256"] for row in records if row["path"] in expected_archives}
+    same(archives, expected_archives, "complete reviewed dependency archives")
+    require(all(name in expected_archives or any(name.startswith(root) for root in allowed_roots)
+                for name in names), "file outside reviewed dependency packages")
+
+
+def dependency_files(a):
+    return a["dependency_files"] + a["current"]["current_dependency_closure"]["additional_files"]
+
+
 def cargo_cache(source, dest, a):
     source, dest = Path(source).absolute(), Path(dest).absolute()
-    verify_map(source, a["dependency_files"])
+    records = dependency_files(a)
+    verify_map(source, records)
     dest.mkdir()
-    for row in a["dependency_files"]:
+    for row in records:
         target = dest / row["path"]; target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / row["path"], target)
-    index = source / "registry/index"
-    require(index.is_dir(), "offline Cargo index required")
-    for p in index.rglob("*"):
-        require(not p.is_symlink() and (p.is_file() or p.is_dir()), "invalid Cargo index member")
-    shutil.copytree(index, dest / "registry/index")
+    # Copy only sparse-index entries required by the reviewed lock closure.
+    # Never copy Cargo configuration, credentials, or unrelated cached packages.
+    index = Path("registry/index/index.crates.io-1949cf8c6b5b557f")
+    entries = [index / "config.json"]
+    for package in a["current"]["current_dependency_closure"]["packages"]:
+        name = package["name"]
+        key = ("1/" + name if len(name) == 1 else "2/" + name if len(name) == 2
+               else "3/" + name[0] + "/" + name if len(name) == 3
+               else name[:2] + "/" + name[2:4] + "/" + name)
+        entries.append(index / ".cache" / key)
+    for entry in entries:
+        regular(source / entry)
+        target = dest / entry; target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / entry, target)
+    verify_map(dest, records)
 
 
 def selected_compiler_path(name):
@@ -1870,7 +1911,7 @@ def verify_build(root, session_path, profile, a, control=False):
     same(envelope["executable_view"], str(out / "rust-bin"), "bound executable view")
     verify_executable_view(out / "rust-bin", toolchain)
     same(envelope["rust_sysroot"], str(toolchain), "recorded reviewed Rust sysroot")
-    verify_map(out / "cargo-home", a["dependency_files"])
+    verify_map(out / "cargo-home", dependency_files(a))
     for name in ("config", "config.toml"):
         require(not (out / "cargo-home" / name).exists(), "private Cargo config forbidden")
     invocation = load(artifact(envelope["invocation"], out / "invocation.json"))

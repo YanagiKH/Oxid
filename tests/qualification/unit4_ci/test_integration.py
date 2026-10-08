@@ -16,9 +16,67 @@ from unittest.mock import patch
 import common as q
 import gate
 import join
-from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only, stage_compact_upload
+from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only, full_archive, stage_compact_upload
 
 REPO = Path(__file__).resolve().parents[3]
+
+
+class GitDiffBatchControls(unittest.TestCase):
+    def test_windows_length_unicode_quoting_order_and_duplicates(self):
+        # Astral characters count as two UTF-16 units; quoting and backslashes
+        # also consume CreateProcess space. No path may disappear at a boundary.
+        names = [('nested space/' + '\U0001f600' * 30 + '/file\\"' + str(i)) for i in range(900)]
+        names += names[:3]
+        with patch.object(q, 'git') as git:
+            q.git_diff_paths(Path('C:/checkout with spaces'), 'a' * 40, names)
+        self.assertGreater(len(git.call_args_list), 1)
+        actual = []
+        for call in git.call_args_list:
+            repo, *args = call.args
+            self.assertEqual(args[:4], ['diff', '--exit-code', 'a' * 40, '--'])
+            actual.extend(args[4:])
+            command = ['git', '-C', str(repo), *args]
+            self.assertLessEqual(len(subprocess.list2cmdline(command).encode('utf-16-le')) // 2 + 1, 16000)
+        self.assertEqual(actual, names)
+
+    def test_empty_paths_do_not_diff_the_whole_checkout(self):
+        with patch.object(q, 'git') as git:
+            q.git_diff_paths(Path('repo'), 'a' * 40, [])
+        git.assert_not_called()
+
+    def test_single_oversized_path_fails_closed(self):
+        with patch.object(q, 'git') as git, self.assertRaises(q.Reject):
+            q.git_diff_paths(Path('repo'), 'a' * 40, ['x' * 16000])
+        git.assert_not_called()
+
+    def test_later_batch_failure_propagates_and_stops(self):
+        with patch.object(q, 'git', side_effect=['', q.Reject('changed later input')]) as git:
+            with self.assertRaisesRegex(q.Reject, 'changed later input'):
+                q.git_diff_paths(Path('repo'), 'a' * 40, ['x' * 8000] * 4)
+        self.assertEqual(git.call_count, 2)
+
+    def test_real_git_preserves_selected_dirty_and_staged_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            q.git(repo, 'init', '--quiet')
+            names = ['first', 'nested space/last']
+            (repo / 'nested space').mkdir()
+            for name in names + ['unrelated']:
+                (repo / name).write_text('original\n')
+            q.git(repo, 'add', '.')
+            q.git(repo, '-c', 'user.name=Unit4 fixture', '-c', 'user.email=unit4@localhost', 'commit', '-qm', 'diff fixture')
+            head = q.git(repo, 'rev-parse', 'HEAD')
+            (repo / 'unrelated').write_text('outside selected scope\n')
+            q.git_diff_paths(repo, head, names)
+            for name in names:
+                for staged in (False, True):
+                    with self.subTest(name=name, staged=staged):
+                        (repo / name).write_text('changed\n')
+                        if staged:
+                            q.git(repo, 'add', '--', name)
+                        with self.assertRaises(q.Reject):
+                            q.git_diff_paths(repo, head, names)
+                        q.git(repo, 'checkout', head, '--', name)
 
 
 class FrozenRosterControls(unittest.TestCase):
@@ -748,6 +806,111 @@ class WindowsToolchainControls(unittest.TestCase):
         with patch.object(q, 'admit', return_value=provenance):
             with self.assertRaises(q.Reject): driver.stage('04-build-ordinary', ['synthetic-build-control'], 10)
         self.assertEqual(q.read(self.root / 'commands/04-build-ordinary/receipt.json')['status'], 1100)
+
+
+class FullArchiveControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.output = self.root / 'output'; self.output.mkdir()
+        self.archive = self.root / 'full-evidence.tar.gz'
+        q.save(self.output / 'driver.json', {'status': 'fail'})
+
+    def parser_build(self, profile='debug', control=False, status='build-failure', exit_code=101):
+        # Frozen helpers/build.py emits no binary on build-failure, including
+        # Cargo exit zero when its executable inventory is not exactly one.
+        result = self.output / 'parser' / (('build-control-' if control else 'build-') + profile) / 'result'
+        result.mkdir(parents=True)
+        stdout = result / 'stdout.jsonl'; stdout.write_bytes(b'{"reason":"build-finished"}\n')
+        stderr = result / 'stderr.txt'; stderr.write_bytes(b'retained raw build diagnostic\n')
+        receipt = {'schema': 'oxid-unit4-parser-build-v1', 'status': status, 'exit_code': exit_code,
+                   'profile': profile, 'control': control, 'stdout': q.identity(stdout), 'stderr': q.identity(stderr)}
+        target = result / 'target/x86_64-unknown-linux-gnu' / profile / 'deps'
+        target.mkdir(parents=True)
+        (target / 'regenerable-cache').write_bytes(b'not evidence')
+        if status == 'built':
+            binary = target / 'oxid-a1b2c3'
+            binary.write_bytes(('synthetic executable ' + profile + str(control)).encode())
+            receipt['binary'] = q.identity(binary)
+        path = result / 'build-receipt.json'
+        q.save(path, receipt)
+        return path, receipt
+
+    def archive_members(self):
+        with tarfile.open(self.archive, 'r:gz') as archive:
+            return {member.name: archive.extractfile(member).read() for member in archive.getmembers()}
+
+    def assert_retained(self, members, path):
+        self.assertEqual(members[Path(path).relative_to(self.output).as_posix()], Path(path).read_bytes())
+
+    def test_failed_parser_export_preserves_raw_evidence_without_qualifying(self):
+        path, receipt = self.parser_build()
+        archives = self.root / 'archives'
+        process = subprocess.run([sys.executable, '-B', str(REPO / 'tests/qualification/unit4_ci/evidence.py'),
+                                  '--output', str(self.output), '--archives', str(archives)],
+                                 capture_output=True, timeout=30)
+        self.assertEqual(process.returncode, 1)
+        self.assertIn(b'evidence preserved; qualification remains failed/incomplete', process.stderr)
+        report = q.read(archives / 'export.json')
+        self.assertEqual(report['status'], 'exported')
+        self.assertEqual(report['qualification_status'], 'fail')
+        self.assertEqual(set(report['archives']), {'full'})
+        self.assertFalse((archives / 'compact.tar.xz').exists())
+        self.assertFalse((archives / 'capsule').exists())
+        self.archive = archives / 'full-evidence.tar.gz'
+        q.verify(self.archive, report['archives']['full'])
+        members = self.archive_members()
+        for retained in (path, receipt['stdout']['path'], receipt['stderr']['path'], self.output / 'driver.json'):
+            self.assert_retained(members, retained)
+        archived = q.loads(members[path.relative_to(self.output).as_posix()])
+        self.assertEqual(archived['status'], 'build-failure')
+        self.assertNotIn('binary', archived)
+        self.assertFalse(any('/target/' in name for name in members))
+
+    def test_zero_exit_failed_receipt_does_not_require_or_invent_binary(self):
+        path, receipt = self.parser_build(exit_code=0)
+        full_archive(self.output, self.archive)
+        members = self.archive_members()
+        self.assert_retained(members, path)
+        self.assertEqual(q.loads(members[path.relative_to(self.output).as_posix()]), receipt)
+        self.assertFalse(any('/target/' in name for name in members))
+
+    def test_successful_binaries_are_retained_for_every_profile_and_role(self):
+        receipts = [self.parser_build(profile, control, status='built', exit_code=0)
+                    for profile in q.PROFILES for control in (False, True)]
+        full_archive(self.output, self.archive)
+        members = self.archive_members()
+        for path, receipt in receipts:
+            for retained in (path, receipt['binary']['path'], receipt['stdout']['path'], receipt['stderr']['path']):
+                self.assert_retained(members, retained)
+        self.assertEqual(sum('/target/' in name for name in members), 4)
+        self.assertEqual(q.read(self.output / 'driver.json')['status'], 'fail')
+
+    def test_earlier_successful_binary_survives_a_later_failed_build(self):
+        built_path, built = self.parser_build(status='built', exit_code=0)
+        failed_path, failed = self.parser_build(control=True)
+        full_archive(self.output, self.archive)
+        members = self.archive_members()
+        for retained in (built_path, built['binary']['path'], failed_path, failed['stderr']['path']):
+            self.assert_retained(members, retained)
+        self.assertEqual(sum('/target/' in name for name in members), 1)
+
+    def test_successful_receipt_requires_unchanged_binary_identity(self):
+        path, receipt = self.parser_build(status='built', exit_code=0)
+        binary = Path(receipt['binary']['path']); original = binary.read_bytes()
+        for mutation in ('missing-identity', 'missing-file', 'bytes', 'sha256', 'content'):
+            with self.subTest(mutation=mutation):
+                binary.write_bytes(original)
+                changed = copy.deepcopy(receipt)
+                if mutation == 'missing-identity': changed.pop('binary')
+                elif mutation == 'missing-file': binary.unlink()
+                elif mutation == 'bytes': changed['binary']['bytes'] += 1
+                elif mutation == 'sha256': changed['binary']['sha256'] = '0' * 64
+                else: binary.write_bytes(b'x' * len(original))
+                q.save(path, changed)
+                with self.assertRaises(q.Reject): full_archive(self.output, self.archive)
+                self.assertFalse(self.archive.exists())
 
 
 class CompactUploadControls(unittest.TestCase):

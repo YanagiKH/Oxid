@@ -161,3 +161,17 @@ Use the exact historical checkout and a fresh external output for preparation:
 Preparation performs zero compiler executions and supplies no semantic pass.
 Actual execution must use the current published qualification head and existing
 host gate. Earlier historical or failed receipts cannot become current passes.
+
+
+## Current dependency closure
+
+The current authority separately binds the actual Cargo.lock and its 13 registry
+packages (including sha2, libc, and their transitive dependencies). Its 384
+additional exact archive/source identities extend the unchanged 64-file frozen
+historical cache. Every archive checksum is bound to the reviewed package roster.
+The current cache copies only those 448 files and the 13 required sparse-index
+entries plus registry config.json. Cargo configuration, credentials and unrelated
+packages/indexes are never copied. Both archive and extracted source identities
+are checked before copying and during build verification; build commands retain
+--offline --locked. This change supplies dependencies only and does not alter
+frozen helpers, semantic expectations, source transition maps or parser policies.

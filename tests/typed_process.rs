@@ -438,10 +438,37 @@ fn process_output_is_exact_and_result_inventory_denial_covers_compile() {
     assert!(out.stderr.is_empty());
 }
 
+// Hold an unrelated exec alive across pipe-reader closure. Without CLOEXEC,
+// it inherits the reader and hides EPIPE from the process under test.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+struct UnrelatedChild(Child);
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl UnrelatedChild {
+    fn spawn() -> Self {
+        Self(
+            Command::new("/bin/sh")
+                .args(["-c", "read line"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
+    }
+}
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl Drop for UnrelatedChild {
+    fn drop(&mut self) {
+        // Also reap on assertion failure; do not leave a blocked shell behind.
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn process_closed_reader_stderr_returns_74_without_stdout_fallback() {
-    use std::os::fd::FromRawFd;
+    use std::os::unix::process::CommandExt;
     let fixture = Fixture::new("fn main()->i32{return 0;}");
     for args in [
         vec![
@@ -461,18 +488,44 @@ fn process_closed_reader_stderr_returns_74_without_stdout_fallback() {
         let mut command = fixture.command(&args);
         // Keep fd2 valid across Rust startup, which repairs a missing standard
         // descriptor. A real pipe with no reader instead fails its first write.
-        let mut descriptors = [-1; 2];
+        // Even CLOEXEC leaves a reader alive between a concurrent fork and
+        // exec. Create and close the reader only in our child, after its fork,
+        // where no other test's child can inherit it. Stdio::null keeps fd2
+        // occupied, so pipe() returns descriptors distinct from all stdio.
+        command.stderr(Stdio::null());
         unsafe {
-            unsafe extern "C" {
-                fn pipe(descriptors: *mut std::ffi::c_int) -> std::ffi::c_int;
-                fn close(fd: std::ffi::c_int) -> std::ffi::c_int;
-            }
-            assert_eq!(pipe(descriptors.as_mut_ptr()), 0);
-            assert_eq!(close(descriptors[0]), 0);
-            // Ownership of the sole write end transfers once to Command.
-            command.stderr(Stdio::from(fs::File::from_raw_fd(descriptors[1])));
+            command.pre_exec(|| {
+                unsafe extern "C" {
+                    fn pipe(descriptors: *mut std::ffi::c_int) -> std::ffi::c_int;
+                    fn close(fd: std::ffi::c_int) -> std::ffi::c_int;
+                    fn dup2(old: std::ffi::c_int, new: std::ffi::c_int) -> std::ffi::c_int;
+                }
+                // Only async-signal-safe syscalls; no allocation or panicking
+                // in the post-fork child of this multithreaded test process.
+                let mut descriptors = [-1; 2];
+                if pipe(descriptors.as_mut_ptr()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if close(descriptors[0]) != 0 {
+                    let error = std::io::Error::last_os_error();
+                    close(descriptors[1]);
+                    return Err(error);
+                }
+                if dup2(descriptors[1], 2) == -1 {
+                    let error = std::io::Error::last_os_error();
+                    close(descriptors[1]);
+                    return Err(error);
+                }
+                if close(descriptors[1]) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
         }
+        let mut unrelated = UnrelatedChild::spawn();
+        assert!(unrelated.0.try_wait().unwrap().is_none());
         let out = wait(command.spawn().unwrap());
+        assert!(unrelated.0.try_wait().unwrap().is_none());
         assert_eq!(out.status.code(), Some(74), "{out:?}");
         assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{out:?}");
         fixture.untouched();
