@@ -48,6 +48,9 @@ fn failure(value: &Diagnostic) -> String {
 
 fn result(value: Result<Scalar, Box<Diagnostic>>) -> String {
     let (ty, scalar, error) = match value {
+        Ok(Scalar::U8(_)) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Ok(Scalar::Bool(value)) => (json_string("bool"), value.to_string(), "null".into()),
         Ok(Scalar::I32(value)) => (json_string("i32"), value.to_string(), "null".into()),
         Ok(Scalar::Unit) => (json_string("()"), "null".into(), "null".into()),
@@ -107,6 +110,7 @@ fn frames(program: &SourceProgram, sources: &SourceMap) -> String {
 
 fn scalar_type(ty: hir::Ty) -> String {
     json_string(match ty {
+        hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => "bool",
         hir::Ty::I32 => "i32",
         hir::Ty::Unit => "()",
@@ -176,6 +180,9 @@ fn call_result(value: CallResult) -> String {
 
 fn rvalue(value: &Rvalue) -> String {
     match value {
+        Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Rvalue::Load(place) => object([
             ("kind", json_string("Load")),
             ("place", place.id.0.to_string()),

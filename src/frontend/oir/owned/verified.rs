@@ -91,6 +91,22 @@ pub(super) fn verify_with_limits(
     })
 }
 
+/// Only the consuming source-association wrapper can select conversion authority.
+pub(super) fn verify_associated(
+    associated: super::source::association::AssociatedOwned<'_>,
+) -> Result<VerifiedOwnedProgram, OwnedFailure> {
+    let (raw, sources) = associated.into_parts();
+    let (mut usage, declarations, mut meter) = prepare(&raw, sources, budget::Limits::DEFAULT)?;
+    inventory_carriers(&raw, &mut meter)?;
+    validate_proof_impl(&raw, &declarations, sources, &mut usage, &mut meter, true)?;
+    Ok(VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    })
+}
+
 fn prepare(
     raw: &RawOwnedProgram,
     sources: &SourceMap,
@@ -132,11 +148,28 @@ fn validate_proof(
     usage: &mut OwnershipUsage,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
+    validate_proof_impl(raw, declarations, sources, usage, meter, false)
+}
+fn validate_proof_impl(
+    raw: &RawOwnedProgram,
+    declarations: &Declarations,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+    source_associated: bool,
+) -> Result<(), OwnedFailure> {
     shape::signatures(raw, declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
     for f in &raw.functions {
-        shape::check(f, raw, declarations, sources, meter)?;
+        shape::check_with_conversion_authority(
+            f,
+            raw,
+            declarations,
+            sources,
+            meter,
+            source_associated,
+        )?;
     }
     for f in &raw.functions {
         super::super::verify::cfg(f)?;
@@ -153,7 +186,14 @@ fn validate_proof(
             )?;
         }
         if budget::active(f) {
-            let checked = shape::check(f, raw, declarations, sources, meter)?;
+            let checked = shape::check_with_conversion_authority(
+                f,
+                raw,
+                declarations,
+                sources,
+                meter,
+                source_associated,
+            )?;
             flow::check(f, &checked, meter)?;
         }
     }
@@ -296,4 +336,35 @@ fn inventory_carriers(
         }
     }
     Ok(())
+}
+
+/// Named transport inventory for the new proof-dispatch layer on both bare and
+/// associated routes. The inherited raw `Limits::scratch` and `metadata` model
+/// requested vector/table payload, not inline Rust call stacks. Accordingly this
+/// measurement is separate; the source HirPlan is not claimed to cover bare raw
+/// verification. There are no new raw-route heap allocations or retained rows.
+#[allow(dead_code)]
+struct ConversionProofDispatchCarriers {
+    raw: &'static RawOwnedProgram,
+    declarations: &'static Declarations,
+    sources: &'static SourceMap,
+    usage: &'static mut OwnershipUsage,
+    meter: &'static mut budget::Meter,
+    selected: bool,
+    validation_return: Result<(), OwnedFailure>,
+    function: &'static RawOwnedFunction,
+    shape_raw: &'static RawOwnedProgram,
+    shape_declarations: &'static Declarations,
+    shape_sources: &'static SourceMap,
+    shape_meter: &'static mut budget::Meter,
+    shape_selected: bool,
+    shape_return: Result<shape::Shape, OwnedFailure>,
+    rejected: OirFailure,
+    normalized: OwnedFailure,
+}
+#[test]
+fn owned_u8_raw_proof_dispatch_carriers_are_separate_from_payload_limits() {
+    println!("RFC0030 owned raw proof dispatch inline_bytes={} align={} raw_scratch_scope=requested_vector_payload raw_metadata_scope=requested_table_payload",
+        std::mem::size_of::<ConversionProofDispatchCarriers>(), std::mem::align_of::<ConversionProofDispatchCarriers>());
+    assert!(std::mem::size_of::<ConversionProofDispatchCarriers>() > 0);
 }

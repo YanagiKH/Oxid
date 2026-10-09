@@ -341,7 +341,7 @@ impl<'s> SourceOwner<'s> {
             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
                 let text = self.text(name)?;
                 let mut builtin = false;
-                for spelling in ["bool", "i32"] {
+                for spelling in ["bool", "i32", "u8"] {
                     work.preflight(name)?;
                     let mut equal = text.len() == spelling.len();
                     if equal {
@@ -368,6 +368,48 @@ impl<'s> SourceOwner<'s> {
 mod enum_carrier_tests {
     use super::*;
     use crate::frontend::{lexer, parser, source::SourceMap};
+
+    #[test]
+    fn u8_route_type_exact_work_successors() {
+        // Type visit + spelling visits + compared bytes. Earlier primitive
+        // matches stop in place. u8 adds one spelling and its two bytes;
+        // a differently sized nominal adds only the final spelling visit.
+        for (name, owned, predecessor, added) in [
+            ("bool", false, 1 + 1 + 4, 0),
+            ("i32", false, 1 + 1 + 1 + 3, 0),
+            ("u8", false, 1 + 1 + 1, 1 + 2),
+            ("Zebra", true, 1 + 1 + 1, 1),
+        ] {
+            let mut sources = SourceMap::new();
+            let id = sources.add("route.ox".into(), format!("fn f()->{name}{{return;}}"));
+            let source = sources.get(id);
+            let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+            let owner = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
+            let exact = predecessor + added;
+            let work = WorkMeter::new(exact);
+            assert_eq!(
+                owner.owned_type(ast.functions[0].result, &work).unwrap(),
+                owned
+            );
+            assert_eq!(work.used(), exact);
+            work.debit(0, ast.functions[0].name, "test deferred route admission")
+                .unwrap();
+            // Route discovery is count-only until the ordered I/J/W gates.
+            // It must not prematurely select a work error before those gates.
+            let short = WorkMeter::new(exact - 1);
+            assert_eq!(
+                owner.owned_type(ast.functions[0].result, &short).unwrap(),
+                owned
+            );
+            assert_eq!(
+                short
+                    .debit(0, ast.functions[0].name, "test deferred route admission")
+                    .unwrap_err()
+                    .code,
+                "E0400"
+            );
+        }
+    }
 
     #[test]
     fn enum_carrier_qualified_path_view_layout_is_explicit() {
@@ -424,7 +466,10 @@ mod enum_carrier_tests {
 
 impl<'s> SourceOwner<'s> {
     /// Same associations as ast(), but no copied owner and no diagnostic calls.
-    pub(super) fn try_ast_borrowed(&self, module: ModuleId) -> Option<&'s ast::Program> {
+    pub(in crate::frontend) fn try_ast_borrowed(
+        &self,
+        module: ModuleId,
+    ) -> Option<&'s ast::Program> {
         match &self.kind {
             Kind::Original { file, ast, .. } if module.0 == 0 => {
                 ast.belongs_to(file).then_some(*ast)

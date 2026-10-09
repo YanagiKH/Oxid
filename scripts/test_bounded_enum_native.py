@@ -350,12 +350,12 @@ class BoundedEnumNativeControls(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         original = repo / "tests/fixtures/typed_project_source_binding/current-source.json"
         manifest = gate.read_reviewed_manifest(original)
-        self.assertEqual(len(manifest["files"]), 345)
+        self.assertEqual(len(manifest["files"]), 363)
         reduced = dict(manifest, files=[row for row in manifest["files"]
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
-        self.assertEqual(len(reduced["files"]), 262)
-        self.assertEqual(reduced["reviewed_source_head"], "98af42f3baa02f179c0437078ab1928e86f0c8f6")
+        self.assertEqual(len(reduced["files"]), 280)
+        self.assertEqual(reduced["reviewed_source_head"], "5e4875d19961b4eba8e465c915ac676c54a9926e")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")
@@ -373,7 +373,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = "82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67"
+        expected = "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4"
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

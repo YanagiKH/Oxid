@@ -317,6 +317,20 @@ fn execute(
             };
             let value = match assign.value {
                 Rvalue::Load(place) => load(active, place)?,
+                Rvalue::CheckedI32ToU8 {
+                    operand, name_span, ..
+                } => {
+                    let Scalar::I32(value) = read(active, operand)? else {
+                        return Err(internal(FailureKind::TypeMismatch, Some(operand.span)));
+                    };
+                    Scalar::U8(u8::try_from(value).map_err(|_| RunFailure::ByteRange(name_span))?)
+                }
+                Rvalue::U8ToI32 { operand, .. } => {
+                    let Scalar::U8(value) = read(active, operand)? else {
+                        return Err(internal(FailureKind::TypeMismatch, Some(operand.span)));
+                    };
+                    Scalar::I32(i32::from(value))
+                }
                 Rvalue::NotBool { operand, .. } => {
                     let Scalar::Bool(value) = read(active, operand)? else {
                         return Err(internal(FailureKind::TypeMismatch, Some(operand.span)));
@@ -347,6 +361,14 @@ fn execute(
                     let right_value = read(active, right)?;
                     let result = match (left_value, right_value) {
                         (Scalar::I32(l), Scalar::I32(r)) => match op {
+                            hir::ComparisonOp::Equal => l == r,
+                            hir::ComparisonOp::NotEqual => l != r,
+                            hir::ComparisonOp::Less => l < r,
+                            hir::ComparisonOp::LessEqual => l <= r,
+                            hir::ComparisonOp::Greater => l > r,
+                            hir::ComparisonOp::GreaterEqual => l >= r,
+                        },
+                        (Scalar::U8(l), Scalar::U8(r)) => match op {
                             hir::ComparisonOp::Equal => l == r,
                             hir::ComparisonOp::NotEqual => l != r,
                             hir::ComparisonOp::Less => l < r,
@@ -514,3 +536,7 @@ mod tests;
 #[cfg(test)]
 #[path = "source_oracle.rs"]
 mod source_oracle;
+
+#[cfg(test)]
+#[path = "u8_execute_tests.rs"]
+mod u8_tests;

@@ -818,6 +818,7 @@ fn expression_kind(
             callee: ast::ItemPath::Absolute(_),
             ..
         }
+        | ast::ExprKind::Conversion { .. }
         | ast::ExprKind::QualifiedValue { .. }
         | ast::ExprKind::StructLiteral { .. }
         | ast::ExprKind::FieldRead { .. }
@@ -1048,6 +1049,9 @@ fn same_expr(a: &hir::Expr, b: &hir::Expr) -> bool {
         return false;
     }
     match ak {
+        // Frozen providers cannot construct conversions, even if both private
+        // inputs have been forged into the same unsupported operation.
+        hir::ExprKind::Conversion { .. } => false,
         hir::ExprKind::Negate {
             operand: av,
             operator_span: ao,
@@ -1496,3 +1500,8 @@ mod emit_entry_tests;
 mod run_entry_tests;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(super) fn u8_projection_named_bytes() -> usize {
+    typed_compare::named_bytes().unwrap()
+}

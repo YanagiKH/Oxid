@@ -97,6 +97,28 @@ pub(super) fn scalar_statement_shape(
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
         Rvalue::Load(value) => place_in(places, value, sources)?,
+        Rvalue::CheckedI32ToU8 {
+            operand: value,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            same_type(
+                operand_in(locals, value, sources)?,
+                hir::Ty::I32,
+                value.span,
+            )?;
+            hir::Ty::U8
+        }
+        Rvalue::U8ToI32 {
+            operand: value,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            same_type(operand_in(locals, value, sources)?, hir::Ty::U8, value.span)?;
+            hir::Ty::I32
+        }
         Rvalue::NotBool {
             operand: value,
             operator_span,
@@ -135,7 +157,7 @@ pub(super) fn scalar_statement_shape(
             let left_ty = operand_in(locals, left, sources)?;
             let expected = match op {
                 hir::ComparisonOp::Equal | hir::ComparisonOp::NotEqual => {
-                    if !matches!(left_ty, hir::Ty::I32 | hir::Ty::Bool) {
+                    if !matches!(left_ty, hir::Ty::I32 | hir::Ty::Bool | hir::Ty::U8) {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -144,8 +166,10 @@ pub(super) fn scalar_statement_shape(
                 | hir::ComparisonOp::LessEqual
                 | hir::ComparisonOp::Greater
                 | hir::ComparisonOp::GreaterEqual => {
-                    same_type(left_ty, hir::Ty::I32, left.span)?;
-                    hir::Ty::I32
+                    if !matches!(left_ty, hir::Ty::I32 | hir::Ty::U8) {
+                        return Err(failure(FailureKind::TypeMismatch, left.span));
+                    }
+                    left_ty
                 }
             };
             same_type(operand_in(locals, right, sources)?, expected, right.span)?;
@@ -176,6 +200,21 @@ pub(super) fn scalar_statement_shape(
 /// First validate every signature; then every block, including unreachable ones;
 /// finally verify the reachable CFG, canonical definitions, and dominance.
 pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedProgram, OirFailure> {
+    verify_impl(program, sources, false)
+}
+
+pub(super) fn verify_associated(
+    associated: source::association::AssociatedScalar<'_>,
+) -> Result<VerifiedProgram, OirFailure> {
+    let (program, sources) = associated.into_parts();
+    verify_impl(program, sources, true)
+}
+
+fn verify_impl(
+    program: Program,
+    sources: &SourceMap,
+    authenticated: bool,
+) -> Result<VerifiedProgram, OirFailure> {
     let mut budget = Budget::default();
     if program.functions.len() > MAX_BLOCKS {
         return Err(OirFailure::new(
@@ -289,6 +328,20 @@ pub(super) fn verify(program: Program, sources: &SourceMap) -> Result<VerifiedPr
                 }
             }
             for statement in &block.statements {
+                if !authenticated
+                    && statement.as_assignment().is_some_and(|assign| {
+                        matches!(
+                            assign.value,
+                            Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. }
+                        )
+                    })
+                {
+                    return Err(OirFailure::new(
+                        FailureKind::UnauthenticatedConversion,
+                        STAGE,
+                        None,
+                    ));
+                }
                 scalar_statement_shape(&function.locals, &function.places, statement, sources)?;
             }
             let end = terminator(block)?;
@@ -410,6 +463,8 @@ pub(super) fn scalar_statement_uses(
         Statement::Assign(assign) => match assign.value {
             Rvalue::Load(place) => visit(ScalarUse::Place(place)),
             Rvalue::Copy(value)
+            | Rvalue::CheckedI32ToU8 { operand: value, .. }
+            | Rvalue::U8ToI32 { operand: value, .. }
             | Rvalue::NotBool { operand: value, .. }
             | Rvalue::CheckedNegateI32 { operand: value, .. } => visit(ScalarUse::Operand(value)),
             Rvalue::CheckedI32 { left, right, .. } | Rvalue::CompareScalar { left, right, .. } => {

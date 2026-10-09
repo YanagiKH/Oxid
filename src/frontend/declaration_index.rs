@@ -1217,6 +1217,9 @@ impl<'i, 's> QuerySession<'i, 's> {
                     if compare_bytes(spelling, "i32", self.work, name)? == Ordering::Equal {
                         return Ok(ValueTy::Scalar(Ty::I32));
                     }
+                    if compare_bytes(spelling, "u8", self.work, name)? == Ordering::Equal {
+                        return Ok(ValueTy::Scalar(Ty::U8));
+                    }
                 }
                 self.lookup_nominal_type(
                     requester,

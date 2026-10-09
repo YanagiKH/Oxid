@@ -87,6 +87,7 @@ fn verifier_enforces_the_complete_closed_comparison_type_table() {
                         Ty::I32 => Rvalue::I32(if i == 0 { -1 } else { 0 }),
                         Ty::Bool => Rvalue::Bool(i != 0),
                         Ty::Unit => Rvalue::Unit,
+                        Ty::U8 => unreachable!("legacy closed type inventory"),
                     };
                 }
                 let Rvalue::CompareScalar { op: actual, .. } =

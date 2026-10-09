@@ -11,6 +11,35 @@ class TestFixtureRegistrationTests(unittest.TestCase):
     def test_published_registration_matches_validated_source_data(self):
         verify_repo.verify_test_fixture_registration(verify_repo.ROOT)
 
+    def test_u8_registration_requires_all_exact_sources_and_rejects_neighbors(self):
+        original_root = verify_repo.ROOT
+        prefix = "tests/qualification/bounded_u8_current/oracle/"
+        expected_u8 = {prefix + f"pairs-{route}-{batch:02}.ox"
+                       for route in ("scalar", "owned") for batch in range(32)}
+        expected_u8.update(prefix + f"roundtrip-{route}.ox" for route in ("scalar", "owned"))
+        data = verify_repo.fixture_data_sources(original_root)
+        self.assertEqual({path.relative_to(original_root).as_posix() for path in data
+                          if path.relative_to(original_root).as_posix().startswith(prefix)}, expected_u8)
+        original = (original_root / "oxid.toml").read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected = {root / path.relative_to(original_root) for path in data}
+            with patch.object(verify_repo, "fixture_data_sources", return_value=expected):
+                (root / "oxid.toml").write_text(original)
+                verify_repo.verify_test_fixture_registration(root)
+                for name in sorted(expected_u8):
+                    line = f'"{name}" = true\n'
+                    self.assertEqual(original.count(line), 1)
+                    with self.subTest(missing=name):
+                        (root / "oxid.toml").write_text(original.replace(line, "", 1))
+                        with self.assertRaisesRegex(RuntimeError, "exactly match"):
+                            verify_repo.verify_test_fixture_registration(root)
+                for extra in (prefix + "unlisted.ox", prefix + "*.ox", prefix.rstrip("/")):
+                    with self.subTest(extra=extra):
+                        (root / "oxid.toml").write_text(original + f'"{extra}" = true\n')
+                        with self.assertRaisesRegex(RuntimeError, "exactly match"):
+                            verify_repo.verify_test_fixture_registration(root)
+
     def test_missing_extra_and_non_boolean_entries_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

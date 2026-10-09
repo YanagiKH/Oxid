@@ -216,3 +216,65 @@ fn private_emit_complete_carriers_are_measured_in_owning_scope() {
     assert!(named_bytes().unwrap() < 16 * 1024 * 1024);
     assert!(named_bytes().unwrap() > 2 * size_of::<Emission>());
 }
+
+#[test]
+fn u8_native_fixed_successor_is_additive_and_precedes_new_helper_work() {
+    // Qualified predecessor local bank. The single added row also grows both
+    // full accounting arrays and the IntoIter by one usize apiece: 24 bytes.
+    let predecessor = 2_155; // Sealed7ef8a94 native carrier measurement.
+    let bank = scalar_resource::named_bytes();
+    let current = named_bytes().unwrap();
+    assert_eq!(
+        current,
+        predecessor + bank + 3 * std::mem::size_of::<usize>()
+    );
+    println!("U8_NATIVE_FIXED_SUCCESSOR predecessor={predecessor} bank={bank} inventory_array_delta=24 current={current}");
+    let (program, sources) = super::tests::verified_with_sources(
+        "fn main()->i32{let x=255;let b=x.to_u8_checked();return b.to_i32();}",
+    );
+    let expected = program
+        .native_module(Some(hir::DefId(0)), &sources)
+        .unwrap();
+    let outside = 137;
+    let complete = current + outside;
+    for (retained, scratch) in [(complete - 1, complete), (complete, complete - 1)] {
+        let mut allocator = Allocator::default();
+        let admission = Admission::new(retained, scratch, outside, &mut allocator).unwrap();
+        scalar_resource::reset();
+        assert!(matches!(
+            program.native_module_private(Some(hir::DefId(0)), &sources, admission),
+            Err(Failure::Budget)
+        ));
+        assert_eq!(scalar_resource::calls(), (0, 0));
+        assert_eq!(allocator.attempts, 0);
+    }
+    // This later denial pays the fixed bank and visits admission/count, but
+    // remains one byte short of the one final text reserve.
+    let mut allocator = Allocator::default();
+    let admission = Admission::new(
+        complete + expected.len() - 1,
+        complete,
+        outside,
+        &mut allocator,
+    )
+    .unwrap();
+    scalar_resource::reset();
+    assert!(matches!(
+        program.native_module_private(Some(hir::DefId(0)), &sources, admission),
+        Err(Failure::Budget)
+    ));
+    assert_eq!(scalar_resource::calls().0, 7);
+    assert_eq!(allocator.attempts, 0);
+    let mut allocator = Allocator::default();
+    let admission =
+        Admission::new(complete + expected.len(), complete, outside, &mut allocator).unwrap();
+    scalar_resource::reset();
+    let actual = program
+        .native_module_private(Some(hir::DefId(0)), &sources, admission)
+        .unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(actual.len(), actual.capacity());
+    assert_eq!(scalar_resource::calls().0, 7);
+    assert_eq!(allocator.attempts, 1);
+    assert_eq!(allocator.trace[0].length, actual.len());
+}

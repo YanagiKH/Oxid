@@ -376,3 +376,107 @@ pub(in crate::frontend::oir) fn layout() -> Layout {
         verify_result: size_of::<Result<VerifiedProgram, OirFailure>>(),
     }
 }
+
+#[test]
+fn u8_verify_carrier_size_and_alignment_measurements() {
+    println!(
+        "u8_verify_carrier definition size={} align={}",
+        size_of::<Definition>(),
+        std::mem::align_of::<Definition>()
+    );
+    println!(
+        "u8_verify_carrier option_definition size={} align={}",
+        size_of::<Option<Definition>>(),
+        std::mem::align_of::<Option<Definition>>()
+    );
+    println!(
+        "u8_verify_carrier predecessors size={} align={}",
+        size_of::<Predecessors>(),
+        std::mem::align_of::<Predecessors>()
+    );
+    println!(
+        "u8_verify_carrier depth_first size={} align={}",
+        size_of::<DepthFirst>(),
+        std::mem::align_of::<DepthFirst>()
+    );
+    println!(
+        "u8_verify_carrier eval_forest size={} align={}",
+        size_of::<EvalForest>(),
+        std::mem::align_of::<EvalForest>()
+    );
+    println!(
+        "u8_verify_carrier dominance size={} align={}",
+        size_of::<Dominance>(),
+        std::mem::align_of::<Dominance>()
+    );
+    println!(
+        "u8_verify_carrier scratch_dimensions size={} align={}",
+        size_of::<ScratchDimensions>(),
+        std::mem::align_of::<ScratchDimensions>()
+    );
+    println!(
+        "u8_verify_carrier usize_element size={} align={}",
+        size_of::<usize>(),
+        std::mem::align_of::<usize>()
+    );
+    println!(
+        "u8_verify_carrier u8_element size={} align={}",
+        size_of::<u8>(),
+        std::mem::align_of::<u8>()
+    );
+    println!(
+        "u8_verify_carrier definitions_vec size={} align={}",
+        size_of::<Vec<Option<Definition>>>(),
+        std::mem::align_of::<Vec<Option<Definition>>>()
+    );
+    println!(
+        "u8_verify_carrier usize_vec size={} align={}",
+        size_of::<Vec<usize>>(),
+        std::mem::align_of::<Vec<usize>>()
+    );
+    println!(
+        "u8_verify_carrier u8_vec size={} align={}",
+        size_of::<Vec<u8>>(),
+        std::mem::align_of::<Vec<u8>>()
+    );
+    println!(
+        "u8_verify_carrier predecessors_result size={} align={}",
+        size_of::<Result<Predecessors, OirFailure>>(),
+        std::mem::align_of::<Result<Predecessors, OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier depth_first_result size={} align={}",
+        size_of::<Result<DepthFirst, OirFailure>>(),
+        std::mem::align_of::<Result<DepthFirst, OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier definitions_result size={} align={}",
+        size_of::<Result<Vec<Option<Definition>>, OirFailure>>(),
+        std::mem::align_of::<Result<Vec<Option<Definition>>, OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier dominators_result size={} align={}",
+        size_of::<Result<Vec<usize>, OirFailure>>(),
+        std::mem::align_of::<Result<Vec<usize>, OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier dominance_result size={} align={}",
+        size_of::<Result<Dominance, OirFailure>>(),
+        std::mem::align_of::<Result<Dominance, OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier scratch_dimensions_result size={} align={}",
+        size_of::<Result<ScratchDimensions, OirFailure>>(),
+        std::mem::align_of::<Result<ScratchDimensions, OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier cfg_result size={} align={}",
+        size_of::<Result<(), OirFailure>>(),
+        std::mem::align_of::<Result<(), OirFailure>>()
+    );
+    println!(
+        "u8_verify_carrier verify_result size={} align={}",
+        size_of::<Result<VerifiedProgram, OirFailure>>(),
+        std::mem::align_of::<Result<VerifiedProgram, OirFailure>>()
+    );
+}

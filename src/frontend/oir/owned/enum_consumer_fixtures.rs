@@ -58,6 +58,7 @@ pub(super) fn block(
 }
 fn scalar_value(ty: hir::Ty) -> Scalar {
     match ty {
+        hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => Scalar::Bool(true),
         hir::Ty::I32 => Scalar::I32(-71),
         hir::Ty::Unit => Scalar::Unit,
@@ -65,6 +66,7 @@ fn scalar_value(ty: hir::Ty) -> Scalar {
 }
 fn fallback(ty: hir::Ty) -> Scalar {
     match ty {
+        hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => Scalar::Bool(false),
         hir::Ty::I32 => Scalar::I32(17),
         hir::Ty::Unit => Scalar::Unit,
@@ -72,6 +74,9 @@ fn fallback(ty: hir::Ty) -> Scalar {
 }
 pub(super) fn literal(value: Scalar) -> Rvalue {
     match value {
+        Scalar::U8(_) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Scalar::Bool(value) => Rvalue::Bool(value),
         Scalar::I32(value) => Rvalue::I32(value),
         Scalar::Unit => Rvalue::Unit,

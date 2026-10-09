@@ -44,6 +44,9 @@ struct ScalarType(hir::Ty);
 impl fmt::Display for ScalarType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Json(match self.0 {
+            hir::Ty::U8 => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             hir::Ty::Bool => "bool",
             hir::Ty::I32 => "i32",
             hir::Ty::Unit => "unit",
@@ -312,6 +315,9 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            source_hir::ExprKind::Conversion { .. } => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             E::ConstructEnum { .. } => unreachable!("enum source gate"),
             E::Bool(value) => write!(f, "[\"bool\",{value}]"),
             E::I32(value) => write!(f, "[\"i32\",{value}]"),
@@ -829,6 +835,9 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             Rvalue::Load(place) => write!(f, "[\"load\",{}]", PlaceRow(*place)),
             Rvalue::Bool(value) => write!(f, "[\"bool\",{value}]"),
             Rvalue::I32(value) => write!(f, "[\"i32\",{value}]"),

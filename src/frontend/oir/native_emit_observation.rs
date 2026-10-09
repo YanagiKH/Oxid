@@ -228,7 +228,15 @@ fn ordinary(path: &str, text: &str) -> (VerifiedProgram, SourceMap) {
     let source = sources.get(id);
     let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
     let typed = typeck::check(hir::resolve(source, &ast).unwrap()).unwrap();
-    (lower_and_verify(&typed, &sources).unwrap(), sources)
+    let raw = lower::lower(&typed).unwrap();
+    let associated = source::association::authenticate_scalar(
+        raw,
+        &sources,
+        source::association::Declarations::Original(&ast),
+    )
+    .unwrap();
+    let verified = verify::verify_associated(associated).unwrap();
+    (verified, sources)
 }
 
 fn dimensions(program: &VerifiedProgram) -> (emit_work::Dimensions, u64) {
@@ -295,7 +303,7 @@ fn observe(
     let k = d.arithmetic_failures as usize;
     let guards = 1 + d.merges + d.statements + d.blocks;
     let attempts = (guards + d.arithmetic_failures) as usize;
-    let human_bound = 71 + 6 * path.len();
+    let human_bound = if d.has_byte_range_failure { 81 } else { 71 } + 6 * path.len();
     let preparation = observation.events[0];
     if guarded {
         assert!(d.maybe_cyclic);
@@ -432,6 +440,7 @@ fn ordinary_emit_events_match_dimensions_and_finite_bounds() {
                         arguments: 2,
                         edges: 8,
                         arithmetic_failures: 1,
+                        has_byte_range_failure: false,
                         maybe_cyclic: true
                     }
                 );
@@ -521,4 +530,32 @@ fn ordinary_emit_observer_is_inactive_reset_and_unwind_safe() {
     event(Event::Construct, 1);
     assert!(guard.finish().overflow);
     assert_eq!(begin().finish(), Observation::default());
+}
+
+#[test]
+fn u8_native_emit_successor_observes_both_new_operation_paths() {
+    for (label, text, guarded) in [
+        ("u8-roundtrip", "fn main()->i32{let x=255;let b=x.to_u8_checked();return b.to_i32();}", false),
+        ("u8-guarded-roundtrip", "fn main()->i32{while false{}let x=255;let b=x.to_u8_checked();return b.to_i32();}", true),
+        ("u8-comparison", "fn main()->bool{let x=127;let y=128;let a=x.to_u8_checked();let b=y.to_u8_checked();return a<b;}", false),
+    ] {
+        let (dimensions, _, total) = observe(label, "u8-native.ox", text, 0, guarded);
+        assert!(dimensions.has_byte_range_failure);
+        assert!(total < 256_000_000);
+    }
+}
+
+#[test]
+fn u8_native_entry_rejection_precedes_every_emission_observation() {
+    let (program, sources) = ordinary(
+        "u8-entry.ox",
+        "fn main()->u8{let x=255;return x.to_u8_checked();}",
+    );
+    let guard = begin();
+    let error = program
+        .native_module(Some(hir::DefId(0)), &sources)
+        .unwrap_err();
+    let observation = guard.finish();
+    assert_eq!(error.code, "E0700");
+    assert_eq!(observation, Observation::default());
 }

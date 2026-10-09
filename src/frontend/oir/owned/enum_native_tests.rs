@@ -1154,6 +1154,9 @@ fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
                 1,
             );
             let inactive = match payload {
+                Some(hir::Ty::U8) => {
+                    unreachable!("u8 is outside this predecessor fixture or observation domain")
+                }
                 None => Some(4),
                 Some(hir::Ty::Bool | hir::Ty::Unit) => Some(5),
                 Some(hir::Ty::I32) => None,

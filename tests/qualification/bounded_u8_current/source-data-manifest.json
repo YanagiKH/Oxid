@@ -1,0 +1,274 @@
+{
+  "files": {
+    "oracle/coverage.json": {
+      "bytes": 28186,
+      "sha256": "0ebd5c0280bb4537ee9fee6e8ffda7bf088aa53dc01045369592774c5c2815d3"
+    },
+    "oracle/pairs-owned-00.ox": {
+      "bytes": 12356,
+      "sha256": "d61b8d7a0ac16855098c6dad19d683864366bca384f7aaa4e6dd417d07b5d7c5"
+    },
+    "oracle/pairs-owned-01.ox": {
+      "bytes": 13465,
+      "sha256": "bd9bed7ff729b1d39a15dbff66c99be098b7e608da860df17053157b440daaa5"
+    },
+    "oracle/pairs-owned-02.ox": {
+      "bytes": 13659,
+      "sha256": "33fc5a9f0b9ca551af58b62afea732f56a8169c6c2a6f5c0ba5167c73e37988c"
+    },
+    "oracle/pairs-owned-03.ox": {
+      "bytes": 13659,
+      "sha256": "273b151fe39feab570c3be7a2c0b5e3df20543a3305cc737143ad873615a4548"
+    },
+    "oracle/pairs-owned-04.ox": {
+      "bytes": 13659,
+      "sha256": "30b878b14af0ed631e8610d7bb1c79f55974c8a2b5c4ddc520690bed36afcde4"
+    },
+    "oracle/pairs-owned-05.ox": {
+      "bytes": 13659,
+      "sha256": "ba0a5955cdfa1e77b16f7aa517ccdd1d431039d3a975ec828c0c73f70c7606fe"
+    },
+    "oracle/pairs-owned-06.ox": {
+      "bytes": 13659,
+      "sha256": "05ec53a5ac401452e0e2b32aadbd2f29b1f84c823623eeb11dd29e1896feb281"
+    },
+    "oracle/pairs-owned-07.ox": {
+      "bytes": 13659,
+      "sha256": "85b940609f462198c9b4c9ce942b97a3ecbfcaff3bbef516ef57597f18f627f5"
+    },
+    "oracle/pairs-owned-08.ox": {
+      "bytes": 13659,
+      "sha256": "abad0fe44e898ec6ee213c3c2e86f95eb68171438be885c09968280427ede1f7"
+    },
+    "oracle/pairs-owned-09.ox": {
+      "bytes": 13659,
+      "sha256": "ad8885109eee6ca80b7e47687358e009709bbad4a4d4d585d832dad45b8afd8a"
+    },
+    "oracle/pairs-owned-10.ox": {
+      "bytes": 13659,
+      "sha256": "8bc90e7677cbca023b929505a62ebabc4a4849fbee13817ec1056f9fbbbdaa74"
+    },
+    "oracle/pairs-owned-11.ox": {
+      "bytes": 13659,
+      "sha256": "269162cd46c004427a921a3c00af4ffe9207c3ce216a6abe606a4e23d4ea6c51"
+    },
+    "oracle/pairs-owned-12.ox": {
+      "bytes": 14053,
+      "sha256": "d6a2e31414992d98d382ad2aeaaf48f49e942e50483bb4758f6597e0110b760d"
+    },
+    "oracle/pairs-owned-13.ox": {
+      "bytes": 14443,
+      "sha256": "0565dae5934cd2654a9b0fdc65e92f72deaaef59cf8b7b3b11c718308e687936"
+    },
+    "oracle/pairs-owned-14.ox": {
+      "bytes": 14443,
+      "sha256": "bf17128d72f66146a73dbe00948a1c3847c72156f04a5c459410b53ab0e7e7a5"
+    },
+    "oracle/pairs-owned-15.ox": {
+      "bytes": 14443,
+      "sha256": "08a41db8ed1fb9485e1be174dee1bcd6efba7d146475505f4c0f619114479905"
+    },
+    "oracle/pairs-owned-16.ox": {
+      "bytes": 14443,
+      "sha256": "29fa9b8b2d0598b2feeec19e7f320d24dce8fce294235077b0515440debd8e0a"
+    },
+    "oracle/pairs-owned-17.ox": {
+      "bytes": 14443,
+      "sha256": "41201c6e415fdf06057bf8dd636da415c2b116001ad4d8591ad2e689a1270ff6"
+    },
+    "oracle/pairs-owned-18.ox": {
+      "bytes": 14443,
+      "sha256": "b64b17e008abe42506f87879e8583794140db44ef8c4cf878c59358a2d1a6bca"
+    },
+    "oracle/pairs-owned-19.ox": {
+      "bytes": 14443,
+      "sha256": "d7235189f53ae8a5608e38bef818101d44faae85cf230466d03a4dacf281850d"
+    },
+    "oracle/pairs-owned-20.ox": {
+      "bytes": 14443,
+      "sha256": "9c6803bd0f9d82dba25f3f95367cdb8bb096ba3df87bc7ad419ce569e30e30f5"
+    },
+    "oracle/pairs-owned-21.ox": {
+      "bytes": 14443,
+      "sha256": "56a00525acbe78bbbf83c3420a9e39798a49fbee4e920d418fb09ab413587f18"
+    },
+    "oracle/pairs-owned-22.ox": {
+      "bytes": 14443,
+      "sha256": "240c9fa1bf99429e9dab7e6edd82b3de1c0a774496ab57b3fe897357f17b7abd"
+    },
+    "oracle/pairs-owned-23.ox": {
+      "bytes": 14443,
+      "sha256": "4a4c04ef2c070bde9e16f5c96f9ce46bf1d8fe8431e6dfe8a8024dc394821107"
+    },
+    "oracle/pairs-owned-24.ox": {
+      "bytes": 14443,
+      "sha256": "35cbf924d5a9523db0a30e1ad5a2080dbe92bcdaa0ff71c93a92c494db928f16"
+    },
+    "oracle/pairs-owned-25.ox": {
+      "bytes": 14443,
+      "sha256": "0c3645a7d21765a04d115d2f1413ad5227edc64ecba3a230fba8490c27a242ee"
+    },
+    "oracle/pairs-owned-26.ox": {
+      "bytes": 14443,
+      "sha256": "ec4a3366530fb93e912e54965dc84641f95a4047d5bb177375ba89001bf00407"
+    },
+    "oracle/pairs-owned-27.ox": {
+      "bytes": 14443,
+      "sha256": "a2f1346d8232bd54b3aa28ab7f924f77e036a0355ec050a82217458e88bb0f67"
+    },
+    "oracle/pairs-owned-28.ox": {
+      "bytes": 14443,
+      "sha256": "5135766d480700c306b3055e5ae0616d7a02a4e893ec336c131369262e1ea75f"
+    },
+    "oracle/pairs-owned-29.ox": {
+      "bytes": 14443,
+      "sha256": "44f1e87bfcf70c73157b74375cf9d26b1a18a0b9cc39c75e75c2bd61ae9f0e63"
+    },
+    "oracle/pairs-owned-30.ox": {
+      "bytes": 14443,
+      "sha256": "d5fd6958c80ffdf33a0035e037e7985b59320a5aad366ab0f5514bc64de10a25"
+    },
+    "oracle/pairs-owned-31.ox": {
+      "bytes": 13860,
+      "sha256": "d97adabb1bfc9b61b87eb0ab692497b9eeaf1d8bdfcf154537739d1385515d85"
+    },
+    "oracle/pairs-scalar-00.ox": {
+      "bytes": 12339,
+      "sha256": "2c06b4d50f752b24ea7e15565f1d9d5b32ca828a6fba073a9adcc95a87cd5404"
+    },
+    "oracle/pairs-scalar-01.ox": {
+      "bytes": 13448,
+      "sha256": "7017313e8fe1e19672eea418be6b0de05752e7548e05afce3679e258f7840633"
+    },
+    "oracle/pairs-scalar-02.ox": {
+      "bytes": 13642,
+      "sha256": "7d76309625b0e5625f944486bfce83f7ebff3b3c81ec930f178282c3d73495b2"
+    },
+    "oracle/pairs-scalar-03.ox": {
+      "bytes": 13642,
+      "sha256": "2b8d1286eb45ce063d435c4e096217a9fecb19d65fc902fa624a28a6c059ceda"
+    },
+    "oracle/pairs-scalar-04.ox": {
+      "bytes": 13642,
+      "sha256": "b3794f2720e9c30eeafe49d4906cca655a6ae4f29ab17c4f826b17a22b2f3a7d"
+    },
+    "oracle/pairs-scalar-05.ox": {
+      "bytes": 13642,
+      "sha256": "cd4ed21f2a35dc3f216e0fdd59739d0ea941fb12f3eb75145826dc6c6d3735e7"
+    },
+    "oracle/pairs-scalar-06.ox": {
+      "bytes": 13642,
+      "sha256": "437c2b54074310e1b35cfbbb962358c2b0d598dd17a0a998927e72f11db57d06"
+    },
+    "oracle/pairs-scalar-07.ox": {
+      "bytes": 13642,
+      "sha256": "09bf42f2ead0e1b6991dda71fbd174d1b8ca99c3b1cae7084f4e0580b9387336"
+    },
+    "oracle/pairs-scalar-08.ox": {
+      "bytes": 13642,
+      "sha256": "02bee59d8e88d9994202bc665e82cca15d98f35f573ca3324301237bec9af2d3"
+    },
+    "oracle/pairs-scalar-09.ox": {
+      "bytes": 13642,
+      "sha256": "81553ede75980b7e5108ae780bd51cb8fa16b11faee48d12f0ea2b380a7441da"
+    },
+    "oracle/pairs-scalar-10.ox": {
+      "bytes": 13642,
+      "sha256": "ad1d689353fb5b43c8b11ed77dc34f6f9468641fe3b17c29f63207a9c2699abf"
+    },
+    "oracle/pairs-scalar-11.ox": {
+      "bytes": 13642,
+      "sha256": "b5fe3265a11d05f67a75cb0d181cb22014a045ea8af4cadf8be07ee4d7de169f"
+    },
+    "oracle/pairs-scalar-12.ox": {
+      "bytes": 14036,
+      "sha256": "f2f5253cbeee057a31b7f55235a526f1025631222e0737d85e7165d335ef7f95"
+    },
+    "oracle/pairs-scalar-13.ox": {
+      "bytes": 14426,
+      "sha256": "152ef0eb242febb4c963bb4f121bf3809ecce56243629b6c091796db085d04e6"
+    },
+    "oracle/pairs-scalar-14.ox": {
+      "bytes": 14426,
+      "sha256": "30856ff0b6f62dbf57136d4c001898944bb856f4267862285b34a9caf8d02276"
+    },
+    "oracle/pairs-scalar-15.ox": {
+      "bytes": 14426,
+      "sha256": "580bdf535edba95ef309c7fcde0da7432d7d5d9e591d20784d557d00dc0068b2"
+    },
+    "oracle/pairs-scalar-16.ox": {
+      "bytes": 14426,
+      "sha256": "533c897bc6d9baa857cb1e2aedacf73f8217266e21dad3a2ad105bb16cc21bd0"
+    },
+    "oracle/pairs-scalar-17.ox": {
+      "bytes": 14426,
+      "sha256": "fb1a9bcf5cbd756c2936421b3a8576d4ce6d3a161b91fc3e863c9058dd835a7d"
+    },
+    "oracle/pairs-scalar-18.ox": {
+      "bytes": 14426,
+      "sha256": "2d637f51c35c9b9f115ca6cfe464d162d76e2103b5ed97aeed0aeb773f308149"
+    },
+    "oracle/pairs-scalar-19.ox": {
+      "bytes": 14426,
+      "sha256": "10aeab9ab7e25c9063cc86e6094305b2e5ee8adf0473c036d5d58493a1e2f8cd"
+    },
+    "oracle/pairs-scalar-20.ox": {
+      "bytes": 14426,
+      "sha256": "b83c46e72dca0a29a2e0138587d795a4f91bbd60b0ca99e47a113c3a25db2927"
+    },
+    "oracle/pairs-scalar-21.ox": {
+      "bytes": 14426,
+      "sha256": "265e336d0642b94d5afd4d720aa3f3c947d743ae55c3650af9e7b8b1af996ac1"
+    },
+    "oracle/pairs-scalar-22.ox": {
+      "bytes": 14426,
+      "sha256": "658ec15c1ae2fc150067f8b5dc3a224c8bc84e68b3dccf0ff8b2bb3ffebe00ee"
+    },
+    "oracle/pairs-scalar-23.ox": {
+      "bytes": 14426,
+      "sha256": "f2e1c96bfecf54825b120bc2c4aafcbb911b6a33775824a3dc5a6b9fb59d5c2b"
+    },
+    "oracle/pairs-scalar-24.ox": {
+      "bytes": 14426,
+      "sha256": "53c225955d9d9ffcb10ff1e1e9a23c53daba5e453814b72fe596b680474e2452"
+    },
+    "oracle/pairs-scalar-25.ox": {
+      "bytes": 14426,
+      "sha256": "4df75da27add2cccd8ff067b90ed8faff3de45c817d31a5e517ff955de56f29a"
+    },
+    "oracle/pairs-scalar-26.ox": {
+      "bytes": 14426,
+      "sha256": "0514c8598ca399a63375b387813d332f6195ba52ae7723cca5b24e907183af8c"
+    },
+    "oracle/pairs-scalar-27.ox": {
+      "bytes": 14426,
+      "sha256": "64e01eb9719163f97c47c255bce1ac5b41064568c3bb1be86b4ee2821f412b70"
+    },
+    "oracle/pairs-scalar-28.ox": {
+      "bytes": 14426,
+      "sha256": "395d51848d114b13d05c4ff5c295e6ce50cc5ebc02bf0b10e4cb4682d41c4378"
+    },
+    "oracle/pairs-scalar-29.ox": {
+      "bytes": 14426,
+      "sha256": "a367c1326f9bb12452573a41dbd2e7a4759235c327f91fc6917f514e3591bd27"
+    },
+    "oracle/pairs-scalar-30.ox": {
+      "bytes": 14426,
+      "sha256": "a40df3cdd7325b254c85d5b4f57403eb22c8ae008cdb561521214634a50b1a60"
+    },
+    "oracle/pairs-scalar-31.ox": {
+      "bytes": 13843,
+      "sha256": "e1a151262ba70e8804b179dfda0cbda15fe96eff23b8f3011d2fd1ac5f8bb50a"
+    },
+    "oracle/roundtrip-owned.ox": {
+      "bytes": 176,
+      "sha256": "13c9e480b158f685dc64e6799e014eca05deece728a22a625e9565041cdf5909"
+    },
+    "oracle/roundtrip-scalar.ox": {
+      "bytes": 159,
+      "sha256": "e0e9eee05f7f03dead426def0682a0d786632e330431d20bd7a6a593c0f4b306"
+    }
+  },
+  "schema": "oxid-bounded-u8-oracle-source-data-v1",
+  "scope": "Exact immutable oracle inputs; executed only by the explicit typed-preview qualification gate, not legacy language discovery."
+}

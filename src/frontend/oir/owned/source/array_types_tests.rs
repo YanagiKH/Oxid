@@ -543,7 +543,13 @@ fn unit3b1_added_work_and_inclusive_limit_share_the_existing_meter() {
         "unit3b1 grouped work total={} added={added}",
         measured.used()
     );
-    assert_eq!(measured.used(), 247);
+    const PREDECESSOR_GROUPED_WORK: u64 = 247;
+    // One module and one original function: two module phases + three row phases.
+    const RFC0030_RESERVATION_SCAN: u64 = 2 + 3;
+    assert_eq!(
+        measured.used(),
+        PREDECESSOR_GROUPED_WORK + RFC0030_RESERVATION_SCAN
+    );
     let limited = WorkMeter::new(247);
     let errors = resolve_types(&sources, &ast, &limited, &mut Allocator::default()).unwrap_err();
     assert_eq!(
@@ -555,7 +561,7 @@ fn unit3b1_added_work_and_inclusive_limit_share_the_existing_meter() {
         )
     );
     assert_eq!(limited.used(), 196);
-    println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"work\",\"seam\":\"private-owned-without-selector\",\"case_id\":\"grouped-complete-access-and-index\",\"limit\":247,\"used\":{},\"added_units\":0,\"success\":false,\"ledger_sha256\":\"65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592\",\"diagnostic\":{},\"human\":{},\"json_line\":{}}}", limited.used(), errors[0].render_json(&sources), crate::frontend::diagnostic::json_string(&errors[0].render_human(&sources)), crate::frontend::diagnostic::json_string(&format!("{}\n", errors[0].render_json(&sources))));
+    println!("CONTROL {{\"schema\":\"oxid-array-types-work-rfc0030\",\"kind\":\"work\",\"reservation_scan_delta\":5,\"seam\":\"private-owned-without-selector\",\"case_id\":\"grouped-complete-access-and-index\",\"limit\":247,\"used\":{},\"added_units\":0,\"success\":false,\"predecessor_ledger_sha256\":\"65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592\",\"diagnostic\":{},\"human\":{},\"json_line\":{}}}", limited.used(), errors[0].render_json(&sources), crate::frontend::diagnostic::json_string(&errors[0].render_human(&sources)), crate::frontend::diagnostic::json_string(&format!("{}\n", errors[0].render_json(&sources))));
 
     // A small source's actual total may be below the unchanged conservative
     // index-build admission estimate. Use the frozen wide source for boundary
@@ -578,7 +584,8 @@ fn unit3b1_added_work_and_inclusive_limit_share_the_existing_meter() {
     // Independently source-derived before this boundary assertion: ledger
     // SHA256 65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592.
     // This helper does not invoke the separately charged whole-project selector.
-    let exact = 10_369;
+    const PREDECESSOR_WIDE_WORK: u64 = 10_369;
+    let exact = PREDECESSOR_WIDE_WORK + RFC0030_RESERVATION_SCAN;
     assert_eq!(measured.used(), exact);
     for (limit, succeeds) in [(exact, true), (exact - 1, false)] {
         let work = WorkMeter::new(limit);
@@ -606,7 +613,7 @@ fn unit3b1_added_work_and_inclusive_limit_share_the_existing_meter() {
                 ))
             ),
         };
-        println!("CONTROL {{\"schema\":\"oxid-array-types-controls-v1\",\"kind\":\"work\",\"seam\":\"private-owned-without-selector\",\"case_id\":\"literal-length-max-trailing-comma\",\"limit\":{limit},\"used\":{},\"added_units\":{observed_added},\"success\":{success},\"ledger_sha256\":\"65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592\",{rendered}}}", work.used());
+        println!("CONTROL {{\"schema\":\"oxid-array-types-work-rfc0030\",\"kind\":\"work\",\"reservation_scan_delta\":5,\"seam\":\"private-owned-without-selector\",\"case_id\":\"literal-length-max-trailing-comma\",\"limit\":{limit},\"used\":{},\"added_units\":{observed_added},\"success\":{success},\"predecessor_ledger_sha256\":\"65258c079d5e0131685170fc37e2ee1997f913613c2c8cf57f9f6dac5ee34592\",{rendered}}}", work.used());
         if let Err(errors) = result {
             assert_eq!(
                 (errors[0].code, errors[0].stage),

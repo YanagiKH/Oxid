@@ -1275,6 +1275,20 @@ impl<'p, 'w> Machine<'p, 'w> {
                 .ok_or_else(|| bad("scalar place index", p.span))?
                 .as_ref()
                 .ok_or_else(|| bad("uninitialized scalar place", p.span))?,
+            Rvalue::CheckedI32ToU8 {
+                operand, name_span, ..
+            } => {
+                let Scalar::I32(value) = self.read(frame, operand)? else {
+                    return Err(bad("narrowing type", operand.span));
+                };
+                Scalar::U8(u8::try_from(value).map_err(|_| RunFailure::ByteRange(name_span))?)
+            }
+            Rvalue::U8ToI32 { operand, .. } => {
+                let Scalar::U8(value) = self.read(frame, operand)? else {
+                    return Err(bad("widening type", operand.span));
+                };
+                Scalar::I32(i32::from(value))
+            }
             Rvalue::NotBool { operand, .. } => {
                 let Scalar::Bool(v) = self.read(frame, operand)? else {
                     return Err(bad("not bool", operand.span));
@@ -1325,6 +1339,14 @@ impl<'p, 'w> Machine<'p, 'w> {
             } => {
                 let value = match (self.read(frame, left)?, self.read(frame, right)?) {
                     (Scalar::I32(a), Scalar::I32(b)) => match op {
+                        hir::ComparisonOp::Equal => a == b,
+                        hir::ComparisonOp::NotEqual => a != b,
+                        hir::ComparisonOp::Less => a < b,
+                        hir::ComparisonOp::LessEqual => a <= b,
+                        hir::ComparisonOp::Greater => a > b,
+                        hir::ComparisonOp::GreaterEqual => a >= b,
+                    },
+                    (Scalar::U8(a), Scalar::U8(b)) => match op {
                         hir::ComparisonOp::Equal => a == b,
                         hir::ComparisonOp::NotEqual => a != b,
                         hir::ComparisonOp::Less => a < b,
@@ -2581,6 +2603,7 @@ fn scalar_size(ty: hir::Ty) -> usize {
     match ty {
         hir::Ty::I32 => 4,
         hir::Ty::Bool | hir::Ty::Unit => 1,
+        hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
     }
 }
 fn scalar_offset(
@@ -2610,6 +2633,7 @@ fn array_index(value: Scalar, array: FixedArrayTy, span: Span) -> Result<usize> 
 }
 fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar> {
     Ok(match ty {
+        hir::Ty::U8 => return Err(bad("u8 aggregate payload", span)),
         hir::Ty::I32 => Scalar::I32(i32::from_le_bytes(
             bytes
                 .get(
@@ -2637,6 +2661,7 @@ fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar
 }
 fn encode(bytes: &mut [u8], offset: usize, value: Scalar, span: Span) -> Result<()> {
     match value {
+        Scalar::U8(_) => return Err(bad("u8 aggregate payload", span)),
         Scalar::I32(v) => bytes
             .get_mut(
                 offset
@@ -2722,6 +2747,9 @@ fn checked_entry_policy(
     }
     if policy == EntryPolicy::Process && f.result != ValueTy::Scalar(hir::Ty::I32) {
         return Err(OwnedRunFailure::ProcessEntry(f.span));
+    }
+    if f.result == ValueTy::Scalar(hir::Ty::U8) {
+        return Err(RunFailure::Entry(Some(f.span)).into());
     }
     if matches!(f.result, ValueTy::Owned(_)) {
         return Err(OwnedRunFailure::EntryResult(f.span));
@@ -2950,4 +2978,94 @@ fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
             Err(bad("unsupported aggregate carrier", span))
         }
     }
+}
+
+#[cfg(test)]
+mod u8_payment_tests {
+    use super::*;
+
+    #[test]
+    fn owned_u8_payment_precedes_operand_read_range_check_and_destination_write() {
+        let (sources, raw, _) = super::super::u8_tests::raw(256, false);
+        let witness = source::u8_tests::verify_source_raw(raw, &sources).unwrap();
+        let plan = ExecutionPlan::build(&witness).unwrap();
+        for (at, input, fuel) in [
+            (3, None, 0),
+            (3, Some(Scalar::I32(256)), 1),
+            (6, None, 0),
+            (6, Some(Scalar::U8(255)), 1),
+        ] {
+            let f = &witness.functions()[0];
+            let OwnedInstruction::Scalar(Statement::Assign(assign)) =
+                &f.blocks[0].statements[at].kind
+            else {
+                unreachable!()
+            };
+            let (operand, name) = match assign.value {
+                Rvalue::CheckedI32ToU8 {
+                    operand, name_span, ..
+                }
+                | Rvalue::U8ToI32 {
+                    operand, name_span, ..
+                } => (operand, name_span),
+                _ => unreachable!(),
+            };
+            let mut frame = Frame::allocate(&plan, hir::DefId(0), 1, None).unwrap();
+            frame.next = at;
+            frame.merge_pending = false;
+            frame.slots[operand.local.0] = input;
+            let mut machine = Machine {
+                plan: &plan,
+                frames: vec![frame],
+                limits: Limits::default(),
+                fuel,
+                next_activation: 2,
+                live_slots: 7,
+                live_cells: 7,
+                live_bytes: 56,
+                header_bytes: 0,
+                events: vec![],
+                observer: Default::default(),
+            };
+            let actual = machine.execute();
+            if fuel == 0 {
+                assert_eq!(
+                    actual,
+                    Err(OwnedRunFailure::Scalar(RunFailure::Fuel(assign.span)))
+                );
+                assert_eq!(machine.frames[0].slots[assign.destination.0], None);
+            } else if at == 3 {
+                assert_eq!(
+                    actual,
+                    Err(OwnedRunFailure::Scalar(RunFailure::ByteRange(name)))
+                );
+                assert_eq!(machine.frames[0].slots[assign.destination.0], None);
+            } else {
+                assert!(matches!(
+                    actual,
+                    Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
+                ));
+                assert_eq!(
+                    machine.frames[0].slots[assign.destination.0],
+                    Some(Scalar::I32(255))
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn owned_u8_runtime_containing_transport_layouts() {
+    use std::mem::{align_of, size_of};
+    macro_rules! report {($($t:ty),+)=>{$(println!("RFC0030 owned runtime {} size={} align={}",stringify!($t),size_of::<$t>(),align_of::<$t>());)+}}
+    report!(
+        Frame,
+        Resume,
+        Option<Resume>,
+        Machine<'_, '_>,
+        Vec<Option<Scalar>>,
+        OwnedRunFailure,
+        Result<Scalar>
+    );
 }

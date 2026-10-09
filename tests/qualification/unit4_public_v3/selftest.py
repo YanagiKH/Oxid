@@ -34,18 +34,37 @@ class SourceAuthorityControls(unittest.TestCase):
             build.prepare(SimpleNamespace(
                 source_root=cls.repo,
                 manifest=cls.repo / 'tests/fixtures/typed_project_source_binding/current-source.json',
-                observer_patch=cls.package / 'observer-stdin-v1.patch',
+                observer_patch=cls.package / 'observer-u8-v1.patch',
                 observer_patch_sha256=build.LIFECYCLE_PATCH_SHA,
                 out=cls.output))
         cls.manifest = json.loads((cls.output / 'observer-source.json').read_bytes())
+        # Independently reverse the current lifecycle hooks and exact source
+        # transition, then reapply the immutable predecessor hooks.
+        import subprocess
+        import shutil
+        prior_root = Path(cls.temp.name) / 'predecessor'
+        shutil.copytree(cls.output / 'source', prior_root)
+        subprocess.run(['git', 'apply', '-R', str(cls.package / 'observer-u8-v1.patch')], cwd=prior_root, check=True)
+        binding_path = cls.repo / 'tests/fixtures/typed_project_source_binding/run.py'
+        spec = importlib.util.spec_from_file_location('public_u8_source_binding', binding_path)
+        api = importlib.util.module_from_spec(spec); spec.loader.exec_module(api)
+        helper = api.load_u8_source({name: (binding_path.parent / name).read_bytes() for name in ('u8_source.py',)})
+        inputs = {row['path']: (prior_root / row['path']).read_bytes()
+                  for row in json.loads((binding_path.parent / 'current-source.json').read_bytes())['files']}
+        restored, _ = helper.inverse(inputs, (binding_path.parent / 'u8-transition.patch').read_bytes(), api)
+        shutil.rmtree(prior_root)
+        api.materialize(prior_root, restored)
+        subprocess.run(['git', 'apply', str(cls.package / 'observer-stdin-v1.patch')], cwd=prior_root, check=True)
+        cls.predecessor_observer_files = [{'path': f.relative_to(prior_root).as_posix(), 'bytes': f.stat().st_size, 'sha256': sha(f.read_bytes())}
+            for f in cls.builder.observer_path_order(prior_root.rglob('*'), prior_root) if f.is_file()]
 
     def test_hir_import_current_and_derived_maps_are_exact(self):
         import authority
         original = json.loads((self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes())
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-        self.assertEqual(len(original['files']), 345)
+        self.assertEqual(len(original['files']), 363)
         self.assertEqual(sha(canonical(original['files'])), authority.CURRENT_FILES_SHA)
-        self.assertEqual(len(self.manifest['files']), 346)
+        self.assertEqual(len(self.manifest['files']), 364)
         self.assertEqual(sha(canonical(self.manifest['files'])), authority.OBSERVER_FILES_SHA)
         self.assertEqual(set(self.manifest['changed_paths']), {
             'src/frontend/mod.rs', 'src/frontend/project.rs', 'src/frontend/lexer.rs',
@@ -54,8 +73,18 @@ class SourceAuthorityControls(unittest.TestCase):
             'src/frontend/lifecycle_observer.rs'})
         self.assertEqual(json.loads((self.output / 'prepared.json').read_bytes())['compiler_invocations'], 0)
 
+    def test_u8_successor_restores_exact_prior_observer_map(self):
+        retained = self.package / 'cache_admission_authority.py'
+        old = {}
+        self.assertEqual(sha(retained.read_bytes()), self.builder.CACHE_ADMISSION_AUTHORITY_SHA)
+        exec(compile(retained.read_bytes(), str(retained), 'exec'), old)
+        canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+        self.assertEqual(len(self.predecessor_observer_files), 346)
+        self.assertEqual(sha(canonical(self.predecessor_observer_files)), old['OBSERVER_FILES_SHA'])
+        self.assertEqual(old['LIFECYCLE_PATCH_SHA'], self.builder.STDIN_LIFECYCLE_PATCH_SHA)
+
     def test_package_successor_restores_exact_prior_observer_map(self):
-        original_path = self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json'
+        original_path = self.repo / 'tests/fixtures/typed_project_source_binding/cache-admission-source.json'
         previous_path = self.repo / 'tests/fixtures/typed_project_source_binding/lexical-provider-source.json'
         previous_raw = previous_path.read_bytes()
         self.assertEqual(sha(previous_raw),
@@ -68,11 +97,11 @@ class SourceAuthorityControls(unittest.TestCase):
         self.assertEqual([name for name in sorted(before) if before[name] != after[name]],
                          ['src/runtime/packages.rs'])
         name = 'src/runtime/packages.rs'
-        observed = {row['path']: row for row in self.manifest['files']}
+        observed = {row['path']: row for row in self.predecessor_observer_files}
         self.assertEqual(observed[name], after[name])
         self.assertNotIn(name, self.manifest['changed_paths'])
         self.assertEqual((self.output / 'source' / name).read_bytes(), (self.repo / name).read_bytes())
-        restored = [before[name] if row['path'] == name else row for row in self.manifest['files']]
+        restored = [before[name] if row['path'] == name else row for row in self.predecessor_observer_files]
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
         self.assertEqual(sha(canonical(previous['files'])),
                          'b1155668118d1fb5dd4ce2ae650b0bf51fe26663b19a7a35531bc0519c7d68ab')
@@ -85,13 +114,13 @@ class SourceAuthorityControls(unittest.TestCase):
         import authority
         old = {}
         exec(compile(retained.read_bytes(), str(retained), 'exec'), old)
-        for key in ('LIFECYCLE_PATCH_SHA', 'PROJECTED_LIFECYCLE_PATCH_SHA',
+        for key in ('PROJECTED_LIFECYCLE_PATCH_SHA',
                     'HISTORICAL_LIFECYCLE_PATCH_SHA', 'ENUM_LIFECYCLE_PATCH_SHA',
                     'LLVM_CONTENT_SHA', 'ENUM_SOURCE_SHA'):
             self.assertEqual(getattr(authority, key), old[key], key)
 
     def test_lifecycle_successor_restores_exact_historical_patch(self):
-        current = (self.package / 'observer-stdin-v1.patch').read_bytes()
+        current = (self.package / 'observer-u8-v1.patch').read_bytes()
         projected = (self.package / 'observer-combined-v1.patch').read_bytes()
         self.assertEqual(sha(projected), self.builder.PROJECTED_LIFECYCLE_PATCH_SHA)
         historical = (self.repo / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
@@ -318,7 +347,7 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         self.assertEqual(receipt['source_manifest']['sha256'], authority.ENUM_SOURCE_SHA)
         self.assertEqual(receipt['source_manifest']['members'], 237)
         self.assertEqual(receipt['execution_source_manifest']['sha256'], authority.CURRENT_SOURCE_SHA)
-        self.assertEqual(receipt['execution_source_manifest']['members'], 345)
+        self.assertEqual(receipt['execution_source_manifest']['members'], 363)
         self.assertEqual(self.helper.sha(self.manifest.read_bytes()), authority.ENUM_SOURCE_SHA)
         with self.assertRaisesRegex(Reject, 'current execution source identity'):
             Predecessors(self.contracts, self.manifest, self.amendment_root)

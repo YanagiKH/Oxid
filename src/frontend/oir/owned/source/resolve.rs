@@ -99,6 +99,49 @@ pub(in crate::frontend::oir) struct ResolvedOwnedProgram<'src> {
     entry: Option<DefId>,
 }
 impl<'src> ResolvedOwnedProgram<'src> {
+    pub(super) fn conversion_capacity_excess(
+        &self,
+        inventory: &mut super::hir_budget::CapacityExcess<'_>,
+    ) -> Result<(), Box<Diagnostic>> {
+        inventory.vector(&self.records)?;
+        inventory.vector(&self.signatures)?;
+        inventory.vector(&self.functions)?;
+        for record in &self.records {
+            inventory.row()?;
+            inventory.vector(&record.fields)?;
+        }
+        for signature in &self.signatures {
+            inventory.row()?;
+            inventory.vector(&signature.params)?;
+        }
+        for function in &self.functions {
+            inventory.row()?;
+            inventory.vector(&function.bindings)?;
+            inventory.vector(&function.expressions)?;
+            inventory.vector(&function.blocks)?;
+            for expression in &function.expressions {
+                inventory.row()?;
+                match &expression.kind {
+                    ExprKind::Call { args, .. } => inventory.vector(args)?,
+                    ExprKind::StructLiteral { fields, .. } => inventory.vector(fields)?,
+                    ExprKind::ArrayLiteral { elements } => inventory.vector(elements)?,
+                    _ => (),
+                }
+            }
+            for block in &function.blocks {
+                inventory.row()?;
+                inventory.vector(&block.body)?;
+                for statement in &block.body {
+                    inventory.row()?;
+                    if let StmtKind::Match { arms, .. } = &statement.kind {
+                        inventory.vector(arms)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Retained typed path payload is cumulative across functions. Admit the
     /// complete exact reservation before allocating; raw paths are independently
     /// inventoried again by lowering and by the verifier.
@@ -287,7 +330,13 @@ fn value_type(
 }
 // Generic value-type resolution must never silently authorize enum containment.
 fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>> {
-    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
+    if ty == ValueTy::Scalar(Ty::U8) {
+        Err(error(
+            "E0202",
+            format_args!("u8 record fields are not supported"),
+            span,
+        ))
+    } else if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
         Err(error(
             "E0300",
             format_args!("enum values cannot be record fields"),
@@ -1109,9 +1158,14 @@ fn resolve_index_impl(
                 } else if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
+                let ty = value_type(&mut index.query(work), module, field.ty)?;
                 let ty = record_field_type(
-                    value_type(&mut index.query(work), module, field.ty)?,
-                    field.span,
+                    ty,
+                    if ty == ValueTy::Scalar(Ty::U8) {
+                        field.ty.span
+                    } else {
+                        field.span
+                    },
                 )?;
                 storage::room(&fields, fields.capacity(), paid.is_some(), field.span)?;
                 fields.push(Field {
@@ -2508,6 +2562,16 @@ impl<'a> Resolver<'_, 'a> {
                 };
                 ExprKind::Call { target, args }
             }
+            ast::ExprKind::Conversion {
+                op,
+                operand,
+                name_span,
+            } => ExprKind::Conversion {
+                source_expr: id,
+                op: *op,
+                operand: self.expression(*operand)?,
+                name_span: *name_span,
+            },
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
             ast::ExprKind::Negate {
                 operand,

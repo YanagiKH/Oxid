@@ -479,6 +479,9 @@ impl HirPlan {
         )?;
 
         let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
+        // RFC0030 named successor: keep all predecessor banks intact, and pay
+        // conversion/provenance/consuming-authentication roles explicitly.
+        increment(&mut fixed, super::u8_resources::fixed_bytes(), at)?;
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
         // owner, source view and all top-level Vec headers. Do not add them again.
         // These whole measured models include each embedded Result/Option
@@ -692,6 +695,16 @@ pub(super) fn preflight_builtin_hir(
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
     index.require_builtin_candidate_pipeline()?;
     preflight_hir(index, work, true)
+}
+
+/// Conversion association must admit its new scratch on ordinary owners too.
+/// This passive plan uses the actual typed owner's existing meter. It does not
+/// select the paid typing lane or construct a source/verification witness.
+pub(super) fn preflight_conversion_hir(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<HirPlan, Box<Diagnostic>> {
+    preflight_hir(index, work, false)?.ok_or_else(|| invalid(index.sources().eof()))
 }
 
 fn preflight_hir(
@@ -962,6 +975,7 @@ fn count_expression(
             cursor.next = add(next, 1, at)?;
             break match &expression.kind {
                 ast::ExprKind::Group(inner)
+                | ast::ExprKind::Conversion { operand: inner, .. }
                 | ast::ExprKind::Negate { operand: inner, .. }
                 | ast::ExprKind::Not { operand: inner, .. }
                 | ast::ExprKind::IndexRead { index: inner, .. } => (next == 0).then_some(*inner),
@@ -1098,4 +1112,43 @@ pub(super) fn output_preflight_carrier_layouts() -> [(usize, usize); 6] {
             align_of::<ProductionBuiltinPreflightCarriers>(),
         ),
     ]
+}
+
+/// Live legacy vectors may have grown beyond their initialized row counts.
+/// Admit their observable spare payload at conversion association, after the
+/// AST-derived row plan but before the new tracker reserve. Every container and
+/// row inspection spends this owner's existing meter; no allocation or cache.
+pub(super) struct CapacityExcess<'a> {
+    work: &'a WorkMeter,
+    origin: Span,
+    bytes: usize,
+}
+impl<'a> CapacityExcess<'a> {
+    pub(super) fn new(work: &'a WorkMeter, origin: Span) -> Self {
+        Self {
+            work,
+            origin,
+            bytes: 0,
+        }
+    }
+    pub(super) fn row(&self) -> Result<(), Box<Diagnostic>> {
+        self.work
+            .debit(1, self.origin, "conversion retained capacity row")
+    }
+    pub(super) fn vector<T>(&mut self, values: &Vec<T>) -> Result<(), Box<Diagnostic>> {
+        self.row()?;
+        let excess = values
+            .capacity()
+            .checked_sub(values.len())
+            .ok_or_else(|| invalid(self.origin))?;
+        self.bytes = add(
+            self.bytes,
+            mul(excess, size_of::<T>(), self.origin)?,
+            self.origin,
+        )?;
+        Ok(())
+    }
+    pub(super) fn finish(self) -> usize {
+        self.bytes
+    }
 }

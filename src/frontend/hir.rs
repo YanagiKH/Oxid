@@ -1,5 +1,5 @@
 //! Resolved IDs are compilation-local, deterministic in source order.
-pub use super::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
+pub use super::ast::{ArithmeticOp, ComparisonOp, ConversionOp, LogicalOp};
 use super::{
     ast,
     declaration_index::{
@@ -17,6 +17,7 @@ use std::collections::HashMap;
 pub enum Ty {
     Bool,
     I32,
+    U8,
     Unit,
 }
 impl std::fmt::Display for Ty {
@@ -24,6 +25,7 @@ impl std::fmt::Display for Ty {
         f.write_str(match self {
             Self::Bool => "bool",
             Self::I32 => "i32",
+            Self::U8 => "u8",
             Self::Unit => "()",
         })
     }
@@ -41,6 +43,12 @@ pub struct BodyBlockId(pub usize);
 pub struct LoopId(pub usize);
 #[derive(Debug)]
 pub enum ExprKind {
+    Conversion {
+        op: ConversionOp,
+        operand: ExprId,
+        name_span: Span,
+        source_expr: ast::ExprId,
+    },
     Negate {
         operand: ExprId,
         operator_span: Span,
@@ -717,6 +725,16 @@ impl<'a> Resolver<'_, 'a> {
             }
             ast::ExprKind::Call { callee, args } => self.call(expr.span, *callee, args)?,
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+            ast::ExprKind::Conversion {
+                op,
+                operand,
+                name_span,
+            } => ExprKind::Conversion {
+                op: *op,
+                operand: self.expression(*operand)?,
+                name_span: *name_span,
+                source_expr: id,
+            },
             ast::ExprKind::Negate {
                 operand,
                 operator_span,

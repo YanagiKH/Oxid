@@ -58,8 +58,8 @@ pub(in crate::frontend::oir) fn check_typed(
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
     let raw = lower::lower(typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
-    super::association::check(&raw, index, sources).map_err(|error| vec![*error])?;
-    let witness = verified::verify_owned(raw, sources)
+    let associated = super::association::associate(raw, typed).map_err(|error| vec![*error])?;
+    let witness = verified::verify_associated(associated)
         .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
     Ok(SourceProgram { witness })
 }
@@ -347,9 +347,9 @@ pub(super) fn run_output_source(
     if source_usage.analysis != raw_usage {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
-    super::association::check_builtin_candidate(&raw, &index, sources)
-        .map_err(|error| vec![*error])?;
-    let witness = verified::verify_owned(raw, sources)
+    let associated =
+        super::association::associate_candidate(raw, &typed).map_err(|error| vec![*error])?;
+    let witness = verified::verify_associated(associated)
         .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
     let seed_after = typed
         .source_storage_bytes()
@@ -545,13 +545,9 @@ fn observe_private_pipeline(
     if source_usage.analysis != raw_usage {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
-    match typed.admission() {
-        resolve::SourceAdmission::BuiltinPipeline => {
-            super::association::check_builtin_candidate(&raw, index, sources)
-        }
-        _ => super::association::check_enum_candidate(&raw, index, sources),
-    }
-    .map_err(|error| vec![*error])?;
+    let associated =
+        super::association::associate_candidate(raw, typed).map_err(|error| vec![*error])?;
+    let raw = associated.program();
     // Only fixed header facts are sampled here. This does not replace either
     // source association or the independent complete raw proof below.
     let enum_count = raw.enums.len();
@@ -594,7 +590,7 @@ fn observe_private_pipeline(
     }
     // Use the authoritative path including prepare, inventory_carriers and
     // shape/CFG/flow validation. No probe-only shortcut or second runtime.
-    let witness = verified::verify_owned(raw, sources)
+    let witness = verified::verify_associated(associated)
         .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
     let verified_usage = witness.usage();
     // checked_entry retains ordinary main parameter/result rejection before

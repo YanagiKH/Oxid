@@ -281,6 +281,21 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         locals[id.0].expect("resolved locals are initialized before use")
                     }
                     ExprKind::Group(inner) => expressions[inner.0],
+                    ExprKind::Conversion { op, operand, .. } => {
+                        let (expected, result) = match op {
+                            ConversionOp::ToU8Checked => (Ty::I32, Ty::U8),
+                            ConversionOp::ToI32 => (Ty::U8, Ty::I32),
+                        };
+                        let actual = expressions[operand.0];
+                        if actual != expected {
+                            return Err(mismatch(
+                                expected,
+                                actual,
+                                function.expressions[operand.0].span,
+                            ));
+                        }
+                        result
+                    }
                     ExprKind::Negate { operand, .. } => {
                         let actual = expressions[operand.0];
                         if actual != Ty::I32 {
@@ -322,7 +337,7 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         let left_ty = expressions[left.0];
                         let expected = match op {
                             ComparisonOp::Equal | ComparisonOp::NotEqual => {
-                                if !matches!(left_ty, Ty::I32 | Ty::Bool) {
+                                if !matches!(left_ty, Ty::I32 | Ty::Bool | Ty::U8) {
                                     return Err(Diagnostic::new(
                                         "E0300", "type",
                                         format!("equality requires i32 or bool operands, found {left_ty}"),
@@ -335,14 +350,14 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                             | ComparisonOp::LessEqual
                             | ComparisonOp::Greater
                             | ComparisonOp::GreaterEqual => {
-                                if left_ty != Ty::I32 {
+                                if !matches!(left_ty, Ty::I32 | Ty::U8) {
                                     return Err(mismatch(
                                         Ty::I32,
                                         left_ty,
                                         function.expressions[left.0].span,
                                     ));
                                 }
-                                Ty::I32
+                                left_ty
                             }
                         };
                         let right_ty = expressions[right.0];

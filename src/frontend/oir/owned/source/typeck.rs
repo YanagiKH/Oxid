@@ -120,6 +120,68 @@ impl TypedOwnedProgram<'_> {
         }
         None
     }
+    /// Admission at the conversion-association reserve boundary. Ordinary
+    /// typing predates the paid lane, so derive the complete containing HIR
+    /// plan now with this owner's existing meter, then add its live projection
+    /// payload. This neither changes nor retroactively certifies earlier phases.
+    pub(super) fn conversion_association_storage_bytes(&self) -> Result<usize, Box<Diagnostic>> {
+        if let Some(seed) = self.source_storage_bytes() {
+            return Ok(seed);
+        }
+        let plan = super::hir_budget::preflight_conversion_hir(self.index(), self.program.work())?;
+        let extra = self.conversion_capacity_excess()?;
+        let dynamic = self
+            .program
+            .type_storage_cell()
+            .get()
+            .checked_add(extra)
+            .ok_or_else(|| {
+                error(
+                    "E0400",
+                    "conversion retained capacity overflow",
+                    self.index().sources().eof(),
+                )
+            })?;
+        plan.with_dynamic(dynamic, self.index().sources().eof())
+    }
+    pub(super) fn conversion_capacity_excess(&self) -> Result<usize, Box<Diagnostic>> {
+        let mut inventory = super::hir_budget::CapacityExcess::new(
+            self.program.work(),
+            self.index().sources().eof(),
+        );
+        self.program.conversion_capacity_excess(&mut inventory)?;
+        inventory.vector(&self.bodies)?;
+        for body in &self.bodies {
+            inventory.row()?;
+            inventory.vector(&body.expressions)?;
+            inventory.vector(&body.bindings)?;
+            inventory.vector(&body.block_flows)?;
+            inventory.vector(&body.projections)?;
+            inventory.vector(&body.statement_projections)?;
+            inventory.vector(&body.borrow_projections)?;
+            for projection in &body.projections {
+                inventory.row()?;
+                if let Some(projection) = projection {
+                    inventory.vector(&projection.path)?;
+                }
+            }
+            for row in &body.statement_projections {
+                inventory.row()?;
+                inventory.vector(row)?;
+                for projection in row {
+                    inventory.row()?;
+                    if let Some(projection) = projection {
+                        inventory.vector(&projection.path)?;
+                    }
+                }
+            }
+            for projection in &body.borrow_projections {
+                inventory.row()?;
+                inventory.vector(&projection.projection.path)?;
+            }
+        }
+        Ok(inventory.finish())
+    }
     #[cfg(test)]
     pub(super) fn work(&self) -> &crate::frontend::declaration_index::WorkMeter {
         self.program.work()
@@ -2293,6 +2355,22 @@ fn expression_type(
                 expr.span,
             )),
         },
+        ExprKind::Conversion { op, operand, .. } => {
+            let (input, output) = match op {
+                ConversionOp::ToU8Checked => (Ty::I32, Ty::U8),
+                ConversionOp::ToI32 => (Ty::U8, Ty::I32),
+            };
+            let actual = child!(*operand)?;
+            if actual != scalar(input) {
+                return Err(mismatch(
+                    program,
+                    scalar(input),
+                    actual,
+                    function.expressions[operand.0].span,
+                ));
+            }
+            scalar(output)
+        }
         ExprKind::Group(inner) => child!(*inner)?,
         ExprKind::Negate { operand, .. } => {
             let actual = child!(*operand)?;
@@ -2343,7 +2421,7 @@ fn expression_type(
             let actual = child!(*left)?;
             let expected = match op {
                 ComparisonOp::Equal | ComparisonOp::NotEqual => {
-                    if !matches!(actual, ValueTy::Scalar(Ty::Bool | Ty::I32)) {
+                    if !matches!(actual, ValueTy::Scalar(Ty::Bool | Ty::I32 | Ty::U8)) {
                         return Err(error(
                             "E0300",
                             "equality requires i32 or bool operands",
@@ -2353,7 +2431,7 @@ fn expression_type(
                     actual
                 }
                 _ => {
-                    if actual != scalar(Ty::I32) {
+                    if !matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::U8)) {
                         return Err(mismatch(
                             program,
                             scalar(Ty::I32),
@@ -2361,7 +2439,7 @@ fn expression_type(
                             function.expressions[left.0].span,
                         ));
                     }
-                    scalar(Ty::I32)
+                    actual
                 }
             };
             let actual = child!(*right)?;
@@ -2599,7 +2677,7 @@ fn expression_type(
             for element in elements {
                 program.work().debit(1, expr.span, "array type edge")?;
                 let actual = child!(*element)?;
-                let ValueTy::Scalar(scalar_type) = actual else {
+                let ValueTy::Scalar(scalar_type @ (Ty::Bool | Ty::I32 | Ty::Unit)) = actual else {
                     return Err(error(
                         "E0300",
                         "array elements must have scalar bool, i32 or () type",
@@ -4816,4 +4894,40 @@ fn bounded_enum_production_type_envelopes_are_separate_and_observers_stay_closed
         align_of::<TypedOwnedProgram<'static>>(),
         size_of::<Result<TypedOwnedProgram<'static>, Vec<Diagnostic>>>()
     );
+}
+
+#[cfg(test)]
+mod conversion_capacity_tests {
+    use super::*;
+    use crate::frontend::{lexer, parser, source::SourceMap};
+    #[test]
+    fn owned_u8_capacity_overlay_reads_observable_spare_rows() {
+        let mut sources = SourceMap::new();
+        let file = sources.add(
+            "u8-spare-capacity.ox".into(),
+            "struct R{} fn main()->i32{let x=1;let b=x.to_u8_checked();return b.to_i32();}".into(),
+        );
+        let source = sources.get(file);
+        let ast = parser::parse_with_mode(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let mut typed =
+            check(super::super::resolve::resolve_in_map(source, &ast, &sources).unwrap()).unwrap();
+        let before = typed.conversion_capacity_excess().unwrap();
+        let old = typed.bodies[0].expressions.capacity();
+        typed.bodies[0].expressions.reserve_exact(old + 257);
+        let new = typed.bodies[0].expressions.capacity();
+        let after = typed.conversion_capacity_excess().unwrap();
+        assert_eq!(after - before, (new - old) * std::mem::size_of::<ValueTy>());
+        let plan = super::super::hir_budget::preflight_conversion_hir(typed.index(), typed.work())
+            .unwrap();
+        assert_eq!(
+            typed.conversion_association_storage_bytes().unwrap(),
+            plan.total + typed.program.type_storage_cell().get() + after
+        );
+        println!("RFC0030 ordinary live capacity before={before} after={after} actual_extra_slots={} element_width={}",new-old,std::mem::size_of::<ValueTy>());
+    }
 }

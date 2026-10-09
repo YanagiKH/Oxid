@@ -352,3 +352,74 @@ fn privacy_alias_conflicts_and_sibling_preorder() {
         );
     }
 }
+
+#[test]
+fn primitive_query_work_is_exact_and_keeps_predecessor_shortcuts() {
+    for (name, expected, exact) in [
+        ("bool", Ty::Bool, 6),
+        ("i32", Ty::I32, 7),
+        ("u8", Ty::U8, 8),
+    ] {
+        let text = format!("fn f()->{name}{{return;}}");
+        let fixture = Fixture::new(&[("main.ox", &text)]);
+        let sources = fixture.load();
+        let index = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap();
+        let ty = sources.try_file_ast(SourceFileId(0)).unwrap().functions[0].result;
+        let work = WorkMeter::default();
+        work.enable_observation();
+        assert_eq!(
+            index
+                .query(&work)
+                .value_type(ModuleId(0), ty, TypeContext::Scalar)
+                .unwrap(),
+            ValueTy::Scalar(expected)
+        );
+        // One query debit, then bool costs5; i32 bool mismatch2 + match4;
+        // u8 bool mismatch2 + i32 mismatch2 + match3. No new bool/i32 comparison.
+        assert_eq!(work.used(), exact);
+        for cap in [exact - 1, exact] {
+            let meter = WorkMeter::new(cap);
+            let result = index
+                .query(&meter)
+                .value_type(ModuleId(0), ty, TypeContext::Scalar);
+            assert_eq!(result.is_ok(), cap == exact);
+            if cap < exact {
+                assert_eq!(result.unwrap_err().primary, Some(ty.span));
+            }
+        }
+        println!(
+            "U8-PRIMITIVE-QUERY-1 name={name} work={exact} carrier={}/{}",
+            size_of::<ValueTy>(),
+            std::mem::align_of::<ValueTy>()
+        );
+    }
+    let fixture = Fixture::new(&[("main.ox", "struct Zebra{} fn f()->Zebra{return;}")]);
+    let sources = fixture.load();
+    let index = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap();
+    let ty = sources.try_file_ast(SourceFileId(0)).unwrap().functions[0].result;
+    let meter = WorkMeter::default();
+    meter.enable_observation();
+    index
+        .query(&meter)
+        .value_type(ModuleId(0), ty, TypeContext::Value)
+        .unwrap();
+    let events = meter.events.borrow();
+    assert_eq!(
+        events[..7].iter().map(|e| e.operation).collect::<Vec<_>>(),
+        [
+            "query value type",
+            "comparison",
+            "compared byte",
+            "comparison",
+            "compared byte",
+            "comparison",
+            "compared byte"
+        ]
+    );
+    // The first two comparisons are unchanged. The third is exactly +2 for Zebra.
+    println!(
+        "U8-PRIMITIVE-QUERY-1 nominal=Zebra predecessor={} successor={} delta=2",
+        meter.used() - 2,
+        meter.used()
+    );
+}

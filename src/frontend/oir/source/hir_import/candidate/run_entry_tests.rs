@@ -1,4 +1,5 @@
 //! Private Run entry, compile-budget and candidate execution controls.
+use super::super::u8_resource_successor::RICH_RESERVATION_WORK;
 use super::super::{ast_compare, leaf, BoundObservation, OPA_BYTES, SUCCESS_BYTES};
 use super::*;
 use crate::frontend::{
@@ -112,7 +113,7 @@ fn checked_hir_import_run_candidate_zero_work_precedes_reserves() {
 }
 
 #[test]
-fn checked_hir_import_run_carrier_preserves_verify_result_and_work() {
+fn checked_hir_import_run_carrier_preserves_verify_result_and_work_u8_reservation_successor() {
     let mut sources = SourceMap::new();
     let id = sources.add("verify-only.ox".into(), RICH_SOURCE.into());
     let source = sources.get(id);
@@ -129,7 +130,7 @@ fn checked_hir_import_run_carrier_preserves_verify_result_and_work() {
     .unwrap();
     assert!(facts.verified.runtime.is_none());
     assert_eq!(facts.verified.entry_work, 0);
-    assert_eq!(facts.total_work, 1_276_867);
+    assert_eq!(facts.total_work, 1_276_867 + RICH_RESERVATION_WORK);
     assert_eq!(runtime.finish(), execute::measurement::Snapshot::default());
 }
 
@@ -274,7 +275,7 @@ fn checked_hir_import_run_work_and_complete_carriers_only() {
 }
 
 #[test]
-fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
+fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners_u8_reservation_successor() {
     let mut sources = SourceMap::new();
     let id = sources.add("private-run.ox".into(), RICH_SOURCE.into());
     let source = sources.get(id);
@@ -302,7 +303,7 @@ fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
     assert_eq!(facts.verified.functions, 2);
     assert_eq!(facts.verified.typed_cells, 29);
     assert_eq!(facts.verified.entry_work, 33_792);
-    assert_eq!(facts.total_work, 1_310_659);
+    assert_eq!(facts.total_work, 1_310_659 + RICH_RESERVATION_WORK);
     assert_eq!(allocator.attempts, 16);
     assert_eq!(allocator.trace.capacity(), trace_capacity);
     assert!(!allocator.observer_trace_overflow);
@@ -312,7 +313,7 @@ fn checked_hir_import_run_rich_uses_verified_candidate_and_drops_owners() {
 }
 
 #[test]
-fn checked_hir_import_run_exact_compile_budget_precedes_execution() {
+fn checked_hir_import_run_exact_compile_budget_precedes_execution_u8_reservation_successor() {
     let mut sources = SourceMap::new();
     let id = sources.add("run-budget.ox".into(), RICH_SOURCE.into());
     let source = sources.get(id);
@@ -332,7 +333,7 @@ fn checked_hir_import_run_exact_compile_budget_precedes_execution() {
         scratch: receipt.fixed_bytes as u64,
         work: baseline.total_work,
     };
-    assert_eq!(exact.work, 1_310_659);
+    assert_eq!(exact.work, 1_310_659 + RICH_RESERVATION_WORK);
     let accepted = leaf::run(
         owner,
         RICH_SOURCE.as_bytes(),

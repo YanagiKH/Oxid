@@ -19,15 +19,14 @@ use std::mem::{size_of, size_of_val};
 
 /// Finite connection work, paid in the leaf before any new bank calculation:
 /// inventory construction, array moves and checked summation receive 32 units
-/// per concrete row: at most 64 outer, 97 here, 65 scan, 41 formula, 29 native,
-/// and 29 repeated native rows = 325 rows / 10,400 units. A row's at-most-one
-/// checked copies call plus its moves/iterator/checked addition fits that 32.
-/// Eight fixed inventory/plan prologues receive 128 each. The remaining
-/// fixed handlers receive 128 each: 64 terminal/path/Upper setup, 48 budget/
-/// meter/results, and 32 artifact/drop/outer moves. Total <=29,856, below
-/// 32,768. Existing common preflight work is inherited, not charged twice.
-/// No path bytes, OIR loops, formula body, native body, allocator internals or
-/// physical-memory claim belongs here. Re-audit these concrete bodies if changed.
+/// per concrete row. RFC0030 successor: outer64, terminal97, scan66, formula42,
+/// native30 plus three repeated native30 banks (run, fixed and final
+/// preflights):389 rows,12448 units. The new native row is const sizeof of one complete role bank,
+/// never another inventory loop. The predecessor fixed prologues/handlers cost
+/// 19456; one extra fixed-preflight handler receives128. Total32032 <=32768.
+/// This includes the new before-plan fixed check as well as final allocation.
+/// Re-audit these concrete bodies if changed. Path/OIR/format/body loops,
+/// allocator internals and physical-memory claims do not belong to this tariff.
 const CONNECTION_WORK: u64 = super::super::EMIT_CONNECTION_WORK;
 // Independently reviewed finite formula tariff: at most 4,048 units. This is
 // paid immediately before calculate, never borrowed from scan setup or body.
@@ -305,6 +304,14 @@ mod tests {
     // connection prepayment. These isolated controls never enter private Emit.
     const RICH_PRIOR: u64 = 1_310_659 + CONNECTION_WORK;
     const RICH_SCAN: u64 = 8_064;
+
+    #[test]
+    fn u8_native_inventory_connection_contains_all_four_bank_evaluations() {
+        let rows = 64 + 97 + 66 + 42 + 4 * 30;
+        let finite = rows * 32 + 19_456 + 128;
+        assert_eq!((rows, finite), (389, 32_032));
+        assert!(finite <= CONNECTION_WORK);
+    }
 
     #[test]
     fn denied_emit_connection_glue_is_not_charged_again_by_the_fixed_pass_plan() {

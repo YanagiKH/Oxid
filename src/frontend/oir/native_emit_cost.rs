@@ -1,7 +1,8 @@
 //! Disconnected checked body-work formula for the private Emit precursor.
 //!
 //! This is the conservative H = 71 + 6p proposal's finite, weighted source-event
-//! model, not a CPU, elapsed-time, allocator-backend, storage, or RSS bound.
+//! model, with the RFC0030 H = 81 + 6p successor for byte-range diagnostics. The
+//! bounds are not a CPU, elapsed-time, allocator-backend, storage, or RSS bound.
 //! Inputs must be the actual immutable scan dimensions and the already-owned
 //! root display path's UTF-8 byte length. Genuine association with one verified
 //! source within the selected protocol cap and Result policy remain caller
@@ -64,6 +65,7 @@ fn validate(dimensions: Dimensions) -> Result<(), Failure> {
         || dimensions.calls > dimensions.edges
         || dimensions.edges > mul(2, dimensions.blocks)?
         || dimensions.arithmetic_failures > mul(2, dimensions.statements)?
+        || (dimensions.has_byte_range_failure && dimensions.arithmetic_failures == 0)
         || (dimensions.maybe_cyclic && dimensions.edges == 0)
     {
         return Err(Failure::Invariant);
@@ -71,11 +73,18 @@ fn validate(dimensions: Dimensions) -> Result<(), Failure> {
     Ok(())
 }
 
-fn diagnostic_cost(path_utf8_len: usize, protocol: Protocol) -> Result<DiagnosticCost, Failure> {
+fn diagnostic_cost(
+    path_utf8_len: usize,
+    protocol: Protocol,
+    has_byte_range_failure: bool,
+) -> Result<DiagnosticCost, Failure> {
     let path = u64::try_from(path_utf8_len).map_err(|_| Failure::Overflow)?;
     // Both source caps give at most three decimal digits for each one-based
-    // location (v2 <=256). The human byte/escape envelope is unchanged.
-    let human_bytes = add(71, mul(6, path)?)?;
+    // location (v2 <=256). Both protocols use the same message envelope.
+    // E0610's fixed message is ten UTF-8 bytes longer than the inherited
+    // maximum. Keep the predecessor formula for every no-byte input.
+    let fixed_human = if has_byte_range_failure { 81 } else { 71 };
+    let human_bytes = add(fixed_human, mul(6, path)?)?;
     // SourceFile::location searches at most B+1 line starts and counts at most
     // B ASCII scalars. For B=255 both bounds are less than twice their v1
     // bounds (129 entries/128 scalars); binary-search visits grow by at most
@@ -169,7 +178,11 @@ pub(in crate::frontend::oir) fn calculate_protocol(
         )?,
     )?;
     let message = if dimensions.maybe_cyclic || dimensions.arithmetic_failures != 0 {
-        Some(diagnostic_cost(path_utf8_len, protocol)?)
+        Some(diagnostic_cost(
+            path_utf8_len,
+            protocol,
+            dimensions.has_byte_range_failure,
+        )?)
     } else {
         None
     };
@@ -322,11 +335,13 @@ struct FormulaLocals {
 
 #[allow(dead_code)]
 struct DiagnosticLocals {
-    caller_arguments: (usize, Protocol),
+    caller_arguments: (usize, Protocol, bool),
     caller_result: Result<DiagnosticCost, Failure>,
-    inputs: (usize, Protocol),
+    inputs: (usize, Protocol, bool),
     path_utf8_len: usize,
     protocol: Protocol,
+    has_byte_range_failure: bool,
+    fixed_human: u64,
     conversion_arguments: (usize,),
     conversion_result: Result<u64, std::num::TryFromIntError>,
     conversion_error: std::num::TryFromIntError,
@@ -386,6 +401,8 @@ pub(in crate::frontend::oir) fn named_bytes() -> Result<usize, Failure> {
         size_of::<Result<(), Failure>>(),
         // Seven scalar incidence comparisons plus the q/edge condition.
         size_of::<[(u64, u64, bool); 7]>(),
+        size_of::<(bool, u64, bool, bool)>(),
+        // RFC0030 diagnostic-selector incidence, independent of CFG selector.
         size_of::<(bool, u64, bool, bool)>(),
         size_of::<DiagnosticLocals>(),
         size_of::<ModeLocals>(),
@@ -485,6 +502,7 @@ mod tests {
             arguments: 2,
             edges: 8,
             arithmetic_failures: 1,
+            has_byte_range_failure: false,
             maybe_cyclic: true,
         }
     }
@@ -508,8 +526,8 @@ mod tests {
             assert_eq!(v2.unguarded - v1.unguarded, 16_384);
             assert_eq!(v2.guarded.unwrap() - v1.guarded.unwrap(), 180_224);
             assert_eq!(v2.body - v1.body, 180_224);
-            let d1 = diagnostic_cost(path, Protocol::V1).unwrap();
-            let d2 = diagnostic_cost(path, Protocol::V2).unwrap();
+            let d1 = diagnostic_cost(path, Protocol::V1, false).unwrap();
+            let d2 = diagnostic_cost(path, Protocol::V2, false).unwrap();
             assert_eq!((d2.human_bytes, d2.escape), (d1.human_bytes, d1.escape));
             assert_eq!(d2.render - d1.render, 4_096);
         }
@@ -791,6 +809,92 @@ mod tests {
             size_of::<WeightedRoles<5>>(), size_of::<WeightedRoles<3>>(),
             size_of::<WeightedRoles<7>>(), size_of::<WeightedRoles<10>>(),
             size_of::<WeightedRoles<11>>()
+        );
+    }
+
+    #[test]
+    fn u8_emit_diagnostic_envelope_successor_preserves_predecessor_formula() {
+        for protocol in [Protocol::V1, Protocol::V2] {
+            for path in [0, 7, 1_024] {
+                let old = diagnostic_cost(path, protocol, false).unwrap();
+                let new = diagnostic_cost(path, protocol, true).unwrap();
+                assert_eq!(new.human_bytes, old.human_bytes + 10);
+                assert_eq!(new.render, old.render + 1_280);
+                assert_eq!(new.escape, old.escape + 1_280);
+            }
+        }
+        let predecessor = division();
+        let successor = Dimensions {
+            has_byte_range_failure: true,
+            ..predecessor
+        };
+        let old = calculate(predecessor, 7).unwrap();
+        let new = calculate(successor, 7).unwrap();
+        assert_eq!((new.admission, new.finish), (old.admission, old.finish));
+        assert_eq!(new.body - old.body, 15_360); // Two sites, six render/escape roles each.
+        assert_eq!(
+            calculate(
+                Dimensions {
+                    has_byte_range_failure: true,
+                    ..literal()
+                },
+                7
+            ),
+            Err(Failure::Invariant)
+        );
+        let mut sources = crate::frontend::source::SourceMap::new();
+        for text in [" ".repeat(255), "\n".repeat(255)] {
+            let id = sources.add(String::new(), text);
+            let source = sources.get(id);
+            let rendered = crate::frontend::oir::RunFailure::ByteRange(source.span(255, 255))
+                .diagnostic(&sources)
+                .render_human(&sources);
+            assert_eq!(rendered.len(), 79);
+            assert!(rendered.len() <= 81);
+        }
+    }
+
+    #[test]
+    fn u8_emit_formula_successor_debits_original_meter_at_exact_endpoint() {
+        use crate::frontend::declaration_index::WorkMeter;
+        let dimensions = Dimensions {
+            functions: 1,
+            locals: 7,
+            blocks: 1,
+            statements: 7,
+            arithmetic_failures: 1,
+            has_byte_range_failure: true,
+            ..Dimensions::default()
+        };
+        let cost = calculate(dimensions, 12).unwrap();
+        let prior = 137;
+        let origin = crate::frontend::source::Span {
+            file: crate::frontend::source::SourceFileId(0),
+            start: 0,
+            end: 0,
+        };
+        let work = WorkMeter::new(prior + cost.body);
+        work.debit(prior, origin, "u8 successor prior work")
+            .unwrap();
+        assert_eq!(
+            super::super::emit_work::debit(&work, cost.body, origin, "u8 body successor"),
+            Ok(())
+        );
+        assert_eq!(work.used(), prior + cost.body);
+        let short = WorkMeter::new(prior + cost.body - 1);
+        short
+            .debit(prior, origin, "u8 successor prior work")
+            .unwrap();
+        assert_eq!(
+            super::super::emit_work::debit(&short, cost.body, origin, "u8 body successor"),
+            Err(Failure::Work)
+        );
+        assert_eq!(short.used(), prior);
+        // Formula/debit evidence only: this test does not enter an importer or
+        // qualify the whole native emitter's work, inherited allocations or RSS.
+        println!(
+            "U8_EMIT_FORMULA_SUCCESSOR cost={cost:?} named_bytes={}",
+            named_bytes().unwrap()
         );
     }
 }

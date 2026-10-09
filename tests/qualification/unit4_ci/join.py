@@ -84,7 +84,7 @@ def verify_qualified_paths_receipts(run, predecessors, rows, values, policy, aut
            'public predecessor semantic amendment authority differs')
     q.need(authority['source_manifest']['sha256'] == q.ENUM_SHA and authority['source_manifest']['members'] == 237 and
            authority['execution_source_manifest']['sha256'] == q.CURRENT_SHA and
-           authority['execution_source_manifest']['members'] == 345,
+           authority['execution_source_manifest']['members'] == 363,
            'public predecessor semantic and execution source roles differ')
     try:
         q.need(len(rows) == len(values), 'public predecessor semantic receipt count')
@@ -330,6 +330,7 @@ def parser_records(capsule, repo, contract_root, plan, seal):
     q.need(len(expected_case_ids) == 248 and expected_modes == 319, 'parser frozen case/mode roster changed')
     binaries, nonces, total, pairs = set(), set(), 0, 0
     normalized_rows = []
+    policy_binaries = {}
     for profile in q.PROFILES:
         builds = []
         for control in (False, True):
@@ -348,6 +349,7 @@ def parser_records(capsule, repo, contract_root, plan, seal):
                    build['overlay_manifest'] == session['control_overlay' if control else 'overlay'], 'parser actual current build source/overlay')
             q.need(build['binary']['sha256'] not in binaries, 'parser binary reused across builds')
             binaries.add(build['binary']['sha256'])
+            policy_binaries[(profile, control)] = build['binary']
             rows = [q.loads(line) for line in capsule.raw(build['stdout']).splitlines()]
             emitted = [row for row in rows if row.get('reason') == 'compiler-artifact' and row.get('executable')]
             q.need(len(emitted) == 1 and emitted[0]['fresh'] is False and emitted[0]['executable'] == build['binary']['path'], 'missing/fresh-cached compiler artifact')
@@ -413,9 +415,13 @@ def parser_records(capsule, repo, contract_root, plan, seal):
                 pairs += 1
     q.need(total == result['observations'] == result['expected_observations'] == 638 and pairs == 12 and len(binaries) == 4, 'parser total incomplete')
     q.need([(row['profile'], row['pairs']) for row in result['ordinary_passivity']] == [('debug', 6), ('release', 6)], 'parser passivity result incomplete')
+    policy_receipt = capsule.json(result['u8_policy_controls'])
+    q.need(policy_receipt['session'] == result['session'] and
+           policy_receipt['closed_policy'] == authority['current']['u8_closed_policy'], 'u8 policy session/authority')
+    policy = adapter.u8_policy_module(authority).verify(adapter, policy_receipt, capsule.raw, policy_binaries, session)
     projection = verify_enum_projection(adapter, authority, normalized_rows, result['enum_structural_projection'])
     return {'actual_observations': total, 'ordinary_passivity_pairs': pairs, 'fresh_builds': len(binaries),
-            'enum_structural_projection': projection,
+            'enum_structural_projection': projection, 'u8_policy_controls': policy,
             'comparison': seal['comparison'], 'seal': capsule.manifest['parser_seal'],
             'boundary': 'Exact normalized/raw case and mode transport, actual source/nonce/stream/build identities, and unchanged inputs sealed around fresh same-host semantic comparison. Binary bytes, toolchain replay and original path restoration require the separate full evidence archive.'}
 

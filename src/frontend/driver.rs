@@ -301,7 +301,23 @@ impl Summary {
         }
     }
 }
-fn report(sources: &SourceMap, diagnostics: Vec<Diagnostic>, json: bool, summary: Summary) -> i32 {
+fn report(
+    sources: &SourceMap,
+    mut diagnostics: Vec<Diagnostic>,
+    json: bool,
+    summary: Summary,
+) -> i32 {
+    let summary = if matches!(summary, Summary::Run(Some(oir::Scalar::U8(_)))) {
+        diagnostics.push(*Diagnostic::new(
+            "E0500",
+            "oir-run",
+            "invalid byte entry result",
+            None,
+        ));
+        Summary::Run(None)
+    } else {
+        summary
+    };
     let success = diagnostics.is_empty();
     for diagnostic in &diagnostics {
         if json {
@@ -345,8 +361,13 @@ fn check_summary(errors: usize, functions: Option<usize>) -> String {
 }
 
 fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
+    let errors = if matches!(result, Some(oir::Scalar::U8(_))) {
+        errors.max(1)
+    } else {
+        errors
+    };
     format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":{},\"errors\":{errors},\"result\":{}}}",
-        errors == 0, result.filter(|_| errors == 0).map_or("null".into(), oir::Scalar::json))
+        errors == 0, result.filter(|_| errors == 0).and_then(oir::Scalar::json).unwrap_or_else(|| "null".into()))
 }
 
 fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
@@ -559,6 +580,15 @@ fn process_compile_loaded(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn byte_scalar_cannot_be_serialized_as_an_entry_result() {
+        assert_eq!(super::oir::Scalar::U8(255).json(), None);
+        let summary = super::run_summary(0, Some(super::oir::Scalar::U8(255)));
+        assert!(summary.contains("\"success\":false"));
+        assert!(summary.contains("\"result\":null"));
+        assert!(!summary.contains("255"));
+    }
+
     use super::*;
 
     #[test]

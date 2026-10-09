@@ -3,8 +3,63 @@ use super::super::*;
 use crate::frontend::{
     builtin_catalog::{BuiltinEnum, BuiltinFunction},
     declaration_index::DeclarationIndex,
-    oir::source::association::{bad, BindUsage, Visitor},
+    oir::source::association::{
+        authenticate_conversion, bad, conversion_carrier_bytes, conversion_seen_bytes, BindUsage,
+        ConversionOwners, ConversionSeen, Visitor,
+    },
 };
+
+/// Owns the exact authenticated program; there is no detachable or reusable permit.
+pub(in crate::frontend::oir::owned) struct AssociatedOwned<'s> {
+    raw: RawOwnedProgram,
+    sources: &'s SourceMap,
+}
+impl<'s> AssociatedOwned<'s> {
+    pub(super) fn program(&self) -> &RawOwnedProgram {
+        &self.raw
+    }
+
+    pub(in crate::frontend::oir::owned) fn into_parts(self) -> (RawOwnedProgram, &'s SourceMap) {
+        (self.raw, self.sources)
+    }
+}
+pub(in crate::frontend::oir::owned) fn associate<'s>(
+    raw: RawOwnedProgram,
+    typed: &'s super::typeck::TypedOwnedProgram<'_>,
+) -> Result<AssociatedOwned<'s>, Box<Diagnostic>> {
+    let index = typed.index();
+    index.require_current_source_pipeline()?;
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(bad());
+    };
+    check_impl(
+        &raw,
+        index,
+        sources,
+        index.enum_count() != 0,
+        index.builtin_set() != BuiltinOrigins::None,
+        Some(typed),
+    )?;
+    Ok(AssociatedOwned { raw, sources })
+}
+#[cfg(test)]
+pub(super) fn associate_candidate<'s>(
+    raw: RawOwnedProgram,
+    typed: &'s super::typeck::TypedOwnedProgram<'_>,
+) -> Result<AssociatedOwned<'s>, Box<Diagnostic>> {
+    let index = typed.index();
+    let builtins = typed.admission() == super::resolve::SourceAdmission::BuiltinPipeline;
+    if builtins {
+        index.require_builtin_candidate_pipeline()?;
+    } else {
+        index.require_no_builtin_candidate()?;
+    }
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(bad());
+    };
+    check_impl(&raw, index, sources, true, builtins, Some(typed))?;
+    Ok(AssociatedOwned { raw, sources })
+}
 
 fn enumeration(
     enumeration: &RawEnumDecl,
@@ -37,11 +92,24 @@ fn origins(
     }
     Ok(())
 }
+#[derive(Clone, Copy)]
+pub(super) enum FunctionSource<'a> {
+    Count,
+    Synthetic,
+    Original(
+        &'a crate::frontend::ast::Program,
+        &'a crate::frontend::ast::Function,
+        &'a SourceMap,
+        usize,
+    ),
+}
 fn function(
     function: &RawOwnedFunction,
     visitor: &mut Visitor<'_>,
     allow_enums: bool,
     builtin: Option<BuiltinFunction>,
+    source: FunctionSource<'_>,
+    seen: &mut ConversionSeen,
 ) -> Result<(), Box<Diagnostic>> {
     if !allow_enums && !function.matches.is_empty() {
         return Err(bad());
@@ -79,7 +147,7 @@ fn function(
         if let Some(merge) = &block.merge {
             visitor.merge(merge)?;
         }
-        for statement in &block.statements {
+        for (position, statement) in block.statements.iter().enumerate() {
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
@@ -106,7 +174,45 @@ fn function(
                         return Err(bad());
                     }
                 }
-                OwnedInstruction::Scalar(statement) => visitor.statement(statement)?,
+                OwnedInstruction::Scalar(statement) => {
+                    visitor.statement(statement)?;
+                    if matches!(source, FunctionSource::Synthetic)
+                        && matches!(
+                            statement,
+                            Statement::Assign(Assign {
+                                value: Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. },
+                                ..
+                            })
+                        )
+                    {
+                        return Err(bad());
+                    }
+                    if let (
+                        FunctionSource::Original(ast, owner, sources, owner_slot),
+                        Statement::Assign(assign),
+                    ) = (source, statement)
+                    {
+                        let previous = position
+                            .checked_sub(1)
+                            .and_then(|position| block.statements.get(position))
+                            .and_then(|instruction| match &instruction.kind {
+                                OwnedInstruction::Scalar(statement) => Some(statement),
+                                _ => None,
+                            });
+                        authenticate_conversion(
+                            ast,
+                            owner,
+                            assign,
+                            previous,
+                            &function.locals,
+                            &function.places,
+                            sources,
+                            visitor,
+                            seen,
+                            owner_slot,
+                        )?;
+                    }
+                }
                 OwnedInstruction::Construct { fields, .. } => {
                     for (_, operand) in fields {
                         visitor.span(operand.span)?;
@@ -174,6 +280,8 @@ fn function(
     }
     Ok(())
 }
+/// Non-witness structural observation. Production must use `associate`, which
+/// derives and admits the complete containing typed-source storage envelope.
 pub(super) fn check(
     raw: &RawOwnedProgram,
     index: &DeclarationIndex<'_>,
@@ -188,6 +296,7 @@ pub(super) fn check(
         sources,
         index.enum_count() != 0,
         index.builtin_set() != BuiltinOrigins::None,
+        None,
     )
 }
 
@@ -199,7 +308,7 @@ pub(super) fn check_enum_candidate(
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
     index.require_no_builtin_candidate()?;
-    check_impl(raw, index, sources, true, false)
+    check_impl(raw, index, sources, true, false, None)
 }
 
 /// Import-derived identity is checked separately from the raw descriptor proof.
@@ -211,7 +320,7 @@ pub(super) fn check_builtin_candidate(
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
     index.require_builtin_candidate_pipeline()?;
-    check_impl(raw, index, sources, true, true)
+    check_impl(raw, index, sources, true, true, None)
 }
 
 // Only builtin identity/anchor transports, not inherited Visitor internals.
@@ -315,6 +424,7 @@ fn check_impl(
     sources: &SourceMap,
     allow_enums: bool,
     allow_builtins: bool,
+    typed: Option<&super::typeck::TypedOwnedProgram<'_>>,
 ) -> Result<BindUsage, Box<Diagnostic>> {
     // Public association already requires Current. The shared helper retains
     // an independent exact-origin check for output claims; the older private
@@ -403,9 +513,41 @@ fn check_impl(
             } else {
                 None
             },
+            FunctionSource::Count,
+            &mut ConversionSeen::empty(),
         )?;
     }
     let mut visitor = Visitor::validate(sources);
+    let mut seen = if count.has_conversions() {
+        let owners = index.sources().count();
+        let mut expressions = 0usize;
+        for owner in 0..owners {
+            visitor.dimension(1, 1)?;
+            let extent = index
+                .sources()
+                .try_ast_borrowed(crate::frontend::project::ModuleId(owner))
+                .ok_or_else(bad)?
+                .expressions
+                .len();
+            expressions = expressions.checked_add(extent).ok_or_else(bad)?;
+        }
+        let requested = conversion_seen_bytes(owners, expressions)?;
+        if let Some(typed) = typed {
+            let seed = typed.conversion_association_storage_bytes()?;
+            // The fixed RFC0030 bank already paid the shared authentication
+            // helper. Only tracker/header/reservation overlap is additional.
+            let additional = requested
+                .checked_sub(conversion_carrier_bytes())
+                .ok_or_else(bad)?;
+            super::budget::admit_conversion_scratch(seed, additional)
+                .map_err(|e| super::diagnostic::lower(&e, sources))?;
+        }
+        #[cfg(test)]
+        CONVERSION_RESERVE_ENTRIES.with(|entries| entries.set(entries.get() + 1));
+        ConversionSeen::new(ConversionOwners::Indexed(index.sources()), &mut visitor)?
+    } else {
+        ConversionSeen::empty()
+    };
     // The ordinary zero-enum path keeps its historical dimension/work count.
     if allow_enums {
         visitor.dimension(raw.enums.len(), index.enum_count())?;
@@ -479,6 +621,8 @@ fn check_impl(
                 } else {
                     None
                 },
+                FunctionSource::Synthetic,
+                &mut seen,
             )?;
             continue;
         }
@@ -489,7 +633,14 @@ fn check_impl(
             return Err(bad());
         }
         visitor.file(original.name.file);
-        function(declaration, &mut visitor, allow_enums, None)?;
+        function(
+            declaration,
+            &mut visitor,
+            allow_enums,
+            None,
+            FunctionSource::Original(ast, original, sources, module.0),
+            &mut seen,
+        )?;
     }
     visitor.finish(count)
 }
@@ -773,7 +924,7 @@ mod array_tests {
             // occurs; only the existing boxed diagnostic is allocated.
             let (denied, allocations) =
                 super::super::super::reviewer_origins::integration_counted(|| {
-                    check_impl(&raw, typed.index(), &sources, true, true)
+                    check_impl(&raw, typed.index(), &sources, true, true, None)
                 });
             let error = denied.unwrap_err();
             assert_eq!(error.code, "E0500");
@@ -1170,4 +1321,29 @@ mod enum_tests {
         }
         assert_eq!(check_enum_candidate(&raw, &index, &sources).unwrap(), usage);
     }
+}
+
+#[test]
+fn owned_u8_synthetic_function_cannot_inherit_program_source_authority() {
+    let (sources, raw, _) = super::super::u8_tests::raw(1, false);
+    let mut visitor = Visitor::validate(&sources);
+    visitor.file(raw.functions[0].span.file);
+    let error = function(
+        &raw.functions[0],
+        &mut visitor,
+        true,
+        None,
+        FunctionSource::Synthetic,
+        &mut ConversionSeen::empty(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        (error.code, error.stage, error.primary),
+        ("E0500", "oir-project-bind", None)
+    );
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static CONVERSION_RESERVE_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }

@@ -22,6 +22,19 @@ STREAMING_FILES = tuple("fixtures/typed-streaming-lexer/" + name + ".ox"
 
 
 DATA = Path("tests/fixtures/fixed_array_source_unit3")
+U8_DATA = Path("tests/qualification/bounded_u8_current")
+U8_MANIFEST = U8_DATA / "source-data-manifest.json"
+U8_SOURCES = tuple((U8_DATA / "oracle" / name).as_posix() for name in (
+    *(f"pairs-{route}-{batch:02}.ox" for route in ("owned", "scalar") for batch in range(32)),
+    "roundtrip-owned.ox", "roundtrip-scalar.ox"))
+
+
+def copy_u8_data(root):
+    destination = root / U8_DATA
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(verify_repo.ROOT / U8_MANIFEST, root / U8_MANIFEST)
+    shutil.copytree(verify_repo.ROOT / U8_DATA / "oracle", destination / "oracle")
+
 SAMPLE_MEMBERS = (
     "fixtures/typed-array-samples/main.ox",
     "fixtures/typed-array-samples/stats.ox",
@@ -123,10 +136,15 @@ class PublishedRegistrationTests(unittest.TestCase):
     def test_full_published_inputs_and_exact_predecessor_inventory(self):
         root = verify_repo.ROOT
         data_sources = verify_fixture_data.fixture_data_sources(root)
-        self.assertEqual(len(data_sources), 122)
+        u8_sources = {root / name for name in U8_SOURCES}
+        self.assertEqual(len(u8_sources), 66)
+        self.assertTrue(u8_sources <= data_sources)
+        self.assertEqual(len(data_sources - u8_sources), 122)
+        self.assertEqual(len(data_sources), 188)
+        self.assertEqual(verify_fixture_data.SOURCE_DATA_MANIFESTS[-1][0], U8_MANIFEST.as_posix())
         registered = set()
         for (relative, _), body_count, source_count in zip(
-                verify_fixture_data.SOURCE_DATA_MANIFESTS, (120, 10, 23, 20), (101, 6, 10, 5), strict=True):
+                verify_fixture_data.SOURCE_DATA_MANIFESTS[:-1], (120, 10, 23, 20), (101, 6, 10, 5), strict=True):
             manifest = json.loads((root / relative).read_bytes())
             self.assertEqual(len(manifest["files"]), body_count)
             self.assertEqual(sum(name.endswith(".ox") for name in manifest["files"]), source_count)
@@ -135,7 +153,13 @@ class PublishedRegistrationTests(unittest.TestCase):
         # Replay documentation shares this directory but is not source data.
         # Pin the registered closure; unlisted .ox files still reach source_plan.
         self.assertEqual(len(registered), 177)
-        self.assertTrue(all(path.is_file() for path in registered))
+        u8_manifest = json.loads((root / U8_MANIFEST).read_bytes())
+        self.assertEqual(len(u8_manifest["files"]), 67)
+        self.assertEqual({root / U8_DATA / name for name in u8_manifest["files"] if name.endswith(".ox")}, u8_sources)
+        u8_registered = {root / U8_MANIFEST} | {root / U8_DATA / name for name in u8_manifest["files"]}
+        self.assertFalse(registered & u8_registered)
+        self.assertEqual(len(registered | u8_registered), 245)
+        self.assertTrue(all(path.is_file() for path in registered | u8_registered))
         sources = discover(root)
         checks, typed_entries, typed_members = verify_repo.source_plan(sources, root)
         language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources]
@@ -335,9 +359,11 @@ class PublishedRegistrationTests(unittest.TestCase):
                     self.assertFalse(any(str(verify_repo.ROOT / child) in command for command in commands))
         self.assertFalse(any("fixed_array_source_unit3" in arg
                              for call in run.call_args_list for arg in call.args[0]))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in command
+                             for name in U8_SOURCES for command in commands))
         for relative in PARSER_ADDED_FILES[1:] + tuple(name for name in STATIC_ADDED_FILES if name not in STATIC_ROOTS):
             self.assertFalse(any(str(verify_repo.ROOT / relative) in command for command in commands))
-        self.assertIn("fixture-data validation passed: 122 source-only files", output.getvalue())
+        self.assertIn("fixture-data validation passed: 188 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
@@ -399,6 +425,7 @@ class PublishedRegistrationTests(unittest.TestCase):
             root.mkdir()
             shutil.copy2(verify_repo.ROOT / ".gitattributes", root / ".gitattributes")
             shutil.copytree(verify_repo.ROOT / DATA, root / DATA)
+            copy_u8_data(root)
             # Published bodies happen to be LF-only. This temporary, unregistered
             # source proves that the attribute also preserves intentional CRLF.
             (root / DATA / "contracts-v2/checkout-crlf-control.ox").write_bytes(b"// control\r\n")
@@ -410,11 +437,11 @@ class PublishedRegistrationTests(unittest.TestCase):
                                       check=True, text=True, capture_output=True)
 
             git("init", "--quiet")
-            git("add", "--", ".gitattributes", DATA.as_posix(), "ordinary.txt")
+            git("add", "--", ".gitattributes", DATA.as_posix(), U8_DATA.as_posix(), "ordinary.txt")
             git("checkout-index", "--all", "--force", "--prefix", checkout.as_posix() + "/")
             self.assertEqual((checkout / "ordinary.txt").read_bytes(), b"ordinary\r\ntext\r\n")
-            self.assertEqual(len(verify_fixture_data.fixture_data_sources(checkout)), 122)
-            scope_files = [p for p in (root / DATA).rglob("*") if p.is_file()]
+            self.assertEqual(len(verify_fixture_data.fixture_data_sources(checkout)), 188)
+            scope_files = [p for folder in (DATA, U8_DATA) for p in (root / folder).rglob("*") if p.is_file()]
             for source in scope_files:
                 self.assertEqual((checkout / source.relative_to(root)).read_bytes(), source.read_bytes())
 
@@ -425,6 +452,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
+        copy_u8_data(self.root)
         self.manifest = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[0][0]
         self.document = json.loads(self.manifest.read_bytes())
         self.source = next(self.manifest.parent / name for name in self.document["files"] if name.endswith(".ox"))
@@ -520,6 +548,48 @@ class FixtureAdmissionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, pattern):
                 verify_repo.main()
             compiler.assert_not_called()
+
+    def test_u8_oracle_missing_source_expectations_and_manifest_fail_before_compiler(self):
+        for relative in (Path(U8_SOURCES[0]), U8_DATA / "oracle/coverage.json", U8_MANIFEST):
+            path = self.root / relative
+            original = path.read_bytes()
+            with self.subTest(path=relative):
+                path.unlink()
+                self.assert_no_compiler("missing or non-file")
+                path.write_bytes(original)
+
+    def test_u8_oracle_body_mutation_fails_before_compiler(self):
+        for relative in (Path(U8_SOURCES[0]), Path(U8_SOURCES[-1]), U8_DATA / "oracle/coverage.json"):
+            path = self.root / relative
+            original = path.read_bytes()
+            with self.subTest(path=relative):
+                path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+                self.assert_no_compiler("body identity mismatch")
+                path.write_bytes(original)
+
+    def test_u8_rehashed_missing_or_extra_registration_is_not_authority(self):
+        path = self.root / U8_MANIFEST
+        original = path.read_bytes()
+        for extra in (False, True):
+            document = json.loads(original)
+            if extra:
+                document["files"]["oracle/unreviewed.ox"] = {"bytes": 0, "sha256": hashlib.sha256(b"").hexdigest()}
+            else:
+                document["files"].pop("oracle/pairs-owned-00.ox")
+            with self.subTest(extra=extra):
+                path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n")
+                self.assert_no_compiler("manifest digest mismatch")
+        path.write_bytes(original)
+
+    def test_u8_missing_discovery_is_rejected_and_unlisted_neighbor_stays_legacy(self):
+        source = self.root / U8_SOURCES[0]
+        with self.assertRaisesRegex(RuntimeError, "data missing from discovery"):
+            verify_repo.source_plan([path for path in discover(self.root) if path != source], self.root)
+        extra = self.write(U8_DATA / "oracle/unlisted.ox", b"invalid candidate\n")
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertIn((extra, False), checks)
+        self.assertNotIn(extra, entries)
+        self.assertFalse(any(path == self.root / name for path, _ in checks for name in U8_SOURCES))
 
     def test_changed_source_even_same_size_fails_before_compiler(self):
         body = self.source.read_bytes()
@@ -693,6 +763,7 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
+        copy_u8_data(self.root)
         members = set(verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES)
         members.update(name for project in verify_repo.TYPED_PROJECTS.values() for name in project)
         members.update(V2_OVERLAY_FILES)

@@ -24,6 +24,9 @@ enum Seed {
 fn values(ty: hir::Ty, n: usize, seed: Seed) -> Vec<Scalar> {
     (0..n)
         .map(|i| match (ty, seed) {
+            (hir::Ty::U8, _) => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             (hir::Ty::I32, Seed::Distinct) => Scalar::I32(i as i32 * 37 - 91),
             (hir::Ty::I32, Seed::Alternate) => Scalar::I32([i32::MIN, i32::MAX, 0, -1][i % 4]),
             (hir::Ty::Bool, Seed::Distinct) => Scalar::Bool(i % 2 == 0),
@@ -35,6 +38,9 @@ fn values(ty: hir::Ty, n: usize, seed: Seed) -> Vec<Scalar> {
 
 fn replacement(ty: hir::Ty, seed: Seed) -> Scalar {
     match (ty, seed) {
+        (hir::Ty::U8, _) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         (hir::Ty::I32, Seed::Distinct) => Scalar::I32(i32::MAX),
         (hir::Ty::I32, Seed::Alternate) => Scalar::I32(i32::MIN),
         (hir::Ty::Bool, Seed::Distinct) => Scalar::Bool(false),
@@ -45,6 +51,9 @@ fn replacement(ty: hir::Ty, seed: Seed) -> Scalar {
 
 fn literal(value: Scalar) -> Rvalue {
     match value {
+        Scalar::U8(_) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Scalar::Bool(v) => Rvalue::Bool(v),
         Scalar::I32(v) => Rvalue::I32(v),
         Scalar::Unit => Rvalue::Unit,
@@ -345,6 +354,9 @@ fn payload(ty: hir::Ty, sequence: &[Scalar]) -> Vec<u8> {
     let mut bytes = vec![];
     for value in sequence {
         match value {
+            Scalar::U8(_) => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             Scalar::Bool(v) => bytes.push(u8::from(*v)),
             Scalar::I32(v) => bytes.extend(v.to_le_bytes()),
             Scalar::Unit => bytes.push(0),

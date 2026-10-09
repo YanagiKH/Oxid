@@ -246,3 +246,72 @@ fn failed_entry_preflight_has_no_storage_observation() {
     ));
     assert_eq!(guard.finish(), Snapshot::default());
 }
+
+#[test]
+fn u8_execute_carrier_size_and_alignment_measurements() {
+    println!(
+        "u8_execute_carrier frame size={} align={}",
+        size_of::<Frame>(),
+        std::mem::align_of::<Frame>()
+    );
+    println!(
+        "u8_execute_carrier resume size={} align={}",
+        size_of::<Resume>(),
+        std::mem::align_of::<Resume>()
+    );
+    println!(
+        "u8_execute_carrier option_resume size={} align={}",
+        size_of::<Option<Resume>>(),
+        std::mem::align_of::<Option<Resume>>()
+    );
+    println!(
+        "u8_execute_carrier scalar size={} align={}",
+        size_of::<Scalar>(),
+        std::mem::align_of::<Scalar>()
+    );
+    println!(
+        "u8_execute_carrier option_scalar size={} align={}",
+        size_of::<Option<Scalar>>(),
+        std::mem::align_of::<Option<Scalar>>()
+    );
+    println!(
+        "u8_execute_carrier run_failure size={} align={}",
+        size_of::<RunFailure>(),
+        std::mem::align_of::<RunFailure>()
+    );
+    println!(
+        "u8_execute_carrier run_result size={} align={}",
+        size_of::<Result<Scalar, RunFailure>>(),
+        std::mem::align_of::<Result<Scalar, RunFailure>>()
+    );
+    println!(
+        "u8_execute_carrier frame_result size={} align={}",
+        size_of::<Result<Frame, RunFailure>>(),
+        std::mem::align_of::<Result<Frame, RunFailure>>()
+    );
+    println!(
+        "u8_execute_carrier unit_result size={} align={}",
+        size_of::<Result<(), RunFailure>>(),
+        std::mem::align_of::<Result<(), RunFailure>>()
+    );
+    println!(
+        "u8_execute_carrier frames_vec size={} align={}",
+        size_of::<Vec<Frame>>(),
+        std::mem::align_of::<Vec<Frame>>()
+    );
+    println!(
+        "u8_execute_carrier slots_vec size={} align={}",
+        size_of::<Vec<Option<Scalar>>>(),
+        std::mem::align_of::<Vec<Option<Scalar>>>()
+    );
+    println!(
+        "u8_execute_carrier places_vec size={} align={}",
+        size_of::<Vec<Option<Scalar>>>(),
+        std::mem::align_of::<Vec<Option<Scalar>>>()
+    );
+    println!(
+        "u8_execute_carrier call_arguments_vec size={} align={}",
+        size_of::<Vec<Scalar>>(),
+        std::mem::align_of::<Vec<Scalar>>()
+    );
+}

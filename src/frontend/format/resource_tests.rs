@@ -219,3 +219,54 @@ fn array_syntax_and_delimiters_keep_bounded_admission() {
         );
     }
 }
+
+#[test]
+fn u8_formatter_preserves_exact_work_height_and_allocation_endpoints() {
+    let text = "fn f(x:i32)->u8{return (x.to_u8_checked());}";
+    let sources = source(text);
+    let file = sources.get(SourceFileId(0));
+    let exact = Limits {
+        delimiters: 3,
+        work_bytes: text.len(),
+    };
+    let mut allocator = Allocator::default();
+    let result = format_with_limits(file, &mut allocator, exact).unwrap();
+    assert_eq!(formatted(&result).unwrap(), result);
+    for limits in [
+        Limits {
+            delimiters: 2,
+            ..exact
+        },
+        Limits {
+            work_bytes: text.len() - 1,
+            ..exact
+        },
+    ] {
+        let errors = format_with_limits(file, &mut Allocator::default(), limits).unwrap_err();
+        assert_eq!((errors[0].code, errors[0].stage), ("E0400", "format"));
+    }
+    for attempt in 1..=allocator.attempts {
+        let mut failed = Allocator {
+            fail_at: Some(attempt),
+            ..Allocator::default()
+        };
+        assert!(
+            format_with_limits(file, &mut failed, exact).is_err(),
+            "reserve {attempt}"
+        );
+    }
+    for (groups, accepted) in [(62, true), (63, false)] {
+        let input = format!(
+            "fn f(x:i32)->u8{{return {}x.to_u8_checked(){};}}",
+            "(".repeat(groups),
+            ")".repeat(groups)
+        );
+        assert_eq!(formatted(&input).is_ok(), accepted);
+    }
+    let (result, metrics) = format_enum_candidate_observed(file, &mut Allocator::default());
+    result.unwrap();
+    assert_eq!(metrics.parse_calls, 2);
+    assert_eq!(metrics.roles_heap, text.len());
+    assert!(metrics.phase_peak_heap_bound >= metrics.reparse_live_heap);
+    println!("U8_FORMAT_SUCCESSOR {metrics:?}");
+}

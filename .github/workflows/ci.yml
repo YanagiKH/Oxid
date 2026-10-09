@@ -15,6 +15,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
   quality-and-repository:
@@ -36,6 +37,9 @@ jobs:
       - name: Fetch locked dependencies before offline private qualification
         run: cargo fetch --locked
 
+      - name: Test current u8 Unit2 accounting successor controls
+        run: python3 -B tests/qualification/unit2_u8_current/test_current.py
+
       - name: Test current and archived source-binding admission controls
         run: python3 -B -m unittest discover -s scripts -p test_typed_project_source_binding.py -v
 
@@ -49,6 +53,13 @@ jobs:
 
       - name: Test feature status metadata validation
         run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
+
+      - name: Test current parser authority and prescribed CI mutation controls
+        run: |
+          python3 -B tests/qualification/unit4_parser_current/test_current.py
+          python3 -B tests/qualification/unit4_parser_current/test_stdin_initializer.py
+          python3 -B tests/qualification/unit4_parser_current/test_record_composition_amendment.py
+          python3 -B tests/qualification/unit4_ci/test_integration.py
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -671,6 +682,29 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: ${{ runner.temp }}/bounded-enum-native
+      - name: Test bounded u8 native, resource, and exhaustive-oracle admission
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_bounded_u8_native.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_bounded_u8_native.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_u8_compatibility.py -v
+      - name: Verify bounded u8 exact tests, both exhaustive routes, and frozen providers in both profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_bounded_u8_native.py \
+            --repo "$PWD" --output "$RUNNER_TEMP/bounded-u8-native" \
+            --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA"
+      - name: Retain bounded u8 resource traces, full coverage, provider streams, and source-free ELFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-u8-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bounded-u8-native
+            !${{ runner.temp }}/bounded-u8-native/llvm-runtime/libraries/**
       - name: Test bounded stdin controller admission
         run: python3 -B tests/qualification/bounded_stdin_current/test_controller.py -v
       - name: Verify bounded stdin effects and fuel in both ordinary profiles
@@ -681,7 +715,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67
+            --source-manifest-sha256 35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -694,7 +728,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67
+            --source-manifest-sha256 35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4

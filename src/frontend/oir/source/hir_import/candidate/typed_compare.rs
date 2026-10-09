@@ -55,12 +55,14 @@ struct CellComparison {
     supplied: i32,
 }
 
-fn type_code(ty: hir::Ty) -> i32 {
-    match ty {
+fn type_code(ty: hir::Ty) -> Result<i32, Failure> {
+    // These are frozen wire codes, not an extensible scalar discriminant.
+    Ok(match ty {
         hir::Ty::Bool => 1,
         hir::Ty::I32 => 2,
         hir::Ty::Unit => 3,
-    }
+        hir::Ty::U8 => return Err(Failure::Shape),
+    })
 }
 
 // STF1's bit representation belongs here, never in the genuine typechecker.
@@ -157,7 +159,7 @@ pub(super) fn compare(
                         syntax,
                         &mut facts,
                         reference,
-                        type_code(view.signature().result),
+                        type_code(view.signature().result)?,
                     )?;
                     facts.functions = facts.functions.checked_add(1).ok_or(Failure::Overflow)?;
                 }
@@ -175,7 +177,7 @@ pub(super) fn compare(
                         syntax,
                         &mut facts,
                         reference,
-                        type_code(view.local_ty(local)),
+                        type_code(view.local_ty(local))?,
                     )?;
                     cursors.local += 1;
                     facts.locals = facts.locals.checked_add(1).ok_or(Failure::Overflow)?;
@@ -222,7 +224,7 @@ pub(super) fn compare(
                 syntax,
                 &mut facts,
                 reference,
-                type_code(view.expression_ty(expression)),
+                type_code(view.expression_ty(expression))?,
             )?;
             facts.expressions = facts.expressions.checked_add(1).ok_or(Failure::Overflow)?;
             cursors.expression += 1;
@@ -368,6 +370,8 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         copies::<bool>(6)?,
         copies::<u64>(4)?,
         copies::<Result<(), Failure>>(8)?,
+        // RFC0030 successor: returned and held closed wire-type projection.
+        copies::<Result<i32, Failure>>(2)?,
         copies::<Result<usize, Failure>>(3)?,
         copies::<Result<u64, Failure>>(2)?,
     ];
@@ -392,8 +396,9 @@ mod tests {
                 type_code(hir::Ty::I32),
                 type_code(hir::Ty::Unit),
             ],
-            [1, 2, 3],
+            [Ok(1), Ok(2), Ok(3)],
         );
+        assert_eq!(type_code(hir::Ty::U8), Err(Failure::Shape));
         for mask in 0..16 {
             assert_eq!(
                 outcome_code((mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0)),

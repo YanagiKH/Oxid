@@ -278,6 +278,16 @@ pub(super) fn check(
     sources: &SourceMap,
     meter: &mut budget::Meter,
 ) -> Result<Shape, OwnedFailure> {
+    check_with_conversion_authority(f, raw, d, sources, meter, false)
+}
+pub(super) fn check_with_conversion_authority(
+    f: &RawOwnedFunction,
+    raw: &RawOwnedProgram,
+    d: &Declarations,
+    sources: &SourceMap,
+    meter: &mut budget::Meter,
+    source_associated: bool,
+) -> Result<Shape, OwnedFailure> {
     check_matches(f, d, sources, meter)?;
     let mut owners = filled(f.owners.len(), OwnerSites::default())?;
     let mut calls = filled(f.calls.len(), CallSites::default())?;
@@ -544,6 +554,22 @@ pub(super) fn check(
                         .map_err(DeclarationError::from)?;
                 }
                 OwnedInstruction::Scalar(i) => {
+                    if !source_associated
+                        && matches!(
+                            i,
+                            Statement::Assign(Assign {
+                                value: Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. },
+                                ..
+                            })
+                        )
+                    {
+                        return Err(OirFailure {
+                            kind: FailureKind::UnauthenticatedConversion,
+                            stage: "oir-verify",
+                            span: None,
+                        }
+                        .into());
+                    }
                     super::super::verify::scalar_statement_shape(&f.locals, &f.places, i, sources)?
                 }
                 OwnedInstruction::StorageLive(id) => {

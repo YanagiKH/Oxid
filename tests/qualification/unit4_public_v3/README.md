@@ -1,3 +1,54 @@
+# Bounded-u8 current-source admission successor
+
+Reviewed compiler source: `5e4875d19961b4eba8e465c915ac676c54a9926e`,
+full source checkpoint tree: `4c687ed5ead4786e34cea154e3b263c00bd1fd1b`.
+Current source manifest SHA-256:
+`35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4`.
+It binds 363 complete inputs, including 275 src/native members (two are retained
+resource proof documents), and 278 selected compiler/build members. The exact
+96-path source transition adds 18 members and removes none. Its inverse must
+recover every byte of the retained 345-input cache-admission source before any
+older inverse runs. The reviewed compiler remains unchanged by this adapter.
+
+The PR55 manifest, parser authority and public authority are retained as named
+cache-admission predecessors. Historical observations, frozen helpers, semantic
+predicates, producer/parser formats and all resource ceilings remain unchanged.
+Current parser maps contain 526 base and 529 derived members per role. Complete
+membership and exact before/after maps remain fail-closed; no cache exclusions
+are permitted. Run all Python entrypoints with `PYTHONDONTWRITEBYTECODE=1` and
+`python3 -B`, including children that import closed fixture packages.
+
+The qualification-only `unit4-closed-u8-grammar-v1` policy uses the existing
+closed-array policy as its historical-entry discriminator. Two exact reversible
+text seams suppress conversion recognition and the new numeric-postfix
+special diagnostic only in that closed historical parser domain. It adds no
+state field and changes no production source or frozen grammar. The derived
+observer and control retain all u8 compiler bodies; they are not predecessor
+compiler builds. Separate executed policy controls require 32 closed conversion
+refusals across the four fresh builds and two enabled public-parser tests.
+These controls are additional to, and never counted among, the 638 frozen
+observations or 12 passivity pairs. Complete raw streams and source/binary/nonces
+are retained and independently revalidated by the comparison and CI join.
+
+The current public lifecycle patch contains one context-only adaptation for
+the authenticated scalar witness. Exact reversal recovers the complete stdin
+patch and its unchanged earlier lineage. Hook meanings and event counts are
+unchanged. This does not instrument new conversion operations or claim new
+producer support. OPA1/AST1/STF1 and OPA2/AST2/STF2 retain their formats and caps;
+the new bounded-u8 CI gate separately executes changed-domain refusal and
+actual current-compiler semantic/native/resource controls.
+
+Preparation and source admission execute no compiler. Historical replay,
+current-source historical-policy replay, enabled feature verification and
+hosted native qualification are separate claims. Genuine Unit4 native staging
+still requires the immutable stager's real installed dpkg metadata. Extracted
+LLVM tools alone do not establish that gate, and no local preparation or
+synthetic receipt can replace mandatory hosted qualification.
+
+Adapter execution/review status is recorded with its final Git head separately
+from the compiler checkpoint above. The sections below retain predecessor
+architecture and historical observations; they are not receipts for this source.
+
 # Current Git cache-location admission authority
 
 The active source checkpoint is `98af42f3baa02f179c0437078ab1928e86f0c8f6`, full tree
