@@ -1,19 +1,4 @@
 {
-  "cache_admission_authority": {
-    "bytes": 94920,
-    "path": "tests/fixtures/typed_project_source_binding/cache-admission-authority.json",
-    "sha256": "07ff6c8427fdc108a2d995a6d94a5788df77e0f85d12892446956eb9d6a43440"
-  },
-  "cache_admission_helper": {
-    "bytes": 5529,
-    "path": "tests/fixtures/typed_project_source_binding/cache_admission.py",
-    "sha256": "f6ef6f7e5dcb01d8f21bdc4911bf7072f401750c971b0d5c6f136935608e0077"
-  },
-  "cache_admission_transition_patch": {
-    "bytes": 10191,
-    "path": "tests/fixtures/typed_project_source_binding/cache-admission-transition.patch",
-    "sha256": "302fab79c45fb34a41a3a641e44fe0880bbfb765554dfe306bcc07cdf67cc01d"
-  },
   "cache_preservation_authority": {
     "bytes": 94920,
     "path": "tests/fixtures/typed_project_source_binding/cache-preservation-authority.json",
@@ -23,16 +8,6 @@
     "bytes": 5563,
     "path": "tests/fixtures/typed_project_source_binding/cache_preservation.py",
     "sha256": "a2a2a8c65a97eaba7fcfcf709d7430179ebef24c5ac0625e8c226eec74aebaf1"
-  },
-  "cache_preservation_parser_authority": {
-    "bytes": 485191,
-    "path": "tests/qualification/unit4_parser_current/cache-preservation-authority.json",
-    "sha256": "f9202d30c38ca09e51879146a53864c7107a49e6e07ce581e22dfe9afa78d377"
-  },
-  "cache_preservation_source_manifest": {
-    "bytes": 67558,
-    "path": "tests/fixtures/typed_project_source_binding/cache-preservation-source.json",
-    "sha256": "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102"
   },
   "cache_preservation_transition_patch": {
     "bytes": 6541,
@@ -1746,9 +1721,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 77147,
+      "bytes": 72312,
       "path": "src/runtime/packages.rs",
-      "sha256": "acd42add4312cf38a8baea9caab43748f0d89b649dfd83fd1949b339941ccd74"
+      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
     },
     {
       "bytes": 262,
@@ -2611,7 +2586,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "2067d2d7f9dd67ace26e4c278b0c0957c94e60ae69d73dd0b89c8b7ed01cc16f",
+  "current_candidate_source_manifest_sha256": "fc0d6151bb5cb532cd8a9331938a1635c63b47c606374e72cad5c306c88400e4",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2711,7 +2686,7 @@
     {
       "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "2067d2d7f9dd67ace26e4c278b0c0957c94e60ae69d73dd0b89c8b7ed01cc16f"
+      "sha256": "fc0d6151bb5cb532cd8a9331938a1635c63b47c606374e72cad5c306c88400e4"
     },
     {
       "bytes": 1583,
@@ -4304,9 +4279,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 77147,
+      "bytes": 72312,
       "path": "src/runtime/packages.rs",
-      "sha256": "acd42add4312cf38a8baea9caab43748f0d89b649dfd83fd1949b339941ccd74"
+      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
     },
     {
       "bytes": 262,
@@ -7265,7 +7240,7 @@
     {
       "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "2067d2d7f9dd67ace26e4c278b0c0957c94e60ae69d73dd0b89c8b7ed01cc16f"
+      "sha256": "fc0d6151bb5cb532cd8a9331938a1635c63b47c606374e72cad5c306c88400e4"
     },
     {
       "bytes": 1583,
@@ -8858,9 +8833,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 77147,
+      "bytes": 72312,
       "path": "src/runtime/packages.rs",
-      "sha256": "acd42add4312cf38a8baea9caab43748f0d89b649dfd83fd1949b339941ccd74"
+      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
     },
     {
       "bytes": 262,
@@ -9724,9 +9699,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 67820,
+    "bytes": 67558,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67"
+    "sha256": "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -10020,7 +9995,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "98af42f3baa02f179c0437078ab1928e86f0c8f6",
+  "reviewed_source_head": "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -10033,9 +10008,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 206372,
+    "bytes": 204058,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "b7ade9d3724b6711e9a676fbba57f2932d587470edb2514ef80db3c02c8acacb"
+    "sha256": "45d4d7c18c8ee76765cd21d8909a331a6d93bb1e90413f78f49850c87a2cdb13"
   },
   "source_delta": [
     {
@@ -12430,9 +12405,9 @@
     },
     {
       "after": {
-        "bytes": 77147,
+        "bytes": 72312,
         "path": "src/runtime/packages.rs",
-        "sha256": "acd42add4312cf38a8baea9caab43748f0d89b649dfd83fd1949b339941ccd74"
+        "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
       },
       "before": {
         "bytes": 57788,
@@ -13117,7 +13092,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "1d37d040150822d4358ec1c70c8e0f227f5eaf48",
+  "source_only_tree": "cf4dbd4fb02a219795b366b6be76d53e8e77ee20",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

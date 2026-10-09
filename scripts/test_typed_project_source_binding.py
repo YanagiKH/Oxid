@@ -107,23 +107,98 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
-    def test_cache_preservation_exact_inverse_and_forward(self):
-        helper = binding.load_cache_preservation(self.captured["package_bytes"], self.package)
-        patch_bytes = self.captured["package_bytes"]["cache-preservation-transition.patch"]
+    def test_cache_admission_exact_inverse_and_forward(self):
+        helper = binding.load_cache_admission(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["cache-admission-transition.patch"]
         restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
         self.assertEqual(touched, ["src/runtime/packages.rs"])
-        self.assertEqual(restored, self.captured["package_integrity_inputs"])
-        binding.check_bytes(restored, self.captured["package_integrity_source"]["files"])
+        self.assertEqual(restored, self.captured["cache_preservation_inputs"])
+        binding.check_bytes(restored, self.captured["cache_preservation_source"]["files"])
         changed = [name for name in restored if restored[name] != self.captured["inputs"][name]]
         self.assertEqual(changed, ["src/runtime/packages.rs"])
         self.assertEqual(set(restored), set(self.captured["inputs"]))
         forward = self.root / "forward-package"
         binding.materialize(forward, restored)
         for extra in (["--check"], []):
-            result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-preservation-transition.patch")],
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-admission-transition.patch")],
                                     cwd=forward, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
         binding.check_entries(forward, self.captured["current"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, patch_bytes, binding)
+
+    def test_cache_admission_preserves_exact_predecessor_authorities(self):
+        expected = {
+            "cache-preservation-source.json": "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102",
+            "cache-preservation-authority.json": "e9f62aaa5d6544c999dc857427f6c5c52abb8308502f980be822e2ebf55eae99",
+            "cache-preservation-transition.patch": "ea517427d0fa75bf5fbc09aaa0c5ad504cb9e66b747895953716a1137e75f1c1",
+            "cache_preservation.py": "a2a2a8c65a97eaba7fcfcf709d7430179ebef24c5ac0625e8c226eec74aebaf1",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], "98af42f3baa02f179c0437078ab1928e86f0c8f6")
+        self.assertEqual(self.captured["current"]["source_only_tree"], "1d37d040150822d4358ec1c70c8e0f227f5eaf48")
+        self.assertNotIn("cache_admission_helper", self.captured)
+        output = self.root / "package-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["cache_admission_inverse_touched"], ["src/runtime/packages.rs"])
+        self.assertEqual(receipt["cache_preservation_source_sha256"], expected["cache-preservation-source.json"])
+
+    def test_cache_admission_coherent_metadata_tampering_rejects_before_history(self):
+        for name, error in (
+            ("cache-preservation-source.json", "unapproved cache preservation predecessor source manifest"),
+            ("cache-admission-authority.json", "stale cache admission authority"),
+            ("cache-admission-transition.patch", "wrong transition patch"),
+            ("cache_admission.py", "unapproved cache admission source helper"),
+        ):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_cache_preservation", side_effect=AssertionError("historical layer ran")):
+                self.rejects(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_cache_admission_reconstructed_package_bytes_checked_before_history(self):
+        helper = binding.load_cache_admission(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["cache_preservation_inputs"])
+        damaged["src/runtime/packages.rs"] += b"\n"
+        with patch.object(binding, "load_cache_admission", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, ["src/runtime/packages.rs"])), \
+             patch.object(binding, "load_cache_preservation", side_effect=AssertionError("historical layer ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_cache_admission_changed_runtime_rejects_before_history(self):
+        path = self.repo / "src/runtime/packages.rs"
+        original = path.read_bytes()
+        for body in (None, original + b"\n"):
+            if body is None:
+                path.unlink()
+            else:
+                path.write_bytes(body)
+            with self.subTest(missing=body is None), patch.object(binding, "load_cache_preservation", side_effect=AssertionError("historical layer ran")):
+                self.rejects("missing regular input" if body is None else "changed input")
+            path.write_bytes(original)
+
+    def test_cache_preservation_exact_inverse_and_forward(self):
+        helper = binding.load_cache_preservation(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["cache-preservation-transition.patch"]
+        restored, touched = helper.inverse(self.captured["cache_preservation_inputs"], patch_bytes, binding)
+        self.assertEqual(touched, ["src/runtime/packages.rs"])
+        self.assertEqual(restored, self.captured["package_integrity_inputs"])
+        binding.check_bytes(restored, self.captured["package_integrity_source"]["files"])
+        changed = [name for name in restored if restored[name] != self.captured["cache_preservation_inputs"][name]]
+        self.assertEqual(changed, ["src/runtime/packages.rs"])
+        self.assertEqual(set(restored), set(self.captured["cache_preservation_inputs"]))
+        forward = self.root / "forward-package"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-preservation-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["cache_preservation_source"]["files"], exact=True)
         with self.assertRaises(binding.BindingError):
             helper.inverse(restored, patch_bytes, binding)
 
@@ -136,8 +211,8 @@ class SourceBindingTests(unittest.TestCase):
         }
         for name, digest in expected.items():
             self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b")
-        self.assertEqual(self.captured["current"]["source_only_tree"], "cf4dbd4fb02a219795b366b6be76d53e8e77ee20")
+        self.assertEqual(self.captured["cache_preservation_source"]["reviewed_source_head"], "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b")
+        self.assertEqual(self.captured["cache_preservation_source"]["source_only_tree"], "cf4dbd4fb02a219795b366b6be76d53e8e77ee20")
         self.assertNotIn("cache_preservation_helper", self.captured)
         output = self.root / "package-archive"
         output.mkdir()

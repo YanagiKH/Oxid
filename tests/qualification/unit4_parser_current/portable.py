@@ -599,7 +599,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = 'f9202d30c38ca09e51879146a53864c7107a49e6e07ce581e22dfe9afa78d377'
+AUTHORITY_SHA = '47725dbdd2cd13da289205a15f7de53610e782f3e2f2037695be374e8fa7ad91'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -701,8 +701,78 @@ def verify_map(root, records, exact=False, extras=()):
         same(sorted(files), sorted(names + list(extras)), "complete file inventory differs")
 
 
+def restore_cache_admission_source(active, inputs):
+    """Restore the complete immutable package predecessor before its inverse."""
+    fields = ("source_binding_runner", "cache_admission_helper", "cache_admission_transition_patch",
+              "cache_preservation_source_manifest")
+    verify_map(REPOSITORY, [active[key] for key in fields])
+    runner = REPOSITORY / active["source_binding_runner"]["path"]
+    api = types.ModuleType("unit4_cache_binding")
+    api.__file__ = str(runner)
+    exec(compile(runner.read_bytes(), str(runner), "exec"), api.__dict__)
+    helper_path = REPOSITORY / active["cache_admission_helper"]["path"]
+    same(sha(helper_path.read_bytes()), api.CACHE_ADMISSION_HELPER_SHA,
+         "exact cache admission helper identity")
+    helper = types.ModuleType("unit4_cache_inverse")
+    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
+    try:
+        restored, touched = helper.inverse(inputs,
+            (REPOSITORY / active["cache_admission_transition_patch"]["path"]).read_bytes(), api)
+    except api.BindingError as error:
+        raise Rejected("cache admission inverse rejected: " + str(error)) from error
+    same(touched, ["src/runtime/packages.rs"], "exact cache admission inverse scope")
+    predecessor = read(REPOSITORY / active["cache_preservation_source_manifest"]["path"])
+    same(active["cache_preservation_source_manifest"]["sha256"],
+         "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102",
+         "exact retained cache preservation source identity")
+    actual = [{"path": name, "bytes": len(raw), "sha256": sha(raw)}
+              for name, raw in sorted(restored.items())]
+    same(actual, predecessor["files"], "cache inverse must recover exact cache preservation source")
+    return restored
+
+
+def validate_cache_admission_transition(active, current, historical):
+    fields = (("cache_admission_authority", "cache-admission-authority.json"),
+              ("cache_admission_transition_patch", "cache-admission-transition.patch"),
+              ("cache_admission_helper", "cache_admission.py"),
+              ("cache_preservation_source_manifest", "cache-preservation-source.json"))
+    for key, filename in fields:
+        same(active[key]["path"], "tests/fixtures/typed_project_source_binding/" + filename,
+             "cache admission binding path")
+    verify_map(REPOSITORY, [active[key] for key, _ in fields])
+    predecessor = read(REPOSITORY / active["cache_preservation_source_manifest"]["path"])
+    successor = read(REPOSITORY / active["cache_admission_authority"]["path"])
+    same(successor["schema"], "oxid-cache-admission-source-transition-v1", "cache authority schema")
+    same(successor["reviewed_source_head"], current["reviewed_source_head"], "cache source checkpoint")
+    same(successor["source_only_tree"], current["source_only_tree"], "cache source tree")
+    for field, key in (("current_source_sha256", "current_source_manifest"),
+                       ("cache_preservation_source_sha256", "cache_preservation_source_manifest"),
+                       ("transition_patch_sha256", "cache_admission_transition_patch")):
+        same(successor[field], active[key]["sha256"], "cache exact " + field)
+    same(successor["transition_paths"], ["src/runtime/packages.rs"], "exact cache transition scope")
+    same(len(predecessor["files"]), 345, "complete retained cache preservation source count")
+    same(successor["current_source_members"], 345, "complete cache source count")
+    for field in ("instrumentation", "control_instrumentation"):
+        same(sorted(set(successor["transition_paths"]).intersection(row["path"] for row in historical[field])),
+             [], "cache transition must not overlap parser instrumentation")
+    retained = active["cache_preservation_parser_authority"]
+    same(retained, {'path': 'tests/qualification/unit4_parser_current/cache-preservation-authority.json', 'bytes': 485191, 'sha256': 'f9202d30c38ca09e51879146a53864c7107a49e6e07ce581e22dfe9afa78d377'},
+         "retained cache preservation parser authority identity")
+    verify_map(REPOSITORY, [retained])
+    old = read(REPOSITORY / retained["path"])
+    omit = {"current_base_files", "current_derived_files", "current_control_derived_files",
+            "current_candidate_source_manifest_sha256", "current_source_manifest", "reviewed_source_head",
+            "source_only_tree", "source_binding_runner", "source_delta", "cache_preservation_parser_authority",
+            *(key for key, _ in fields)}
+    same({k: v for k, v in active.items() if k not in omit},
+         {k: v for k, v in old.items() if k not in omit},
+         "cache changes unrelated parser authority")
+    return predecessor
+
+
 def restore_cache_preservation_source(active, inputs):
     """Restore the complete immutable package predecessor before its inverse."""
+    inputs = restore_cache_admission_source(active, inputs)
     fields = ("source_binding_runner", "cache_preservation_helper", "cache_preservation_transition_patch",
               "package_integrity_source_manifest")
     verify_map(REPOSITORY, [active[key] for key in fields])
@@ -745,7 +815,7 @@ def validate_cache_preservation_transition(active, current, historical):
     same(successor["schema"], "oxid-cache-preservation-source-transition-v1", "cache authority schema")
     same(successor["reviewed_source_head"], current["reviewed_source_head"], "cache source checkpoint")
     same(successor["source_only_tree"], current["source_only_tree"], "cache source tree")
-    for field, key in (("current_source_sha256", "current_source_manifest"),
+    for field, key in (("current_source_sha256", "cache_preservation_source_manifest"),
                        ("package_integrity_source_sha256", "package_integrity_source_manifest"),
                        ("transition_patch_sha256", "cache_preservation_transition_patch")):
         same(successor[field], active[key]["sha256"], "cache exact " + field)
@@ -763,6 +833,8 @@ def validate_cache_preservation_transition(active, current, historical):
     omit = {"current_base_files", "current_derived_files", "current_control_derived_files",
             "current_candidate_source_manifest_sha256", "current_source_manifest", "reviewed_source_head",
             "source_only_tree", "source_binding_runner", "source_delta", "package_integrity_parser_authority",
+            "cache_admission_authority", "cache_admission_transition_patch", "cache_admission_helper",
+            "cache_preservation_source_manifest", "cache_preservation_parser_authority",
             *(key for key, _ in fields)}
     same({k: v for k, v in active.items() if k not in omit},
          {k: v for k, v in old.items() if k not in omit},
@@ -833,6 +905,8 @@ def validate_package_integrity_transition(active, current, historical):
     omit = {"current_base_files", "current_derived_files", "current_control_derived_files",
             "current_candidate_source_manifest_sha256", "current_source_manifest", "reviewed_source_head",
             "source_only_tree", "source_binding_runner", "source_delta", "lexical_provider_parser_authority",
+            "cache_admission_authority", "cache_admission_transition_patch", "cache_admission_helper",
+            "cache_preservation_source_manifest", "cache_preservation_parser_authority",
             "cache_preservation_authority", "cache_preservation_transition_patch", "cache_preservation_helper",
             "package_integrity_source_manifest", "package_integrity_parser_authority",
             *(key for key, _ in fields)}
@@ -909,6 +983,8 @@ def validate_lexical_provider_transition(active, current, historical):
             "source_only_tree", "source_binding_runner", "source_delta", "producer_diagnostic_parser_authority",
             "package_integrity_authority", "package_integrity_transition_patch", "package_integrity_helper",
             "lexical_provider_source_manifest", "lexical_provider_parser_authority",
+            "cache_admission_authority", "cache_admission_transition_patch", "cache_admission_helper",
+            "cache_preservation_source_manifest", "cache_preservation_parser_authority",
             "cache_preservation_authority", "cache_preservation_transition_patch", "cache_preservation_helper",
             "package_integrity_source_manifest", "package_integrity_parser_authority",
             *(key for key, _ in fields)}
@@ -1103,7 +1179,8 @@ def authority():
     same(len(current["files"]), 345, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
-    package_source = validate_cache_preservation_transition(active, current, result)
+    cache_source = validate_cache_admission_transition(active, current, result)
+    package_source = validate_cache_preservation_transition(active, cache_source, result)
     lexical_source = validate_package_integrity_transition(active, package_source, result)
     diagnostic_source = validate_lexical_provider_transition(active, lexical_source, result)
     v2_source = validate_producer_diagnostic_transition(active, diagnostic_source, result)

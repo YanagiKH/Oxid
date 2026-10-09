@@ -79,6 +79,39 @@ revision updates remain supported. Checkout never uses force and also refuses
 to overwrite ignored files. These guarantees assume a stable filesystem; they
 do not claim protection against concurrent writers or hostile Git configuration.
 
+## Git cache location admission
+
+Before creating cache directories or changing an existing cache, Oxid inspects
+`.oxid`, `.oxid/deps`, the requested checkout and its `.git` entry without
+following links. Existing entries must be ordinary directories. Symlinks
+(including dangling links), Windows junctions and other Windows reparse points
+are refused, even when their targets are inside the project. Inspection errors
+are not treated as absence. An occupied temporary checkout name is never reused,
+including when it is a dangling link.
+
+An existing checkout must have its own ordinary `.git` directory. Git's reported
+work-tree root, Git directory and common directory must resolve to that checkout
+and its `.git` directory. Enclosing repositories, linked worktrees, gitfiles,
+separate/shared Git directories and redirected work-tree roots are not supported
+cache layouts. Move such caches aside and let Oxid recreate an ordinary cache;
+Oxid does not rewrite or remove rejected entries. Project-root aliases and
+explicit path dependencies outside the project remain supported.
+
+A location refusal precedes cache directory creation, configuration writes,
+fetching and checkout for that dependency. Its cache, external target and project
+lockfile remain unchanged. Earlier dependencies may already have resolved; this
+is not whole-resolution rollback. These checks assume a stable filesystem and
+trusted Git execution context. They are not a race-proof sandbox and do not
+cover concurrent replacement, bind mounts, hardlinks, arbitrary indirection
+inside Git metadata, hostile Git configuration or inherited Git environment
+overrides. They do not authenticate the repository's publisher.
+
+Acceptance tests are `tests/package_cache_admission.rs` and the package unit
+tests. Windows qualification requires successful junction and directory-symlink
+creation; capability failures fail those tests rather than silently skipping
+coverage. Exact-source qualification and the configured hosted host matrix are
+separate requirements from focused local tests.
+
 ## Current limits
 
 The resolver identifies packages by name and cannot resolve multiple versions of the same name together. New package-tree checksums use SHA-256. Existing FNV entries retain their historical verification algorithm until an explicit update; mixed-algorithm locks are supported. Neither digest authenticates a publisher or establishes source trust. Review dependency sources and lockfile updates before running their code. Registry publishing is not part of the 0.9 workflow.

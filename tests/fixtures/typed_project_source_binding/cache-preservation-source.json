@@ -1,10 +1,7 @@
 {
   "base_head": "0884f95e2f49d59c4f828febb50d36c4e7ea9a47",
-  "cache_admission_base_head": "20f8e494f872420e6eb53b518b92783c9a1c3539",
-  "cache_admission_base_tree": "26b2d2ed5eaf78b37e9933296f011f6536c8d1dd",
   "cache_preservation_base_head": "7f4e37707ad1c46476d2bf1e96575cb7d7e7724d",
   "cache_preservation_base_tree": "532822dab2c2b118b773ade53bb902fa1440bbbb",
-  "cache_preservation_source_sha256": "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102",
   "combined_base_head": "595f681c2a906d686ddea90c65d060cff97e0a75",
   "combined_source_sha256": "221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487",
   "compile_time_fixture_members": 42,
@@ -1350,9 +1347,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 77147,
+      "bytes": 72312,
       "path": "src/runtime/packages.rs",
-      "sha256": "acd42add4312cf38a8baea9caab43748f0d89b649dfd83fd1949b339941ccd74"
+      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
     },
     {
       "bytes": 3884,
@@ -1768,12 +1765,12 @@
   "producer_diagnostic_source_sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29",
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
-  "purpose": "Exact cache-location admission source successor; immutable predecessor views and execution oracles retained.",
-  "reviewed_source_head": "98af42f3baa02f179c0437078ab1928e86f0c8f6",
+  "purpose": "Exact cache-preservation source successor; immutable predecessor views and execution oracles retained.",
+  "reviewed_source_head": "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "1d37d040150822d4358ec1c70c8e0f227f5eaf48",
+  "source_only_tree": "cf4dbd4fb02a219795b366b6be76d53e8e77ee20",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

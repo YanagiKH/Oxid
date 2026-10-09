@@ -71,8 +71,9 @@ HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e
 HIR_IMPORT_SOURCE_BYTES = 62558
 PRODUCER_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 PRODUCER_SOURCE_BYTES = 63220
-CURRENT_SOURCE_SHA = '481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102'
-CURRENT_SOURCE_BYTES = 67558
+CURRENT_SOURCE_SHA = '82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67'
+CURRENT_SOURCE_BYTES = 67820
+CACHE_ADMISSION_HELPER_SHA = 'f6ef6f7e5dcb01d8f21bdc4911bf7072f401750c971b0d5c6f136935608e0077'
 CACHE_PRESERVATION_HELPER_SHA = 'a2a2a8c65a97eaba7fcfcf709d7430179ebef24c5ac0625e8c226eec74aebaf1'
 PACKAGE_INTEGRITY_HELPER_SHA = '263e898f966fbc1cb007dfab86a0b16504a2a65d11c4edcdb3cbbbcba34af857'
 LEXICAL_PROVIDER_HELPER_SHA = '7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c'
@@ -1376,6 +1377,16 @@ def compile_fixture_paths(source, *, combined=False):
     return paths
 
 
+def load_cache_admission(package_bytes, package=PACKAGE):
+    """Load only the separately pinned cache-admission outer successor."""
+    require(digest(package_bytes["cache_admission.py"]) == CACHE_ADMISSION_HELPER_SHA,
+            "unapproved cache admission source helper")
+    module = types.ModuleType("cache_admission_source_binding")
+    module.__file__ = str(package / "cache_admission.py")
+    exec(compile(package_bytes["cache_admission.py"], module.__file__, "exec"), module.__dict__)
+    return module
+
+
 def load_cache_preservation(package_bytes, package=PACKAGE):
     """Load only the separately pinned cache-preservation outer successor."""
     require(digest(package_bytes["cache_preservation.py"]) == CACHE_PRESERVATION_HELPER_SHA,
@@ -1657,9 +1668,17 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    cache = load_cache_preservation(package_bytes, package)
-    cache_current, cache_inputs, cache_authority, package_inputs, cache_touched = cache.admit(
+    admission = load_cache_admission(package_bytes, package)
+    admission_current, admission_inputs, admission_authority, cache_inputs, admission_touched = admission.admit(
         repo, package_bytes, types.SimpleNamespace(**globals()))
+    cache = load_cache_preservation(package_bytes, package)
+    cache_package = dict(package_bytes, **{"current-source.json": package_bytes["cache-preservation-source.json"]})
+    with tempfile.TemporaryDirectory(prefix="oxid-retained-cache-preservation-") as directory:
+        cache_repo = Path(directory) / "source"
+        materialize(cache_repo, cache_inputs)
+        cache_current, admitted_cache_inputs, cache_authority, package_inputs, cache_touched = cache.admit(
+            cache_repo, cache_package, types.SimpleNamespace(**globals()))
+    require(admitted_cache_inputs == cache_inputs, "retained cache admission changed its input view")
     integrity = load_package_integrity(package_bytes, package)
     integrity_package = dict(package_bytes, **{"current-source.json": package_bytes["package-integrity-source.json"]})
     with tempfile.TemporaryDirectory(prefix="oxid-retained-package-integrity-") as directory:
@@ -2275,7 +2294,9 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": cache_current, "cache_preservation_authority": cache_authority,
+    return {"current": admission_current, "cache_admission_authority": admission_authority,
+            "cache_admission_touched": admission_touched,
+            "cache_preservation_source": cache_current, "cache_preservation_inputs": cache_inputs, "cache_preservation_authority": cache_authority,
             "cache_preservation_touched": cache_touched,
             "package_integrity_source": package_current, "package_integrity_inputs": package_inputs, "package_integrity_authority": package_authority,
             "package_integrity_touched": package_touched,
@@ -2307,7 +2328,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": cache_inputs, "archived": reconstructed, "references": references,
+            "inputs": admission_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2361,6 +2382,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "cache_admission_authority_sha256": digest(captured["package_bytes"]["cache-admission-authority.json"]),
+            "cache_admission_inverse_patch_sha256": digest(captured["package_bytes"]["cache-admission-transition.patch"]),
+            "cache_admission_inverse_touched": captured["cache_admission_touched"],
+            "cache_preservation_source_sha256": digest(captured["package_bytes"]["cache-preservation-source.json"]),
             "cache_preservation_authority_sha256": digest(captured["package_bytes"]["cache-preservation-authority.json"]),
             "cache_preservation_inverse_patch_sha256": digest(captured["package_bytes"]["cache-preservation-transition.patch"]),
             "cache_preservation_inverse_touched": captured["cache_preservation_touched"],
@@ -2644,6 +2669,9 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      cache_admission_authority_sha256=digest(captured["package_bytes"]["cache-admission-authority.json"]),
+                      cache_admission_inverse_patch_sha256=digest(captured["package_bytes"]["cache-admission-transition.patch"]),
+                      cache_preservation_source_sha256=digest(captured["package_bytes"]["cache-preservation-source.json"]),
                       cache_preservation_authority_sha256=digest(captured["package_bytes"]["cache-preservation-authority.json"]),
                       cache_preservation_inverse_patch_sha256=digest(captured["package_bytes"]["cache-preservation-transition.patch"]),
                       package_integrity_source_sha256=digest(captured["package_bytes"]["package-integrity-source.json"]),
