@@ -2378,11 +2378,11 @@
       "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
     },
     {
-      "bytes": 17918,
-      "git_blob": "d53e789f154d8ea563b9884fe1e00cec4e0e0794",
+      "bytes": 25395,
+      "git_blob": "d52f80a6f822fe5841525199902d6db8c39f3b81",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-      "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+      "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
     },
     {
       "bytes": 21384,
@@ -2392,11 +2392,11 @@
       "sha256": "94d8b96af5ad8d304b7e77bd0cccd7fe1aa7db0f901af245b8492cf19ccc1e38"
     },
     {
-      "bytes": 13018,
-      "git_blob": "7bb8f1946b9e005ebb56e1ddc89f521221c8860e",
+      "bytes": 12887,
+      "git_blob": "6b0c6c2ba39762d2ccccd0e07f9cebd17d720b3b",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-      "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+      "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
     },
     {
       "bytes": 41762,
@@ -3885,16 +3885,16 @@
   ],
   "current_source_bytes": 74192,
   "current_source_members": 376,
-  "current_source_sha256": "9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8",
+  "current_source_sha256": "402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa",
   "fixture_additions": [],
   "predecessor_source_bytes": 71510,
   "predecessor_source_members": 363,
   "predecessor_source_sha256": "20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4",
   "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS",
   "removed_paths": [],
-  "reviewed_source_head": "b3371e6a383b526d25409f2d4b308b4993739466",
+  "reviewed_source_head": "e3c1b4a1a3ef457326f11a802896c125202fe797",
   "schema": "oxid-bounded-byte-storage-source-transition-v1",
-  "source_only_tree": "c168a3d6d6c3e3ba3d6b71b981319cbed9497525",
+  "source_only_tree": "5fdb4f06a8fcbc61724676df55a4c3bee130eaf7",
   "transition_inputs": [
     {
       "after": {
@@ -4116,11 +4116,11 @@
     },
     {
       "after": {
-        "bytes": 17918,
-        "git_blob": "d53e789f154d8ea563b9884fe1e00cec4e0e0794",
+        "bytes": 25395,
+        "git_blob": "d52f80a6f822fe5841525199902d6db8c39f3b81",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-        "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+        "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs"
@@ -4138,11 +4138,11 @@
     },
     {
       "after": {
-        "bytes": 13018,
-        "git_blob": "7bb8f1946b9e005ebb56e1ddc89f521221c8860e",
+        "bytes": 12887,
+        "git_blob": "6b0c6c2ba39762d2ccccd0e07f9cebd17d720b3b",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-        "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+        "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs"
@@ -4380,8 +4380,8 @@
       "path": "src/frontend/parser/u8_syntax_tests.rs"
     }
   ],
-  "transition_patch_bytes": 274861,
-  "transition_patch_sha256": "8ed7bf4876066a9cce422ff53e995c4a8c6d0fc7a3a81baedaa5de32c047bcd9",
+  "transition_patch_bytes": 282373,
+  "transition_patch_sha256": "c3d74ac39e441cd1f55f908d6ae57aaa8c1cf686e8deaa005eed29a37e15bb15",
   "transition_paths": [
     "src/frontend/ast.rs",
     "src/frontend/declaration_index.rs",

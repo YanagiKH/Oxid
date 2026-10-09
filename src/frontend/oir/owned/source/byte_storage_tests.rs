@@ -5,6 +5,176 @@ use crate::frontend::{ast, lexer, parser, source::SourceFileId};
 
 pub(super) const BYTE: &str = "fn byte(x:i32)->u8{return x.to_u8_checked();}";
 
+// Semantic module controls run on every host through authentic parsed fixtures.
+// Linux additionally exercises the qualified filesystem loader with the same
+// sources and checked module origins. Production host admission is unchanged.
+pub(super) fn module_sources(
+    files: &[(&str, &str)],
+) -> Vec<crate::frontend::project::ProjectSources> {
+    use crate::frontend::project::ProjectSources;
+    let projects = vec![ProjectSources::from_u8_index_test_files(files)];
+    assert_eq!(projects[0].sources().files().len(), files.len());
+    for (name, text) in files {
+        let source = projects[0]
+            .sources()
+            .files()
+            .iter()
+            .find(|source| source.path() == *name)
+            .expect("memory source must retain the supplied literal path");
+        assert_eq!(source.text(), *text);
+    }
+    #[cfg(target_os = "linux")]
+    let projects = {
+        use crate::frontend::project::ProjectLimits;
+        use std::{
+            fs,
+            sync::atomic::{AtomicUsize, Ordering},
+        };
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "oxid-byte-module-project-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        for (name, text) in files {
+            fs::write(directory.join(name), text).unwrap();
+        }
+        let loaded = ProjectSources::load_typed(
+            directory.join("main.ox").to_str().unwrap(),
+            ProjectLimits::default(),
+        )
+        .unwrap();
+        fs::remove_dir_all(&directory).unwrap();
+        let memory = &projects[0];
+        assert_eq!(memory.modules().len(), loaded.modules().len());
+        for (a, b) in memory.modules().iter().zip(loaded.modules()) {
+            assert_eq!(
+                (
+                    a.file,
+                    a.parent,
+                    a.declaration,
+                    a.public,
+                    a.depth,
+                    &a.relative_path
+                ),
+                (
+                    b.file,
+                    b.parent,
+                    b.declaration,
+                    b.public,
+                    b.depth,
+                    &b.relative_path
+                )
+            );
+            let a_source = memory.sources().get(a.file);
+            let b_source = loaded.sources().get(b.file);
+            assert_eq!(a_source.text(), b_source.text());
+            assert_eq!(
+                b_source.path(),
+                directory.join(a_source.path()).to_str().unwrap()
+            );
+            let a_ast = memory.try_file_ast(a.file).unwrap();
+            let b_ast = loaded.try_file_ast(b.file).unwrap();
+            assert!(a_ast.belongs_to(a_source));
+            assert!(b_ast.belongs_to(b_source));
+            assert!(!a_ast.belongs_to(b_source));
+            assert!(!b_ast.belongs_to(a_source));
+            assert!(a_ast.validate_spans_and_ids(|at| memory.try_text(at).is_some()));
+            assert!(b_ast.validate_spans_and_ids(|at| loaded.try_text(at).is_some()));
+        }
+        let mut projects = projects;
+        projects.push(loaded);
+        projects
+    };
+    projects
+}
+
+#[test]
+fn byte_storage_source_identical_module_text_keeps_runtime_file_identity() {
+    use crate::frontend::declaration_index::SourceOwner;
+    let child = "pub fn get(p:&[u8])->i32{let b=p[1];return b.to_i32();}";
+    let start = child.find("p[1]").unwrap();
+    for (chosen, expected_file) in [("left", 1), ("right", 2)] {
+        let root = format!("mod left;mod right;fn main()->i32{{let n=128;let b=n.to_u8_checked();let a=[b];return crate::{chosen}::get(&a);}}");
+        for project in
+            module_sources(&[("main.ox", &root), ("left.ox", child), ("right.ox", child)])
+        {
+            assert!(project.uses_owned_syntax());
+            let typed =
+                typeck::check(resolve::resolve_sources(SourceOwner::project(&project)).unwrap())
+                    .unwrap();
+            let checked = program::check_typed(&typed).unwrap();
+            let error = checked.run(typed.entry(), project.sources()).unwrap_err();
+            assert_eq!(
+                (error.code, error.stage, error.message.as_str()),
+                ("E0606", "oir-owned-run", "array index out of bounds")
+            );
+            let span = error.primary.unwrap();
+            assert_eq!(
+                (span.file, span.start, span.end),
+                (SourceFileId(expected_file), start, start + 4)
+            );
+            assert!(error.secondary.is_empty());
+            assert!(error.notes.is_empty());
+            let expected_path = project.sources().get(SourceFileId(expected_file)).path();
+            assert_eq!(
+                std::path::Path::new(expected_path).file_name().unwrap(),
+                format!("{chosen}.ox").as_str()
+            );
+            assert_eq!(error.render_human(project.sources()), format!("error[E0606] (oir-owned-run): array index out of bounds\n  --> {expected_path}:1:{}\n", start + 1));
+        }
+    }
+}
+
+#[test]
+fn byte_storage_source_unused_nested_enum_array_payload_keeps_inner_origin() {
+    // Invalid child syntax cannot construct ProjectSources. Parse the authentic
+    // root/outer/inner sources with their exact preorder and retained file IDs;
+    // the public integration control additionally checks Linux loader parity.
+    for n in [0, 1, 1024] {
+        let inner = format!("enum E{{V([u8;{n}])}}");
+        let mut sources = SourceMap::new();
+        for (ordinal, (path, text, declared)) in [
+            (
+                "main.ox",
+                "mod outer;fn main()->i32{return 0;}",
+                Some("outer"),
+            ),
+            ("outer.ox", "mod inner;", Some("inner")),
+            ("outer/inner.ox", inner.as_str(), None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = sources.add(path.into(), text.into());
+            assert_eq!(id, SourceFileId(ordinal));
+            let source = sources.get(id);
+            let parsed = parser::parse_typed_counted(
+                source,
+                lexer::lex(source).unwrap(),
+                parser::SourceMode::ProjectCandidate,
+                parser::MAX_NODES,
+                &mut crate::frontend::project::budget::Allocator::default(),
+                &mut parser::SyntaxStorage::default(),
+            );
+            if let Some(declared) = declared {
+                let (ast, _) = parsed.unwrap();
+                assert!(ast.belongs_to(source));
+                assert_eq!(ast.modules.len(), 1);
+                assert_eq!(source.text_at(ast.modules[0].name), declared);
+            } else {
+                let errors = parsed.unwrap_err();
+                assert_eq!(errors.len(), 1);
+                let start = inner.find('[').unwrap();
+                let end = start + 1;
+                let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0100\",\"stage\":\"parse\",\"message\":\"only bool, i32 and () enum payloads are supported\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+                assert_eq!(errors[0].render_json(&sources), expected);
+            }
+        }
+    }
+}
+
 pub(super) fn parsed(text: &str) -> (SourceMap, ast::Program) {
     let mut sources = SourceMap::new();
     let id = sources.add("byte-storage.ox".into(), text.into());

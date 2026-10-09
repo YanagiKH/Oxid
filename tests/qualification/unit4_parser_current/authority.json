@@ -2,17 +2,17 @@
   "byte_storage_authority": {
     "bytes": 182657,
     "path": "tests/fixtures/typed_project_source_binding/byte-storage-authority.json",
-    "sha256": "72b59997311d9198a0357376a938b9332fd7ef6808ec3c9949a5f2ffaf7c4518"
+    "sha256": "e8f678e0dd5b641194a286a6245d80fbe727fb5099ce4b49a426f79da8e66d85"
   },
   "byte_storage_helper": {
     "bytes": 9896,
     "path": "tests/fixtures/typed_project_source_binding/byte_storage.py",
-    "sha256": "356728c17bf325b6a943f396e6386f7d22b1eb18ca0be7cf0ed8029a62393114"
+    "sha256": "e9eef8a6475d6c79c5e93a127af8ed99e46eb029de4da7909371b44dcd6f6084"
   },
   "byte_storage_transition_patch": {
-    "bytes": 274861,
+    "bytes": 282373,
     "path": "tests/fixtures/typed_project_source_binding/byte-storage-transition.patch",
-    "sha256": "8ed7bf4876066a9cce422ff53e995c4a8c6d0fc7a3a81baedaa5de32c047bcd9"
+    "sha256": "c3d74ac39e441cd1f55f908d6ae57aaa8c1cf686e8deaa005eed29a37e15bb15"
   },
   "cache_admission_authority": {
     "bytes": 94920,
@@ -1246,9 +1246,9 @@
       "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
     },
     {
-      "bytes": 17918,
+      "bytes": 25395,
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-      "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+      "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
     },
     {
       "bytes": 21384,
@@ -1256,9 +1256,9 @@
       "sha256": "94d8b96af5ad8d304b7e77bd0cccd7fe1aa7db0f901af245b8492cf19ccc1e38"
     },
     {
-      "bytes": 13018,
+      "bytes": 12887,
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-      "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+      "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
     },
     {
       "bytes": 41762,
@@ -2791,7 +2791,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "47ce365b88a14ce7e8dad8faca953b47a90acdb376e36215f4f7206a1cde9361",
+  "current_candidate_source_manifest_sha256": "f3e0b1ef6b64db6fdd7bfbebbb55b39cead8badb880445d28672198e64029cf8",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2891,7 +2891,7 @@
     {
       "bytes": 95349,
       "path": "candidate-source-manifest.json",
-      "sha256": "47ce365b88a14ce7e8dad8faca953b47a90acdb376e36215f4f7206a1cde9361"
+      "sha256": "f3e0b1ef6b64db6fdd7bfbebbb55b39cead8badb880445d28672198e64029cf8"
     },
     {
       "bytes": 1583,
@@ -3954,9 +3954,9 @@
       "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
     },
     {
-      "bytes": 17918,
+      "bytes": 25395,
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-      "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+      "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
     },
     {
       "bytes": 21384,
@@ -3964,9 +3964,9 @@
       "sha256": "94d8b96af5ad8d304b7e77bd0cccd7fe1aa7db0f901af245b8492cf19ccc1e38"
     },
     {
-      "bytes": 13018,
+      "bytes": 12887,
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-      "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+      "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
     },
     {
       "bytes": 41762,
@@ -7600,7 +7600,7 @@
     {
       "bytes": 95349,
       "path": "candidate-source-manifest.json",
-      "sha256": "47ce365b88a14ce7e8dad8faca953b47a90acdb376e36215f4f7206a1cde9361"
+      "sha256": "f3e0b1ef6b64db6fdd7bfbebbb55b39cead8badb880445d28672198e64029cf8"
     },
     {
       "bytes": 1583,
@@ -8663,9 +8663,9 @@
       "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
     },
     {
-      "bytes": 17918,
+      "bytes": 25395,
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-      "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+      "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
     },
     {
       "bytes": 21384,
@@ -8673,9 +8673,9 @@
       "sha256": "94d8b96af5ad8d304b7e77bd0cccd7fe1aa7db0f901af245b8492cf19ccc1e38"
     },
     {
-      "bytes": 13018,
+      "bytes": 12887,
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-      "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+      "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
     },
     {
       "bytes": 41762,
@@ -10216,7 +10216,7 @@
   "current_source_manifest": {
     "bytes": 74192,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8"
+    "sha256": "402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -10510,7 +10510,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "b3371e6a383b526d25409f2d4b308b4993739466",
+  "reviewed_source_head": "e3c1b4a1a3ef457326f11a802896c125202fe797",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -10525,7 +10525,7 @@
   "source_binding_runner": {
     "bytes": 216279,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "1fbcc1a935ceae8986e6c54f59f480f2595712cadae99ca944949817285cb833"
+    "sha256": "584e8ee937cb2d3ef62d59d3eb69a79bfb6afce23df86de3df305f81afae7c76"
   },
   "source_delta": [
     {
@@ -11988,9 +11988,9 @@
     },
     {
       "after": {
-        "bytes": 17918,
+        "bytes": 25395,
         "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-        "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+        "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs"
@@ -12006,9 +12006,9 @@
     },
     {
       "after": {
-        "bytes": 13018,
+        "bytes": 12887,
         "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-        "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+        "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs"
@@ -13925,7 +13925,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "c168a3d6d6c3e3ba3d6b71b981319cbed9497525",
+  "source_only_tree": "5fdb4f06a8fcbc61724676df55a4c3bee130eaf7",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

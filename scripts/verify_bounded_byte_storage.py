@@ -40,10 +40,10 @@ from verify_fixture_data import _regular_path, _unique_object
 
 require, identity, save, sha = common.require, common.identity, common.save, common.sha
 PACKAGE = Path('tests/qualification/byte_storage_current')
-DATA_SHA256 = '85c8908a2bf94e69e352ddb2399e1a3c0eb80319ab0a82f0ccdb3ed8c617e979'
+DATA_SHA256 = '53211d876b89c192c7636c3d0e0e78d2ad381dd47da521a2e20087fd8a16df30'
 ORACLE_SHA256 = 'de6d63aba53edfe1af802536d044ffbad345509556e804b293381ea5c39ed3a7'
 ORIGINAL_SEAL_SHA256 = '91f99de6d2632f3d6972017c7af55596490ddd00e7b16c9e6bd1abecae5b01c3'
-SOURCE_SHA256 = '9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8'
+SOURCE_SHA256 = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
 STAGER = u8_gate.STAGER
 STAGER_SHA256 = '055dd46f2c24f3a0496486ec89570ef533d7a016a5bc85d834447e8a59204def'
 PUBLIC_SOURCE = 'tests/typed_byte_storage_native.rs'
@@ -158,8 +158,8 @@ def source_tests(repo):
 
 def admit_registry(repo, registry):
     rows = registry['unit_tests']
-    require(len(rows) == len({r['name'] for r in rows}) == 77 and sum(r['ignored'] for r in rows) == 4,
-            'unit roster must contain 73 normal and four ignored tests')
+    require(len(rows) == len({r['name'] for r in rows}) == 79 and sum(r['ignored'] for r in rows) == 4,
+            'unit roster must contain 75 normal and four ignored tests')
     require(sorted((r['source'], r['function'], r['ignored']) for r in rows) == source_tests(repo),
             'source-derived byte-storage test membership differs')
     require(all(r['name'].endswith('::' + r['function']) for r in rows), 'full test name/function mismatch')
@@ -408,7 +408,7 @@ def verify(args, root):
             require(not stderr, 'test discovery stderr'); u8_gate.admit_listing(stdout, names)
         skips = [x for name in ignored for x in ('--skip', name)]
         stdout, _ = invoke(directory, 'unit-resources-and-semantics', [binaries['unit'], 'byte_storage', '--nocapture', '--test-threads=1', '--color=never', *skips], cwd=repo, env=env, timeout=1800)
-        u8_gate.admit_execution(stdout, 73)
+        u8_gate.admit_execution(stdout, 75)
         stdout, _ = invoke(directory, 'public-boundaries', [binaries['public'], '--nocapture', '--test-threads=1', '--color=never'], cwd=repo, env=env, timeout=1800)
         u8_gate.admit_execution(stdout, 10)
         for index, row in enumerate(registry['native_tests']):
@@ -422,7 +422,7 @@ def verify(args, root):
         invoke(directory, 'provider', [sys.executable, '-B', repo / 'scripts/qualify_hir_byte_storage_compatibility.py', '--compiler', binaries['cli'], '--llvm-bin', llvm, '--output', directory / 'provider'], cwd=repo, env=env, timeout=3600)
         validate_provider(read_json(directory / 'provider/byte-storage-summary.json'), before['cli'], head, tree)
         require(before == {name: identity(binary) for name, binary in binaries.items()}, 'ordinary binary changed during execution')
-        save(directory / 'result.json', {'status': 'passed', 'unit_tests': 73, 'ignored_tests': 4, 'native_elf_cases': 93,
+        save(directory / 'result.json', {'status': 'passed', 'unit_tests': 75, 'ignored_tests': 4, 'native_elf_cases': 93,
              'reference_cases': 323, 'transport_elf_cases': 256, 'public_boundary_tests': 10, 'provider_refusals': 216})
     require(libraries == [identity(p) for p in sorted((stage / 'libraries').iterdir()) if not p.is_symlink()], 'staged libraries changed')
     for name, record in tools.items(): require(identity(Path(record['path'])) == record, 'tool changed during execution: ' + name)
@@ -518,7 +518,7 @@ def main():
     if args.prepare_public_build:
         print('bounded byte storage public integration binaries: exact ordinary profiles prepared')
         return
-    print('bounded byte storage: both ordinary profiles, full 323 reference, 256 native transport, 77 unit, 93 gate ELFs, 10 public, 11 privacy and 216 provider refusals: PASS')
+    print('bounded byte storage: both ordinary profiles, full 323 reference, 256 native transport, 79 unit, 93 gate ELFs, 10 public, 11 privacy and 216 provider refusals: PASS')
 
 
 if __name__ == '__main__':

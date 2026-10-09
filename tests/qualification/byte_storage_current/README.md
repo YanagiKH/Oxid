@@ -16,7 +16,7 @@ All 325 copied .ox files are individually DATA, registered in oxid.toml and the
 repository verifier. The predecessor 188-file DATA equation remains separate;
 current DATA is 188 + 325 = 513. No directory exclusion is authorized.
 
-`registry.json` explicitly lists 77 unit controls (73 normal, four ignored),
+`registry.json` explicitly lists 79 unit controls (75 normal, four ignored),
 ten public integration tests, all 93 retained ignored-test ELF names, all
 256 transport cases and eleven source-privacy probes. Source scanning independently
 checks test membership and ignore status before executable discovery. Every
@@ -31,6 +31,13 @@ ignored-test ELF names, all v3 sources and expectations, DATA membership and
 provider recipe remain unchanged. This prospective registration does not
 relabel any earlier a3f1244/d5d149 source or 323/256 execution receipts as final
 head evidence; final combined execution must bind the new exact head and seal.
+The portability successor adds exactly two further normal, all-host source
+controls for identical-text runtime file identity and unused nested enum-array
+error origins. They accompany the existing platform-specific public controls;
+public10, privacy11 and the93 ELF roster are unchanged. Source-only tests
+reconstruct both the preceding77/10/11 registry/DATA seal and the earlier67/8/5
+registration exactly. Earlier b878/9e9 receipts also remain historical; these
+portable source and registry changes require fresh exact-source hosted evidence.
 
 The full immutable 323-case reference route includes maximum-length 1024 owners,
 runtime E0606/E0610 and all 49 exact diagnostic contracts. Native transport runs
@@ -43,7 +50,7 @@ excluded grammar, unchanged stdout signature, cross-file runtime origins,
 record-reference declaration fences and unused nested enum-array exclusions.
 
 `scripts/verify_bounded_byte_storage.py` requires clean exact head/tree, the
-reviewed 9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8
+reviewed 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
 source authority, Rust 1.99.0 and Linux x86_64 LLVM/Clang/LLD 19.1.7. It reuses
 ordinary debug/release CLI and unit Cargo receipts from the bounded-enum gate.
 Separate public integration no-run receipts must be coordinated once, using

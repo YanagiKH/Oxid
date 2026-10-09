@@ -214,11 +214,11 @@ actual count/render controls remain separately labeled. The original stronger
 corpus is unchanged, and separate fallible-preflight hardening is recorded in
 the plan rather than marked completed.
 
-## Corrected complete test-source checkpoint
+## Historical corrected Linux test-source checkpoint
 
 The corrected compiler-input checkpoint is
 `b3371e6a383b526d25409f2d4b308b4993739466`, tree
-`c168a3d6d6c3e3ba3d6b71b981319cbed9497525`. Its current-source manifest is
+`c168a3d6d6c3e3ba3d6b71b981319cbed9497525`. Its source manifest is
 `9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8`,
 closing 376 inputs, including 288 src/native files. The adapter/CI integration
 `b8780569e81959a6200c13444cc5850d0ab2286e` has identical compiler inputs.
@@ -246,3 +246,31 @@ replays are tracked separately. Genuine hosted staging, the full public native
 lifecycle gate and all applicable exact-PR-head CI remain required. Historical
 observations above are preserved under their actual source identities; they are
 not relabeled as executions of this corrected checkpoint.
+
+## Cross-host test-fixture successor
+
+The reviewed cross-host test checkpoint is
+`e3c1b4a1a3ef457326f11a802896c125202fe797`, tree
+`5fdb4f06a8fcbc61724676df55a4c3bee130eaf7`. The current-source manifest is
+`402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa`.
+Membership remains 376 inputs, 288 src/native files, 78 compile-time fixture
+bodies and 136 includes. The closed byte roster is now 79 unit tests: 75 normal
+and four ignored native gates. Public tests remain ten, privacy probes eleven,
+and the native gate artifact roster remains 93.
+
+The first PR57 hosted run correctly refused filesystem module loading on
+unqualified hosts, exposing a test fixture that incorrectly required that route.
+The successor changes three test files only. Portable tests use authentic parsed
+module fixtures with source/AST ownership checks and exact runtime/parser origins;
+Linux also executes actual filesystem-loader parity. Public non-Linux paths
+assert the unchanged exact E0005 source refusal. Production host admission,
+language semantics and caps are unchanged. The two new portable semantic controls
+remain active on every host; no test body is skipped to hide the refusal.
+
+Fresh focused artifacts passed 19 exact unit controls and all ten public tests,
+with formatting and all-target/all-feature clippy warnings denied. The workflow
+also separates toolchain lookup from export so failures retain their status.
+The previous 9e9-source full Linux receipts remain historical under their actual
+identities. Fresh closed authority/registry controls and all applicable hosted
+direct, foreign-host and native qualification must pass on this successor before
+final acceptance; focused tests do not replace those gates.

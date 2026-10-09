@@ -719,10 +719,12 @@ jobs:
           export CARGO_TARGET_DIR="$PWD/target"
           # Bind dispatch to the actual toolchain recorded by bounded-enum,
           # rather than rustup's PATH shims. The controller verifies both tools.
-          export PATH="$(dirname "$(rustup which cargo)"):$PATH"
+          byte_storage_cargo="$(rustup which cargo)"
+          byte_storage_toolchain_bin="$(dirname "$byte_storage_cargo")"
+          export PATH="$byte_storage_toolchain_bin:$PATH"
           python3 -B scripts/verify_bounded_byte_storage.py --prepare-public-build \
             --repo "$PWD" --build-evidence "$RUNNER_TEMP/bounded-enum-native" \
-            --cargo "$(rustup which cargo)" --expected-head "$UNIT2E_EXPECTED_HEAD" \
+            --cargo "$byte_storage_cargo" --expected-head "$UNIT2E_EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/byte-storage-public-builds"
           python3 -B scripts/verify_bounded_byte_storage.py \
             --repo "$PWD" --build-evidence "$RUNNER_TEMP/bounded-enum-native" \
@@ -750,7 +752,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8
+            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -763,7 +765,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8
+            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4

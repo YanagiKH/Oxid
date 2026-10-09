@@ -31,15 +31,38 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(len(gate.fixture_data_sources(REPO)), 325)
         self.assertEqual(sum(c['expected']['kind'] == 'diagnostic' for c in cases), 49)
         self.assertEqual(sum(c['expected'].get('code', '').startswith('E06') for c in cases), 13)
-        self.assertEqual(len(registry['unit_tests']), 77)
+        self.assertEqual(len(registry['unit_tests']), 79)
         self.assertEqual(sum(r['ignored'] for r in registry['unit_tests']), 4)
         self.assertEqual([len(r['artifacts']) for r in registry['native_tests']], [19, 20, 52, 2])
         self.assertEqual(len(registry['public_tests']), 10)
         self.assertEqual(len(registry['privacy_probes']), 11)
         self.assertEqual(gate.sha((REPO / gate.STAGER).read_bytes()), gate.STAGER_SHA256)
 
+    def pre_portability_registry(self, manifest, registry):
+        additions = {
+            'frontend::oir::owned::source::byte_storage_tests::byte_storage_source_identical_module_text_keeps_runtime_file_identity',
+            'frontend::oir::owned::source::byte_storage_tests::byte_storage_source_unused_nested_enum_array_payload_keeps_inner_origin',
+        }
+        self.assertEqual(len(registry['unit_tests']), 79)
+        self.assertTrue(additions <= {r['name'] for r in registry['unit_tests']})
+        predecessor = copy.deepcopy(registry)
+        predecessor['unit_tests'] = [r for r in predecessor['unit_tests'] if r['name'] not in additions]
+        self.assertEqual((len(predecessor['unit_tests']), len(predecessor['public_tests']), len(predecessor['privacy_probes'])), (77, 10, 11))
+        previous_bytes = (json.dumps(predecessor, indent=2) + '\n').encode()
+        self.assertEqual(gate.sha(previous_bytes), 'f199a3680c91526a40229499c64be6302ea17bd6855fc53571048c73aa9b1ad5')
+        previous_manifest = copy.deepcopy(manifest)
+        previous_manifest['files']['registry.json'] = {'bytes': len(previous_bytes), 'sha256': gate.sha(previous_bytes)}
+        self.assertEqual(gate.sha((json.dumps(previous_manifest, indent=2, sort_keys=True) + '\n').encode()),
+                         '85c8908a2bf94e69e352ddb2399e1a3c0eb80319ab0a82f0ccdb3ed8c617e979')
+        return previous_manifest, predecessor
+
+    def test_portability_preserves_exact_77_registry_and_data_manifest(self):
+        manifest, registry, _ = gate.admit_package(REPO)
+        self.pre_portability_registry(manifest, registry)
+
     def test_final_closure_preserves_exact_predecessor_registry_and_oracle(self):
         manifest, registry, _ = gate.admit_package(REPO)
+        manifest, registry = self.pre_portability_registry(manifest, registry)
         additions = [
             'frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_maximum_owned_and_borrowed_arguments_use_full_scratch',
             'frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_reference_frame_ceiling_is_exact_for_byte_slice_reborrows',
@@ -167,10 +190,10 @@ class ExecutionAdmissionTests(unittest.TestCase):
         gate.u8_gate.admit_listing(good, expected)
         for bad in (good.replace(b'alpha', b'beta'), good.replace(b'alpha: test\n', b''), good.replace(b'2 tests', b'3 tests')):
             with self.assertRaises(ValueError): gate.u8_gate.admit_listing(bad, expected)
-        good = b'test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.12s\n'
-        gate.u8_gate.admit_execution(good, 73)
-        for bad in (good.replace(b'73 passed', b'0 passed'), good.replace(b'0 ignored', b'4 ignored'), good + good):
-            with self.assertRaises(ValueError): gate.u8_gate.admit_execution(bad, 73)
+        good = b'test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.12s\n'
+        gate.u8_gate.admit_execution(good, 75)
+        for bad in (good.replace(b'75 passed', b'0 passed'), good.replace(b'0 ignored', b'4 ignored'), good + good):
+            with self.assertRaises(ValueError): gate.u8_gate.admit_execution(bad, 75)
 
     def test_full_diagnostic_contract_and_runtime_check_run_separation(self):
         cases = gate.admit_package(REPO)[2]

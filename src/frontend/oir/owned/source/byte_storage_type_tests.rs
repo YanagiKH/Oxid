@@ -139,48 +139,44 @@ fn byte_storage_source_scalar_record_controls_and_standalone_signatures_coexist(
 
 #[test]
 fn byte_storage_imported_record_fence_uses_complete_child_type_origin() {
-    use crate::frontend::project::{ProjectLimits, ProjectSources};
-    use std::{
-        fs,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let directory = std::env::temp_dir().join(format!(
-        "oxid-byte-type-project-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&directory).unwrap();
-    let root = directory.join("main.ox");
-    fs::write(&root, "mod child; use crate::child::Inner; struct Outer { inner:Inner } fn main()->i32{return 0;}").unwrap();
+    let root = "mod child; use crate::child::Inner; struct Outer { inner:Inner } fn main()->i32{return 0;}";
     for n in [0, 1, 1024] {
         let field_type = format!("[u8;{n}]");
         let text = format!("pub struct Inner {{ pub bytes:{field_type} }}");
-        fs::write(directory.join("child.ox"), &text).unwrap();
-        let project =
-            ProjectSources::load_typed(root.to_str().unwrap(), ProjectLimits::default()).unwrap();
-        assert!(project.uses_owned_syntax());
-        let errors = resolve_sources(SourceOwner::project(&project)).unwrap_err();
-        assert_eq!(errors.len(), 1);
-        let error = &errors[0];
-        assert_eq!(
-            (error.code, error.stage, error.message.as_str()),
-            (
-                "E0202",
-                "resolve",
-                "u8 array record fields are not supported"
-            )
-        );
-        let primary = error.primary.unwrap();
-        assert_eq!(primary.file, crate::frontend::source::SourceFileId(1));
-        let start = text.find(&field_type).unwrap();
-        assert_eq!(
-            (primary.start, primary.end),
-            (start, start + field_type.len())
-        );
-        assert!(error.secondary.is_empty());
+        for project in super::super::byte_storage_tests::module_sources(&[
+            ("main.ox", root),
+            ("child.ox", &text),
+        ]) {
+            assert!(project.uses_owned_syntax());
+            let errors = resolve_sources(SourceOwner::project(&project)).unwrap_err();
+            assert_eq!(errors.len(), 1);
+            let error = &errors[0];
+            assert_eq!(
+                (error.code, error.stage, error.message.as_str()),
+                (
+                    "E0202",
+                    "resolve",
+                    "u8 array record fields are not supported"
+                )
+            );
+            let primary = error.primary.unwrap();
+            assert_eq!(primary.file, crate::frontend::source::SourceFileId(1));
+            let start = text.find(&field_type).unwrap();
+            assert_eq!(
+                (primary.start, primary.end),
+                (start, start + field_type.len())
+            );
+            assert!(error.secondary.is_empty());
+            assert!(error.notes.is_empty());
+            assert_eq!(
+                std::path::Path::new(project.sources().get(primary.file).path())
+                    .file_name()
+                    .unwrap(),
+                "child.ox"
+            );
+            assert_eq!(project.sources().get(primary.file).text(), text);
+        }
     }
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]

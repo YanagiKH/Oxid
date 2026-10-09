@@ -828,9 +828,9 @@
       "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
     },
     {
-      "bytes": 17918,
+      "bytes": 25395,
       "path": "src/frontend/oir/owned/source/byte_storage_tests.rs",
-      "sha256": "99d7aefc4fb2548ab2010a89489b57477a889a2d27668a2b55585ecd5a694561"
+      "sha256": "e5336e96f93377867a9f51a13f596f34b3f59107006226edff5e41f0445bfb2b"
     },
     {
       "bytes": 21384,
@@ -838,9 +838,9 @@
       "sha256": "94d8b96af5ad8d304b7e77bd0cccd7fe1aa7db0f901af245b8492cf19ccc1e38"
     },
     {
-      "bytes": 13018,
+      "bytes": 12887,
       "path": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
-      "sha256": "655f1c84ad903ec7979dd971c1862d07c8a6764dc2fe4cdf313ddc826e8f2f7f"
+      "sha256": "9a5de79eb21eaa488a6225a2d2bf0ffdd39ee209018a69504140537934422110"
     },
     {
       "bytes": 41762,
@@ -1927,11 +1927,11 @@
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
   "purpose": "Exact RFC0031 standalone byte-storage source successor; prior observations remain immutable.",
-  "reviewed_source_head": "b3371e6a383b526d25409f2d4b308b4993739466",
+  "reviewed_source_head": "e3c1b4a1a3ef457326f11a802896c125202fe797",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "c168a3d6d6c3e3ba3d6b71b981319cbed9497525",
+  "source_only_tree": "5fdb4f06a8fcbc61724676df55a4c3bee130eaf7",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

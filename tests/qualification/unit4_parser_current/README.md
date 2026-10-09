@@ -1,8 +1,8 @@
 # RFC0031 standalone byte-storage source successor
 
-Current reviewed source checkpoint: `b3371e6a383b526d25409f2d4b308b4993739466`. Full Git tree:
-`c168a3d6d6c3e3ba3d6b71b981319cbed9497525`. Current source-manifest SHA-256:
-`9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8`.
+Current reviewed source checkpoint: `e3c1b4a1a3ef457326f11a802896c125202fe797`. Full Git tree:
+`5fdb4f06a8fcbc61724676df55a4c3bee130eaf7`. Current source-manifest SHA-256:
+`402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa`.
 
 The exact closure has 376 inputs, including 288 `src`/`native` members
 and 291 compiler/build bodies. The 33-path transition adds

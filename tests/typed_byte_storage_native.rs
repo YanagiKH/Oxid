@@ -206,6 +206,11 @@ fn byte_storage_public_array_main_checks_but_is_not_a_run_entry() {
     case.unchanged();
 }
 
+fn unqualified_module_diagnostic(name: &str) -> String {
+    let end = 4 + name.len();
+    format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0005\",\"stage\":\"source\",\"message\":\"module source policy is not qualified on this host\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":4,\"end\":{end},\"line\":1,\"column\":5,\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", end + 1)
+}
+
 #[test]
 fn byte_storage_public_identical_module_text_keeps_runtime_file_identity() {
     // Identical bytes and function names in two retained files cannot exchange
@@ -219,12 +224,20 @@ fn byte_storage_public_identical_module_text_keeps_runtime_file_identity() {
             fs::write(case.0.join(name), child).unwrap();
         }
         let checked = source_command(&case, "check", true);
-        assert_eq!(checked.status.code(), Some(0), "{checked:?}");
         assert!(checked.stderr.is_empty());
         let ran = source_command(&case, "run", false);
         assert_eq!(ran.status.code(), Some(1), "{ran:?}");
         assert!(ran.stdout.is_empty());
-        assert_eq!(ran.stderr, format!("error[E0606] (oir-owned-run): array index out of bounds\n  --> {chosen}.ox:1:{column}\n").as_bytes());
+        if cfg!(target_os = "linux") {
+            assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+            assert_eq!(ran.stderr, format!("error[E0606] (oir-owned-run): array index out of bounds\n  --> {chosen}.ox:1:{column}\n").as_bytes());
+        } else {
+            // The companion source test runs both child origins on every host;
+            // the public filesystem route must retain its earlier host gate.
+            assert_eq!(checked.status.code(), Some(1), "{checked:?}");
+            assert_eq!(checked.stdout, format!("{}\n{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}}\n", unqualified_module_diagnostic("left")).as_bytes());
+            assert_eq!(ran.stderr, b"error[E0005] (source): module source policy is not qualified on this host\n  --> main.ox:1:5\n");
+        }
         assert_eq!(fs::read(case.0.join("existing")).unwrap(), SENTINEL);
         assert_eq!(fs::read_to_string(case.0.join("main.ox")).unwrap(), root);
         for name in ["left.ox", "right.ox"] {
@@ -325,8 +338,15 @@ fn byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser() 
         let start = inner.find('[').unwrap();
         let end = start + 1;
         let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0100\",\"stage\":\"parse\",\"message\":\"only bool, i32 and () enum payloads are supported\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+        // Portable source parsing checks the exact inner E0100 on every host;
+        // public discovery reaches it only on its qualified Linux host.
+        let (code, stage, expected) = if cfg!(target_os = "linux") {
+            ("E0100", "parse", expected)
+        } else {
+            ("E0005", "source", unqualified_module_diagnostic("outer"))
+        };
         for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), "E0100", "parse");
+            let text = diagnostic(case.compile(output, &[]), code, stage);
             assert_eq!(text.lines().count(), 2);
             assert_eq!(text.lines().next(), Some(expected.as_str()));
             assert!(!text.contains("E0701"));

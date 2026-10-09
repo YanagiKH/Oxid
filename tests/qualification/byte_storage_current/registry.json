@@ -236,6 +236,12 @@
       "ignored": false
     },
     {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_identical_module_text_keeps_runtime_file_identity",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_identical_module_text_keeps_runtime_file_identity",
+      "ignored": false
+    },
+    {
       "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_independent_every_fuel_schedule",
       "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
       "function": "byte_storage_source_independent_every_fuel_schedule",
@@ -251,6 +257,12 @@
       "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_rhs_snapshot_precedes_mutating_index_helper",
       "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
       "function": "byte_storage_source_rhs_snapshot_precedes_mutating_index_helper",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_unused_nested_enum_array_payload_keeps_inner_origin",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_unused_nested_enum_array_payload_keeps_inner_origin",
       "ignored": false
     },
     {
