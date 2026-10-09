@@ -152,8 +152,10 @@ fn directory_alias(target: &Path, link: &Path) {
     {
         let output = Command::new("cmd")
             .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
+            // Path::join preserves embedded '/' in fixture boundary strings.
+            // cmd's mklink parses those as switches; pass native separators.
+            .arg(link.to_str().unwrap().replace('/', "\\"))
+            .arg(target.to_str().unwrap().replace('/', "\\"))
             .output()
             .unwrap();
         assert!(
