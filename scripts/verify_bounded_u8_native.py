@@ -3,7 +3,8 @@
 
 Reuses the real bounded-enum ordinary-profile Cargo receipts without rebuilding
 or weakening predecessors. Calls the unchanged Debian dpkg LLVM stager itself.
-Every ignored u8 test is discovered and executed, with counted retained ELFs.
+Every ignored test in the frozen roster is discovered and executed, with counted
+retained ELFs. Later suites may share the u8 namespace without joining this gate.
 """
 from __future__ import annotations
 
@@ -70,6 +71,7 @@ IGNORED = {
 
 
 def admit_listing(data, expected):
+    require(expected and len(expected) == len(set(expected)), 'empty or duplicate u8 test selection')
     lines = [line for line in data.decode().splitlines() if line]
     require(lines and lines[-1] == f'{len(expected)} tests, 0 benchmarks', 'test discovery count differs')
     require(sorted(lines[:-1]) == sorted(name + ': test' for name in expected),
@@ -77,10 +79,33 @@ def admit_listing(data, expected):
 
 
 def admit_execution(data, count):
+    require(type(count) is int and count > 0, 'positive selected test count required')
     summaries = [line for line in data.decode().splitlines() if line.startswith('test result:')]
     require(len(summaries) == 1 and re.fullmatch(
         rf'test result: ok\. {count} passed; 0 failed; 0 ignored; 0 measured; \d+ filtered out; finished in \d+(?:\.\d+)?s',
         summaries[0]), 'selected tests did not all execute successfully')
+
+
+def run_roster_tests(directory, unit, roster, repo, env):
+    # Libtest treats multiple exact filters as a union. Select the reviewed
+    # names themselves, rather than every later test containing "u8".
+    require(roster and len(roster) == len(set(roster)) and set(IGNORED) <= set(roster),
+            'empty, duplicate or incomplete u8 test selection')
+    normal = [name for name in roster if name not in IGNORED]
+    require(normal, 'no ordinary u8 tests selected')
+    selected = [unit, '--exact', *roster]
+    stdout, stderr = corpus.invoke(directory, 'all-discovery',
+        [*selected, '--list', '--color=never'], cwd=repo, env=env)
+    require(not stderr, 'test discovery stderr')
+    admit_listing(stdout, roster)
+    stdout, stderr = corpus.invoke(directory, 'ignored-discovery',
+        [*selected, '--list', '--ignored', '--color=never'], cwd=repo, env=env)
+    require(not stderr, 'ignored discovery stderr')
+    admit_listing(stdout, list(IGNORED))
+    stdout, _ = corpus.invoke(directory, 'resources-and-semantics',
+        [unit, '--exact', *normal, '--nocapture', '--test-threads=1', '--color=never'],
+        cwd=repo, env=env, timeout=1800)
+    admit_execution(stdout, len(normal))
 
 
 def native_artifacts(root, route, count):
@@ -188,16 +213,7 @@ def verify(args, root):
         binaries = builds.reused_binaries(args.build_evidence, directory, repo, repo / 'target', profile)
         before = {name: identity(binary) for name, binary in binaries.items()}
         unit = binaries['unit']
-        stdout, stderr = corpus.invoke(directory, 'all-discovery', [unit, 'u8', '--list', '--color=never'], cwd=repo, env=env)
-        require(not stderr, 'test discovery stderr')
-        admit_listing(stdout, roster)
-        stdout, stderr = corpus.invoke(directory, 'ignored-discovery', [unit, 'u8', '--list', '--ignored', '--color=never'], cwd=repo, env=env)
-        require(not stderr, 'ignored discovery stderr')
-        admit_listing(stdout, list(IGNORED))
-        skips = [value for name in IGNORED for value in ('--skip', name)]
-        stdout, _ = corpus.invoke(directory, 'resources-and-semantics',
-            [unit, 'u8', '--nocapture', '--test-threads=1', '--color=never', *skips], cwd=repo, env=env, timeout=1800)
-        admit_execution(stdout, len(roster) - len(IGNORED))
+        run_roster_tests(directory, unit, roster, repo, env)
         for index, (name, (route, count)) in enumerate(IGNORED.items()):
             child = directory / f'native-{index + 1:02}'
             child.mkdir()

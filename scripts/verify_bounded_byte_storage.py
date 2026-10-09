@@ -33,8 +33,6 @@ if __name__ == '__main__':
 import qualify_hir_byte_storage_compatibility as provider
 import run_bounded_u8_corpus as common
 import verify_bounded_enum_native as enum_gate
-import verify_bounded_stdin_native as builds
-import verify_bounded_u8_native as u8_gate
 import verify_byte_storage_source_privacy as privacy
 from verify_fixture_data import _regular_path, _unique_object
 
@@ -44,7 +42,18 @@ DATA_SHA256 = '53211d876b89c192c7636c3d0e0e78d2ad381dd47da521a2e20087fd8a16df30'
 ORACLE_SHA256 = 'de6d63aba53edfe1af802536d044ffbad345509556e804b293381ea5c39ed3a7'
 ORIGINAL_SEAL_SHA256 = '91f99de6d2632f3d6972017c7af55596490ddd00e7b16c9e6bd1abecae5b01c3'
 SOURCE_SHA256 = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
-STAGER = u8_gate.STAGER
+# Fixture registration is imported by cross-host repository/parser/static
+# checks. Keep its immutable identities independent of the Linux native
+# helpers, whose historical controls require the Unix-only resource module.
+# The native controller tests bind these exact identities to the unchanged
+# predecessor helper without making portable registration import that helper.
+BYTE_STORAGE_ARCHIVES = {
+    'src/frontend/oir/owned/source/hir_budget_tests.rs': 'ec8ca98ac71d422f61884825013c34ccdb8861bb3be2f2d617555cbe77df57bc',
+    'src/frontend/oir/owned/source/u8_tests.rs': 'ceb607ddb9ced06eb435290f51a2406c704aab0661b0f105a5f24d15b67de783',
+    'src/frontend/parser/u8_syntax_tests.rs': 'abf228ea026b98d802d7f68e79019392d1f1f9a3a91d987a016883b9f07300b0',
+    'src/frontend/oir/owned_types/u8_tests.rs': 'ce139e4592ceb63a4f002f4e24893b69216643f0d2f1010f79ee9c800c612dcd',
+}
+STAGER = Path('tests/fixtures/typed_project_unit3_independent/portable/native-v1/stage_llvm_runtime.py')
 STAGER_SHA256 = '055dd46f2c24f3a0496486ec89570ef533d7a016a5bc85d834447e8a59204def'
 PUBLIC_SOURCE = 'tests/typed_byte_storage_native.rs'
 TEST_PATTERN = re.compile(r'((?:#\[[^\n]+\]\s*)+)fn\s+(\w*byte_storage\w*)\s*\(')
@@ -101,7 +110,7 @@ def admit_package(repo):
                 'malformed registered identity')
         body = path.read_bytes()
         require((len(body), sha(body)) == (record['bytes'], record['sha256']), 'registered body changed: ' + name)
-    historical = {**u8_gate.BYTE_STORAGE_ARCHIVES,
+    historical = {**BYTE_STORAGE_ARCHIVES,
                   'identity.json': '77b3d06ef7c4def465fa95a07ca702823b6282b636ee7fbe58e00814039f8dea'}
     archived = root / 'predecessor'
     require({p.relative_to(archived).as_posix() for p in archived.rglob('*') if p.is_file() or p.is_symlink()} == set(historical),
@@ -180,6 +189,8 @@ def admit_registry(repo, registry):
 
 def admit_public_build(evidence, destination, repo, target, profile, source_receipt):
     """Admit a separately coordinated integration no-run build, never rebuild."""
+    import verify_bounded_stdin_native as builds
+
     previous = evidence / profile
     require(read_json(evidence / 'source-identity.json') == source_receipt,
             'public build source receipt differs from exact ordinary builds')
@@ -353,6 +364,9 @@ def controller_inputs(repo):
 
 def verify(args, root):
     require(platform.system() == 'Linux' and platform.machine() == 'x86_64', 'Linux x86_64 required')
+    import verify_bounded_stdin_native as builds
+    import verify_bounded_u8_native as u8_gate
+
     repo = args.repo.resolve(strict=True); llvm = args.llvm_bin.resolve(strict=True)
     require(not root.is_relative_to(repo), 'evidence must be outside checkout')
     reject_bytecode(repo)
@@ -437,6 +451,9 @@ def verify(args, root):
 
 def prepare_public_build(args, root):
     """One coordinated integration build per ordinary profile, with real receipts."""
+    require(platform.system() == 'Linux' and platform.machine() == 'x86_64', 'Linux x86_64 required')
+    import verify_bounded_stdin_native as builds
+
     repo = args.repo.resolve(strict=True)
     reject_bytecode(repo)
     require(not root.is_relative_to(repo), 'public build evidence must be outside checkout')

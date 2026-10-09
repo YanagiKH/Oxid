@@ -1226,9 +1226,9 @@
       "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
     },
     {
-      "bytes": 137497,
+      "bytes": 138863,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "601ddc48b79c84e6d6fc49dfa09b7d6842e05b57c4c4c6167c4276fb110274bf"
+      "sha256": "85978f87b99cfb26e3c01f1d0099fd8376b221fa17255445044d63c34c90f993"
     },
     {
       "bytes": 8920,

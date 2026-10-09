@@ -5,17 +5,66 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
 import verify_bounded_byte_storage as gate
+import verify_bounded_stdin_native as builds
+import verify_bounded_u8_native as u8_gate
 import verify_repo
 
 REPO = Path(__file__).resolve().parents[1]
 
 
 class PackageTests(unittest.TestCase):
+    def test_portable_identities_equal_unchanged_native_predecessor(self):
+        self.assertEqual(gate.BYTE_STORAGE_ARCHIVES, u8_gate.BYTE_STORAGE_ARCHIVES)
+        self.assertEqual(gate.STAGER, u8_gate.STAGER)
+
+    def test_fresh_portable_imports_admit_complete_fixtures_without_resource(self):
+        script = textwrap.dedent('''
+            import importlib
+            import importlib.abc
+            import json
+            from pathlib import Path
+            import sys
+
+            class NoResource(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname == 'resource':
+                        raise ModuleNotFoundError('resource is unavailable on this host')
+
+            sys.modules.pop('resource', None)
+            sys.meta_path.insert(0, NoResource())
+            repo = Path(sys.argv[1])
+            sys.path.insert(0, str(repo / 'scripts'))
+            importlib.import_module(sys.argv[2])
+            import verify_bounded_byte_storage as gate
+            import verify_repo
+            manifest, registry, cases = gate.admit_package(repo)
+            gate.admit_registry(repo, registry)
+            current = gate.fixture_data_sources(repo)
+            previous = verify_repo.predecessor_fixture_data_sources(repo)
+            gate.require(len(cases) == 323 and len(current) == 325 and len(previous) == 188,
+                         'portable fixture counts differ')
+            gate.require(not current & previous and verify_repo.fixture_data_sources(repo) == current | previous,
+                         'portable fixture registration differs')
+            verify_repo.verify_test_fixture_registration(repo)
+            gate.require(not {'resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'} & sys.modules.keys(),
+                         'portable registration loaded native execution helpers')
+            print(json.dumps({'cases': len(cases), 'current': len(current), 'predecessor': len(previous)}))
+        ''')
+        for module in ('verify_bounded_byte_storage', 'verify_repo', 'verify_fixture_data',
+                       'verify_bounded_typed_parser', 'verify_bounded_typed_static'):
+            with self.subTest(module=module):
+                result = subprocess.run([sys.executable, '-I', '-B', *(['-O'] if sys.flags.optimize else []),
+                                         '-c', script, str(REPO), module], capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {'cases': 323, 'current': 325, 'predecessor': 188})
+
     def copy_package(self):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -185,15 +234,51 @@ class PackageTests(unittest.TestCase):
 
 
 class ExecutionAdmissionTests(unittest.TestCase):
+    def test_non_linux_native_entries_refuse_before_importing_native_helpers(self):
+        script = textwrap.dedent('''
+            import importlib.abc
+            from pathlib import Path
+            import sys
+            from unittest.mock import patch
+
+            class NoNativeHelpers(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname in ('resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'):
+                        raise ModuleNotFoundError('native helper imported before host admission: ' + fullname)
+
+            sys.modules.pop('resource', None)
+            sys.meta_path.insert(0, NoNativeHelpers())
+            sys.path.insert(0, str(Path(sys.argv[1]) / 'scripts'))
+            import verify_bounded_byte_storage as gate
+            refused = 0
+            for system, machine in (('Windows', 'AMD64'), ('Darwin', 'arm64'), ('Linux', 'aarch64')):
+                with patch.object(gate.platform, 'system', return_value=system), \\
+                        patch.object(gate.platform, 'machine', return_value=machine):
+                    for operation in (gate.verify, gate.prepare_public_build):
+                        try:
+                            operation(None, None)
+                        except ValueError as error:
+                            gate.require(str(error) == 'Linux x86_64 required', 'unexpected host refusal')
+                            refused += 1
+                        else:
+                            raise ValueError('native entry admitted an unsupported host')
+            gate.require(refused == 6, 'native host refusal count differs')
+            print(refused)
+        ''')
+        result = subprocess.run([sys.executable, '-I', '-B', *(['-O'] if sys.flags.optimize else []),
+                                 '-c', script, str(REPO)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '6')
+
     def test_missing_duplicate_or_extra_test_discovery_and_skips_refuse(self):
         expected = ['alpha', 'beta']; good = b'alpha: test\nbeta: test\n\n2 tests, 0 benchmarks\n'
-        gate.u8_gate.admit_listing(good, expected)
+        u8_gate.admit_listing(good, expected)
         for bad in (good.replace(b'alpha', b'beta'), good.replace(b'alpha: test\n', b''), good.replace(b'2 tests', b'3 tests')):
-            with self.assertRaises(ValueError): gate.u8_gate.admit_listing(bad, expected)
+            with self.assertRaises(ValueError): u8_gate.admit_listing(bad, expected)
         good = b'test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.12s\n'
-        gate.u8_gate.admit_execution(good, 75)
+        u8_gate.admit_execution(good, 75)
         for bad in (good.replace(b'75 passed', b'0 passed'), good.replace(b'0 ignored', b'4 ignored'), good + good):
-            with self.assertRaises(ValueError): gate.u8_gate.admit_execution(bad, 75)
+            with self.assertRaises(ValueError): u8_gate.admit_execution(bad, 75)
 
     def test_full_diagnostic_contract_and_runtime_check_run_separation(self):
         cases = gate.admit_package(REPO)[2]
@@ -266,8 +351,8 @@ class ExecutionAdmissionTests(unittest.TestCase):
                     def read(path): return {} if path.name == 'tools.json' else receipt
                     with patch.dict(gate.os.environ, {'CARGO_TARGET_DIR': str(repo / 'target')}, clear=True), \
                             patch.object(gate.enum_gate, 'git_command', side_effect=git), \
-                            patch.object(gate.builds, 'source_manifest', return_value={}), \
-                            patch.object(gate.builds, 'source_identity', return_value=[]), \
+                            patch.object(builds, 'source_manifest', return_value={}), \
+                            patch.object(builds, 'source_identity', return_value=[]), \
                             patch.object(gate, 'read_json', side_effect=read), \
                             patch.object(gate, 'admit_package', return_value=({}, {}, [])), \
                             patch.object(gate, 'admit_registry'), \

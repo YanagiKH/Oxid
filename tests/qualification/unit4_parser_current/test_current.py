@@ -1181,8 +1181,27 @@ class CheckoutControls(unittest.TestCase):
         self.git('commit', '-qm', 'Exact current admission fixture')
 
     def git(self, *args):
+        # Temporary fixtures must not leave detached writers after Git returns.
         return subprocess.check_output(['/usr/bin/git', '-c', 'user.name=Codex', '-c', 'user.email=codex@local.invalid',
-                                        '-c', 'core.autocrlf=false', '-C', str(self.root), *args], stderr=subprocess.STDOUT)
+                                        '-c', 'core.autocrlf=false', '-c', 'maintenance.auto=false',
+                                        '-C', str(self.root), *args], stderr=subprocess.STDOUT)
+
+    def test_fixture_git_never_starts_automatic_maintenance(self):
+        with tempfile.TemporaryDirectory(prefix='oxid-current-parser-trace-') as directory:
+            trace = Path(directory).resolve() / 'git-trace.json'
+            with patch.dict('os.environ', {
+                    'GIT_CONFIG_COUNT': '3',
+                    'GIT_CONFIG_KEY_0': 'maintenance.auto', 'GIT_CONFIG_VALUE_0': 'true',
+                    'GIT_CONFIG_KEY_1': 'maintenance.autoDetach', 'GIT_CONFIG_VALUE_1': 'true',
+                    'GIT_CONFIG_KEY_2': 'gc.auto', 'GIT_CONFIG_VALUE_2': '1',
+                    'GIT_TRACE2_EVENT': str(trace)}):
+                self.assertEqual(self.git('config', '--bool', 'maintenance.auto'), b'false\n')
+                self.git('commit', '--allow-empty', '-qm', 'Maintenance lifetime control')
+            events = [json.loads(line) for line in trace.read_text().splitlines()]
+            self.assertTrue(any(event['event'] == 'start' and 'commit' in event.get('argv', [])
+                                for event in events))
+            self.assertFalse(any(event['event'] == 'child_start' and 'maintenance' in event.get('argv', [])
+                                 for event in events))
 
     def rejects_before_git_or_child(self, message):
         with patch.object(p, 'git', side_effect=AssertionError('must reject before Git/tool use')):
