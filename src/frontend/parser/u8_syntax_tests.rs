@@ -211,7 +211,7 @@ fn u8_argument_missing_close_and_excluded_receiver_diagnostics_pin_tokens() {
 }
 
 #[test]
-fn u8_bare_fields_ordinary_calls_and_len_keep_their_old_shapes() {
+fn u8_bare_fields_ordinary_calls_and_len_byte_storage_successor() {
     let map = source("struct R{to_i32:i32,to_u8_checked:i32,u8:i32}fn to_i32(x:i32)->i32{return x;}fn f(r:R,a:[i32;0])->i32{r.to_i32;r.to_u8_checked;r.u8;a.len();return to_i32(1);}");
     let ast = parsed(&map);
     assert_eq!(
@@ -239,6 +239,12 @@ fn u8_bare_fields_ordinary_calls_and_len_keep_their_old_shapes() {
         .expressions
         .iter()
         .any(|e| matches!(e.kind, ExprKind::Conversion { .. })));
+    // RFC0030's exact historical expectation for these six forms was
+    // E0101/parse, at the two-byte u8 token, with this unchanged message.
+    // RFC0031 intentionally supersedes precisely this array/slice domain;
+    // enum and conversion exclusions below remain active checks.
+    const PREDECESSOR: (&str, &str, &str) =
+        ("E0101", "parse", "unsupported typed-preview construct `u8`");
     for ty in [
         "[u8;0]",
         "[u8;1]",
@@ -250,21 +256,17 @@ fn u8_bare_fields_ordinary_calls_and_len_keep_their_old_shapes() {
         let text = format!("fn f(a:{ty})->(){{return;}}");
         let map = source(&text);
         let file = map.get(SourceFileId(0));
-        let errors = typed(
+        let (ast, _) = typed(
             &map,
             SourceMode::ProjectCandidate,
             MAX_NODES,
             &mut Allocator::default(),
             &mut SyntaxStorage::default(),
         )
-        .unwrap_err();
-        let start = text.find("u8").unwrap();
-        assert_eq!((errors[0].code, errors[0].stage), ("E0101", "parse"));
-        assert_eq!(errors[0].primary, Some(file.span(start, start + 2)));
-        assert_eq!(
-            errors[0].message,
-            "unsupported typed-preview construct `u8`"
-        );
+        .unwrap_or_else(|errors| panic!("RFC0031 successor of {PREDECESSOR:?}: {errors:?}"));
+        assert!(ast.belongs_to(file));
+        assert!(ast.uses_owned_syntax(file));
+        assert_eq!(file.text_at(ast.functions[0].params[0].ty.span), ty);
     }
     let map = source("enum E{V(u8)}");
     let errors = typed(

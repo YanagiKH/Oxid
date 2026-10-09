@@ -144,9 +144,17 @@ pub enum ScalarTypeSyntax {
     I32,
     Unit,
 }
+/// Array-only syntax. Enum payloads deliberately retain ScalarTypeSyntax.
+#[derive(Clone, Copy, Debug)]
+pub enum ArrayElementTypeSyntax {
+    Bool,
+    I32,
+    U8,
+    Unit,
+}
 #[derive(Clone, Copy, Debug)]
 pub struct FixedArraySyntax {
-    pub element: ScalarTypeSyntax,
+    pub element: ArrayElementTypeSyntax,
     pub length: u16,
 }
 #[derive(Clone, Copy, Debug)]
@@ -160,7 +168,7 @@ pub enum TypeSyntaxKind {
     Array(FixedArraySyntax),
     SliceReference {
         mutable: bool,
-        element: ScalarTypeSyntax,
+        element: ArrayElementTypeSyntax,
     },
     ArrayReference {
         mutable: bool,

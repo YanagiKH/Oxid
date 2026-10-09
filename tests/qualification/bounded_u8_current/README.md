@@ -57,3 +57,17 @@ hosted exact-head/ordinary-profile/dpkg-staging gate passed.
 The immutable initial 115-test roster is retained as `tests-u8-initial.json`.
 The successor adds exactly two normal cross-host fixture controls; all four
 ignored native controls and all prior test names remain mandatory.
+
+## RFC0031 changed-domain test successor
+
+The standalone byte-storage extension supersedes three RFC0030 aggregate
+exclusion functions and one exact-source resource endpoint. `tests-u8-initial.json` and
+`tests-u8-cross-host.json` retain both preceding rosters byte-for-byte. The full
+original parser/type/source test sources are archived under
+`../byte_storage_current/predecessor/` with base commit/tree/blob/SHA256 identities.
+The prescribed gate independently pins those bytes and admits an explicit
+old-name to current-successor-name map. All other names, all four ignored native
+controls, the117-test total and every resource ceiling remain unchanged. The
+new tests retain unchanged enum/direct-field exclusions while exercising only
+the newly admitted standalone array/slice placements. Historical negative
+expectations are not relabeled as current successful qualification.

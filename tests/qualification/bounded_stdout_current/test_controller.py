@@ -112,9 +112,9 @@ class EvidenceTests(unittest.TestCase):
         manifest = gate.stdin_gate.source_manifest(ROOT, gate.REVIEWED_SOURCE_SHA256)
         core = [row['path'] for row in manifest['files'] if row['path'].startswith(('src/', 'native/'))
                 or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual((len(manifest['files']), len(core)), (363, 278))
+        self.assertEqual((len(manifest['files']), len(core)), (gate.stdin_gate.REVIEWED_SOURCE_MEMBERS, gate.stdin_gate.REVIEWED_COMPILER_BODIES))
         listing = b'\0'.join(name.encode() for name in core) + b'\0'
-        self.assertEqual(len(gate.stdin_gate.source_identity(ROOT, manifest, listing)), 363)
+        self.assertEqual(len(gate.stdin_gate.source_identity(ROOT, manifest, listing)), gate.stdin_gate.REVIEWED_SOURCE_MEMBERS)
         for bad in (listing + b'src/extra.rs\0', listing + b'src/cli.rs\0', listing.split(b'\0', 1)[1]):
             with self.assertRaises(ValueError):
                 gate.stdin_gate.source_identity(ROOT, manifest, bad)

@@ -2602,8 +2602,7 @@ fn encode_enum(
 fn scalar_size(ty: hir::Ty) -> usize {
     match ty {
         hir::Ty::I32 => 4,
-        hir::Ty::Bool | hir::Ty::Unit => 1,
-        hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
+        hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
 }
 fn scalar_offset(
@@ -2633,7 +2632,11 @@ fn array_index(value: Scalar, array: FixedArrayTy, span: Span) -> Result<usize> 
 }
 fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar> {
     Ok(match ty {
-        hir::Ty::U8 => return Err(bad("u8 aggregate payload", span)),
+        hir::Ty::U8 => Scalar::U8(
+            *bytes
+                .get(offset)
+                .ok_or_else(|| bad("payload range", span))?,
+        ),
         hir::Ty::I32 => Scalar::I32(i32::from_le_bytes(
             bytes
                 .get(
@@ -2661,7 +2664,11 @@ fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar
 }
 fn encode(bytes: &mut [u8], offset: usize, value: Scalar, span: Span) -> Result<()> {
     match value {
-        Scalar::U8(_) => return Err(bad("u8 aggregate payload", span)),
+        Scalar::U8(v) => {
+            *bytes
+                .get_mut(offset)
+                .ok_or_else(|| bad("payload range", span))? = v
+        }
         Scalar::I32(v) => bytes
             .get_mut(
                 offset
@@ -3069,3 +3076,7 @@ fn owned_u8_runtime_containing_transport_layouts() {
         Result<Scalar>
     );
 }
+
+#[cfg(test)]
+#[path = "byte_storage_codec_tests.rs"]
+mod byte_storage_codec_tests;

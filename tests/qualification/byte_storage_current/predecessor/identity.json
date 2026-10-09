@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "base_commit": "b5455ad07081590aeffdec54a927c9095e870fb0",
+  "base_tree": "cb53acc04ac88538a74410bc0a3c037da369c02e",
+  "purpose": "Immutable RFC0030 test source; changed-domain current successor tests are separate and do not rewrite these historical expectations.",
+  "files": [
+    {
+      "path": "src/frontend/parser/u8_syntax_tests.rs",
+      "archive": "tests/qualification/byte_storage_current/predecessor/src/frontend/parser/u8_syntax_tests.rs",
+      "sha256": "abf228ea026b98d802d7f68e79019392d1f1f9a3a91d987a016883b9f07300b0",
+      "git_blob": "85cc3c568d67e9f8502d800399a5c395bda2a0d1"
+    },
+    {
+      "path": "src/frontend/oir/owned_types/u8_tests.rs",
+      "archive": "tests/qualification/byte_storage_current/predecessor/src/frontend/oir/owned_types/u8_tests.rs",
+      "sha256": "ce139e4592ceb63a4f002f4e24893b69216643f0d2f1010f79ee9c800c612dcd",
+      "git_blob": "19a2187dbb7730eb0d52093a07fe3f55a7e63cc6"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/u8_tests.rs",
+      "archive": "tests/qualification/byte_storage_current/predecessor/src/frontend/oir/owned/source/u8_tests.rs",
+      "sha256": "ceb607ddb9ced06eb435290f51a2406c704aab0661b0f105a5f24d15b67de783",
+      "git_blob": "6e614fac2c860230cc6c007953584461c1033653"
+    },
+    {
+      "path": "src/frontend/oir/owned/source/hir_budget_tests.rs",
+      "archive": "tests/qualification/byte_storage_current/predecessor/src/frontend/oir/owned/source/hir_budget_tests.rs",
+      "sha256": "ec8ca98ac71d422f61884825013c34ccdb8861bb3be2f2d617555cbe77df57bc",
+      "git_blob": "fbacb840e44c76dde3b5a2da9d78944d102c1f9b"
+    }
+  ]
+}

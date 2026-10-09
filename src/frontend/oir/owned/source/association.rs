@@ -23,7 +23,33 @@ impl<'s> AssociatedOwned<'s> {
         (self.raw, self.sources)
     }
 }
-pub(in crate::frontend::oir::owned) fn associate<'s>(
+/// Source authority is minted only from this exact trusted lowering invocation.
+/// No production caller may supply raw operations or a detachable source permit.
+pub(super) fn lower_and_associate<'s>(
+    typed: &'s super::typeck::TypedOwnedProgram<'_>,
+) -> Result<AssociatedOwned<'s>, Box<Diagnostic>> {
+    let crate::frontend::source::SourceView::Map(sources) = typed.index().sources().view() else {
+        return Err(bad());
+    };
+    let raw =
+        super::lower::lower(typed).map_err(|error| super::diagnostic::lower(&error, sources))?;
+    let index = typed.index();
+    index.require_current_source_pipeline()?;
+    check_impl(
+        &raw,
+        index,
+        sources,
+        index.enum_count() != 0,
+        index.builtin_set() != BuiltinOrigins::None,
+        Some(typed),
+    )?;
+    Ok(AssociatedOwned { raw, sources })
+}
+
+// Private historical test helper. It is absent from production, where only
+// lower_and_associate above can mint this source-owned value.
+#[cfg(test)]
+fn associate_lowered<'s>(
     raw: RawOwnedProgram,
     typed: &'s super::typeck::TypedOwnedProgram<'_>,
 ) -> Result<AssociatedOwned<'s>, Box<Diagnostic>> {
@@ -42,6 +68,16 @@ pub(in crate::frontend::oir::owned) fn associate<'s>(
     )?;
     Ok(AssociatedOwned { raw, sources })
 }
+/// Historical mutation observations never construct SourceProgram. Keep this
+/// test-only raw seam out of production instead of granting it source authority.
+#[cfg(test)]
+pub(in crate::frontend::oir::owned) fn associate<'s>(
+    raw: RawOwnedProgram,
+    typed: &'s super::typeck::TypedOwnedProgram<'_>,
+) -> Result<AssociatedOwned<'s>, Box<Diagnostic>> {
+    associate_lowered(raw, typed)
+}
+
 #[cfg(test)]
 pub(super) fn associate_candidate<'s>(
     raw: RawOwnedProgram,
@@ -1347,3 +1383,7 @@ fn owned_u8_synthetic_function_cannot_inherit_program_source_authority() {
 thread_local! {
     pub(super) static CONVERSION_RESERVE_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
+
+#[cfg(test)]
+#[path = "byte_storage_association_tests.rs"]
+mod byte_storage_association_tests;

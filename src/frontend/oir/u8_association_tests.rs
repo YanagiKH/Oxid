@@ -345,3 +345,49 @@ fn forged_conversion_against_genuine_no_conversion_source_is_extent_bounded_and_
         )
     );
 }
+
+#[test]
+fn byte_storage_inherited_auth_walk_counters_refuse_overflow_and_mismatch() {
+    // Association is a structurally bounded count/validate walk, not a tunable
+    // work budget. Exercise its actual checked arithmetic/equality contracts.
+    let mut sources = SourceMap::new();
+    let id = sources.add("auth-count.ox".into(), "fn main()->i32{return 0;}".into());
+    let at = sources.get(id).span(0, 1);
+    let mut declarations = Visitor::count();
+    declarations.counts.declarations = usize::MAX;
+    assert!(declarations.declaration().is_err());
+    assert_eq!(declarations.counts.declarations, usize::MAX);
+    let mut spans = Visitor::count();
+    spans.counts.spans = usize::MAX;
+    assert!(spans.span(at).is_err());
+    assert_eq!(spans.counts.spans, usize::MAX);
+    let mut dimensions = Visitor::count();
+    dimensions.dimensions = usize::MAX;
+    assert!(dimensions.dimension(1, 1).is_err());
+    assert_eq!(dimensions.dimensions, usize::MAX);
+    assert!(Counts {
+        declarations: usize::MAX,
+        spans: 1
+    }
+    .total()
+    .is_err());
+    let mut count = Visitor::count();
+    count.declaration().unwrap();
+    assert!(Visitor::validate(&sources).finish(count).is_err());
+    assert!(Visitor::validate(&sources).dimension(0, 1).is_err());
+    let mut count = Visitor::count();
+    count.declaration().unwrap();
+    count.span(at).unwrap();
+    let mut validate = Visitor::validate(&sources);
+    validate.declaration().unwrap();
+    validate.span(at).unwrap();
+    let result = validate.finish(count).unwrap();
+    assert_eq!(
+        result.count,
+        Counts {
+            declarations: 1,
+            spans: 1
+        }
+    );
+    assert_eq!(result.validation, result.count);
+}

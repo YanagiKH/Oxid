@@ -96,22 +96,33 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         for data in (Path('tests/fixtures/fixed_array_source_unit3'),
-                     Path('tests/qualification/bounded_u8_current')):
+                     Path('tests/qualification/bounded_u8_current'),
+                     Path('tests/qualification/byte_storage_current')):
             shutil.copytree(verify_repo.ROOT / data, self.root / data)
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
-        self.assertEqual(len(self.data_sources), 188)
+        byte_data = verify_repo.byte_storage_fixture_data_sources(self.root)
+        self.assertEqual(len(byte_data), 325)
+        self.assertEqual(len(self.data_sources), 188 + 325)
+        self.assertEqual(len(set(self.data_sources) - byte_data), 188)
         u8_root = self.root / 'tests/qualification/bounded_u8_current/oracle'
         u8_expected = {u8_root / ('pairs-' + mode + '-' + format(index, '02d') + '.ox')
                        for mode in ('owned', 'scalar') for index in range(32)}
         u8_expected |= {u8_root / 'roundtrip-owned.ox', u8_root / 'roundtrip-scalar.ox'}
         self.assertEqual({path for path in self.data_sources if u8_root in path.parents}, u8_expected)
-        self.assertEqual(len(set(self.data_sources) - u8_expected), 122)
+        self.assertEqual(len(set(self.data_sources) - u8_expected - byte_data), 122)
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]
         self.members = sorted(set(self.members))
 
     def assert_static_addition(self, checks, entries, count):
+        # Strip only the RFC0031 runnable pilot before replaying historical totals.
+        byte_entry = self.root / "fixtures/typed-byte-storage/main.ox"
+        self.assertEqual([row for row in checks if row[0] == byte_entry], [(byte_entry, True)])
+        self.assertEqual([entry for entry in entries if entry == byte_entry], [byte_entry])
+        checks = [row for row in checks if row[0] != byte_entry]
+        entries = [entry for entry in entries if entry != byte_entry]
+        count -= 1
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[0], STREAMING_ROOT)
         self.assertEqual(verify_repo.TYPED_PROJECTS[STREAMING_ROOT], STREAMING_FILES)
         streaming = {self.root / name for name in STREAMING_FILES}

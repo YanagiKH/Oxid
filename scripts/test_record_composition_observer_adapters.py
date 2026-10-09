@@ -83,7 +83,7 @@ class RecordObserverPackageControls(unittest.TestCase):
         with admitted_composition_view() as (view, captured):
             current_members = {row['path'] for row in captured['current']['files']}
             self.assertEqual(set(captured['inputs']), current_members)
-            self.assertEqual(len(current_members), 363)
+            self.assertEqual(len(current_members), source_binding().load_byte_storage(captured['package_bytes']).CURRENT_MEMBERS)
             for row in captured['current']['files']:
                 raw = captured['inputs'][row['path']]
                 self.assertEqual(len(raw), row['bytes'])

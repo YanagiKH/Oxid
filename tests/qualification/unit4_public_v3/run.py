@@ -20,7 +20,7 @@ from predecessors import Predecessors, original_generator_check
 ADAPTER_ROOT = Path(__file__).resolve().parent
 SOURCE_BINDING_ROOT = ADAPTER_ROOT.parents[1] / 'fixtures' / 'typed_project_source_binding'
 
-PACKAGE_FILES = {'u8_source_authority.py', 'observer-u8-v1.patch', 'cache_admission_authority.py', 'observer-combined-v1.patch', 'observer-enum-v1.patch', 'observer-stdin-v1.patch', 'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'producer_diagnostic_authority.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
+PACKAGE_FILES = {'u8_source_authority.py', 'u8_cross_host_source_authority.py', 'observer-u8-v1.patch', 'cache_admission_authority.py', 'observer-combined-v1.patch', 'observer-enum-v1.patch', 'observer-stdin-v1.patch', 'README.md', 'authority.py', 'authority_controls.py', 'build.py', 'compare.py', 'contracts.py', 'guards.py', 'no_tool_trap.rs', 'predecessors.py', 'producer_diagnostic_authority.py', 'process_tree.py', 'run.py', 'runtime.py', 'selftest.py', 'tool_wrapper.py'}
 
 def adapter_identity():
     paths = sorted(ADAPTER_ROOT.iterdir(), key=lambda path: path.name)

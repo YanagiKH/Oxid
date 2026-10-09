@@ -1504,15 +1504,13 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
 fn element_stride(element: hir::Ty) -> usize {
     match element {
         hir::Ty::I32 => 4,
-        hir::Ty::Bool | hir::Ty::Unit => 1,
-        hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
+        hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
 }
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
         hir::Ty::I32 => "i32",
-        hir::Ty::Bool | hir::Ty::Unit => "i8",
-        hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
+        hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
 /// Resolve from the verified nominal root every time; raw offsets are never
@@ -4012,3 +4010,7 @@ fn owned_u8_native_roles_are_dominated_by_predecessor_operations() {
     }
     println!("RFC0030 native relative carriers checked_byte={} predecessor_checked={} byte_comparison={} predecessor_comparison={}; same outer callers and failure/store helpers", size_of::<CheckedByteArmRoles>(),size_of::<PredecessorCheckedArmRoles>(),size_of::<ByteComparisonRoles>(),size_of::<PredecessorComparisonRoles>());
 }
+
+#[cfg(test)]
+#[path = "byte_storage_native_tests.rs"]
+mod byte_storage_tests;

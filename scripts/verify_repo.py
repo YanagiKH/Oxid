@@ -12,11 +12,22 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from verify_feature_status import verify_feature_status
-from verify_fixture_data import fixture_data_sources
+from verify_fixture_data import fixture_data_sources as predecessor_fixture_data_sources
+from verify_bounded_byte_storage import fixture_data_sources as byte_storage_fixture_data_sources
 from verify_typed_formatter import verify as verify_typed_formatter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def fixture_data_sources(root: Path) -> set[Path]:
+    """Explicit RFC0031 DATA successor; predecessor registration stays intact."""
+    previous = predecessor_fixture_data_sources(root)
+    current = byte_storage_fixture_data_sources(root)
+    if previous & current:
+        raise RuntimeError("byte-storage DATA overlaps predecessor inventory")
+    return previous | current
+
 RUNNABLE_GROUPS = ("tests", "examples", "tools", "apps")
 RUNNABLE_PACKAGE_FILES = (
     "packages/demo/package.ox",
@@ -27,7 +38,7 @@ RUNNABLE_PACKAGE_FILES = (
 )
 # Exact typed fixture inventory; all other checked-in .ox files retain their
 # existing legacy checks. Never exclude an entire fixture directory.
-TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
+TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox", "fixtures/typed-byte-storage/main.ox")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (

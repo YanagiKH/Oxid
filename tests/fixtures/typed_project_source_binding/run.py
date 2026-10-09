@@ -71,8 +71,9 @@ HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e
 HIR_IMPORT_SOURCE_BYTES = 62558
 PRODUCER_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 PRODUCER_SOURCE_BYTES = 63220
-CURRENT_SOURCE_SHA = '20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4'
-CURRENT_SOURCE_BYTES = 71510
+BYTE_STORAGE_HELPER_SHA = 'e9eef8a6475d6c79c5e93a127af8ed99e46eb029de4da7909371b44dcd6f6084'
+CURRENT_SOURCE_SHA = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
+CURRENT_SOURCE_BYTES = 74192
 UNIT2_U8_RESOURCE_HELPER_SHA = 'eb7c611e986a46d8468edc57a51b7ba708dbac81eb7d0a05bde190f2a530394b'
 U8_CROSS_HOST_HELPER_SHA = '7664dc9ff6597c3c586154af3b3a38f095147d025b8fd6e544f6c7a93f250ff8'
 U8_SOURCE_HELPER_SHA = 'a89918a6016a008a44ad0e0c8afe8771d225ee3fb8cf3ea56c32acc5ac3922ec'
@@ -1380,6 +1381,16 @@ def compile_fixture_paths(source, *, combined=False):
     return paths
 
 
+def load_byte_storage(package_bytes, package=PACKAGE):
+    """Admit only the separately sealed standalone byte-storage source successor."""
+    require(digest(package_bytes["byte_storage.py"]) == BYTE_STORAGE_HELPER_SHA,
+            "unapproved byte storage source helper")
+    module = types.ModuleType("byte_storage_source_binding")
+    module.__file__ = str(package / "byte_storage.py")
+    exec(compile(package_bytes["byte_storage.py"], module.__file__, "exec"), module.__dict__)
+    return module
+
+
 def load_u8_cross_host(package_bytes, package=PACKAGE):
     """Load the separately pinned two-file test-only source successor."""
     require(digest(package_bytes["u8_cross_host.py"]) == U8_CROSS_HOST_HELPER_SHA,
@@ -1691,9 +1702,18 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    cross_host = load_u8_cross_host(package_bytes, package)
-    cross_host_current, cross_host_inputs, cross_host_authority, u8_inputs, cross_host_touched = cross_host.admit(
+    byte_storage = load_byte_storage(package_bytes, package)
+    byte_current, byte_inputs, byte_authority, cross_host_inputs, byte_touched = byte_storage.admit(
         repo, package_bytes, types.SimpleNamespace(**globals()))
+    cross_host = load_u8_cross_host(package_bytes, package)
+    cross_host_package = dict(package_bytes, **{"current-source.json": package_bytes["u8-cross-host-source.json"]})
+    with tempfile.TemporaryDirectory(prefix="oxid-retained-u8-cross-host-") as directory:
+        cross_host_repo = Path(directory) / "source"
+        materialize(cross_host_repo, cross_host_inputs)
+        cross_host_current, admitted_cross_host_inputs, cross_host_authority, u8_inputs, cross_host_touched = cross_host.admit(
+            cross_host_repo, cross_host_package, types.SimpleNamespace(**globals()))
+    require(admitted_cross_host_inputs == cross_host_inputs,
+            "retained byte storage admission changed its cross-host input view")
     u8 = load_u8_source(package_bytes, package)
     u8_package = dict(package_bytes, **{"current-source.json": package_bytes["u8-source.json"]})
     with tempfile.TemporaryDirectory(prefix="oxid-retained-u8-source-") as directory:
@@ -1815,8 +1835,8 @@ def preflight(repo, package=PACKAGE):
             "stale native inventory complete input identities")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [name for name in native_inventory_inputs if name.startswith(("src/", "native/"))]
-    require(len(expected) == 208 and (sorted(actual) == sorted(n for n in u8_inputs if n.startswith(("src/", "native/")))
-            and sorted(set(actual) - set(u8.ADDITIONS)) == sorted(n for n in lexical_inputs if n.startswith(("src/", "native/")))),
+    require(len(expected) == 208 and (sorted(set(actual) - set(byte_storage.ADDITIONS)) == sorted(n for n in u8_inputs if n.startswith(("src/", "native/")))
+            and sorted(set(actual) - set(byte_storage.ADDITIONS) - set(u8.ADDITIONS)) == sorted(n for n in lexical_inputs if n.startswith(("src/", "native/")))),
             "missing or extra compiler source member")
     require(len([name for name in native_inventory_inputs if name.startswith(("src/", "native/"))
                  or name in ("Cargo.toml", "Cargo.lock", "build.rs")]) == 211,
@@ -2181,8 +2201,8 @@ def preflight(repo, package=PACKAGE):
             == fixture_paths, "missing or extra compile-time fixture input")
     actual = [part + "/" + name for part in ("src", "native") for name in members(repo / part)]
     expected = [x for x in native_inventory_inputs if x.startswith(("src/", "native/"))]
-    require((sorted(actual) == sorted(n for n in u8_inputs if n.startswith(("src/", "native/")))
-            and sorted(set(actual) - set(u8.ADDITIONS)) == sorted(n for n in lexical_inputs if n.startswith(("src/", "native/")))), "missing or extra compiler source member")
+    require((sorted(set(actual) - set(byte_storage.ADDITIONS)) == sorted(n for n in u8_inputs if n.startswith(("src/", "native/")))
+            and sorted(set(actual) - set(byte_storage.ADDITIONS) - set(u8.ADDITIONS)) == sorted(n for n in lexical_inputs if n.startswith(("src/", "native/")))), "missing or extra compiler source member")
     require(slices["compile_time_fixture_derivation"] == {
         **combined["compile_time_fixture_derivation"],
         "source": entry(COMPILE_FIXTURE_SOURCE, inputs[COMPILE_FIXTURE_SOURCE]),
@@ -2307,15 +2327,15 @@ def preflight(repo, package=PACKAGE):
         index_resource, package_bytes["unit2-u8-resource-authority.json"],
         package_bytes["u8-source.json"], types.SimpleNamespace(require=require, digest=digest, entry=entry))
     # Transport the unchanged accounting successor only through identical source
-    # dependencies. Current Unit2 execution still receives cross_host_inputs.
-    require(all(row in cross_host_current["files"] and row in u8_current["files"]
+    # dependencies. Current Unit2 execution receives the complete byte_inputs.
+    require(all(row in byte_current["files"] and row in cross_host_current["files"] and row in u8_current["files"]
                 for row in u8_index_resource_authority["source_dependencies"]),
             "changed retained Unit2 u8 accounting dependency")
     u8_accounting_source_binding = {
-        "version": "unit2-u8-cross-host-identical-accounting-source-v1",
+        "version": "unit2-byte-storage-identical-accounting-source-v1",
         "current_source": entry("current-source.json", package_bytes["current-source.json"]),
-        "reviewed_source_head": cross_host_current["reviewed_source_head"],
-        "source_only_tree": cross_host_current["source_only_tree"],
+        "reviewed_source_head": byte_current["reviewed_source_head"],
+        "source_only_tree": byte_current["source_only_tree"],
         "retained_accounting_source": entry("u8-source.json", package_bytes["u8-source.json"]),
         "retained_reviewed_source_head": u8_current["reviewed_source_head"],
         "retained_source_only_tree": u8_current["source_only_tree"],
@@ -2363,7 +2383,9 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": cross_host_current, "u8_cross_host_authority": cross_host_authority,
+    return {"current": byte_current, "byte_storage_authority": byte_authority,
+            "byte_storage_touched": byte_touched, "u8_cross_host_source": cross_host_current,
+            "u8_cross_host_inputs": cross_host_inputs, "u8_cross_host_authority": cross_host_authority,
             "u8_cross_host_touched": cross_host_touched, "u8_source": u8_current, "u8_inputs": u8_inputs,
             "u8_authority": u8_authority, "u8_touched": u8_touched,
             "u8_accounting_source_binding": u8_accounting_source_binding,
@@ -2402,7 +2424,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": cross_host_inputs, "archived": reconstructed, "references": references,
+            "inputs": byte_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2457,6 +2479,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "byte_storage_authority_sha256": digest(captured["package_bytes"]["byte-storage-authority.json"]),
+            "byte_storage_inverse_patch_sha256": digest(captured["package_bytes"]["byte-storage-transition.patch"]),
+            "byte_storage_inverse_touched": captured["byte_storage_touched"],
+            "u8_cross_host_source_sha256": digest(captured["package_bytes"]["u8-cross-host-source.json"]),
             "u8_cross_host_authority_sha256": digest(captured["package_bytes"]["u8-cross-host-authority.json"]),
             "u8_cross_host_inverse_patch_sha256": digest(captured["package_bytes"]["u8-cross-host-transition.patch"]),
             "u8_cross_host_inverse_touched": captured["u8_cross_host_touched"],
@@ -2754,6 +2780,9 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      byte_storage_authority_sha256=digest(captured["package_bytes"]["byte-storage-authority.json"]),
+                      byte_storage_inverse_patch_sha256=digest(captured["package_bytes"]["byte-storage-transition.patch"]),
+                      u8_cross_host_source_sha256=digest(captured["package_bytes"]["u8-cross-host-source.json"]),
                       u8_cross_host_authority_sha256=digest(captured["package_bytes"]["u8-cross-host-authority.json"]),
                       u8_cross_host_inverse_patch_sha256=digest(captured["package_bytes"]["u8-cross-host-transition.patch"]),
                       u8_source_sha256=digest(captured["package_bytes"]["u8-source.json"]),

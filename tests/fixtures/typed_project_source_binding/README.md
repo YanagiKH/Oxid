@@ -1,3 +1,44 @@
+# RFC0031 standalone byte-storage source successor
+
+Current reviewed source checkpoint: `e3c1b4a1a3ef457326f11a802896c125202fe797`. Full Git tree:
+`5fdb4f06a8fcbc61724676df55a4c3bee130eaf7`. Current source-manifest SHA-256:
+`402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa`.
+
+The exact closure has 376 inputs, including 288 `src`/`native` members
+and 291 compiler/build bodies. The 33-path transition adds
+13 compiler members, removes none, and preserves all 78 compile-time fixture
+bodies and all 136 include expressions. These are source identity facts, not
+semantic, resource, native-execution or hosted qualification results.
+
+`byte_storage.py` is the active source admission stage. Its separately pinned
+`byte-storage-authority.json` and `byte-storage-transition.patch` require exact
+membership, modes, Git blob identities and complete forward/inverse identities.
+The inverse reconstructs every one of the 363 scalar-u8 cross-host inputs before
+any unchanged predecessor adapter runs. Their exact current manifest is retained
+as `u8-cross-host-source.json`, SHA-256
+`20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4`.
+All original source authorities, wire/provider domains, resource ceilings,
+semantic observations and authentic parsed-module portable fixtures remain intact.
+
+Current Unit2 materialization consumes the complete new compiler source. The
+unchanged `unit2_u8_resource.py` still authenticates `u8-source.json` and its
+original accounting authority. Its three accounting dependencies must be
+byte-identical in the original, cross-host and byte-storage source maps. The
+new transport receipt names the current execution source and retained accounting
+source separately; it does not transplant an old execution result.
+
+The new controls exercise exact forward/inverse recovery, every changed hunk,
+coherent manifest/helper/authority tampering, file modes, missing/extra compiler
+members, all complete input identities and unchanged fixture/include closure.
+The 117-member archived source selection and older observer staging remain exact.
+`preflight` and `run-unit2 --prepare-only` invoke no compiler. Fresh Unit2 execution,
+separate resource review and applicable exact-head hosted CI are still required.
+
+The following predecessor documentation is retained verbatim. Its references to
+“current” identify its own earlier checkpoint.
+
+## Retained predecessor documentation
+
 # Test-only u8 cross-host source successor
 
 The active source checkpoint is `d204fbc684b81c6e0deac04007182ebe2bb67b00`,

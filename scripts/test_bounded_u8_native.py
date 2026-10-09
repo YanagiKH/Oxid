@@ -102,7 +102,11 @@ class NativeGateTests(unittest.TestCase):
         self.assertEqual(gate.identity(initial_path)['sha256'], gate.INITIAL_ROSTER_SHA)
         initial = json.loads(initial_path.read_text())
         self.assertEqual(len(initial), 115)
-        self.assertEqual(roster, sorted([*initial, *gate.CROSS_HOST_TESTS]))
+        gate.admit_byte_storage_predecessors(repo, initial)
+        self.assertEqual(roster, gate.current_roster(initial))
+        self.assertEqual(set(roster) - set(initial) - set(gate.CROSS_HOST_TESTS),
+                         set(gate.BYTE_STORAGE_RENAMES.values()))
+        self.assertEqual(set(initial) - set(roster), set(gate.BYTE_STORAGE_RENAMES))
         self.assertTrue(set(gate.IGNORED) <= set(roster))
         self.assertEqual(sum(value[1] for value in gate.IGNORED.values()), 91)
         data = '\n'.join(name + ': test' for name in roster) + '\n\n117 tests, 0 benchmarks\n'
@@ -118,6 +122,15 @@ class NativeGateTests(unittest.TestCase):
                     good.replace(b'0 failed', b'1 failed'), good + good):
             with self.assertRaises(ValueError):
                 gate.admit_execution(bad, 113)
+
+    def test_empty_or_duplicate_selection_cannot_admit_its_own_summary(self):
+        for names, data in (([], b'0 tests, 0 benchmarks\n'),
+                            (['same', 'same'], b'same: test\nsame: test\n2 tests, 0 benchmarks\n')):
+            with self.subTest(names=names), self.assertRaises(ValueError):
+                gate.admit_listing(data, names)
+        with self.assertRaises(ValueError):
+            gate.admit_execution(
+                b'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 117 filtered out; finished in 0.00s\n', 0)
 
     def test_native_stream_retention_is_mandatory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,6 +169,97 @@ class NativeGateTests(unittest.TestCase):
         self.assertIn('name: bounded-u8-native-evidence', workflow)
         self.assertEqual(corpus.sha((repo / gate.STAGER).read_bytes()),
                          '055dd46f2c24f3a0496486ec89570ef533d7a016a5bc85d834447e8a59204def')
+
+
+class RosterSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.repo = Path(__file__).resolve().parents[1]
+        self.roster = json.loads((self.repo / gate.PACKAGE / 'tests.json').read_text())
+        self.normal = [name for name in self.roster if name not in gate.IGNORED]
+        self.collision = ('frontend::oir::source::association::u8_tests::'
+                          'byte_storage_inherited_auth_walk_counters_refuse_overflow_and_mismatch')
+        # Include both the actual RFC0031 collision and names containing a full
+        # admitted name, so a multi-filter substring selector also fails.
+        self.available = self.roster + [self.collision, self.normal[0] + '_later',
+                                        'later::' + next(iter(gate.IGNORED))]
+        self.ignored = set(gate.IGNORED)
+
+    @staticmethod
+    def listing(names):
+        return ('\n'.join(name + ': test' for name in names)
+                + f'\n\n{len(names)} tests, 0 benchmarks\n').encode()
+
+    def invoke(self, directory, label, argv, **kwargs):
+        filters = [arg for arg in argv[1:] if not arg.startswith('--')]
+        selected = [name for name in self.available if
+                    (name in filters if '--exact' in argv else any(part in name for part in filters))]
+        if '--ignored' in argv:
+            selected = [name for name in selected if name in self.ignored]
+        if '--list' in argv:
+            return self.listing(selected), b''
+        ignored = len(set(selected) & self.ignored)
+        return (f'test result: ok. {len(selected) - ignored} passed; 0 failed; {ignored} ignored; '
+                f'0 measured; {len(self.available) - len(selected)} filtered out; finished in 0.01s\n').encode(), b''
+
+    def run_selection(self):
+        gate.run_roster_tests(Path('evidence'), Path('unit'), self.roster, self.repo, {})
+
+    def test_discovery_and_execution_use_exact_frozen_names_despite_collisions(self):
+        with patch.object(corpus, 'invoke', side_effect=self.invoke) as invoke:
+            self.run_selection()
+        self.assertEqual(invoke.call_count, 3)
+        for call, names, flags in zip(invoke.call_args_list,
+                (self.roster, self.roster, self.normal),
+                (['--list', '--color=never'], ['--list', '--ignored', '--color=never'],
+                 ['--nocapture', '--test-threads=1', '--color=never'])):
+            self.assertEqual(call.args[2], [Path('unit'), '--exact', *names, *flags])
+        self.assertEqual(len(self.normal), 113)
+
+    def test_invalid_selection_is_rejected_before_invoking_the_binary(self):
+        for roster in ([], self.roster + self.roster[:1], self.normal, list(gate.IGNORED)):
+            with self.subTest(roster=roster), patch.object(corpus, 'invoke') as invoke:
+                with self.assertRaises(ValueError):
+                    gate.run_roster_tests(Path('evidence'), Path('unit'), roster, self.repo, {})
+                invoke.assert_not_called()
+
+    def test_missing_duplicate_unexpected_or_zero_discovery_fails_closed(self):
+        for label, names in (
+                ('missing', self.roster[1:]), ('duplicate', [self.roster[1], *self.roster[1:]]),
+                ('unexpected', [self.collision, *self.roster[1:]]), ('zero', [])):
+            with self.subTest(label=label), patch.object(corpus, 'invoke',
+                    return_value=(self.listing(names), b'')) as invoke:
+                with self.assertRaises(ValueError):
+                    self.run_selection()
+                self.assertEqual(invoke.call_count, 1)
+
+    def test_missing_extra_or_zero_ignored_discovery_fails_before_execution(self):
+        for ignored in (set(list(gate.IGNORED)[1:]), set(gate.IGNORED) | {self.normal[0]}, set()):
+            self.ignored = ignored
+            with self.subTest(ignored=ignored), patch.object(corpus, 'invoke', side_effect=self.invoke) as invoke:
+                with self.assertRaises(ValueError):
+                    self.run_selection()
+                self.assertEqual(invoke.call_count, 2)
+
+    def test_discovery_stderr_fails_before_execution(self):
+        for failure in ('all-discovery', 'ignored-discovery'):
+            def invoke(directory, label, argv, **kwargs):
+                stdout, stderr = self.invoke(directory, label, argv, **kwargs)
+                return stdout, b'unexpected' if label == failure else stderr
+            with self.subTest(failure=failure), patch.object(corpus, 'invoke', side_effect=invoke) as mocked:
+                with self.assertRaisesRegex(ValueError, 'discovery stderr'):
+                    self.run_selection()
+                self.assertEqual(mocked.call_count, 1 if failure == 'all-discovery' else 2)
+
+    def test_zero_or_ignored_normal_execution_fails_closed(self):
+        for passed, ignored in ((0, 0), (112, 1)):
+            def invoke(directory, label, argv, **kwargs):
+                if label == 'resources-and-semantics':
+                    return (f'test result: ok. {passed} passed; 0 failed; {ignored} ignored; '
+                            '0 measured; 5 filtered out; finished in 0.01s\n').encode(), b''
+                return self.invoke(directory, label, argv, **kwargs)
+            with self.subTest(passed=passed, ignored=ignored), patch.object(corpus, 'invoke', side_effect=invoke):
+                with self.assertRaises(ValueError):
+                    self.run_selection()
 
 
 if __name__ == '__main__':

@@ -127,6 +127,9 @@ CURRENT_PATHS = ('Cargo.lock',
  'src/frontend/oir/owned/builtin_output_process_tests.rs',
  'src/frontend/oir/owned/builtin_output_reference_tests.rs',
  'src/frontend/oir/owned/builtins.rs',
+ 'src/frontend/oir/owned/byte_storage_codec_tests.rs',
+ 'src/frontend/oir/owned/byte_storage_native_tests.rs',
+ 'src/frontend/oir/owned/byte_storage_reference_tests.rs',
  'src/frontend/oir/owned/cfg.rs',
  'src/frontend/oir/owned/composition_native_tests.rs',
  'src/frontend/oir/owned/composition_reference_tests.rs',
@@ -185,6 +188,15 @@ CURRENT_PATHS = ('Cargo.lock',
  'src/frontend/oir/owned/source/builtin_lower.rs',
  'src/frontend/oir/owned/source/builtin_signature_tests.rs',
  'src/frontend/oir/owned/source/builtin_source_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_association_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_native_fixture.rs',
+ 'src/frontend/oir/owned/source/byte_storage_raw_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_resources.rs',
+ 'src/frontend/oir/owned/source/byte_storage_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_trust_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_type_tests.rs',
  'src/frontend/oir/owned/source/candidate_adapter.rs',
  'src/frontend/oir/owned/source/candidate_mutations.rs',
  'src/frontend/oir/owned/source/candidate_native.rs',
@@ -228,6 +240,7 @@ CURRENT_PATHS = ('Cargo.lock',
  'src/frontend/oir/owned/verified.rs',
  'src/frontend/oir/owned_types.rs',
  'src/frontend/oir/owned_types/array_tests.rs',
+ 'src/frontend/oir/owned_types/byte_storage_tests.rs',
  'src/frontend/oir/owned_types/composition_tests.rs',
  'src/frontend/oir/owned_types/enum_integration_tests.rs',
  'src/frontend/oir/owned_types/enums.rs',
@@ -432,6 +445,9 @@ CURRENT_ADDED_PATHS = ('fixtures/typed-record-composition-samples/main.ox',
  'src/frontend/oir/owned/builtin_output_process_tests.rs',
  'src/frontend/oir/owned/builtin_output_reference_tests.rs',
  'src/frontend/oir/owned/builtins.rs',
+ 'src/frontend/oir/owned/byte_storage_codec_tests.rs',
+ 'src/frontend/oir/owned/byte_storage_native_tests.rs',
+ 'src/frontend/oir/owned/byte_storage_reference_tests.rs',
  'src/frontend/oir/owned/composition_native_tests.rs',
  'src/frontend/oir/owned/composition_reference_tests.rs',
  'src/frontend/oir/owned/composition_verifier_tests.rs',
@@ -467,6 +483,15 @@ CURRENT_ADDED_PATHS = ('fixtures/typed-record-composition-samples/main.ox',
  'src/frontend/oir/owned/source/builtin_lower.rs',
  'src/frontend/oir/owned/source/builtin_signature_tests.rs',
  'src/frontend/oir/owned/source/builtin_source_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_association_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_native_fixture.rs',
+ 'src/frontend/oir/owned/source/byte_storage_raw_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_resources.rs',
+ 'src/frontend/oir/owned/source/byte_storage_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_trust_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_type_tests.rs',
  'src/frontend/oir/owned/source/enum_native_source_tests.rs',
  'src/frontend/oir/owned/source/enum_storage_failure_tests.rs',
  'src/frontend/oir/owned/source/enum_type_tests.rs',
@@ -489,6 +514,7 @@ CURRENT_ADDED_PATHS = ('fixtures/typed-record-composition-samples/main.ox',
  'src/frontend/oir/owned/source/u8_tests.rs',
  'src/frontend/oir/owned/u8_tests.rs',
  'src/frontend/oir/owned_types/array_tests.rs',
+ 'src/frontend/oir/owned_types/byte_storage_tests.rs',
  'src/frontend/oir/owned_types/composition_tests.rs',
  'src/frontend/oir/owned_types/enum_integration_tests.rs',
  'src/frontend/oir/owned_types/enums.rs',
@@ -635,7 +661,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9'
+AUTHORITY_SHA = '446f9c022dd7ae3070a9fe8a07e4973fdbb12f4623b8a293b6826ed3ef576c5b'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -778,6 +804,70 @@ def compose_u8_closed_policy(a, name, raw, reverse=False):
     return result
 
 
+BYTE_STORAGE_PARSER_PREDECESSOR_SHA = '29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9'
+BYTE_STORAGE_FIELDS = ('byte_storage_authority', 'byte_storage_transition_patch',
+                       'byte_storage_helper', 'u8_cross_host_source_manifest',
+                       'u8_cross_host_parser_authority')
+
+
+def byte_storage_predecessor_active(active):
+    """Keep every prior parser contract; replace only exact current source maps."""
+    retained = active['u8_cross_host_parser_authority']
+    same(retained['path'], 'tests/qualification/unit4_parser_current/u8-cross-host-authority.json',
+         'retained cross-host parser authority path')
+    same(retained['sha256'], BYTE_STORAGE_PARSER_PREDECESSOR_SHA, 'immutable cross-host parser authority')
+    verify_map(REPOSITORY, [active[key] for key in BYTE_STORAGE_FIELDS])
+    previous = read(REPOSITORY / retained['path'])
+    omit = {'current_base_files', 'current_derived_files', 'current_control_derived_files',
+            'current_candidate_source_manifest_sha256', 'current_source_manifest', 'reviewed_source_head',
+            'source_only_tree', 'source_binding_runner', 'source_delta', *BYTE_STORAGE_FIELDS}
+    same({k: v for k, v in active.items() if k not in omit},
+         {k: v for k, v in previous.items() if k not in omit},
+         'byte storage changes unrelated cross-host parser authority')
+    previous['source_binding_runner'] = active['source_binding_runner']
+    return previous
+
+
+def restore_byte_storage_source(active, inputs):
+    previous = byte_storage_predecessor_active(active)
+    api = u8_binding_api(active)
+    path = REPOSITORY / active['byte_storage_helper']['path']
+    helper = types.ModuleType('unit4_byte_storage_inverse')
+    exec(compile(path.read_bytes(), str(path), 'exec'), helper.__dict__)
+    same(sha(path.read_bytes()), api.BYTE_STORAGE_HELPER_SHA, 'exact byte storage helper identity')
+    try:
+        restored, touched = helper.inverse(inputs,
+            (REPOSITORY / active['byte_storage_transition_patch']['path']).read_bytes(), api)
+    except api.BindingError as error:
+        raise Rejected('byte storage inverse rejected: ' + str(error)) from error
+    same(touched, list(helper.PATHS), 'exact byte storage inverse scope')
+    predecessor = read(REPOSITORY / active['u8_cross_host_source_manifest']['path'])
+    same([{'path': name, 'bytes': len(raw), 'sha256': sha(raw)} for name, raw in sorted(restored.items())],
+         predecessor['files'], 'byte storage inverse must recover all exact cross-host inputs')
+    same(predecessor['reviewed_source_head'], previous['reviewed_source_head'], 'byte parser predecessor head')
+    return restored
+
+
+def byte_storage_predecessor_body(a, name, raw):
+    active = a['current']
+    previous = byte_storage_predecessor_active(active)
+    row = next(r for r in active['current_base_files'] if r['path'] == name)
+    same({'path': name, 'bytes': len(raw), 'sha256': sha(raw)}, row, 'exact current byte storage composition body')
+    prior = next(r for r in previous['current_base_files'] if r['path'] == name)
+    if row != prior:
+        api = u8_binding_api(active)
+        raw_patch = (REPOSITORY / active['byte_storage_transition_patch']['path']).read_bytes()
+        prefix = ('a/' + name + ' b/' + name + '\n').encode()
+        sections = [b'diff --git ' + part for part in raw_patch.split(b'diff --git ')[1:] if part.startswith(prefix)]
+        same(len(sections), 1, 'exact byte storage composition transition section')
+        section = sections[0]
+        restored, touched = api.apply_inverse_patch({name: raw}, section, sha(section), len(section), (name,))
+        same(touched, [name], 'exact byte storage composition inverse path')
+        raw = restored[name]
+    same({'path': name, 'bytes': len(raw), 'sha256': sha(raw)}, prior, 'exact cross-host composition body recovery')
+    return dict(a, current=previous), raw
+
+
 U8_PREDECESSOR_PARSER_SHA = '47725dbdd2cd13da289205a15f7de53610e782f3e2f2037695be374e8fa7ad91'
 U8_CROSS_HOST_PARSER_SHA = '48b3864d7b04f2e4afcdc35c2a42fd56720dcbd80ac789f359e9f04e5eff48be'
 U8_CROSS_HOST_FIELDS = ('u8_cross_host_authority', 'u8_cross_host_transition_patch',
@@ -796,6 +886,8 @@ def u8_binding_api(active):
 
 
 def verify_u8_cross_host_parser_predecessor(active):
+    if 'byte_storage_authority' in active:
+        active = byte_storage_predecessor_active(active)
     retained = active['u8_parser_authority']
     same(retained['path'], 'tests/qualification/unit4_parser_current/u8-authority.json',
          'retained initial u8 parser authority path')
@@ -812,6 +904,9 @@ def verify_u8_cross_host_parser_predecessor(active):
 
 
 def restore_u8_cross_host_source(active, inputs):
+    if 'byte_storage_authority' in active:
+        inputs = restore_byte_storage_source(active, inputs)
+        active = byte_storage_predecessor_active(active)
     api = u8_binding_api(active)
     path = REPOSITORY / active['u8_cross_host_helper']['path']
     helper = types.ModuleType('unit4_u8_cross_host_inverse')
@@ -829,6 +924,8 @@ def restore_u8_cross_host_source(active, inputs):
 
 
 def u8_predecessor_active(active):
+    if 'byte_storage_authority' in active:
+        active = byte_storage_predecessor_active(active)
     verify_u8_cross_host_parser_predecessor(active)
     retained = active['cache_admission_parser_authority']
     same(retained['path'], 'tests/qualification/unit4_parser_current/cache-admission-authority.json',
@@ -876,6 +973,12 @@ def validate_u8_transition(active, current, historical):
                               'u8_cross_host.py', 'u8-source.json')):
         same(active[key]['path'], 'tests/fixtures/typed_project_source_binding/' + filename,
              'exact cross-host transition artifact path')
+    for key, filename in zip(BYTE_STORAGE_FIELDS[:4],
+                             ('byte-storage-authority.json', 'byte-storage-transition.patch',
+                              'byte_storage.py', 'u8-cross-host-source.json')):
+        same(active[key]['path'], 'tests/fixtures/typed_project_source_binding/' + filename,
+             'exact byte storage transition artifact path')
+    byte_storage_predecessor_active(active)
     # Admit the complete u8 source membership and exact inverse directly. The
     # independent older parser chain below rechecks its complete predecessor
     # identities; Unit2 observer preparation is not part of parser admission.
@@ -883,10 +986,22 @@ def validate_u8_transition(active, current, historical):
     package_bytes = {name: (package / name).read_bytes() for name in
                      ('u8_source.py', 'current-source.json', 'cache-admission-source.json',
                       'u8-authority.json', 'u8-transition.patch', 'u8-source.json',
-                      'u8_cross_host.py', 'u8-cross-host-authority.json', 'u8-cross-host-transition.patch')}
+                      'u8_cross_host.py', 'u8-cross-host-authority.json', 'u8-cross-host-transition.patch',
+                      'byte_storage.py', 'byte-storage-authority.json', 'byte-storage-transition.patch',
+                      'u8-cross-host-source.json')}
     try:
+        byte_helper = api.load_byte_storage(package_bytes)
+        byte_admitted, _, _, cross_inputs, _ = byte_helper.admit(REPOSITORY, package_bytes, api)
+        # Refuse forged current metadata before staging any retained predecessor.
+        same(byte_admitted, current, 'parser source must equal admitted complete byte storage source')
         cross = api.load_u8_cross_host(package_bytes)
-        admitted, _, _, restored, _ = cross.admit(REPOSITORY, package_bytes, api)
+        cross_package = dict(package_bytes, **{'current-source.json': package_bytes['u8-cross-host-source.json']})
+        with tempfile.TemporaryDirectory(prefix='unit4-byte-storage-predecessor-') as directory:
+            root = Path(directory) / 'source'
+            api.materialize(root, cross_inputs)
+            admitted, _, _, restored, _ = cross.admit(root, cross_package, api)
+        same(admitted, read(REPOSITORY / active['u8_cross_host_source_manifest']['path']),
+             'exact admitted cross-host predecessor')
         predecessor_package = dict(package_bytes, **{'current-source.json': package_bytes['u8-source.json']})
         helper = api.load_u8_source(predecessor_package)
         with tempfile.TemporaryDirectory(prefix='unit4-u8-predecessor-') as directory:
@@ -897,7 +1012,7 @@ def validate_u8_transition(active, current, historical):
              'exact admitted initial u8 predecessor')
     except api.BindingError as error:
         raise Rejected('u8 source admission rejected: ' + str(error)) from error
-    same(admitted, current, 'parser source must equal admitted complete u8 source')
+    active = byte_storage_predecessor_active(active)
     previous = u8_predecessor_active(active)
     omit = {'current_base_files', 'current_derived_files', 'current_control_derived_files',
             'current_candidate_source_manifest_sha256', 'current_source_manifest', 'reviewed_source_head',
@@ -914,6 +1029,8 @@ def validate_u8_transition(active, current, historical):
 
 
 def u8_predecessor_body(a, name, raw):
+    if 'byte_storage_authority' in a['current']:
+        a, raw = byte_storage_predecessor_body(a, name, raw)
     active = a['current']
     row = next(r for r in active['current_base_files'] if r['path'] == name)
     same({'path': name, 'bytes': len(raw), 'sha256': sha(raw)}, row, 'exact current u8 composition body')
@@ -1425,7 +1542,7 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 363, "complete current source count")
+    same(len(current["files"]), 376, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     cache_current, predecessor_active = validate_u8_transition(active, current, result)
@@ -1536,7 +1653,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 363, "duplicate current member")
+    same(len(after), 376, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -1553,7 +1670,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 526, "current base count")
+    same(len(base), 539, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     verify_map(REPOSITORY, current["files"])
     restore_hir_producer_source(active, {row["path"]: (REPOSITORY / row["path"]).read_bytes()
@@ -1590,7 +1707,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 529, "current derived count")
+        same(len(ordered), 542, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -2194,7 +2311,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 278, "current compiler body count")
+    same(len(wanted), 291, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

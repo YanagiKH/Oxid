@@ -204,9 +204,10 @@ impl<'a> Fingerprint<'a> {
     fn array_type(&mut self, array: FixedArraySyntax) {
         let FixedArraySyntax { element, length } = array;
         self.tag(match element {
-            ScalarTypeSyntax::Bool => "bool-element",
-            ScalarTypeSyntax::I32 => "i32-element",
-            ScalarTypeSyntax::Unit => "unit-element",
+            ArrayElementTypeSyntax::Bool => "bool-element",
+            ArrayElementTypeSyntax::I32 => "i32-element",
+            ArrayElementTypeSyntax::U8 => "u8-element",
+            ArrayElementTypeSyntax::Unit => "unit-element",
         });
         self.count(usize::from(length));
     }
@@ -228,9 +229,10 @@ impl<'a> Fingerprint<'a> {
                 self.tag("slice-reference-type");
                 self.flag(mutable);
                 self.tag(match element {
-                    ScalarTypeSyntax::Bool => "bool",
-                    ScalarTypeSyntax::I32 => "i32",
-                    ScalarTypeSyntax::Unit => "unit",
+                    ArrayElementTypeSyntax::Bool => "bool",
+                    ArrayElementTypeSyntax::I32 => "i32",
+                    ArrayElementTypeSyntax::U8 => "u8",
+                    ArrayElementTypeSyntax::Unit => "unit",
                 });
             }
             TypeSyntaxKind::ArrayReference { mutable, array } => {
@@ -1200,7 +1202,7 @@ fn normalization_detects_same_tape_array_mutations() {
             else {
                 panic!()
             };
-            array.element = ScalarTypeSyntax::Bool;
+            array.element = ArrayElementTypeSyntax::Bool;
         },
         |p| {
             let TypeSyntaxKind::Array(array) = &mut p.functions[0].params[1].ty.kind else {
@@ -1212,7 +1214,7 @@ fn normalization_detects_same_tape_array_mutations() {
             let TypeSyntaxKind::Array(array) = &mut p.functions[0].result.kind else {
                 panic!()
             };
-            array.element = ScalarTypeSyntax::I32;
+            array.element = ArrayElementTypeSyntax::I32;
         },
         |p| {
             let expression = p
@@ -1720,4 +1722,20 @@ fn u8_formatter_fingerprint_binds_operation_receiver_and_intrinsic_origins() {
         }
         assert_ne!(expected, fingerprint(source, &ast));
     }
+}
+
+#[test]
+fn byte_storage_formatter_preserves_array_only_types_and_source_origins() {
+    let text = "// 雪\r\nfn byte(x:i32)->u8{return x.to_u8_checked();}fn f(a:& /*A*/ [u8],b:&mut [u8;0001])->[u8;0]{let c:[u8;0]=([]);b[0]=byte(255);a.len();return c;}";
+    let mut sources = SourceMap::new();
+    let id = sources.add("byte-format.ox".into(), text.into());
+    let source = sources.get(id);
+    let before = fingerprint(source, &parse(source));
+    let formatted = format_source(source).unwrap();
+    let mut output = SourceMap::new();
+    output.add("unrelated.ox".into(), "".into());
+    let id = output.add("byte-formatted.ox".into(), formatted);
+    let after = output.get(id);
+    assert_eq!(before, fingerprint(after, &parse(after)));
+    assert_eq!(format_source(after).unwrap(), after.text());
 }

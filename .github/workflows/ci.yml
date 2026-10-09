@@ -705,6 +705,43 @@ jobs:
           path: |
             ${{ runner.temp }}/bounded-u8-native
             !${{ runner.temp }}/bounded-u8-native/llvm-runtime/libraries/**
+      - name: Test bounded byte storage closed oracle and exact-source admission
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_bounded_byte_storage.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_bounded_byte_storage.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_byte_storage_compatibility.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_hir_byte_storage_compatibility.py -v
+      - name: Verify bounded byte storage resources, reference and native oracles in both profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export CARGO_TARGET_DIR="$PWD/target"
+          # Bind dispatch to the actual toolchain recorded by bounded-enum,
+          # rather than rustup's PATH shims. The controller verifies both tools.
+          byte_storage_cargo="$(rustup which cargo)"
+          byte_storage_toolchain_bin="$(dirname "$byte_storage_cargo")"
+          export PATH="$byte_storage_toolchain_bin:$PATH"
+          python3 -B scripts/verify_bounded_byte_storage.py --prepare-public-build \
+            --repo "$PWD" --build-evidence "$RUNNER_TEMP/bounded-enum-native" \
+            --cargo "$byte_storage_cargo" --expected-head "$UNIT2E_EXPECTED_HEAD" \
+            --output "$RUNNER_TEMP/byte-storage-public-builds"
+          python3 -B scripts/verify_bounded_byte_storage.py \
+            --repo "$PWD" --build-evidence "$RUNNER_TEMP/bounded-enum-native" \
+            --public-build-evidence "$RUNNER_TEMP/byte-storage-public-builds" \
+            --llvm-bin "$OXID_LLVM_BIN" --expected-head "$UNIT2E_EXPECTED_HEAD" \
+            --event-sha "$UNIT2E_EVENT_SHA" --output "$RUNNER_TEMP/byte-storage-current"
+      - name: Retain bounded byte storage closed-oracle, resource and source-free native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: byte-storage-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/byte-storage-public-builds
+            ${{ runner.temp }}/byte-storage-current
+            !${{ runner.temp }}/byte-storage-current/llvm-runtime/libraries/**
       - name: Test bounded stdin controller admission
         run: python3 -B tests/qualification/bounded_stdin_current/test_controller.py -v
       - name: Verify bounded stdin effects and fuel in both ordinary profiles
@@ -715,7 +752,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4
+            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -728,7 +765,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4
+            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4

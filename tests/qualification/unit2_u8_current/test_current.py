@@ -42,7 +42,9 @@ class CurrentResource(unittest.TestCase):
         self.assertNotEqual(current['reviewed_source_head'], retained['reviewed_source_head'])
         self.assertNotEqual(binding.digest(self.current_source), helper.SOURCE_SHA)
         before = {row['path']: row for row in retained['files']}
-        after = {row['path']: row for row in current['files']}
+        cross_host = json.loads((PACKAGE / 'u8-cross-host-source.json').read_bytes())
+        after = {row['path']: row for row in cross_host['files']}
+        byte_current = {row['path']: row for row in current['files']}
         self.assertEqual(set(before), set(after))
         self.assertEqual({name for name in before if before[name] != after[name]},
                          {'src/frontend/project.rs', 'src/frontend/declaration_index/u8_integration_tests.rs'})
@@ -50,6 +52,7 @@ class CurrentResource(unittest.TestCase):
         for row in authority['source_dependencies']:
             self.assertEqual(before[row['path']], row)
             self.assertEqual(after[row['path']], row)
+            self.assertEqual(byte_current[row['path']], row)
         with self.assertRaisesRegex(binding.BindingError, 'wrong Unit2 u8 current source'):
             self.adapt(source=self.current_source)
 

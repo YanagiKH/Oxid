@@ -106,6 +106,8 @@ Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器
 
 實驗性的[僅限呼叫期間借用的純量切片](spec/typed-preview.md#call-only-borrowed-scalar-slices)讓接受共享 `&[T]` 或獨佔 `&mut [T]` 的輔助函式，透過顯式借用與再借用處理不同長度的完整 bool/i32/unit 固定長度陣列。[三模組切片範例](fixtures/typed-slice-samples/README.md)使用長度 2、3、0，回傳 515。此功能僅限明確指定 typed-preview 的 `check`、`run` 與原生 `compile`，沿用既有的 Linux 模組載入限制，以及 Linux x86_64、LLVM/Clang/LLD 19.1.7、O0 原生限制。範圍語法、子切片及擁有所有權的不定長度值仍未提供；這不代表穩定性或里程碑已完成。
 
+[有界獨立位元組儲存擴充](rfcs/0031-bounded-standalone-byte-storage.md)正在進行目前原始碼的驗證：`[u8; N]` 擁有者、僅限呼叫期間的整體位元組切片、顯式受檢轉換、i32 索引與長度，資源上限不變。[範例](fixtures/typed-byte-storage/README.md)預期回傳 638。仍不支援記錄中的位元組欄位與投影、位元組算術、堆積緩衝區或 I/O 遷移；獨立資源審查與精確提交的託管 CI 是分開的關卡。
+
 實驗性的[型別格式化工具](spec/typed-preview.md#single-file-formatting)支援固定長度陣列語法及 `oxid fmt --edition typed-preview input.ox`（將完整格式化原始碼寫至標準輸出）及 `--check`（需要格式化時回傳結束碼 1）。它會保留註解和既有換行，調整空白與縮排，不載入模組或寫入檔案。預設的舊版格式化行為不變。
 
 只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。
