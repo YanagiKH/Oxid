@@ -355,7 +355,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
         self.assertEqual(len(reduced["files"]), 262)
-        self.assertEqual(reduced["reviewed_source_head"], "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b")
+        self.assertEqual(reduced["reviewed_source_head"], "98af42f3baa02f179c0437078ab1928e86f0c8f6")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")
@@ -373,7 +373,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102"
+        expected = "82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67"
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

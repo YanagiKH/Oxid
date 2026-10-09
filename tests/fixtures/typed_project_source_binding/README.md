@@ -1,3 +1,34 @@
+# Current Git cache-location admission authority
+
+The active source checkpoint is `98af42f3baa02f179c0437078ab1928e86f0c8f6`, full tree
+`1d37d040150822d4358ec1c70c8e0f227f5eaf48`. The 345 selected inputs, 257 src/native
+members and 260 compiler/build bodies preserve the predecessor roster. Only
+`src/runtime/packages.rs` differs. Current manifest SHA-256:
+`82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67`.
+
+The retained `cache-preservation-source.json`, authority, helper and patch preserve
+all predecessor bytes. The new cache-admission authority/helper/patch binds one
+exact reversible outer transition. Its inverse recovers all 345 cache-preservation
+inputs from checkpoint `e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b` before executing
+the unchanged historical helper against a separate materialization. Actual source
+membership, modes and producer closure remain checked before historical views.
+
+The exact patch recipe is `git diff --binary --no-ext-diff --no-renames --abbrev=7
+26b2d2ed5eaf78b37e9933296f011f6536c8d1dd
+1d37d040150822d4358ec1c70c8e0f227f5eaf48 -- src/runtime/packages.rs`. The base is actual merged
+main `20f8e494f872420e6eb53b518b92783c9a1c3539` (PR54), whose selected inputs match the
+retained predecessor. Existing authorities, lifecycle patches, parser hooks,
+frozen rosters, language oracles, native expectations and resource caps remain
+unchanged. Complete parser and public observer maps are derived through the same
+patches. Current CI inventory and native enum/stdin/stdout pins identify this source.
+
+Admission and source-only preparation execute no compiler and establish no native,
+semantic or hosted qualification. Fresh execution must identify the final adapter
+head separately. Windows link controls and all exact-head hosted checks remain
+mandatory; local Linux evidence cannot replace them.
+
+The following sections describe retained historical transitions and observations.
+
 # Git dependency cache-preservation source successor
 
 The active source checkpoint is `e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b`,
