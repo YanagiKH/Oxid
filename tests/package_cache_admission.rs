@@ -13,8 +13,23 @@ struct Fixture {
     first: String,
     second: String,
 }
+// Snapshots require a stable fixture: Git maintenance may otherwise detach
+// after commit/fetch and remove its lock while the snapshot is traversing it.
+// Keep maintenance enabled, but wait for it in every fixture Git process,
+// including children launched by Oxid. These overrides are command-scoped.
+fn fixture_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command
+        .env("GIT_CONFIG_COUNT", "2")
+        .env("GIT_CONFIG_KEY_0", "maintenance.autoDetach")
+        .env("GIT_CONFIG_VALUE_0", "false")
+        .env("GIT_CONFIG_KEY_1", "gc.autoDetach")
+        .env("GIT_CONFIG_VALUE_1", "false");
+    command
+}
+
 fn git(path: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+    let output = fixture_command("git")
         .arg("-C")
         .arg(path)
         .args(args)
@@ -89,7 +104,7 @@ impl Fixture {
         .unwrap();
     }
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_oxid"))
+        fixture_command(env!("CARGO_BIN_EXE_oxid"))
             .args(args)
             .current_dir(&self.root)
             .env("OXID_CACHE_DIR", self.root.join("cache"))
@@ -104,7 +119,14 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
+        if std::thread::panicking() {
+            eprintln!(
+                "preserving failed cache-admission fixture: {}",
+                self.root.display()
+            );
+        } else {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 }
 #[derive(Debug, Eq, PartialEq)]
@@ -125,24 +147,41 @@ fn redirected(meta: &fs::Metadata) -> bool {
     }
 }
 // Never traverse links, including junctions; include empty directories.
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Entry> {
-    fn walk(root: &Path, path: &Path, out: &mut BTreeMap<PathBuf, Entry>) {
-        let meta = fs::symlink_metadata(path).unwrap();
+fn snapshot(root: &Path, phase: &str) -> BTreeMap<PathBuf, Entry> {
+    fn walk(root: &Path, path: &Path, phase: &str, out: &mut BTreeMap<PathBuf, Entry>) {
+        let context = |operation: &str, error: std::io::Error| -> ! {
+            panic!(
+                "snapshot {phase}: {operation} failed for {} (watched root {}): {error}",
+                path.display(),
+                root.display()
+            );
+        };
+        let meta =
+            fs::symlink_metadata(path).unwrap_or_else(|error| context("symlink_metadata", error));
         let key = path.strip_prefix(root).unwrap().to_path_buf();
         if redirected(&meta) {
-            out.insert(key, Entry::Link(fs::read_link(path).unwrap()));
+            out.insert(
+                key,
+                Entry::Link(
+                    fs::read_link(path).unwrap_or_else(|error| context("read_link", error)),
+                ),
+            );
         } else if meta.is_dir() {
             out.insert(key, Entry::Directory);
-            for entry in fs::read_dir(path).unwrap() {
-                walk(root, &entry.unwrap().path(), out);
+            for entry in fs::read_dir(path).unwrap_or_else(|error| context("read_dir", error)) {
+                let entry = entry.unwrap_or_else(|error| context("directory entry", error));
+                walk(root, &entry.path(), phase, out);
             }
         } else {
             assert!(meta.is_file());
-            out.insert(key, Entry::File(fs::read(path).unwrap()));
+            out.insert(
+                key,
+                Entry::File(fs::read(path).unwrap_or_else(|error| context("read", error))),
+            );
         }
     }
     let mut out = BTreeMap::new();
-    walk(root, root, &mut out);
+    walk(root, root, phase, &mut out);
     out
 }
 fn directory_alias(target: &Path, link: &Path) {
@@ -166,7 +205,10 @@ fn directory_alias(target: &Path, link: &Path) {
     }
 }
 fn rejected(f: &Fixture, watched: &[&Path]) {
-    let before: Vec<_> = watched.iter().map(|p| snapshot(p)).collect();
+    let before: Vec<_> = watched
+        .iter()
+        .map(|p| snapshot(p, "before resolution"))
+        .collect();
     let lock = fs::read(f.root.join("oxid.lock")).unwrap();
     for args in [
         &["lock"][..],
@@ -179,7 +221,7 @@ fn rejected(f: &Fixture, watched: &[&Path]) {
         let output = f.run(args);
         for (path, expected) in watched.iter().zip(&before) {
             assert!(
-                snapshot(path) == *expected,
+                snapshot(path, &format!("after {args:?}")) == *expected,
                 "refused resolution mutated {}",
                 path.display()
             );
@@ -325,7 +367,7 @@ fn ordinary_cache_and_external_path_dependencies_remain_supported() {
             format!("[dependencies]\nshared = \"{path}\"\n"),
         )
         .unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+        let output = fixture_command(env!("CARGO_BIN_EXE_oxid"))
             .arg("update")
             .current_dir(&project)
             .output()
@@ -335,7 +377,7 @@ fn ordinary_cache_and_external_path_dependencies_remain_supported() {
     }
     let alias = f.root.join("project-alias");
     directory_alias(&project, &alias);
-    let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+    let output = fixture_command(env!("CARGO_BIN_EXE_oxid"))
         .arg("lock")
         .arg("--frozen")
         .current_dir(&alias)
@@ -382,7 +424,7 @@ fn project_alias_with_git_cache_is_supported() {
     let f = Fixture::new();
     let alias = f.root.join("project-alias");
     directory_alias(&f.root, &alias);
-    let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+    let output = fixture_command(env!("CARGO_BIN_EXE_oxid"))
         .args(["fetch", "--frozen"])
         .current_dir(&alias)
         .output()
