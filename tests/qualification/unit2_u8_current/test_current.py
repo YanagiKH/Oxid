@@ -25,10 +25,34 @@ class CurrentResource(unittest.TestCase):
         self.frozen = (ROOT / binding.U2 / binding.INDEX_RESOURCE).read_bytes()
         self.old = binding.adapt_enum_index_resource(self.frozen)
         self.authority = helper_path.with_name('unit2-u8-resource-authority.json').read_bytes()
-        self.source = (PACKAGE / 'current-source.json').read_bytes()
+        # The immutable accounting adapter authenticates its original u8 source.
+        # Current execution is admitted separately through identical dependencies.
+        self.source = (PACKAGE / 'u8-source.json').read_bytes()
+        self.current_source = (PACKAGE / 'current-source.json').read_bytes()
     def adapt(self, old=None, authority=None, source=None):
         return helper.adapt(self.old if old is None else old, self.authority if authority is None else authority,
                             self.source if source is None else source, binding)
+    def test_retained_accounting_source_is_distinct_from_current_execution(self):
+        current = json.loads(self.current_source)
+        retained = json.loads(self.source)
+        authority = json.loads(self.authority)
+        self.assertEqual(binding.digest(self.source), helper.SOURCE_SHA)
+        self.assertEqual(binding.digest(self.source), current['u8_source_sha256'])
+        self.assertEqual(retained['reviewed_source_head'], authority['reviewed_source_head'])
+        self.assertNotEqual(current['reviewed_source_head'], retained['reviewed_source_head'])
+        self.assertNotEqual(binding.digest(self.current_source), helper.SOURCE_SHA)
+        before = {row['path']: row for row in retained['files']}
+        after = {row['path']: row for row in current['files']}
+        self.assertEqual(set(before), set(after))
+        self.assertEqual({name for name in before if before[name] != after[name]},
+                         {'src/frontend/project.rs', 'src/frontend/declaration_index/u8_integration_tests.rs'})
+        self.assertTrue(authority['source_dependencies'])
+        for row in authority['source_dependencies']:
+            self.assertEqual(before[row['path']], row)
+            self.assertEqual(after[row['path']], row)
+        with self.assertRaisesRegex(binding.BindingError, 'wrong Unit2 u8 current source'):
+            self.adapt(source=self.current_source)
+
     def test_exact_derived_and_inverse(self):
         result, authority = self.adapt()
         self.assertEqual(binding.digest(result), authority['derived']['sha256'])
@@ -66,11 +90,18 @@ class CurrentResource(unittest.TestCase):
         self.assertEqual(captured['index_resource'], self.old)
         self.assertEqual(captured['u8_index_resource'], result)
         self.assertEqual(captured['u8_index_resource_authority'], authority)
+        transfer = captured['u8_accounting_source_binding']
+        self.assertEqual(transfer['current_source'], binding.entry('current-source.json', self.current_source))
+        self.assertEqual(transfer['retained_accounting_source'], binding.entry('u8-source.json', self.source))
+        self.assertEqual(transfer['reviewed_source_head'], json.loads(self.current_source)['reviewed_source_head'])
+        self.assertEqual(transfer['retained_reviewed_source_head'], json.loads(self.source)['reviewed_source_head'])
+        self.assertEqual(transfer['source_dependencies'], authority['source_dependencies'])
         with tempfile.TemporaryDirectory() as root:
             seam = binding.prepare_unit2(Path(root), captured)
             self.assertEqual((Path(seam['resource_package_root']) / binding.INDEX_RESOURCE).read_bytes(), result)
             self.assertEqual(seam['index_resource_adapter'], captured['index_resource_authority'])
             self.assertEqual(seam['u8_index_resource_adapter'], authority)
+            self.assertEqual(seam['u8_accounting_source_binding'], transfer)
 
     def test_missing_extra_or_changed_seam_rejected(self):
         for seams in [helper.SEAMS[:1], helper.SEAMS+helper.SEAMS[:1],
