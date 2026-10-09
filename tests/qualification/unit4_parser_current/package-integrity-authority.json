@@ -1,19 +1,4 @@
 {
-  "cache_preservation_authority": {
-    "bytes": 94920,
-    "path": "tests/fixtures/typed_project_source_binding/cache-preservation-authority.json",
-    "sha256": "e9f62aaa5d6544c999dc857427f6c5c52abb8308502f980be822e2ebf55eae99"
-  },
-  "cache_preservation_helper": {
-    "bytes": 5563,
-    "path": "tests/fixtures/typed_project_source_binding/cache_preservation.py",
-    "sha256": "a2a2a8c65a97eaba7fcfcf709d7430179ebef24c5ac0625e8c226eec74aebaf1"
-  },
-  "cache_preservation_transition_patch": {
-    "bytes": 6541,
-    "path": "tests/fixtures/typed_project_source_binding/cache-preservation-transition.patch",
-    "sha256": "ea517427d0fa75bf5fbc09aaa0c5ad504cb9e66b747895953716a1137e75f1c1"
-  },
   "combined_source_manifest": {
     "bytes": 35021,
     "path": "tests/fixtures/typed_project_source_binding/combined-source.json",
@@ -1721,9 +1706,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 72312,
+      "bytes": 67862,
       "path": "src/runtime/packages.rs",
-      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
+      "sha256": "72dab01f6e59a7f88da18846aa0bf739042d88f22343eb95b5318b9abbcfa6fb"
     },
     {
       "bytes": 262,
@@ -2586,7 +2571,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "fc0d6151bb5cb532cd8a9331938a1635c63b47c606374e72cad5c306c88400e4",
+  "current_candidate_source_manifest_sha256": "b543dc303d14b92bd863f8e923bc7ce189eab8d5fc25126ad1ef1da559633f4e",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2686,7 +2671,7 @@
     {
       "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "fc0d6151bb5cb532cd8a9331938a1635c63b47c606374e72cad5c306c88400e4"
+      "sha256": "b543dc303d14b92bd863f8e923bc7ce189eab8d5fc25126ad1ef1da559633f4e"
     },
     {
       "bytes": 1583,
@@ -4279,9 +4264,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 72312,
+      "bytes": 67862,
       "path": "src/runtime/packages.rs",
-      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
+      "sha256": "72dab01f6e59a7f88da18846aa0bf739042d88f22343eb95b5318b9abbcfa6fb"
     },
     {
       "bytes": 262,
@@ -7240,7 +7225,7 @@
     {
       "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "fc0d6151bb5cb532cd8a9331938a1635c63b47c606374e72cad5c306c88400e4"
+      "sha256": "b543dc303d14b92bd863f8e923bc7ce189eab8d5fc25126ad1ef1da559633f4e"
     },
     {
       "bytes": 1583,
@@ -8833,9 +8818,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 72312,
+      "bytes": 67862,
       "path": "src/runtime/packages.rs",
-      "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
+      "sha256": "72dab01f6e59a7f88da18846aa0bf739042d88f22343eb95b5318b9abbcfa6fb"
     },
     {
       "bytes": 262,
@@ -9699,9 +9684,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 67558,
+    "bytes": 67336,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102"
+    "sha256": "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -9945,16 +9930,6 @@
     "path": "tests/fixtures/typed_project_source_binding/package_integrity.py",
     "sha256": "263e898f966fbc1cb007dfab86a0b16504a2a65d11c4edcdb3cbbbcba34af857"
   },
-  "package_integrity_parser_authority": {
-    "bytes": 484020,
-    "path": "tests/qualification/unit4_parser_current/package-integrity-authority.json",
-    "sha256": "974aebf4121f323f1674a19b7442d42e495c2075e99ae9f70c6cc1f1fb59a7a5"
-  },
-  "package_integrity_source_manifest": {
-    "bytes": 67336,
-    "path": "tests/fixtures/typed_project_source_binding/package-integrity-source.json",
-    "sha256": "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f"
-  },
   "package_integrity_transition_patch": {
     "bytes": 16227,
     "path": "tests/fixtures/typed_project_source_binding/package-integrity-transition.patch",
@@ -9995,7 +9970,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b",
+  "reviewed_source_head": "3315ad42a98cbd033f88fbec676793dec5e0be4a",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -10008,9 +9983,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 204058,
+    "bytes": 201696,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "45d4d7c18c8ee76765cd21d8909a331a6d93bb1e90413f78f49850c87a2cdb13"
+    "sha256": "63ed85648cac69c3d00521685abfd094c640188bc1d262bf474af54bcbcd1722"
   },
   "source_delta": [
     {
@@ -12405,9 +12380,9 @@
     },
     {
       "after": {
-        "bytes": 72312,
+        "bytes": 67862,
         "path": "src/runtime/packages.rs",
-        "sha256": "0e0b9b3aafbfa35d2766a07365182deb1dbe1c5e997f441f606b867a352f1d01"
+        "sha256": "72dab01f6e59a7f88da18846aa0bf739042d88f22343eb95b5318b9abbcfa6fb"
       },
       "before": {
         "bytes": 57788,
@@ -13092,7 +13067,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "cf4dbd4fb02a219795b366b6be76d53e8e77ee20",
+  "source_only_tree": "243e6e55d179a362569ab353aa207eaa95e5ba1b",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

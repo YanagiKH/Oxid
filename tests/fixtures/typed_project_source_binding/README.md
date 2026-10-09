@@ -1,3 +1,32 @@
+# Git dependency cache-preservation source successor
+
+The active source checkpoint is `e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b`,
+full tree `cf4dbd4fb02a219795b366b6be76d53e8e77ee20`. Its 345 selected inputs,
+257 src/native members and 260 compiler/build bodies preserve the predecessor roster.
+Only `src/runtime/packages.rs` differs. Current manifest SHA-256:
+`481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102`.
+
+`package-integrity-source.json` retains the prior manifest byte-for-byte. Every
+prior authority, helper, patch and historical execution receipt remains unchanged.
+The cache-preservation authority/helper/patch bind an exact reversible one-file
+transition. Its inverse recovers all 345 package-integrity inputs before executing
+the unchanged predecessor helper against a separate materialization. Actual source
+membership, modes and producer closure are checked before historical views can
+hide unexpected inputs. No parser instrumentation, observer hook, language oracle,
+resource cap, native expectation or dependency closure is changed.
+
+The exact patch recipe is `git diff --binary --no-ext-diff --no-renames --abbrev=7
+532822dab2c2b118b773ade53bb902fa1440bbbb
+cf4dbd4fb02a219795b366b6be76d53e8e77ee20 -- src/runtime/packages.rs`.
+The declared predecessor is local checkpoint
+`7f4e37707ad1c46476d2bf1e96575cb7d7e7724d`, whose selected source inputs
+match package-integrity checkpoint `3315ad42a98cbd033f88fbec676793dec5e0be4a`.
+This adapter is stacked until that predecessor is accepted. Source admission and
+Python controls are not native, semantic or hosted qualification. Fresh execution
+must identify the final adapter head separately from the source checkpoint.
+
+The following sections describe retained historical transitions.
+
 # SHA-256 package-integrity source successor
 
 The active source checkpoint is `3315ad42a98cbd033f88fbec676793dec5e0be4a`,

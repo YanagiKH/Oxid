@@ -1,3 +1,18 @@
+# Current cache-preservation authority
+
+Current source checkpoint: `e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b`; full tree
+`cf4dbd4fb02a219795b366b6be76d53e8e77ee20`; manifest SHA-256
+`481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102`. The 345-input source roster and 260 compiler/build bodies
+remain fixed. Only the package runtime body changes. The exact outer inverse
+restores the immutable SHA-256 package-integrity source before all prior inverses.
+The parser's complete current/derived maps and the public lifecycle map are
+re-derived with unchanged instrumentation and lifecycle patches. The active CI
+input closure and enum/stdin/stdout entrypoint seals identify this same source.
+Historical observations below retain their original identities and are not fresh
+execution evidence. Admission alone does not establish hosted/native qualification.
+
+The following sections document retained predecessor designs and observations.
+
 # Mandatory current Unit4 qualification
 
 This integration admits the exact component closure and the 324-input current

@@ -509,6 +509,8 @@ fn materialize_git_dependency(
                 origin.trim()
             ));
         }
+        // Reject local data before changing configuration, fetching or checking out.
+        ensure_pristine_git_cache(&checkout, name)?;
         git_output(
             &checkout,
             &[
@@ -585,26 +587,70 @@ fn materialize_git_dependency(
             head.trim()
         ));
     }
-    let status = git_output(
-        &checkout,
-        &[
-            OsString::from("status"),
-            OsString::from("--porcelain"),
-            OsString::from("--untracked-files=all"),
-        ],
-    )?;
-    if !status.trim().is_empty() {
-        return Err(format!(
-            "cached dependency `{name}` contains modified or untracked files; clear {} before resolving",
-            checkout.display()
-        ));
-    }
+    ensure_pristine_git_cache(&checkout, name)?;
+    Ok(checkout)
+}
+
+// Include ignored files deliberately: an uncached requested commit may track any
+// of them, and discovering that must not fetch into a cache containing local data.
+// --no-optional-locks prevents status from refreshing the on-disk index.
+fn ensure_pristine_git_cache(checkout: &Path, name: &str) -> Result<(), String> {
     if checkout.join(".gitmodules").exists() {
         return Err(format!(
             "git dependency `{name}` uses unsupported submodules"
         ));
     }
-    Ok(checkout)
+    // Status intentionally trusts these index flags and can hide local edits.
+    // Refuse the flags themselves rather than changing the user's index.
+    let entries = git_output(
+        checkout,
+        &[
+            OsString::from("--no-optional-locks"),
+            OsString::from("ls-files"),
+            OsString::from("--stage"),
+            OsString::from("-v"),
+            OsString::from("-z"),
+        ],
+    )?;
+    // Nested work trees are opaque to the outer status check. Reject gitlinks
+    // even if their usual .gitmodules metadata is missing.
+    if entries
+        .split('\0')
+        .any(|entry| entry.as_bytes().get(2..8) == Some(b"160000"))
+    {
+        return Err(format!(
+            "git dependency `{name}` uses unsupported submodules"
+        ));
+    }
+    if entries.split('\0').any(|entry| {
+        entry
+            .as_bytes()
+            .first()
+            .is_some_and(|tag| *tag == b'S' || tag.is_ascii_lowercase())
+    }) {
+        return Err(format!(
+            "cached dependency `{name}` has unsupported assume-unchanged or skip-worktree index flags; preserve your changes and clear those flags manually in {} before resolving",
+            checkout.display()
+        ));
+    }
+    let status = git_output(
+        checkout,
+        &[
+            OsString::from("--no-optional-locks"),
+            OsString::from("status"),
+            OsString::from("--porcelain"),
+            OsString::from("--untracked-files=all"),
+            OsString::from("--ignored"),
+            OsString::from("--ignore-submodules=none"),
+        ],
+    )?;
+    if !status.trim().is_empty() {
+        return Err(format!(
+            "cached dependency `{name}` contains modified, untracked or ignored files; preserve your changes and move local files out of {} before resolving",
+            checkout.display()
+        ));
+    }
+    Ok(())
 }
 
 fn unique_sibling_path(parent: &Path, name: &str) -> Result<PathBuf, String> {
@@ -673,7 +719,7 @@ fn git_checkout(path: &Path, revision: &str) -> Result<(), String> {
             OsString::from("checkout"),
             OsString::from("--quiet"),
             OsString::from("--detach"),
-            OsString::from("--force"),
+            OsString::from("--no-overwrite-ignore"),
             OsString::from(revision),
         ],
     )?;
@@ -1970,6 +2016,49 @@ mod tests {
         )
         .expect("cached locked offline resolution");
         assert_eq!(first, locked);
+    }
+
+    #[test]
+    fn pristine_cache_preflight_does_not_refresh_index_or_accept_ignored_files() {
+        let root = TestDir::new("pristine-preflight");
+        test_git(root.path(), &["init", "--quiet"]);
+        test_git(root.path(), &["config", "user.email", "oxid@example.invalid"]);
+        test_git(root.path(), &["config", "user.name", "Oxid Test"]);
+        write(root.path().join(".gitignore"), "build/\n");
+        test_git(root.path(), &["add", "."]);
+        test_git(root.path(), &["commit", "--quiet", "-m", "fixture"]);
+        let index = fs::read(root.path().join(".git/index")).unwrap();
+        ensure_pristine_git_cache(root.path(), "fixture").unwrap();
+        assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
+        write(root.path().join("build/output"), "local build product");
+        assert!(ensure_pristine_git_cache(root.path(), "fixture")
+            .unwrap_err()
+            .contains("ignored files"));
+        assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
+        assert_eq!(fs::read(root.path().join("build/output")).unwrap(), b"local build product");
+    }
+
+    #[test]
+    fn checkout_defense_refuses_ignored_path_collision_without_force() {
+        let root = TestDir::new("checkout-ignored");
+        test_git(root.path(), &["init", "--quiet"]);
+        test_git(root.path(), &["config", "user.email", "oxid@example.invalid"]);
+        test_git(root.path(), &["config", "user.name", "Oxid Test"]);
+        write(root.path().join(".gitignore"), "artifact\n");
+        test_git(root.path(), &["add", "."]);
+        test_git(root.path(), &["commit", "--quiet", "-m", "first"]);
+        let first = test_git(root.path(), &["rev-parse", "HEAD"]);
+        write(root.path().join("artifact"), "upstream");
+        test_git(root.path(), &["add", "--force", "artifact"]);
+        test_git(root.path(), &["commit", "--quiet", "-m", "second"]);
+        let second = test_git(root.path(), &["rev-parse", "HEAD"]);
+        git_checkout(root.path(), first.trim()).unwrap();
+        write(root.path().join("artifact"), "local data");
+        let index = fs::read(root.path().join(".git/index")).unwrap();
+        assert!(git_checkout(root.path(), second.trim()).is_err());
+        assert_eq!(fs::read(root.path().join("artifact")).unwrap(), b"local data");
+        assert_eq!(test_git(root.path(), &["rev-parse", "HEAD"]), first);
+        assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
     }
 
     fn test_git(repository: &Path, args: &[&str]) -> String {
