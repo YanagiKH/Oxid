@@ -355,7 +355,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
         self.assertEqual(len(reduced["files"]), 262)
-        self.assertEqual(reduced["reviewed_source_head"], "3315ad42a98cbd033f88fbec676793dec5e0be4a")
+        self.assertEqual(reduced["reviewed_source_head"], "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")
@@ -373,7 +373,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f"
+        expected = "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102"
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]
@@ -394,6 +394,9 @@ class BoundedEnumNativeControls(unittest.TestCase):
         lexical = (package / "lexical-provider-source.json").read_bytes()
         self.assertEqual(hashlib.sha256(lexical).hexdigest(),
                          "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db")
+        integrity = (package / "package-integrity-source.json").read_bytes()
+        self.assertEqual(hashlib.sha256(integrity).hexdigest(),
+                         "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f")
         forged_head = dict(current, reviewed_source_head="c15465acb90e9f8bb18f5291a8931f5d5bbc6edb")
         forged_rows = dict(current, files=[dict(row) for row in current["files"]])
         forged_rows["files"][0]["sha256"] = "0" * 64
@@ -401,6 +404,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
             candidate = Path(directory) / "source.json"
             for label, raw in (("stale predecessor", stale),
                                ("retained lexical predecessor", lexical),
+                               ("retained package predecessor", integrity),
                                ("same-count wrong head", (json.dumps(forged_head, sort_keys=True, indent=2) + "\n").encode()),
                                ("same-count wrong input", (json.dumps(forged_rows, sort_keys=True, indent=2) + "\n").encode())):
                 candidate.write_bytes(raw)

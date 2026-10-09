@@ -107,23 +107,98 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
-    def test_package_integrity_exact_inverse_and_forward(self):
-        helper = binding.load_package_integrity(self.captured["package_bytes"], self.package)
-        patch_bytes = self.captured["package_bytes"]["package-integrity-transition.patch"]
+    def test_cache_preservation_exact_inverse_and_forward(self):
+        helper = binding.load_cache_preservation(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["cache-preservation-transition.patch"]
         restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
         self.assertEqual(touched, ["src/runtime/packages.rs"])
-        self.assertEqual(restored, self.captured["lexical_provider_inputs"])
-        binding.check_bytes(restored, self.captured["lexical_provider_source"]["files"])
+        self.assertEqual(restored, self.captured["package_integrity_inputs"])
+        binding.check_bytes(restored, self.captured["package_integrity_source"]["files"])
         changed = [name for name in restored if restored[name] != self.captured["inputs"][name]]
         self.assertEqual(changed, ["src/runtime/packages.rs"])
         self.assertEqual(set(restored), set(self.captured["inputs"]))
         forward = self.root / "forward-package"
         binding.materialize(forward, restored)
         for extra in (["--check"], []):
-            result = subprocess.run(["git", "apply", *extra, str(self.package / "package-integrity-transition.patch")],
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-preservation-transition.patch")],
                                     cwd=forward, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
         binding.check_entries(forward, self.captured["current"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, patch_bytes, binding)
+
+    def test_cache_preservation_preserves_exact_predecessor_authorities(self):
+        expected = {
+            "package-integrity-source.json": "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f",
+            "package-integrity-authority.json": "f5a44432927c0e84d58226fcb988860098b2c44d9fe01e4874a771632f89f724",
+            "package-integrity-transition.patch": "79c53c652528fe770939ba42dd7a478a309b04555e398d33298bc96644316a49",
+            "package_integrity.py": "263e898f966fbc1cb007dfab86a0b16504a2a65d11c4edcdb3cbbbcba34af857",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b")
+        self.assertEqual(self.captured["current"]["source_only_tree"], "cf4dbd4fb02a219795b366b6be76d53e8e77ee20")
+        self.assertNotIn("cache_preservation_helper", self.captured)
+        output = self.root / "package-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["cache_preservation_inverse_touched"], ["src/runtime/packages.rs"])
+        self.assertEqual(receipt["package_integrity_source_sha256"], expected["package-integrity-source.json"])
+
+    def test_cache_preservation_coherent_metadata_tampering_rejects_before_history(self):
+        for name, error in (
+            ("package-integrity-source.json", "unapproved package integrity predecessor source manifest"),
+            ("cache-preservation-authority.json", "stale cache preservation authority"),
+            ("cache-preservation-transition.patch", "wrong transition patch"),
+            ("cache_preservation.py", "unapproved cache preservation source helper"),
+        ):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_package_integrity", side_effect=AssertionError("historical layer ran")):
+                self.rejects(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_cache_preservation_reconstructed_package_bytes_checked_before_history(self):
+        helper = binding.load_cache_preservation(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["package_integrity_inputs"])
+        damaged["src/runtime/packages.rs"] += b"\n"
+        with patch.object(binding, "load_cache_preservation", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, ["src/runtime/packages.rs"])), \
+             patch.object(binding, "load_package_integrity", side_effect=AssertionError("historical layer ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_cache_preservation_changed_runtime_rejects_before_history(self):
+        path = self.repo / "src/runtime/packages.rs"
+        original = path.read_bytes()
+        for body in (None, original + b"\n"):
+            if body is None:
+                path.unlink()
+            else:
+                path.write_bytes(body)
+            with self.subTest(missing=body is None), patch.object(binding, "load_package_integrity", side_effect=AssertionError("historical layer ran")):
+                self.rejects("missing regular input" if body is None else "changed input")
+            path.write_bytes(original)
+
+    def test_package_integrity_exact_inverse_and_forward(self):
+        helper = binding.load_package_integrity(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["package-integrity-transition.patch"]
+        restored, touched = helper.inverse(self.captured["package_integrity_inputs"], patch_bytes, binding)
+        self.assertEqual(touched, ["src/runtime/packages.rs"])
+        self.assertEqual(restored, self.captured["lexical_provider_inputs"])
+        binding.check_bytes(restored, self.captured["lexical_provider_source"]["files"])
+        changed = [name for name in restored if restored[name] != self.captured["package_integrity_inputs"][name]]
+        self.assertEqual(changed, ["src/runtime/packages.rs"])
+        self.assertEqual(set(restored), set(self.captured["package_integrity_inputs"]))
+        forward = self.root / "forward-package"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "package-integrity-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["package_integrity_source"]["files"], exact=True)
         with self.assertRaises(binding.BindingError):
             helper.inverse(restored, patch_bytes, binding)
 
@@ -136,8 +211,8 @@ class SourceBindingTests(unittest.TestCase):
         }
         for name, digest in expected.items():
             self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], "3315ad42a98cbd033f88fbec676793dec5e0be4a")
-        self.assertEqual(self.captured["current"]["source_only_tree"], "243e6e55d179a362569ab353aa207eaa95e5ba1b")
+        self.assertEqual(self.captured["package_integrity_source"]["reviewed_source_head"], "3315ad42a98cbd033f88fbec676793dec5e0be4a")
+        self.assertEqual(self.captured["package_integrity_source"]["source_only_tree"], "243e6e55d179a362569ab353aa207eaa95e5ba1b")
         self.assertNotIn("package_integrity_helper", self.captured)
         output = self.root / "package-archive"
         output.mkdir()
