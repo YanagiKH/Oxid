@@ -74,4 +74,139 @@ mod tests {
         assert_eq!(historical_remaining - current_remaining, successor);
         println!("RFC0031 fixed endpoint inherited_total={inherited} current_total={} addition={successor} historical_remaining={historical_remaining} current_remaining={current_remaining} unchanged_cap={MAX_HIR_BYTES}", plan.total);
     }
+    #[test]
+    fn byte_storage_hir_work_is_independently_counted_before_allocation() {
+        use super::super::{count_function, HirCounts};
+        use crate::frontend::{
+            declaration_index::WorkMeter, lexer, parser, project::budget::Allocator,
+        };
+        for length in [0usize, 1, 1024] {
+            let elements = (0..length).map(|_| "b").collect::<Vec<_>>().join(",");
+            let text =
+                format!("fn f(b:u8)->i32{{let a:[u8;{length}]=[{elements}];return a.len();}}");
+            let mut sources = SourceMap::new();
+            let id = sources.add("byte-hir-work.ox".into(), text);
+            let file = sources.get(id);
+            let (ast, _) = parser::parse_typed_counted(
+                file,
+                lexer::lex(file).unwrap(),
+                parser::SourceMode::OwnedCandidate,
+                parser::MAX_NODES,
+                &mut Allocator::default(),
+                &mut parser::SyntaxStorage::default(),
+            )
+            .unwrap();
+            // count_function visits parameter1, body1, statements2;
+            // count_expression visits array1 + namesN + length1 and separately
+            // debits the N literal edges. Stack cursors are fixed arrays; this
+            // count-only traversal contains no reserve or heap construction.
+            let demand = 1 + 1 + 2 + (length + 2) + length;
+            for limit in [demand - 1, demand] {
+                let work = WorkMeter::new(limit as u64);
+                let mut counts = HirCounts::default();
+                let result = count_function(&ast, &ast.functions[0], &work, &mut counts);
+                if limit == demand {
+                    result.unwrap();
+                    assert_eq!(work.used(), demand as u64);
+                    assert_eq!(
+                        (
+                            counts.parameters,
+                            counts.blocks,
+                            counts.statements,
+                            counts.expressions,
+                            counts.array_literals,
+                            counts.array_entries
+                        ),
+                        (1, 1, 2, length + 2, 1, length)
+                    );
+                } else {
+                    let error = result.unwrap_err();
+                    assert_eq!(error.message, "declaration index work limit exceeded");
+                    // The last visited node is the return's ArrayLength. All
+                    // earlier debits fit exactly, so the failure is local and
+                    // occurs before any affected HIR allocation.
+                    let start = file.text().find("a.len()").unwrap();
+                    assert_eq!(
+                        error.primary,
+                        Some(file.span(start, start + "a.len()".len()))
+                    );
+                    assert_eq!(work.used(), limit as u64);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn byte_storage_raw_count_fill_demand_and_allocation_sites_are_independent() {
+        use crate::frontend::oir::owned::{
+            source::{budget, byte_storage_tests, lower},
+            *,
+        };
+        use std::mem::size_of;
+        for length in [0usize, 1, 1024] {
+            let elements = (0..length).map(|_| "b").collect::<Vec<_>>().join(",");
+            let text =
+                format!("fn f(b:u8)->i32{{let a:[u8;{length}]=[{elements}];return a.len();}}");
+            byte_storage_tests::with_raw(&text, |sources, typed, _| {
+                // Independently follow lower.rs templates: one parameter local,
+                // N name snapshots and len local; two owners (temporary/local);
+                // N copies + live/construct/live/move/end/len/cleanup = N+7.
+                let expected = size_of::<RawOwnedProgram>()
+                    + size_of::<RawOwnedFunction>()
+                    + size_of::<ParameterBinding>()
+                    + (length + 2) * size_of::<LocalDecl>()
+                    + 2 * size_of::<OwnerDecl>()
+                    + size_of::<OwnedBlock>()
+                    + (length + 7) * size_of::<OwnedStatement>()
+                    + length * size_of::<Operand>();
+                let exact = budget::Limits {
+                    raw_bytes: expected,
+                };
+                let usage =
+                    budget::fail_allocation_after(0, || budget::preflight(typed, exact)).unwrap();
+                assert_eq!(usage.raw_bytes, expected);
+                let short = budget::fail_allocation_after(0, || {
+                    lower::lower_with_limits(
+                        typed,
+                        budget::Limits {
+                            raw_bytes: expected - 1,
+                        },
+                    )
+                })
+                .unwrap_err();
+                assert_eq!(short.kind, OwnedFailureKind::Resource("source raw payload"));
+                // Two top-level vectors; twelve per-function output/map vectors
+                // (including counted blocks); one statement vector; one literal
+                // operand vector, even when empty. These are exactly the sites
+                // lower.rs reserves for this no-record/no-call shape.
+                const SITES: usize = 2 + 12 + 1 + 1;
+                for fail in 0..SITES {
+                    let error = budget::fail_allocation_after(fail, || {
+                        lower::lower_with_limits(typed, exact)
+                    })
+                    .unwrap_err();
+                    assert_eq!(
+                        error.kind,
+                        OwnedFailureKind::Resource("injected source allocation failure"),
+                        "length={length}, fail={fail}"
+                    );
+                }
+                let raw =
+                    budget::fail_allocation_after(SITES, || lower::lower_with_limits(typed, exact))
+                        .unwrap();
+                let f = &raw.functions[0];
+                assert_eq!(
+                    (
+                        f.parameters.len(),
+                        f.locals.len(),
+                        f.owners.len(),
+                        f.blocks.len(),
+                        f.blocks[0].statements.len()
+                    ),
+                    (1, length + 2, 2, 1, length + 7)
+                );
+                verified::verify_owned(raw, sources).unwrap();
+            });
+        }
+    }
 }

@@ -89,3 +89,6 @@ mod byte_storage_trust_tests;
 
 #[cfg(test)]
 mod byte_storage_fuel_tests;
+
+#[cfg(test)]
+mod byte_storage_authority_tests;

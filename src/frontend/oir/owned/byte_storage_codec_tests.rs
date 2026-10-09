@@ -231,15 +231,32 @@ fn byte_storage_resource_width_and_payload_are_exact_before_frame_allocation() {
                     )))
                 );
             }
-            let allocations =
-                plan::fail_allocation_after(0, || execute_plan(&p, entry, limits, None));
-            assert!(matches!(
-                allocations,
-                Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
-                    name: "injected owned allocation failure",
-                    ..
-                }))
-            ));
+            // Independent allocation topology: one frame-header reserve plus
+            // Frame::allocate's seven filled arrays (slots, snapshots, payload,
+            // owners, references, loans, calls). reserve invokes its test point
+            // even for an empty vector. No instruction in this single-frame
+            // literal/length fixture allocates after activation.
+            const ALLOCATION_SITES: usize = 1 + 7;
+            for fail in 0..ALLOCATION_SITES {
+                let allocation =
+                    plan::fail_allocation_after(fail, || execute_plan(&p, entry, limits, None));
+                assert!(
+                    matches!(
+                        allocation,
+                        Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
+                            name: "injected owned allocation failure",
+                            ..
+                        }))
+                    ),
+                    "length={length}, allocation={fail}: {allocation:?}"
+                );
+            }
+            assert_eq!(
+                plan::fail_allocation_after(ALLOCATION_SITES, || {
+                    execute_plan(&p, entry, limits, None)
+                }),
+                Ok(Scalar::I32(length as i32))
+            );
         });
     }
 }
@@ -398,6 +415,170 @@ fn byte_storage_dynamic_reborrows_preserve_root_view_and_parent_permissions() {
                     span
                 )
                 .is_ok());
+        });
+    }
+}
+
+#[test]
+fn byte_storage_reference_frame_ceiling_is_exact_for_byte_slice_reborrows() {
+    // main occupies one frame. down(1022) through down(0) occupies 1023 more;
+    // tail-call elimination is not part of the reference contract. Every call
+    // explicitly reborrows the complete byte owner, including its empty case.
+    for length in [0usize, 1, 1024] {
+        let prefix = if length == 0 {
+            ""
+        } else {
+            "let x=128;let b=x.to_u8_checked();"
+        };
+        let elements = (0..length).map(|_| "b").collect::<Vec<_>>().join(",");
+        let text = format!("fn down(a:&[u8],n:i32)->i32{{if n==0{{return a.len();}}return down(&*a,n-1);}}fn main()->i32{{{prefix}let a:[u8;{length}]=[{elements}];return down(&a,1022);}}");
+        source::byte_storage_tests::with_raw(&text, |_, typed, raw| {
+            let witness =
+                verified::verify_associated(source::association::associate(raw, typed).unwrap())
+                    .unwrap();
+            let entry = typed.entry().unwrap();
+            let p = ExecutionPlan::build(&witness).unwrap();
+            let exact = Limits {
+                frames: 1024,
+                ..Default::default()
+            };
+            assert_eq!(
+                execute_plan(&p, entry, exact, None),
+                Ok(Scalar::I32(length as i32))
+            );
+            let short = Limits {
+                frames: 1023,
+                ..exact
+            };
+            assert!(matches!(
+                execute_plan(&p, entry, short, None),
+                Err(OwnedRunFailure::Scalar(RunFailure::Frames(_)))
+            ));
+            // Same fixed seven arrays for each activation, plus one header
+            // reserve. Exercise the final activation site and the exact full
+            // topology count; the small-frame control sweeps each distinct site.
+            const SITES: usize = 1 + 7 * 1024;
+            assert!(matches!(
+                plan::fail_allocation_after(SITES - 1, || execute_plan(&p, entry, exact, None)),
+                Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
+                    name: "injected owned allocation failure",
+                    ..
+                }))
+            ));
+            assert_eq!(
+                plan::fail_allocation_after(SITES, || execute_plan(&p, entry, exact, None)),
+                Ok(Scalar::I32(length as i32))
+            );
+        });
+    }
+}
+
+#[test]
+fn byte_storage_maximum_owned_and_borrowed_arguments_use_full_scratch() {
+    for borrowed in [false, true] {
+        let params = (0..256)
+            .map(|i| format!("p{i}:{}", if borrowed { "&[u8]" } else { "[u8;0]" }))
+            .collect::<Vec<_>>()
+            .join(",");
+        let (bindings, args) = if borrowed {
+            (
+                "let a:[u8;0]=[];".into(),
+                (0..256).map(|_| "&a").collect::<Vec<_>>().join(","),
+            )
+        } else {
+            (
+                (0..256)
+                    .map(|i| format!("let a{i}:[u8;0]=[];"))
+                    .collect::<String>(),
+                (0..256)
+                    .map(|i| format!("a{i}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
+        };
+        let text = format!("fn many({params})->i32{{return p255.len();}}fn main()->i32{{{bindings}return many({args});}}");
+        source::byte_storage_tests::with_raw(&text, |_, typed, raw| {
+            let witness =
+                verified::verify_associated(source::association::associate(raw, typed).unwrap())
+                    .unwrap();
+            let entry = typed.entry().unwrap();
+            let p = ExecutionPlan::build(&witness).unwrap();
+            // Arguments occupy scalar-width staging positions even when the
+            // value itself is an owner/view. Byte payload size cannot discount
+            // the full 256-position transport scratch.
+            assert_eq!(p.function(entry).usage().arguments, 256);
+            // Source census: main has one call-result scalar and 256 staging
+            // slots. Shared-borrow form has two owners and256 loans; owned form
+            // has four owners per argument (literal,local,name-move,staged).
+            // many has one len scalar and256 references or parameter owners.
+            let (root_owners, child_owners, loans, references) = if borrowed {
+                (2usize, 0usize, 256usize, 256usize)
+            } else {
+                (4 * 256, 256, 0, 0)
+            };
+            let root_cells = 1 + 256 + 5 * root_owners + 14 * loans + 2;
+            let child_cells = 1 + 5 * child_owners + 10 * references;
+            let root_bytes = 257 * size_of::<Option<Scalar>>()
+                + root_owners
+                + root_owners * size_of::<OwnerRuntime>()
+                + loans * size_of::<LoanRuntime>()
+                + size_of::<CallRuntime>();
+            let child_bytes = size_of::<Option<Scalar>>()
+                + child_owners
+                + child_owners * size_of::<OwnerRuntime>()
+                + references * size_of::<ReferenceHandle>();
+            assert_eq!(p.function(entry).usage().expanded_cells, root_cells);
+            assert_eq!(p.function(entry).usage().reference_bytes, root_bytes);
+            let limits = Limits {
+                frames: 2,
+                cells: root_cells + child_cells,
+                bytes: 2 * size_of::<Frame>() + size_of::<Scalar>() + root_bytes + child_bytes,
+                ..Default::default()
+            };
+            for (short, name) in [
+                (
+                    Limits {
+                        cells: limits.cells - 1,
+                        ..limits
+                    },
+                    "live expanded cells",
+                ),
+                (
+                    Limits {
+                        bytes: limits.bytes - 1,
+                        ..limits
+                    },
+                    "live requested bytes",
+                ),
+            ] {
+                // Root uses8 allocation points; child admission must refuse
+                // before its first vector allocation at point8.
+                let error = plan::fail_allocation_after(8, || execute_plan(&p, entry, short, None));
+                assert!(
+                    matches!(error, Err(OwnedRunFailure::Resource(plan::AdmissionFailure { name: actual, .. })) if actual == name),
+                    "{error:?}"
+                );
+            }
+            // main plus one callee: one header + two seven-vector frames.
+            const SITES: usize = 1 + 2 * 7;
+            for fail in 0..SITES {
+                let result =
+                    plan::fail_allocation_after(fail, || execute_plan(&p, entry, limits, None));
+                assert!(
+                    matches!(
+                        result,
+                        Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
+                            name: "injected owned allocation failure",
+                            ..
+                        }))
+                    ),
+                    "borrowed={borrowed}, site={fail}: {result:?}"
+                );
+            }
+            assert_eq!(
+                plan::fail_allocation_after(SITES, || execute_plan(&p, entry, limits, None)),
+                Ok(Scalar::I32(0))
+            );
         });
     }
 }

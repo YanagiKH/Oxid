@@ -1215,7 +1215,7 @@ class ComparisonSealControls(unittest.TestCase):
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
         # Added compiler bodies are retained in both observer/control archive trees.
-        self.assertEqual(report['full_archive_only'], 1060 + 2 * 12)
+        self.assertEqual(report['full_archive_only'], 1060 + 2 * 13)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):

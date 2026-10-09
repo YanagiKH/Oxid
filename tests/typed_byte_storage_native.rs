@@ -286,3 +286,65 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
         }
     }
 }
+
+#[test]
+fn byte_storage_public_record_reference_projection_stops_at_declaration() {
+    // The sealed direct/unused-record oracle fixes E0202 at the full field type.
+    // A whole-record reference and unused projection cannot get past that gate.
+    for n in [0, 1, 1024] {
+        let ty = format!("[u8;{n}]");
+        let source = format!(
+            "struct R{{a:{ty}}}fn f(r:&R)->i32{{return r.a.len();}}fn main()->i32{{return 0;}}"
+        );
+        let case = Case::new(&source);
+        let start = source.find(&ty).unwrap();
+        let end = start + ty.len();
+        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0202\",\"stage\":\"resolve\",\"message\":\"u8 array record fields are not supported\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+        for output in ["existing", "fresh"] {
+            let text = diagnostic(case.compile(output, &[]), "E0202", "resolve");
+            assert_eq!(text.lines().count(), 2);
+            assert_eq!(text.lines().next(), Some(expected.as_str()));
+            assert!(!text.contains("E0701"));
+            case.unchanged();
+        }
+    }
+}
+
+#[test]
+fn byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser() {
+    // enum_payload_type is byte-identical to b5455ad: '[' is refused before
+    // reading any leaf/length. DFS retains root0, outer1, inner2; no name is used.
+    let root = "mod outer;fn main()->i32{return 0;}";
+    let outer = "mod inner;";
+    for n in [0, 1, 1024] {
+        let inner = format!("enum E{{V([u8;{n}])}}");
+        let case = Case::new(root);
+        fs::write(case.0.join("outer.ox"), outer).unwrap();
+        fs::create_dir(case.0.join("outer")).unwrap();
+        fs::write(case.0.join("outer/inner.ox"), &inner).unwrap();
+        let start = inner.find('[').unwrap();
+        let end = start + 1;
+        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0100\",\"stage\":\"parse\",\"message\":\"only bool, i32 and () enum payloads are supported\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+        for output in ["existing", "fresh"] {
+            let text = diagnostic(case.compile(output, &[]), "E0100", "parse");
+            assert_eq!(text.lines().count(), 2);
+            assert_eq!(text.lines().next(), Some(expected.as_str()));
+            assert!(!text.contains("E0701"));
+            assert_eq!(fs::read(case.0.join("existing")).unwrap(), SENTINEL);
+            for (path, expected) in [
+                ("main.ox", root),
+                ("outer.ox", outer),
+                ("outer/inner.ox", &inner),
+            ] {
+                assert_eq!(fs::read_to_string(case.0.join(path)).unwrap(), expected);
+            }
+            let mut paths = fs::read_dir(&case.0)
+                .unwrap()
+                .map(|p| p.unwrap().file_name())
+                .collect::<Vec<_>>();
+            paths.sort();
+            assert_eq!(paths, ["existing", "main.ox", "outer", "outer.ox"]);
+            assert_eq!(fs::read_dir(case.0.join("outer")).unwrap().count(), 1);
+        }
+    }
+}

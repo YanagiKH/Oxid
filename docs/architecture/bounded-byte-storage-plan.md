@@ -83,7 +83,7 @@ Workers use isolated worktrees from the approved contract checkpoint and return
 commits without push. Use one coordinated target directory, serial build leases,
 bytecode-disabled Python, Rust1.99/LLVM19.1.7 toolchain environment. No duplicate
 large targets; do not remove source/evidence/executables. Integrate all changes
-before final full checks. No worker reads paused private parser research/review.
+before final full checks.
 
 ## Resource measurement and admission inventory
 
@@ -146,3 +146,37 @@ and measures existing relocated caller/result/error roles. There is no duplicate
 lowering or new provenance table. Compile-time privacy tests must prove callers
 cannot provide arbitrary raw + typed as a production source witness. This does
 not expand the accepted language/provider domain or waive raw verifier controls.
+
+## Separate follow-up: fallible ordinary lexer token allocation
+
+Status: deferred hardening, not implemented or qualified by RFC0031. Parent
+explicitly approved carrying the unchanged lexer limitation on 2026-10-09.
+Ordinary token-tape `Vec::push` remains infallible and uninjected; its allocator
+failure recovery is UNPROVED. The independent stronger corpus obligations stay
+unchanged and cannot be reported as whole-row empirical passes.
+
+A separate proposal must inventory token capacity growth, temporary/caller/error
+roles and allocator sites; design fallible reservation and failure diagnostics
+without changing existing source/token error precedence unintentionally; price
+all requested payload and retained capacity under reviewed caps; and execute
+independently derived exact/one-short plus every-site allocator-failure controls.
+It must cover ordinary and provider routes separately and replay lexer/parser,
+formatter, module loader and public diagnostics. No implementation or altered
+error semantics is authorized by this follow-up entry.
+
+## Separate follow-up: native graph and call-scratch fallible preflight
+
+Status: deferred hardening, not implemented by RFC0031. The separately approved
+native limitation covers only the seven graph-vector families and call-emitter
+Vec/String/format/join temporaries enumerated in the RFC. Their recovery and
+per-site injected-failure guarantees remain UNPROVED.
+
+Design fallible demand/reservation before graph construction, including early
+adjacency growth presently bounded by raw 300,000 blocks before the native
+4,096-block check. Separately inventory and preflight actual call-string/header
+capacities rather than treating post-allocation metrics or logical byte bounds
+as prepayment. Review error precedence, caller/temporary/error roles and caps;
+add exact/one-short and each-site controls, plus guarded and acyclic call-graph
+regression coverage. This entry does not authorize that production redesign or
+claim it is complete. Keep independently derived guarded text demand distinct
+from the existing template-invariance and actual count/render evidence.

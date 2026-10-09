@@ -23,6 +23,8 @@ STREAMING_FILES = tuple("fixtures/typed-streaming-lexer/" + name + ".ox"
 
 DATA = Path("tests/fixtures/fixed_array_source_unit3")
 U8_DATA = Path("tests/qualification/bounded_u8_current")
+BYTE_DATA = Path("tests/qualification/byte_storage_current")
+BYTE_PILOT = "fixtures/typed-byte-storage/main.ox"
 U8_MANIFEST = U8_DATA / "source-data-manifest.json"
 U8_SOURCES = tuple((U8_DATA / "oracle" / name).as_posix() for name in (
     *(f"pairs-{route}-{batch:02}.ox" for route in ("owned", "scalar") for batch in range(32)),
@@ -162,10 +164,25 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertTrue(all(path.is_file() for path in registered | u8_registered))
         sources = discover(root)
         checks, typed_entries, typed_members = verify_repo.source_plan(sources, root)
-        language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources]
+        byte_data = verify_repo.byte_storage_fixture_data_sources(root)
+        self.assertEqual(len(byte_data), 325)
+        self.assertFalse(data_sources & byte_data)
+        self.assertEqual(verify_repo.fixture_data_sources(root), data_sources | byte_data)
+        self.assertEqual(len(data_sources | byte_data), 188 + 325)
+        language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources | byte_data]
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Explicit RFC0031 runnable successor; preserve every predecessor equation.
+        self.assertEqual([name for name in language if name == BYTE_PILOT], [BYTE_PILOT])
+        self.assertEqual([row for row in check_inventory if row[0] == BYTE_PILOT], [(BYTE_PILOT, True)])
+        self.assertEqual([row for row in run_inventory if row[0] == BYTE_PILOT], [(BYTE_PILOT, True)])
+        self.assertFalse(any(path.relative_to(root).as_posix() in language for path in byte_data))
+        language = [name for name in language if name != BYTE_PILOT]
+        check_inventory = [row for row in check_inventory if row[0] != BYTE_PILOT]
+        run_inventory = [row for row in run_inventory if row[0] != BYTE_PILOT]
+        typed_members -= 1
+        typed_entries = [path for path in typed_entries if path != root / BYTE_PILOT]
         # The genuine streaming lexer is five new language files and one
         # check-only root. Subtract only this exact successor before replaying
         # every historical inventory and fingerprint below.
@@ -325,6 +342,11 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
         commands = [call.args[0] for call in run.call_args_list]
+        byte_pilot = str(verify_repo.ROOT / BYTE_PILOT)
+        self.assertEqual([command[1] for command in commands if byte_pilot in command], ["check", "run"])
+        self.assertFalse(any(str(path) in command for path in verify_repo.byte_storage_fixture_data_sources(verify_repo.ROOT)
+                             for command in commands))
+        commands = [command for command in commands if byte_pilot not in command]
         overlay_commands = [command for command in commands if len(command) > 2
                             and Path(command[2]).parent.name == "typed-frontend-v2"]
         self.assertEqual(len(overlay_commands), 2)
@@ -363,16 +385,16 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for name in U8_SOURCES for command in commands))
         for relative in PARSER_ADDED_FILES[1:] + tuple(name for name in STATIC_ADDED_FILES if name not in STATIC_ROOTS):
             self.assertFalse(any(str(verify_repo.ROOT / relative) in command for command in commands))
-        self.assertIn("fixture-data validation passed: 188 source-only files", output.getvalue())
+        self.assertIn("fixture-data validation passed: 513 source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
-        self.assertIn(f"{146 + len(additional_members) + len(V2_OVERLAY_FILES)} language sources, "
-                      f"{131 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS)} checks, "
-                      "75 runnable programs", output.getvalue())
+        self.assertIn(f"{146 + 1 + len(additional_members) + len(V2_OVERLAY_FILES)} language sources, "
+                      f"{131 + 1 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS)} checks, "
+                      "76 runnable programs", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + len(additional_members)} typed source members / "
-                      "8 typed entry runs", output.getvalue())
+                      f"{25 + 1 + len(additional_members)} typed source members / "
+                      "9 typed entry runs", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
                       output.getvalue())
 
@@ -453,6 +475,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         self.root = Path(temporary.name)
         shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
         copy_u8_data(self.root)
+        shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
         self.manifest = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[0][0]
         self.document = json.loads(self.manifest.read_bytes())
         self.source = next(self.manifest.parent / name for name in self.document["files"] if name.endswith(".ox"))
@@ -479,6 +502,12 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        byte_pilot = self.root / BYTE_PILOT
+        self.assertEqual([row for row in checks if row[0] == byte_pilot], [(byte_pilot, True)])
+        self.assertEqual([path for path in entries if path == byte_pilot], [byte_pilot])
+        checks = [row for row in checks if row[0] != byte_pilot]
+        entries = [path for path in entries if path != byte_pilot]
+        count -= 1
         streaming = {self.root / name for name in STREAMING_FILES}
         self.assertEqual([row for row in checks if row[0] in streaming], [(self.root / STREAMING_ROOT, True)])
         self.assertFalse(any(entry in streaming for entry in entries))
@@ -764,6 +793,7 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         self.root = Path(temporary.name)
         shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
         copy_u8_data(self.root)
+        shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
         members = set(verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES)
         members.update(name for project in verify_repo.TYPED_PROJECTS.values() for name in project)
         members.update(V2_OVERLAY_FILES)
@@ -838,7 +868,9 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
         self.assertIn((extra, False), checks)
         self.assertNotIn(extra, entries)
-        self.assertEqual(count, 79)
+        self.assertIn((self.root / BYTE_PILOT, True), checks)
+        self.assertIn(self.root / BYTE_PILOT, entries)
+        self.assertEqual(count - 1, 79)  # Explicit RFC0031 pilot subtraction.
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in V2_OVERLAY_FILES))
 
     def test_overlay_cannot_also_be_a_standalone_typed_source_or_legacy_run(self):

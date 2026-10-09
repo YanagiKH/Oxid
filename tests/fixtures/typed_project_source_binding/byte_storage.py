@@ -7,14 +7,14 @@ import hashlib
 import json
 
 # SOURCE_CONSTANTS: replaced only from the final reviewed compiler checkpoint.
-SOURCE_SHA = 'd5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb'
-SOURCE_BYTES = 73995
-AUTHORITY_SHA = '93926b77547db43b60636489624b7118960d4fcbbe390994b00003e683c5fcdd'
-AUTHORITY_BYTES = 181128
-PATCH_SHA = '346abef29dc38b37b7242e77276b0d7d7e2306f25fe14eb1fa5d3e394249914a'
-PATCH_BYTES = 216329
-SOURCE_HEAD = 'cd5c0e47cd0d40179b916758068ddb320a52a6fb'
-SOURCE_TREE = 'd29049905ca3a8b9401d40650eeb7d63b841d87c'
+SOURCE_SHA = '9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8'
+SOURCE_BYTES = 74192
+AUTHORITY_SHA = '72b59997311d9198a0357376a938b9332fd7ef6808ec3c9949a5f2ffaf7c4518'
+AUTHORITY_BYTES = 182657
+PATCH_SHA = '8ed7bf4876066a9cce422ff53e995c4a8c6d0fc7a3a81baedaa5de32c047bcd9'
+PATCH_BYTES = 274861
+SOURCE_HEAD = 'b3371e6a383b526d25409f2d4b308b4993739466'
+SOURCE_TREE = 'c168a3d6d6c3e3ba3d6b71b981319cbed9497525'
 BASE_HEAD = 'd204fbc684b81c6e0deac04007182ebe2bb67b00'
 BASE_TREE = '8c00492b24d56b842858b72da9b4442f057ab4de'
 PREDECESSOR_SHA = '20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4'
@@ -30,6 +30,7 @@ PATHS = ('src/frontend/ast.rs',
  'src/frontend/oir/owned/native.rs',
  'src/frontend/oir/owned/source/association.rs',
  'src/frontend/oir/owned/source/byte_storage_association_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_native_fixture.rs',
  'src/frontend/oir/owned/source/byte_storage_raw_tests.rs',
@@ -47,6 +48,7 @@ PATHS = ('src/frontend/ast.rs',
  'src/frontend/oir/owned_types.rs',
  'src/frontend/oir/owned_types/byte_storage_tests.rs',
  'src/frontend/oir/owned_types/u8_tests.rs',
+ 'src/frontend/oir/u8_association_tests.rs',
  'src/frontend/parser/array_syntax_tests.rs',
  'src/frontend/parser/arrays.rs',
  'src/frontend/parser/u8_syntax_tests.rs')
@@ -54,6 +56,7 @@ ADDITIONS = ('src/frontend/oir/owned/byte_storage_codec_tests.rs',
  'src/frontend/oir/owned/byte_storage_native_tests.rs',
  'src/frontend/oir/owned/byte_storage_reference_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_association_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_native_fixture.rs',
  'src/frontend/oir/owned/source/byte_storage_raw_tests.rs',
@@ -64,8 +67,8 @@ ADDITIONS = ('src/frontend/oir/owned/byte_storage_codec_tests.rs',
  'src/frontend/oir/owned_types/byte_storage_tests.rs')
 FIXTURE_ADDITIONS = ()
 INCLUDE_ADDITIONS = ()
-CURRENT_MEMBERS = 375
-COMPILER_MEMBERS = 287
+CURRENT_MEMBERS = 376
+COMPILER_MEMBERS = 288
 FIXTURE_MEMBERS = 78
 INCLUDE_MEMBERS = 136
 # END_SOURCE_CONSTANTS

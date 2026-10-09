@@ -123,3 +123,126 @@ including Unit2/Unit4 and archived observer staging closures. The actual system
 dpkg LLVM stager is unavailable in the local environment; genuine hosted staging
 and all applicable exact-head CI jobs are mandatory. No local shim, old CI result,
 or successful compilation substitutes for those gates.
+## Historical test-only checkpoint and local qualification
+
+The earlier, now superseded compiler-input checkpoint is
+`cd5c0e47cd0d40179b916758068ddb320a52a6fb`, with source-only tree
+`d29049905ca3a8b9401d40650eeb7d63b841d87c`. The reversible current-source
+manifest SHA-256 is
+`d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb`.
+It closes 375 inputs, including 287 src/native files, and preserves the original
+membership/inverse authorities. The source-qualification integration at a3f1244
+has the same compiler inputs. All 694 admission controls passed.
+
+At that historical checkpoint, the ordinary all-target/all-feature Rust run passed 2,197 tests across
+31 suites, with 73 ignored; fmt and clippy with warnings denied passed. The
+release byte filter passed 63 tests, with four native gates separately executed.
+Those four gates passed 93 source-free ELF cases in each ordinary profile.
+The final eight public integration tests also passed through Cargo. The later
+public-test receipt is separate from the earlier main-unit source receipt.
+
+Independent resource review passed the final source: 11 focused controls,
+28 HIR budget controls, 22 inherited native-resource controls and eight trust
+controls. The measured 28-byte source successor and exact admission endpoints
+above are unchanged. Production authority files and privacy-probe source are
+byte-identical to the previously executed five compile-time privacy controls.
+
+Independent semantic review found no production defect. The source/raw local
+move and replacement schedules, including N=1024, and 18 borrow schedules cover
+every integer fuel budget. Owned by-value calls and results cover every budget
+at N=0/1; N=1024 checks 1,070 source and 22 raw exact/one-short debit boundaries,
+not every integer budget. Exact malformed IDs/owner roles and a real prepared
+owner escaping on a reachable branch are rejected before sealing. Full frozen
+scalar-u8 reference/native compatibility was also executed in both scalar and
+owned source routes: 393,216 pair/operator keys and 256 round trips per route.
+
+Actual current Unit2 debug/release qualification passed 3,603 semantic cases per
+profile, plus its resource and observer controls. The public ordinary/observer
+builds passed the original 248 and predecessor 7,814 projections and all 284
+explicitly selected non-native lifecycle pairs. The other 34 native lifecycle
+pairs remain a hosted gate; this is not a full local public qualification claim.
+
+All four legacy observer builds and their parser/static projection tests passed.
+The direct typed lexer, parser and static reference/native proof controllers
+passed, including both ordinary parser/static profiles. Streaming component-use
+qualification passed 623 cases, 69 exact diagnostics, 82 module invocations and
+111 failure-control receipts per profile. Its separate exact hosted CI wrapper
+remains required.
+
+Portable parser qualification completed four real compiler builds, both
+ordinary passivity controls and both collection profiles. The current comparison
+passed all 638 observations with no issues. Historical unadapted/frozen failures
+remain retained under their original predicates; the reviewed current amendment
+is applied explicitly, without rewriting raw observations or old expectations.
+
+The separately registered RFC0031 checker passed actual 323 reference and
+256 native transport cases in each ordinary profile against the preserved public
+qualification CLIs. This rehearses its execution and exact comparison paths;
+it does not claim the full genuine-dpkg-staged controller has run locally.
+
+Resource approval is specifically incremental accounting, source authority and
+the executed boundaries above. It does not turn the independent oracle's 25
+compound resource obligations into complete coverage. Remaining distinctions
+include work versus byte endpoints, frame count one versus the frame ceiling,
+measured native text demand versus independently derived text demand, and
+fail-first allocation rejection versus every allocation site. Those broader
+claims remain explicitly partial; no production defect was inferred from the
+coverage gaps.
+
+### Explicit inherited lexer limitation
+
+Parent approved the RFC0031 B11 clarification recorded in the RFC after reviewing
+exact predecessor/current lexer identity and route evidence. The ordinary lexer
+already processed the same byte spellings before the later grammar decision;
+this increment changes none of its allocation topology. Its infallible token
+pushes have no recoverable allocation-failure proof. That subclaim remains
+UNPROVED, and the original compound oracle rows remain unchanged rather than
+being marked empirical passes. All new/changed byte allocation claims still
+require the full applicable controls. Separate lexer hardening is tracked in
+the implementation plan and has not been implemented.
+
+### Explicit inherited native limitations
+
+Parent separately approved the RFC's enumerated seven graph-vector families and
+call Vec/String/format/join temporaries as unchanged predecessor limitations.
+Their allocator recovery/per-site injection remains UNPROVED. Early adjacency
+allocation is bounded by the verified raw 300,000-block ceiling, not the later
+native 4,096-block check or post-allocation metadata metrics. Logical graph and
+call-text bounds are not capacity/RSS guarantees. Frozen independent N0/N1
+demands cover their acyclic fixtures; guarded template/topology inheritance and
+actual count/render controls remain separately labeled. The original stronger
+corpus is unchanged, and separate fallible-preflight hardening is recorded in
+the plan rather than marked completed.
+
+## Corrected complete test-source checkpoint
+
+The corrected compiler-input checkpoint is
+`b3371e6a383b526d25409f2d4b308b4993739466`, tree
+`c168a3d6d6c3e3ba3d6b71b981319cbed9497525`. Its current-source manifest is
+`9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8`,
+closing 376 inputs, including 288 src/native files. The adapter/CI integration
+`b8780569e81959a6200c13444cc5850d0ab2286e` has identical compiler inputs.
+Fresh ordinary builds, with recorded source and executable identities, passed
+2,210 Rust tests across 31 suites (73 ignored), all-target/all-feature clippy
+with warnings denied, and formatting checks. The release byte roster passed
+73 tests with four separately registered ignored native gates; all ten public
+integration tests passed. All 694 final source-adapter admission controls passed.
+The complete closed CI registry contains 77 unit tests, ten public tests,
+11 privacy probes and 93 ELF cases from the four ignored native gates.
+
+Targeted resource closure adds independently enumerated HIR/parser/query work,
+full frame-ceiling and allocation-topology controls, maximum argument scratch,
+raw count/fill reservation controls and independent acyclic N0/N1 native text,
+diagnostic and plan demands. Its scoped admission was reviewed with the two
+explicit inherited allocator-recovery limitations above. Authentication has no
+numeric WORK gate; its checked-count and bounded-traversal proof is separate.
+Guarded native topology/count-render evidence does not become an independently
+derived guarded text-demand claim. Original compound oracle obligations remain
+unchanged; these are explicit applicability dispositions, not 145 empirical
+whole-row passes.
+
+Fresh direct-source executions and the final per-profile native/oracle/provider
+replays are tracked separately. Genuine hosted staging, the full public native
+lifecycle gate and all applicable exact-PR-head CI remain required. Historical
+observations above are preserved under their actual source identities; they are
+not relabeled as executions of this corrected checkpoint.

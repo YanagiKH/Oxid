@@ -1237,6 +1237,7 @@
     "src/frontend/oir/owned/byte_storage_native_tests.rs",
     "src/frontend/oir/owned/byte_storage_reference_tests.rs",
     "src/frontend/oir/owned/source/byte_storage_association_tests.rs",
+    "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
     "src/frontend/oir/owned/source/byte_storage_fuel_tests.rs",
     "src/frontend/oir/owned/source/byte_storage_native_fixture.rs",
     "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
@@ -1246,8 +1247,8 @@
     "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
     "src/frontend/oir/owned_types/byte_storage_tests.rs"
   ],
-  "compiler_bodies": 290,
-  "compiler_source_members": 287,
+  "compiler_bodies": 291,
+  "compiler_source_members": 288,
   "current_input_identities": [
     {
       "bytes": 3026,
@@ -1908,18 +1909,18 @@
       "sha256": "2c7e5001e6985dcd1acc86a6d5543d864935919e08a5459cff76b8816c70d42e"
     },
     {
-      "bytes": 16298,
-      "git_blob": "f1d7ca0131f0ae57523b85bca62b3aa5f085c159",
+      "bytes": 24522,
+      "git_blob": "0d142a7f0af84550ce00b9fe02c3368743ca3589",
       "mode": "100644",
       "path": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
-      "sha256": "8689942e6a31f8f85e2a93d2dcff05142d57f607f9c19b707ed36e688af99aa9"
+      "sha256": "b2e43ea4b3d022d3fbf6c825d034c7786e525ac8b3d9664e2b42eeb78ad0f44a"
     },
     {
-      "bytes": 32464,
-      "git_blob": "a0f87b3b3a5a6d0111999f3227a753b6a3d59938",
+      "bytes": 58053,
+      "git_blob": "71ed6cdd2ab24988924014b42cf80a8c92909997",
       "mode": "100644",
       "path": "src/frontend/oir/owned/byte_storage_native_tests.rs",
-      "sha256": "ecf25c7a5d48f4e8559db35755f2b07a1c044c25d3349026890ebc0b4f15ea68"
+      "sha256": "0db294445eb319fe93462cb062ff6b2af5c449144e2b9a8469d4e622d66d2737"
     },
     {
       "bytes": 5685,
@@ -2342,6 +2343,13 @@
       "sha256": "87206c95a6b7f361b3092fe2936710adafe2411720cfa1517d7c6bc8d617e818"
     },
     {
+      "bytes": 9515,
+      "git_blob": "b98ea6137db546148bf97a40be3f39a570c5bbf2",
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
+      "sha256": "dfc8fbdfcd1b5d278de85b7e219f3d71cf2b249c6d1d607d3c4024da94c48658"
+    },
+    {
       "bytes": 29968,
       "git_blob": "5516e1d2858886c225126be580b14276b8648c61",
       "mode": "100644",
@@ -2363,11 +2371,11 @@
       "sha256": "8a4b233b5ce3e4cd3c56b92b846997dbe2f794f9763cb123ab78a0fc7ccc1657"
     },
     {
-      "bytes": 3741,
-      "git_blob": "e07cd5ed6937acd25a907062a66a52c5050e165d",
+      "bytes": 10158,
+      "git_blob": "55dad1301404fe14f557329488415d464384a7a2",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/byte_storage_resources.rs",
-      "sha256": "d141761603f435eedcc5bfcaaa8216e1b731f3833d03a4e564c24fa223e5516b"
+      "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
     },
     {
       "bytes": 17918,
@@ -2482,11 +2490,11 @@
       "sha256": "031b2d1e77edc63d4ab3db72eb77a6c1d3d1b2278a52092058fa79f7258e3649"
     },
     {
-      "bytes": 1719,
-      "git_blob": "f2859c6056d6ad8d88699c9d768cbf39f694813a",
+      "bytes": 1767,
+      "git_blob": "ab937ba8b1d4f223300f283c530f4df676f34741",
       "mode": "100644",
       "path": "src/frontend/oir/owned/source/mod.rs",
-      "sha256": "eaa828eae17ceb0de2e00f1d6106422f71b11f123aa77b9b33d44c1faa1ff3b5"
+      "sha256": "f977087603f7adaebc1ffd88230e8acee91844da1e6075a40eb4269862b4a90d"
     },
     {
       "bytes": 7238,
@@ -3028,11 +3036,11 @@
       "sha256": "6456e1cd19794092624780fcac05a3d5575668a6313e6602d419e18aabef08d9"
     },
     {
-      "bytes": 13390,
-      "git_blob": "ef074e89ce40c7193b7193ce4d2e64e543a4867c",
+      "bytes": 15112,
+      "git_blob": "04ab4ee6526401dd2fb0002b4eee41df3db2d84e",
       "mode": "100644",
       "path": "src/frontend/oir/u8_association_tests.rs",
-      "sha256": "5fe35dac510205010fba556d4ad980a20d8456faa7efe2870785cf8b6c2c5312"
+      "sha256": "9b54ae676a470127119fe5eea2058b2a7caf3528386aac65e56d0e7dc6b3c715"
     },
     {
       "bytes": 1353,
@@ -3112,11 +3120,11 @@
       "sha256": "ee4e2ee3fae43d34729c382a64839bc864eb5c357b0ce018eceafb920dfd2ede"
     },
     {
-      "bytes": 21563,
-      "git_blob": "84a57e55eac7a2b3d4edda883e9ae7e3500a7515",
+      "bytes": 26623,
+      "git_blob": "2d0b0e33b1a5d02381c590725ea9194830ccbe68",
       "mode": "100644",
       "path": "src/frontend/parser/array_syntax_tests.rs",
-      "sha256": "50d9854ef870d950ebc29a5438fc14b15b90c8e95db42aaab817237db5a92268"
+      "sha256": "0846b8969bf745f72a6c9fe760667bac500b98f41228c7c2be402eac042fe16c"
     },
     {
       "bytes": 8450,
@@ -3875,18 +3883,18 @@
       "sha256": "347a35be3794ef927789a3d036e99ccb45bcb1b52c49272a8647b1924b5c8db8"
     }
   ],
-  "current_source_bytes": 73995,
-  "current_source_members": 375,
-  "current_source_sha256": "d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb",
+  "current_source_bytes": 74192,
+  "current_source_members": 376,
+  "current_source_sha256": "9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8",
   "fixture_additions": [],
   "predecessor_source_bytes": 71510,
   "predecessor_source_members": 363,
   "predecessor_source_sha256": "20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4",
   "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS",
   "removed_paths": [],
-  "reviewed_source_head": "cd5c0e47cd0d40179b916758068ddb320a52a6fb",
+  "reviewed_source_head": "b3371e6a383b526d25409f2d4b308b4993739466",
   "schema": "oxid-bounded-byte-storage-source-transition-v1",
-  "source_only_tree": "d29049905ca3a8b9401d40650eeb7d63b841d87c",
+  "source_only_tree": "c168a3d6d6c3e3ba3d6b71b981319cbed9497525",
   "transition_inputs": [
     {
       "after": {
@@ -3941,22 +3949,22 @@
     },
     {
       "after": {
-        "bytes": 16298,
-        "git_blob": "f1d7ca0131f0ae57523b85bca62b3aa5f085c159",
+        "bytes": 24522,
+        "git_blob": "0d142a7f0af84550ce00b9fe02c3368743ca3589",
         "mode": "100644",
         "path": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
-        "sha256": "8689942e6a31f8f85e2a93d2dcff05142d57f607f9c19b707ed36e688af99aa9"
+        "sha256": "b2e43ea4b3d022d3fbf6c825d034c7786e525ac8b3d9664e2b42eeb78ad0f44a"
       },
       "before": null,
       "path": "src/frontend/oir/owned/byte_storage_codec_tests.rs"
     },
     {
       "after": {
-        "bytes": 32464,
-        "git_blob": "a0f87b3b3a5a6d0111999f3227a753b6a3d59938",
+        "bytes": 58053,
+        "git_blob": "71ed6cdd2ab24988924014b42cf80a8c92909997",
         "mode": "100644",
         "path": "src/frontend/oir/owned/byte_storage_native_tests.rs",
-        "sha256": "ecf25c7a5d48f4e8559db35755f2b07a1c044c25d3349026890ebc0b4f15ea68"
+        "sha256": "0db294445eb319fe93462cb062ff6b2af5c449144e2b9a8469d4e622d66d2737"
       },
       "before": null,
       "path": "src/frontend/oir/owned/byte_storage_native_tests.rs"
@@ -4053,6 +4061,17 @@
     },
     {
       "after": {
+        "bytes": 9515,
+        "git_blob": "b98ea6137db546148bf97a40be3f39a570c5bbf2",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
+        "sha256": "dfc8fbdfcd1b5d278de85b7e219f3d71cf2b249c6d1d607d3c4024da94c48658"
+      },
+      "before": null,
+      "path": "src/frontend/oir/owned/source/byte_storage_authority_tests.rs"
+    },
+    {
+      "after": {
         "bytes": 29968,
         "git_blob": "5516e1d2858886c225126be580b14276b8648c61",
         "mode": "100644",
@@ -4086,11 +4105,11 @@
     },
     {
       "after": {
-        "bytes": 3741,
-        "git_blob": "e07cd5ed6937acd25a907062a66a52c5050e165d",
+        "bytes": 10158,
+        "git_blob": "55dad1301404fe14f557329488415d464384a7a2",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/byte_storage_resources.rs",
-        "sha256": "d141761603f435eedcc5bfcaaa8216e1b731f3833d03a4e564c24fa223e5516b"
+        "sha256": "dfede700eb8540e010d8bbed4eb493c08aa8767e9226db6c8082559df40b2fb6"
       },
       "before": null,
       "path": "src/frontend/oir/owned/source/byte_storage_resources.rs"
@@ -4164,11 +4183,11 @@
     },
     {
       "after": {
-        "bytes": 1719,
-        "git_blob": "f2859c6056d6ad8d88699c9d768cbf39f694813a",
+        "bytes": 1767,
+        "git_blob": "ab937ba8b1d4f223300f283c530f4df676f34741",
         "mode": "100644",
         "path": "src/frontend/oir/owned/source/mod.rs",
-        "sha256": "eaa828eae17ceb0de2e00f1d6106422f71b11f123aa77b9b33d44c1faa1ff3b5"
+        "sha256": "f977087603f7adaebc1ffd88230e8acee91844da1e6075a40eb4269862b4a90d"
       },
       "before": {
         "bytes": 1483,
@@ -4294,11 +4313,28 @@
     },
     {
       "after": {
-        "bytes": 21563,
-        "git_blob": "84a57e55eac7a2b3d4edda883e9ae7e3500a7515",
+        "bytes": 15112,
+        "git_blob": "04ab4ee6526401dd2fb0002b4eee41df3db2d84e",
+        "mode": "100644",
+        "path": "src/frontend/oir/u8_association_tests.rs",
+        "sha256": "9b54ae676a470127119fe5eea2058b2a7caf3528386aac65e56d0e7dc6b3c715"
+      },
+      "before": {
+        "bytes": 13390,
+        "git_blob": "ef074e89ce40c7193b7193ce4d2e64e543a4867c",
+        "mode": "100644",
+        "path": "src/frontend/oir/u8_association_tests.rs",
+        "sha256": "5fe35dac510205010fba556d4ad980a20d8456faa7efe2870785cf8b6c2c5312"
+      },
+      "path": "src/frontend/oir/u8_association_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 26623,
+        "git_blob": "2d0b0e33b1a5d02381c590725ea9194830ccbe68",
         "mode": "100644",
         "path": "src/frontend/parser/array_syntax_tests.rs",
-        "sha256": "50d9854ef870d950ebc29a5438fc14b15b90c8e95db42aaab817237db5a92268"
+        "sha256": "0846b8969bf745f72a6c9fe760667bac500b98f41228c7c2be402eac042fe16c"
       },
       "before": {
         "bytes": 13592,
@@ -4344,8 +4380,8 @@
       "path": "src/frontend/parser/u8_syntax_tests.rs"
     }
   ],
-  "transition_patch_bytes": 216329,
-  "transition_patch_sha256": "346abef29dc38b37b7242e77276b0d7d7e2306f25fe14eb1fa5d3e394249914a",
+  "transition_patch_bytes": 274861,
+  "transition_patch_sha256": "8ed7bf4876066a9cce422ff53e995c4a8c6d0fc7a3a81baedaa5de32c047bcd9",
   "transition_paths": [
     "src/frontend/ast.rs",
     "src/frontend/declaration_index.rs",
@@ -4358,6 +4394,7 @@
     "src/frontend/oir/owned/native.rs",
     "src/frontend/oir/owned/source/association.rs",
     "src/frontend/oir/owned/source/byte_storage_association_tests.rs",
+    "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
     "src/frontend/oir/owned/source/byte_storage_fuel_tests.rs",
     "src/frontend/oir/owned/source/byte_storage_native_fixture.rs",
     "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
@@ -4375,6 +4412,7 @@
     "src/frontend/oir/owned_types.rs",
     "src/frontend/oir/owned_types/byte_storage_tests.rs",
     "src/frontend/oir/owned_types/u8_tests.rs",
+    "src/frontend/oir/u8_association_tests.rs",
     "src/frontend/parser/array_syntax_tests.rs",
     "src/frontend/parser/arrays.rs",
     "src/frontend/parser/u8_syntax_tests.rs"

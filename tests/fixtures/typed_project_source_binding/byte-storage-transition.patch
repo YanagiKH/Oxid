@@ -134,10 +134,10 @@ index 5fdda25..b5cac2c 100644
 +}
 diff --git a/src/frontend/oir/owned/byte_storage_codec_tests.rs b/src/frontend/oir/owned/byte_storage_codec_tests.rs
 new file mode 100644
-index 0000000..f1d7ca0
+index 0000000..0d142a7
 --- /dev/null
 +++ b/src/frontend/oir/owned/byte_storage_codec_tests.rs
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,584 @@
 +//! RFC0031 byte codecs are full-octet transports, independently of admission.
 +use super::*;
 +
@@ -371,15 +371,32 @@ index 0000000..f1d7ca0
 +                    )))
 +                );
 +            }
-+            let allocations =
-+                plan::fail_allocation_after(0, || execute_plan(&p, entry, limits, None));
-+            assert!(matches!(
-+                allocations,
-+                Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
-+                    name: "injected owned allocation failure",
-+                    ..
-+                }))
-+            ));
++            // Independent allocation topology: one frame-header reserve plus
++            // Frame::allocate's seven filled arrays (slots, snapshots, payload,
++            // owners, references, loans, calls). reserve invokes its test point
++            // even for an empty vector. No instruction in this single-frame
++            // literal/length fixture allocates after activation.
++            const ALLOCATION_SITES: usize = 1 + 7;
++            for fail in 0..ALLOCATION_SITES {
++                let allocation =
++                    plan::fail_allocation_after(fail, || execute_plan(&p, entry, limits, None));
++                assert!(
++                    matches!(
++                        allocation,
++                        Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
++                            name: "injected owned allocation failure",
++                            ..
++                        }))
++                    ),
++                    "length={length}, allocation={fail}: {allocation:?}"
++                );
++            }
++            assert_eq!(
++                plan::fail_allocation_after(ALLOCATION_SITES, || {
++                    execute_plan(&p, entry, limits, None)
++                }),
++                Ok(Scalar::I32(length as i32))
++            );
 +        });
 +    }
 +}
@@ -541,12 +558,176 @@ index 0000000..f1d7ca0
 +        });
 +    }
 +}
++
++#[test]
++fn byte_storage_reference_frame_ceiling_is_exact_for_byte_slice_reborrows() {
++    // main occupies one frame. down(1022) through down(0) occupies 1023 more;
++    // tail-call elimination is not part of the reference contract. Every call
++    // explicitly reborrows the complete byte owner, including its empty case.
++    for length in [0usize, 1, 1024] {
++        let prefix = if length == 0 {
++            ""
++        } else {
++            "let x=128;let b=x.to_u8_checked();"
++        };
++        let elements = (0..length).map(|_| "b").collect::<Vec<_>>().join(",");
++        let text = format!("fn down(a:&[u8],n:i32)->i32{{if n==0{{return a.len();}}return down(&*a,n-1);}}fn main()->i32{{{prefix}let a:[u8;{length}]=[{elements}];return down(&a,1022);}}");
++        source::byte_storage_tests::with_raw(&text, |_, typed, raw| {
++            let witness =
++                verified::verify_associated(source::association::associate(raw, typed).unwrap())
++                    .unwrap();
++            let entry = typed.entry().unwrap();
++            let p = ExecutionPlan::build(&witness).unwrap();
++            let exact = Limits {
++                frames: 1024,
++                ..Default::default()
++            };
++            assert_eq!(
++                execute_plan(&p, entry, exact, None),
++                Ok(Scalar::I32(length as i32))
++            );
++            let short = Limits {
++                frames: 1023,
++                ..exact
++            };
++            assert!(matches!(
++                execute_plan(&p, entry, short, None),
++                Err(OwnedRunFailure::Scalar(RunFailure::Frames(_)))
++            ));
++            // Same fixed seven arrays for each activation, plus one header
++            // reserve. Exercise the final activation site and the exact full
++            // topology count; the small-frame control sweeps each distinct site.
++            const SITES: usize = 1 + 7 * 1024;
++            assert!(matches!(
++                plan::fail_allocation_after(SITES - 1, || execute_plan(&p, entry, exact, None)),
++                Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
++                    name: "injected owned allocation failure",
++                    ..
++                }))
++            ));
++            assert_eq!(
++                plan::fail_allocation_after(SITES, || execute_plan(&p, entry, exact, None)),
++                Ok(Scalar::I32(length as i32))
++            );
++        });
++    }
++}
++
++#[test]
++fn byte_storage_maximum_owned_and_borrowed_arguments_use_full_scratch() {
++    for borrowed in [false, true] {
++        let params = (0..256)
++            .map(|i| format!("p{i}:{}", if borrowed { "&[u8]" } else { "[u8;0]" }))
++            .collect::<Vec<_>>()
++            .join(",");
++        let (bindings, args) = if borrowed {
++            (
++                "let a:[u8;0]=[];".into(),
++                (0..256).map(|_| "&a").collect::<Vec<_>>().join(","),
++            )
++        } else {
++            (
++                (0..256)
++                    .map(|i| format!("let a{i}:[u8;0]=[];"))
++                    .collect::<String>(),
++                (0..256)
++                    .map(|i| format!("a{i}"))
++                    .collect::<Vec<_>>()
++                    .join(","),
++            )
++        };
++        let text = format!("fn many({params})->i32{{return p255.len();}}fn main()->i32{{{bindings}return many({args});}}");
++        source::byte_storage_tests::with_raw(&text, |_, typed, raw| {
++            let witness =
++                verified::verify_associated(source::association::associate(raw, typed).unwrap())
++                    .unwrap();
++            let entry = typed.entry().unwrap();
++            let p = ExecutionPlan::build(&witness).unwrap();
++            // Arguments occupy scalar-width staging positions even when the
++            // value itself is an owner/view. Byte payload size cannot discount
++            // the full 256-position transport scratch.
++            assert_eq!(p.function(entry).usage().arguments, 256);
++            // Source census: main has one call-result scalar and 256 staging
++            // slots. Shared-borrow form has two owners and256 loans; owned form
++            // has four owners per argument (literal,local,name-move,staged).
++            // many has one len scalar and256 references or parameter owners.
++            let (root_owners, child_owners, loans, references) = if borrowed {
++                (2usize, 0usize, 256usize, 256usize)
++            } else {
++                (4 * 256, 256, 0, 0)
++            };
++            let root_cells = 1 + 256 + 5 * root_owners + 14 * loans + 2;
++            let child_cells = 1 + 5 * child_owners + 10 * references;
++            let root_bytes = 257 * size_of::<Option<Scalar>>()
++                + root_owners
++                + root_owners * size_of::<OwnerRuntime>()
++                + loans * size_of::<LoanRuntime>()
++                + size_of::<CallRuntime>();
++            let child_bytes = size_of::<Option<Scalar>>()
++                + child_owners
++                + child_owners * size_of::<OwnerRuntime>()
++                + references * size_of::<ReferenceHandle>();
++            assert_eq!(p.function(entry).usage().expanded_cells, root_cells);
++            assert_eq!(p.function(entry).usage().reference_bytes, root_bytes);
++            let limits = Limits {
++                frames: 2,
++                cells: root_cells + child_cells,
++                bytes: 2 * size_of::<Frame>() + size_of::<Scalar>() + root_bytes + child_bytes,
++                ..Default::default()
++            };
++            for (short, name) in [
++                (
++                    Limits {
++                        cells: limits.cells - 1,
++                        ..limits
++                    },
++                    "live expanded cells",
++                ),
++                (
++                    Limits {
++                        bytes: limits.bytes - 1,
++                        ..limits
++                    },
++                    "live requested bytes",
++                ),
++            ] {
++                // Root uses8 allocation points; child admission must refuse
++                // before its first vector allocation at point8.
++                let error = plan::fail_allocation_after(8, || execute_plan(&p, entry, short, None));
++                assert!(
++                    matches!(error, Err(OwnedRunFailure::Resource(plan::AdmissionFailure { name: actual, .. })) if actual == name),
++                    "{error:?}"
++                );
++            }
++            // main plus one callee: one header + two seven-vector frames.
++            const SITES: usize = 1 + 2 * 7;
++            for fail in 0..SITES {
++                let result =
++                    plan::fail_allocation_after(fail, || execute_plan(&p, entry, limits, None));
++                assert!(
++                    matches!(
++                        result,
++                        Err(OwnedRunFailure::Resource(plan::AdmissionFailure {
++                            name: "injected owned allocation failure",
++                            ..
++                        }))
++                    ),
++                    "borrowed={borrowed}, site={fail}: {result:?}"
++                );
++            }
++            assert_eq!(
++                plan::fail_allocation_after(SITES, || execute_plan(&p, entry, limits, None)),
++                Ok(Scalar::I32(0))
++            );
++        });
++    }
++}
 diff --git a/src/frontend/oir/owned/byte_storage_native_tests.rs b/src/frontend/oir/owned/byte_storage_native_tests.rs
 new file mode 100644
-index 0000000..a0f87b3
+index 0000000..71ed6cd
 --- /dev/null
 +++ b/src/frontend/oir/owned/byte_storage_native_tests.rs
-@@ -0,0 +1,722 @@
+@@ -0,0 +1,1324 @@
 +//! RFC0031 standalone bytes. Expected values are ordinary byte sequences and
 +//! source semantics fixed before execution. Resource observations measure the
 +//! successor; they are not replacements for archived no-byte endpoints.
@@ -1269,6 +1450,608 @@ index 0000000..a0f87b3
 +        );
 +    }
 +}
++
++// Independent acyclic N0/N1 oracle frozen before successor execution:
++// oracle-frozen.json SHA25685c580143b7375cea4270a29fb2083486318573ef1f8e9ccd569d7c90a2ba95b.
++// Baseline b5455ad native.rs: emit2012, emit_function2204, emit_scalar3173,
++// emit_terminator3370, load/store1435/1439, index_pointer1535, transfer1893;
++// lower.rs scalar binding/expression numbering285..330 and Let1761;
++// plan.rs build239, diagnostic.rs human formatting62. The sole new spelling
++// substitution is admitted byte array memory i8/stride1. Expected text below
++// was assembled from these literal templates and the fixed source rosters,
++// never from an emitter, formatter helper, successful result, or NativeMetrics.
++// Guarded fuel templates retain the separate guarded allocation controls above.
++// These fixtures do not claim all graph/call shapes or inherited uninstrumented
++// admission Vec allocations. Plan reservation hooks include zero-sized calls.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum ByteTextOp {
++    Live(usize),
++    End(usize),
++    Empty(usize),
++    Construct(usize, usize),
++    Move(usize, usize),
++    Integer(usize, i32),
++    Copy(usize, usize, hir::Ty),
++    Narrow(usize, usize),
++    Widen(usize, usize),
++    Read(usize, usize),
++}
++
++struct ByteTextOracle {
++    source: &'static str,
++    text: &'static str,
++    diagnostics: &'static [&'static str],
++    locals: &'static [hir::Ty],
++    roster: &'static [ByteTextOp],
++    length: usize,
++    text_bytes: usize,
++    diagnostic_bytes: usize,
++    metadata_bytes: usize,
++    native_bytes: usize,
++    ordinary_visits: usize,
++    cost: usize,
++}
++
++const BYTE_TEXT_N0: &str = r#"; Oxid private owned native ABI 1
++source_filename = "oxid-owned-native"
++target triple = "x86_64-unknown-linux-gnu"
++
++declare i32 @__oxid_print_bool(i32)
++declare i32 @__oxid_print_i32(i32)
++declare i32 @__oxid_print_unit()
++declare void @__oxid_overflow(ptr, i64) noreturn
++declare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)
++declare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)
++declare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)
++@__oxid_owned_error_0 = private unnamed_addr constant [83 x i8] c"\65\72\72\6F\72\5B\45\30\36\30\36\5D\20\28\6F\69\72\2D\6F\77\6E\65\64\2D\72\75\6E\29\3A\20\61\72\72\61\79\20\69\6E\64\65\78\20\6F\75\74\20\6F\66\20\62\6F\75\6E\64\73\0A\20\20\2D\2D\3E\20\62\79\74\65\2D\73\74\6F\72\61\67\65\2E\6F\78\3A\31\3A\33\38\0A"
++
++define internal i32 @__oxid_owned_fn_0() noinline {
++entry:
++  %scalars = alloca [5 x i64], align 8
++  %owners = alloca [4 x i8], align 4
++  %s0 = getelementptr i8, ptr %scalars, i64 0
++  %s1 = getelementptr i8, ptr %scalars, i64 8
++  %s2 = getelementptr i8, ptr %scalars, i64 16
++  %s3 = getelementptr i8, ptr %scalars, i64 24
++  %s4 = getelementptr i8, ptr %scalars, i64 32
++  %o0 = getelementptr i8, ptr %owners, i64 0
++  %o1 = getelementptr i8, ptr %owners, i64 1
++  br label %b0
++b0:
++  store i8 0, ptr %o0, align 1
++  %f0_b0_i3_empty = load i8, ptr %o0, align 1
++  store i8 %f0_b0_i3_empty, ptr %o1, align 1
++  %f0_b0_i5_store_wide = zext i32 0 to i64
++  store i64 %f0_b0_i5_store_wide, ptr %s1, align 8
++  %f0_b0_i6_index_wide = load i64, ptr %s1, align 8
++  %f0_b0_i6_index = trunc i64 %f0_b0_i6_index_wide to i32
++  %f0_b0_i6_nonnegative = icmp sge i32 %f0_b0_i6_index, 0
++  %f0_b0_i6_below = icmp slt i32 %f0_b0_i6_index, 0
++  %f0_b0_i6_in_range = and i1 %f0_b0_i6_nonnegative, %f0_b0_i6_below
++  br i1 %f0_b0_i6_in_range, label %f0_b0_i6_bounds_ok, label %f0_b0_i6_bounds_error
++f0_b0_i6_bounds_error:
++  call void @__oxid_overflow(ptr @__oxid_owned_error_0, i64 83)
++  unreachable
++f0_b0_i6_bounds_ok:
++  %f0_b0_i6_index64 = zext i32 %f0_b0_i6_index to i64
++  %f0_b0_i6_offset = mul i64 %f0_b0_i6_index64, 1
++  %f0_b0_i6_ptr = getelementptr i8, ptr %o1, i64 %f0_b0_i6_offset
++  %f0_b0_i6_value = load i8, ptr %f0_b0_i6_ptr, align 1
++  %f0_b0_i6_store_wide = zext i8 %f0_b0_i6_value to i64
++  store i64 %f0_b0_i6_store_wide, ptr %s2, align 8
++  %f0_b0_i7_value_wide = load i64, ptr %s2, align 8
++  %f0_b0_i7_value = trunc i64 %f0_b0_i7_value_wide to i8
++  %f0_b0_i7_store_wide = zext i8 %f0_b0_i7_value to i64
++  store i64 %f0_b0_i7_store_wide, ptr %s0, align 8
++  %f0_b0_i8_value_wide = load i64, ptr %s0, align 8
++  %f0_b0_i8_value = trunc i64 %f0_b0_i8_value_wide to i8
++  %f0_b0_i8_store_wide = zext i8 %f0_b0_i8_value to i64
++  store i64 %f0_b0_i8_store_wide, ptr %s3, align 8
++  %f0_b0_i9_operand_wide = load i64, ptr %s3, align 8
++  %f0_b0_i9_operand = trunc i64 %f0_b0_i9_operand_wide to i8
++  %f0_b0_i9_value = zext i8 %f0_b0_i9_operand to i32
++  %f0_b0_i9_store_wide = zext i32 %f0_b0_i9_value to i64
++  store i64 %f0_b0_i9_store_wide, ptr %s4, align 8
++  %f0_b0_term_value_wide = load i64, ptr %s4, align 8
++  %f0_b0_term_value = trunc i64 %f0_b0_term_value_wide to i32
++  ret i32 %f0_b0_term_value
++}
++
++define i32 @main() {
++entry:
++  %value = call i32 @__oxid_owned_fn_0()
++  %status = call i32 @__oxid_print_i32(i32 %value)
++  ret i32 %status
++}
++"#;
++
++const BYTE_TEXT_N1: &str = r#"; Oxid private owned native ABI 1
++source_filename = "oxid-owned-native"
++target triple = "x86_64-unknown-linux-gnu"
++
++declare i32 @__oxid_print_bool(i32)
++declare i32 @__oxid_print_i32(i32)
++declare i32 @__oxid_print_unit()
++declare void @__oxid_overflow(ptr, i64) noreturn
++declare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)
++declare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)
++declare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)
++@__oxid_owned_error_0 = private unnamed_addr constant [93 x i8] c"\65\72\72\6F\72\5B\45\30\36\31\30\5D\20\28\6F\69\72\2D\72\75\6E\29\3A\20\63\68\65\63\6B\65\64\20\69\33\32\20\74\6F\20\75\38\20\63\6F\6E\76\65\72\73\69\6F\6E\20\6F\75\74\20\6F\66\20\72\61\6E\67\65\0A\20\20\2D\2D\3E\20\62\79\74\65\2D\73\74\6F\72\61\67\65\2E\6F\78\3A\31\3A\33\34\0A"
++@__oxid_owned_error_1 = private unnamed_addr constant [83 x i8] c"\65\72\72\6F\72\5B\45\30\36\30\36\5D\20\28\6F\69\72\2D\6F\77\6E\65\64\2D\72\75\6E\29\3A\20\61\72\72\61\79\20\69\6E\64\65\78\20\6F\75\74\20\6F\66\20\62\6F\75\6E\64\73\0A\20\20\2D\2D\3E\20\62\79\74\65\2D\73\74\6F\72\61\67\65\2E\6F\78\3A\31\3A\36\36\0A"
++
++define internal i32 @__oxid_owned_fn_0() noinline {
++entry:
++  %scalars = alloca [11 x i64], align 8
++  %owners = alloca [4 x i8], align 4
++  %s0 = getelementptr i8, ptr %scalars, i64 0
++  %s1 = getelementptr i8, ptr %scalars, i64 8
++  %s2 = getelementptr i8, ptr %scalars, i64 16
++  %s3 = getelementptr i8, ptr %scalars, i64 24
++  %s4 = getelementptr i8, ptr %scalars, i64 32
++  %s5 = getelementptr i8, ptr %scalars, i64 40
++  %s6 = getelementptr i8, ptr %scalars, i64 48
++  %s7 = getelementptr i8, ptr %scalars, i64 56
++  %s8 = getelementptr i8, ptr %scalars, i64 64
++  %s9 = getelementptr i8, ptr %scalars, i64 72
++  %s10 = getelementptr i8, ptr %scalars, i64 80
++  %o0 = getelementptr i8, ptr %owners, i64 0
++  %o1 = getelementptr i8, ptr %owners, i64 1
++  br label %b0
++b0:
++  %f0_b0_i0_store_wide = zext i32 128 to i64
++  store i64 %f0_b0_i0_store_wide, ptr %s3, align 8
++  %f0_b0_i1_value_wide = load i64, ptr %s3, align 8
++  %f0_b0_i1_value = trunc i64 %f0_b0_i1_value_wide to i32
++  %f0_b0_i1_store_wide = zext i32 %f0_b0_i1_value to i64
++  store i64 %f0_b0_i1_store_wide, ptr %s0, align 8
++  %f0_b0_i2_value_wide = load i64, ptr %s0, align 8
++  %f0_b0_i2_value = trunc i64 %f0_b0_i2_value_wide to i32
++  %f0_b0_i2_store_wide = zext i32 %f0_b0_i2_value to i64
++  store i64 %f0_b0_i2_store_wide, ptr %s4, align 8
++  %f0_b0_i3_operand_wide = load i64, ptr %s4, align 8
++  %f0_b0_i3_operand = trunc i64 %f0_b0_i3_operand_wide to i32
++  %f0_b0_i3_negative = icmp slt i32 %f0_b0_i3_operand, 0
++  %f0_b0_i3_large = icmp sgt i32 %f0_b0_i3_operand, 255
++  %f0_b0_i3_invalid = or i1 %f0_b0_i3_negative, %f0_b0_i3_large
++  br i1 %f0_b0_i3_invalid, label %f0_b0_i3_conversion_error, label %f0_b0_i3_conversion_ok
++f0_b0_i3_conversion_error:
++  call void @__oxid_overflow(ptr @__oxid_owned_error_0, i64 93)
++  unreachable
++f0_b0_i3_conversion_ok:
++  %f0_b0_i3_value = trunc i32 %f0_b0_i3_operand to i8
++  %f0_b0_i3_store_wide = zext i8 %f0_b0_i3_value to i64
++  store i64 %f0_b0_i3_store_wide, ptr %s5, align 8
++  %f0_b0_i4_value_wide = load i64, ptr %s5, align 8
++  %f0_b0_i4_value = trunc i64 %f0_b0_i4_value_wide to i8
++  %f0_b0_i4_store_wide = zext i8 %f0_b0_i4_value to i64
++  store i64 %f0_b0_i4_store_wide, ptr %s1, align 8
++  %f0_b0_i5_value_wide = load i64, ptr %s1, align 8
++  %f0_b0_i5_value = trunc i64 %f0_b0_i5_value_wide to i8
++  %f0_b0_i5_store_wide = zext i8 %f0_b0_i5_value to i64
++  store i64 %f0_b0_i5_store_wide, ptr %s6, align 8
++  %f0_b0_i7_element0_value_wide = load i64, ptr %s6, align 8
++  %f0_b0_i7_element0_value = trunc i64 %f0_b0_i7_element0_value_wide to i8
++  %f0_b0_i7_element0_ptr = getelementptr i8, ptr %o0, i64 0
++  store i8 %f0_b0_i7_element0_value, ptr %f0_b0_i7_element0_ptr, align 1
++  %f0_b0_i9_in0_ptr = getelementptr i8, ptr %o0, i64 0
++  %f0_b0_i9_out0_ptr = getelementptr i8, ptr %o1, i64 0
++  %f0_b0_i9_element0 = load i8, ptr %f0_b0_i9_in0_ptr, align 1
++  store i8 %f0_b0_i9_element0, ptr %f0_b0_i9_out0_ptr, align 1
++  %f0_b0_i11_store_wide = zext i32 0 to i64
++  store i64 %f0_b0_i11_store_wide, ptr %s7, align 8
++  %f0_b0_i12_index_wide = load i64, ptr %s7, align 8
++  %f0_b0_i12_index = trunc i64 %f0_b0_i12_index_wide to i32
++  %f0_b0_i12_nonnegative = icmp sge i32 %f0_b0_i12_index, 0
++  %f0_b0_i12_below = icmp slt i32 %f0_b0_i12_index, 1
++  %f0_b0_i12_in_range = and i1 %f0_b0_i12_nonnegative, %f0_b0_i12_below
++  br i1 %f0_b0_i12_in_range, label %f0_b0_i12_bounds_ok, label %f0_b0_i12_bounds_error
++f0_b0_i12_bounds_error:
++  call void @__oxid_overflow(ptr @__oxid_owned_error_1, i64 83)
++  unreachable
++f0_b0_i12_bounds_ok:
++  %f0_b0_i12_index64 = zext i32 %f0_b0_i12_index to i64
++  %f0_b0_i12_offset = mul i64 %f0_b0_i12_index64, 1
++  %f0_b0_i12_ptr = getelementptr i8, ptr %o1, i64 %f0_b0_i12_offset
++  %f0_b0_i12_value = load i8, ptr %f0_b0_i12_ptr, align 1
++  %f0_b0_i12_store_wide = zext i8 %f0_b0_i12_value to i64
++  store i64 %f0_b0_i12_store_wide, ptr %s8, align 8
++  %f0_b0_i13_value_wide = load i64, ptr %s8, align 8
++  %f0_b0_i13_value = trunc i64 %f0_b0_i13_value_wide to i8
++  %f0_b0_i13_store_wide = zext i8 %f0_b0_i13_value to i64
++  store i64 %f0_b0_i13_store_wide, ptr %s2, align 8
++  %f0_b0_i14_value_wide = load i64, ptr %s2, align 8
++  %f0_b0_i14_value = trunc i64 %f0_b0_i14_value_wide to i8
++  %f0_b0_i14_store_wide = zext i8 %f0_b0_i14_value to i64
++  store i64 %f0_b0_i14_store_wide, ptr %s9, align 8
++  %f0_b0_i15_operand_wide = load i64, ptr %s9, align 8
++  %f0_b0_i15_operand = trunc i64 %f0_b0_i15_operand_wide to i8
++  %f0_b0_i15_value = zext i8 %f0_b0_i15_operand to i32
++  %f0_b0_i15_store_wide = zext i32 %f0_b0_i15_value to i64
++  store i64 %f0_b0_i15_store_wide, ptr %s10, align 8
++  %f0_b0_term_value_wide = load i64, ptr %s10, align 8
++  %f0_b0_term_value = trunc i64 %f0_b0_term_value_wide to i32
++  ret i32 %f0_b0_term_value
++}
++
++define i32 @main() {
++entry:
++  %value = call i32 @__oxid_owned_fn_0()
++  %status = call i32 @__oxid_print_i32(i32 %value)
++  ret i32 %status
++}
++"#;
++
++fn byte_text_oracles() -> [ByteTextOracle; 2] {
++    use ByteTextOp::*;
++    [
++        ByteTextOracle {
++            source: "fn main()->i32{let a:[u8;0]=[];let b=a[0];return b.to_i32();}",
++            text: BYTE_TEXT_N0,
++            diagnostics: &["error[E0606] (oir-owned-run): array index out of bounds\n  --> byte-storage.ox:1:38\n"],
++            locals: &[hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
++            roster: &[Live(0),Empty(0),Live(1),Move(1,0),End(0),Integer(1,0),Read(2,1),Copy(0,2,hir::Ty::U8),Copy(3,0,hir::Ty::U8),Widen(4,3),End(1)],
++            length: 0, text_bytes: 3279, diagnostic_bytes: 83,
++            metadata_bytes: 33080, native_bytes: 44,
++            ordinary_visits: 39, cost: 34,
++        },
++        ByteTextOracle {
++            source: "fn main()->i32{let n=128;let b=n.to_u8_checked();let a=[b];let c=a[0];return c.to_i32();}",
++            text: BYTE_TEXT_N1,
++            diagnostics: &["error[E0610] (oir-run): checked i32 to u8 conversion out of range\n  --> byte-storage.ox:1:34\n","error[E0606] (oir-owned-run): array index out of bounds\n  --> byte-storage.ox:1:66\n"],
++            locals: &[hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
++            roster: &[Integer(3,128),Copy(0,3,hir::Ty::I32),Copy(4,0,hir::Ty::I32),Narrow(5,4),Copy(1,5,hir::Ty::U8),Copy(6,1,hir::Ty::U8),Live(0),Construct(0,6),Live(1),Move(1,0),End(0),Integer(7,0),Read(8,7),Copy(2,8,hir::Ty::U8),Copy(9,2,hir::Ty::U8),Widen(10,9),End(1)],
++            length: 1, text_bytes: 5982, diagnostic_bytes: 176,
++            metadata_bytes: 33144, native_bytes: 92,
++            ordinary_visits: 64, cost: 46,
++        },
++    ]
++}
++
++fn assert_byte_text_roster(case: &Case, oracle: &ByteTextOracle) {
++    use ByteTextOp::*;
++    let functions = case.witness.functions();
++    assert_eq!(functions.len(), 1);
++    let f = &functions[0];
++    assert_eq!(case.entry, hir::DefId(0));
++    assert_eq!(
++        f.locals.iter().map(|l| l.ty).collect::<Vec<_>>(),
++        oracle.locals
++    );
++    assert!(
++        f.places.is_empty()
++            && f.parameters.is_empty()
++            && f.calls.is_empty()
++            && f.references.is_empty()
++            && f.loans.is_empty()
++    );
++    assert_eq!(f.owners.len(), 2);
++    for owner in &f.owners {
++        let AggregateTy::FixedArray(a) = owner.aggregate() else {
++            panic!("array owner");
++        };
++        assert_eq!(
++            (a.element(), a.length(), a.stride()),
++            (hir::Ty::U8, oracle.length, 1)
++        );
++    }
++    assert_eq!(f.blocks.len(), 1);
++    assert_eq!(f.entry, BlockId(0));
++    assert!(f.blocks[0].merge.is_none());
++    let actual = f.blocks[0]
++        .statements
++        .iter()
++        .map(|statement| match &statement.kind {
++            OwnedInstruction::StorageLive(o) => Live(o.0),
++            OwnedInstruction::StorageEnd(o) => End(o.0),
++            OwnedInstruction::ConstructArray {
++                destination,
++                elements,
++            } => match elements.as_slice() {
++                [] => Empty(destination.0),
++                [element] => Construct(destination.0, element.local.0),
++                _ => panic!("fixed N0/N1 source roster"),
++            },
++            OwnedInstruction::MoveInitialize {
++                destination,
++                source,
++            } => Move(destination.0, source.0),
++            OwnedInstruction::ReadIndex {
++                destination,
++                base,
++                index,
++            } => {
++                assert_eq!(*base, AccessBase::Owner(OwnerPlaceId(1)));
++                Read(destination.0, index.local.0)
++            }
++            OwnedInstruction::Scalar(Statement::Assign(a)) => match a.value {
++                Rvalue::I32(n) => Integer(a.destination.0, n),
++                Rvalue::Copy(v) => Copy(a.destination.0, v.local.0, f.locals[v.local.0].ty),
++                Rvalue::CheckedI32ToU8 { operand, .. } => Narrow(a.destination.0, operand.local.0),
++                Rvalue::U8ToI32 { operand, .. } => Widen(a.destination.0, operand.local.0),
++                _ => panic!("unexpected scalar row"),
++            },
++            _ => panic!("unexpected owned row"),
++        })
++        .collect::<Vec<_>>();
++    assert_eq!(actual, oracle.roster);
++    let OwnedTerminatorKind::ReturnScalar(result) = f.blocks[0].terminator.as_ref().unwrap().kind
++    else {
++        panic!("scalar return");
++    };
++    assert_eq!(result.local.0, oracle.locals.len() - 1);
++}
++
++#[test]
++fn byte_storage_native_independent_templates_and_allocation_topology() {
++    // Required reservation calls are read from immutable plan::build_with_limit:
++    // functions(1), owners(2), calls(0), owned stages(0), borrowed loans(0).
++    const PLAN_SITES: [&str; 5] = [
++        "function plans",
++        "owner offsets",
++        "call plans (zero)",
++        "owned stages (zero)",
++        "borrowed loans (zero)",
++    ];
++    for oracle in byte_text_oracles() {
++        let case = checked(oracle.source);
++        assert_byte_text_roster(&case, &oracle);
++        let scalar = oracle.locals.len();
++        let unique = oracle.diagnostics.len();
++        let plan_bytes = size_of::<plan::FunctionPlan>() + 2 * size_of::<usize>();
++        assert_eq!(plan_bytes, 200);
++        assert_eq!(oracle.text.len(), oracle.text_bytes);
++        assert_eq!(
++            oracle.diagnostics.iter().map(|s| s.len()).sum::<usize>(),
++            oracle.diagnostic_bytes
++        );
++        assert_eq!(
++            oracle.metadata_bytes,
++            plan_bytes
++                + size_of::<Bound>()
++                + unique * (size_of::<DiagnosticLookup>() + size_of::<String>())
++                + EMITTER_TRANSIENT_BYTES
++        );
++        let exact = Limits {
++            function_slots: scalar + 2,
++            scalar_slots: scalar,
++            inventory_items: scalar + 2,
++            owner_width: 2,
++            cost: oracle.cost,
++            bytes: oracle.native_bytes,
++            live_bytes: oracle.native_bytes,
++            diagnostic_bytes: oracle.diagnostic_bytes,
++            metadata_bytes: oracle.metadata_bytes,
++            ir_bytes: oracle.text_bytes,
++            ..Limits::DEFAULT
++        };
++        let plan = ExecutionPlan::build_with_test_limit(&case.witness, plan_bytes).unwrap();
++        assert_eq!(plan.metadata_bytes(), plan_bytes);
++        let error = plan::fail_allocation_after(0, || {
++            ExecutionPlan::build_with_test_limit(&case.witness, plan_bytes - 1)
++        })
++        .unwrap_err();
++        assert_eq!(error.name, "owned plan bytes");
++        let mut diagnostic_accounting = Accounting::default();
++        let diagnostics = Diagnostics::new_accounted(
++            &plan,
++            case.entry,
++            &case.sources,
++            false,
++            oracle.diagnostic_bytes,
++            oracle.metadata_bytes,
++            &mut diagnostic_accounting,
++        )
++        .unwrap();
++        assert_eq!(
++            diagnostics
++                .messages
++                .iter()
++                .map(String::as_str)
++                .collect::<Vec<_>>(),
++            oracle.diagnostics
++        );
++        assert_eq!(diagnostics.ids.len(), unique);
++        assert_eq!(
++            diagnostic_accounting.metrics.allocation_attempts,
++            3 + unique
++        );
++        let accepted = case.observe(NativeControl {
++            limits: exact,
++            ..NativeControl::default()
++        });
++        assert_eq!(accepted.result.as_ref().unwrap(), oracle.text);
++        let m = &accepted.metrics;
++        assert_eq!(
++            (m.count_bytes, m.render_bytes),
++            (oracle.text_bytes, oracle.text_bytes)
++        );
++        assert_eq!(
++            (m.message_count_bytes, m.message_render_bytes),
++            (oracle.diagnostic_bytes, oracle.diagnostic_bytes)
++        );
++        assert_eq!((m.occurrences, m.unique), (unique, unique));
++        assert_eq!(m.plan_bytes, plan_bytes);
++        assert_eq!(m.metadata_peak, oracle.metadata_bytes);
++        assert_eq!(m.transfer_inventory_visits, oracle.roster.len() + 3);
++        assert_eq!(
++            (m.count_ordinary_visits, m.render_ordinary_visits),
++            (oracle.ordinary_visits, oracle.ordinary_visits)
++        );
++        assert_eq!(m.count_expansion_kinds, [1, 1, oracle.diagnostic_bytes]);
++        assert_eq!(m.render_expansion_kinds, [1, 1, oracle.diagnostic_bytes]);
++        assert_eq!(m.count_predecessor_visits, 0);
++        assert_eq!(m.render_predecessor_visits, 0);
++        assert_eq!(m.count_borrow_projection_visits, 0);
++        assert_eq!(m.render_borrow_projection_visits, 0);
++        assert_eq!(m.count_call_scratch_peak, 0);
++        assert_eq!(m.render_call_scratch_peak, 0);
++        assert_eq!(m.allocation_attempts, 4 + unique);
++        for (site, name) in PLAN_SITES.iter().enumerate() {
++            let failed = plan::fail_allocation_after(site, || {
++                case.observe(NativeControl {
++                    limits: exact,
++                    fail_after: Some(0),
++                    ..NativeControl::default()
++                })
++            });
++            let error = failed.result.unwrap_err();
++            assert!(
++                error.message.contains("injected owned allocation failure"),
++                "{name}: {error:?}"
++            );
++            assert_eq!(failed.metrics.plan_bytes, 0);
++            assert_eq!(failed.metrics.allocation_attempts, 0);
++            assert_eq!(
++                (failed.metrics.count_bytes, failed.metrics.render_bytes),
++                (0, 0)
++            );
++        }
++        // A sixth plan hook must not run; the first diagnostic allocation wins.
++        let after_plan = plan::fail_allocation_after(PLAN_SITES.len(), || {
++            case.observe(NativeControl {
++                limits: exact,
++                fail_after: Some(0),
++                ..NativeControl::default()
++            })
++        });
++        assert!(after_plan
++            .result
++            .unwrap_err()
++            .message
++            .contains("diagnostic occurrences allocation"));
++        let phases = [
++            "diagnostic occurrences",
++            "diagnostic lookup",
++            "diagnostic headers",
++        ];
++        for (site, expected) in phases
++            .into_iter()
++            .chain(std::iter::repeat_n("diagnostic message", unique))
++            .chain(std::iter::once("LLVM"))
++            .enumerate()
++        {
++            let failed = case.observe(NativeControl {
++                limits: exact,
++                fail_after: Some(site),
++                ..NativeControl::default()
++            });
++            assert!(failed.result.unwrap_err().message.contains("allocation"));
++            assert_eq!(failed.metrics.failed_allocation, Some(expected));
++            assert_eq!(failed.metrics.allocation_attempts, site + 1);
++            assert_eq!(failed.metrics.render_bytes, 0);
++        }
++        let after_last = case.observe(NativeControl {
++            limits: exact,
++            fail_after: Some(4 + unique),
++            ..NativeControl::default()
++        });
++        assert_eq!(after_last.result.unwrap(), oracle.text);
++        assert_eq!(after_last.metrics.failed_allocation, None);
++        for (limits, marker, allocations) in [
++            (
++                Limits {
++                    function_slots: scalar + 1,
++                    ..exact
++                },
++                "scalar and owner slots",
++                0,
++            ),
++            (
++                Limits {
++                    scalar_slots: scalar - 1,
++                    ..exact
++                },
++                "aggregate scalar slots",
++                0,
++            ),
++            (
++                Limits {
++                    inventory_items: scalar + 1,
++                    ..exact
++                },
++                "compiler inventory",
++                0,
++            ),
++            (
++                Limits {
++                    owner_width: 1,
++                    ..exact
++                },
++                "owner width",
++                0,
++            ),
++            (
++                Limits {
++                    cost: oracle.cost - 1,
++                    ..exact
++                },
++                "reference fuel upper bound",
++                0,
++            ),
++            (
++                Limits {
++                    bytes: oracle.native_bytes - 1,
++                    ..exact
++                },
++                "aggregate storage bytes",
++                0,
++            ),
++            (
++                Limits {
++                    live_bytes: oracle.native_bytes - 1,
++                    ..exact
++                },
++                "live storage bytes",
++                0,
++            ),
++            (
++                Limits {
++                    diagnostic_bytes: oracle.diagnostic_bytes - 1,
++                    ..exact
++                },
++                "diagnostic bytes",
++                3,
++            ),
++            (
++                Limits {
++                    metadata_bytes: oracle.metadata_bytes - 1,
++                    ..exact
++                },
++                "emission metadata bytes",
++                3 + unique,
++            ),
++            (
++                Limits {
++                    ir_bytes: oracle.text_bytes - 1,
++                    ..exact
++                },
++                "LLVM bytes",
++                3 + unique,
++            ),
++        ] {
++            // Injection at the next site proves that admission refuses first.
++            let denied = case.observe(NativeControl {
++                limits,
++                fail_after: Some(allocations),
++                ..NativeControl::default()
++            });
++            let error = denied.result.unwrap_err();
++            assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
++            assert!(
++                error.message.contains(marker),
++                "N={} {error:?}",
++                oracle.length
++            );
++            assert_eq!(denied.metrics.allocation_attempts, allocations);
++            assert_eq!(denied.metrics.failed_allocation, None);
++            assert_eq!(denied.metrics.render_bytes, 0);
++            if marker != "LLVM bytes" {
++                assert_eq!(denied.metrics.count_bytes, 0);
++            }
++        }
++        println!("RFC0031 independent frozen native N={} plan={} I={} W=2 native={} cost={} diagnostic={} LLVM={} metadata={} transfer_visits={} ordinary_visits={} plan_sites=5 including_zero=3 native_sites={} all_exact_and_one_short_pass", oracle.length, plan_bytes, scalar + 2, oracle.native_bytes, oracle.cost, oracle.diagnostic_bytes, oracle.text_bytes, oracle.metadata_bytes, oracle.roster.len() + 3, oracle.ordinary_visits, 4 + unique);
++    }
++}
 diff --git a/src/frontend/oir/owned/byte_storage_reference_tests.rs b/src/frontend/oir/owned/byte_storage_reference_tests.rs
 new file mode 100644
 index 0000000..4d636e6
@@ -1684,6 +2467,252 @@ index 0000000..2dc2bb7
 +    // No retained rows, tracker, vectors, SourceMap or typed-owner copies were
 +    // added. The raw error Vec normalization moved to the already-existing
 +    // outer AssociatedOwned error normalization; source errors stay identical.
++}
+diff --git a/src/frontend/oir/owned/source/byte_storage_authority_tests.rs b/src/frontend/oir/owned/source/byte_storage_authority_tests.rs
+new file mode 100644
+index 0000000..b98ea61
+--- /dev/null
++++ b/src/frontend/oir/owned/source/byte_storage_authority_tests.rs
+@@ -0,0 +1,240 @@
++//! RFC0031 residual source-authority controls. Expected origins come from source
++//! spelling and frozen predecessor contracts, never from emitted successor text.
++use super::super::*;
++use super::{association, byte_storage_tests::with_raw};
++use crate::frontend::{lexer, parser, source::SourceFileId};
++
++#[test]
++fn byte_storage_trusted_lowering_keeps_distinct_read_write_origins() {
++    let text = "fn main()->i32{let n=128;let x=255;let lo=n.to_u8_checked();let hi=x.to_u8_checked();let mut a=[lo,hi];a[1]=a[0];let c=a[1];return c.to_i32();}";
++    let origin = |container: &str, access: &str| {
++        let start = text.find(container).unwrap() + container.find(access).unwrap();
++        Span {
++            file: SourceFileId(0),
++            start,
++            end: start + access.len(),
++        }
++    };
++    let expected = [
++        ("read", origin("a[1]=a[0];", "a[0]")),
++        ("write", origin("a[1]=a[0];", "a[1]")),
++        ("read", origin("let c=a[1];", "a[1]")),
++    ];
++    assert_ne!(expected[0].1, expected[1].1);
++    assert_ne!(expected[1].1, expected[2].1);
++    with_raw(text, |_, typed, _| {
++        // Only the production typed-owner constructor supplies these operations.
++        // No promise is made that the historical raw mutation seam compares
++        // arbitrary same-file opcodes with an independently rebuilt AST.
++        let associated = association::lower_and_associate(typed).unwrap();
++        let actual = associated
++            .program()
++            .functions
++            .iter()
++            .flat_map(|f| &f.blocks)
++            .flat_map(|b| &b.statements)
++            .filter_map(|s| match s.kind {
++                OwnedInstruction::ReadIndex { .. } => Some(("read", s.primary_span())),
++                OwnedInstruction::WriteIndex { .. } => Some(("write", s.primary_span())),
++                _ => None,
++            })
++            .collect::<Vec<_>>();
++        assert_eq!(actual, expected);
++        let witness = verified::verify_associated(associated).unwrap();
++        assert_eq!(
++            execute::run(&witness, typed.entry()).unwrap(),
++            Scalar::I32(128)
++        );
++    });
++}
++
++#[test]
++fn byte_storage_array_conversion_authority_rejects_nine_forged_origins() {
++    // Mutations and E0500/oir-project-bind/None are the immutable b5455ad
++    // owned_u8_source_auth_rejects_in_bounds_swaps_and_forged_binding_reads
++    // contract, now with array construction and indexed-read named widening.
++    let text = "fn main()->i32{let x=1;let y=2;let a=x.to_u8_checked();let b=y.to_u8_checked();let bytes=[a,b];let c=bytes[0];let d=c.to_i32();return b.to_i32();}";
++    with_raw(text, |_, typed, _| {
++        let witness =
++            verified::verify_associated(association::lower_and_associate(typed).unwrap()).unwrap();
++        assert!(witness.functions()[0].blocks[0]
++            .statements
++            .iter()
++            .any(|s| matches!(s.kind, OwnedInstruction::ConstructArray { .. })));
++        assert!(witness.functions()[0].blocks[0]
++            .statements
++            .iter()
++            .any(|s| matches!(s.kind, OwnedInstruction::ReadIndex { .. })));
++        assert_eq!(
++            execute::run(&witness, typed.entry()).unwrap(),
++            Scalar::I32(2)
++        );
++    });
++    for mutation in 0..9 {
++        with_raw(text, |_, typed, mut raw| {
++            let f = &mut raw.functions[0];
++            let positions = f.blocks[0]
++                .statements
++                .iter()
++                .enumerate()
++                .filter_map(|(i, s)| {
++                    matches!(
++                        s.kind,
++                        OwnedInstruction::Scalar(Statement::Assign(Assign {
++                            value: Rvalue::CheckedI32ToU8 { .. },
++                            ..
++                        }))
++                    )
++                    .then_some(i)
++                })
++                .collect::<Vec<_>>();
++            assert_eq!(positions.len(), 2);
++            let second = match &f.blocks[0].statements[positions[1]].kind {
++                OwnedInstruction::Scalar(Statement::Assign(a)) => a.clone(),
++                _ => unreachable!(),
++            };
++            let Rvalue::CheckedI32ToU8 {
++                source_expr: other_id,
++                operand: other_operand,
++                name_span: other_name,
++            } = second.value
++            else {
++                unreachable!()
++            };
++            if mutation == 6 {
++                let OwnedInstruction::Scalar(Statement::Assign(snapshot)) =
++                    &mut f.blocks[0].statements[positions[0] - 1].kind
++                else {
++                    unreachable!()
++                };
++                let Rvalue::Copy(operand) = &mut snapshot.value else {
++                    unreachable!()
++                };
++                operand.local = LocalId(1); // same-typed y is not the named x receiver
++            } else {
++                let OwnedInstruction::Scalar(Statement::Assign(first)) =
++                    &mut f.blocks[0].statements[positions[0]].kind
++                else {
++                    unreachable!()
++                };
++                let Rvalue::CheckedI32ToU8 {
++                    source_expr,
++                    operand,
++                    name_span,
++                } = &mut first.value
++                else {
++                    unreachable!()
++                };
++                match mutation {
++                    0 => *name_span = other_name,
++                    1 => operand.span = other_operand.span,
++                    2 => *source_expr = other_id,
++                    3 => first.span = second.span,
++                    4 => source_expr.0 = usize::MAX,
++                    5 => {
++                        first.value = Rvalue::U8ToI32 {
++                            source_expr: *source_expr,
++                            operand: *operand,
++                            name_span: *name_span,
++                        }
++                    }
++                    7 => first.destination = other_operand.local,
++                    8 => name_span.file = SourceFileId(1),
++                    _ => unreachable!(),
++                }
++            }
++            let error = association::associate(raw, typed)
++                .err()
++                .expect("forged conversion authority");
++            assert_eq!(
++                (error.code, error.stage, error.primary),
++                ("E0500", "oir-project-bind", None),
++                "mutation={mutation}"
++            );
++            assert!(error.secondary.is_empty());
++            assert!(error.notes.is_empty());
++        });
++    }
++}
++
++#[test]
++fn byte_storage_checked_facade_native_diagnostics_keep_own_source_map() {
++    let text =
++        "fn main()->i32{let n=128;let b=n.to_u8_checked();let a=[b];let v=a[1];return v.to_i32();}";
++    let make = |name: &str, prefix: bool| {
++        let mut sources = SourceMap::new();
++        if prefix {
++            sources.add("unused-map-entry.ox".into(), "".into());
++        }
++        let id = sources.add(name.into(), text.into());
++        let source = sources.get(id);
++        let (ast, _) = parser::parse_typed_counted(
++            source,
++            lexer::lex(source).unwrap(),
++            parser::SourceMode::OwnedCandidate,
++            parser::MAX_NODES,
++            &mut crate::frontend::project::budget::Allocator::default(),
++            &mut parser::SyntaxStorage::default(),
++        )
++        .unwrap();
++        (sources, ast, id)
++    };
++    let (left_map, left_ast, left_id) = make("left-byte-map.ox", false);
++    let (right_map, right_ast, right_id) = make("right-byte-map.ox", true);
++    assert_ne!(left_id, right_id);
++    let left =
++        crate::frontend::oir::check_source(left_map.get(left_id), &left_ast, &left_map).unwrap();
++    let right = crate::frontend::oir::check_source(right_map.get(right_id), &right_ast, &right_map)
++        .unwrap();
++    let start = text.find("a[1]").unwrap();
++    let expected = |name: &str| {
++        format!(
++            "error[E0606] (oir-owned-run): array index out of bounds\n  --> {name}:1:{}\n",
++            start + 1
++        )
++    };
++    let encoded = |message: &str| {
++        message
++            .bytes()
++            .map(|byte| format!("\\{byte:02X}"))
++            .collect::<String>()
++    };
++    // The frozen diagnostic writer supplies the human template; LLVM constant
++    // byte escaping is computed directly, independently of the emitter result.
++    for (checked, sources, id, name, other) in [
++        (
++            &left,
++            &left_map,
++            left_id,
++            "left-byte-map.ox",
++            "right-byte-map.ox",
++        ),
++        (
++            &right,
++            &right_map,
++            right_id,
++            "right-byte-map.ox",
++            "left-byte-map.ox",
++        ),
++    ] {
++        let failure = checked.run().unwrap_err();
++        assert_eq!(
++            (failure.code, failure.stage, failure.primary),
++            (
++                "E0606",
++                "oir-owned-run",
++                Some(Span {
++                    file: id,
++                    start,
++                    end: start + 4
++                })
++            )
++        );
++        assert_eq!(failure.render_human(sources), expected(name));
++        // The actual sealed facade takes no alternate map. This is not a claim
++        // that a crate-private raw renderer authenticates arbitrary SourceMaps.
++        let llvm = checked.native_module().unwrap();
++        assert!(llvm.contains(&encoded(&expected(name))));
++        assert!(!llvm.contains(&encoded(&expected(other))));
++    }
 +}
 diff --git a/src/frontend/oir/owned/source/byte_storage_fuel_tests.rs b/src/frontend/oir/owned/source/byte_storage_fuel_tests.rs
 new file mode 100644
@@ -2715,10 +3744,10 @@ index 0000000..0da0509
 +}
 diff --git a/src/frontend/oir/owned/source/byte_storage_resources.rs b/src/frontend/oir/owned/source/byte_storage_resources.rs
 new file mode 100644
-index 0000000..e07cd5e
+index 0000000..55dad13
 --- /dev/null
 +++ b/src/frontend/oir/owned/source/byte_storage_resources.rs
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,212 @@
 +//! RFC0031 explicit fixed source-fence carrier successor.
 +//!
 +//! These roles are distinct from unchanged enclosing ValueTy/Span/Result and
@@ -2794,6 +3823,141 @@ index 0000000..e07cd5e
 +        assert!(plan.with_dynamic(historical_remaining, at).is_err());
 +        assert_eq!(historical_remaining - current_remaining, successor);
 +        println!("RFC0031 fixed endpoint inherited_total={inherited} current_total={} addition={successor} historical_remaining={historical_remaining} current_remaining={current_remaining} unchanged_cap={MAX_HIR_BYTES}", plan.total);
++    }
++    #[test]
++    fn byte_storage_hir_work_is_independently_counted_before_allocation() {
++        use super::super::{count_function, HirCounts};
++        use crate::frontend::{
++            declaration_index::WorkMeter, lexer, parser, project::budget::Allocator,
++        };
++        for length in [0usize, 1, 1024] {
++            let elements = (0..length).map(|_| "b").collect::<Vec<_>>().join(",");
++            let text =
++                format!("fn f(b:u8)->i32{{let a:[u8;{length}]=[{elements}];return a.len();}}");
++            let mut sources = SourceMap::new();
++            let id = sources.add("byte-hir-work.ox".into(), text);
++            let file = sources.get(id);
++            let (ast, _) = parser::parse_typed_counted(
++                file,
++                lexer::lex(file).unwrap(),
++                parser::SourceMode::OwnedCandidate,
++                parser::MAX_NODES,
++                &mut Allocator::default(),
++                &mut parser::SyntaxStorage::default(),
++            )
++            .unwrap();
++            // count_function visits parameter1, body1, statements2;
++            // count_expression visits array1 + namesN + length1 and separately
++            // debits the N literal edges. Stack cursors are fixed arrays; this
++            // count-only traversal contains no reserve or heap construction.
++            let demand = 1 + 1 + 2 + (length + 2) + length;
++            for limit in [demand - 1, demand] {
++                let work = WorkMeter::new(limit as u64);
++                let mut counts = HirCounts::default();
++                let result = count_function(&ast, &ast.functions[0], &work, &mut counts);
++                if limit == demand {
++                    result.unwrap();
++                    assert_eq!(work.used(), demand as u64);
++                    assert_eq!(
++                        (
++                            counts.parameters,
++                            counts.blocks,
++                            counts.statements,
++                            counts.expressions,
++                            counts.array_literals,
++                            counts.array_entries
++                        ),
++                        (1, 1, 2, length + 2, 1, length)
++                    );
++                } else {
++                    let error = result.unwrap_err();
++                    assert_eq!(error.message, "declaration index work limit exceeded");
++                    // The last visited node is the return's ArrayLength. All
++                    // earlier debits fit exactly, so the failure is local and
++                    // occurs before any affected HIR allocation.
++                    let start = file.text().find("a.len()").unwrap();
++                    assert_eq!(
++                        error.primary,
++                        Some(file.span(start, start + "a.len()".len()))
++                    );
++                    assert_eq!(work.used(), limit as u64);
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn byte_storage_raw_count_fill_demand_and_allocation_sites_are_independent() {
++        use crate::frontend::oir::owned::{
++            source::{budget, byte_storage_tests, lower},
++            *,
++        };
++        use std::mem::size_of;
++        for length in [0usize, 1, 1024] {
++            let elements = (0..length).map(|_| "b").collect::<Vec<_>>().join(",");
++            let text =
++                format!("fn f(b:u8)->i32{{let a:[u8;{length}]=[{elements}];return a.len();}}");
++            byte_storage_tests::with_raw(&text, |sources, typed, _| {
++                // Independently follow lower.rs templates: one parameter local,
++                // N name snapshots and len local; two owners (temporary/local);
++                // N copies + live/construct/live/move/end/len/cleanup = N+7.
++                let expected = size_of::<RawOwnedProgram>()
++                    + size_of::<RawOwnedFunction>()
++                    + size_of::<ParameterBinding>()
++                    + (length + 2) * size_of::<LocalDecl>()
++                    + 2 * size_of::<OwnerDecl>()
++                    + size_of::<OwnedBlock>()
++                    + (length + 7) * size_of::<OwnedStatement>()
++                    + length * size_of::<Operand>();
++                let exact = budget::Limits {
++                    raw_bytes: expected,
++                };
++                let usage =
++                    budget::fail_allocation_after(0, || budget::preflight(typed, exact)).unwrap();
++                assert_eq!(usage.raw_bytes, expected);
++                let short = budget::fail_allocation_after(0, || {
++                    lower::lower_with_limits(
++                        typed,
++                        budget::Limits {
++                            raw_bytes: expected - 1,
++                        },
++                    )
++                })
++                .unwrap_err();
++                assert_eq!(short.kind, OwnedFailureKind::Resource("source raw payload"));
++                // Two top-level vectors; twelve per-function output/map vectors
++                // (including counted blocks); one statement vector; one literal
++                // operand vector, even when empty. These are exactly the sites
++                // lower.rs reserves for this no-record/no-call shape.
++                const SITES: usize = 2 + 12 + 1 + 1;
++                for fail in 0..SITES {
++                    let error = budget::fail_allocation_after(fail, || {
++                        lower::lower_with_limits(typed, exact)
++                    })
++                    .unwrap_err();
++                    assert_eq!(
++                        error.kind,
++                        OwnedFailureKind::Resource("injected source allocation failure"),
++                        "length={length}, fail={fail}"
++                    );
++                }
++                let raw =
++                    budget::fail_allocation_after(SITES, || lower::lower_with_limits(typed, exact))
++                        .unwrap();
++                let f = &raw.functions[0];
++                assert_eq!(
++                    (
++                        f.parameters.len(),
++                        f.locals.len(),
++                        f.owners.len(),
++                        f.blocks.len(),
++                        f.blocks[0].statements.len()
++                    ),
++                    (1, length + 2, 2, 1, length + 7)
++                );
++                verified::verify_owned(raw, sources).unwrap();
++            });
++        }
 +    }
 +}
 diff --git a/src/frontend/oir/owned/source/byte_storage_tests.rs b/src/frontend/oir/owned/source/byte_storage_tests.rs
@@ -4185,10 +5349,10 @@ index fbacb84..3b45071 100644
      {
          // The added signature count widens the complete returned facts by 8.
 diff --git a/src/frontend/oir/owned/source/mod.rs b/src/frontend/oir/owned/source/mod.rs
-index 8779e71..f2859c6 100644
+index 8779e71..ab937ba 100644
 --- a/src/frontend/oir/owned/source/mod.rs
 +++ b/src/frontend/oir/owned/source/mod.rs
-@@ -74,3 +74,18 @@ mod output_source_tests;
+@@ -74,3 +74,21 @@ mod output_source_tests;
  pub(super) mod u8_tests;
  
  mod u8_resources;
@@ -4207,6 +5371,9 @@ index 8779e71..f2859c6 100644
 +
 +#[cfg(test)]
 +mod byte_storage_fuel_tests;
++
++#[cfg(test)]
++mod byte_storage_authority_tests;
 diff --git a/src/frontend/oir/owned/source/program.rs b/src/frontend/oir/owned/source/program.rs
 index e029b94..1b0f5ef 100644
 --- a/src/frontend/oir/owned/source/program.rs
@@ -4729,8 +5896,62 @@ index 19a2187..a96e3f9 100644
      assert!(Declarations::check(&[record(0, &[hir::Ty::U8], span)], &sources).is_err());
      let enumeration = RawEnumDecl {
          id: EnumId(0),
+diff --git a/src/frontend/oir/u8_association_tests.rs b/src/frontend/oir/u8_association_tests.rs
+index ef074e8..04ab4ee 100644
+--- a/src/frontend/oir/u8_association_tests.rs
++++ b/src/frontend/oir/u8_association_tests.rs
+@@ -345,3 +345,49 @@ fn forged_conversion_against_genuine_no_conversion_source_is_extent_bounded_and_
+         )
+     );
+ }
++
++#[test]
++fn byte_storage_inherited_auth_walk_counters_refuse_overflow_and_mismatch() {
++    // Association is a structurally bounded count/validate walk, not a tunable
++    // work budget. Exercise its actual checked arithmetic/equality contracts.
++    let mut sources = SourceMap::new();
++    let id = sources.add("auth-count.ox".into(), "fn main()->i32{return 0;}".into());
++    let at = sources.get(id).span(0, 1);
++    let mut declarations = Visitor::count();
++    declarations.counts.declarations = usize::MAX;
++    assert!(declarations.declaration().is_err());
++    assert_eq!(declarations.counts.declarations, usize::MAX);
++    let mut spans = Visitor::count();
++    spans.counts.spans = usize::MAX;
++    assert!(spans.span(at).is_err());
++    assert_eq!(spans.counts.spans, usize::MAX);
++    let mut dimensions = Visitor::count();
++    dimensions.dimensions = usize::MAX;
++    assert!(dimensions.dimension(1, 1).is_err());
++    assert_eq!(dimensions.dimensions, usize::MAX);
++    assert!(Counts {
++        declarations: usize::MAX,
++        spans: 1
++    }
++    .total()
++    .is_err());
++    let mut count = Visitor::count();
++    count.declaration().unwrap();
++    assert!(Visitor::validate(&sources).finish(count).is_err());
++    assert!(Visitor::validate(&sources).dimension(0, 1).is_err());
++    let mut count = Visitor::count();
++    count.declaration().unwrap();
++    count.span(at).unwrap();
++    let mut validate = Visitor::validate(&sources);
++    validate.declaration().unwrap();
++    validate.span(at).unwrap();
++    let result = validate.finish(count).unwrap();
++    assert_eq!(
++        result.count,
++        Counts {
++            declarations: 1,
++            spans: 1
++        }
++    );
++    assert_eq!(result.validation, result.count);
++}
 diff --git a/src/frontend/parser/array_syntax_tests.rs b/src/frontend/parser/array_syntax_tests.rs
-index cd628a9..84a57e5 100644
+index cd628a9..2d0b0e3 100644
 --- a/src/frontend/parser/array_syntax_tests.rs
 +++ b/src/frontend/parser/array_syntax_tests.rs
 @@ -42,7 +42,7 @@ fn unit3a_real_ast_retains_target_once_and_original_origins() {
@@ -4769,7 +5990,7 @@ index cd628a9..84a57e5 100644
          length: 1025,
      });
      assert!(!valid(&p));
-@@ -381,3 +381,211 @@ fn unit3a_nonstarter_diagnostic_is_bounded_without_changing_public_formatting()
+@@ -381,3 +381,331 @@ fn unit3a_nonstarter_diagnostic_is_bounded_without_changing_public_formatting()
          format!("unsupported typed-preview construct `{token}`")
      );
  }
@@ -4818,6 +6039,30 @@ index cd628a9..84a57e5 100644
 +        },
 +    ];
 +    for (param, expected) in ast.functions[0].params.iter().zip(expected) {
++        // Reference branches debit one structural query; owned arrays first
++        // debit value_type and then array_type, hence two. All map a closed
++        // scalar tag without allocation. A fresh meter separates this source-
++        // derived query demand from already-paid index preparation.
++        let demand = if matches!(param.ty.kind, TypeSyntaxKind::Array(_)) {
++            2
++        } else {
++            1
++        };
++        for limit in [demand - 1, demand] {
++            let query_work = WorkMeter::new(limit);
++            let result = index
++                .query(&query_work)
++                .parameter_type(ModuleId(0), param.ty);
++            if limit == demand {
++                assert_eq!(result.unwrap(), expected);
++                assert_eq!(query_work.used(), demand);
++            } else {
++                let error = result.unwrap_err();
++                assert_eq!(error.message, "declaration index work limit exceeded");
++                assert_eq!(error.primary, Some(param.ty.span));
++                assert_eq!(query_work.used(), demand - 1);
++            }
++        }
 +        let start = work.used();
 +        assert_eq!(
 +            index
@@ -4860,6 +6105,11 @@ index cd628a9..84a57e5 100644
 +            &mut storage,
 +        )
 +        .unwrap();
++        // Independent grammar census: function1 + parameters3 + statements2
++        // (let,return) + primary expressions2 (empty array,name) =8. Type
++        // annotations and the body braces do not invoke Parser::node.
++        const DEMAND: usize = 1 + 3 + 2 + 2;
++        assert_eq!(nodes, DEMAND);
 +        let shape = (
 +            nodes,
 +            storage,
@@ -4875,7 +6125,7 @@ index cd628a9..84a57e5 100644
 +            file,
 +            lexer::lex(file).unwrap(),
 +            SourceMode::ProjectCandidate,
-+            nodes,
++            DEMAND,
 +            &mut Allocator::default(),
 +            &mut SyntaxStorage::default()
 +        )
@@ -4884,7 +6134,7 @@ index cd628a9..84a57e5 100644
 +            file,
 +            lexer::lex(file).unwrap(),
 +            SourceMode::ProjectCandidate,
-+            nodes - 1,
++            DEMAND - 1,
 +            &mut Allocator::default(),
 +            &mut SyntaxStorage::default(),
 +        )
@@ -4979,6 +6229,97 @@ index cd628a9..84a57e5 100644
 +        let errors = parsed(&map, &mut Allocator::default()).unwrap_err();
 +        assert_eq!((errors[0].code, errors[0].stage), ("E0101", "parse"));
 +        assert_eq!(map.text(errors[0].primary.unwrap()), token);
++    }
++}
++
++#[test]
++fn byte_storage_borrow_argument_and_literal_reservation_topology_is_bounded() {
++    // The production call parser checks MAX_PARAMS before parsing/reserving the
++    // next argument. An explicit borrow is a distinct parser branch from a
++    // scalar expression, so cover its own reserve path at the actual cap.
++    for count in [256, 257] {
++        let params = (0..256)
++            .map(|i| format!("p{i}:&[u8]"))
++            .collect::<Vec<_>>()
++            .join(",");
++        let args = (0..count).map(|_| "&a").collect::<Vec<_>>().join(",");
++        let map = source(&format!(
++            "fn f({params})->(){{}}fn main()->(){{let a:[u8;0]=[];f({args});}}"
++        ));
++        let file = map.get(SourceFileId(0));
++        let mut allocator = Allocator::default();
++        let result = parse_typed_counted(
++            file,
++            lexer::lex(file).unwrap(),
++            SourceMode::ProjectCandidate,
++            MAX_NODES,
++            &mut allocator,
++            &mut SyntaxStorage::default(),
++        );
++        if count == 256 {
++            assert!(result.is_ok());
++        } else {
++            let errors = result.unwrap_err();
++            assert_eq!(errors[0].message, "argument limit exceeded");
++            assert_eq!(map.text(errors[0].primary.unwrap()), "&");
++        }
++        // The exact-growth helper reserves capacities4,8,...,256. The first
++        // excess position fails before either argument parsing or growth.
++        let argument_growth = allocator
++            .trace
++            .iter()
++            .filter(|event| event.kind == "syntax call arguments")
++            .map(|event| event.length)
++            .collect::<Vec<_>>();
++        assert_eq!(argument_growth, [4, 8, 16, 32, 64, 128, 256]);
++    }
++    // Small explicit-borrow fixture covers every dynamic parser reserve site;
++    // its growth helper is identical at 256 positions. Literal1024 exercises
++    // every actual growth ordinal at the literal endpoint independently.
++    for text in [
++        "fn f(p:&[u8])->(){}fn main()->(){let a:[u8;0]=[];f(&a);}".to_string(),
++        format!("fn f()->(){{[{}];}}", vec!["byte(0)"; 1024].join(",")),
++    ] {
++        let map = source(&text);
++        let file = map.get(SourceFileId(0));
++        let mut allocator = Allocator::default();
++        let (_, nodes) = parse_typed_counted(
++            file,
++            lexer::lex(file).unwrap(),
++            SourceMode::ProjectCandidate,
++            MAX_NODES,
++            &mut allocator,
++            &mut SyntaxStorage::default(),
++        )
++        .unwrap();
++        if text.contains("byte(0)") {
++            // One function, one statement, one array primary, and1024 pairs
++            // of call primary plus integer argument primary.
++            assert_eq!(nodes, 1 + 1 + 1 + 2 * 1024);
++            let literal_growth = allocator
++                .trace
++                .iter()
++                .filter(|event| event.kind == "array literal elements")
++                .map(|event| event.length)
++                .collect::<Vec<_>>();
++            assert_eq!(literal_growth, [4, 8, 16, 32, 64, 128, 256, 512, 1024]);
++        }
++        for attempt in 1..=allocator.attempts {
++            let mut failing = Allocator {
++                fail_at: Some(attempt),
++                ..Allocator::default()
++            };
++            assert!(parse_typed_counted(
++                file,
++                lexer::lex(file).unwrap(),
++                SourceMode::ProjectCandidate,
++                MAX_NODES,
++                &mut failing,
++                &mut SyntaxStorage::default()
++            )
++            .is_err());
++            assert_eq!(failing.attempts, attempt);
++        }
 +    }
 +}
 diff --git a/src/frontend/parser/arrays.rs b/src/frontend/parser/arrays.rs

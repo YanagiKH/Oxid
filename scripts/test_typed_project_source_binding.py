@@ -3520,7 +3520,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (375, 185, 185, 133, 129, 117))
+                         (376, 185, 185, 133, 129, 117))
         self.assertEqual(plan["cache_admission_source_members"], 345)
         self.assertEqual((plan["u8_compiler_additions"], plan["u8_compile_time_fixture_members"],
                           plan["u8_compile_time_include_directives"]), (18, 78, 136))

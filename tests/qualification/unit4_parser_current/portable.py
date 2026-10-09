@@ -189,6 +189,7 @@ CURRENT_PATHS = ('Cargo.lock',
  'src/frontend/oir/owned/source/builtin_signature_tests.rs',
  'src/frontend/oir/owned/source/builtin_source_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_association_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_native_fixture.rs',
  'src/frontend/oir/owned/source/byte_storage_raw_tests.rs',
@@ -483,6 +484,7 @@ CURRENT_ADDED_PATHS = ('fixtures/typed-record-composition-samples/main.ox',
  'src/frontend/oir/owned/source/builtin_signature_tests.rs',
  'src/frontend/oir/owned/source/builtin_source_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_association_tests.rs',
+ 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs',
  'src/frontend/oir/owned/source/byte_storage_native_fixture.rs',
  'src/frontend/oir/owned/source/byte_storage_raw_tests.rs',
@@ -659,7 +661,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '24f2a94fcf6ae69fa2d185de60aaccdd5468a99faf6570c78e4cf5b1df2f6e40'
+AUTHORITY_SHA = '52fb618de81bcf3556614a77ac0dd941b5ecc1cdb1393aef7bd6af4933cfc967'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -1540,7 +1542,7 @@ def authority():
     verify_map(FROZEN, result["package_files"])
     verify_map(FROZEN / "frozen/helpers", result["helper_files"], exact=True)
     current = read(REPOSITORY / active["current_source_manifest"]["path"])
-    same(len(current["files"]), 375, "complete current source count")
+    same(len(current["files"]), 376, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
     cache_current, predecessor_active = validate_u8_transition(active, current, result)
@@ -1651,7 +1653,7 @@ def authority():
     before = {row["path"]: row for row in result["original_files"]}
     after = {row["path"]: row for row in current["files"]}
     same(len(before), 283, "duplicate historical member")
-    same(len(after), 375, "duplicate current member")
+    same(len(after), 376, "duplicate current member")
     historical_compiler = {name for name in before if name.startswith(("src/", "native/"))
                            or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     require(historical_compiler <= after.keys(), "current transition deletes historical compiler input")
@@ -1668,7 +1670,7 @@ def authority():
     same([row["path"] for row in changes if row["before"] is None], list(CURRENT_ADDED_PATHS), "unexpected transition additions")
     merged = before | after
     base = [merged[name] for name in sorted(merged)]
-    same(len(base), 538, "current base count")
+    same(len(base), 539, "current base count")
     same(base, active["current_base_files"], "current base map must be derived from frozen inputs")
     verify_map(REPOSITORY, current["files"])
     restore_hir_producer_source(active, {row["path"]: (REPOSITORY / row["path"]).read_bytes()
@@ -1705,7 +1707,7 @@ def authority():
         derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         derived[candidate_row["path"]] = candidate_row
         ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 541, "current derived count")
+        same(len(ordered), 542, "current derived count")
         same(ordered, active["current_" + field], "unapproved current derived map")
     return result
 
@@ -2309,7 +2311,7 @@ def compiler_map(a):
 def verify_checkout(repo, a):
     repo = Path(repo).absolute()
     wanted = compiler_map(a)
-    same(len(wanted), 290, "current compiler body count")
+    same(len(wanted), 291, "current compiler body count")
     verify_map(repo, [a["current"]["current_source_manifest"]])
     verify_map(repo, a["current_source"]["files"])
     names = []

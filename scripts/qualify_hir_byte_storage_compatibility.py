@@ -111,7 +111,7 @@ class Run(predecessor.Run):
             donor_source = VALID[0][1].ljust(len(ACCEPTED[0][1]), b' ')
             require(len(donor_source) == len(ACCEPTED[0][1]), 'donor length mismatch')
             self.capture(version, 'integer-donor', donor_source, bundle)
-            donor = self.root / f'v{version}/captures/integer-donor' 
+            donor = self.root / f'v{version}/captures/integer-donor'
             opa = (donor / 'parser/stdout').read_bytes()
             wire = (donor / 'static/stdout').read_bytes()
             require(len(opa) == scalar.OPA_BYTES and len(wire) == scalar.SUCCESS_BYTES,

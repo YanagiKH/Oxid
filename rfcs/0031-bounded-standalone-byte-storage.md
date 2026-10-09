@@ -5,7 +5,7 @@ Date: 2026-10-09. Owner: bounded-byte implementation task. Reviewer: parent and 
 
 Exact dependency: merged main `b5455ad07081590aeffdec54a927c9095e870fb0`, tree `cb53acc04ac88538a74410bc0a3c037da369c02e` (PR56). Its PR-head CI and separately running postmerge CI are predecessor evidence, not evidence for this increment.
 
-Authority: independently reviewed planning proposal SHA-256 `7efc3b0c93444893af94f58237088a8c16ec3ce9f114bae95fed2effc3dbf38a`; original Oxid roadmap M2/M3, M4 byte buffers, AI-A1 and sections 6–7; predecessor RFCs 0016, 0019, 0020, 0022 and 0030. This RFC carries the full bounded proposal forward. Historical observations below remain explicitly historical. The current worktree verified all listed grammar/type/storage fences on the exact dependency. No implementation or private parser research was used in drafting.
+Authority: independently reviewed planning proposal SHA-256 `7efc3b0c93444893af94f58237088a8c16ec3ce9f114bae95fed2effc3dbf38a`; original Oxid roadmap M2/M3, M4 byte buffers, AI-A1 and sections 6–7; predecessor RFCs 0016, 0019, 0020, 0022 and 0030. This RFC carries the full bounded proposal forward. Historical observations below remain explicitly historical. The current worktree verified all listed grammar/type/storage fences on the exact dependency. The semantic contract was frozen before implementation.
 
 This is a bounded M2/M3 increment, not completion of M2, I/O migration, tensors, self-hosting, memory-safety certification or v1. There is no artifact/ABI/protocol version change and no implicit legacy migration. Only the explicit stable-Rust typed-preview accepted source domain expands. RFC0030 byte aggregate exclusions are superseded only in the standalone positions defined here.
 
@@ -152,3 +152,63 @@ work cap or raw-to-SourceProgram path is allowed. Diagnostic mapping/order must
 remain byte-identical. Relocated caller/result/error carriers require measured
 accounting; compile-time privacy and forged-raw inability require independent
 controls. Full semantic comparator or further API growth is not approved.
+
+### Approved B11 lexer-allocation scope clarification (2026-10-09)
+
+Parent explicitly reviewed and approved this bounded clarification after the
+independent allocation audit. The exact predecessor already lexed the same byte
+spellings through the identical identifier/token-tape implementation before
+later grammar rejection. RFC0031 changes no lexer path, token carrier, capacity
+policy, allocation site or ceiling.
+
+New or changed byte-storage allocation sites still require independently
+derived demand, exact/one-short admission and each-site failure controls;
+reused fallible sites require exact topology evidence and linked controls.
+The unchanged ordinary lexer uses infallible `Vec::push` and has no allocation
+failure hook. Recoverable allocator failure at those inherited sites remains
+explicitly **UNPROVED**. Provider canonical-backing prepayment is a separate
+route and does not establish ordinary-lexer recovery.
+
+The independent corpus's stronger compound source/token obligations remain
+unchanged. Only their topology/limit subclaims may be established; this
+clarification does not turn the whole rows into empirical passes. It adds no
+recovery guarantee and changes no diagnostic, error precedence, grammar, cap,
+fallback or provider behavior. Any new or changed allocation topology reopens
+admission review. A separate lexer fallible-allocation/error-semantics hardening
+follow-up is recorded in the implementation plan; it is not completed here.
+
+### Approved inherited-native allocation limitation (2026-10-09)
+
+Parent separately reviewed and approved carrying these precisely enumerated,
+unchanged predecessor mechanisms; the lexer clarification did not cover them:
+
+1. Caller-table outer vector and its empty adjacency headers.
+2. Remaining-call counts.
+3. Per-invoke caller-adjacency growth.
+4. Global function-ready collection and pushes.
+5. Function-bound rows.
+6. Per-function incoming-edge counts.
+7. Per-function block-ready collection and pushes.
+
+Also included are the unchanged call emitter's argument `Vec<String>`, guarded
+fuel/owned-result strings, scalar argument/name/load temporaries, owned and
+borrowed pointer arguments, slice-length strings, scalar result prefix/store
+temporaries, and joined argument string. Standard `vec!`, `collect`, growth-capable
+`push`, `with_capacity`, `format!` and `join` at these sites remain infallible
+and outside the named failure-injection hooks. Their recoverable allocation
+failure and per-site injection remain **UNPROVED**; the original stronger corpus
+obligations are unchanged and are not whole-row empirical passes.
+
+Preserve the actual ordering: function count is bounded at 256 before the early
+caller structures, but adjacency growth precedes the native 4,096-block gate.
+Its earlier bound is the already verified raw 300,000-block ceiling. Subsequent
+capacity metrics and metadata checks do not preflight those earlier allocations.
+Logical entry-byte bounds are not allocator-capacity or RSS guarantees.
+
+Exact unchanged sections, carriers, graph shapes and pointer/length templates
+justify this limited inheritance. No new byte-dependent allocation, width or
+capacity is exempt; any such change reopens admission. Independently derived
+acyclic N0/N1 demand is separate from guarded template/topology inheritance and
+actual count/render controls. No independently derived full guarded demand is
+claimed. Separate native fallible-preflight hardening is tracked in the plan;
+this decision changes no production behavior, error precedence or caps.

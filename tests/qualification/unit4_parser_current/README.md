@@ -1,12 +1,12 @@
 # RFC0031 standalone byte-storage source successor
 
-Current reviewed source checkpoint: `cd5c0e47cd0d40179b916758068ddb320a52a6fb`. Full Git tree:
-`d29049905ca3a8b9401d40650eeb7d63b841d87c`. Current source-manifest SHA-256:
-`d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb`.
+Current reviewed source checkpoint: `b3371e6a383b526d25409f2d4b308b4993739466`. Full Git tree:
+`c168a3d6d6c3e3ba3d6b71b981319cbed9497525`. Current source-manifest SHA-256:
+`9e9e65c9ba3b034074ca22cb0967d6820ff5b5f8907613fcb36720b97519b0f8`.
 
-The exact closure has 375 inputs, including 287 `src`/`native` members
-and 290 compiler/build bodies. The 31-path transition adds
-12 compiler members, removes none, and preserves all 78 compile-time fixture
+The exact closure has 376 inputs, including 288 `src`/`native` members
+and 291 compiler/build bodies. The 33-path transition adds
+13 compiler members, removes none, and preserves all 78 compile-time fixture
 bodies and all 136 include expressions. These are source identity facts, not
 semantic, resource, native-execution or hosted qualification results.
 
@@ -22,7 +22,7 @@ semantic observations and authentic parsed-module portable fixtures remain intac
 
 The previous current parser authority is preserved byte-for-byte as
 `u8-cross-host-authority.json`. Current maps contain
-538 base and 541 derived members in each observer/control role.
+539 base and 542 derived members in each observer/control role.
 The byte predecessor bridge proves the exact original source body before the
 unchanged historical instrumentation is composed onto the current source.
 No parser hook, policy, predicate, semantic amendment, host rule or passivity

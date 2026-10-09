@@ -38,6 +38,38 @@ fn check(raw: super::super::RawOwnedProgram, sources: &super::super::SourceMap) 
     let _ = association::AssociatedOwned { raw, sources };
 }
 """),
+
+    ("native-storage-plan-checked-access", True, None, """
+fn check(execution: &super::super::plan::ExecutionPlan<'_>) {
+    let plan = super::super::plan::native_storage::NativeStoragePlan::checked(execution, false).unwrap();
+    let _ = plan.execution();
+}
+"""),
+    ("native-storage-plan-private-execution", False, "E0451", """
+fn check(execution: &super::super::plan::ExecutionPlan<'_>) {
+    let _ = super::super::plan::native_storage::NativeStoragePlan { execution, guarded: false };
+}
+"""),
+    ("checked-source-private-sources", False, "E0451", """
+fn check<'s>(base: crate::frontend::oir::CheckedSourceProgram<'s>, sources: &'s super::super::SourceMap) {
+    let _ = crate::frontend::oir::CheckedSourceProgram { sources, ..base };
+}
+"""),
+    ("checked-source-private-body", False, "E0616", """
+fn check(base: &mut crate::frontend::oir::CheckedSourceProgram<'_>) {
+    let _ = &mut base.body;
+}
+"""),
+    ("checked-source-native-own-map-api", True, None, """
+fn check(base: &crate::frontend::oir::CheckedSourceProgram<'_>) {
+    let _ = base.native_module();
+}
+"""),
+    ("checked-source-native-rejects-alternate-map", False, "E0061", """
+fn check(base: &crate::frontend::oir::CheckedSourceProgram<'_>, sources: &super::super::SourceMap) {
+    let _ = base.native_module(sources);
+}
+"""),
 )
 
 

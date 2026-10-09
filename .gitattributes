@@ -44,3 +44,6 @@ tests/fixtures/producer_diagnostic/** -text
 # RFC0030 immutable integer-oracle inputs keep their independently pinned bytes.
 tests/qualification/bounded_u8_current/oracle/* -text
 tests/qualification/bounded_u8_current/source-data-manifest.json -text
+
+# RFC0031 immutable byte corpus, registry and predecessor archive retain exact bytes.
+tests/qualification/byte_storage_current/** -text

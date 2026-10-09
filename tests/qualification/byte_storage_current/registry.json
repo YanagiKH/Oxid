@@ -1,0 +1,867 @@
+{
+  "schema": "rfc0031-byte-storage-registry-v1",
+  "unit_tests": [
+    {
+      "name": "frontend::format::ast_tests::byte_storage_formatter_preserves_array_only_types_and_source_origins",
+      "source": "src/frontend/format/ast_tests.rs",
+      "function": "byte_storage_formatter_preserves_array_only_types_and_source_origins",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::byte_storage_reference_tests::byte_storage_raw_empty_moves_replacement_and_bounds_every_fuel",
+      "source": "src/frontend/oir/owned/byte_storage_reference_tests.rs",
+      "function": "byte_storage_raw_empty_moves_replacement_and_bounds_every_fuel",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_codecs_check_offset_and_extent_before_writing",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_codecs_check_offset_and_extent_before_writing",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_codecs_round_trip_every_octet_without_touching_neighbors",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_codecs_round_trip_every_octet_without_touching_neighbors",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_dynamic_reborrows_preserve_root_view_and_parent_permissions",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_dynamic_reborrows_preserve_root_view_and_parent_permissions",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_maximum_owned_and_borrowed_arguments_use_full_scratch",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_maximum_owned_and_borrowed_arguments_use_full_scratch",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_reference_frame_ceiling_is_exact_for_byte_slice_reborrows",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_reference_frame_ceiling_is_exact_for_byte_slice_reborrows",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_resource_width_and_payload_are_exact_before_frame_allocation",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_resource_width_and_payload_are_exact_before_frame_allocation",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::execute::byte_storage_codec_tests::byte_storage_views_rederive_whole_owner_identity_before_offsets",
+      "source": "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+      "function": "byte_storage_views_rederive_whole_owner_identity_before_offsets",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_carriers_retained_capacities_and_storage_endpoints",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_carriers_retained_capacities_and_storage_endpoints",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_exact_text_metadata_and_allocation_endpoints",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_exact_text_metadata_and_allocation_endpoints",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_independent_small_frame_endpoints",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_independent_small_frame_endpoints",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_independent_templates_and_allocation_topology",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_independent_templates_and_allocation_topology",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_large_source_and_array_entry_refuse_before_emission",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_large_source_and_array_entry_refuse_before_emission",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_phi_uses_actual_bounds_and_conversion_success_exit",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_phi_uses_actual_bounds_and_conversion_success_exit",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_pilot_and_every_byte_inventory",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_pilot_and_every_byte_inventory",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_bounds_conversion_and_phi_exits",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_source_free_bounds_conversion_and_phi_exits",
+      "ignored": true
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_every_byte_pilot_and_empty_transfers",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_source_free_every_byte_pilot_and_empty_transfers",
+      "ignored": true
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_independent_every_fuel_schedule",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_source_free_independent_every_fuel_schedule",
+      "ignored": true
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_unpaid_bounds_priority",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_source_free_unpaid_bounds_priority",
+      "ignored": true
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_storage_plan_preserves_exact_ranges_and_scalar_abi",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_storage_plan_preserves_exact_ranges_and_scalar_abi",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_stride_sentinel_and_scalar_transport",
+      "source": "src/frontend/oir/owned/byte_storage_native_tests.rs",
+      "function": "byte_storage_native_stride_sentinel_and_scalar_transport",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::association::byte_storage_association_tests::byte_storage_source_authority_relocated_carriers_are_dominated",
+      "source": "src/frontend/oir/owned/source/byte_storage_association_tests.rs",
+      "function": "byte_storage_source_authority_relocated_carriers_are_dominated",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_authority_tests::byte_storage_array_conversion_authority_rejects_nine_forged_origins",
+      "source": "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
+      "function": "byte_storage_array_conversion_authority_rejects_nine_forged_origins",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_authority_tests::byte_storage_checked_facade_native_diagnostics_keep_own_source_map",
+      "source": "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
+      "function": "byte_storage_checked_facade_native_diagnostics_keep_own_source_map",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_authority_tests::byte_storage_trusted_lowering_keeps_distinct_read_write_origins",
+      "source": "src/frontend/oir/owned/source/byte_storage_authority_tests.rs",
+      "function": "byte_storage_trusted_lowering_keeps_distinct_read_write_origins",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_fuel_tests::byte_storage_owned_call_and_result_independent_fuel_handoffs",
+      "source": "src/frontend/oir/owned/source/byte_storage_fuel_tests.rs",
+      "function": "byte_storage_owned_call_and_result_independent_fuel_handoffs",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_fuel_tests::byte_storage_raw_construct_move_replace_access_every_fuel_all_widths",
+      "source": "src/frontend/oir/owned/source/byte_storage_fuel_tests.rs",
+      "function": "byte_storage_raw_construct_move_replace_access_every_fuel_all_widths",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_fuel_tests::byte_storage_source_and_raw_borrow_call_reborrow_every_fuel",
+      "source": "src/frontend/oir/owned/source/byte_storage_fuel_tests.rs",
+      "function": "byte_storage_source_and_raw_borrow_call_reborrow_every_fuel",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_fuel_tests::byte_storage_source_construct_move_replace_every_fuel_all_widths",
+      "source": "src/frontend/oir/owned/source/byte_storage_fuel_tests.rs",
+      "function": "byte_storage_source_construct_move_replace_every_fuel_all_widths",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_raw_tests::byte_storage_historical_raw_mutation_cannot_change_trusted_lowering",
+      "source": "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
+      "function": "byte_storage_historical_raw_mutation_cannot_change_trusted_lowering",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_raw_tests::byte_storage_raw_array_identity_scalar_tags_and_lengths_are_rechecked",
+      "source": "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
+      "function": "byte_storage_raw_array_identity_scalar_tags_and_lengths_are_rechecked",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_raw_tests::byte_storage_raw_rechecks_empty_element_identity_and_call_direction",
+      "source": "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
+      "function": "byte_storage_raw_rechecks_empty_element_identity_and_call_direction",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_raw_tests::byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested",
+      "source": "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
+      "function": "byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_raw_tests::byte_storage_source_rejects_foreign_identical_text_origins",
+      "source": "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
+      "function": "byte_storage_source_rejects_foreign_identical_text_origins",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_bounds_are_signed_and_report_complete_access",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_bounds_are_signed_and_report_complete_access",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_every_octet_constructs_moves_stores_and_reads",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_every_octet_constructs_moves_stores_and_reads",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_failed_constructor_never_exposes_partial_destination",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_failed_constructor_never_exposes_partial_destination",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_failed_rhs_index_and_paid_bounds_keep_prior_effects",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_failed_rhs_index_and_paid_bounds_keep_prior_effects",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_independent_every_fuel_schedule",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_independent_every_fuel_schedule",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_pilot_and_complete_exact_slice_reborrows",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_pilot_and_complete_exact_slice_reborrows",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_rhs_snapshot_precedes_mutating_index_helper",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_rhs_snapshot_precedes_mutating_index_helper",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_source_zero_one_maximum_lengths_and_sentinels",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_source_zero_one_maximum_lengths_and_sentinels",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_tests::byte_storage_unpaid_bounds_keeps_mutating_index_effects",
+      "source": "src/frontend/oir/owned/source/byte_storage_tests.rs",
+      "function": "byte_storage_unpaid_bounds_keeps_mutating_index_effects",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_cfg_requires_array_scalar_operands_to_dominate",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_cfg_requires_array_scalar_operands_to_dominate",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_native_plan_keeps_exact_same_shaped_witness_identity",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_native_plan_keeps_exact_same_shaped_witness_identity",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_prepared_owner_cannot_escape_without_its_invocation",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_prepared_owner_cannot_escape_without_its_invocation",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_raw_invalid_storage_and_scalar_ids_fail_at_shape",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_raw_invalid_storage_and_scalar_ids_fail_at_shape",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_raw_owner_slot_roles_are_not_layout_compatible",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_raw_owner_slot_roles_are_not_layout_compatible",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_raw_parent_access_is_suspended_after_child_staging",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_raw_parent_access_is_suspended_after_child_staging",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_source_later_parent_reads_and_writes_refuse_before_execution",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_source_later_parent_reads_and_writes_refuse_before_execution",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::byte_storage_trust_tests::byte_storage_staged_owners_require_each_argument_once",
+      "source": "src/frontend/oir/owned/source/byte_storage_trust_tests.rs",
+      "function": "byte_storage_staged_owners_require_each_argument_once",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::hir_budget::byte_storage_resources::tests::byte_storage_current_fixed_endpoint_preserves_historical_bank_and_cap",
+      "source": "src/frontend/oir/owned/source/byte_storage_resources.rs",
+      "function": "byte_storage_current_fixed_endpoint_preserves_historical_bank_and_cap",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::hir_budget::byte_storage_resources::tests::byte_storage_fixed_fence_successor_measures_complete_guard_roles",
+      "source": "src/frontend/oir/owned/source/byte_storage_resources.rs",
+      "function": "byte_storage_fixed_fence_successor_measures_complete_guard_roles",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::hir_budget::byte_storage_resources::tests::byte_storage_hir_work_is_independently_counted_before_allocation",
+      "source": "src/frontend/oir/owned/source/byte_storage_resources.rs",
+      "function": "byte_storage_hir_work_is_independently_counted_before_allocation",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::hir_budget::byte_storage_resources::tests::byte_storage_raw_count_fill_demand_and_allocation_sites_are_independent",
+      "source": "src/frontend/oir/owned/source/byte_storage_resources.rs",
+      "function": "byte_storage_raw_count_fill_demand_and_allocation_sites_are_independent",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::resolve::byte_storage_type_tests::byte_storage_imported_record_fence_uses_complete_child_type_origin",
+      "source": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
+      "function": "byte_storage_imported_record_fence_uses_complete_child_type_origin",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::resolve::byte_storage_type_tests::byte_storage_new_fence_format_backing_and_failure_roles_are_bounded",
+      "source": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
+      "function": "byte_storage_new_fence_format_backing_and_failure_roles_are_bounded",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::resolve::byte_storage_type_tests::byte_storage_source_literal_inference_is_exact_and_empty_context_is_local_only",
+      "source": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
+      "function": "byte_storage_source_literal_inference_is_exact_and_empty_context_is_local_only",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::resolve::byte_storage_type_tests::byte_storage_source_scalar_record_controls_and_standalone_signatures_coexist",
+      "source": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
+      "function": "byte_storage_source_scalar_record_controls_and_standalone_signatures_coexist",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::resolve::byte_storage_type_tests::byte_storage_source_unused_nested_and_empty_record_fields_stay_closed",
+      "source": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
+      "function": "byte_storage_source_unused_nested_and_empty_record_fields_stay_closed",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::resolve::byte_storage_type_tests::byte_storage_store_first_error_order_matches_immutable_predecessor",
+      "source": "src/frontend/oir/owned/source/byte_storage_type_tests.rs",
+      "function": "byte_storage_store_first_error_order_matches_immutable_predecessor",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::u8_tests::owned_u8_ordinary_source_tracker_byte_storage_admission_successor",
+      "source": "src/frontend/oir/owned/source/u8_tests.rs",
+      "function": "owned_u8_ordinary_source_tracker_byte_storage_admission_successor",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned::source::u8_tests::owned_u8_source_static_rejections_byte_storage_successor",
+      "source": "src/frontend/oir/owned/source/u8_tests.rs",
+      "function": "owned_u8_source_static_rejections_byte_storage_successor",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::byte_storage_tests::byte_storage_borrow_matrix_is_directional_and_preserves_element_identity",
+      "source": "src/frontend/oir/owned_types/byte_storage_tests.rs",
+      "function": "byte_storage_borrow_matrix_is_directional_and_preserves_element_identity",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::byte_storage_tests::byte_storage_every_length_has_unit_stride_and_full_logical_width",
+      "source": "src/frontend/oir/owned_types/byte_storage_tests.rs",
+      "function": "byte_storage_every_length_has_unit_stride_and_full_logical_width",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::byte_storage_tests::byte_storage_lane_a_actual_carrier_inventory",
+      "source": "src/frontend/oir/owned_types/byte_storage_tests.rs",
+      "function": "byte_storage_lane_a_actual_carrier_inventory",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::byte_storage_tests::byte_storage_previous_record_elements_and_enum_exclusions_are_unchanged",
+      "source": "src/frontend/oir/owned_types/byte_storage_tests.rs",
+      "function": "byte_storage_previous_record_elements_and_enum_exclusions_are_unchanged",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::byte_storage_tests::byte_storage_raw_guard_transient_roles_do_not_change_output_table_metric",
+      "source": "src/frontend/oir/owned_types/byte_storage_tests.rs",
+      "function": "byte_storage_raw_guard_transient_roles_do_not_change_output_table_metric",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::byte_storage_tests::byte_storage_raw_unused_and_nested_record_fields_reject_before_output_reserve",
+      "source": "src/frontend/oir/owned_types/byte_storage_tests.rs",
+      "function": "byte_storage_raw_unused_and_nested_record_fields_reject_before_output_reserve",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::owned_types::u8_tests::u8_standalone_value_and_parameter_byte_storage_successor",
+      "source": "src/frontend/oir/owned_types/u8_tests.rs",
+      "function": "u8_standalone_value_and_parameter_byte_storage_successor",
+      "ignored": false
+    },
+    {
+      "name": "frontend::oir::source::association::u8_tests::byte_storage_inherited_auth_walk_counters_refuse_overflow_and_mismatch",
+      "source": "src/frontend/oir/u8_association_tests.rs",
+      "function": "byte_storage_inherited_auth_walk_counters_refuse_overflow_and_mismatch",
+      "ignored": false
+    },
+    {
+      "name": "frontend::parser::array_syntax_tests::byte_storage_borrow_argument_and_literal_reservation_topology_is_bounded",
+      "source": "src/frontend/parser/array_syntax_tests.rs",
+      "function": "byte_storage_borrow_argument_and_literal_reservation_topology_is_bounded",
+      "ignored": false
+    },
+    {
+      "name": "frontend::parser::array_syntax_tests::byte_storage_length_and_literal_limits_keep_exact_preallocation_origins",
+      "source": "src/frontend/parser/array_syntax_tests.rs",
+      "function": "byte_storage_length_and_literal_limits_keep_exact_preallocation_origins",
+      "ignored": false
+    },
+    {
+      "name": "frontend::parser::array_syntax_tests::byte_storage_parser_queries_keep_array_identity_and_slice_direction",
+      "source": "src/frontend/parser/array_syntax_tests.rs",
+      "function": "byte_storage_parser_queries_keep_array_identity_and_slice_direction",
+      "ignored": false
+    },
+    {
+      "name": "frontend::parser::array_syntax_tests::byte_storage_syntax_capacities_match_predecessor_shapes_and_fail_reserves",
+      "source": "src/frontend/parser/array_syntax_tests.rs",
+      "function": "byte_storage_syntax_capacities_match_predecessor_shapes_and_fail_reserves",
+      "ignored": false
+    },
+    {
+      "name": "frontend::parser::u8_syntax_tests::u8_bare_fields_ordinary_calls_and_len_byte_storage_successor",
+      "source": "src/frontend/parser/u8_syntax_tests.rs",
+      "function": "u8_bare_fields_ordinary_calls_and_len_byte_storage_successor",
+      "ignored": false
+    }
+  ],
+  "public_tests": [
+    "byte_storage_native_public_entry_and_capacity_refuse_before_tool_and_output",
+    "byte_storage_native_public_no_clobber_missing_tools_and_host_gate",
+    "byte_storage_native_public_unsupported_target_has_no_artifact_effects",
+    "byte_storage_public_array_main_checks_but_is_not_a_run_entry",
+    "byte_storage_public_excluded_spellings_fail_before_native_tools",
+    "byte_storage_public_i32_stdout_signature_stays_closed",
+    "byte_storage_public_identical_module_text_keeps_runtime_file_identity",
+    "byte_storage_public_record_reference_projection_stops_at_declaration",
+    "byte_storage_public_slice_value_and_element_reference_grammar_stays_closed",
+    "byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser"
+  ],
+  "public_source": "tests/typed_byte_storage_native.rs",
+  "native_tests": [
+    {
+      "test": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_every_byte_pilot_and_empty_transfers",
+      "artifacts": [
+        "byte-storage-all-0",
+        "byte-storage-all-16",
+        "byte-storage-all-32",
+        "byte-storage-all-48",
+        "byte-storage-all-64",
+        "byte-storage-all-80",
+        "byte-storage-all-96",
+        "byte-storage-all-112",
+        "byte-storage-all-128",
+        "byte-storage-all-144",
+        "byte-storage-all-160",
+        "byte-storage-all-176",
+        "byte-storage-all-192",
+        "byte-storage-all-208",
+        "byte-storage-all-224",
+        "byte-storage-all-240",
+        "byte-storage-pilot",
+        "byte-storage-empty",
+        "byte-storage-rhs-snapshot"
+      ]
+    },
+    {
+      "test": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_bounds_conversion_and_phi_exits",
+      "artifacts": [
+        "byte-storage-phi-acyclic",
+        "byte-storage-bounds-acyclic-0--2147483648",
+        "byte-storage-bounds-acyclic-0--1",
+        "byte-storage-bounds-acyclic-0-0",
+        "byte-storage-bounds-acyclic-0-2147483647",
+        "byte-storage-bounds-acyclic-1--2147483648",
+        "byte-storage-bounds-acyclic-1--1",
+        "byte-storage-bounds-acyclic-1-1",
+        "byte-storage-bounds-acyclic-1-2147483647",
+        "byte-storage-rhs-range-acyclic",
+        "byte-storage-phi-guarded",
+        "byte-storage-bounds-guarded-0--2147483648",
+        "byte-storage-bounds-guarded-0--1",
+        "byte-storage-bounds-guarded-0-0",
+        "byte-storage-bounds-guarded-0-2147483647",
+        "byte-storage-bounds-guarded-1--2147483648",
+        "byte-storage-bounds-guarded-1--1",
+        "byte-storage-bounds-guarded-1-1",
+        "byte-storage-bounds-guarded-1-2147483647",
+        "byte-storage-rhs-range-guarded"
+      ]
+    },
+    {
+      "test": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_independent_every_fuel_schedule",
+      "artifacts": [
+        "byte-storage-fuel-0",
+        "byte-storage-fuel-1",
+        "byte-storage-fuel-2",
+        "byte-storage-fuel-3",
+        "byte-storage-fuel-4",
+        "byte-storage-fuel-5",
+        "byte-storage-fuel-6",
+        "byte-storage-fuel-7",
+        "byte-storage-fuel-8",
+        "byte-storage-fuel-9",
+        "byte-storage-fuel-10",
+        "byte-storage-fuel-11",
+        "byte-storage-fuel-12",
+        "byte-storage-fuel-13",
+        "byte-storage-fuel-14",
+        "byte-storage-fuel-15",
+        "byte-storage-fuel-16",
+        "byte-storage-fuel-17",
+        "byte-storage-fuel-18",
+        "byte-storage-fuel-19",
+        "byte-storage-fuel-20",
+        "byte-storage-fuel-21",
+        "byte-storage-fuel-22",
+        "byte-storage-fuel-23",
+        "byte-storage-fuel-24",
+        "byte-storage-fuel-25",
+        "byte-storage-fuel-26",
+        "byte-storage-fuel-27",
+        "byte-storage-fuel-28",
+        "byte-storage-fuel-29",
+        "byte-storage-fuel-30",
+        "byte-storage-fuel-31",
+        "byte-storage-fuel-32",
+        "byte-storage-fuel-33",
+        "byte-storage-fuel-34",
+        "byte-storage-fuel-35",
+        "byte-storage-fuel-36",
+        "byte-storage-fuel-37",
+        "byte-storage-fuel-38",
+        "byte-storage-fuel-39",
+        "byte-storage-fuel-40",
+        "byte-storage-fuel-41",
+        "byte-storage-fuel-42",
+        "byte-storage-fuel-43",
+        "byte-storage-fuel-44",
+        "byte-storage-fuel-45",
+        "byte-storage-fuel-46",
+        "byte-storage-fuel-47",
+        "byte-storage-fuel-48",
+        "byte-storage-fuel-49",
+        "byte-storage-fuel-50",
+        "byte-storage-fuel-51"
+      ]
+    },
+    {
+      "test": "frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_unpaid_bounds_priority",
+      "artifacts": [
+        "byte-storage-unpaid-bounds-83",
+        "byte-storage-unpaid-bounds-84"
+      ]
+    }
+  ],
+  "reference_cases": 323,
+  "native_transport": [
+    "transport-000",
+    "transport-001",
+    "transport-002",
+    "transport-003",
+    "transport-004",
+    "transport-005",
+    "transport-006",
+    "transport-007",
+    "transport-008",
+    "transport-009",
+    "transport-010",
+    "transport-011",
+    "transport-012",
+    "transport-013",
+    "transport-014",
+    "transport-015",
+    "transport-016",
+    "transport-017",
+    "transport-018",
+    "transport-019",
+    "transport-020",
+    "transport-021",
+    "transport-022",
+    "transport-023",
+    "transport-024",
+    "transport-025",
+    "transport-026",
+    "transport-027",
+    "transport-028",
+    "transport-029",
+    "transport-030",
+    "transport-031",
+    "transport-032",
+    "transport-033",
+    "transport-034",
+    "transport-035",
+    "transport-036",
+    "transport-037",
+    "transport-038",
+    "transport-039",
+    "transport-040",
+    "transport-041",
+    "transport-042",
+    "transport-043",
+    "transport-044",
+    "transport-045",
+    "transport-046",
+    "transport-047",
+    "transport-048",
+    "transport-049",
+    "transport-050",
+    "transport-051",
+    "transport-052",
+    "transport-053",
+    "transport-054",
+    "transport-055",
+    "transport-056",
+    "transport-057",
+    "transport-058",
+    "transport-059",
+    "transport-060",
+    "transport-061",
+    "transport-062",
+    "transport-063",
+    "transport-064",
+    "transport-065",
+    "transport-066",
+    "transport-067",
+    "transport-068",
+    "transport-069",
+    "transport-070",
+    "transport-071",
+    "transport-072",
+    "transport-073",
+    "transport-074",
+    "transport-075",
+    "transport-076",
+    "transport-077",
+    "transport-078",
+    "transport-079",
+    "transport-080",
+    "transport-081",
+    "transport-082",
+    "transport-083",
+    "transport-084",
+    "transport-085",
+    "transport-086",
+    "transport-087",
+    "transport-088",
+    "transport-089",
+    "transport-090",
+    "transport-091",
+    "transport-092",
+    "transport-093",
+    "transport-094",
+    "transport-095",
+    "transport-096",
+    "transport-097",
+    "transport-098",
+    "transport-099",
+    "transport-100",
+    "transport-101",
+    "transport-102",
+    "transport-103",
+    "transport-104",
+    "transport-105",
+    "transport-106",
+    "transport-107",
+    "transport-108",
+    "transport-109",
+    "transport-110",
+    "transport-111",
+    "transport-112",
+    "transport-113",
+    "transport-114",
+    "transport-115",
+    "transport-116",
+    "transport-117",
+    "transport-118",
+    "transport-119",
+    "transport-120",
+    "transport-121",
+    "transport-122",
+    "transport-123",
+    "transport-124",
+    "transport-125",
+    "transport-126",
+    "transport-127",
+    "transport-128",
+    "transport-129",
+    "transport-130",
+    "transport-131",
+    "transport-132",
+    "transport-133",
+    "transport-134",
+    "transport-135",
+    "transport-136",
+    "transport-137",
+    "transport-138",
+    "transport-139",
+    "transport-140",
+    "transport-141",
+    "transport-142",
+    "transport-143",
+    "transport-144",
+    "transport-145",
+    "transport-146",
+    "transport-147",
+    "transport-148",
+    "transport-149",
+    "transport-150",
+    "transport-151",
+    "transport-152",
+    "transport-153",
+    "transport-154",
+    "transport-155",
+    "transport-156",
+    "transport-157",
+    "transport-158",
+    "transport-159",
+    "transport-160",
+    "transport-161",
+    "transport-162",
+    "transport-163",
+    "transport-164",
+    "transport-165",
+    "transport-166",
+    "transport-167",
+    "transport-168",
+    "transport-169",
+    "transport-170",
+    "transport-171",
+    "transport-172",
+    "transport-173",
+    "transport-174",
+    "transport-175",
+    "transport-176",
+    "transport-177",
+    "transport-178",
+    "transport-179",
+    "transport-180",
+    "transport-181",
+    "transport-182",
+    "transport-183",
+    "transport-184",
+    "transport-185",
+    "transport-186",
+    "transport-187",
+    "transport-188",
+    "transport-189",
+    "transport-190",
+    "transport-191",
+    "transport-192",
+    "transport-193",
+    "transport-194",
+    "transport-195",
+    "transport-196",
+    "transport-197",
+    "transport-198",
+    "transport-199",
+    "transport-200",
+    "transport-201",
+    "transport-202",
+    "transport-203",
+    "transport-204",
+    "transport-205",
+    "transport-206",
+    "transport-207",
+    "transport-208",
+    "transport-209",
+    "transport-210",
+    "transport-211",
+    "transport-212",
+    "transport-213",
+    "transport-214",
+    "transport-215",
+    "transport-216",
+    "transport-217",
+    "transport-218",
+    "transport-219",
+    "transport-220",
+    "transport-221",
+    "transport-222",
+    "transport-223",
+    "transport-224",
+    "transport-225",
+    "transport-226",
+    "transport-227",
+    "transport-228",
+    "transport-229",
+    "transport-230",
+    "transport-231",
+    "transport-232",
+    "transport-233",
+    "transport-234",
+    "transport-235",
+    "transport-236",
+    "transport-237",
+    "transport-238",
+    "transport-239",
+    "transport-240",
+    "transport-241",
+    "transport-242",
+    "transport-243",
+    "transport-244",
+    "transport-245",
+    "transport-246",
+    "transport-247",
+    "transport-248",
+    "transport-249",
+    "transport-250",
+    "transport-251",
+    "transport-252",
+    "transport-253",
+    "transport-254",
+    "transport-255"
+  ],
+  "privacy_probes": [
+    "trusted-typed-lowering",
+    "raw-cannot-replace-typed-owner",
+    "raw-association-absent-in-production",
+    "raw-helper-absent-in-production",
+    "associated-owner-cannot-be-forged",
+    "native-storage-plan-checked-access",
+    "native-storage-plan-private-execution",
+    "checked-source-private-sources",
+    "checked-source-private-body",
+    "checked-source-native-own-map-api",
+    "checked-source-native-rejects-alternate-map"
+  ]
+}
