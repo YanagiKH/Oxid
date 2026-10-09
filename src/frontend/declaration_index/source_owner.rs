@@ -421,3 +421,70 @@ mod enum_carrier_tests {
         }
     }
 }
+
+impl<'s> SourceOwner<'s> {
+    /// Same associations as ast(), but no copied owner and no diagnostic calls.
+    pub(super) fn try_ast_borrowed(&self, module: ModuleId) -> Option<&'s ast::Program> {
+        match &self.kind {
+            Kind::Original { file, ast, .. } if module.0 == 0 => {
+                ast.belongs_to(file).then_some(*ast)
+            }
+            Kind::Project(project) => {
+                let header = project.modules().get(module.0)?;
+                let ast = project.try_file_ast(header.file)?;
+                let file = project.sources().files().get(header.file.0)?;
+                ast.belongs_to(file).then_some(ast)
+            }
+            _ => None,
+        }
+    }
+    /// One Span copy only at SourceFile::try_text, preserving all range/UTF-8 checks.
+    pub(super) fn try_text_borrowed(&self, span: &Span) -> Option<&'s str> {
+        match &self.kind {
+            Kind::Original { file, .. } => file.try_text(*span),
+            Kind::Project(project) => project.sources().files().get(span.file.0)?.try_text(*span),
+        }
+    }
+}
+
+#[cfg(test)]
+mod compact_owner_tests {
+    use super::*;
+    #[test]
+    fn original_valid_and_forged_access_parity() {
+        let mut map = super::super::super::source::SourceMap::new();
+        let a = map.add("a.ox".into(), "// ü\nfn main()->i32{return 0;}".into());
+        let b = map.add("b.ox".into(), "// ü\nfn main()->i32{return 0;}".into());
+        let ast = super::super::super::parser::parse(
+            map.get(a),
+            super::super::super::lexer::lex(map.get(a)).unwrap(),
+        )
+        .unwrap();
+        for file in [map.get(a), map.get(b)] {
+            // Intentional forgery of the private owner, solely in this module's tests.
+            let owner = SourceOwner {
+                kind: Kind::Original {
+                    file,
+                    ast: &ast,
+                    view: SourceView::Map(&map),
+                },
+            };
+            for module in [ModuleId(0), ModuleId(1), ModuleId(usize::MAX)] {
+                assert_eq!(
+                    owner.ast(module).ok().map(|p| p as *const _),
+                    owner.try_ast_borrowed(module).map(|p| p as *const _)
+                );
+            }
+            for file_id in [a, b, SourceFileId(usize::MAX)] {
+                for (start, end) in [(0, 0), (0, 5), (3, 4), (4, 5), (5, 3), (0, usize::MAX)] {
+                    let span = Span {
+                        file: file_id,
+                        start,
+                        end,
+                    };
+                    assert_eq!(owner.text(span).ok(), owner.try_text_borrowed(&span));
+                }
+            }
+        }
+    }
+}

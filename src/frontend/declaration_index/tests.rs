@@ -9,9 +9,9 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering as AtomicOrdering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
-struct Fixture(PathBuf);
+pub(super) struct Fixture(PathBuf);
 impl Fixture {
-    fn new(files: &[(&str, &str)]) -> Self {
+    pub(super) fn new(files: &[(&str, &str)]) -> Self {
         let root = std::env::temp_dir().join(format!(
             "oxid-unit2-index-{}-{}",
             std::process::id(),
@@ -25,7 +25,7 @@ impl Fixture {
         }
         Self(root)
     }
-    fn load(&self) -> ProjectSources {
+    pub(super) fn load(&self) -> ProjectSources {
         ProjectSources::load_project_candidate(
             self.0.join("main.ox").to_str().unwrap(),
             ProjectLimits::default(),

@@ -1410,6 +1410,13 @@ fn bounded_enum_production_project_policy_layout() {
 }
 
 #[cfg(test)]
+impl ProjectSources {
+    pub(super) fn corrupt_header_file_for_u8_test(&mut self, module: usize, file: SourceFileId) {
+        self.modules[module].file = file;
+    }
+}
+
+#[cfg(test)]
 #[allow(dead_code)]
 mod lexical_loader_layout_tests {
     use super::*;

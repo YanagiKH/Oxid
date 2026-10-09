@@ -400,6 +400,9 @@ impl IndexPlan {
             add(mul(c.originals, 2, at)?, mul(c.original_bytes, 4, at)?, at)?,
             at,
         )?;
+        let additional =
+            super::u8_reservation::checked_bound(&counts).ok_or_else(|| overflow(at))?;
+        build_work = add(build_work, additional, at)?;
         let limits = limits.lowered();
         if retained > limits.retained {
             return Err(resource(
@@ -541,4 +544,89 @@ pub(super) fn merge_sort(
         width = width.checked_mul(2).ok_or_else(|| overflow(at))?;
     }
     Ok(())
+}
+
+/// Reservation scanner protocol: preserve the original meter transaction while
+/// returning finite failure data. Diagnostic construction belongs to its caller
+/// after traversal returns. The existing observer is still test instrumentation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DebitFailure {
+    Overflow,
+    Limit,
+}
+impl WorkMeter {
+    pub(super) fn try_debit_compact(
+        &self,
+        units: u64,
+        origin: &Span,
+        operation: &'static str,
+    ) -> Result<(), DebitFailure> {
+        let next = self
+            .used
+            .get()
+            .checked_add(units)
+            .ok_or(DebitFailure::Overflow)?;
+        if next > self.limit.get() {
+            return Err(DebitFailure::Limit);
+        }
+        self.used.set(next);
+        #[cfg(test)]
+        if self.observing.get() {
+            self.events.borrow_mut().push(WorkEvent {
+                operation,
+                origin: *origin,
+                units,
+            });
+        }
+        #[cfg(not(test))]
+        let _ = (origin, operation);
+        Ok(())
+    }
+}
+#[cfg(test)]
+mod compact_meter_tests {
+    use super::*;
+    #[test]
+    fn exact_old_transaction_and_observation_parity() {
+        let at = Span {
+            file: SourceFileId(0),
+            start: 3,
+            end: 5,
+        };
+        for (used, limit, units) in [
+            (0, 0, 0),
+            (0, 1, 1),
+            (0, 1, 2),
+            (2, 1, 0),
+            (u64::MAX, 0, 1),
+            (u64::MAX, 0, 0),
+            (1, 2, 1),
+        ] {
+            let old = WorkMeter::default();
+            let new = WorkMeter::default();
+            for meter in [&old, &new] {
+                meter.used.set(used);
+                meter.limit.set(limit);
+                meter.enable_observation();
+            }
+            let a = old.debit(units, at, "parity");
+            let b = new.try_debit_compact(units, &at, "parity");
+            assert_eq!(a.is_ok(), b.is_ok());
+            if let (Err(a), Err(b)) = (a, b) {
+                assert_eq!(
+                    a.message,
+                    match b {
+                        DebitFailure::Overflow => "declaration index count overflow",
+                        DebitFailure::Limit => "declaration index work limit exceeded",
+                    }
+                );
+            }
+            assert_eq!(old.used(), new.used());
+            assert_eq!(
+                format!("{:?}", old.events.borrow()),
+                format!("{:?}", new.events.borrow())
+            );
+            assert_eq!(old.limit(), new.limit());
+        }
+    }
 }

@@ -1389,6 +1389,7 @@ impl<'s> CleanOriginals<'s> {
                 return Err(vec![*bad(at)]);
             }
         }
+        super::u8_reservation::scan(&tables, work, &at).map_err(|e| vec![*e])?;
         #[cfg(test)]
         work.observe(Observation::Frozen {
             root_main: (tables.root_main != NONE).then_some(DefId(tables.root_main as usize)),
@@ -2153,5 +2154,19 @@ impl<'s> DeclarationIndex<'s> {
             self.tables.builtins.write_status,
             self.tables.builtins.write_stdout,
         ]
+    }
+}
+
+#[cfg(test)]
+impl DeclarationIndex<'_> {
+    pub(super) fn scan_u8_for_test(&self, work: &WorkMeter) -> Result<(), Box<Diagnostic>> {
+        super::u8_reservation::scan(&self.tables, work, &self.tables.sources.eof())
+    }
+    pub(super) fn corrupt_u8_import_for_test(&mut self, alias: bool) {
+        if alias {
+            self.tables.imports[0].alias_group = NONE;
+        } else {
+            self.tables.modules[0].import_start = NONE;
+        }
     }
 }
