@@ -282,6 +282,7 @@ CURRENT_PATHS = (
     'src/frontend/typeck.rs',
     'src/frontend/typeck_measurement.rs',
     'src/main.rs',
+    'src/runtime/packages.rs',
     'tests/fixtures/bounded_enum_scanner/main.ox',
     'tests/fixtures/bounded_enum_scanner/scanner.ox',
     'tests/fixtures/checked_hir_import/public-source.txt',
@@ -598,7 +599,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f'
+AUTHORITY_SHA = '974aebf4121f323f1674a19b7442d42e495c2075e99ae9f70c6cc1f1fb59a7a5'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -700,8 +701,78 @@ def verify_map(root, records, exact=False, extras=()):
         same(sorted(files), sorted(names + list(extras)), "complete file inventory differs")
 
 
+def restore_package_integrity_source(active, inputs):
+    """Restore the complete immutable lexical predecessor before its inverse."""
+    fields = ("source_binding_runner", "package_integrity_helper", "package_integrity_transition_patch",
+              "lexical_provider_source_manifest")
+    verify_map(REPOSITORY, [active[key] for key in fields])
+    runner = REPOSITORY / active["source_binding_runner"]["path"]
+    api = types.ModuleType("unit4_package_binding")
+    api.__file__ = str(runner)
+    exec(compile(runner.read_bytes(), str(runner), "exec"), api.__dict__)
+    helper_path = REPOSITORY / active["package_integrity_helper"]["path"]
+    same(sha(helper_path.read_bytes()), api.PACKAGE_INTEGRITY_HELPER_SHA,
+         "exact package integrity helper identity")
+    helper = types.ModuleType("unit4_package_inverse")
+    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
+    try:
+        restored, touched = helper.inverse(inputs,
+            (REPOSITORY / active["package_integrity_transition_patch"]["path"]).read_bytes(), api)
+    except api.BindingError as error:
+        raise Rejected("package integrity inverse rejected: " + str(error)) from error
+    same(touched, ["src/runtime/packages.rs"], "exact package integrity inverse scope")
+    predecessor = read(REPOSITORY / active["lexical_provider_source_manifest"]["path"])
+    same(active["lexical_provider_source_manifest"]["sha256"],
+         "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db",
+         "exact retained lexical source identity")
+    actual = [{"path": name, "bytes": len(raw), "sha256": sha(raw)}
+              for name, raw in sorted(restored.items())]
+    same(actual, predecessor["files"], "package inverse must recover exact lexical source")
+    return restored
+
+
+def validate_package_integrity_transition(active, current, historical):
+    fields = (("package_integrity_authority", "package-integrity-authority.json"),
+              ("package_integrity_transition_patch", "package-integrity-transition.patch"),
+              ("package_integrity_helper", "package_integrity.py"),
+              ("lexical_provider_source_manifest", "lexical-provider-source.json"))
+    for key, filename in fields:
+        same(active[key]["path"], "tests/fixtures/typed_project_source_binding/" + filename,
+             "package integrity binding path")
+    verify_map(REPOSITORY, [active[key] for key, _ in fields])
+    predecessor = read(REPOSITORY / active["lexical_provider_source_manifest"]["path"])
+    successor = read(REPOSITORY / active["package_integrity_authority"]["path"])
+    same(successor["schema"], "oxid-package-integrity-source-transition-v1", "package authority schema")
+    same(successor["reviewed_source_head"], current["reviewed_source_head"], "package source checkpoint")
+    same(successor["source_only_tree"], current["source_only_tree"], "package source tree")
+    for field, key in (("current_source_sha256", "current_source_manifest"),
+                       ("lexical_source_sha256", "lexical_provider_source_manifest"),
+                       ("transition_patch_sha256", "package_integrity_transition_patch")):
+        same(successor[field], active[key]["sha256"], "package exact " + field)
+    same(successor["transition_paths"], ["src/runtime/packages.rs"], "exact package transition scope")
+    same(len(predecessor["files"]), 345, "complete retained lexical source count")
+    same(successor["current_source_members"], 345, "complete package source count")
+    for field in ("instrumentation", "control_instrumentation"):
+        same(sorted(set(successor["transition_paths"]).intersection(row["path"] for row in historical[field])),
+             [], "package transition must not overlap parser instrumentation")
+    retained = active["lexical_provider_parser_authority"]
+    same(retained, {'path': 'tests/qualification/unit4_parser_current/lexical-provider-authority.json', 'bytes': 482448, 'sha256': '209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f'},
+         "retained lexical parser authority identity")
+    verify_map(REPOSITORY, [retained])
+    old = read(REPOSITORY / retained["path"])
+    omit = {"current_base_files", "current_derived_files", "current_control_derived_files",
+            "current_candidate_source_manifest_sha256", "current_source_manifest", "reviewed_source_head",
+            "source_only_tree", "source_binding_runner", "source_delta", "lexical_provider_parser_authority",
+            *(key for key, _ in fields)}
+    same({k: v for k, v in active.items() if k not in omit},
+         {k: v for k, v in old.items() if k not in omit},
+         "package changes unrelated parser authority")
+    return predecessor
+
+
 def restore_lexical_provider_source(active, inputs):
     """Recover every diagnostic predecessor byte before its immutable inverse."""
+    inputs = restore_package_integrity_source(active, inputs)
     fields = ("source_binding_runner", "lexical_provider_helper", "lexical_provider_transition_patch",
               "producer_diagnostic_source_manifest")
     verify_map(REPOSITORY, [active[key] for key in fields])
@@ -745,7 +816,7 @@ def validate_lexical_provider_transition(active, current, historical):
     same(successor["source_only_tree"], current["source_only_tree"], "lexical provider source tree")
     same(successor["base_tree"], predecessor["source_only_tree"], "lexical provider exact predecessor tree")
     same(successor["predecessor_source_head"], predecessor["reviewed_source_head"], "lexical provider predecessor checkpoint")
-    for field, key in (("current_source_sha256", "current_source_manifest"),
+    for field, key in (("current_source_sha256", "lexical_provider_source_manifest"),
                        ("producer_diagnostic_source_sha256", "producer_diagnostic_source_manifest"),
                        ("transition_patch_sha256", "lexical_provider_transition_patch")):
         same(successor[field], active[key]["sha256"], "lexical provider exact " + field)
@@ -764,6 +835,8 @@ def validate_lexical_provider_transition(active, current, historical):
     omit = {"current_base_files", "current_derived_files", "current_control_derived_files",
             "current_candidate_source_manifest_sha256", "current_source_manifest", "reviewed_source_head",
             "source_only_tree", "source_binding_runner", "source_delta", "producer_diagnostic_parser_authority",
+            "package_integrity_authority", "package_integrity_transition_patch", "package_integrity_helper",
+            "lexical_provider_source_manifest", "lexical_provider_parser_authority",
             *(key for key, _ in fields)}
     same({k: v for k, v in active.items() if k not in omit},
          {k: v for k, v in old.items() if k not in omit},
@@ -956,7 +1029,8 @@ def authority():
     same(len(current["files"]), 345, "complete current source count")
     same(current["reviewed_source_head"], active["reviewed_source_head"], "reviewed source checkpoint")
     same(current["source_only_tree"], active["source_only_tree"], "reviewed source tree")
-    diagnostic_source = validate_lexical_provider_transition(active, current, result)
+    lexical_source = validate_package_integrity_transition(active, current, result)
+    diagnostic_source = validate_lexical_provider_transition(active, lexical_source, result)
     v2_source = validate_producer_diagnostic_transition(active, diagnostic_source, result)
     producer_source = validate_frontend_v2_transition(active, v2_source, result)
     hir_source = validate_hir_producer_transition(active, producer_source, result)

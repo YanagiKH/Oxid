@@ -40,10 +40,10 @@ SCANNER_HASHES = {
     "scanner.ox": "d13847eaecd69667031e54bb6f3f329365427a483e0bff537d0b28882516ac14",
 }
 ELF_ENV = {"PATH": "/no-tools"}
-# Reviewed lexical-provider successor executes the unchanged enum roster. The exact
+# Reviewed package-integrity successor executes the unchanged enum roster. The exact
 # 237-member enum predecessor remains in enum-source.json; current execution
 # uses the complete 345-member authority, never a caller-supplied subset.
-REVIEWED_SOURCE_SHA256 = '952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db'
+REVIEWED_SOURCE_SHA256 = '4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f'
 
 
 def require(condition, message):

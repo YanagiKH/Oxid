@@ -52,4 +52,21 @@ Commit `oxid.lock` for applications. Libraries may commit it when reproducible r
 
 ## Current limits
 
-The resolver identifies packages by name and cannot resolve multiple versions of the same name together. Package-tree checksums use FNV; they detect changes but are not cryptographic supply-chain verification. Review dependency sources and lockfile updates before running their code. Registry publishing is not part of the 0.9 workflow.
+The resolver identifies packages by name and cannot resolve multiple versions of the same name together. New package-tree checksums use SHA-256. Existing FNV entries retain their historical verification algorithm until an explicit update; mixed-algorithm locks are supported. Neither digest authenticates a publisher or establishes source trust. Review dependency sources and lockfile updates before running their code. Registry publishing is not part of the 0.9 workflow.
+
+## Checksum migration
+
+`oxid update` upgrades existing FNV entries to SHA-256 while retaining its usual
+permission to accept source, revision and content changes. Review dependencies
+before updating. Ordinary resolution preserves recorded algorithms; `--locked`
+verifies without rewriting. `--offline` retains its existing ability to create or
+rewrite locks from local/cached content, but does not upgrade existing FNV entries.
+Older Oxid binaries reject SHA-256 checksums explicitly.
+
+SHA hashing uses deterministic, domain-separated binary framing. Included
+symlinks, special files, non-UTF-8 names and backslash-containing components are
+rejected; rename ambiguous components before migration. The exclusions `.git`,
+`.oxid`, `target`, and `oxid.lock` apply at every depth. File bytes and empty
+directories are included; permissions and timestamps are not. A concurrently
+changing tree is not an atomic snapshot. See [RFC 0029](../rfcs/0029-package-sha256-integrity.md)
+for the exact representation and bounded trust contract.

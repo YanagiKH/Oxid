@@ -238,3 +238,16 @@ its historical inversions remain byte-identical; the map changes only for the
 12 producer compiler/build paths and three additive module members. Removing
 the existing driver hook restores the exact producer-enabled driver. No
 producer-specific lifecycle events or semantic expectations are inferred.
+
+### Package-integrity source successor
+
+The active source manifest now binds package checkpoint
+`3315ad42a98cbd033f88fbec676793dec5e0be4a`. Its 345 inputs differ from the retained
+lexical-provider source only at `src/runtime/packages.rs`. The unchanged lifecycle
+patch still derives exactly 346 observer inputs and the same eight changed
+frontend paths; package bytes remain identical between ordinary and observer
+views. Restoring the single prior package identity recovers the exact former
+observer-map digest. Only the current-manifest, current-file-map and derived
+observer-file-map pins advance. Lifecycle patches, runtime selection and prior
+source authorities remain unchanged. Source preparation executes no compiler
+and is not a semantic qualification pass.

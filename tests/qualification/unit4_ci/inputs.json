@@ -51,9 +51,9 @@
       "sha256": "ddf68e898be3895717461388368122f00eb31c3b3b27fd8677e652b263438155"
     },
     {
-      "bytes": 35830,
+      "bytes": 37648,
       "path": "tests/fixtures/typed_project_source_binding/README.md",
-      "sha256": "678faea2ef25f5c80b46544d4db3bf7e6afeb5cbda8b6b398e5ed8c99315ed2a"
+      "sha256": "41e2089f2152da0ba5a8e5d451b0745af02ba060f8772d380be6d7476ecb93fa"
     },
     {
       "bytes": 9916,
@@ -91,9 +91,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 67100,
+      "bytes": 67336,
       "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-      "sha256": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
+      "sha256": "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f"
     },
     {
       "bytes": 29723,
@@ -211,6 +211,11 @@
       "sha256": "69ea522493ab027b8dfcb3b1fb158f8dde14e7ff283e85d8e1ae6c29dc256a02"
     },
     {
+      "bytes": 67100,
+      "path": "tests/fixtures/typed_project_source_binding/lexical-provider-source.json",
+      "sha256": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
+    },
+    {
       "bytes": 156583,
       "path": "tests/fixtures/typed_project_source_binding/lexical-provider-transition.patch",
       "sha256": "400270e547f1214abd9885d724641427fb8b0871f69f25176818446218d0d458"
@@ -251,9 +256,24 @@
       "sha256": "9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c"
     },
     {
-      "bytes": 9959,
+      "bytes": 94900,
+      "path": "tests/fixtures/typed_project_source_binding/package-integrity-authority.json",
+      "sha256": "f5a44432927c0e84d58226fcb988860098b2c44d9fe01e4874a771632f89f724"
+    },
+    {
+      "bytes": 16227,
+      "path": "tests/fixtures/typed_project_source_binding/package-integrity-transition.patch",
+      "sha256": "79c53c652528fe770939ba42dd7a478a309b04555e398d33298bc96644316a49"
+    },
+    {
+      "bytes": 10616,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "7267d8f44b3cf112530d82b33f2a8191a6cedab1298347c834da874cf7b0afc1"
+      "sha256": "feb0da801975623c62022156438b75e8db6a894d8efe2a020b13404d0f1655f2"
+    },
+    {
+      "bytes": 5445,
+      "path": "tests/fixtures/typed_project_source_binding/package_integrity.py",
+      "sha256": "263e898f966fbc1cb007dfab86a0b16504a2a65d11c4edcdb3cbbbcba34af857"
     },
     {
       "bytes": 22314,
@@ -296,9 +316,9 @@
       "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
     },
     {
-      "bytes": 198778,
+      "bytes": 201696,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "4d8a7c06f9050e50c17152bcf1e2e6eb9f72cb72dbd773560515b680502329d8"
+      "sha256": "63ed85648cac69c3d00521685abfd094c640188bc1d262bf474af54bcbcd1722"
     },
     {
       "bytes": 55961,
@@ -1046,19 +1066,24 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 13300,
+      "bytes": 14570,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "ec55c932dd01772c05b2c09dca611c81d7b98e9a14e236dd37256a978b5469c9"
+      "sha256": "f9772a27b58241ff4441d1de6941d9ab0d0e5af407481a73ce41e57605ceed78"
+    },
+    {
+      "bytes": 484020,
+      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "974aebf4121f323f1674a19b7442d42e495c2075e99ae9f70c6cc1f1fb59a7a5"
     },
     {
       "bytes": 482448,
-      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "path": "tests/qualification/unit4_parser_current/lexical-provider-authority.json",
       "sha256": "209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f"
     },
     {
-      "bytes": 170682,
+      "bytes": 175789,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "70e0e3ecebb4d724702cc6f2358f0d26939b374dcb763e28a06a521077dd681d"
+      "sha256": "bdb2076db8409cf3b8da59c80fe7a6f15ef8200a21d4fd1687f24f2d0ac7897a"
     },
     {
       "bytes": 477258,
@@ -1076,9 +1101,9 @@
       "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
     },
     {
-      "bytes": 103080,
+      "bytes": 107645,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "055cfa251d7b0c590ede16ed076d4bbfb6de1960c147d616f173a3053a2add34"
+      "sha256": "f07dae0f4a205cf3872f9b517934e9073be5fb9c49c53307205630d606e4fb26"
     },
     {
       "bytes": 8920,
@@ -1091,14 +1116,14 @@
       "sha256": "d992085ac14bde1d4511c3aad3ef6d05fb544fc9fb349bb873cdd60bed0aed52"
     },
     {
-      "bytes": 14579,
+      "bytes": 15347,
       "path": "tests/qualification/unit4_public_v3/README.md",
-      "sha256": "9b10633b667d4f7a48188dfcd4d0b18e054efc74ae79215912d2da0e462a725a"
+      "sha256": "fc46341a374d8234bac37f524aa7934746a774f16f70c2d8b84116978f962a94"
     },
     {
       "bytes": 945,
       "path": "tests/qualification/unit4_public_v3/authority.py",
-      "sha256": "2eb19f470bb5d002257800e4f4ea34091e3ba2f6d17a031e77da990584d3f11c"
+      "sha256": "b99e313c3a5cd4f36b3b5eb8352051760bc3be5595f0c2933a75c5d913a824e8"
     },
     {
       "bytes": 7004,
@@ -1171,9 +1196,9 @@
       "sha256": "dd924dd35aec0b72f3680ca4e9a9cff8b0d0d69ad3ddc5e1b3c3935b004c752c"
     },
     {
-      "bytes": 31447,
+      "bytes": 33175,
       "path": "tests/qualification/unit4_public_v3/selftest.py",
-      "sha256": "544374994f2880e0be20b29b21833e3ebdf6dbb0be5b531b3aa03f17fbc30a88"
+      "sha256": "576a66e049f480e1586511635720a2189b4d5c65544810b667efb4595fdee421"
     },
     {
       "bytes": 3197,

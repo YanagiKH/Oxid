@@ -180,7 +180,7 @@
       "evidence": [
         "docs/architecture/baseline-validation.md"
       ],
-      "limitations": "Name-based identity, FNV tree checksum; no multi-version registry or cryptographic trust guarantee."
+      "limitations": "Name-based identity; SHA-256 for new package-tree locks with explicitly migrated legacy FNV entries. No multi-version registry, publisher authentication or cryptographic source-trust guarantee."
     },
     {
       "id": "synthetic-source-corpus",

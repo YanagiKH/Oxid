@@ -38,7 +38,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         self.assertEqual(len(p.compiler_map(a)), 260)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 305)
+        self.assertEqual(len(a['current']['source_delta']), 306)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox',
  'fixtures/typed-record-composition-samples/model.ox',
  'fixtures/typed-record-composition-samples/ops.ox',
@@ -264,9 +264,9 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/producer_diagnostic/unknown-type-source.txt',
  'tests/fixtures/producer_diagnostic/unknown-type.bin',
  'tests/typed_record_composition.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 80)
-        self.assertEqual(a['current']['reviewed_source_head'], '41c73d527f5518e09877544fa5820f3129f55b42')
-        self.assertEqual(a['current']['source_only_tree'], 'ea05a2c15672bdef5b596b4f9d4494e1134d6e76')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 81)
+        self.assertEqual(a['current']['reviewed_source_head'], '3315ad42a98cbd033f88fbec676793dec5e0be4a')
+        self.assertEqual(a['current']['source_only_tree'], '243e6e55d179a362569ab353aa207eaa95e5ba1b')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read
@@ -314,7 +314,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'verify_build', 'cargo_cache', 'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'restore_package_integrity_source', 'validate_package_integrity_transition', 'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -1489,7 +1489,7 @@ class LexicalProviderTransitionControls(unittest.TestCase):
             altered = copy.deepcopy(self.a)
             altered[field].append({'path': 'src/frontend/project.rs'})
             with self.subTest(field=field), self.assertRaisesRegex(p.Rejected, 'must not overlap parser instrumentation'):
-                p.validate_lexical_provider_transition(self.active, self.a['current_source'], altered)
+                p.validate_lexical_provider_transition(self.active, p.read(p.REPOSITORY / self.active['lexical_provider_source_manifest']['path']), altered)
 
     def test_lexical_preserves_historical_parser_authority_and_dependencies(self):
         old = p.read(p.REPOSITORY / self.active['producer_diagnostic_parser_authority']['path'])
@@ -1576,6 +1576,76 @@ class FrontendV2TransitionControls(unittest.TestCase):
             altered[field].append({'path':'src/frontend/hir_protocol.rs'})
             with self.subTest(field=field), self.assertRaises(p.Rejected):
                 p.validate_frontend_v2_transition(self.active, p.read(p.REPOSITORY / self.active['frontend_v2_source_manifest']['path']), altered)
+
+
+class PackageIntegrityTransitionControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.a = p.authority()
+        cls.active = cls.a['current']
+        cls.inputs = {row['path']: (p.REPOSITORY / row['path']).read_bytes()
+                      for row in cls.a['current_source']['files']}
+
+    def test_exact_single_body_inverse_and_immutable_parser_predecessor(self):
+        restored = p.restore_package_integrity_source(self.active, self.inputs)
+        predecessor = p.read(p.REPOSITORY / self.active['lexical_provider_source_manifest']['path'])
+        self.assertEqual([{'path': name, 'bytes': len(raw), 'sha256': p.sha(raw)}
+                          for name, raw in sorted(restored.items())], predecessor['files'])
+        self.assertEqual([name for name in sorted(self.inputs)
+                          if self.inputs[name] != restored[name]], ['src/runtime/packages.rs'])
+        retained = self.active['lexical_provider_parser_authority']
+        self.assertEqual(p.sha((p.REPOSITORY / retained['path']).read_bytes()),
+                         '209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f')
+        with self.assertRaises(p.Rejected):
+            p.restore_package_integrity_source(self.active, restored)
+
+    def test_wrong_member_hash_missing_and_extra_delta_reject(self):
+        for case in ('wrong-hash', 'missing', 'wrong-member', 'extra-delta', 'extra-member'):
+            altered = dict(self.inputs)
+            if case == 'wrong-hash': altered['src/runtime/packages.rs'] += b'\n'
+            if case == 'missing': del altered['src/runtime/packages.rs']
+            if case == 'wrong-member': altered['src/runtime/wrong.rs'] = altered.pop('src/runtime/packages.rs')
+            if case == 'extra-delta': altered['src/frontend/lexer.rs'] += b'\n'
+            if case == 'extra-member': altered['src/runtime/extra.rs'] = b'\n'
+            with self.subTest(case=case), self.assertRaises(p.Rejected):
+                p.restore_package_integrity_source(self.active, altered)
+
+    def test_all_binding_pins_reject(self):
+        for field in ('source_binding_runner', 'package_integrity_helper',
+                      'package_integrity_transition_patch', 'lexical_provider_source_manifest'):
+            altered = copy.deepcopy(self.active)
+            altered[field]['sha256'] = '0' * 64
+            with self.subTest(field=field), self.assertRaises(p.Rejected):
+                p.restore_package_integrity_source(altered, self.inputs)
+
+    def test_coherently_rebased_predecessor_rejects(self):
+        active = copy.deepcopy(self.active)
+        path = p.REPOSITORY / active['lexical_provider_source_manifest']['path']
+        altered = p.read(path)
+        altered['files'][0]['sha256'] = '0' * 64
+        original_read = p.read
+        with patch.object(p, 'read', side_effect=lambda name: altered if name == path else original_read(name)):
+            with self.assertRaisesRegex(p.Rejected, 'must recover exact lexical source'):
+                p.restore_package_integrity_source(active, self.inputs)
+        active['lexical_provider_source_manifest']['sha256'] = p.sha(
+            (json.dumps(altered, sort_keys=True, indent=2) + '\n').encode())
+        with patch.object(p, 'verify_map'), self.assertRaisesRegex(p.Rejected, 'exact retained lexical source identity'):
+            p.restore_package_integrity_source(active, self.inputs)
+
+    def test_package_cannot_overlap_either_hook_roster(self):
+        for field in ('instrumentation', 'control_instrumentation'):
+            altered = copy.deepcopy(self.a)
+            altered[field].append({'path': 'src/runtime/packages.rs'})
+            with self.subTest(field=field), self.assertRaisesRegex(p.Rejected, 'must not overlap parser instrumentation'):
+                p.validate_package_integrity_transition(self.active, self.a['current_source'], altered)
+
+    def test_package_preserves_semantics_and_dependencies(self):
+        old = p.read(p.REPOSITORY / self.active['lexical_provider_parser_authority']['path'])
+        for key in ('current_dependency_closure', 'historical_authority', 'historical_portable',
+                    'enum_ast_schema_adapter', 'enum_parser_instrumentation_adapter',
+                    'observer_initializer_adapter', 'composition_parser_amendment',
+                    'composition_parser_amendment_module'):
+            self.assertEqual(self.active[key], old[key], key)
 
 
 if __name__ == '__main__':

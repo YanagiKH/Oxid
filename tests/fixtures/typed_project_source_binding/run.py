@@ -71,8 +71,9 @@ HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e
 HIR_IMPORT_SOURCE_BYTES = 62558
 PRODUCER_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 PRODUCER_SOURCE_BYTES = 63220
-CURRENT_SOURCE_SHA = '952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db'
-CURRENT_SOURCE_BYTES = 67100
+CURRENT_SOURCE_SHA = '4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f'
+CURRENT_SOURCE_BYTES = 67336
+PACKAGE_INTEGRITY_HELPER_SHA = '263e898f966fbc1cb007dfab86a0b16504a2a65d11c4edcdb3cbbbcba34af857'
 LEXICAL_PROVIDER_HELPER_SHA = '7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c'
 FRONTEND_V2_HELPER_SHA = 'c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7'
 PRODUCER_DIAGNOSTIC_HELPER_SHA = '15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823'
@@ -1374,6 +1375,16 @@ def compile_fixture_paths(source, *, combined=False):
     return paths
 
 
+def load_package_integrity(package_bytes, package=PACKAGE):
+    """Load only the separately pinned package-integrity outer successor."""
+    require(digest(package_bytes["package_integrity.py"]) == PACKAGE_INTEGRITY_HELPER_SHA,
+            "unapproved package integrity source helper")
+    module = types.ModuleType("package_integrity_source_binding")
+    module.__file__ = str(package / "package_integrity.py")
+    exec(compile(package_bytes["package_integrity.py"], module.__file__, "exec"), module.__dict__)
+    return module
+
+
 def load_lexical_provider(package_bytes, package=PACKAGE):
     """Load only the separately pinned lexical-provider successor helper."""
     require(digest(package_bytes["lexical_provider.py"]) == LEXICAL_PROVIDER_HELPER_SHA,
@@ -1635,10 +1646,27 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    lexical = load_lexical_provider(package_bytes, package)
-    lexical_current, lexical_inputs, lexical_authority, diagnostic_inputs, lexical_touched = lexical.admit(
+    integrity = load_package_integrity(package_bytes, package)
+    package_current, package_inputs, package_authority, lexical_inputs, package_touched = integrity.admit(
         repo, package_bytes, types.SimpleNamespace(**globals()))
-    references.update(check_entries(repo, list(lexical.PRODUCER_CLOSURE)))
+    lexical = load_lexical_provider(package_bytes, package)
+    lexical_closure = check_entries(repo, list(lexical.PRODUCER_CLOSURE))
+    references.update(lexical_closure)
+    # Preserve actual-input closure/mode checks before materializing the exact
+    # predecessor. Copying must not hide unexpected siblings or executable bits.
+    lexical_sources = {row['path'] for row in lexical.PRODUCER_CLOSURE if row['path'].endswith('.ox')}
+    require(sorted(path.name for path in (repo / 'fixtures/typed-streaming-lexer').glob('*.ox'))
+            == sorted(name.rsplit('/', 1)[1] for name in lexical_sources),
+            'lexical producer source closure differs')
+    for name in lexical_closure:
+        require(regular(repo, name).stat().st_mode & 0o111 == 0, 'changed input mode: ' + name)
+    lexical_package = dict(package_bytes, **{"current-source.json": package_bytes["lexical-provider-source.json"]})
+    with tempfile.TemporaryDirectory(prefix="oxid-retained-lexical-provider-") as directory:
+        lexical_repo = Path(directory) / "source"
+        materialize(lexical_repo, {**lexical_inputs, **lexical_closure})
+        lexical_current, admitted_lexical_inputs, lexical_authority, diagnostic_inputs, lexical_touched = lexical.admit(
+            lexical_repo, lexical_package, types.SimpleNamespace(**globals()))
+    require(admitted_lexical_inputs == lexical_inputs, "retained lexical admission changed its input view")
     diagnostic = load_producer_diagnostic(package_bytes, package)
     diagnostic_closure = check_entries(repo, list(diagnostic.DIAGNOSTIC_CLOSURE))
     references.update(diagnostic_closure)
@@ -2228,7 +2256,10 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": lexical_current, "lexical_provider_authority": lexical_authority,
+    return {"current": package_current, "package_integrity_authority": package_authority,
+            "package_integrity_touched": package_touched,
+            "lexical_provider_source": lexical_current, "lexical_provider_inputs": lexical_inputs,
+            "lexical_provider_authority": lexical_authority,
             "lexical_provider_touched": lexical_touched,
             "producer_diagnostic_source": diagnostic_current, "producer_diagnostic_inputs": diagnostic_inputs,
             "producer_diagnostic_authority": diagnostic_authority,
@@ -2255,7 +2286,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": lexical_inputs, "archived": reconstructed, "references": references,
+            "inputs": package_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2309,6 +2340,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "package_integrity_authority_sha256": digest(captured["package_bytes"]["package-integrity-authority.json"]),
+            "package_integrity_inverse_patch_sha256": digest(captured["package_bytes"]["package-integrity-transition.patch"]),
+            "package_integrity_inverse_touched": captured["package_integrity_touched"],
+            "lexical_provider_source_sha256": digest(captured["package_bytes"]["lexical-provider-source.json"]),
             "lexical_provider_authority_sha256": digest(captured["package_bytes"]["lexical-provider-authority.json"]),
             "lexical_provider_inverse_patch_sha256": digest(captured["package_bytes"]["lexical-provider-transition.patch"]),
             "lexical_provider_inverse_touched": captured["lexical_provider_touched"],
@@ -2584,6 +2619,8 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      package_integrity_authority_sha256=digest(captured["package_bytes"]["package-integrity-authority.json"]),
+                      package_integrity_inverse_patch_sha256=digest(captured["package_bytes"]["package-integrity-transition.patch"]),
                       lexical_provider_authority_sha256=digest(captured["package_bytes"]["lexical-provider-authority.json"]),
                       lexical_provider_inverse_patch_sha256=digest(captured["package_bytes"]["lexical-provider-transition.patch"]),
                       producer_diagnostic_source_sha256=digest(captured["package_bytes"]["producer-diagnostic-source.json"]),
