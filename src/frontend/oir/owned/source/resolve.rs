@@ -336,6 +336,13 @@ fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>
             format_args!("u8 record fields are not supported"),
             span,
         ))
+    } else if matches!(ty, ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == Ty::U8)
+    {
+        Err(error(
+            "E0202",
+            format_args!("u8 array record fields are not supported"),
+            span,
+        ))
     } else if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
         Err(error(
             "E0300",
@@ -1161,7 +1168,9 @@ fn resolve_index_impl(
                 let ty = value_type(&mut index.query(work), module, field.ty)?;
                 let ty = record_field_type(
                     ty,
-                    if ty == ValueTy::Scalar(Ty::U8) {
+                    if ty == ValueTy::Scalar(Ty::U8)
+                        || matches!(ty, ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == Ty::U8)
+                    {
                         field.ty.span
                     } else {
                         field.span
@@ -3196,3 +3205,7 @@ mod builtin_signature_tests;
 #[cfg(test)]
 #[path = "output_typing_tests.rs"]
 mod output_typing_tests;
+
+#[cfg(test)]
+#[path = "byte_storage_type_tests.rs"]
+mod byte_storage_type_tests;

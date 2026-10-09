@@ -34,7 +34,10 @@ impl FixedArrayTy {
         element: hir::Ty,
         length: usize,
     ) -> Result<Self, DeclarationError> {
-        if !matches!(element, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) {
+        if !matches!(
+            element,
+            hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit
+        ) {
             return Err(DeclarationError::TypeMismatch);
         }
         if length > 1024 {
@@ -88,7 +91,6 @@ pub(in crate::frontend) enum BorrowedTy {
 impl BorrowedTy {
     pub(in crate::frontend) fn accepts(self, authority: Self) -> bool {
         match (authority, self) {
-            (Self::ScalarSlice(hir::Ty::U8), _) | (_, Self::ScalarSlice(hir::Ty::U8)) => false,
             (Self::Exact(AggregateTy::Enum(_)), _) | (_, Self::Exact(AggregateTy::Enum(_))) => {
                 false
             }
@@ -129,10 +131,9 @@ impl BorrowedSlot {
                 FixedArrayTy::check(array.element(), array.length())?;
                 BorrowedSlotRepr::FixedArray(array)
             }
-            BorrowedTy::ScalarSlice(element @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit)) => {
-                BorrowedSlotRepr::ScalarSlice(element)
-            }
-            BorrowedTy::ScalarSlice(hir::Ty::U8) => return Err(DeclarationError::TypeMismatch),
+            BorrowedTy::ScalarSlice(
+                element @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit),
+            ) => BorrowedSlotRepr::ScalarSlice(element),
         }))
     }
     pub(in crate::frontend) fn referent(self) -> BorrowedTy {
@@ -298,9 +299,8 @@ impl Layout {
     }
     fn scalar(ty: hir::Ty) -> Self {
         match ty {
-            hir::Ty::Bool | hir::Ty::Unit => Self { size: 1, align: 1 },
+            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => Self { size: 1, align: 1 },
             hir::Ty::I32 => Self { size: 4, align: 4 },
-            hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
         }
     }
 }
@@ -681,8 +681,9 @@ impl Declarations {
         match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
-            BorrowedTy::ScalarSlice(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) => Ok(()),
-            BorrowedTy::ScalarSlice(hir::Ty::U8) => Err(DeclarationError::TypeMismatch),
+            BorrowedTy::ScalarSlice(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit) => {
+                Ok(())
+            }
         }
     }
     pub(super) fn same_borrowed_type(
@@ -822,6 +823,11 @@ fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
         ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)) => {
             Err(DeclarationError::NonScalarField(field.id))
         }
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)))
+            if array.element() == hir::Ty::U8 =>
+        {
+            Err(DeclarationError::NonScalarField(field.id))
+        }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_))) => {
             Err(DeclarationError::NonScalarField(field.id))
         }
@@ -851,6 +857,9 @@ fn value_summary(
             width: 1,
             depth: 0,
         },
+        ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == hir::Ty::U8 => {
+            return Err(DeclarationError::TypeMismatch)
+        }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
             layout: array.layout()?,
             width: array.length().max(1),
@@ -2010,3 +2019,6 @@ mod enum_integration_tests;
 
 #[cfg(test)]
 mod u8_tests;
+
+#[cfg(test)]
+mod byte_storage_tests;

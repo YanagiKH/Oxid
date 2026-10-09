@@ -74,3 +74,18 @@ mod output_source_tests;
 pub(super) mod u8_tests;
 
 mod u8_resources;
+
+#[cfg(test)]
+pub(super) mod byte_storage_tests;
+
+#[cfg(test)]
+mod byte_storage_raw_tests;
+
+#[cfg(test)]
+pub(super) mod byte_storage_native_fixture;
+
+#[cfg(test)]
+mod byte_storage_trust_tests;
+
+#[cfg(test)]
+mod byte_storage_fuel_tests;

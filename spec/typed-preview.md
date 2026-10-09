@@ -121,10 +121,50 @@ for exact diagnostics, costs and exclusions, and the
 for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
 experimental and does not complete M2 or v1.0.
 
+## Standalone bounded byte storage
+
+[RFC0031](../rfcs/0031-bounded-standalone-byte-storage.md) extends the fixed-array
+and call-only slice contract to standalone `[u8; N]`, `&[u8; N]`,
+`&mut [u8; N]`, `&[u8]` and `&mut [u8]`, with N=0..1024. This successor is
+under independent resource and current-source qualification; it does not extend
+the historical validation claims linked above.
+
+A u8 scalar is exactly 0..255. Construct one through an explicitly named i32
+local or parameter using `x.to_u8_checked()`; an out-of-range value fails with
+E0610. Widen a named byte with `b.to_i32()`. Decimal literals remain i32 even
+under byte annotations. There is no implicit coercion, u8 arithmetic or byte
+literal syntax. The helper `byte` in the
+[pilot](../fixtures/typed-byte-storage/main.ox) is an ordinary declared function.
+That pilot moves `[0,127,128,255]` through a helper, mutates index1 through an
+exclusive slice, and sums `[0,255,128,255]` through a shared slice to return638.
+
+Nonempty byte literals infer exact u8 elements. Empty literals still require an
+explicit zero-length local annotation, for example `let a: [u8;0] = ([]);`.
+Arrays remain move-only including N=0; indexes and lengths remain i32. Reads
+copy byte snapshots. Exact fixed-array and whole-array slice calls retain
+existing whole-owner loans, explicit reborrows and evaluation/fuel order.
+An indexed byte must first be bound to a local before widening; `a[i].to_i32()`
+is not a supported receiver.
+
+Byte arrays cannot be record fields, including unused/nested/imported fields
+and N=0. Such fields fail E0202/resolve at the complete field type with
+`u8 array record fields are not supported`. Direct u8 fields and enum payloads
+remain excluded. Predecessor bool/i32/unit record arrays and projections stay
+available. There are no byte-record projections, element references, subslices,
+heap buffers, I/O signature changes or provider wire expansions. Existing
+stdin/stdout builtins continue to use i32 arrays/slices.
+
+Physical standalone byte array storage uses stride/alignment1 and max(1,N)
+bytes. Logical width remains max(1,N), preserving all expanded-cell and fuel
+charges. Source/reference and native caps are unchanged; a legal N=1024 source
+constructor can exceed the narrower native per-function slot cap and be refused
+before tools/output. Native qualification remains Linux x86_64 LLVM19.1.7 O0.
+
 ## Bounded owned record composition
 
 [RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold
-bool/i32/unit, another nominal record, or a fixed scalar array. Forward type
+bool/i32/unit, another nominal record, or a fixed bool/i32/unit array. Standalone
+byte arrays are excluded from record fields. Forward type
 references are allowed, but by-value containment must be acyclic even in unused
 declarations. Records remain nominal and move-only. Containment and named-root
 field paths are bounded to 64 levels, with the existing byte and work ceilings.
@@ -592,9 +632,11 @@ absolute_path  := "crate" "::" name ("::" name)*
 item_path      := name | absolute_path
 function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
-scalar_type    := "bool" | "i32" | "(" ")"
-fixed_array_type := "[" scalar_type ";" decimal "]"
-slice_type     := "[" scalar_type "]"
+scalar_type    := "bool" | "i32" | "u8" | "(" ")"
+array_element_type := "bool" | "i32" | "u8" | "(" ")"
+enum_payload_type := "bool" | "i32" | "(" ")"
+fixed_array_type := "[" array_element_type ";" decimal "]"
+slice_type     := "[" array_element_type "]"
 value_type     := scalar_type | item_path | fixed_array_type
 referent_type  := item_path | fixed_array_type | slice_type
 parameter_type := value_type | "&" referent_type | "&" "mut" referent_type
@@ -602,7 +644,7 @@ struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
 field_decl     := "pub"? name ":" value_type
 field_decls    := field_decl ("," field_decl)* ","?
 enum_decl      := "pub"? "enum" type_name "{" variant_decl ("," variant_decl)* ","? "}"
-variant_decl   := name ("(" scalar_type ")")?
+variant_decl   := name ("(" enum_payload_type ")")?
 variant_path   := name "::" name | absolute_path "::" name
 match_arm      := variant_path ("(" name ")")? "=>" block
 block          := "{" statement* "}"

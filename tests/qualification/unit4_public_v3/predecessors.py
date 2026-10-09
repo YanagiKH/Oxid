@@ -16,7 +16,7 @@ import tarfile
 from pathlib import Path
 from contracts import need, sha, load, binding, verify, save
 from compare import envelope, diagnostic_vector, valid_origins, policy_bounds
-from authority import CURRENT_SOURCE_SHA, ENUM_SOURCE_SHA
+from authority import CURRENT_SOURCE_SHA, CURRENT_SOURCE_MEMBERS, ENUM_SOURCE_SHA
 
 QUALIFIED_PATHS_HELPER_SHA = '999e9f8cd75ae2010a11d20a40c357bf28d42b658d6293e93cb73a36cb665288'
 
@@ -130,7 +130,7 @@ class Predecessors:
             need(not Path(source_manifest).is_symlink() and sha(execution_raw) == CURRENT_SOURCE_SHA,
                  'public predecessor current execution source identity')
             execution = load(source_manifest)
-            need(execution['enum_source_sha256'] == ENUM_SOURCE_SHA and len(execution['files']) == 363,
+            need(execution['enum_source_sha256'] == ENUM_SOURCE_SHA and len(execution['files']) == CURRENT_SOURCE_MEMBERS,
                  'public predecessor exact semantic source link')
             semantic_manifest = root / 'enum-source.json'
             need(not semantic_manifest.is_symlink() and sha(semantic_manifest.read_bytes()) == ENUM_SOURCE_SHA,

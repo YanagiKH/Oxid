@@ -51,6 +51,8 @@ class SourceAuthorityControls(unittest.TestCase):
         helper = api.load_u8_source({name: (binding_path.parent / name).read_bytes() for name in ('u8_source.py',)})
         inputs = {row['path']: (prior_root / row['path']).read_bytes()
                   for row in json.loads((binding_path.parent / 'current-source.json').read_bytes())['files']}
+        byte = api.load_byte_storage({'byte_storage.py': (binding_path.parent / 'byte_storage.py').read_bytes()})
+        inputs, _ = byte.inverse(inputs, (binding_path.parent / 'byte-storage-transition.patch').read_bytes(), api)
         cross = api.load_u8_cross_host({'u8_cross_host.py': (binding_path.parent / 'u8_cross_host.py').read_bytes()})
         inputs, _ = cross.inverse(inputs, (binding_path.parent / 'u8-cross-host-transition.patch').read_bytes(), api)
         restored, _ = helper.inverse(inputs, (binding_path.parent / 'u8-transition.patch').read_bytes(), api)
@@ -157,9 +159,9 @@ class SourceAuthorityControls(unittest.TestCase):
         import authority
         original = json.loads((self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes())
         canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-        self.assertEqual(len(original['files']), 363)
+        self.assertEqual(len(original['files']), authority.CURRENT_SOURCE_MEMBERS)
         self.assertEqual(sha(canonical(original['files'])), authority.CURRENT_FILES_SHA)
-        self.assertEqual(len(self.manifest['files']), 364)
+        self.assertEqual(len(self.manifest['files']), authority.OBSERVER_SOURCE_MEMBERS)
         self.assertEqual(sha(canonical(self.manifest['files'])), authority.OBSERVER_FILES_SHA)
         self.assertEqual(set(self.manifest['changed_paths']), {
             'src/frontend/mod.rs', 'src/frontend/project.rs', 'src/frontend/lexer.rs',
@@ -177,7 +179,11 @@ class SourceAuthorityControls(unittest.TestCase):
         self.assertEqual(initial['CACHE_ADMISSION_AUTHORITY_SHA'], authority.CACHE_ADMISSION_AUTHORITY_SHA)
         for field in ('LIFECYCLE_PATCH_SHA', 'ENUM_SOURCE_SHA', 'LLVM_CONTENT_SHA'):
             self.assertEqual(initial[field], getattr(authority, field))
-        self.assertEqual((authority.CURRENT_SOURCE_MEMBERS, authority.OBSERVER_SOURCE_MEMBERS), (363, 364))
+        retained_cross = self.package / 'u8_cross_host_source_authority.py'
+        self.assertEqual(sha(retained_cross.read_bytes()), authority.U8_CROSS_HOST_SOURCE_AUTHORITY_SHA)
+        cross = {}; exec(compile(retained_cross.read_bytes(), str(retained_cross), 'exec'), cross)
+        self.assertEqual((cross['CURRENT_SOURCE_MEMBERS'], cross['OBSERVER_SOURCE_MEMBERS']), (363, 364))
+        self.assertEqual(authority.OBSERVER_SOURCE_MEMBERS, authority.CURRENT_SOURCE_MEMBERS + 1)
 
     def test_u8_successor_restores_exact_prior_observer_map(self):
         retained = self.package / 'cache_admission_authority.py'
@@ -453,7 +459,7 @@ class EnumQualifiedPathsControls(unittest.TestCase):
         self.assertEqual(receipt['source_manifest']['sha256'], authority.ENUM_SOURCE_SHA)
         self.assertEqual(receipt['source_manifest']['members'], 237)
         self.assertEqual(receipt['execution_source_manifest']['sha256'], authority.CURRENT_SOURCE_SHA)
-        self.assertEqual(receipt['execution_source_manifest']['members'], 363)
+        self.assertEqual(receipt['execution_source_manifest']['members'], authority.CURRENT_SOURCE_MEMBERS)
         self.assertEqual(self.helper.sha(self.manifest.read_bytes()), authority.ENUM_SOURCE_SHA)
         with self.assertRaisesRegex(Reject, 'current execution source identity'):
             Predecessors(self.contracts, self.manifest, self.amendment_root)

@@ -1,5 +1,6 @@
 """Fail-closed selection and subprocess evidence controls; never build Rust/LLVM."""
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -350,18 +351,28 @@ class BoundedEnumNativeControls(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         original = repo / "tests/fixtures/typed_project_source_binding/current-source.json"
         manifest = gate.read_reviewed_manifest(original)
-        self.assertEqual(len(manifest["files"]), 363)
+        binding_root = original.parent
+        spec = importlib.util.spec_from_file_location("native_byte_source_authority", binding_root / "byte_storage.py")
+        byte = importlib.util.module_from_spec(spec); spec.loader.exec_module(byte)
+        self.assertEqual(len(manifest["files"]), byte.CURRENT_MEMBERS)
+        self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(), byte.SOURCE_SHA)
         reduced = dict(manifest, files=[row for row in manifest["files"]
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
-        self.assertEqual(len(reduced["files"]), 280)
-        self.assertEqual(reduced["reviewed_source_head"], "d204fbc684b81c6e0deac04007182ebe2bb67b00")
+        self.assertEqual(len(reduced["files"]), byte.COMPILER_MEMBERS + 5)
+        self.assertEqual(reduced["reviewed_source_head"], byte.SOURCE_HEAD)
         previous_raw = original.with_name("u8-source.json").read_bytes()
         self.assertEqual(hashlib.sha256(previous_raw).hexdigest(), manifest["u8_source_sha256"])
         previous = json.loads(previous_raw)
         self.assertEqual(previous["reviewed_source_head"], "5e4875d19961b4eba8e465c915ac676c54a9926e")
         before = {row["path"]: row for row in previous["files"]}
-        after = {row["path"]: row for row in manifest["files"]}
+        cross_raw = original.with_name("u8-cross-host-source.json").read_bytes()
+        self.assertEqual(hashlib.sha256(cross_raw).hexdigest(), byte.PREDECESSOR_SHA)
+        cross = json.loads(cross_raw)
+        after = {row["path"]: row for row in cross["files"]}
+        current = {row["path"]: row for row in manifest["files"]}
+        self.assertEqual(set(current) - set(after), set(byte.ADDITIONS) | set(byte.FIXTURE_ADDITIONS))
+        self.assertEqual([row["path"] for row in manifest["files"] if after.get(row["path"]) != row], list(byte.PATHS))
         self.assertEqual(set(before), set(after))
         self.assertEqual({name for name in before if before[name] != after[name]},
                          {"src/frontend/project.rs", "src/frontend/declaration_index/u8_integration_tests.rs"})
@@ -382,7 +393,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = "20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4"
+        expected = 'd5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb'
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

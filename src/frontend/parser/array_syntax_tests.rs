@@ -42,7 +42,7 @@ fn unit3a_real_ast_retains_target_once_and_original_origins() {
         TypeSyntaxKind::ArrayReference {
             mutable: true,
             array: FixedArraySyntax {
-                element: ScalarTypeSyntax::I32,
+                element: ArrayElementTypeSyntax::I32,
                 length: 2
             }
         }
@@ -50,7 +50,7 @@ fn unit3a_real_ast_retains_target_once_and_original_origins() {
     assert!(matches!(
         function.result.kind,
         TypeSyntaxKind::Array(FixedArraySyntax {
-            element: ScalarTypeSyntax::Unit,
+            element: ArrayElementTypeSyntax::Unit,
             length: 0
         })
     ));
@@ -150,7 +150,7 @@ fn unit3a_structural_queries_are_checked_without_execution() {
             .unwrap()
     );
     let forged = FixedArraySyntax {
-        element: ScalarTypeSyntax::I32,
+        element: ArrayElementTypeSyntax::I32,
         length: 1025,
     };
     assert!(query.array_type(ModuleId(0), forged, param.span).is_err());
@@ -294,7 +294,7 @@ fn unit3a_new_ast_edges_spans_and_descriptors_fail_closed_when_corrupted() {
     let valid = |p: &Program| p.validate_spans_and_ids(|span| map.try_text(span).is_some());
     let mut p = candidate(&map);
     p.functions[0].result.kind = TypeSyntaxKind::Array(FixedArraySyntax {
-        element: ScalarTypeSyntax::I32,
+        element: ArrayElementTypeSyntax::I32,
         length: 1025,
     });
     assert!(!valid(&p));
@@ -380,4 +380,212 @@ fn unit3a_nonstarter_diagnostic_is_bounded_without_changing_public_formatting() 
         error.message,
         format!("unsupported typed-preview construct `{token}`")
     );
+}
+
+#[test]
+fn byte_storage_parser_queries_keep_array_identity_and_slice_direction() {
+    use crate::frontend::{
+        hir::Ty,
+        oir::owned_types::{
+            AggregateTy, BorrowKind, BorrowedTy, FixedArrayTy, ParameterTy, ValueTy,
+        },
+    };
+    let map = source("fn f(a:[u8;0000],b:&[u8;1],c:&mut [u8;1024],d:&[u8],e:&mut [u8])->[u8;0]{}");
+    let file = map.get(SourceFileId(0));
+    let ast = candidate(&map);
+    let work = WorkMeter::default();
+    let mut alloc = Allocator::default();
+    let owner = SourceOwner::original(file, &ast, SourceView::Map(&map)).unwrap();
+    let index = collect_originals(owner, IndexLimits::default(), &work, &mut alloc)
+        .unwrap()
+        .finish(&work, &mut alloc)
+        .unwrap();
+    let expected = [
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(
+            FixedArrayTy::check(Ty::U8, 0).unwrap(),
+        ))),
+        ParameterTy::Reference {
+            referent: BorrowedTy::Exact(AggregateTy::FixedArray(
+                FixedArrayTy::check(Ty::U8, 1).unwrap(),
+            )),
+            kind: BorrowKind::Shared,
+        },
+        ParameterTy::Reference {
+            referent: BorrowedTy::Exact(AggregateTy::FixedArray(
+                FixedArrayTy::check(Ty::U8, 1024).unwrap(),
+            )),
+            kind: BorrowKind::Exclusive,
+        },
+        ParameterTy::Reference {
+            referent: BorrowedTy::ScalarSlice(Ty::U8),
+            kind: BorrowKind::Shared,
+        },
+        ParameterTy::Reference {
+            referent: BorrowedTy::ScalarSlice(Ty::U8),
+            kind: BorrowKind::Exclusive,
+        },
+    ];
+    for (param, expected) in ast.functions[0].params.iter().zip(expected) {
+        let start = work.used();
+        assert_eq!(
+            index
+                .query(&work)
+                .parameter_type(ModuleId(0), param.ty)
+                .unwrap(),
+            expected
+        );
+        println!(
+            "BYTE-STORAGE-LANE-A query {} work={}",
+            file.text_at(param.ty.span),
+            work.used() - start
+        );
+    }
+    let forged = FixedArraySyntax {
+        element: ArrayElementTypeSyntax::U8,
+        length: 1025,
+    };
+    assert!(index
+        .query(&work)
+        .array_type(ModuleId(0), forged, ast.functions[0].params[0].ty.span)
+        .is_err());
+}
+
+#[test]
+fn byte_storage_syntax_capacities_match_predecessor_shapes_and_fail_reserves() {
+    use std::mem::{align_of, size_of};
+    let mut prior = None;
+    for element in ["bool", "i32", "u8", "()"] {
+        let map = source(&format!("fn f(a:[{element};0],b:&[{element}],c:&mut [{element};1])->[{element};0]{{let x:[{element};0]=[];return x;}}"));
+        let file = map.get(SourceFileId(0));
+        let mut allocator = Allocator::default();
+        let mut storage = SyntaxStorage::default();
+        let (ast, nodes) = parse_typed_counted(
+            file,
+            lexer::lex(file).unwrap(),
+            SourceMode::ProjectCandidate,
+            MAX_NODES,
+            &mut allocator,
+            &mut storage,
+        )
+        .unwrap();
+        let shape = (
+            nodes,
+            storage,
+            ast.functions.capacity(),
+            ast.functions[0].params.capacity(),
+            ast.expressions.capacity(),
+        );
+        if let Some(prior) = prior {
+            assert_eq!(shape, prior);
+        }
+        prior = Some(shape);
+        assert!(parse_typed_counted(
+            file,
+            lexer::lex(file).unwrap(),
+            SourceMode::ProjectCandidate,
+            nodes,
+            &mut Allocator::default(),
+            &mut SyntaxStorage::default()
+        )
+        .is_ok());
+        let errors = parse_typed_counted(
+            file,
+            lexer::lex(file).unwrap(),
+            SourceMode::ProjectCandidate,
+            nodes - 1,
+            &mut Allocator::default(),
+            &mut SyntaxStorage::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            (errors[0].code, errors[0].stage, errors[0].message.as_str()),
+            ("E0400", "parse", "syntax node limit exceeded")
+        );
+        for attempt in 1..=allocator.attempts {
+            let mut failing = Allocator {
+                fail_at: Some(attempt),
+                ..Allocator::default()
+            };
+            assert!(parse_typed_counted(
+                file,
+                lexer::lex(file).unwrap(),
+                SourceMode::ProjectCandidate,
+                MAX_NODES,
+                &mut failing,
+                &mut SyntaxStorage::default()
+            )
+            .is_err());
+        }
+        println!("BYTE-STORAGE-LANE-A parse {element} nodes={nodes} retained={} scratch={} peak={} copied={} growths={} attempts={} function_capacity={} param_capacity={} expression_capacity={} parser_size={} parser_align={} parse_result_size={} parse_result_align={}", storage.retained_capacity,storage.scratch_capacity,storage.peak_capacity_bound,storage.copied_bytes_bound,storage.growths,allocator.attempts,ast.functions.capacity(),ast.functions[0].params.capacity(),ast.expressions.capacity(),size_of::<Parser<'_>>(),align_of::<Parser<'_>>(),size_of::<Result<(Program,usize),Vec<Diagnostic>>>(),align_of::<Result<(Program,usize),Vec<Diagnostic>>>());
+    }
+}
+
+#[test]
+fn byte_storage_length_and_literal_limits_keep_exact_preallocation_origins() {
+    for (spelling, expected) in [
+        ("0".repeat(lexer::MAX_TOKEN_BYTES), 0),
+        ("0001024".into(), 1024),
+    ] {
+        let map = source(&format!("fn f(a:[u8;{spelling}])->(){{}}"));
+        let mut allocator = Allocator::default();
+        let (ast, nodes) = parsed(&map, &mut allocator).unwrap();
+        assert_eq!(nodes, 2);
+        assert_eq!(allocator.attempts, 0);
+        let TypeSyntaxKind::Array(array) = ast.functions[0].params[0].ty.kind else {
+            unreachable!()
+        };
+        assert_eq!(usize::from(array.length), expected);
+        assert!(matches!(array.element, ArrayElementTypeSyntax::U8));
+    }
+    for spelling in ["1025".into(), "9".repeat(lexer::MAX_TOKEN_BYTES)] {
+        let map = source(&format!("fn f(a:[u8;{spelling}])->(){{}}"));
+        let mut allocator = Allocator::default();
+        let errors = parsed(&map, &mut allocator).unwrap_err();
+        assert_eq!(
+            (errors[0].code, errors[0].stage, errors[0].message.as_str()),
+            ("E0400", "parse", "array length limit exceeded (1024)")
+        );
+        assert_eq!(map.text(errors[0].primary.unwrap()), spelling);
+        assert_eq!(allocator.attempts, 0);
+    }
+    let map = source(&format!(
+        "fn f(a:[u8;{}])->(){{}}",
+        "0".repeat(lexer::MAX_TOKEN_BYTES + 1)
+    ));
+    let error = lexer::lex(map.get(SourceFileId(0))).unwrap_err();
+    assert_eq!(
+        (error.code, error.stage, error.message.as_str()),
+        ("E0400", "lex", "token resource limit exceeded")
+    );
+    let map = source(&format!(
+        "fn f()->(){{[{}byte(255)];}}",
+        "byte(0),".repeat(1024)
+    ));
+    let mut allocator = Allocator::default();
+    let errors = parsed(&map, &mut allocator).unwrap_err();
+    assert_eq!(
+        (errors[0].code, errors[0].stage, errors[0].message.as_str()),
+        ("E0400", "parse", "array element limit exceeded (1024)")
+    );
+    assert_eq!(map.text(errors[0].primary.unwrap()), "byte");
+    assert_eq!(
+        allocator
+            .trace
+            .iter()
+            .filter(|event| event.kind == "array literal elements")
+            .count(),
+        1024
+    );
+    for (syntax, token) in [
+        ("[u8;-1]", "-"),
+        ("[u8;+1]", "+"),
+        ("[u8;1+1]", "+"),
+        ("[u8;N]", "N"),
+        ("[[u8;1];1]", "["),
+    ] {
+        let map = source(&format!("fn f(a:{syntax})->(){{}}"));
+        let errors = parsed(&map, &mut Allocator::default()).unwrap_err();
+        assert_eq!((errors[0].code, errors[0].stage), ("E0101", "parse"));
+        assert_eq!(map.text(errors[0].primary.unwrap()), token);
+    }
 }

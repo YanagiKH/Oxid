@@ -149,8 +149,8 @@ class EvidenceTests(unittest.TestCase):
         core = [row["path"] for row in manifest["files"] if row["path"].startswith(("src/", "native/"))
                 or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")]
         listing = b"\0".join(name.encode() for name in core) + b"\0"
-        self.assertEqual((len(manifest["files"]), len(core)), (363, 278))
-        self.assertEqual(len(gate.source_identity(ROOT, manifest, listing)), 363)
+        self.assertEqual((len(manifest["files"]), len(core)), (gate.REVIEWED_SOURCE_MEMBERS, gate.REVIEWED_COMPILER_BODIES))
+        self.assertEqual(len(gate.source_identity(ROOT, manifest, listing)), gate.REVIEWED_SOURCE_MEMBERS)
         for invalid in (listing + b"src/extra.rs\0", listing.split(b"\0", 1)[1], listing + b"src/cli.rs\0"):
             with self.subTest(invalid=invalid[-30:]), self.assertRaisesRegex(ValueError, "closure"):
                 gate.source_identity(ROOT, manifest, invalid)

@@ -80,22 +80,26 @@ impl Parser<'_> {
         }
     }
 
-    fn array_element_type(&mut self) -> Result<ScalarTypeSyntax, Box<Diagnostic>> {
+    fn array_element_type(&mut self) -> Result<ArrayElementTypeSyntax, Box<Diagnostic>> {
         self.bump(); // The caller checked the opening bracket.
         let token = self.peek();
         let element = match token.kind {
             Kind::Ident if self.source.text_at(token.span) == "bool" => {
                 self.bump();
-                ScalarTypeSyntax::Bool
+                ArrayElementTypeSyntax::Bool
             }
             Kind::Ident if self.source.text_at(token.span) == "i32" => {
                 self.bump();
-                ScalarTypeSyntax::I32
+                ArrayElementTypeSyntax::I32
+            }
+            Kind::Ident if self.source.text_at(token.span) == "u8" => {
+                self.bump();
+                ArrayElementTypeSyntax::U8
             }
             Kind::LParen if self.next_kind() == Kind::RParen => {
                 self.bump();
                 self.bump();
-                ScalarTypeSyntax::Unit
+                ArrayElementTypeSyntax::Unit
             }
             _ => return Err(self.array_unsupported(token.span)),
         };
@@ -104,7 +108,7 @@ impl Parser<'_> {
 
     fn fixed_array_type_tail(
         &mut self,
-        element: ScalarTypeSyntax,
+        element: ArrayElementTypeSyntax,
     ) -> Result<(FixedArraySyntax, usize), Box<Diagnostic>> {
         if self.take(Kind::Semi).is_none() {
             return Err(self.array_missing("array type requires `;` after its element type"));

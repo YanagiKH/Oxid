@@ -1250,9 +1250,10 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.requester(requester, at)?;
         self.tables.sources.text(at)?;
         let element = match array.element {
-            ast::ScalarTypeSyntax::Bool => Ty::Bool,
-            ast::ScalarTypeSyntax::I32 => Ty::I32,
-            ast::ScalarTypeSyntax::Unit => Ty::Unit,
+            ast::ArrayElementTypeSyntax::Bool => Ty::Bool,
+            ast::ArrayElementTypeSyntax::I32 => Ty::I32,
+            ast::ArrayElementTypeSyntax::U8 => Ty::U8,
+            ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
         };
         FixedArrayTy::check(element, usize::from(array.length)).map_err(|_| bad(at))
     }
@@ -1285,9 +1286,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                 self.requester(requester, ty.span)?;
                 self.tables.sources.text(ty.span)?;
                 let element = match element {
-                    ast::ScalarTypeSyntax::Bool => Ty::Bool,
-                    ast::ScalarTypeSyntax::I32 => Ty::I32,
-                    ast::ScalarTypeSyntax::Unit => Ty::Unit,
+                    ast::ArrayElementTypeSyntax::Bool => Ty::Bool,
+                    ast::ArrayElementTypeSyntax::I32 => Ty::I32,
+                    ast::ArrayElementTypeSyntax::U8 => Ty::U8,
+                    ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
                 };
                 (mutable, BorrowedTy::ScalarSlice(element))
             }

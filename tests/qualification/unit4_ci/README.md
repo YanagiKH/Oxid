@@ -1,3 +1,43 @@
+# RFC0031 standalone byte-storage source successor
+
+Current reviewed source checkpoint: `cd5c0e47cd0d40179b916758068ddb320a52a6fb`. Full Git tree:
+`d29049905ca3a8b9401d40650eeb7d63b841d87c`. Current source-manifest SHA-256:
+`d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb`.
+
+The exact closure has 375 inputs, including 287 `src`/`native` members
+and 290 compiler/build bodies. The 31-path transition adds
+12 compiler members, removes none, and preserves all 78 compile-time fixture
+bodies and all 136 include expressions. These are source identity facts, not
+semantic, resource, native-execution or hosted qualification results.
+
+`byte_storage.py` is the active source admission stage. Its separately pinned
+`byte-storage-authority.json` and `byte-storage-transition.patch` require exact
+membership, modes, Git blob identities and complete forward/inverse identities.
+The inverse reconstructs every one of the 363 scalar-u8 cross-host inputs before
+any unchanged predecessor adapter runs. Their exact current manifest is retained
+as `u8-cross-host-source.json`, SHA-256
+`20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4`.
+All original source authorities, wire/provider domains, resource ceilings,
+semantic observations and authentic parsed-module portable fixtures remain intact.
+
+The current source seal and explicit 375-member count are shared by admission,
+public predecessor execution receipts and the cross-host join. The closed inputs
+manifest includes the new source adapter and named historical authority copies.
+The public observer has 376 members; parser maps have 538 base/541 derived
+members per role. The added compiler bodies remain in both full parser trees;
+compact evidence omits only the explicitly qualified source-body roles.
+
+Direct source-binding, Unit2 accounting, Unit4 parser/public/integration and
+stdin/stdout/native-current controls remain separate from compiler execution.
+Original portable publication, host rosters, non-Linux exclusions, genuine dpkg
+runtime staging and exact-head hosted evidence are mandatory. No local staging
+shim or predecessor CI result qualifies the successor.
+
+The following predecessor documentation is retained verbatim. Its references to
+“current” identify its own earlier checkpoint.
+
+## Retained predecessor documentation
+
 # Cross-host test-only source successor
 
 Current source is `d204fbc684b81c6e0deac04007182ebe2bb67b00`, tree

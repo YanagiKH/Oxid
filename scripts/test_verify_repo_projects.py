@@ -112,6 +112,13 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members = sorted(set(self.members))
 
     def assert_static_addition(self, checks, entries, count):
+        # Strip only the RFC0031 runnable pilot before replaying historical totals.
+        byte_entry = self.root / "fixtures/typed-byte-storage/main.ox"
+        self.assertEqual([row for row in checks if row[0] == byte_entry], [(byte_entry, True)])
+        self.assertEqual([entry for entry in entries if entry == byte_entry], [byte_entry])
+        checks = [row for row in checks if row[0] != byte_entry]
+        entries = [entry for entry in entries if entry != byte_entry]
+        count -= 1
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_PROJECTS[0], STREAMING_ROOT)
         self.assertEqual(verify_repo.TYPED_PROJECTS[STREAMING_ROOT], STREAMING_FILES)
         streaming = {self.root / name for name in STREAMING_FILES}

@@ -24,7 +24,9 @@ spec = importlib.util.spec_from_file_location("bounded_stdin_controls", HELPERS 
 controls = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(controls)
 require = controls.require
-REVIEWED_SOURCE_SHA256 = "20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4"
+REVIEWED_SOURCE_SHA256 = 'd5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb'
+REVIEWED_SOURCE_MEMBERS = 375
+REVIEWED_COMPILER_BODIES = 290
 MANIFEST_PATH = "tests/fixtures/typed_project_source_binding/current-source.json"
 CORE_PATHS = ("src", "native", "Cargo.toml", "Cargo.lock", "build.rs")
 HELPER_FILES = ("controls.py", "read_retry_shim.c", "calibration_probe.c", "smoke.txt", "test_controller.py")
@@ -36,8 +38,8 @@ def source_manifest(repo, digest):
     require(hashlib.sha256(data).hexdigest() == digest, "current source manifest seal differs")
     manifest = json.loads(data)
     rows = manifest["files"]
-    require(len(rows) == 363 and len({row["path"] for row in rows}) == 363,
-            "current source authority requires exactly 363 unique members")
+    require(len(rows) == REVIEWED_SOURCE_MEMBERS and len({row["path"] for row in rows}) == REVIEWED_SOURCE_MEMBERS,
+            "current source authority requires the exact reviewed unique membership")
     for row in rows:
         path = Path(row["path"])
         require(not path.is_absolute() and path.as_posix() == row["path"]
@@ -50,7 +52,7 @@ def source_identity(repo, manifest, tracked_core):
     core = {name for name in expected if name.startswith(("src/", "native/"))
             or name in ("Cargo.toml", "Cargo.lock", "build.rs")}
     actual_core = [os.fsdecode(name) for name in tracked_core.split(b"\0") if name]
-    require(len(core) == 278 and len(actual_core) == len(set(actual_core))
+    require(len(core) == REVIEWED_COMPILER_BODIES and len(actual_core) == len(set(actual_core))
             and set(actual_core) == core, "compiler/native tracked source closure differs")
     observed = []
     for name, row in expected.items():

@@ -339,7 +339,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -1045,6 +1045,42 @@
         "docs/architecture/projected-array-slices-validation.md"
       ],
       "limitations": "Only complete fixed bool/i32/unit array fields as slice formals; max64 path hops. No disjoint-field authority, exact-array projected formals, scalar/record/element borrows, stored references or raised ceilings. No v1.0, stability, self-hosting or broader native platform claim."
+    },
+    {
+      "id": "typed-preview-standalone-byte-storage",
+      "summary": "Experimental standalone fixed u8 arrays and whole-array call-only byte slices with exact conversions, owner loans and unchanged limits",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "verified-oir-reference and llvm-19.1.7",
+      "target_scope": "Current local Linux x86_64 source/reference and pinned LLVM19.1.7 O0 checks; final source admission review and exact-head hosted CI remain separate pending gates.",
+      "owner": "Oxid language development",
+      "reviewer": "Independent resource/source-authority review; final sealed candidate review pending",
+      "spec": [
+        "rfcs/0031-bounded-standalone-byte-storage.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser/arrays.rs",
+        "src/frontend/oir/owned_types.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/source/association.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "src/frontend/oir/owned_types/byte_storage_tests.rs",
+        "src/frontend/oir/owned/source/byte_storage_tests.rs",
+        "src/frontend/oir/owned/source/byte_storage_raw_tests.rs",
+        "src/frontend/oir/owned/byte_storage_native_tests.rs",
+        "tests/typed_byte_storage_native.rs",
+        "fixtures/typed-byte-storage/main.ox"
+      ],
+      "evidence": [
+        "docs/architecture/bounded-byte-storage-validation.md"
+      ],
+      "limitations": "Standalone N=0..1024 only; move-only including zero length. i32 indexes/lengths, explicit named-local conversions, whole-owner loans. No record-contained byte arrays/projections, direct u8 record fields or enum payloads, arithmetic/coercions/literals, heap/subslice/element references, I/O migration or provider expansion. Existing stricter native limits can reject source-legal programs. No stable ABI, memory-safety certification, M2/M3 completion, self-hosting or tensor claim."
     }
   ]
 }

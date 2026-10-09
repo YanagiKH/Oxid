@@ -1,3 +1,39 @@
+# RFC0031 standalone byte-storage source successor
+
+Current reviewed source checkpoint: `cd5c0e47cd0d40179b916758068ddb320a52a6fb`. Full Git tree:
+`d29049905ca3a8b9401d40650eeb7d63b841d87c`. Current source-manifest SHA-256:
+`d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb`.
+
+The exact closure has 375 inputs, including 287 `src`/`native` members
+and 290 compiler/build bodies. The 31-path transition adds
+12 compiler members, removes none, and preserves all 78 compile-time fixture
+bodies and all 136 include expressions. These are source identity facts, not
+semantic, resource, native-execution or hosted qualification results.
+
+`byte_storage.py` is the active source admission stage. Its separately pinned
+`byte-storage-authority.json` and `byte-storage-transition.patch` require exact
+membership, modes, Git blob identities and complete forward/inverse identities.
+The inverse reconstructs every one of the 363 scalar-u8 cross-host inputs before
+any unchanged predecessor adapter runs. Their exact current manifest is retained
+as `u8-cross-host-source.json`, SHA-256
+`20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4`.
+All original source authorities, wire/provider domains, resource ceilings,
+semantic observations and authentic parsed-module portable fixtures remain intact.
+
+The previous current parser authority is preserved byte-for-byte as
+`u8-cross-host-authority.json`. Current maps contain
+538 base and 541 derived members in each observer/control role.
+The byte predecessor bridge proves the exact original source body before the
+unchanged historical instrumentation is composed onto the current source.
+No parser hook, policy, predicate, semantic amendment, host rule or passivity
+expectation changes. Unsupported-host refusal and authentic parsed-module
+controls remain required. Preparation is not replay or native execution.
+
+The following predecessor documentation is retained verbatim. Its references to
+“current” identify its own earlier checkpoint.
+
+## Retained predecessor documentation
+
 # Cross-host test-only source successor
 
 Current source is `d204fbc684b81c6e0deac04007182ebe2bb67b00`, tree

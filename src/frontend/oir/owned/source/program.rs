@@ -1,6 +1,8 @@
 //! Source-only construction keeps the owned witness sealed in this child module.
 use super::super::{execute, native, verified, *};
-use super::{diagnostic, lower, resolve, typeck};
+#[cfg(test)]
+use super::lower;
+use super::{diagnostic, resolve, typeck};
 use crate::frontend::{ast, source::SourceFile};
 use crate::frontend::{
     declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
@@ -57,8 +59,8 @@ pub(in crate::frontend::oir) fn check_typed(
     if typed.entry() != index.root_original_main() {
         return Err(vec![*crate::frontend::oir::source::association::bad()]);
     }
-    let raw = lower::lower(typed).map_err(|error| vec![*diagnostic::lower(&error, sources)])?;
-    let associated = super::association::associate(raw, typed).map_err(|error| vec![*error])?;
+    let associated =
+        super::association::lower_and_associate(typed).map_err(|error| vec![*error])?;
     let witness = verified::verify_associated(associated)
         .map_err(|error| vec![*diagnostic::verify(&error, sources)])?;
     Ok(SourceProgram { witness })

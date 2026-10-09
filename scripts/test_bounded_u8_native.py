@@ -102,7 +102,11 @@ class NativeGateTests(unittest.TestCase):
         self.assertEqual(gate.identity(initial_path)['sha256'], gate.INITIAL_ROSTER_SHA)
         initial = json.loads(initial_path.read_text())
         self.assertEqual(len(initial), 115)
-        self.assertEqual(roster, sorted([*initial, *gate.CROSS_HOST_TESTS]))
+        gate.admit_byte_storage_predecessors(repo, initial)
+        self.assertEqual(roster, gate.current_roster(initial))
+        self.assertEqual(set(roster) - set(initial) - set(gate.CROSS_HOST_TESTS),
+                         set(gate.BYTE_STORAGE_RENAMES.values()))
+        self.assertEqual(set(initial) - set(roster), set(gate.BYTE_STORAGE_RENAMES))
         self.assertTrue(set(gate.IGNORED) <= set(roster))
         self.assertEqual(sum(value[1] for value in gate.IGNORED.values()), 91)
         data = '\n'.join(name + ': test' for name in roster) + '\n\n117 tests, 0 benchmarks\n'

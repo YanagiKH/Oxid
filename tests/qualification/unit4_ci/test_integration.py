@@ -238,7 +238,7 @@ class HostPreparationControls(unittest.TestCase):
             observer = q.read(root / 'observer-source/observer-source.json')
             self.assertEqual(observer['observer_patch'], patch_identity)
             self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
-            self.assertEqual(len(observer['files']), 364)
+            self.assertEqual(len(observer['files']), q.CURRENT_SOURCE_MEMBERS + 1)
             runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
             self.assertFalse((root / 'ordinary-build').exists())
             self.assertFalse((root / 'observer-build').exists())
@@ -334,7 +334,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 364)
+        self.assertEqual(len(self.manifest['files']), q.CURRENT_SOURCE_MEMBERS + 1)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -428,7 +428,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 21)
+        self.assertEqual(len(expected), 22)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
@@ -1214,7 +1214,8 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 1060)
+        # Added compiler bodies are retained in both observer/control archive trees.
+        self.assertEqual(report['full_archive_only'], 1060 + 2 * 12)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1429,7 +1430,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 278)
+        self.assertEqual(len(compiler), q.CURRENT_COMPILER_BODIES)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,

@@ -22,6 +22,14 @@ use crate::frontend::{
 };
 use std::mem::size_of;
 
+#[path = "byte_storage_resources.rs"]
+mod byte_storage_resources;
+
+#[cfg(test)]
+pub(super) const fn byte_storage_fixed_successor_bytes() -> usize {
+    byte_storage_resources::fixed_bytes()
+}
+
 // Same numeric ceiling, separate from AST/index/raw admission. Future dynamic
 // projection capacities spend the remainder of this allowance, not a second cap.
 pub(super) const MAX_HIR_BYTES: usize = super::budget::MAX_RAW_BYTES;
@@ -482,6 +490,9 @@ impl HirPlan {
         // RFC0030 named successor: keep all predecessor banks intact, and pay
         // conversion/provenance/consuming-authentication roles explicitly.
         increment(&mut fixed, super::u8_resources::fixed_bytes(), at)?;
+        // RFC0031 separately pays both complete byte-record guard roles.
+        // Historical banks and the global ceiling are unchanged.
+        increment(&mut fixed, byte_storage_resources::fixed_bytes(), at)?;
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
         // owner, source view and all top-level Vec headers. Do not add them again.
         // These whole measured models include each embedded Result/Option

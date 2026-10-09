@@ -27,7 +27,7 @@ RUNNABLE_PACKAGE_FILES = (
 )
 # Exact typed fixture inventory; all other checked-in .ox files retain their
 # existing legacy checks. Never exclude an entire fixture directory.
-TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox",)
+TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox", "fixtures/typed-byte-storage/main.ox")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (

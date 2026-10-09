@@ -2677,7 +2677,9 @@ fn expression_type(
             for element in elements {
                 program.work().debit(1, expr.span, "array type edge")?;
                 let actual = child!(*element)?;
-                let ValueTy::Scalar(scalar_type @ (Ty::Bool | Ty::I32 | Ty::Unit)) = actual else {
+                let ValueTy::Scalar(scalar_type @ (Ty::Bool | Ty::I32 | Ty::U8 | Ty::Unit)) =
+                    actual
+                else {
                     return Err(error(
                         "E0300",
                         "array elements must have scalar bool, i32 or () type",

@@ -27,6 +27,39 @@ CROSS_HOST_TESTS = (
     'frontend::declaration_index::u8_integration_tests::in_memory_module_fixture_preserves_order_spans_and_source_identity',
     'frontend::declaration_index::u8_integration_tests::in_memory_module_fixture_rejects_inexact_inputs',
 )
+# RFC0031 explicitly supersedes only two changed-domain exclusion controls.
+# Complete original test files and both historical rosters remain immutable.
+BYTE_STORAGE_RENAMES = {'frontend::oir::owned::source::u8_tests::owned_u8_ordinary_source_tracker_has_real_exact_admission': 'frontend::oir::owned::source::u8_tests::owned_u8_ordinary_source_tracker_byte_storage_admission_successor', 'frontend::oir::owned::source::u8_tests::owned_u8_source_static_rejections_preserve_legacy_recursive_schedule': 'frontend::oir::owned::source::u8_tests::owned_u8_source_static_rejections_byte_storage_successor', 'frontend::parser::u8_syntax_tests::u8_bare_fields_ordinary_calls_and_len_keep_their_old_shapes': 'frontend::parser::u8_syntax_tests::u8_bare_fields_ordinary_calls_and_len_byte_storage_successor', 'frontend::oir::owned_types::u8_tests::u8_standalone_value_and_parameter_admit_but_all_aggregate_paths_reject': 'frontend::oir::owned_types::u8_tests::u8_standalone_value_and_parameter_byte_storage_successor'}
+CROSS_HOST_ROSTER_SHA = '4dc12e32c32b89d2e871207572ff991f5b66df54a0dfde83189ebf9e0cfd3e7c'
+BYTE_STORAGE_ARCHIVES = {
+    'src/frontend/oir/owned/source/hir_budget_tests.rs': 'ec8ca98ac71d422f61884825013c34ccdb8861bb3be2f2d617555cbe77df57bc',
+    'src/frontend/oir/owned/source/u8_tests.rs': 'ceb607ddb9ced06eb435290f51a2406c704aab0661b0f105a5f24d15b67de783',
+    'src/frontend/parser/u8_syntax_tests.rs': 'abf228ea026b98d802d7f68e79019392d1f1f9a3a91d987a016883b9f07300b0',
+    'src/frontend/oir/owned_types/u8_tests.rs': 'ce139e4592ceb63a4f002f4e24893b69216643f0d2f1010f79ee9c800c612dcd',
+}
+
+
+def current_roster(initial):
+    previous = sorted([*initial, *CROSS_HOST_TESTS])
+    require(len(previous) == len(set(previous)) == 117
+            and set(BYTE_STORAGE_RENAMES) <= set(previous)
+            and len(set(BYTE_STORAGE_RENAMES.values())) == 4
+            and not set(BYTE_STORAGE_RENAMES.values()).intersection(previous),
+            'invalid byte-storage successor test mapping')
+    return sorted(BYTE_STORAGE_RENAMES.get(name, name) for name in previous)
+
+
+def admit_byte_storage_predecessors(repo, initial):
+    archived = repo / PACKAGE / 'tests-u8-cross-host.json'
+    require(identity(archived)['sha256'] == CROSS_HOST_ROSTER_SHA
+            and json.loads(archived.read_text()) == sorted([*initial, *CROSS_HOST_TESTS]),
+            'immutable cross-host u8 test roster')
+    root = repo / 'tests/qualification/byte_storage_current/predecessor'
+    for path, expected in BYTE_STORAGE_ARCHIVES.items():
+        require(identity(root / path)['sha256'] == expected,
+                'changed byte-storage historical test source: ' + path)
+
+
 STAGER = Path('tests/fixtures/typed_project_unit3_independent/portable/native-v1/stage_llvm_runtime.py')
 IGNORED = {
     'frontend::oir::native::u8_tests::u8_scalar_native_pinned_boundary_and_fuel_proof': ('scalar', 16),
@@ -76,6 +109,8 @@ def controller_inputs(repo):
         'build_hir_producers_v2.py', 'verify_bounded_enum_native.py', 'verify_bounded_stdin_native.py')]
     names += [Path('.github/workflows/ci.yml'), STAGER]
     names += sorted(path.relative_to(repo) for path in (repo / PACKAGE).rglob('*') if path.is_file())
+    names += sorted(path.relative_to(repo) for path in
+                    (repo / 'tests/qualification/byte_storage_current/predecessor').rglob('*') if path.is_file())
     return [identity(repo / path) for path in names]
 
 
@@ -142,8 +177,9 @@ def verify(args, root):
     initial_path = repo / PACKAGE / 'tests-u8-initial.json'
     require(identity(initial_path)['sha256'] == INITIAL_ROSTER_SHA, 'immutable initial u8 test roster')
     initial = json.loads(initial_path.read_text())
-    require(len(initial) == 115 and roster == sorted([*initial, *CROSS_HOST_TESTS]),
-            'cross-host test roster must retain all initial tests and exact two additions')
+    admit_byte_storage_predecessors(repo, initial)
+    require(len(initial) == 115 and roster == current_roster(initial),
+            'byte-storage current roster must preserve exact predecessor and four named successors')
     require(len(roster) == 117 and len(set(roster)) == 117 and set(IGNORED) <= set(roster),
             'reviewed u8 test roster changed')
     for profile in ('debug', 'release'):

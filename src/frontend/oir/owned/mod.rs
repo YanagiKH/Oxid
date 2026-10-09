@@ -548,3 +548,6 @@ pub(in crate::frontend::oir) fn hir_import_allocation_observers_idle() -> bool {
 
 #[cfg(test)]
 mod u8_tests;
+
+#[cfg(test)]
+mod byte_storage_reference_tests;

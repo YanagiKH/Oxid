@@ -98,7 +98,25 @@ fn owned_u8_source_all_roundtrips() {
 }
 
 #[test]
-fn owned_u8_source_static_rejections_preserve_legacy_recursive_schedule() {
+fn owned_u8_source_static_rejections_byte_storage_successor() {
+    // RFC0031 supersedes only the byte array expression refusal. The complete
+    // original test source is retained under byte_storage_current/predecessor.
+    let mut sources = SourceMap::new();
+    let file = sources.add(
+        "byte-array-expression.ox".into(),
+        "struct R {} fn main()->(){let x=1;let b=x.to_u8_checked();[b];return;}".into(),
+    );
+    let source = sources.get(file);
+    let (ast, _) = parser::parse_counted_with_arrays(
+        source,
+        lexer::lex(source).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+        parser::MAX_NODES,
+        &mut crate::frontend::project::budget::Allocator::default(),
+        parser::ArraySyntaxPolicy::Enabled,
+    )
+    .unwrap();
+    assert!(typeck::check(resolve::resolve(source, &ast).unwrap()).is_ok());
     let legacy = errors("struct R {} fn main()->bool{return () == (true + 1);}");
     assert_eq!(legacy.len(), 1);
     assert_eq!(
@@ -129,7 +147,6 @@ fn owned_u8_source_static_rejections_preserve_legacy_recursive_schedule() {
         "1<b",
         "b.to_u8_checked()",
         "x.to_i32()",
-        "[b]",
     ] {
         let text = format!(
             "struct R {{}} fn main()->(){{let x=1;let b=x.to_u8_checked();{expression};return;}}"
@@ -484,7 +501,7 @@ fn owned_u8_real_native_helpers_and_all_roundtrips() {
 }
 
 #[test]
-fn owned_u8_ordinary_source_tracker_has_real_exact_admission() {
+fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
     let mut sources = SourceMap::new();
     let file = sources.add(
         "owned-u8-ordinary-admission.ox".into(),
@@ -505,7 +522,28 @@ fn owned_u8_ordinary_source_tracker_has_real_exact_admission() {
             .unwrap();
     let extra = request - crate::frontend::oir::source::association::conversion_carrier_bytes();
     let exact = seed + extra;
-    for (limit, succeeds) in [(exact - 1, false), (exact, true)] {
+    // The immutable predecessor source/seed test remains archived. This current
+    // source endpoint is independently pinned to its actual b5455ad receipt.
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(
+            seed,
+            169_210 + super::hir_budget::byte_storage_fixed_successor_bytes()
+        );
+        assert_eq!(extra, 2_028);
+        assert_eq!(
+            exact,
+            171_238 + super::hir_budget::byte_storage_fixed_successor_bytes()
+        );
+    }
+    for (limit, succeeds) in [
+        (
+            exact - super::hir_budget::byte_storage_fixed_successor_bytes(),
+            false,
+        ),
+        (exact - 1, false),
+        (exact, true),
+    ] {
         let raw = lower::lower(&typed).unwrap();
         let before_work = typed.work().used();
         let before_reserve = association::CONVERSION_RESERVE_ENTRIES.with(|entries| entries.get());
@@ -531,7 +569,7 @@ fn owned_u8_ordinary_source_tracker_has_real_exact_admission() {
             );
         }
     }
-    println!("RFC0030 ordinary owned source seed={seed} tracker_increment={extra} exact_association_bytes={exact}; one_less_rejects_before_tracker_constructor");
+    println!("RFC0031 current owned source seed={seed} tracker_increment={extra} exact_association_bytes={exact}; one_less_rejects_before_tracker_constructor");
 }
 
 #[test]

@@ -705,6 +705,37 @@ jobs:
           path: |
             ${{ runner.temp }}/bounded-u8-native
             !${{ runner.temp }}/bounded-u8-native/llvm-runtime/libraries/**
+      - name: Verify standalone byte storage providers and source authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export CARGO_TARGET_DIR="$PWD/target"
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_byte_storage_compatibility.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_hir_byte_storage_compatibility.py -v
+          python3 -B scripts/verify_byte_storage_source_privacy.py > "$RUNNER_TEMP/byte-storage-privacy.json"
+          for profile in debug release; do
+            args=()
+            if [ "$profile" = release ]; then args+=(--release); fi
+            cargo test "${args[@]}" --locked --bin oxid byte_storage_native_source_free_ -- --ignored --list > "$RUNNER_TEMP/byte-storage-$profile-roster.txt"
+            test "$(grep -c '^frontend::oir::owned::native::byte_storage_tests::byte_storage_native_source_free_.*: test$' "$RUNNER_TEMP/byte-storage-$profile-roster.txt")" = 4
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/byte-storage-native/$profile" cargo test "${args[@]}" --locked --bin oxid byte_storage_native_source_free_ -- --ignored --test-threads=1 --nocapture
+            python3 -B scripts/qualify_hir_byte_storage_compatibility.py \
+              --compiler "$PWD/target/$profile/oxid" --llvm-bin "$OXID_LLVM_BIN" \
+              --output "$RUNNER_TEMP/byte-storage-providers/$profile"
+          done
+      - name: Retain standalone byte storage authority, providers, and source-free native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: byte-storage-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/byte-storage-privacy.json
+            ${{ runner.temp }}/byte-storage-*-roster.txt
+            ${{ runner.temp }}/byte-storage-native
+            ${{ runner.temp }}/byte-storage-providers
       - name: Test bounded stdin controller admission
         run: python3 -B tests/qualification/bounded_stdin_current/test_controller.py -v
       - name: Verify bounded stdin effects and fuel in both ordinary profiles
@@ -715,7 +746,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4
+            --source-manifest-sha256 d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -728,7 +759,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4
+            --source-manifest-sha256 d5d1492a4873a40a53867d81062eec81f35aeecfa3468b70ceb8ce1f353fbadb
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4
