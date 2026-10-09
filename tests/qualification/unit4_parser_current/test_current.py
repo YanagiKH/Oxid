@@ -41,8 +41,8 @@ class CurrentAuthorityControls(unittest.TestCase):
         self.assertEqual(len(a['current']['source_delta']), 327)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox', 'fixtures/typed-record-composition-samples/model.ox', 'fixtures/typed-record-composition-samples/ops.ox', 'src/frontend/builtin_catalog.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/declaration_index/enum_query_tests.rs', 'src/frontend/declaration_index/enum_tests.rs', 'src/frontend/declaration_index/enum_views.rs', 'src/frontend/declaration_index/u8_integration_tests.rs', 'src/frontend/declaration_index/u8_reservation.rs', 'src/frontend/enum_public_tests.rs', 'src/frontend/format.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/format/enum_candidate_tests.rs', 'src/frontend/format/resource_tests.rs', 'src/frontend/format_cli.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/hir_protocol.rs', 'src/frontend/lexical_provider.rs', 'src/frontend/lexical_provider/bundle.rs', 'src/frontend/lexical_provider/supervisor.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/lexical_provider/wire.rs', 'src/frontend/oir/execute_measurement.rs', 'src/frontend/oir/lower_measurement.rs', 'src/frontend/oir/native_emit_cost.rs', 'src/frontend/oir/native_emit_observation.rs', 'src/frontend/oir/native_emit_work.rs', 'src/frontend/oir/native_private_emit.rs', 'src/frontend/oir/native_private_emit_tests.rs', 'src/frontend/oir/native_scalar_resource.rs', 'src/frontend/oir/native_scalar_resource_proof.md', 'src/frontend/oir/native_u8_tests.rs', 'src/frontend/oir/negation_raw_tests.rs', 'src/frontend/oir/owned/array_native_resource_tests.rs', 'src/frontend/oir/owned/array_native_tests.rs', 'src/frontend/oir/owned/array_observe.rs', 'src/frontend/oir/owned/array_reference_boundary_tests.rs', 'src/frontend/oir/owned/array_reference_tests.rs', 'src/frontend/oir/owned/array_tests.rs', 'src/frontend/oir/owned/builtin_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_input_fixtures.rs', 'src/frontend/oir/owned/builtin_input_native_tests.rs', 'src/frontend/oir/owned/builtin_input_tests.rs', 'src/frontend/oir/owned/builtin_origin_tests.rs', 'src/frontend/oir/owned/builtin_output_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_output_fixtures.rs', 'src/frontend/oir/owned/builtin_output_native_tests.rs', 'src/frontend/oir/owned/builtin_output_process_tests.rs', 'src/frontend/oir/owned/builtin_output_reference_tests.rs', 'src/frontend/oir/owned/builtins.rs', 'src/frontend/oir/owned/composition_native_tests.rs', 'src/frontend/oir/owned/composition_reference_tests.rs', 'src/frontend/oir/owned/composition_verifier_tests.rs', 'src/frontend/oir/owned/enum_admission_tests.rs', 'src/frontend/oir/owned/enum_consumer_fixtures.rs', 'src/frontend/oir/owned/enum_formatter_allocation_tests.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/enum_layout_tests.rs', 'src/frontend/oir/owned/enum_match_tests.rs', 'src/frontend/oir/owned/enum_native_tests.rs', 'src/frontend/oir/owned/enum_parser_allocation_tests.rs', 'src/frontend/oir/owned/enum_query_allocation_tests.rs', 'src/frontend/oir/owned/enum_reference_tests.rs', 'src/frontend/oir/owned/input.rs', 'src/frontend/oir/owned/native_inventory_admission_tests.rs', 'src/frontend/oir/owned/native_inventory_tests.rs', 'src/frontend/oir/owned/native_storage.rs', 'src/frontend/oir/owned/native_storage_tests.rs', 'src/frontend/oir/owned/negation_raw_tests.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/projected_slice_native_tests.rs', 'src/frontend/oir/owned/reviewer_array_observer_tests.rs', 'src/frontend/oir/owned/reviewer_array_reference_tests.rs', 'src/frontend/oir/owned/slice_native_tests.rs', 'src/frontend/oir/owned/source/array_consumer_tests.rs', 'src/frontend/oir/owned/source/array_pipeline.rs', 'src/frontend/oir/owned/source/array_pipeline_rows.rs', 'src/frontend/oir/owned/source/array_pipeline_tests.rs', 'src/frontend/oir/owned/source/array_pipeline_transport.rs', 'src/frontend/oir/owned/source/array_type_controls.rs', 'src/frontend/oir/owned/source/array_types_tests.rs', 'src/frontend/oir/owned/source/builtin_lower.rs', 'src/frontend/oir/owned/source/builtin_signature_tests.rs', 'src/frontend/oir/owned/source/builtin_source_tests.rs', 'src/frontend/oir/owned/source/enum_native_source_tests.rs', 'src/frontend/oir/owned/source/enum_storage_failure_tests.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs', 'src/frontend/oir/owned/source/hir_budget.rs', 'src/frontend/oir/owned/source/hir_budget_tests.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/oir/owned/source/projected_slice_raw_tests.rs', 'src/frontend/oir/owned/source/resolver_enum_tests.rs', 'src/frontend/oir/owned/source/resolver_inventory_tests.rs', 'src/frontend/oir/owned/source/resolver_paid_tests.rs', 'src/frontend/oir/owned/source/resolver_storage.rs', 'src/frontend/oir/owned/source/resolver_storage_tests.rs', 'src/frontend/oir/owned/source/slice_raw_tests.rs', 'src/frontend/oir/owned/source/slice_tests.rs', 'src/frontend/oir/owned/source/type_storage.rs', 'src/frontend/oir/owned/source/type_storage_tests.rs', 'src/frontend/oir/owned/source/u8_resources.rs', 'src/frontend/oir/owned/source/u8_tests.rs', 'src/frontend/oir/owned/u8_tests.rs', 'src/frontend/oir/owned_types/array_tests.rs', 'src/frontend/oir/owned_types/composition_tests.rs', 'src/frontend/oir/owned_types/enum_integration_tests.rs', 'src/frontend/oir/owned_types/enums.rs', 'src/frontend/oir/owned_types/u8_tests.rs', 'src/frontend/oir/source/conversion_seen.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/allocation.rs', 'src/frontend/oir/source/hir_import/allocation/tests.rs', 'src/frontend/oir/source/hir_import/ast_compare.rs', 'src/frontend/oir/source/hir_import/ast_compare/tests.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs', 'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs', 'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs', 'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/tests.rs', 'src/frontend/oir/source/hir_import/candidate/typed_compare.rs', 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/oir/source/hir_import/emit_measurements.rs', 'src/frontend/oir/source/hir_import/emit_native_tests.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/oir/source/hir_import/leaf.rs', 'src/frontend/oir/source/hir_import/pass_measurements.rs', 'src/frontend/oir/source/hir_import/producer_diagnostic.rs', 'src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/oir/source/hir_import/run_execution_tests.rs', 'src/frontend/oir/source/hir_import/run_measurements.rs', 'src/frontend/oir/source/hir_import/tests.rs', 'src/frontend/oir/source/hir_import/u8_resource_successor.rs', 'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/source/hir_import/verify_tests.rs', 'src/frontend/oir/source/u8_association_resource_proof.md', 'src/frontend/oir/u8_association_tests.rs', 'src/frontend/oir/u8_carrier_tests.rs', 'src/frontend/oir/u8_execute_tests.rs', 'src/frontend/oir/u8_tests.rs', 'src/frontend/oir/unary_source_tests.rs', 'src/frontend/oir/verify_measurement.rs', 'src/frontend/parser/array_syntax_tests.rs', 'src/frontend/parser/arrays.rs', 'src/frontend/parser/builtin_tests.rs', 'src/frontend/parser/conversions.rs', 'src/frontend/parser/enum_syntax_tests.rs', 'src/frontend/parser/enums.rs', 'src/frontend/parser/u8_syntax_tests.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/project/budget_real_null_observer.rs', 'src/frontend/project/budget_string_null_tests.rs', 'src/frontend/project/builtin_tests.rs', 'src/frontend/project/enum_carrier_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/typeck_measurement.rs', 'tests/fixtures/bounded_enum_scanner/main.ox', 'tests/fixtures/bounded_enum_scanner/scanner.ox', 'tests/fixtures/checked_hir_import/public-source.txt', 'tests/fixtures/checked_hir_import/public-success.bin', 'tests/fixtures/checked_hir_import/rich-source.txt', 'tests/fixtures/checked_hir_import/rich-success.bin', 'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt', 'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin', 'tests/fixtures/checked_hir_import/scalar-assignment-source.txt', 'tests/fixtures/checked_hir_import/scalar-assignment-success.bin', 'tests/fixtures/checked_hir_import/scalar-boolean-source.txt', 'tests/fixtures/checked_hir_import/scalar-boolean-success.bin', 'tests/fixtures/checked_hir_import/scalar-comparison-source.txt', 'tests/fixtures/checked_hir_import/scalar-comparison-success.bin', 'tests/fixtures/checked_hir_import/scalar-loop-source.txt', 'tests/fixtures/checked_hir_import/scalar-loop-success.bin', 'tests/fixtures/checked_hir_import/scalar-unit-source.txt', 'tests/fixtures/checked_hir_import/scalar-unit-success.bin', 'tests/fixtures/checked_hir_import/synthetic-division-source.txt', 'tests/fixtures/checked_hir_import/synthetic-division-success.bin', 'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt', 'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin', 'tests/fixtures/checked_hir_import_v2/source-255.txt', 'tests/fixtures/checked_hir_import_v2/success-255.bin', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox', 'tests/fixtures/producer_diagnostic/duplicate-source.txt', 'tests/fixtures/producer_diagnostic/duplicate.bin', 'tests/fixtures/producer_diagnostic/end255-source.txt', 'tests/fixtures/producer_diagnostic/end255.bin', 'tests/fixtures/producer_diagnostic/multiple-source.txt', 'tests/fixtures/producer_diagnostic/multiple.bin', 'tests/fixtures/producer_diagnostic/unknown-type-source.txt', 'tests/fixtures/producer_diagnostic/unknown-type.bin', 'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 84)
-        self.assertEqual(a['current']['reviewed_source_head'], '5e4875d19961b4eba8e465c915ac676c54a9926e')
-        self.assertEqual(a['current']['source_only_tree'], '4c687ed5ead4786e34cea154e3b263c00bd1fd1b')
+        self.assertEqual(a['current']['reviewed_source_head'], 'd204fbc684b81c6e0deac04007182ebe2bb67b00')
+        self.assertEqual(a['current']['source_only_tree'], '8c00492b24d56b842858b72da9b4442f057ab4de')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read
@@ -90,7 +90,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'verify_build', 'cargo_cache', 'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'collect', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'u8_policy_module', 'u8_binding_api', 'u8_predecessor_active', 'restore_u8_source', 'validate_u8_transition', 'u8_predecessor_body', 'compose_u8_closed_policy', 'restore_cache_admission_source', 'validate_cache_admission_transition', 'restore_cache_preservation_source', 'validate_cache_preservation_transition', 'restore_package_integrity_source', 'validate_package_integrity_transition', 'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'verify_u8_cross_host_parser_predecessor', 'restore_u8_cross_host_source', 'u8_policy_module', 'u8_binding_api', 'u8_predecessor_active', 'restore_u8_source', 'validate_u8_transition', 'u8_predecessor_body', 'compose_u8_closed_policy', 'restore_cache_admission_source', 'validate_cache_admission_transition', 'restore_cache_preservation_source', 'validate_cache_preservation_transition', 'restore_package_integrity_source', 'validate_package_integrity_transition', 'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -465,7 +465,7 @@ class DivisionCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -514,7 +514,7 @@ class SlicesCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -557,7 +557,7 @@ class RecordCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -600,7 +600,7 @@ class UnaryCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -643,7 +643,7 @@ class ProjectedCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -730,7 +730,7 @@ class StdoutCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -741,7 +741,7 @@ class StdoutCompositionControls(unittest.TestCase):
     def test_forged_stdin_predecessor_identity_rejects(self):
         altered = copy.deepcopy(self.a)
         altered['current']['stdin_source_manifest']['sha256'] = '0' * 64
-        with self.assertRaisesRegex(p.Rejected, 'u8 changes unrelated parser authority'):
+        with self.assertRaisesRegex(p.Rejected, 'cross-host changes unrelated initial u8 parser authority'):
             p.restore_stdout_source(altered, self.name, self.raw)
 
     def test_missing_duplicate_and_wrong_patch_section_reject(self):
@@ -805,7 +805,7 @@ class StdinCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -851,7 +851,7 @@ class EnumCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -1159,7 +1159,7 @@ class HirImportOverlapControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                for key in dict.fromkeys((*fields, *p.U8_FIELDS)):
+                for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -1224,11 +1224,45 @@ class CheckoutControls(unittest.TestCase):
         self.rejects_before_git_or_child('file bytes differ')
 
 
+    def historical_ast_from_retained_transitions(self):
+        # No public checkout is required to possess a locally reconstructed
+        # historical commit:path. Recover only the immutable authority's body.
+        name = 'src/frontend/ast.rs'
+        active = self.a['current']
+        raw = (p.REPOSITORY / name).read_bytes()
+        previous, raw = p.u8_predecessor_body(self.a, name, raw)
+        combined = p.restore_division_source(previous, name, raw)
+        transition = active['combined_transition_patch']
+        p.verify_map(p.REPOSITORY, [transition])
+        prefix = ('a/' + name + ' b/' + name + '\n').encode()
+        sections = [b'diff --git ' + part for part in
+                    (p.REPOSITORY / transition['path']).read_bytes().split(b'diff --git ')[1:]
+                    if part.startswith(prefix)]
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        restored, touched = p.u8_binding_api(active).apply_inverse_patch(
+            {name: combined}, section, p.sha(section), len(section), (name,))
+        self.assertEqual(touched, [name])
+        raw = restored[name]
+        expected = next(row for row in self.a['original_files'] if row['path'] == name)
+        self.assertEqual({'path': name, 'bytes': len(raw), 'sha256': p.sha(raw)}, expected)
+        self.assertEqual((len(raw), p.sha(raw)),
+                         (20717, '3632fc114303be571166307ddab04f78b508226789b7c1495b4a692c538d3d2f'))
+        return raw
+
     def test_old_historical_body_cannot_substitute(self):
         name = 'src/frontend/ast.rs'
-        raw = p.git(p.REPOSITORY, 'show', self.a['base_commit'] + ':' + name)
-        (self.root / name).write_bytes(raw)
-        self.rejects_before_git_or_child('file bytes differ')
+        with patch.object(p, 'git', side_effect=AssertionError('no historical Git lookup')):
+            raw = self.historical_ast_from_retained_transitions()
+            (self.root / name).write_bytes(raw)
+            self.rejects_before_git_or_child('file bytes differ')
+
+    def test_historical_mutation_fixture_is_public_history_independent(self):
+        with patch.object(p, 'git', side_effect=AssertionError('no historical Git lookup')), \
+             patch.object(subprocess, 'check_output', side_effect=AssertionError('no Git subprocess')), \
+             patch.object(subprocess, 'run', side_effect=AssertionError('no fetch or other child')):
+            raw = self.historical_ast_from_retained_transitions()
+        self.assertNotEqual(raw, (self.root / 'src/frontend/ast.rs').read_bytes())
 
     def test_current_worktree_cannot_hide_wrong_committed_body(self):
         path = self.root / p.CURRENT_PATHS[0]; good = path.read_bytes()
@@ -1615,6 +1649,21 @@ class U8TransitionControls(unittest.TestCase):
         cls.inputs = {row['path']: (p.REPOSITORY / row['path']).read_bytes()
                       for row in cls.a['current_source']['files']}
 
+    def test_cross_host_inverse_preserves_complete_initial_u8_source(self):
+        restored = p.restore_u8_cross_host_source(self.active, self.inputs)
+        previous = p.read(p.REPOSITORY / self.active['u8_source_manifest']['path'])
+        self.assertEqual(set(restored), set(self.inputs))
+        self.assertEqual(len(restored), 363)
+        self.assertEqual([{'path': k, 'bytes': len(v), 'sha256': p.sha(v)} for k, v in sorted(restored.items())], previous['files'])
+        self.assertEqual({name for name in restored if restored[name] != self.inputs[name]},
+                         {'src/frontend/project.rs', 'src/frontend/declaration_index/u8_integration_tests.rs'})
+        with self.assertRaises(p.Rejected):
+            p.restore_u8_cross_host_source(self.active, restored)
+        retained = p.verify_u8_cross_host_parser_predecessor(self.active)
+        self.assertEqual(retained['reviewed_source_head'], '5e4875d19961b4eba8e465c915ac676c54a9926e')
+        for field in ('u8_closed_policy', 'u8_policy_controls', 'u8_authority', 'u8_transition_patch', 'u8_helper'):
+            self.assertEqual(retained[field], self.active[field])
+
     def test_complete_exact_source_inverse(self):
         restored = p.restore_u8_source(self.active, self.inputs)
         previous = p.read(p.REPOSITORY / self.active['cache_admission_source_manifest']['path'])
@@ -1634,7 +1683,7 @@ class U8TransitionControls(unittest.TestCase):
                 p.restore_u8_source(self.active, inputs)
 
     def test_every_u8_binding_is_pinned(self):
-        for key in p.U8_FIELDS:
+        for key in (*p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS):
             active = copy.deepcopy(self.active)
             active[key]['sha256'] = '0' * 64
             with self.subTest(key=key), self.assertRaises(p.Rejected):
@@ -1672,7 +1721,7 @@ class U8TransitionControls(unittest.TestCase):
     def test_unrelated_parser_authority_cannot_drift(self):
         active = copy.deepcopy(self.active)
         active['enum_ast_schema_adapter']['semantic_changes_permitted'] = True
-        with self.assertRaisesRegex(p.Rejected, 'u8 changes unrelated parser authority'):
+        with self.assertRaisesRegex(p.Rejected, 'cross-host changes unrelated initial u8 parser authority'):
             p.validate_u8_transition(active, self.a['current_source'], self.a)
 
     def test_u8_overlap_rosters_cannot_expand(self):

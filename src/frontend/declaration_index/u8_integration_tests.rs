@@ -2,6 +2,53 @@
 use super::tests::Fixture;
 use super::*;
 
+// Core index assertions run on every host without relaxing filesystem policy.
+// On Linux, also run every case through the real supported source loader.
+fn module_sources(files: &[(&str, &str)]) -> Vec<ProjectSources> {
+    let sources = vec![ProjectSources::from_u8_index_test_files(files)];
+    #[cfg(target_os = "linux")]
+    let sources = {
+        let mut sources = sources;
+        let loaded = Fixture::new(files).load();
+        let memory = &sources[0];
+        assert_eq!(memory.modules().len(), loaded.modules().len());
+        for (a, b) in memory.modules().iter().zip(loaded.modules()) {
+            assert_eq!(
+                (
+                    a.file,
+                    a.parent,
+                    a.declaration,
+                    a.public,
+                    a.depth,
+                    &a.relative_path
+                ),
+                (
+                    b.file,
+                    b.parent,
+                    b.declaration,
+                    b.public,
+                    b.depth,
+                    &b.relative_path
+                )
+            );
+            let a_source = memory.sources().get(a.file);
+            let b_source = loaded.sources().get(b.file);
+            assert_eq!(a_source.text(), b_source.text());
+            let a_ast = memory.try_file_ast(a.file).unwrap();
+            let b_ast = loaded.try_file_ast(b.file).unwrap();
+            assert!(a_ast.belongs_to(a_source));
+            assert!(b_ast.belongs_to(b_source));
+            assert!(!a_ast.belongs_to(b_source));
+            assert!(!b_ast.belongs_to(a_source));
+            assert!(a_ast.validate_spans_and_ids(|at| memory.try_text(at).is_some()));
+            assert!(b_ast.validate_spans_and_ids(|at| loaded.try_text(at).is_some()));
+        }
+        sources.push(loaded);
+        sources
+    };
+    sources
+}
+
 fn build<'s>(
     owner: SourceOwner<'s>,
     work: &WorkMeter,
@@ -10,6 +57,77 @@ fn build<'s>(
     collect_originals(owner, IndexLimits::default(), work, &mut allocator)
         .map_err(|e| vec![*e])?
         .finish(work, &mut allocator)
+}
+
+#[test]
+fn in_memory_module_fixture_preserves_order_spans_and_source_identity() {
+    let files = [
+        ("main.ox", "pub mod z; mod a; use crate::z::T as U;"),
+        ("a.ox", "pub struct A {}"),
+        ("z.ox", "pub struct T {}"),
+    ];
+    let sources = ProjectSources::from_u8_index_test_files(&files);
+    let other = ProjectSources::from_u8_index_test_files(&files);
+    assert_eq!(sources.modules().len(), 3);
+    for (index, (name, declaration, public)) in [
+        ("main.ox", None, None),
+        ("z.ox", Some((8, 9)), Some((0, 3))),
+        ("a.ox", Some((15, 16)), None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = SourceFileId(index);
+        let header = &sources.modules()[index];
+        assert_eq!(header.file, id);
+        assert_eq!(header.parent, (index != 0).then_some(ModuleId(0)));
+        assert_eq!(header.depth, usize::from(index != 0));
+        let origin = |(start, end)| Span {
+            file: SourceFileId(0),
+            start,
+            end,
+        };
+        assert_eq!(header.declaration, declaration.map(origin));
+        assert_eq!(header.public, public.map(origin));
+        let source = sources.sources().get(id);
+        assert_eq!(
+            source.text(),
+            files.iter().find(|(path, _)| *path == name).unwrap().1
+        );
+        let ast = sources.try_file_ast(id).unwrap();
+        assert!(ast.belongs_to(source));
+        assert!(!ast.belongs_to(other.sources().get(id)));
+        assert!(ast.validate_spans_and_ids(|at| sources.try_text(at).is_some()));
+    }
+    build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap();
+}
+
+#[test]
+fn in_memory_module_fixture_rejects_inexact_inputs() {
+    for files in [
+        vec![("main.ox", "mod ;"), ("m.ox", "")],
+        vec![("main.ox", "mod m;"), ("m.ox", "pub struct {")],
+        vec![("main.ox", "mod m;"), ("m.ox", "\"")],
+        vec![
+            ("main.ox", "mod m;"),
+            ("m.ox", "mod nested;"),
+            ("m/nested.ox", ""),
+        ],
+        vec![("main.ox", "mod m;"), ("m.ox", ""), ("unused.ox", "")],
+        vec![("main.ox", "mod m;"), ("wrong.ox", "")],
+        vec![("main.ox", "mod m;"), ("m.ox", ""), ("m.ox", "")],
+        vec![("main.ox", "mod m; mod m;"), ("m.ox", "")],
+        vec![
+            ("main.ox", "mod m; mod m;"),
+            ("m.ox", ""),
+            ("unused.ox", ""),
+        ],
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| { ProjectSources::from_u8_index_test_files(&files) })
+                .is_err()
+        );
+    }
 }
 
 #[test]
@@ -76,47 +194,47 @@ fn actual_alias_provenance_and_module_preorder() {
             26,
         ),
     ] {
-        let fixture = Fixture::new(&[("main.ox", root), ("m.ox", child)]);
-        let sources = fixture.load();
-        let errors = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap_err();
-        assert_eq!(errors.len(), 1);
-        let e = &errors[0];
-        assert_eq!((e.code, e.stage), ("E0208", "resolve"));
-        assert_eq!(e.message,"type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias");
-        assert_eq!(
-            e.primary,
-            Some(Span {
-                file: SourceFileId(0),
-                start,
-                end: start + 2
-            })
-        );
-        assert!(e.secondary.is_empty());
-        assert!(e.notes.is_empty());
+        for sources in module_sources(&[("main.ox", root), ("m.ox", child)]) {
+            let errors = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap_err();
+            assert_eq!(errors.len(), 1);
+            let e = &errors[0];
+            assert_eq!((e.code, e.stage), ("E0208", "resolve"));
+            assert_eq!(e.message,"type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias");
+            assert_eq!(
+                e.primary,
+                Some(Span {
+                    file: SourceFileId(0),
+                    start,
+                    end: start + 2
+                })
+            );
+            assert!(e.secondary.is_empty());
+            assert!(e.notes.is_empty());
+        }
     }
-    let fixture = Fixture::new(&[
+    for sources in module_sources(&[
         (
             "main.ox",
             "mod m; use crate::m::f as u8; fn main()->i32{return u8();}",
         ),
         ("m.ox", child),
-    ]);
-    let sources = fixture.load();
-    build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap();
-    let fixture = Fixture::new(&[
+    ]) {
+        build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap();
+    }
+    for sources in module_sources(&[
         ("main.ox", "mod m; struct u8 {}"),
         ("m.ox", "pub struct u8 {}"),
-    ]);
-    let sources = fixture.load();
-    let errors = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap_err();
-    assert_eq!(
-        errors[0].primary,
-        Some(Span {
-            file: SourceFileId(0),
-            start: 14,
-            end: 16
-        })
-    );
+    ]) {
+        let errors = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap_err();
+        assert_eq!(
+            errors[0].primary,
+            Some(Span {
+                file: SourceFileId(0),
+                start: 14,
+                end: 16
+            })
+        );
+    }
 }
 
 #[test]
@@ -275,33 +393,33 @@ fn malformed_owner_and_import_metadata_keep_checked_origins() {
         SourceFileId(2),
         SourceFileId(usize::MAX),
     ] {
-        let fixture = Fixture::new(&[
+        for mut sources in module_sources(&[
             ("main.ox", "mod m; fn main()->i32{return 0;}"),
             ("m.ox", "pub struct T {}"),
-        ]);
-        let mut sources = fixture.load();
-        sources.corrupt_header_file_for_u8_test(0, target);
-        let owner = SourceOwner::project(&sources);
-        for m in [0, 1, 2, usize::MAX] {
-            assert_eq!(
-                owner.ast(ModuleId(m)).ok().map(|p| p as *const _),
-                owner.try_ast_borrowed(ModuleId(m)).map(|p| p as *const _)
-            );
+        ]) {
+            sources.corrupt_header_file_for_u8_test(0, target);
+            let owner = SourceOwner::project(&sources);
+            for m in [0, 1, 2, usize::MAX] {
+                assert_eq!(
+                    owner.ast(ModuleId(m)).ok().map(|p| p as *const _),
+                    owner.try_ast_borrowed(ModuleId(m)).map(|p| p as *const _)
+                );
+            }
         }
     }
     for alias in [false, true] {
-        let fixture = Fixture::new(&[
+        for sources in module_sources(&[
             ("main.ox", "mod m; use crate::m::T as U;"),
             ("m.ox", "pub struct T {}"),
-        ]);
-        let sources = fixture.load();
-        let owner = SourceOwner::project(&sources);
-        let mut index = build(owner, &WorkMeter::default()).unwrap();
-        let at = sources.try_file_ast(SourceFileId(0)).unwrap().imports[0].alias;
-        index.corrupt_u8_import_for_test(alias);
-        let error = index.scan_u8_for_test(&WorkMeter::default()).unwrap_err();
-        assert_eq!(error.code, "E0500");
-        assert_eq!(error.primary, Some(at));
+        ]) {
+            let owner = SourceOwner::project(&sources);
+            let mut index = build(owner, &WorkMeter::default()).unwrap();
+            let at = sources.try_file_ast(SourceFileId(0)).unwrap().imports[0].alias;
+            index.corrupt_u8_import_for_test(alias);
+            let error = index.scan_u8_for_test(&WorkMeter::default()).unwrap_err();
+            assert_eq!(error.code, "E0500");
+            assert_eq!(error.primary, Some(at));
+        }
     }
 }
 
@@ -320,36 +438,39 @@ fn privacy_alias_conflicts_and_sibling_preorder() {
         let control = root.replacen("u8", "ZZ", 1);
         let mut vectors = Vec::new();
         for source in [root, control.as_str()] {
-            let fixture = Fixture::new(&[("main.ox", source), ("m.ox", child)]);
-            let sources = fixture.load();
-            let work = WorkMeter::default();
-            work.enable_observation();
-            let errors = build(SourceOwner::project(&sources), &work).unwrap_err();
-            assert!(!errors.iter().any(|e| e.code == "E0208"));
-            assert!(!work
-                .events
-                .borrow()
-                .iter()
-                .any(|e| e.operation.starts_with("u8")));
-            vectors.push(format!("{errors:?}"));
+            for sources in module_sources(&[("main.ox", source), ("m.ox", child)]) {
+                let work = WorkMeter::default();
+                work.enable_observation();
+                let errors = build(SourceOwner::project(&sources), &work).unwrap_err();
+                assert!(!errors.iter().any(|e| e.code == "E0208"));
+                assert!(!work
+                    .events
+                    .borrow()
+                    .iter()
+                    .any(|e| e.operation.starts_with("u8")));
+                vectors.push(format!("{errors:?}"));
+            }
         }
-        assert_eq!(vectors[0], vectors[1]);
+        // Compare both spelling controls and both source routes, when available.
+        for pair in vectors.windows(2) {
+            assert_eq!(pair[0], pair[1]);
+        }
     }
     for root in ["mod z; mod a;", "mod a; mod z;"] {
-        let fixture = Fixture::new(&[
+        for sources in module_sources(&[
             ("main.ox", root),
             ("z.ox", "pub struct u8 {}"),
             ("a.ox", "pub enum u8 { V }"),
-        ]);
-        let sources = fixture.load();
-        let errors = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap_err();
-        assert_eq!(errors[0].code, "E0208");
-        // The first declared module is loaded at numeric preorder 1, regardless of filename sorting.
-        assert_eq!(errors[0].primary.unwrap().file, SourceFileId(1));
-        assert_eq!(
-            errors[0].primary.unwrap().start,
-            if root.starts_with("mod z") { 11 } else { 9 }
-        );
+        ]) {
+            let errors = build(SourceOwner::project(&sources), &WorkMeter::default()).unwrap_err();
+            assert_eq!(errors[0].code, "E0208");
+            // The first declared module is loaded at numeric preorder 1, regardless of filename sorting.
+            assert_eq!(errors[0].primary.unwrap().file, SourceFileId(1));
+            assert_eq!(
+                errors[0].primary.unwrap().start,
+                if root.starts_with("mod z") { 11 } else { 9 }
+            );
+        }
     }
 }
 

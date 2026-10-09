@@ -21,10 +21,10 @@ results from being concealed by positive counts. Adapted reference execution and
 source-free native execution must both equal the independent expected count.
 All 256 narrow/widen roundtrips run through reference and native execution too.
 
-`tests.json` is the exact 115-test u8 roster from source commit
-`5e4875d19961b4eba8e465c915ac676c54a9926e`, tree
-`4c687ed5ead4786e34cea154e3b263c00bd1fd1b`. The gate requires exact discovery,
-runs the 111 ordinary resource/semantic tests with uncaptured measurement output,
+`tests.json` is the exact 117-test u8 roster from source commit
+`d204fbc684b81c6e0deac04007182ebe2bb67b00`, tree
+`8c00492b24d56b842858b72da9b4442f057ab4de`. The gate requires exact discovery,
+runs the 113 ordinary resource/semantic tests with uncaptured measurement output,
 and explicitly executes all four ignored tests. The ignored tests must retain
 16 scalar and 75 owned real ELF/IR/stream/status cases. The three owned tests
 use the existing unary-native retention key, `OXID_UNARY_NATIVE_EVIDENCE`.
@@ -53,3 +53,7 @@ Standalone local corpus rehearsal (qualifies only the supplied executable):
 
 Repeat with `--route owned`. This standalone invocation does not claim the
 hosted exact-head/ordinary-profile/dpkg-staging gate passed.
+
+The immutable initial 115-test roster is retained as `tests-u8-initial.json`.
+The successor adds exactly two normal cross-host fixture controls; all four
+ignored native controls and all prior test names remain mandatory.

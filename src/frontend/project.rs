@@ -1411,6 +1411,89 @@ fn bounded_enum_production_project_policy_layout() {
 
 #[cfg(test)]
 impl ProjectSources {
+    /// In-memory root/sibling fixtures for index tests, not a filesystem loader.
+    /// Real parsed declarations determine source preorder and checked origins.
+    /// Production host qualification and filesystem discovery remain untouched.
+    pub(super) fn from_u8_index_test_files(files: &[(&str, &str)]) -> Self {
+        assert_eq!(files[0].0, "main.ox");
+        let mut project = Self {
+            sources: SourceMap::new(),
+            programs: Vec::new(),
+            modules: Vec::new(),
+            canonical_root: None,
+            usage: SourceUsage::default(),
+            syntax_flavor: SyntaxFlavor::ProjectSyntax,
+        };
+        let mut pending = vec![("main.ox".to_owned(), None)];
+        let mut next = 0;
+        while next < pending.len() {
+            let (name, declaration) = &pending[next];
+            let matching: Vec<_> = files.iter().filter(|(path, _)| path == name).collect();
+            assert_eq!(matching.len(), 1, "fixture path must be unique: {name}");
+            let text = matching[0].1;
+            let file = project.sources.add(name.clone(), text.into());
+            let source = project.sources.get(file);
+            let tokens = lexer::lex(source).unwrap();
+            let (program, nodes) = parser::parse_typed_counted(
+                source,
+                tokens,
+                parser::SourceMode::ProjectCandidate,
+                parser::MAX_NODES,
+                &mut Allocator::default(),
+                &mut Default::default(),
+            )
+            .unwrap();
+            assert!(program.belongs_to(source));
+            project.usage.source_bytes += text.len();
+            project.usage.non_eof_tokens += program.tokens.len() - 1;
+            project.usage.syntax_nodes += nodes;
+            project.usage.line_starts += source.line_count();
+            project.usage.modules += 1;
+            project.usage.retained_path_bytes += name.len();
+            let (parent, declaration, public, depth, relative_path) = match declaration {
+                None => (None, None, None, 0, String::new()),
+                Some(decl) => {
+                    let decl: &ast::ModuleDecl = decl;
+                    assert!(
+                        program.modules.is_empty(),
+                        "fixture supports root siblings only"
+                    );
+                    project.usage.retained_path_bytes += name.len();
+                    (
+                        Some(ModuleId(0)),
+                        Some(decl.name),
+                        decl.public,
+                        1,
+                        name.clone(),
+                    )
+                }
+            };
+            project.modules.push(ModuleHeader {
+                file,
+                parent,
+                declaration,
+                public,
+                depth,
+                relative_path,
+                canonical_path: None,
+            });
+            if next == 0 {
+                for decl in &program.modules {
+                    let child = format!("{}.ox", source.text_at(decl.name));
+                    assert!(
+                        !pending.iter().any(|(path, _)| path == &child),
+                        "fixture module declared twice"
+                    );
+                    pending.push((child, Some(*decl)));
+                }
+            }
+            project.programs.push(program);
+            next += 1;
+        }
+        assert_eq!(project.programs.len(), files.len(), "unused fixture source");
+        project
+    }
+
     pub(super) fn corrupt_header_file_for_u8_test(&mut self, module: usize, file: SourceFileId) {
         self.modules[module].file = file;
     }

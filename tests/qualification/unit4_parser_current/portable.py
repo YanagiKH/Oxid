@@ -15,6 +15,7 @@ import struct
 import subprocess
 import sys
 import time
+import tempfile
 import types
 import uuid
 
@@ -634,7 +635,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '48b3864d7b04f2e4afcdc35c2a42fd56720dcbd80ac789f359e9f04e5eff48be'
+AUTHORITY_SHA = '29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -778,12 +779,15 @@ def compose_u8_closed_policy(a, name, raw, reverse=False):
 
 
 U8_PREDECESSOR_PARSER_SHA = '47725dbdd2cd13da289205a15f7de53610e782f3e2f2037695be374e8fa7ad91'
+U8_CROSS_HOST_PARSER_SHA = '48b3864d7b04f2e4afcdc35c2a42fd56720dcbd80ac789f359e9f04e5eff48be'
+U8_CROSS_HOST_FIELDS = ('u8_cross_host_authority', 'u8_cross_host_transition_patch',
+                       'u8_cross_host_helper', 'u8_source_manifest', 'u8_parser_authority')
 U8_FIELDS = ('u8_authority', 'u8_transition_patch', 'u8_helper',
              'cache_admission_source_manifest', 'cache_admission_parser_authority')
 
 
 def u8_binding_api(active):
-    verify_map(REPOSITORY, [active['source_binding_runner'], *(active[key] for key in U8_FIELDS)])
+    verify_map(REPOSITORY, [active['source_binding_runner'], *(active[key] for key in (*U8_FIELDS, *U8_CROSS_HOST_FIELDS))])
     path = REPOSITORY / active['source_binding_runner']['path']
     api = types.ModuleType('unit4_u8_binding')
     api.__file__ = str(path)
@@ -791,7 +795,41 @@ def u8_binding_api(active):
     return api
 
 
+def verify_u8_cross_host_parser_predecessor(active):
+    retained = active['u8_parser_authority']
+    same(retained['path'], 'tests/qualification/unit4_parser_current/u8-authority.json',
+         'retained initial u8 parser authority path')
+    same(retained['sha256'], U8_CROSS_HOST_PARSER_SHA, 'immutable initial u8 parser authority')
+    verify_map(REPOSITORY, [retained])
+    previous = read(REPOSITORY / retained['path'])
+    omit = {'current_base_files', 'current_derived_files', 'current_control_derived_files',
+            'current_candidate_source_manifest_sha256', 'current_source_manifest', 'reviewed_source_head',
+            'source_only_tree', 'source_binding_runner', 'source_delta', *U8_CROSS_HOST_FIELDS}
+    same({k: v for k, v in active.items() if k not in omit},
+         {k: v for k, v in previous.items() if k not in omit},
+         'cross-host changes unrelated initial u8 parser authority')
+    return previous
+
+
+def restore_u8_cross_host_source(active, inputs):
+    api = u8_binding_api(active)
+    path = REPOSITORY / active['u8_cross_host_helper']['path']
+    helper = types.ModuleType('unit4_u8_cross_host_inverse')
+    exec(compile(path.read_bytes(), str(path), 'exec'), helper.__dict__)
+    try:
+        restored, touched = helper.inverse(inputs,
+            (REPOSITORY / active['u8_cross_host_transition_patch']['path']).read_bytes(), api)
+    except api.BindingError as error:
+        raise Rejected('u8 cross-host inverse rejected: ' + str(error)) from error
+    same(touched, list(helper.PATHS), 'exact cross-host inverse scope')
+    previous = read(REPOSITORY / active['u8_source_manifest']['path'])
+    same([{'path': name, 'bytes': len(raw), 'sha256': sha(raw)} for name, raw in sorted(restored.items())],
+         previous['files'], 'cross-host inverse must recover all exact initial u8 inputs')
+    return restored
+
+
 def u8_predecessor_active(active):
+    verify_u8_cross_host_parser_predecessor(active)
     retained = active['cache_admission_parser_authority']
     same(retained['path'], 'tests/qualification/unit4_parser_current/cache-admission-authority.json',
          'retained cache admission parser authority path')
@@ -801,7 +839,7 @@ def u8_predecessor_active(active):
     omit = {'current_base_files', 'current_derived_files', 'current_control_derived_files',
             'current_candidate_source_manifest_sha256', 'current_source_manifest', 'reviewed_source_head',
             'source_only_tree', 'source_binding_runner', 'source_delta', 'u8_closed_policy',
-            'u8_policy_controls', *U8_FIELDS}
+            'u8_policy_controls', *U8_FIELDS, *U8_CROSS_HOST_FIELDS}
     same({k: v for k, v in active.items() if k not in omit},
          {k: v for k, v in previous.items() if k not in omit}, 'u8 changes unrelated parser authority')
     previous['source_binding_runner'] = active['source_binding_runner']
@@ -810,6 +848,7 @@ def u8_predecessor_active(active):
 
 
 def restore_u8_source(active, inputs):
+    inputs = restore_u8_cross_host_source(active, inputs)
     api = u8_binding_api(active)
     path = REPOSITORY / active['u8_helper']['path']
     helper = types.ModuleType('unit4_u8_inverse')
@@ -832,23 +871,37 @@ def validate_u8_transition(active, current, historical):
                                            'u8_source.py', 'cache-admission-source.json')):
         same(active[key]['path'], 'tests/fixtures/typed_project_source_binding/' + filename,
              'exact u8 transition artifact path')
+    for key, filename in zip(U8_CROSS_HOST_FIELDS[:4],
+                             ('u8-cross-host-authority.json', 'u8-cross-host-transition.patch',
+                              'u8_cross_host.py', 'u8-source.json')):
+        same(active[key]['path'], 'tests/fixtures/typed_project_source_binding/' + filename,
+             'exact cross-host transition artifact path')
     # Admit the complete u8 source membership and exact inverse directly. The
     # independent older parser chain below rechecks its complete predecessor
     # identities; Unit2 observer preparation is not part of parser admission.
     package = REPOSITORY / 'tests/fixtures/typed_project_source_binding'
     package_bytes = {name: (package / name).read_bytes() for name in
                      ('u8_source.py', 'current-source.json', 'cache-admission-source.json',
-                      'u8-authority.json', 'u8-transition.patch')}
+                      'u8-authority.json', 'u8-transition.patch', 'u8-source.json',
+                      'u8_cross_host.py', 'u8-cross-host-authority.json', 'u8-cross-host-transition.patch')}
     try:
-        helper = api.load_u8_source(package_bytes)
-        admitted, _, _, _, _ = helper.admit(REPOSITORY, package_bytes, api)
+        cross = api.load_u8_cross_host(package_bytes)
+        admitted, _, _, restored, _ = cross.admit(REPOSITORY, package_bytes, api)
+        predecessor_package = dict(package_bytes, **{'current-source.json': package_bytes['u8-source.json']})
+        helper = api.load_u8_source(predecessor_package)
+        with tempfile.TemporaryDirectory(prefix='unit4-u8-predecessor-') as directory:
+            root = Path(directory) / 'source'
+            api.materialize(root, restored)
+            previous_source, _, _, _, _ = helper.admit(root, predecessor_package, api)
+        same(previous_source, read(REPOSITORY / active['u8_source_manifest']['path']),
+             'exact admitted initial u8 predecessor')
     except api.BindingError as error:
         raise Rejected('u8 source admission rejected: ' + str(error)) from error
     same(admitted, current, 'parser source must equal admitted complete u8 source')
     previous = u8_predecessor_active(active)
     omit = {'current_base_files', 'current_derived_files', 'current_control_derived_files',
             'current_candidate_source_manifest_sha256', 'current_source_manifest', 'reviewed_source_head',
-            'source_only_tree', 'source_binding_runner', 'source_delta', 'u8_closed_policy', 'u8_policy_controls', *U8_FIELDS}
+            'source_only_tree', 'source_binding_runner', 'source_delta', 'u8_closed_policy', 'u8_policy_controls', *U8_FIELDS, *U8_CROSS_HOST_FIELDS}
     same({k: v for k, v in active.items() if k not in omit},
          {k: v for k, v in previous.items() if k not in omit}, 'u8 changes unrelated parser authority')
     transition = read(REPOSITORY / active['u8_authority']['path'])
@@ -864,6 +917,20 @@ def u8_predecessor_body(a, name, raw):
     active = a['current']
     row = next(r for r in active['current_base_files'] if r['path'] == name)
     same({'path': name, 'bytes': len(raw), 'sha256': sha(raw)}, row, 'exact current u8 composition body')
+    retained = verify_u8_cross_host_parser_predecessor(active)
+    prior_row = next(r for r in retained['current_base_files'] if r['path'] == name)
+    if row != prior_row:
+        api = u8_binding_api(active)
+        patch = (REPOSITORY / active['u8_cross_host_transition_patch']['path']).read_bytes()
+        prefix = ('a/' + name + ' b/' + name + '\n').encode()
+        sections = [b'diff --git ' + part for part in patch.split(b'diff --git ')[1:] if part.startswith(prefix)]
+        same(len(sections), 1, 'exact cross-host composition transition section')
+        section = sections[0]
+        restored, touched = api.apply_inverse_patch({name: raw}, section, sha(section), len(section), (name,))
+        same(touched, [name], 'exact cross-host composition inverse path')
+        raw = restored[name]
+    same({'path': name, 'bytes': len(raw), 'sha256': sha(raw)}, prior_row,
+         'exact initial u8 composition body recovery')
     previous = dict(a)
     previous['current'] = u8_predecessor_active(active)
     expected = next(r for r in previous['current']['current_base_files'] if r['path'] == name)

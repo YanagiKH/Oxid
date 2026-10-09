@@ -355,7 +355,16 @@ class BoundedEnumNativeControls(unittest.TestCase):
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
         self.assertEqual(len(reduced["files"]), 280)
-        self.assertEqual(reduced["reviewed_source_head"], "5e4875d19961b4eba8e465c915ac676c54a9926e")
+        self.assertEqual(reduced["reviewed_source_head"], "d204fbc684b81c6e0deac04007182ebe2bb67b00")
+        previous_raw = original.with_name("u8-source.json").read_bytes()
+        self.assertEqual(hashlib.sha256(previous_raw).hexdigest(), manifest["u8_source_sha256"])
+        previous = json.loads(previous_raw)
+        self.assertEqual(previous["reviewed_source_head"], "5e4875d19961b4eba8e465c915ac676c54a9926e")
+        before = {row["path"]: row for row in previous["files"]}
+        after = {row["path"]: row for row in manifest["files"]}
+        self.assertEqual(set(before), set(after))
+        self.assertEqual({name for name in before if before[name] != after[name]},
+                         {"src/frontend/project.rs", "src/frontend/declaration_index/u8_integration_tests.rs"})
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")
@@ -373,7 +382,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4"
+        expected = "20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4"
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

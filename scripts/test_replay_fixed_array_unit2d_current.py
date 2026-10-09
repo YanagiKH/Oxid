@@ -101,17 +101,89 @@ class CurrentCarrierTests(unittest.TestCase):
             "enum_adapter_sha256": runner.ENUM_ADAPTER_SHA,
             "stdin_carrier_compatibility": receipt,
             "stdin_adapter_sha256": runner.STDIN_ADAPTER_SHA,
-            "module_sha256": adapter.STDIN_IDENTITIES["reviewer"][1],
+            "pre_u8_oracle_compatibility": runner.PRE_U8_ORACLE_COMPATIBILITY,
+            "pre_u8_adapter_sha256": runner.PRE_U8_ADAPTER_SHA,
+            "module_sha256": adapter.PRE_U8_IDENTITIES[1],
         }
         runner.assert_current_module_binding(binding)
-        for field in ("stdin_carrier_compatibility", "stdin_adapter_sha256", "enum_carrier_compatibility"):
+        for field in ("stdin_carrier_compatibility", "stdin_adapter_sha256", "enum_carrier_compatibility",
+                      "pre_u8_oracle_compatibility", "pre_u8_adapter_sha256"):
             altered = copy.deepcopy(binding)
             del altered[field]
             with self.assertRaisesRegex(RuntimeError, "current public-array module binding differs"):
                 runner.assert_current_module_binding(altered)
-        for module_sha in adapter.IDENTITIES["reviewer"]:
+        for module_sha in (*adapter.IDENTITIES["reviewer"], *adapter.STDIN_IDENTITIES["reviewer"]):
             with self.assertRaisesRegex(RuntimeError, "current public-array module binding differs"):
                 runner.assert_current_module_binding({**binding, "module_sha256": module_sha})
+
+
+class PreU8OracleTests(CurrentCarrierTests):
+    def predecessor(self):
+        return adapter.stdin_carrier_bytes("reviewer", adapter.enum_carrier_bytes("reviewer", self.inputs["reviewer"]))
+
+    def test_exact_eight_exclusions_and_complete_inverse(self):
+        predecessor = self.predecessor()
+        current = adapter.pre_u8_oracle_bytes(predecessor)
+        self.assertEqual(adapter.PRE_U8_IDENTITIES[0], adapter.STDIN_IDENTITIES["reviewer"][1])
+        self.assertEqual(len(adapter.PRE_U8_REPLACEMENTS), 8)
+        self.assertEqual([n for _, _, n in adapter.PRE_U8_REPLACEMENTS], [1] * 8)
+        arms = [new[len(old):] for old, new, _ in adapter.PRE_U8_REPLACEMENTS]
+        self.assertEqual(arms.count(b'\n        hir::Ty::U8 => panic!("Unit2D pre-u8 oracle received u8"),'), 5)
+        self.assertEqual(sum(b'Scalar::U8(_) =>' in arm for arm in arms), 3)
+        for arm in arms:
+            self.assertNotIn(b'\n        _ =>', arm)
+            self.assertIn(b'panic!("Unit2D pre-u8 oracle received u8")', arm)
+        # Independently remove only the eight explicit new panic arms.
+        restored = current
+        for arm in set(arms):
+            restored = restored.replace(arm, b'')
+        self.assertEqual(restored, predecessor)
+        self.assertEqual(adapter.pre_u8_oracle_bytes(current, reverse=True), predecessor)
+        self.assertEqual(current.count(b"#[test]"), predecessor.count(b"#[test]"))
+        self.assertEqual(current.count(b"#[ignore"), predecessor.count(b"#[ignore"))
+
+    def test_reject_input_output_count_order_and_double_application_drift(self):
+        predecessor = self.predecessor()
+        current = adapter.pre_u8_oracle_bytes(predecessor)
+        for changed in (predecessor + b"\n", current,
+                        adapter.enum_carrier_bytes("reviewer", self.inputs["reviewer"]),
+                        predecessor.replace(b"#[test]", b"#[ignore]", 1)):
+            with self.assertRaisesRegex(ValueError, "pre-u8 adapter input identity differs"):
+                adapter.pre_u8_oracle_bytes(changed)
+        for changed in (current + b"\n", current.replace(b'panic!("Unit2D pre-u8 oracle received u8")', b'Scalar::Unit', 1)):
+            with self.assertRaisesRegex(ValueError, "pre-u8 adapter input identity differs"):
+                adapter.pre_u8_oracle_bytes(changed, reverse=True)
+        replacements = adapter.PRE_U8_REPLACEMENTS
+        old, new, count = replacements[0]
+        for first, error in (((old, new, 2), "replacement count"),
+                             ((old, new.replace(b"Scalar::U8(_)", b"_"), count), "output identity")):
+            with patch.object(adapter, "PRE_U8_REPLACEMENTS", (first,) + replacements[1:]):
+                with self.assertRaisesRegex(ValueError, "pre-u8 adapter " + error + " differs"):
+                    adapter.pre_u8_oracle_bytes(predecessor)
+
+    def test_runner_three_seams_inverse_and_historical_inventory(self):
+        original = Path(frozen.__file__).read_bytes()
+        enum = adapter.current_runner_bytes(original)
+        stdin = adapter.stdin_runner_bytes(enum)
+        current = adapter.pre_u8_runner_bytes(stdin)
+        self.assertEqual(len(adapter.PRE_U8_RUNNER_REPLACEMENTS), 3)
+        self.assertEqual(adapter.pre_u8_runner_bytes(current, reverse=True), stdin)
+        self.assertEqual(adapter.current_runner_bytes(adapter.stdin_runner_bytes(
+            adapter.pre_u8_runner_bytes(current, reverse=True), reverse=True), reverse=True), original)
+        for changed in (original, enum, stdin + b"\n", current):
+            with self.assertRaisesRegex(ValueError, "pre-u8 adapter input identity differs"):
+                adapter.pre_u8_runner_bytes(changed)
+        runner = adapter.load_runner()
+        for name in ("ORDINARY", "NATIVE", "PHYSICAL", "CONTROL_FILES", "PROVENANCE"):
+            self.assertEqual(getattr(runner, name), getattr(frozen, name))
+        self.assertEqual((len(runner.ORDINARY) + 1, len(runner.NATIVE) + 1), (8, 9))
+        self.assertEqual(runner.PROVENANCE["test_roster"]["counts"],
+                         {"ordinary": 8, "ignored_native": 9, "total": 17})
+        self.assertIn("336 ELF / 1210 execution / 3360 command", runner.PROVENANCE["native_execution_totals"]["role"])
+        receipt = runner.PRE_U8_ORACLE_COMPATIBILITY
+        self.assertEqual(receipt["predecessor_adapter"], adapter.STDIN_VERSION)
+        self.assertEqual(receipt["domain"], ["i32", "bool", "unit"])
+        self.assertEqual(receipt["excluded_domain"], ["u8"])
 
 
 if __name__ == "__main__":

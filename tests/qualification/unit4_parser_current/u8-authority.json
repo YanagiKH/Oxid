@@ -566,9 +566,9 @@
       "sha256": "008d975c52915813a4ab53f8999d04c7f2ac8010e230d9823030d29c0bc7a5b2"
     },
     {
-      "bytes": 19574,
+      "bytes": 14996,
       "path": "src/frontend/declaration_index/u8_integration_tests.rs",
-      "sha256": "c1b2366877f9e313c02eeb54191fceb6c2d6ea159e84cd1e457bd9efdafe1952"
+      "sha256": "cdf78fe0a069e09f81f182ab531c7615ad7b178d2e82920f0a217049e8391727"
     },
     {
       "bytes": 26194,
@@ -1736,9 +1736,9 @@
       "sha256": "abf228ea026b98d802d7f68e79019392d1f1f9a3a91d987a016883b9f07300b0"
     },
     {
-      "bytes": 54990,
+      "bytes": 51475,
       "path": "src/frontend/project.rs",
-      "sha256": "3839621918c23eb26fa40ffb5fb670941aae529eb31af6afe7438c373eb58151"
+      "sha256": "e1950f237f9cd7b791b0ed557cdef9dd8ea9538952c696aacc4a156dc6937b5d"
     },
     {
       "bytes": 7105,
@@ -2711,7 +2711,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "7c8e6e77e2d70acbe13e49d545d8884e36b98574081add7f459b807585030fce",
+  "current_candidate_source_manifest_sha256": "73af230eb5fab73a956a63e48b42546aef90af03ffcd2e993050d2caae4270cf",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2811,7 +2811,7 @@
     {
       "bytes": 92868,
       "path": "candidate-source-manifest.json",
-      "sha256": "7c8e6e77e2d70acbe13e49d545d8884e36b98574081add7f459b807585030fce"
+      "sha256": "73af230eb5fab73a956a63e48b42546aef90af03ffcd2e993050d2caae4270cf"
     },
     {
       "bytes": 1583,
@@ -3204,9 +3204,9 @@
       "sha256": "008d975c52915813a4ab53f8999d04c7f2ac8010e230d9823030d29c0bc7a5b2"
     },
     {
-      "bytes": 19574,
+      "bytes": 14996,
       "path": "src/frontend/declaration_index/u8_integration_tests.rs",
-      "sha256": "c1b2366877f9e313c02eeb54191fceb6c2d6ea159e84cd1e457bd9efdafe1952"
+      "sha256": "cdf78fe0a069e09f81f182ab531c7615ad7b178d2e82920f0a217049e8391727"
     },
     {
       "bytes": 26194,
@@ -4434,9 +4434,9 @@
       "sha256": "36cf09544b605cc140ca0ed5cc811501c97ba8ceed14584ed890a1cf29e05e4f"
     },
     {
-      "bytes": 54990,
+      "bytes": 51475,
       "path": "src/frontend/project.rs",
-      "sha256": "3839621918c23eb26fa40ffb5fb670941aae529eb31af6afe7438c373eb58151"
+      "sha256": "e1950f237f9cd7b791b0ed557cdef9dd8ea9538952c696aacc4a156dc6937b5d"
     },
     {
       "bytes": 15666,
@@ -7455,7 +7455,7 @@
     {
       "bytes": 92868,
       "path": "candidate-source-manifest.json",
-      "sha256": "7c8e6e77e2d70acbe13e49d545d8884e36b98574081add7f459b807585030fce"
+      "sha256": "73af230eb5fab73a956a63e48b42546aef90af03ffcd2e993050d2caae4270cf"
     },
     {
       "bytes": 1583,
@@ -7848,9 +7848,9 @@
       "sha256": "008d975c52915813a4ab53f8999d04c7f2ac8010e230d9823030d29c0bc7a5b2"
     },
     {
-      "bytes": 19574,
+      "bytes": 14996,
       "path": "src/frontend/declaration_index/u8_integration_tests.rs",
-      "sha256": "c1b2366877f9e313c02eeb54191fceb6c2d6ea159e84cd1e457bd9efdafe1952"
+      "sha256": "cdf78fe0a069e09f81f182ab531c7615ad7b178d2e82920f0a217049e8391727"
     },
     {
       "bytes": 26194,
@@ -9078,9 +9078,9 @@
       "sha256": "36cf09544b605cc140ca0ed5cc811501c97ba8ceed14584ed890a1cf29e05e4f"
     },
     {
-      "bytes": 54990,
+      "bytes": 51475,
       "path": "src/frontend/project.rs",
-      "sha256": "3839621918c23eb26fa40ffb5fb670941aae529eb31af6afe7438c373eb58151"
+      "sha256": "e1950f237f9cd7b791b0ed557cdef9dd8ea9538952c696aacc4a156dc6937b5d"
     },
     {
       "bytes": 15844,
@@ -10004,9 +10004,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 71510,
+    "bytes": 71254,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4"
+    "sha256": "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -10300,7 +10300,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "d204fbc684b81c6e0deac04007182ebe2bb67b00",
+  "reviewed_source_head": "5e4875d19961b4eba8e465c915ac676c54a9926e",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -10313,9 +10313,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 213866,
+    "bytes": 209972,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "e0e0674ab2127439fdd5ee688d9b5e50022bb99d740ca3292e48e87b2e8bd5b5"
+    "sha256": "f9e811961c3e608d3d8d43849840187161b15e4ef129bc045955be4e2bc6af35"
   },
   "source_delta": [
     {
@@ -10509,9 +10509,9 @@
     },
     {
       "after": {
-        "bytes": 19574,
+        "bytes": 14996,
         "path": "src/frontend/declaration_index/u8_integration_tests.rs",
-        "sha256": "c1b2366877f9e313c02eeb54191fceb6c2d6ea159e84cd1e457bd9efdafe1952"
+        "sha256": "cdf78fe0a069e09f81f182ab531c7615ad7b178d2e82920f0a217049e8391727"
       },
       "before": null,
       "path": "src/frontend/declaration_index/u8_integration_tests.rs"
@@ -12761,9 +12761,9 @@
     },
     {
       "after": {
-        "bytes": 54990,
+        "bytes": 51475,
         "path": "src/frontend/project.rs",
-        "sha256": "3839621918c23eb26fa40ffb5fb670941aae529eb31af6afe7438c373eb58151"
+        "sha256": "e1950f237f9cd7b791b0ed557cdef9dd8ea9538952c696aacc4a156dc6937b5d"
       },
       "before": {
         "bytes": 34117,
@@ -13598,7 +13598,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "8c00492b24d56b842858b72da9b4442f057ab4de",
+  "source_only_tree": "4c687ed5ead4786e34cea154e3b263c00bd1fd1b",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",
@@ -13652,40 +13652,15 @@
     "state_fields_added": 0,
     "version": "unit4-closed-u8-grammar-v1"
   },
-  "u8_cross_host_authority": {
-    "bytes": 160226,
-    "path": "tests/fixtures/typed_project_source_binding/u8-cross-host-authority.json",
-    "sha256": "c602ed97acae3437929069a2aa01244de9d54a9611167e0abefa289f6aa3c26c"
-  },
-  "u8_cross_host_helper": {
-    "bytes": 7911,
-    "path": "tests/fixtures/typed_project_source_binding/u8_cross_host.py",
-    "sha256": "7664dc9ff6597c3c586154af3b3a38f095147d025b8fd6e544f6c7a93f250ff8"
-  },
-  "u8_cross_host_transition_patch": {
-    "bytes": 17278,
-    "path": "tests/fixtures/typed_project_source_binding/u8-cross-host-transition.patch",
-    "sha256": "8f62ca183f15292ef1cf043e5799a5e36d5a7c9b16fa95eb5a0b710e833e35a6"
-  },
   "u8_helper": {
     "bytes": 13829,
     "path": "tests/fixtures/typed_project_source_binding/u8_source.py",
     "sha256": "a89918a6016a008a44ad0e0c8afe8771d225ee3fb8cf3ea56c32acc5ac3922ec"
   },
-  "u8_parser_authority": {
-    "bytes": 504509,
-    "path": "tests/qualification/unit4_parser_current/u8-authority.json",
-    "sha256": "48b3864d7b04f2e4afcdc35c2a42fd56720dcbd80ac789f359e9f04e5eff48be"
-  },
   "u8_policy_controls": {
     "bytes": 7600,
     "path": "tests/qualification/unit4_parser_current/u8_policy_controls.py",
     "sha256": "5228fc42aedb19708e727c51266acd8760440acb973784463f02fbf70be03d35"
-  },
-  "u8_source_manifest": {
-    "bytes": 71254,
-    "path": "tests/fixtures/typed_project_source_binding/u8-source.json",
-    "sha256": "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4"
   },
   "u8_transition_patch": {
     "bytes": 484704,

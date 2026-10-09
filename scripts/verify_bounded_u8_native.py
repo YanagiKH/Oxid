@@ -22,6 +22,11 @@ import verify_bounded_stdin_native as builds
 
 require, save, identity = corpus.require, corpus.save, corpus.identity
 PACKAGE = Path('tests/qualification/bounded_u8_current')
+INITIAL_ROSTER_SHA = '0e38dd18192c1c8b1288a95fe76099879236b5645623d1a35742e6371aaa2dca'
+CROSS_HOST_TESTS = (
+    'frontend::declaration_index::u8_integration_tests::in_memory_module_fixture_preserves_order_spans_and_source_identity',
+    'frontend::declaration_index::u8_integration_tests::in_memory_module_fixture_rejects_inexact_inputs',
+)
 STAGER = Path('tests/fixtures/typed_project_unit3_independent/portable/native-v1/stage_llvm_runtime.py')
 IGNORED = {
     'frontend::oir::native::u8_tests::u8_scalar_native_pinned_boundary_and_fuel_proof': ('scalar', 16),
@@ -134,7 +139,12 @@ def verify(args, root):
         require(not stderr, 'native tool version stderr')
         enum_gate.admit_tool_version(name, marker, stdout)
     roster = json.loads((repo / PACKAGE / 'tests.json').read_text())
-    require(len(roster) == 115 and len(set(roster)) == 115 and set(IGNORED) <= set(roster),
+    initial_path = repo / PACKAGE / 'tests-u8-initial.json'
+    require(identity(initial_path)['sha256'] == INITIAL_ROSTER_SHA, 'immutable initial u8 test roster')
+    initial = json.loads(initial_path.read_text())
+    require(len(initial) == 115 and roster == sorted([*initial, *CROSS_HOST_TESTS]),
+            'cross-host test roster must retain all initial tests and exact two additions')
+    require(len(roster) == 117 and len(set(roster)) == 117 and set(IGNORED) <= set(roster),
             'reviewed u8 test roster changed')
     for profile in ('debug', 'release'):
         directory = root / profile
@@ -212,7 +222,7 @@ def main():
         raise
     finally:
         save(root / 'result.json', result)
-    print('bounded u8: both ordinary profiles, 115 tests, 91 boundary ELFs, both exhaustive routes, v1/v2 provider controls: PASS')
+    print('bounded u8: both ordinary profiles, 117 tests, 91 boundary ELFs, both exhaustive routes, v1/v2 provider controls: PASS')
 
 
 if __name__ == '__main__':

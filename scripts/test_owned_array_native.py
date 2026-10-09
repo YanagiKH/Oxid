@@ -194,17 +194,23 @@ class Unit2DEnumCarrierTests(unittest.TestCase):
             self.assertEqual(native.read_bytes(), original)
             enum_predecessor = enum_adapter.enum_carrier_bytes("reviewer", self.previous_members()["reviewer"])
             current = (output / "source" / schema.MODULE_REL).read_bytes()
-            self.assertEqual(current, enum_adapter.stdin_carrier_bytes("reviewer", enum_predecessor))
-            self.assertEqual(enum_adapter.stdin_carrier_bytes("reviewer", current, reverse=True), enum_predecessor)
+            stdin_predecessor = enum_adapter.stdin_carrier_bytes("reviewer", enum_predecessor)
+            self.assertEqual(current, enum_adapter.pre_u8_oracle_bytes(stdin_predecessor))
+            self.assertEqual(enum_adapter.pre_u8_oracle_bytes(current, reverse=True), stdin_predecessor)
+            self.assertEqual(enum_adapter.stdin_carrier_bytes("reviewer", stdin_predecessor, reverse=True), enum_predecessor)
             self.assertEqual(current.count(b"BuiltinOrigins::None"), 6)
             self.assertEqual(binding["enum_carrier_compatibility"]["members"]["reviewer"][1],
                              enum_adapter.digest(enum_predecessor))
             self.assertEqual(binding["stdin_carrier_compatibility"]["members"]["reviewer"],
-                             [enum_adapter.digest(enum_predecessor), enum_adapter.digest(current)])
+                             [enum_adapter.digest(enum_predecessor), enum_adapter.digest(stdin_predecessor)])
+            self.assertEqual(binding["pre_u8_oracle_compatibility"]["reviewer_sha256"],
+                             [enum_adapter.digest(stdin_predecessor), enum_adapter.digest(current)])
+            self.assertEqual(current.count(b'panic!("Unit2D pre-u8 oracle received u8")'), 8)
             schema.assert_manifest(output / "source", binding["prepared"])
             schema.assert_manifest(output / "inputs", binding["inputs"])
             for field in ("enum_carrier_compatibility", "enum_adapter_sha256",
-                          "stdin_carrier_compatibility", "stdin_adapter_sha256", "module_sha256"):
+                          "stdin_carrier_compatibility", "stdin_adapter_sha256",
+                          "pre_u8_oracle_compatibility", "pre_u8_adapter_sha256", "module_sha256"):
                 changed = dict(binding)
                 changed[field] = "mutated"
                 with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "module binding differs"):
@@ -1555,7 +1561,9 @@ class CombinedReceiptTests(unittest.TestCase):
             'enum_adapter_sha256': cls.schema.ENUM_ADAPTER_SHA,
             'stdin_carrier_compatibility': cls.schema.STDIN_CARRIER_COMPATIBILITY,
             'stdin_adapter_sha256': cls.schema.STDIN_ADAPTER_SHA,
-            'module_sha256': cls.schema.STDIN_CARRIER_COMPATIBILITY['members']['reviewer'][1],
+            'pre_u8_oracle_compatibility': cls.schema.PRE_U8_ORACLE_COMPATIBILITY,
+            'pre_u8_adapter_sha256': cls.schema.PRE_U8_ADAPTER_SHA,
+            'module_sha256': cls.schema.PRE_U8_ORACLE_COMPATIBILITY['reviewer_sha256'][1],
             'original_manifest_sha256': admission.file_record(evidence / 'original-source.json')['sha256'],
             'archive_sha256': admission.file_record(evidence / 'source.tar')['sha256'],
             'input_manifest_sha256': cls.input_digest, 'original_input_manifest_sha256': cls.input_digest,

@@ -1,3 +1,14 @@
+# Cross-host test-only source successor
+
+Current source is `d204fbc684b81c6e0deac04007182ebe2bb67b00`, tree
+`8c00492b24d56b842858b72da9b4442f057ab4de`, with 363 source members and manifest
+`20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4`.
+The exact two-file inverse preserves the initial bounded-u8 source and all
+older authorities. Preparation is not execution. Fresh successor replay and
+hosted native qualification retain their own receipts.
+
+## Retained initial bounded-u8 qualification context
+
 # Bounded-u8 current-source admission successor
 
 Reviewed compiler source: `5e4875d19961b4eba8e465c915ac676c54a9926e`,

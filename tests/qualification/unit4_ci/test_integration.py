@@ -428,7 +428,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 20)
+        self.assertEqual(len(expected), 21)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.

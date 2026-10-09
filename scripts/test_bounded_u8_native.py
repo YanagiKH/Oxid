@@ -97,22 +97,27 @@ class NativeGateTests(unittest.TestCase):
     def test_exact_roster_includes_all_four_ignored_tests(self):
         repo = Path(__file__).resolve().parents[1]
         roster = json.loads((repo / gate.PACKAGE / 'tests.json').read_text())
-        self.assertEqual(len(roster), 115)
+        self.assertEqual(len(roster), 117)
+        initial_path = repo / gate.PACKAGE / 'tests-u8-initial.json'
+        self.assertEqual(gate.identity(initial_path)['sha256'], gate.INITIAL_ROSTER_SHA)
+        initial = json.loads(initial_path.read_text())
+        self.assertEqual(len(initial), 115)
+        self.assertEqual(roster, sorted([*initial, *gate.CROSS_HOST_TESTS]))
         self.assertTrue(set(gate.IGNORED) <= set(roster))
         self.assertEqual(sum(value[1] for value in gate.IGNORED.values()), 91)
-        data = '\n'.join(name + ': test' for name in roster) + '\n\n115 tests, 0 benchmarks\n'
+        data = '\n'.join(name + ': test' for name in roster) + '\n\n117 tests, 0 benchmarks\n'
         gate.admit_listing(data.encode(), roster)
-        for bad in (data.replace(roster[0], roster[1]), data.replace('115 tests', '114 tests'), data.replace(roster[0] + ': test\n', '')):
+        for bad in (data.replace(roster[0], roster[1]), data.replace('117 tests', '116 tests'), data.replace(roster[0] + ': test\n', '')):
             with self.assertRaises(ValueError):
                 gate.admit_listing(bad.encode(), roster)
 
     def test_zero_or_skipped_execution_is_not_a_pass(self):
-        good = b'test result: ok. 111 passed; 0 failed; 0 ignored; 0 measured; 1234 filtered out; finished in 1.2s\n'
-        gate.admit_execution(good, 111)
-        for bad in (good.replace(b'111 passed', b'0 passed'), good.replace(b'0 ignored', b'4 ignored'),
+        good = b'test result: ok. 113 passed; 0 failed; 0 ignored; 0 measured; 1234 filtered out; finished in 1.2s\n'
+        gate.admit_execution(good, 113)
+        for bad in (good.replace(b'113 passed', b'0 passed'), good.replace(b'0 ignored', b'4 ignored'),
                     good.replace(b'0 failed', b'1 failed'), good + good):
             with self.assertRaises(ValueError):
-                gate.admit_execution(bad, 111)
+                gate.admit_execution(bad, 113)
 
     def test_native_stream_retention_is_mandatory(self):
         with tempfile.TemporaryDirectory() as tmp:

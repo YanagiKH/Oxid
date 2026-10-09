@@ -1,3 +1,52 @@
+# Test-only u8 cross-host source successor
+
+The active source checkpoint is `d204fbc684b81c6e0deac04007182ebe2bb67b00`,
+full Git tree `8c00492b24d56b842858b72da9b4442f057ab4de`. Its complete selected source
+closure remains 363 inputs: 275 src/native members and 88 noncompiler inputs,
+with 278 compiler/build bodies. Only cfg(test) code in
+`src/frontend/declaration_index/u8_integration_tests.rs` and
+`src/frontend/project.rs` changes.
+
+`current-source.json` is 71,510 bytes, SHA-256
+`20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4`. The preceding current manifest is preserved
+byte-for-byte as `u8-source.json` (71,254 bytes, SHA-256
+`35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4`). The original `u8_source.py`,
+`u8-authority.json`, `u8-transition.patch`, both Unit2 u8 accounting artifacts,
+and every older source stage remain unchanged.
+
+The pinned `u8_cross_host.py` admits all current bytes, modes, Git blob identities,
+complete src/native membership, 78 fixture identities and 136 exact compile-time
+include expressions. The two-file patch is 17,278 bytes, SHA-256
+`8f62ca183f15292ef1cf043e5799a5e36d5a7c9b16fa95eb5a0b710e833e35a6`. Its exact recipe is
+`git diff --binary --no-ext-diff --no-renames --abbrev=7
+4c687ed5ead4786e34cea154e3b263c00bd1fd1b
+8c00492b24d56b842858b72da9b4442f057ab4de --
+src/frontend/declaration_index/u8_integration_tests.rs src/frontend/project.rs`.
+It has no additions, removals or roster exceptions.
+
+Admission reverses this patch using exact hunk offsets and contexts, verifies all
+363 reconstructed predecessor inputs, and invokes the immutable u8 helper against
+a separate closed predecessor materialization. That helper still applies its
+original 96-path inverse to all 345 cache-admission inputs. Every historical
+inverse and the final 117-member archive retain their original identities.
+
+Current Unit2 executes the newly admitted candidate source. The immutable u8
+accounting helper is evaluated with its original `u8-source.json` authority;
+all three accounting source dependencies must also be identical in the new
+candidate. The successor receipt names both complete source identities and the
+unchanged helper, authority, dependencies and derived resource bytes. No resource
+ceiling, test roster, observation, corpus or language oracle changes, and no old
+executable is reused as fresh qualification.
+
+The controls retain all 239 predecessor tests and add exact forward/inverse,
+wrong-stage/double-inversion, every changed hunk, complete identity/fixture/include,
+coherent-tampering, dependency-transport, mode, extra-member and pre-execution refusal
+checks. Preflight and archive preparation execute no compiler and establish no
+semantic or hosted pass. Fresh current Unit2 and exact-head hosted qualification
+remain separate gates.
+
+The following sections are retained predecessor documentation.
+
 # Bounded u8 source admission successor
 
 The active source checkpoint is `5e4875d19961b4eba8e465c915ac676c54a9926e`,

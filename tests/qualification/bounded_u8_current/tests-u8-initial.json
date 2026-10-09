@@ -4,8 +4,6 @@
   "frontend::declaration_index::u8_integration_tests::actual_freeze_exact_no_u8_trace_and_each_failure_prefix",
   "frontend::declaration_index::u8_integration_tests::cross_kind_order_is_fully_validated_before_reservation",
   "frontend::declaration_index::u8_integration_tests::graph_error_vectors_precede_reservation",
-  "frontend::declaration_index::u8_integration_tests::in_memory_module_fixture_preserves_order_spans_and_source_identity",
-  "frontend::declaration_index::u8_integration_tests::in_memory_module_fixture_rejects_inexact_inputs",
   "frontend::declaration_index::u8_integration_tests::malformed_owner_and_import_metadata_keep_checked_origins",
   "frontend::declaration_index::u8_integration_tests::primitive_query_work_is_exact_and_keeps_predecessor_shortcuts",
   "frontend::declaration_index::u8_integration_tests::privacy_alias_conflicts_and_sibling_preorder",

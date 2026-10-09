@@ -161,9 +161,9 @@
       "sha256": "008d975c52915813a4ab53f8999d04c7f2ac8010e230d9823030d29c0bc7a5b2"
     },
     {
-      "bytes": 19574,
+      "bytes": 14996,
       "path": "src/frontend/declaration_index/u8_integration_tests.rs",
-      "sha256": "c1b2366877f9e313c02eeb54191fceb6c2d6ea159e84cd1e457bd9efdafe1952"
+      "sha256": "cdf78fe0a069e09f81f182ab531c7615ad7b178d2e82920f0a217049e8391727"
     },
     {
       "bytes": 26194,
@@ -1331,9 +1331,9 @@
       "sha256": "abf228ea026b98d802d7f68e79019392d1f1f9a3a91d987a016883b9f07300b0"
     },
     {
-      "bytes": 54990,
+      "bytes": 51475,
       "path": "src/frontend/project.rs",
-      "sha256": "3839621918c23eb26fa40ffb5fb670941aae529eb31af6afe7438c373eb58151"
+      "sha256": "e1950f237f9cd7b791b0ed557cdef9dd8ea9538952c696aacc4a156dc6937b5d"
     },
     {
       "bytes": 7105,
@@ -1859,21 +1859,18 @@
   "producer_diagnostic_source_sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29",
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
-  "purpose": "Exact test-only u8 cross-host source successor; reversible current-input admission only, not semantic, resource or hosted qualification.",
-  "reviewed_source_head": "d204fbc684b81c6e0deac04007182ebe2bb67b00",
+  "purpose": "Exact bounded u8 source checkpoint; reversible current-input admission only, not semantic or resource qualification.",
+  "reviewed_source_head": "5e4875d19961b4eba8e465c915ac676c54a9926e",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "8c00492b24d56b842858b72da9b4442f057ab4de",
+  "source_only_tree": "4c687ed5ead4786e34cea154e3b263c00bd1fd1b",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",
   "stdout_source_sha256": "3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936",
   "u8_base_head": "98af42f3baa02f179c0437078ab1928e86f0c8f6",
   "u8_base_tree": "1d37d040150822d4358ec1c70c8e0f227f5eaf48",
-  "u8_cross_host_base_head": "5e4875d19961b4eba8e465c915ac676c54a9926e",
-  "u8_cross_host_base_tree": "4c687ed5ead4786e34cea154e3b263c00bd1fd1b",
-  "u8_source_sha256": "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4",
   "unary_base_head": "c4c4ec0958a31fc7878bdc4031e93b204ff14acb",
   "unary_source_sha256": "d9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220"
 }

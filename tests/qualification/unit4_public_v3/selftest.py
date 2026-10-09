@@ -51,12 +51,107 @@ class SourceAuthorityControls(unittest.TestCase):
         helper = api.load_u8_source({name: (binding_path.parent / name).read_bytes() for name in ('u8_source.py',)})
         inputs = {row['path']: (prior_root / row['path']).read_bytes()
                   for row in json.loads((binding_path.parent / 'current-source.json').read_bytes())['files']}
+        cross = api.load_u8_cross_host({'u8_cross_host.py': (binding_path.parent / 'u8_cross_host.py').read_bytes()})
+        inputs, _ = cross.inverse(inputs, (binding_path.parent / 'u8-cross-host-transition.patch').read_bytes(), api)
         restored, _ = helper.inverse(inputs, (binding_path.parent / 'u8-transition.patch').read_bytes(), api)
         shutil.rmtree(prior_root)
         api.materialize(prior_root, restored)
         subprocess.run(['git', 'apply', str(cls.package / 'observer-stdin-v1.patch')], cwd=prior_root, check=True)
         cls.predecessor_observer_files = [{'path': f.relative_to(prior_root).as_posix(), 'bytes': f.stat().st_size, 'sha256': sha(f.read_bytes())}
             for f in cls.builder.observer_path_order(prior_root.rglob('*'), prior_root) if f.is_file()]
+
+    def runtime_fixture(self, observer=False):
+        """Real source admission, deliberately synthetic/nonexecuted build receipts."""
+        import runtime as rt
+        import shutil
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        source = root / 'source'
+        manifest_path = root / 'source.json'
+        original_path = (self.output / 'observer-source.json' if observer else
+                         self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json')
+        original_root = self.output / 'source' if observer else self.repo
+        manifest = json.loads(original_path.read_bytes())
+        for row in manifest['files']:
+            dest = source / row['path']; dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(original_root / row['path'], dest)
+        manifest_path.write_bytes(original_path.read_bytes())
+        cfg = {'schema_version': 1,
+               'kind': 'unit4-public-v3-lifecycle-observer' if observer else 'unit4-public-v3-candidate',
+               'source_root': str(source), 'source_manifest': rt.binding(manifest_path),
+               'compiler_head': '1' * 40, 'compiler_head_tree': '2' * 40,
+               'compiler_source_only_tree': '3' * 40, 'binaries': {}, 'build_receipts': {}}
+        if observer:
+            cfg.update(base_source_manifest_sha256=manifest['base_source_manifest_sha256'],
+                       observer_patch=manifest['observer_patch'])
+        for profile in ('debug', 'release'):
+            binary = root / ('synthetic-nonexecutable-' + profile)
+            binary.write_bytes(b'SYNTHETIC control: never executed\n')
+            stream = root / (profile + '-empty-stream'); stream.write_bytes(b'')
+            cfg['binaries'][profile] = rt.binding(binary)
+            receipt = {'source_manifest_sha256': cfg['source_manifest']['sha256'],
+                       'profile': profile, 'status': 0, 'binary': rt.binding(binary),
+                       'argv': ['cargo', 'build', '--bin', 'oxid', '--locked', '--offline'] +
+                               (['--release'] if profile == 'release' else []),
+                       'source_before': cfg['source_manifest']['sha256'],
+                       'source_after': cfg['source_manifest']['sha256'],
+                       'environment': {'CARGO_INCREMENTAL': '0', 'CARGO_BUILD_JOBS': '2'},
+                       'streams': {'stdout': rt.binding(stream), 'stderr': rt.binding(stream)}}
+            path = root / (profile + '-synthetic-build.json'); rt.save(path, receipt)
+            cfg['build_receipts'][profile] = rt.binding(path)
+        path = root / 'synthetic-candidate-binding.json'; rt.save(path, cfg)
+        return rt, path, cfg
+
+    def test_actual_collector_preflight_admits_complete_current_and_observer_sources(self):
+        import authority
+        for observer, members in ((False, authority.CURRENT_SOURCE_MEMBERS),
+                                  (True, authority.OBSERVER_SOURCE_MEMBERS)):
+            with self.subTest(observer=observer):
+                rt, path, cfg = self.runtime_fixture(observer)
+                admitted = rt.candidate_binding(path)
+                self.assertEqual(admitted['source_manifest'], cfg['source_manifest'])
+                self.assertEqual(len(rt.load(cfg['source_manifest']['path'])['files']), members)
+                # Mutate only the independent count/digest guard. Both must reject
+                # after the same real traversal used by run.py collection preflight.
+                count = 'OBSERVER_SOURCE_MEMBERS' if observer else 'CURRENT_SOURCE_MEMBERS'
+                digest = 'OBSERVER_FILES_SHA' if observer else 'CURRENT_FILES_SHA'
+                for field, value in ((count, 346 if observer else 345), (digest, '0' * 64)):
+                    with mock.patch.object(rt, field, value), self.assertRaises(Reject):
+                        rt.candidate_binding(path)
+
+    def test_runtime_source_membership_bytes_and_overlay_reject(self):
+        for mutation in ('duplicate', 'missing', 'extra', 'body', 'base', 'overlay'):
+            with self.subTest(mutation=mutation):
+                rt, path, cfg = self.runtime_fixture(mutation in ('base', 'overlay'))
+                manifest_path = Path(cfg['source_manifest']['path'])
+                manifest = rt.load(manifest_path)
+                if mutation in ('duplicate', 'missing'):
+                    if mutation == 'duplicate': manifest['files'].append(manifest['files'][0])
+                    else: manifest['files'] = [r for r in manifest['files'] if r['path'] != 'src/main.rs']
+                    rt.save(manifest_path, manifest)
+                    cfg['source_manifest'] = rt.binding(manifest_path)
+                elif mutation == 'extra':
+                    (Path(cfg['source_root']) / 'src/unapproved.rs').write_bytes(b'// extra\n')
+                elif mutation == 'body':
+                    (Path(cfg['source_root']) / 'src/main.rs').write_bytes(b'// changed\n')
+                elif mutation == 'base': cfg['base_source_manifest_sha256'] = '0' * 64
+                else: cfg['observer_patch'] = dict(cfg['observer_patch'], sha256='0' * 64)
+                rt.save(path, cfg)
+                with self.assertRaises(Reject): rt.candidate_binding(path)
+
+    def test_runtime_binary_and_build_receipt_remain_bound(self):
+        for observer in (False, True):
+            for mutation in ('binary', 'receipt'):
+                with self.subTest(observer=observer, mutation=mutation):
+                    rt, path, cfg = self.runtime_fixture(observer)
+                    if mutation == 'binary':
+                        Path(cfg['binaries']['debug']['path']).write_bytes(b'changed')
+                    else:
+                        receipt = Path(cfg['build_receipts']['debug']['path'])
+                        body = rt.load(receipt); body['status'] = 1; rt.save(receipt, body)
+                        cfg['build_receipts']['debug'] = rt.binding(receipt); rt.save(path, cfg)
+                    with self.assertRaises(Reject): rt.candidate_binding(path)
 
     def test_hir_import_current_and_derived_maps_are_exact(self):
         import authority
@@ -72,6 +167,17 @@ class SourceAuthorityControls(unittest.TestCase):
             'src/frontend/declaration_index/sealed.rs', 'src/frontend/driver.rs',
             'src/frontend/lifecycle_observer.rs'})
         self.assertEqual(json.loads((self.output / 'prepared.json').read_bytes())['compiler_invocations'], 0)
+
+    def test_cross_host_public_authority_preserves_initial_u8_and_cache_predecessors(self):
+        import authority
+        retained = self.package / 'u8_source_authority.py'
+        self.assertEqual(sha(retained.read_bytes()), authority.U8_SOURCE_AUTHORITY_SHA)
+        initial = {}; exec(compile(retained.read_bytes(), str(retained), 'exec'), initial)
+        self.assertEqual(initial['CURRENT_SOURCE_SHA'], '35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4')
+        self.assertEqual(initial['CACHE_ADMISSION_AUTHORITY_SHA'], authority.CACHE_ADMISSION_AUTHORITY_SHA)
+        for field in ('LIFECYCLE_PATCH_SHA', 'ENUM_SOURCE_SHA', 'LLVM_CONTENT_SHA'):
+            self.assertEqual(initial[field], getattr(authority, field))
+        self.assertEqual((authority.CURRENT_SOURCE_MEMBERS, authority.OBSERVER_SOURCE_MEMBERS), (363, 364))
 
     def test_u8_successor_restores_exact_prior_observer_map(self):
         retained = self.package / 'cache_admission_authority.py'

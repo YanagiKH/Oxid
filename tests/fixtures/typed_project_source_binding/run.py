@@ -71,9 +71,10 @@ HIR_IMPORT_SOURCE_SHA = '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e
 HIR_IMPORT_SOURCE_BYTES = 62558
 PRODUCER_SOURCE_SHA = '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680'
 PRODUCER_SOURCE_BYTES = 63220
-CURRENT_SOURCE_SHA = '35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4'
-CURRENT_SOURCE_BYTES = 71254
+CURRENT_SOURCE_SHA = '20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4'
+CURRENT_SOURCE_BYTES = 71510
 UNIT2_U8_RESOURCE_HELPER_SHA = 'eb7c611e986a46d8468edc57a51b7ba708dbac81eb7d0a05bde190f2a530394b'
+U8_CROSS_HOST_HELPER_SHA = '7664dc9ff6597c3c586154af3b3a38f095147d025b8fd6e544f6c7a93f250ff8'
 U8_SOURCE_HELPER_SHA = 'a89918a6016a008a44ad0e0c8afe8771d225ee3fb8cf3ea56c32acc5ac3922ec'
 CACHE_ADMISSION_HELPER_SHA = 'f6ef6f7e5dcb01d8f21bdc4911bf7072f401750c971b0d5c6f136935608e0077'
 CACHE_PRESERVATION_HELPER_SHA = 'a2a2a8c65a97eaba7fcfcf709d7430179ebef24c5ac0625e8c226eec74aebaf1'
@@ -1379,6 +1380,16 @@ def compile_fixture_paths(source, *, combined=False):
     return paths
 
 
+def load_u8_cross_host(package_bytes, package=PACKAGE):
+    """Load the separately pinned two-file test-only source successor."""
+    require(digest(package_bytes["u8_cross_host.py"]) == U8_CROSS_HOST_HELPER_SHA,
+            "unapproved u8 cross-host source helper")
+    module = types.ModuleType("u8_cross_host_source_binding")
+    module.__file__ = str(package / "u8_cross_host.py")
+    exec(compile(package_bytes["u8_cross_host.py"], module.__file__, "exec"), module.__dict__)
+    return module
+
+
 def load_u8_source(package_bytes, package=PACKAGE):
     """Load the separately pinned bounded-u8 source successor only."""
     require(digest(package_bytes["u8_source.py"]) == U8_SOURCE_HELPER_SHA,
@@ -1680,9 +1691,17 @@ def preflight(repo, package=PACKAGE):
             and retained == [x for x in formatter_source["files"]
                              if not x["path"].startswith(("src/", "native/"))],
             "changed retained non-source inputs")
-    u8 = load_u8_source(package_bytes, package)
-    u8_current, u8_inputs, u8_authority, admission_inputs, u8_touched = u8.admit(
+    cross_host = load_u8_cross_host(package_bytes, package)
+    cross_host_current, cross_host_inputs, cross_host_authority, u8_inputs, cross_host_touched = cross_host.admit(
         repo, package_bytes, types.SimpleNamespace(**globals()))
+    u8 = load_u8_source(package_bytes, package)
+    u8_package = dict(package_bytes, **{"current-source.json": package_bytes["u8-source.json"]})
+    with tempfile.TemporaryDirectory(prefix="oxid-retained-u8-source-") as directory:
+        u8_repo = Path(directory) / "source"
+        materialize(u8_repo, u8_inputs)
+        u8_current, admitted_u8_inputs, u8_authority, admission_inputs, u8_touched = u8.admit(
+            u8_repo, u8_package, types.SimpleNamespace(**globals()))
+    require(admitted_u8_inputs == u8_inputs, "retained cross-host admission changed its input view")
     admission = load_cache_admission(package_bytes, package)
     admission_package = dict(package_bytes, **{"current-source.json": package_bytes["cache-admission-source.json"]})
     with tempfile.TemporaryDirectory(prefix="oxid-retained-cache-admission-") as directory:
@@ -2286,7 +2305,25 @@ def preflight(repo, package=PACKAGE):
          u8_resource_module.__dict__)
     u8_index_resource, u8_index_resource_authority = u8_resource_module.adapt(
         index_resource, package_bytes["unit2-u8-resource-authority.json"],
-        package_bytes["current-source.json"], types.SimpleNamespace(require=require, digest=digest, entry=entry))
+        package_bytes["u8-source.json"], types.SimpleNamespace(require=require, digest=digest, entry=entry))
+    # Transport the unchanged accounting successor only through identical source
+    # dependencies. Current Unit2 execution still receives cross_host_inputs.
+    require(all(row in cross_host_current["files"] and row in u8_current["files"]
+                for row in u8_index_resource_authority["source_dependencies"]),
+            "changed retained Unit2 u8 accounting dependency")
+    u8_accounting_source_binding = {
+        "version": "unit2-u8-cross-host-identical-accounting-source-v1",
+        "current_source": entry("current-source.json", package_bytes["current-source.json"]),
+        "reviewed_source_head": cross_host_current["reviewed_source_head"],
+        "source_only_tree": cross_host_current["source_only_tree"],
+        "retained_accounting_source": entry("u8-source.json", package_bytes["u8-source.json"]),
+        "retained_reviewed_source_head": u8_current["reviewed_source_head"],
+        "retained_source_only_tree": u8_current["source_only_tree"],
+        "retained_authority": entry("unit2-u8-resource-authority.json", package_bytes["unit2-u8-resource-authority.json"]),
+        "retained_helper": entry("unit2_u8_resource.py", package_bytes["unit2_u8_resource.py"]),
+        "derived_resource": entry(INDEX_RESOURCE, u8_index_resource),
+        "source_dependencies": u8_index_resource_authority["source_dependencies"],
+    }
     require(digest(package_bytes[SEMANTIC_HELPER]) == SEMANTIC_HELPER_SHA
             and digest(package_bytes[SEMANTIC_DESCRIPTOR]) == SEMANTIC_DESCRIPTOR_SHA,
             "unapproved enum semantic amendment")
@@ -2326,7 +2363,10 @@ def preflight(repo, package=PACKAGE):
     }, "stale enum Unit2 observer adapter authority")
     require(digest(package_bytes["authority.json"]) == formatter["predecessor_authority_sha256"],
             "changed predecessor authority")
-    return {"current": u8_current, "u8_authority": u8_authority, "u8_touched": u8_touched,
+    return {"current": cross_host_current, "u8_cross_host_authority": cross_host_authority,
+            "u8_cross_host_touched": cross_host_touched, "u8_source": u8_current, "u8_inputs": u8_inputs,
+            "u8_authority": u8_authority, "u8_touched": u8_touched,
+            "u8_accounting_source_binding": u8_accounting_source_binding,
             "cache_admission_source": admission_current, "cache_admission_inputs": admission_inputs,
             "cache_admission_authority": admission_authority,
             "cache_admission_touched": admission_touched,
@@ -2362,7 +2402,7 @@ def preflight(repo, package=PACKAGE):
             "composition_inputs": composition_inputs, "slices_source": current,
             "composition_authority": composition, "composition_touched": composition_touched,
             "slices_inputs": inputs, "selected": selected, "historical": historical,
-            "inputs": u8_inputs, "archived": reconstructed, "references": references,
+            "inputs": cross_host_inputs, "archived": reconstructed, "references": references,
             "historical_bytes": historical_bytes, "resource": stdin_resource,
             "enum_resource": enum_resource, "combined_resource": adapted_resource,
             "index_resource": index_resource, "index_resource_authority": index_resource_authority,
@@ -2417,6 +2457,10 @@ def prepare_archived(output, captured):
             "division_inverse_touched": captured["division_touched"],
             "combined_source_sha256": COMBINED_SOURCE_SHA,
             "current_source_sha256": CURRENT_SOURCE_SHA,
+            "u8_cross_host_authority_sha256": digest(captured["package_bytes"]["u8-cross-host-authority.json"]),
+            "u8_cross_host_inverse_patch_sha256": digest(captured["package_bytes"]["u8-cross-host-transition.patch"]),
+            "u8_cross_host_inverse_touched": captured["u8_cross_host_touched"],
+            "u8_source_sha256": digest(captured["package_bytes"]["u8-source.json"]),
             "u8_authority_sha256": digest(captured["package_bytes"]["u8-authority.json"]),
             "u8_inverse_patch_sha256": digest(captured["package_bytes"]["u8-transition.patch"]),
             "u8_inverse_touched": captured["u8_touched"],
@@ -2510,6 +2554,7 @@ def prepare_unit2(output, captured):
             "stdin_semantic_adapter": captured["stdin_authority"]["unit2_semantic_adapter"],
             "index_resource_adapter": captured["index_resource_authority"],
             "u8_index_resource_adapter": captured["u8_index_resource_authority"],
+            "u8_accounting_source_binding": captured["u8_accounting_source_binding"],
             "observer_adapter": captured["enum_authority"]["unit2_observer_adapter"],
             "resource_before": next(x for x in captured["historical"]["files"] if x["path"] == RESOURCE),
             "resource_predecessor": captured["authority"]["derived_resource"],
@@ -2709,6 +2754,10 @@ def main():
         captured = preflight(repo)
         result.update(current_source_sha256=digest(captured["package_bytes"]["current-source.json"]),
                       adapter_package_sha256=digest(captured["package_manifest"]),
+                      u8_cross_host_authority_sha256=digest(captured["package_bytes"]["u8-cross-host-authority.json"]),
+                      u8_cross_host_inverse_patch_sha256=digest(captured["package_bytes"]["u8-cross-host-transition.patch"]),
+                      u8_source_sha256=digest(captured["package_bytes"]["u8-source.json"]),
+                      u8_accounting_source_binding=captured["u8_accounting_source_binding"],
                       u8_authority_sha256=digest(captured["package_bytes"]["u8-authority.json"]),
                       u8_inverse_patch_sha256=digest(captured["package_bytes"]["u8-transition.patch"]),
                       cache_admission_source_sha256=digest(captured["package_bytes"]["cache-admission-source.json"]),
@@ -2767,6 +2816,8 @@ def main():
                       combined_source_sha256=COMBINED_SOURCE_SHA)
         plan = {**result, "status": "planned", "repository": str(repo),
                 "current_source_members": len(captured["inputs"]),
+                "u8_source_members": len(captured["u8_inputs"]),
+                "u8_cross_host_changed_sources": len(captured["u8_cross_host_touched"]),
                 "cache_admission_source_members": len(captured["cache_admission_inputs"]),
                 "u8_compiler_additions": 18, "u8_compile_time_fixture_members": 78,
                 "u8_compile_time_include_directives": 136,
