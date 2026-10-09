@@ -30,7 +30,10 @@ const ROUNDS: usize = 4;
 // Two original rows: the value-lane E precedes the type-lane E in lookup order.
 // Classification 11+9+11, variant wrappers 11+11, callees 8+12,
 // nominal/value 6+11, exposure 1, and two prepared names 9+9.
-const SUCCESS_WORK: u64 = 109;
+const PREDECESSOR_SUCCESS_WORK: u64 = 109;
+// One primitive spelling comparison plus its first mismatching byte.
+const U8_NOMINAL_QUERY_WORK: u64 = 2;
+const SUCCESS_WORK: u64 = PREDECESSOR_SUCCESS_WORK + U8_NOMINAL_QUERY_WORK;
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 struct Fixture(PathBuf);
@@ -220,7 +223,7 @@ fn successful_batch(
             .unwrap(),
         ValueTy::Owned(AggregateTy::Enum(EnumId(0)))
     );
-    assert_eq!(work.used() - before, 90);
+    assert_eq!(work.used() - before, 90 + U8_NOMINAL_QUERY_WORK);
     match query
         .nominal_signature_exposure(DefId(0), NominalId::Enum(EnumId(0)), handles.value.span)
         .unwrap()
@@ -234,7 +237,7 @@ fn successful_batch(
         }
         NominalExposure::Allowed => panic!("public function cannot expose root-private E"),
     }
-    assert_eq!(work.used() - before, 91);
+    assert_eq!(work.used() - before, 91 + U8_NOMINAL_QUERY_WORK);
     let first = query
         .prepare_nominal_type_name(NominalId::Enum(EnumId(0)), handles.value.span)
         .unwrap();
@@ -306,7 +309,7 @@ fn enum_query_lifecycle_repeated_successes_and_prepared_names_allocate_nothing()
     assert_eq!(trace(&allocator), original_trace);
     assert_eq!(allocator.trace.capacity(), trace_capacity);
     assert_eq!(project.try_text(value.span), Some("E"));
-    println!("enum query success: 4 fresh + 4 shared cold/repeated batches; 109 work each; real calls/live/peak=0/0/0, fixed-buffer prepared names unchanged after exhaustion");
+    println!("enum query success: 4 fresh + 4 shared cold/repeated batches; predecessor109 + u8-query2 =111 work each; real calls/live/peak=0/0/0, fixed-buffer prepared names unchanged after exhaustion");
 }
 
 #[test]

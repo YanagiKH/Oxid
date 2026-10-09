@@ -32,6 +32,12 @@ pub struct ImportDecl {
 pub struct ExprId(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodyBlockId(pub usize);
+/// Closed named-receiver scalar conversions; no general cast or method dispatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConversionOp {
+    ToU8Checked,
+    ToI32,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithmeticOp {
     Add,
@@ -56,6 +62,11 @@ pub enum LogicalOp {
 }
 #[derive(Debug)]
 pub enum ExprKind {
+    Conversion {
+        op: ConversionOp,
+        operand: ExprId,
+        name_span: Span,
+    },
     Negate {
         operand: ExprId,
         operator_span: Span,
@@ -832,7 +843,15 @@ impl Program {
             }
             let earlier = |id: ExprId| visit() && id.0 < index;
             let ok = match &expression.kind {
-                ExprKind::Negate {
+                // Structural ID/span admission shares the established unary
+                // traversal. The source-association witness independently checks
+                // the named receiver, operation and exact authenticated origins.
+                ExprKind::Conversion {
+                    operand,
+                    name_span: operator_span,
+                    ..
+                }
+                | ExprKind::Negate {
                     operand,
                     operator_span,
                 }
@@ -943,7 +962,7 @@ impl Program {
             | TypeSyntaxKind::ArrayReference { .. }
             | TypeSyntaxKind::SliceReference { .. } => true,
             TypeSyntaxKind::Name(ItemPath::Unqualified(name)) => {
-                !matches!(source.text_at(name), "bool" | "i32")
+                !matches!(source.text_at(name), "bool" | "i32" | "u8")
             }
             TypeSyntaxKind::Name(ItemPath::Absolute(_)) => true,
         };

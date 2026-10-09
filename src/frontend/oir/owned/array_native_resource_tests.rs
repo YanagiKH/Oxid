@@ -49,6 +49,9 @@ fn scalar_raw(spans: &[Span]) -> RawOwnedProgram {
 
 fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
     match kind {
+        FailureKind::ByteRange => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         FailureKind::Fuel => RunFailure::Fuel(origin).diagnostic(sources),
         FailureKind::Overflow => RunFailure::Overflow(origin).diagnostic(sources),
         FailureKind::DivisionByZero => RunFailure::DivisionByZero(origin).diagnostic(sources),

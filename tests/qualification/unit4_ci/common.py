@@ -17,8 +17,8 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = 'dbea540b171ec004411df46a50bf3be87be93c24958feed165fc4fe5f9a36e4d'
-CURRENT_SHA = '82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67'
+INPUTS_SHA = '894d5be6edc01fd9193f39fd582c0450887ee72ad2a4df8c5e18bc83d353dbdb'
+CURRENT_SHA = '20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4'
 ENUM_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
@@ -28,7 +28,7 @@ PARSER_FROZEN = 'tests/fixtures/typed_project_unit4_parser_portable/frozen/v3'
 TRANSPORT = 'tests/fixtures/typed_project_unit4_contracts'
 SOURCE = 'tests/fixtures/typed_project_source_binding'
 AMENDMENT = 'tests/fixtures/typed_project_unit4_public_location_amendment_v1'
-OBSERVER_PATCH = 'tests/qualification/unit4_public_v3/observer-stdin-v1.patch'
+OBSERVER_PATCH = 'tests/qualification/unit4_public_v3/observer-u8-v1.patch'
 RUNTIME_STAGE = 'tests/fixtures/typed_project_unit3_independent/portable/native-v1/stage_llvm_runtime.py'
 SECTIONS = ('public', 'original', 'predecessors', 'lifecycle', 'guards')
 PROFILES = ('debug', 'release')
@@ -198,7 +198,7 @@ def admit(repo, expected_head, event_sha, committed=True):
     source_path = repo / SOURCE / 'current-source.json'
     need(identity(source_path)['sha256'] == CURRENT_SHA, 'unapproved current source manifest')
     source = read(source_path)
-    need(len(source['files']) == 345, 'current source count')
+    need(len(source['files']) == 363, 'current source count')
     for row in source['files']:
         verify(repo / relative(row['path']), row)
     actual = sorted(p.relative_to(repo).as_posix() for sub in ('src', 'native') for p in (repo / sub).rglob('*') if p.is_file())

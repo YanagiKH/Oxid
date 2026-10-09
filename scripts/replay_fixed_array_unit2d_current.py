@@ -5,7 +5,8 @@ Only the old non-enum harness receives empty carriers. Its two aggregate matches
 reject enums explicitly. Every transformation pins both byte identities and is
 reversible; no assertion, expectation, test selection, or compiler file changes.
 The stdin successor adds only explicit BuiltinOrigins::None after the preserved
-enum predecessor. Each stage retains its own identities and inverse operation.
+enum predecessor. The pre-u8 successor rejects u8 in eight historical oracle
+match sites. Each stage retains its own identities and inverse operation.
 """
 import hashlib
 from pathlib import Path
@@ -92,6 +93,40 @@ STDIN_RUNNER_REPLACEMENTS = (
 )
 
 
+# The historical oracle covers i32/bool/unit only. Explicit fail-closed arms
+# restore exhaustiveness without defining u8 expectations or changing its cases.
+PRE_U8_VERSION = "unit2d-pre-u8-oracle-exclusion-v1"
+PRE_U8_IDENTITIES = ('193ac9c0950e95c8130104a58017ec5bb85474a249e77b324c2e6c1e4333eaf5', 'aa90cb3dd0f5413d4c79775b45c9f0e803ce9474d9893a9f1cf09ce094aace51')
+PRE_U8_RUNNER_SHA = '1bfb2a154cf3bab3b89fd20ad2456ddedc7203d39dc56b0a1db6d60925f4dc6e'
+PRE_U8_REPLACEMENTS = (
+    (b'fn literal(id: usize, value: Scalar, span: Span) -> OwnedStatement {\n    let value = match value {',
+     b'fn literal(id: usize, value: Scalar, span: Span) -> OwnedStatement {\n    let value = match value {\n        Scalar::U8(_) => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b'fn value(ty: hir::Ty, j: usize) -> Scalar {\n    match ty {',
+     b'fn value(ty: hir::Ty, j: usize) -> Scalar {\n    match ty {\n        hir::Ty::U8 => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b'fn replacement(ty: hir::Ty) -> Scalar {\n    match ty {',
+     b'fn replacement(ty: hir::Ty) -> Scalar {\n    match ty {\n        hir::Ty::U8 => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b'    for v in sequence {\n        match v {',
+     b'    for v in sequence {\n        match v {\n            Scalar::U8(_) => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b'fn native_core_value(ty: hir::Ty, ordinal: usize) -> Scalar {\n    match ty {',
+     b'fn native_core_value(ty: hir::Ty, ordinal: usize) -> Scalar {\n    match ty {\n        hir::Ty::U8 => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b'fn native_core_replacement(ty: hir::Ty) -> Scalar {\n    match ty {',
+     b'fn native_core_replacement(ty: hir::Ty) -> Scalar {\n    match ty {\n        hir::Ty::U8 => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b'    let scalar_rvalue = |s| match s {',
+     b'    let scalar_rvalue = |s| match s {\n        Scalar::U8(_) => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+    (b"fn kind_name(ty: hir::Ty) -> &'static str {\n    match ty {",
+     b'fn kind_name(ty: hir::Ty) -> &\'static str {\n    match ty {\n        hir::Ty::U8 => panic!("Unit2D pre-u8 oracle received u8"),', 1),
+)
+
+PRE_U8_RUNNER_REPLACEMENTS = (
+    (b'        current = stdin_carrier_bytes("reviewer", current)',
+     b'        current = stdin_carrier_bytes("reviewer", current)\n        current = pre_u8_oracle_bytes(current)', 1),
+    (b'                       stdin_adapter_sha256=STDIN_ADAPTER_SHA,',
+     b'                       stdin_adapter_sha256=STDIN_ADAPTER_SHA,\n                       pre_u8_oracle_compatibility=PRE_U8_ORACLE_COMPATIBILITY,\n                       pre_u8_adapter_sha256=PRE_U8_ADAPTER_SHA,', 1),
+    (b'            and binding.get("module_sha256") == STDIN_CARRIER_COMPATIBILITY["members"]["reviewer"][1],',
+     b'            and binding.get("pre_u8_oracle_compatibility") == PRE_U8_ORACLE_COMPATIBILITY\n            and binding.get("pre_u8_adapter_sha256") == PRE_U8_ADAPTER_SHA\n            and binding.get("module_sha256") == PRE_U8_ORACLE_COMPATIBILITY["reviewer_sha256"][1],', 1),
+)
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -128,9 +163,19 @@ def stdin_runner_bytes(data, *, reverse=False):
                          reverse=reverse, adapter="stdin")
 
 
+def pre_u8_oracle_bytes(data, *, reverse=False):
+    return exact_replace(data, PRE_U8_IDENTITIES, PRE_U8_REPLACEMENTS,
+                         reverse=reverse, adapter="pre-u8")
+
+
+def pre_u8_runner_bytes(data, *, reverse=False):
+    return exact_replace(data, (STDIN_RUNNER_SHA, PRE_U8_RUNNER_SHA), PRE_U8_RUNNER_REPLACEMENTS,
+                         reverse=reverse, adapter="pre-u8")
+
+
 def load_runner(path=None):
     path = Path(path) if path is not None else Path(__file__).with_name("replay_fixed_array_unit2d.py")
-    module = types.ModuleType("unit2d_current_stdin_carriers")
+    module = types.ModuleType("unit2d_current_pre_u8_oracle")
     module.__file__ = str(path)
     module.ENUM_CARRIER_COMPATIBILITY = {
         "adapter": VERSION, "runner_sha256": CURRENT_RUNNER_SHA,
@@ -148,7 +193,18 @@ def load_runner(path=None):
     }
     module.STDIN_ADAPTER_SHA = digest(Path(__file__).read_bytes())
     module.stdin_carrier_bytes = stdin_carrier_bytes
-    exec(compile(stdin_runner_bytes(current_runner_bytes(path.read_bytes())), str(path), "exec"), module.__dict__)
+    module.PRE_U8_ORACLE_COMPATIBILITY = {
+        "adapter": PRE_U8_VERSION, "predecessor_adapter": STDIN_VERSION,
+        "predecessor_runner_sha256": STDIN_RUNNER_SHA, "runner_sha256": PRE_U8_RUNNER_SHA,
+        "reviewer_sha256": list(PRE_U8_IDENTITIES),
+        "substitutions": [{"old_sha256": digest(old), "new_sha256": digest(new), "count": count}
+                          for old, new, count in PRE_U8_REPLACEMENTS],
+        "domain": ["i32", "bool", "unit"], "excluded_domain": ["u8"],
+    }
+    module.PRE_U8_ADAPTER_SHA = digest(Path(__file__).read_bytes())
+    module.pre_u8_oracle_bytes = pre_u8_oracle_bytes
+    current = pre_u8_runner_bytes(stdin_runner_bytes(current_runner_bytes(path.read_bytes())))
+    exec(compile(current, str(path), "exec"), module.__dict__)
     return module
 
 

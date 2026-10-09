@@ -9,6 +9,9 @@ use std::fmt::Write;
 pub(super) mod private_emit;
 use private_emit::{Failure as EmitFailure, OutputMode, RenderLimit};
 
+#[path = "native_scalar_resource.rs"]
+pub(super) mod scalar_resource;
+
 // Paid immutable dimensions for the private importer only.
 #[allow(dead_code)]
 #[path = "native_emit_work.rs"]
@@ -22,6 +25,10 @@ pub(super) mod emit_cost;
 #[cfg(test)]
 #[path = "native_private_emit_tests.rs"]
 mod private_emit_tests;
+
+#[cfg(test)]
+#[path = "native_u8_tests.rs"]
+mod u8_tests;
 
 #[cfg(test)]
 #[path = "native_emit_observation.rs"]
@@ -216,6 +223,15 @@ impl VerifiedProgram {
         if policy == EntryPolicy::Process && root.result != hir::Ty::I32 {
             return Err(reject("process main must return i32", Some(root.span)).into());
         }
+        // An i8 helper result is valid internally, but has no public result
+        // representation. Reject the selected entry before native plan vectors,
+        // diagnostics, count/render passes, output allocation, or tools.
+        if policy == EntryPolicy::Result && root.result == hir::Ty::U8 {
+            return Err(reject("native main must return bool, i32 or ()", Some(root.span)).into());
+        }
+        // The importer already prepays the complete fixed bank. Recheck the
+        // descriptor before entering the new scalar helper or native plans.
+        mode.preflight_fixed()?;
         let bounds = self.admit()?;
         let guarded = bounds.iter().any(|bound| bound.cyclic);
         // Process diagnostics use the same bounded table even for acyclic
@@ -302,6 +318,7 @@ impl VerifiedProgram {
                         Statement::Assign(a) => a,
                         Statement::Initialize { .. } | Statement::Store { .. } => continue,
                     };
+                    admit_assignment(f, a)?;
                     #[allow(unreachable_patterns)]
                     match a.value {
                         Rvalue::Bool(_)
@@ -312,6 +329,8 @@ impl VerifiedProgram {
                         | Rvalue::NotBool { .. }
                         | Rvalue::CheckedI32 { .. }
                         | Rvalue::CheckedNegateI32 { .. }
+                        | Rvalue::CheckedI32ToU8 { .. }
+                        | Rvalue::U8ToI32 { .. }
                         | Rvalue::CompareScalar { .. } => {}
                         _ => {
                             return Err(reject(
@@ -398,6 +417,75 @@ impl VerifiedProgram {
         Ok(bounds)
     }
 }
+// Recheck the closed scalar operation/type table independently of the OIR
+// verifier. The witness still owns IDs, initialization, dominance, and source
+// authentication; this admission check must never render an unchecked origin.
+fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<Diagnostic>> {
+    let local = |id: LocalId| {
+        #[cfg(test)]
+        scalar_resource::lookup();
+        function.locals.get(id.0).map(|decl| decl.ty)
+    };
+    #[cfg(test)]
+    scalar_resource::record_closure(&local);
+    let destination = local(assignment.destination);
+    let valid = match assignment.value {
+        Rvalue::CheckedI32ToU8 { operand, .. } => {
+            local(operand.local) == Some(hir::Ty::I32) && destination == Some(hir::Ty::U8)
+        }
+        Rvalue::U8ToI32 { operand, .. } => {
+            local(operand.local) == Some(hir::Ty::U8) && destination == Some(hir::Ty::I32)
+        }
+        Rvalue::CompareScalar {
+            op, left, right, ..
+        } => {
+            let left = local(left.local);
+            let right = local(right.local);
+            let allowed = match op {
+                hir::ComparisonOp::Equal | hir::ComparisonOp::NotEqual => {
+                    matches!(left, Some(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8))
+                }
+                hir::ComparisonOp::Less
+                | hir::ComparisonOp::LessEqual
+                | hir::ComparisonOp::Greater
+                | hir::ComparisonOp::GreaterEqual => {
+                    matches!(left, Some(hir::Ty::I32 | hir::Ty::U8))
+                }
+            };
+            allowed && left == right && destination == Some(hir::Ty::Bool)
+        }
+        Rvalue::NotBool { operand, .. } => {
+            local(operand.local) == Some(hir::Ty::Bool) && destination == Some(hir::Ty::Bool)
+        }
+        Rvalue::CheckedNegateI32 { operand, .. } => {
+            local(operand.local) == Some(hir::Ty::I32) && destination == Some(hir::Ty::I32)
+        }
+        Rvalue::CheckedI32 { left, right, .. } => {
+            local(left.local) == Some(hir::Ty::I32)
+                && local(right.local) == Some(hir::Ty::I32)
+                && destination == Some(hir::Ty::I32)
+        }
+        Rvalue::Bool(_) => destination == Some(hir::Ty::Bool),
+        Rvalue::I32(_) => destination == Some(hir::Ty::I32),
+        Rvalue::Unit => destination == Some(hir::Ty::Unit),
+        Rvalue::Copy(operand) => destination.is_some() && destination == local(operand.local),
+        Rvalue::Load(place) => {
+            destination.is_some()
+                && destination == function.places.get(place.id.0).map(|decl| decl.ty)
+        }
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(Diagnostic::new(
+            "E0500",
+            "native-admission",
+            scalar_resource::INVALID_TYPES,
+            None,
+        ))
+    }
+}
+
 // Guarded and Process modules retain all old OIR/source/native dimensions and
 // additionally bound expanded representation. Loop-free Result stays unchanged.
 const MAX_GUARDED_DIAGNOSTIC_BYTES: usize = 16 * 1024 * 1024;
@@ -514,6 +602,7 @@ enum FailureKind {
     Fuel,
     Overflow,
     DivisionByZero,
+    ByteRange,
     ProcessStatus,
 }
 impl FailureKind {
@@ -532,6 +621,7 @@ impl FailureKind {
             Self::Fuel => RunFailure::Fuel(span),
             Self::Overflow => RunFailure::Overflow(span),
             Self::DivisionByZero => RunFailure::DivisionByZero(span),
+            Self::ByteRange => RunFailure::ByteRange(span),
             Self::ProcessStatus => unreachable!("process status handled above"),
         }
         .diagnostic(sources)
@@ -540,6 +630,7 @@ impl FailureKind {
         match self {
             Self::Overflow => "__oxid_error",
             Self::DivisionByZero => "__oxid_division_error",
+            Self::ByteRange => "__oxid_byte_range_error",
             Self::Fuel | Self::ProcessStatus => unreachable!("arithmetic failure kind"),
         }
     }
@@ -562,6 +653,7 @@ fn checked_failures(value: &Rvalue) -> Option<(&'static [FailureKind], Span)> {
         Rvalue::CheckedNegateI32 { operator_span, .. } => {
             Some((&[FailureKind::Overflow], operator_span))
         }
+        Rvalue::CheckedI32ToU8 { name_span, .. } => Some((&[FailureKind::ByteRange], name_span)),
         _ => None,
     }
 }
@@ -695,10 +787,20 @@ fn emit_guard(
 fn ty(ty: hir::Ty) -> &'static str {
     match ty {
         hir::Ty::Bool => "i1",
-        hir::Ty::Unit => "i8",
+        hir::Ty::Unit | hir::Ty::U8 => "i8",
         hir::Ty::I32 => "i32",
     }
 }
+fn write_u8_checks(out: &mut Emission, n: usize, operand: usize) {
+    writeln!(out, "  %byte{n}_negative = icmp slt i32 %v{operand}, 0\n  %byte{n}_large = icmp sgt i32 %v{operand}, 255\n  %byte{n}_invalid = or i1 %byte{n}_negative, %byte{n}_large\n  br i1 %byte{n}_invalid, label %byte{n}_error, label %checked{n}_ok\nbyte{n}_error:").unwrap();
+}
+fn write_u8_value(out: &mut Emission, n: usize, operand: usize) {
+    writeln!(out, "checked{n}_ok:\n  %v{n} = trunc i32 %v{operand} to i8").unwrap();
+}
+fn write_u8_widen(out: &mut Emission, n: usize, operand: usize) {
+    writeln!(out, "  %v{n} = zext i8 %v{operand} to i32").unwrap();
+}
+
 fn emit_arithmetic_failure(
     out: &mut Emission,
     guarded: Option<&GuardedDiagnostics>,
@@ -928,23 +1030,53 @@ fn emit(
                     Rvalue::CompareScalar {
                         op, left, right, ..
                     } => {
-                        let predicate = match op {
-                            hir::ComparisonOp::Equal => "eq",
-                            hir::ComparisonOp::NotEqual => "ne",
-                            hir::ComparisonOp::Less => "slt",
-                            hir::ComparisonOp::LessEqual => "sle",
-                            hir::ComparisonOp::Greater => "sgt",
-                            hir::ComparisonOp::GreaterEqual => "sge",
+                        let operand_ty = f.locals[left.local.0].ty;
+                        let unsigned = operand_ty == hir::Ty::U8;
+                        let predicate = match (op, unsigned) {
+                            (hir::ComparisonOp::Equal, _) => "eq",
+                            (hir::ComparisonOp::NotEqual, _) => "ne",
+                            (hir::ComparisonOp::Less, true) => "ult",
+                            (hir::ComparisonOp::LessEqual, true) => "ule",
+                            (hir::ComparisonOp::Greater, true) => "ugt",
+                            (hir::ComparisonOp::GreaterEqual, true) => "uge",
+                            (hir::ComparisonOp::Less, false) => "slt",
+                            (hir::ComparisonOp::LessEqual, false) => "sle",
+                            (hir::ComparisonOp::Greater, false) => "sgt",
+                            (hir::ComparisonOp::GreaterEqual, false) => "sge",
                         };
-                        // Independent verification admits matching i32/bool only
-                        // for equality, and i32 only for signed ordering.
-                        let operand_type = ty(f.locals[left.local.0].ty);
+                        // Select interpretation only from independently admitted
+                        // operand types, never spelling or host signedness.
+                        let operand_type = ty(operand_ty);
                         writeln!(
                             out,
                             "  %v{} = icmp {predicate} {operand_type} %v{}, %v{}",
                             a.destination.0, left.local.0, right.local.0
                         )
                         .unwrap();
+                        continue;
+                    }
+                    Rvalue::CheckedI32ToU8 {
+                        operand, name_span, ..
+                    } => {
+                        let n = a.destination.0;
+                        // The statement's fuel guard above dominates operand
+                        // use and both signed i32 range checks. Truncation and
+                        // destination initialization exist only on success.
+                        write_u8_checks(out, n, operand.local.0);
+                        emit_arithmetic_failure(
+                            out,
+                            diagnostics,
+                            FailureKind::ByteRange,
+                            name_span,
+                            sources,
+                            f.id.0,
+                            n,
+                        );
+                        write_u8_value(out, n, operand.local.0);
+                        continue;
+                    }
+                    Rvalue::U8ToI32 { operand, .. } => {
+                        write_u8_widen(out, a.destination.0, operand.local.0);
                         continue;
                     }
                     Rvalue::CheckedNegateI32 {
@@ -1159,6 +1291,7 @@ fn emit(
         ),
         hir::Ty::I32 => out.push_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n"),
         hir::Ty::Unit => out.push_str("  %status = call i32 @__oxid_print_unit()\n"),
+        hir::Ty::U8 => unreachable!("byte entry rejected before native admission"),
     }
     out.push_str("  ret i32 %status\n}\n");
 }
@@ -1176,7 +1309,15 @@ mod tests {
         let source = sources.get(id);
         let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
         let typed = typeck::check(hir::resolve(source, &ast).unwrap()).unwrap();
-        (lower_and_verify(&typed, &sources).unwrap(), sources)
+        let raw = lower::lower(&typed).unwrap();
+        let associated = source::association::authenticate_scalar(
+            raw,
+            &sources,
+            source::association::Declarations::Original(&ast),
+        )
+        .unwrap();
+        let verified = verify::verify_associated(associated).unwrap();
+        (verified, sources)
     }
     fn verified(text: &str) -> VerifiedProgram {
         verified_with_sources(text).0

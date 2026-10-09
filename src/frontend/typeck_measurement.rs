@@ -193,3 +193,72 @@ fn activation_rejects_nesting_and_resets_on_finish_and_unwind() {
     .is_err());
     assert_eq!(begin().finish().frames_capacity_max, 0);
 }
+
+#[test]
+fn u8_typeck_carrier_size_and_alignment_measurements() {
+    println!(
+        "u8_typeck_carrier typed_program size={} align={}",
+        size_of::<TypedProgram>(),
+        std::mem::align_of::<TypedProgram>()
+    );
+    println!(
+        "u8_typeck_carrier typed_body size={} align={}",
+        size_of::<TypedBody>(),
+        std::mem::align_of::<TypedBody>()
+    );
+    println!(
+        "u8_typeck_carrier flow size={} align={}",
+        size_of::<FlowSummary>(),
+        std::mem::align_of::<FlowSummary>()
+    );
+    println!(
+        "u8_typeck_carrier option_flow size={} align={}",
+        size_of::<Option<FlowSummary>>(),
+        std::mem::align_of::<Option<FlowSummary>>()
+    );
+    println!(
+        "u8_typeck_carrier ty size={} align={}",
+        size_of::<Ty>(),
+        std::mem::align_of::<Ty>()
+    );
+    println!(
+        "u8_typeck_carrier option_ty size={} align={}",
+        size_of::<Option<Ty>>(),
+        std::mem::align_of::<Option<Ty>>()
+    );
+    println!(
+        "u8_typeck_carrier bodies_vec size={} align={}",
+        size_of::<Vec<TypedBody>>(),
+        std::mem::align_of::<Vec<TypedBody>>()
+    );
+    println!(
+        "u8_typeck_carrier types_vec size={} align={}",
+        size_of::<Vec<Ty>>(),
+        std::mem::align_of::<Vec<Ty>>()
+    );
+    println!(
+        "u8_typeck_carrier option_types_vec size={} align={}",
+        size_of::<Vec<Option<Ty>>>(),
+        std::mem::align_of::<Vec<Option<Ty>>>()
+    );
+    println!(
+        "u8_typeck_carrier flows_vec size={} align={}",
+        size_of::<Vec<FlowSummary>>(),
+        std::mem::align_of::<Vec<FlowSummary>>()
+    );
+    println!(
+        "u8_typeck_carrier option_flows_vec size={} align={}",
+        size_of::<Vec<Option<FlowSummary>>>(),
+        std::mem::align_of::<Vec<Option<FlowSummary>>>()
+    );
+    println!(
+        "u8_typeck_carrier check_result size={} align={}",
+        size_of::<Result<TypedProgram, Vec<Diagnostic>>>(),
+        std::mem::align_of::<Result<TypedProgram, Vec<Diagnostic>>>()
+    );
+    println!(
+        "u8_typeck_carrier body_result size={} align={}",
+        size_of::<Result<TypedBody, Box<Diagnostic>>>(),
+        std::mem::align_of::<Result<TypedBody, Box<Diagnostic>>>()
+    );
+}

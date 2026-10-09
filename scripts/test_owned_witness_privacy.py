@@ -64,6 +64,18 @@ class PrivacyCheckoutTests(unittest.TestCase):
             self.assertEqual((ROOT / name).stat().st_size if name.endswith('.bin') else len((ROOT / name).read_bytes()),
                              1575 if name.endswith('.bin') else {"duplicate":31, "end255":255, "multiple":48, "unknown-type":35}[Path(name).name.removesuffix('-source.txt')])
 
+    def test_exact_u8_boundary_include_successor_membership(self):
+        includer = ROOT / "src/frontend/oir/source/hir_import/u8_resource_successor.rs"
+        references = re.findall(r'include_str!\(\s*concat!\(\s*env!\("CARGO_MANIFEST_DIR"\),\s*"([^"\n]+)"\s*\)\s*\)', includer.read_text())
+        expected = [
+            "tests/fixtures/checked_hir_import/rich-source.txt",
+            "tests/fixtures/checked_hir_import_v2/source-255.txt",
+        ]
+        self.assertEqual([name.lstrip('/') for name in references], expected)
+        self.assertEqual(len(re.findall(r'include(?:_str|_bytes)?!\(', includer.read_text())), 2)
+        for name in expected:
+            self.assertIn(name, privacy.COMPILE_TIME_FIXTURES)
+
     def test_materialized_checkout_has_exact_fixture_bytes_and_all_includes(self):
         with tempfile.TemporaryDirectory() as directory:
             checkout = Path(directory) / 'checkout'
@@ -108,7 +120,11 @@ class PrivacyCheckoutTests(unittest.TestCase):
             # definitions, two v2 endpoints and ten diagnostic-test include sites.
             # Real cfg(test)
             # compilation checks their expansion without expanding probe scope.
-            self.assertEqual(count, 133)
+            predecessor_include_sites = 133
+            # RFC0030's importer work-bound controls read these existing frozen
+            # sources independently; no new fixture or dynamic include shape.
+            u8_boundary_source_reads = 2  # rich-source.txt and source-255.txt
+            self.assertEqual(count, predecessor_include_sites + u8_boundary_source_reads)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

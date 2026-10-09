@@ -147,6 +147,11 @@ def verify_parser_seal(seal, resolver):
             for process in case['receipts']:
                 for key in ('raw', 'stdout', 'stderr'):
                     bound(process[key])
+    controls = read_bound(result['u8_policy_controls'])
+    for row in controls['cases']:
+        invocation(row['invocation'])
+        if row['case'] != 'enabled-public':
+            bound(row['source']); bound(row['raw'])
     q.need(len(set(binaries)) == 4, 'sealed four executable inventory')
     q.need(index == required, 'missing/extra complete parser comparison closure')
     q.need(omitted == allowed_omissions, 'parser omissions must be exact derived-tree members excluding generated metadata and four binary identities')

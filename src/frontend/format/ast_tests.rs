@@ -286,6 +286,18 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::Conversion {
+                op,
+                operand,
+                name_span,
+            } => {
+                self.tag(match op {
+                    ConversionOp::ToU8Checked => "to-u8-checked",
+                    ConversionOp::ToI32 => "to-i32",
+                });
+                self.spelling(*name_span);
+                self.expression(*operand);
+            }
             ExprKind::Negate {
                 operand,
                 operator_span,
@@ -693,8 +705,20 @@ impl<'a> Fingerprint<'a> {
     }
 }
 
+fn assert_expression_source_order(program: &Program) {
+    for pair in program.expressions.windows(2) {
+        let left = pair[0].span;
+        let right = pair[1].span;
+        assert_eq!(left.file, right.file);
+        assert!(
+            left.end < right.end || (left.end == right.end && left.start > right.start),
+            "parser postorder must have strict (end, reverse-start) keys: {left:?}, {right:?}"
+        );
+    }
+}
+
 fn parse(source: &SourceFile) -> Program {
-    parser::parse_counted_with_arrays(
+    let program = parser::parse_counted_with_arrays(
         source,
         lexer::lex(source).expect("corpus must lex"),
         SourceMode::ProjectCandidate,
@@ -703,7 +727,9 @@ fn parse(source: &SourceFile) -> Program {
         parser::ArraySyntaxPolicy::Enabled,
     )
     .map(|(program, _)| program)
-    .unwrap_or_else(|errors| panic!("corpus must parse: {errors:?}\n{}", source.text()))
+    .unwrap_or_else(|errors| panic!("corpus must parse: {errors:?}\n{}", source.text()));
+    assert_expression_source_order(&program);
+    program
 }
 
 fn fingerprint(source: &SourceFile, program: &Program) -> Vec<Part> {
@@ -721,6 +747,7 @@ fn normalized(text: &str) -> Vec<Part> {
 // runtime fixtures. No packages or unrelated language proposals are needed.
 const CORPUS: &[(&str, &str)] = &[
     ("empty", ""),
+    ("named-byte-conversions", "// 雪\r\nfn f(x:i32,b:u8)->i32{x /*é*/ . /*dot*/ to_u8_checked /*name*/ ( /*empty*/ );return (b . to_i32 ());}fn u8(x:i32)->i32{return - -x.to_i32()+x.to_i32()*2;}"),
     ("projected-borrow-paths", "fn use_paths()->(){f(&batch /* root */ . inner . samples,&mut batch.inner.samples,&*p . inner . samples,&mut *p /* ref */ .inner.samples);return;}"),
     ("comments-only", "// 雪\r\n/* é\n braces { } and punctuation :: */\r\n"),
     ("scalar-expressions", r#"
@@ -1251,7 +1278,7 @@ fn normalization_detects_same_tape_array_mutations() {
 }
 
 fn parse_enum_fingerprint(source: &SourceFile) -> Program {
-    parser::parse_enum_candidate_counted(
+    let program = parser::parse_enum_candidate_counted(
         source,
         lexer::lex(source).unwrap(),
         SourceMode::ProjectCandidate,
@@ -1260,7 +1287,9 @@ fn parse_enum_fingerprint(source: &SourceFile) -> Program {
         &mut Default::default(),
     )
     .unwrap()
-    .0
+    .0;
+    assert_expression_source_order(&program);
+    program
 }
 
 #[test]
@@ -1648,5 +1677,47 @@ fn enum_formatter_independent_fingerprint_covers_qualified_values_and_match_orig
             fingerprint(source, &changed),
             "missing mutation control: {name}"
         );
+    }
+}
+
+#[test]
+fn u8_formatter_fingerprint_binds_operation_receiver_and_intrinsic_origins() {
+    let text = "fn f(x:i32,y:i32)->(){x.to_u8_checked();y.to_u8_checked();return;}";
+    let mut map = SourceMap::new();
+    let file = map.add("u8-origins.ox".into(), text.into());
+    let source = map.get(file);
+    let expected = fingerprint(source, &parse(source));
+    for mutation in 0..3 {
+        let mut ast = parse(source);
+        let ExprKind::Conversion {
+            operand: second_operand,
+            name_span: second_name,
+            ..
+        } = ast.expressions[3].kind
+        else {
+            unreachable!()
+        };
+        let ExprKind::Conversion {
+            op,
+            operand,
+            name_span,
+        } = &mut ast.expressions[1].kind
+        else {
+            unreachable!()
+        };
+        match mutation {
+            0 => *op = ConversionOp::ToI32,
+            1 => *name_span = second_name,
+            2 => {
+                let first = *operand;
+                *operand = second_operand;
+                let ExprKind::Conversion { operand, .. } = &mut ast.expressions[3].kind else {
+                    unreachable!()
+                };
+                *operand = first;
+            }
+            _ => unreachable!(),
+        }
+        assert_ne!(expected, fingerprint(source, &ast));
     }
 }

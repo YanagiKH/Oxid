@@ -268,6 +268,19 @@ pub(super) fn preflight(
 /// Invocation-local overlay. The affected-source owner already paid the fixed
 /// Walk/stacks/views and typed projection payload. Function caches are sequential
 /// and their maximum is charged once; no persistent source cell is ever changed.
+/// Source association follows lowering and releases its tracker before returning
+/// the consuming wrapper. Its paid seed already includes fixed RFC0030 roles.
+pub(super) fn admit_conversion_scratch(seed: usize, scratch: usize) -> Result<usize, OwnedFailure> {
+    let ceiling = super::hir_budget::MAX_HIR_BYTES;
+    #[cfg(test)]
+    let ceiling =
+        CONVERSION_LIMIT.with(|limit| limit.get().map_or(ceiling, |limit| limit.min(ceiling)));
+    cap(
+        add(seed, scratch)?,
+        ceiling,
+        "conversion association scratch",
+    )
+}
 pub(super) fn admit_lower_scratch(seed: usize, scratch: usize) -> Result<usize, OwnedFailure> {
     cap(
         add(seed, add(scratch, lower::invocation_control_bytes())?)?,
@@ -384,4 +397,20 @@ fn enum_lower_scratch_overlay_has_exact_unchanged_boundary_and_overflow() {
     }
     assert!(admit_lower_scratch(usize::MAX, 0).is_err());
     assert!(admit_lower_scratch(0, usize::MAX).is_err());
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONVERSION_LIMIT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+#[cfg(test)]
+pub(super) fn with_conversion_limit<T>(limit: usize, action: impl FnOnce() -> T) -> T {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            CONVERSION_LIMIT.with(|limit| limit.set(self.0));
+        }
+    }
+    let _reset = Reset(CONVERSION_LIMIT.with(|value| value.replace(Some(limit))));
+    action()
 }

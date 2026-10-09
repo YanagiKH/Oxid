@@ -531,3 +531,56 @@ fn checked_hir_import_v2_version_capacity_and_tariffs_are_independent() {
         assert!(Wire::decode(&bytes, n).is_err()); // Mixed OPA1/STF2.
     }
 }
+
+#[test]
+fn u8_frozen_source_domain_rejects_conversions_on_both_protocols() {
+    for text in [
+        "fn f(x:i32)->u8{return x.to_u8_checked();}",
+        "fn f(x:u8)->i32{return x.to_i32();}",
+    ] {
+        let project = project(text);
+        let owner = SourceOwner::project(&project);
+        let ast = owner.ast(ModuleId(0)).unwrap();
+        assert!(ast
+            .expressions
+            .iter()
+            .any(|expression| matches!(expression.kind, ast::ExprKind::Conversion { .. })));
+        assert!(matches!(bounded_ast_domain(ast), Err(Boundary::Domain)));
+        for digit in *b"12" {
+            let mut wire = frame(text.len());
+            wire[3] = digit;
+            wire[OPA_BYTES + 3] = digit;
+            assert!(matches!(
+                BoundObservation::bind(owner, text.as_bytes(), &wire),
+                Err(Boundary::Domain)
+            ));
+            for operation in [
+                crate::frontend::options::Operation::Check,
+                crate::frontend::options::Operation::Run,
+                crate::frontend::options::Operation::Compile,
+            ] {
+                let imported =
+                    public_facade::import_checked(&project, &wire, operation).unwrap_err();
+                assert_eq!(
+                    (imported[0].code, imported[0].stage),
+                    ("E0702", "hir-import")
+                );
+                let produced =
+                    public_facade::import_produced(&project, &wire, operation).unwrap_err();
+                assert_eq!(
+                    (produced[0].code, produced[0].stage),
+                    // Successful-frame fact/domain rejection retains the
+                    // existing checked-import diagnostic on producer routes.
+                    ("E0702", "hir-import")
+                );
+            }
+        }
+    }
+    // Unknown-name syntax still reaches the canonical diagnostic comparator;
+    // this is not permission to invent a successful wire type for a new scalar.
+    for text in ["fn f(x:u8)->u8{return x;}", "fn f(x:i64)->i64{return x;}"] {
+        let (sources, ast) = parsed(text);
+        assert!(bounded_ast_domain(&ast).is_ok());
+        assert!(original(&sources, &ast).ast(ModuleId(0)).is_ok());
+    }
+}

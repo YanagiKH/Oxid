@@ -59,8 +59,11 @@ pub(in crate::frontend) fn check_source<'s>(
             .map(|(_, function)| function.id);
         let typed = typeck::check(resolved)?;
         let raw = lower::lower(&typed).map_err(|e| vec![*e.diagnostic(sources)])?;
-        association::scalar(&raw, sources, Declarations::Original(ast)).map_err(|e| vec![*e])?;
-        let verified = verify::verify(raw, sources).map_err(|e| vec![*e.diagnostic(sources)])?;
+        let associated =
+            association::authenticate_scalar(raw, sources, Declarations::Original(ast))
+                .map_err(|e| vec![*e])?;
+        let verified =
+            verify::verify_associated(associated).map_err(|e| vec![*e.diagnostic(sources)])?;
         (CheckedBody::Scalar(verified), entry)
     };
     Ok(CheckedSourceProgram {
@@ -151,10 +154,14 @@ fn check_project<'s>(
                 return Ok(Checked::Types(summary()));
             }
             let raw = lower::lower(&typed).map_err(|e| vec![*e.diagnostic(project.sources())])?;
-            association::scalar(&raw, project.sources(), Declarations::Project(&frozen))
-                .map_err(|e| vec![*e])?;
+            let associated = association::authenticate_scalar(
+                raw,
+                project.sources(),
+                Declarations::Project(&frozen),
+            )
+            .map_err(|e| vec![*e])?;
             CheckedBody::Scalar(
-                verify::verify(raw, project.sources())
+                verify::verify_associated(associated)
                     .map_err(|e| vec![*e.diagnostic(project.sources())])?,
             )
         }

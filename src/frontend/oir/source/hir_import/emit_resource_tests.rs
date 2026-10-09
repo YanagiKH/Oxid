@@ -1,4 +1,5 @@
 //! Actual paid Emit boundaries. No external native tool is invoked.
+use super::u8_resource_successor::{EMIT_FIXED_GROWTH, RICH_RESERVATION_WORK, V2_RESERVATION_WORK};
 use super::{candidate, leaf, SourceOwner};
 use crate::frontend::{
     declaration_index::IndexLimits,
@@ -23,10 +24,12 @@ const WIRE: &[u8] = include_bytes!(concat!(
 // Independently measured rich main.ox endpoints after complete versioned
 // protocol/endpoint carriers plus 264 bytes of shared source-helper transports;
 // not derived from the call under test.
-const FIXED: u64 = 140_203;
+const PREDECESSOR_FIXED: u64 = 140_203;
+const FIXED: u64 = PREDECESSOR_FIXED + EMIT_FIXED_GROWTH;
 const HIR_PAIR: u64 = 3_472 + 2_241;
 const LLVM_BYTES: u64 = 14_325;
-const WORK: u64 = 10_069_187;
+const PREDECESSOR_WORK: u64 = 10_069_187;
+const WORK: u64 = PREDECESSOR_WORK + RICH_RESERVATION_WORK;
 
 #[derive(Clone, Copy, Debug)]
 enum Expected {
@@ -39,7 +42,7 @@ enum Expected {
 }
 
 #[test]
-fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints() {
+fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints_u8_admission_successor() {
     let mut sources = SourceMap::new();
     let id = sources.add("main.ox".into(), TEXT.into());
     let source = sources.get(id);
@@ -55,6 +58,20 @@ fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints() {
                 ..defaults
             },
             Expected::SourceBytes,
+        ),
+        (
+            IndexLimits {
+                scratch: PREDECESSOR_FIXED,
+                ..defaults
+            },
+            Expected::SourceBytes,
+        ),
+        (
+            IndexLimits {
+                work: PREDECESSOR_WORK,
+                ..defaults
+            },
+            Expected::LateWork,
         ),
         (
             IndexLimits {
@@ -191,7 +208,7 @@ fn checked_hir_import_emit_actual_work_and_final_text_byte_endpoints() {
 }
 
 #[test]
-fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints() {
+fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints_u8_admission_successor() {
     for path_bytes in [3_365, 3_366] {
         let mut sources = SourceMap::new();
         let id = sources.add("x".repeat(path_bytes), TEXT.into());
@@ -216,7 +233,7 @@ fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints() {
             );
             matched = match (path_bytes, result) {
                 (3_365, Ok(output)) => {
-                    assert_eq!(output.total_work, 255_928_515);
+                    assert_eq!(output.total_work, 255_928_515 + RICH_RESERVATION_WORK);
                     assert_eq!(output.artifact.text, ordinary);
                     assert_eq!(output.artifact.bytes, output.artifact.capacity);
                     drop(output);
@@ -250,7 +267,7 @@ fn checked_hir_import_emit_conservative_long_path_actual_work_endpoints() {
 }
 
 #[test]
-fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints() {
+fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints_u8_admission_successor() {
     const TEXT2: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/checked_hir_import_v2/source-255.txt"
@@ -291,7 +308,12 @@ fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints() {
     // Independently measured authentic v2 fixture; keep the endpoints visible.
     assert_eq!(
         (fixed, retained, bytes, work),
-        (140_203, 141_739, 690, 1_004_093)
+        (
+            140_203 + EMIT_FIXED_GROWTH,
+            141_739 + EMIT_FIXED_GROWTH,
+            690,
+            1_004_093 + V2_RESERVATION_WORK
+        )
     );
     drop(baseline);
     let exact = IndexLimits {

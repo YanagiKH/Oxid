@@ -42,6 +42,7 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
 }
 fn literal(ty: hir::Ty) -> Rvalue {
     match ty {
+        hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => Rvalue::Bool(true),
         hir::Ty::I32 => Rvalue::I32(-71),
         hir::Ty::Unit => Rvalue::Unit,

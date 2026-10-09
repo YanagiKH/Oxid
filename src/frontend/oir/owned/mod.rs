@@ -545,3 +545,6 @@ pub(in crate::frontend::oir) fn hir_import_measure_allocations(
 pub(in crate::frontend::oir) fn hir_import_allocation_observers_idle() -> bool {
     !reviewer_origins::integration_enabled() && !source::reviewer_source::integration_enabled()
 }
+
+#[cfg(test)]
+mod u8_tests;

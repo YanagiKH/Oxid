@@ -67,7 +67,8 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_current_and_archived_views_are_distinct_and_exact(self):
         captured = binding.preflight(self.repo, self.package)
-        self.assertEqual(len(captured["inputs"]), 345)
+        self.assertEqual(len(captured["inputs"]), 363)
+        self.assertEqual(len(captured["cache_admission_inputs"]), 345)
         self.assertEqual(len(captured["stdin_inputs"]), 252)
         self.assertEqual(len(captured["enum_inputs"]), 237)
         self.assertEqual(len(captured["slices_inputs"]), 188)
@@ -107,23 +108,406 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_u8_cross_host_exact_inverse_and_forward_preserves_363_inputs(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-cross-host-transition.patch"]
+        restored, touched = helper.inverse(self.captured["inputs"], raw, binding)
+        self.assertEqual(restored, self.captured["u8_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(touched), len(restored)), (2, 363))
+        self.assertEqual(set(restored), set(self.captured["inputs"]))
+        binding.check_bytes(restored, self.captured["u8_source"]["files"])
+        forward = self.root / "cross-host-forward"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "u8-cross-host-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["current"]["files"], exact=True)
+        for old in (restored, self.captured["cache_admission_inputs"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(old, raw, binding)
+
+    def test_u8_cross_host_retains_original_u8_and_accounting_bytes(self):
+        expected = {
+            "u8-source.json": "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4",
+            "u8-authority.json": "407d3319bbc2dc404d65768cbe117d314dc486eb5b99169e0104c5536c029cda",
+            "u8-transition.patch": "133d3a599b7c95929d4b691b7390645d0fca44d8fe0fff40e1fbc79c11091d27",
+            "u8_source.py": "a89918a6016a008a44ad0e0c8afe8771d225ee3fb8cf3ea56c32acc5ac3922ec",
+            "unit2-u8-resource-authority.json": "9cad87cddf974c53b94bb5883884fd895ca50eef6ea939b300dcbcd09930d612",
+            "unit2_u8_resource.py": "eb7c611e986a46d8468edc57a51b7ba708dbac81eb7d0a05bde190f2a530394b",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["u8_source"]["reviewed_source_head"],
+                         "5e4875d19961b4eba8e465c915ac676c54a9926e")
+        self.assertEqual(self.captured["u8_source"]["source_only_tree"],
+                         "4c687ed5ead4786e34cea154e3b263c00bd1fd1b")
+        self.assertEqual(len(self.captured["u8_inputs"]), 363)
+        self.assertEqual(len(self.captured["archived"]), 117)
+        self.assertNotIn("u8_cross_host_helper", self.captured)
+
+    def test_u8_cross_host_complete_identities_and_compile_time_closure(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        authority = self.captured["u8_cross_host_authority"]
+        self.assertEqual(authority["current_input_identities"], [
+            helper.identity(name, data, binding) for name, data in self.captured["inputs"].items()])
+        self.assertEqual(helper.include_directives(self.captured["inputs"], binding),
+                         helper.include_directives(self.captured["u8_inputs"], binding))
+        self.assertEqual(authority["compile_time_include_directives"],
+                         self.captured["u8_authority"]["compile_time_include_directives"])
+        self.assertEqual(authority["compile_time_fixture_inputs"],
+                         self.captured["u8_authority"]["compile_time_fixture_inputs"])
+        self.assertEqual((len(authority["compile_time_fixture_inputs"]),
+                          len(authority["compile_time_include_directives"])), (78, 136))
+        for name in helper.PATHS:
+            result = subprocess.run(["git", "hash-object", "--stdin"], input=self.captured["inputs"][name],
+                                    capture_output=True, check=True, timeout=30)
+            self.assertEqual(helper.identity(name, self.captured["inputs"][name], binding)["git_blob"],
+                             result.stdout.decode().strip())
+
+    def test_u8_cross_host_coherent_package_tampering_fails_before_u8(self):
+        for name, error in (
+            ("current-source.json", "unapproved current source manifest"),
+            ("u8-source.json", "unapproved u8 predecessor source manifest"),
+            ("u8-cross-host-authority.json", "stale u8 cross-host source authority"),
+            ("u8-cross-host-transition.patch", "wrong transition patch"),
+            ("u8_cross_host.py", "unapproved u8 cross-host source helper"),
+        ):
+            original = (self.package / name).read_bytes()
+            (self.package / name).write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                self.rejects(error)
+                self.rejects_before_materialization(error)
+            (self.package / name).write_bytes(original)
+            self.rehash_package()
+
+    def test_u8_cross_host_checks_reconstructed_inputs_before_predecessor(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        for label, change in (("changed", lambda d: d.__setitem__("src/frontend/parser.rs", d["src/frontend/parser.rs"] + b"\n")),
+                              ("missing", lambda d: d.pop("src/frontend/parser.rs")),
+                              ("extra", lambda d: d.__setitem__("src/extra.rs", b""))):
+            damaged = dict(self.captured["u8_inputs"])
+            change(damaged)
+            with self.subTest(kind=label), patch.object(binding, "load_u8_cross_host", return_value=helper), \
+                 patch.object(helper, "inverse", return_value=(damaged, list(helper.PATHS))), \
+                 patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                self.rejects("changed reconstructed input|missing or extra reconstructed member")
+
+    def test_u8_cross_host_requires_every_changed_hunk_context(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-cross-host-transition.patch"]
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 2)
+        for name, section in zip(helper.PATHS, sections):
+            for hunk in (line for line in section.splitlines() if line.startswith(b"@@ ")):
+                with self.subTest(path=name, hunk=hunk):
+                    inputs = dict(self.captured["inputs"])
+                    offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                    lines = inputs[name].splitlines(keepends=True)
+                    lines[offset] = b"X" + lines[offset]
+                    inputs[name] = b"".join(lines)
+                    with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                        helper.inverse(inputs, raw, binding)
+
+    def test_u8_cross_host_rejects_reordered_missing_and_duplicate_patch_members(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-cross-host-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            helper.inverse(self.captured["inputs"], raw + b"\n", binding)
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        for changed, error in ((b"".join(reversed(sections)), "wrong transition scope"),
+                               (b"".join(sections[:-1]), "wrong transition scope"),
+                               (raw + sections[0], "duplicate transition member|transition current context differs")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, error):
+                binding.apply_inverse_patch(self.captured["inputs"], changed, binding.digest(changed),
+                                            len(changed), helper.PATHS)
+
+    def test_u8_cross_host_each_changed_source_fails_before_predecessor(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        for name in helper.PATHS:
+            path = self.repo / name
+            original = path.read_bytes()
+            with self.subTest(path=name), patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                path.unlink()
+                self.rejects("missing regular input")
+                path.write_bytes(original + b"\n")
+                self.rejects("changed input")
+                path.write_bytes(original)
+                path.chmod(0o755)
+                self.rejects_before_materialization("changed input mode")
+                path.chmod(0o644)
+        (self.repo / "src/frontend/cross_host_unlisted.rs").write_bytes(b"// unexpected\n")
+        self.rejects_before_materialization("missing or extra compiler source member")
+
+    def test_u8_cross_host_internal_authority_checks_are_independent(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        original = self.captured["u8_cross_host_authority"]
+        variants = (
+            ("transition_paths", list(reversed(helper.PATHS)), "stale u8 cross-host source transition authority"),
+            ("compiler_additions", ["unlisted"], "stale u8 cross-host source transition authority"),
+            ("fixture_additions", ["unlisted"], "stale u8 cross-host source transition authority"),
+            ("source_only_tree", "0" * 40, "stale u8 cross-host source transition authority"),
+            ("base_head", "0" * 40, "stale u8 cross-host source transition authority"),
+            ("current_source_members", 362, "stale u8 cross-host source transition authority"),
+            ("current_input_identities", original["current_input_identities"][:-1], "stale u8 cross-host complete input identities"),
+            ("compile_time_fixture_inputs", original["compile_time_fixture_inputs"][:-1], "stale u8 cross-host compile-time fixture closure"),
+            ("compile_time_include_directives", original["compile_time_include_directives"][:-1], "stale u8 cross-host compile-time include inventory"),
+            ("transition_inputs", [], "stale u8 cross-host transition input identities"),
+        )
+        for field, value, error in variants:
+            raw = binding.encoded({**original, field: value})
+            package_bytes = dict(self.captured["package_bytes"], **{"u8-cross-host-authority.json": raw})
+            with self.subTest(field=field), patch.object(helper, "AUTHORITY_SHA", binding.digest(raw)), \
+                 patch.object(helper, "AUTHORITY_BYTES", len(raw)), self.assertRaisesRegex(binding.BindingError, error):
+                helper.admit(self.repo, package_bytes, binding)
+
+    def test_u8_cross_host_unit2_keeps_accounting_source_distinct_from_execution(self):
+        receipt = self.captured["u8_accounting_source_binding"]
+        self.assertEqual(receipt["current_source"],
+                         binding.entry("current-source.json", self.captured["package_bytes"]["current-source.json"]))
+        self.assertEqual(receipt["retained_accounting_source"],
+                         binding.entry("u8-source.json", self.captured["package_bytes"]["u8-source.json"]))
+        self.assertNotEqual(receipt["current_source"]["sha256"], receipt["retained_accounting_source"]["sha256"])
+        self.assertEqual(receipt["source_dependencies"], self.captured["u8_index_resource_authority"]["source_dependencies"])
+        self.assertEqual(len(receipt["source_dependencies"]), 3)
+        for row in receipt["source_dependencies"]:
+            self.assertEqual(self.captured["inputs"][row["path"]], self.captured["u8_inputs"][row["path"]])
+        output = self.root / "cross-host-unit2"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        self.assertEqual(seam["u8_accounting_source_binding"], receipt)
+        self.assertEqual(binding.digest(self.captured["u8_index_resource"]),
+                         "1b717bef7b1d6ffebcab1fe245f60ef95ba2b4819bccddad90de078fcee05831")
+
+    def test_u8_cross_host_refuses_changed_accounting_dependency(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        changed = {**self.captured["current"], "files": [dict(row) for row in self.captured["current"]["files"]]}
+        names = [row["path"] for row in self.captured["u8_index_resource_authority"]["source_dependencies"]]
+        for name in names:
+            row = next(row for row in changed["files"] if row["path"] == name)
+            original = row["sha256"]
+            row["sha256"] = "0" * 64
+            admitted = (changed, self.captured["inputs"], self.captured["u8_cross_host_authority"],
+                        self.captured["u8_inputs"], self.captured["u8_cross_host_touched"])
+            with self.subTest(path=name), patch.object(binding, "load_u8_cross_host", return_value=helper), \
+                 patch.object(helper, "admit", return_value=admitted):
+                self.rejects("changed retained Unit2 u8 accounting dependency")
+            row["sha256"] = original
+
+    def test_u8_cross_host_archive_receipt_names_both_source_stages(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        output = self.root / "cross-host-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["u8_cross_host_inverse_touched"], list(helper.PATHS))
+        self.assertEqual(receipt["u8_cross_host_inverse_patch_sha256"], helper.PATCH_SHA)
+        self.assertEqual(receipt["u8_source_sha256"], helper.U8_SOURCE_SHA)
+        self.assertEqual(receipt["current_source_sha256"], helper.SOURCE_SHA)
+        self.assertEqual(len(receipt["archived_files"]), 117)
+        self.assertEqual(receipt["compiler_executions"], 0)
+        self.assertFalse(receipt["semantic_pass"])
+        self.assertFalse(receipt["direct_current_execution"])
+
+    def test_u8_exact_inverse_and_forward_preserves_complete_predecessor(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-transition.patch"]
+        restored, touched = helper.inverse(self.captured["u8_inputs"], raw, binding)
+        self.assertEqual(restored, self.captured["cache_admission_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(touched), len(helper.ADDITIONS), len(restored)), (96, 18, 345))
+        self.assertEqual(set(self.captured["u8_inputs"]) - set(restored), set(helper.ADDITIONS))
+        binding.check_bytes(restored, self.captured["cache_admission_source"]["files"])
+        forward = self.root / "u8-forward"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "u8-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["u8_source"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, raw, binding)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(self.captured["cache_preservation_inputs"], raw, binding)
+
+    def test_u8_source_git_identities_and_preserved_authorities(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        self.assertEqual(self.captured["u8_source"]["reviewed_source_head"], "5e4875d19961b4eba8e465c915ac676c54a9926e")
+        self.assertEqual(self.captured["u8_source"]["source_only_tree"], "4c687ed5ead4786e34cea154e3b263c00bd1fd1b")
+        expected = {
+            "cache-admission-source.json": "82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67",
+            "cache-admission-authority.json": "07ff6c8427fdc108a2d995a6d94a5788df77e0f85d12892446956eb9d6a43440",
+            "cache-admission-transition.patch": "302fab79c45fb34a41a3a641e44fe0880bbfb765554dfe306bcc07cdf67cc01d",
+            "cache_admission.py": "f6ef6f7e5dcb01d8f21bdc4911bf7072f401750c971b0d5c6f136935608e0077",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        authority = self.captured["u8_authority"]
+        self.assertEqual(authority["current_input_identities"], [
+            helper.identity(name, body, binding) for name, body in self.captured["u8_inputs"].items()])
+        sample = "src/frontend/parser/conversions.rs"
+        result = subprocess.run(["git", "hash-object", "--stdin"], input=self.captured["u8_inputs"][sample],
+                                capture_output=True, check=True, timeout=30)
+        self.assertEqual(helper.identity(sample, self.captured["u8_inputs"][sample], binding)["git_blob"],
+                         result.stdout.decode().strip())
+        self.assertNotIn("u8_helper", self.captured)
+        output = self.root / "u8-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["u8_inverse_touched"], list(helper.PATHS))
+        self.assertEqual(receipt["u8_inverse_patch_sha256"], helper.PATCH_SHA)
+        self.assertEqual(receipt["cache_admission_source_sha256"], helper.CACHE_ADMISSION_SOURCE_SHA)
+        self.assertFalse(receipt["semantic_pass"])
+        self.assertEqual(receipt["compiler_executions"], 0)
+
+    def test_u8_compile_time_closure_preserves_every_old_directive_and_fixture(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        before = helper.include_directives(self.captured["cache_admission_inputs"], binding)
+        current = helper.include_directives(self.captured["u8_inputs"], binding)
+        self.assertEqual((len(before), len(current)), (134, 136))
+        self.assertEqual([row for row in current if row not in before], list(helper.INCLUDE_ADDITIONS))
+        self.assertTrue(all(row in current for row in before))
+        fixtures = self.captured["u8_authority"]["compile_time_fixture_inputs"]
+        self.assertEqual(len(fixtures), 78)
+        for row in fixtures:
+            name = row["path"]
+            self.assertEqual(self.captured["u8_inputs"][name], self.captured["cache_admission_inputs"][name])
+            self.assertEqual(row, helper.identity(name, self.captured["u8_inputs"][name], binding))
+        self.assertNotEqual(self.captured["u8_inputs"][binding.COMPILE_FIXTURE_SOURCE],
+                            self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE])
+        self.assertEqual(binding.re.findall(binding.COMPILE_FIXTURE_PATTERN,
+                            self.captured["u8_inputs"][binding.COMPILE_FIXTURE_SOURCE]),
+                         binding.re.findall(binding.COMPILE_FIXTURE_PATTERN,
+                            self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]))
+
+    def test_u8_coherent_package_tampering_rejects_before_predecessor(self):
+        for name, error in (
+            ("cache-admission-source.json", "unapproved cache admission predecessor source manifest"),
+            ("u8-authority.json", "stale u8 source authority"),
+            ("u8-transition.patch", "wrong transition patch"),
+            ("u8_source.py", "unapproved u8 source helper"),
+        ):
+            original = (self.package / name).read_bytes()
+            (self.package / name).write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_cache_admission", side_effect=AssertionError("predecessor ran")):
+                self.rejects(error)
+            (self.package / name).write_bytes(original)
+            self.rehash_package()
+
+    def test_u8_reconstructed_bytes_checked_before_predecessor(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        for label, change in (("changed", lambda d: d.__setitem__("src/frontend/parser.rs", d["src/frontend/parser.rs"] + b"\n")),
+                              ("missing", lambda d: d.pop("src/frontend/parser.rs")),
+                              ("extra", lambda d: d.__setitem__("src/extra.rs", b""))):
+            damaged = dict(self.captured["cache_admission_inputs"])
+            change(damaged)
+            with self.subTest(kind=label), patch.object(binding, "load_u8_source", return_value=helper), \
+                 patch.object(helper, "inverse", return_value=(damaged, list(helper.PATHS))), \
+                 patch.object(binding, "load_cache_admission", side_effect=AssertionError("predecessor ran")):
+                self.rejects("changed reconstructed input|missing or extra reconstructed member")
+
+    def test_u8_each_changed_context_is_required_by_the_inverse(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-transition.patch"]
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 96)
+        for name, section in zip(helper.PATHS, sections):
+            with self.subTest(path=name):
+                inputs = dict(self.captured["u8_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    helper.inverse(inputs, raw, binding)
+
+    def test_u8_inverse_rejects_unapproved_and_reordered_missing_duplicate_paths(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            helper.inverse(self.captured["u8_inputs"], raw + b"\n", binding)
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        for changed, error in ((b"".join(reversed(sections)), "wrong transition scope"),
+                               (b"".join(sections[:-1]), "wrong transition scope"),
+                               (raw + sections[0], "duplicate transition member|transition current context differs")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, error):
+                binding.apply_inverse_patch(self.captured["u8_inputs"], changed, binding.digest(changed),
+                                            len(changed), helper.PATHS)
+
+    def test_u8_each_addition_missing_or_changed_fails_before_predecessor(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        for name in helper.ADDITIONS:
+            path = self.repo / name
+            original = path.read_bytes()
+            with self.subTest(path=name), patch.object(binding, "load_cache_admission", side_effect=AssertionError("predecessor ran")):
+                path.unlink()
+                self.rejects("missing regular input")
+                path.write_bytes(original + b"\n")
+                self.rejects("changed input")
+            path.write_bytes(original)
+
+    def test_u8_added_source_mode_and_extra_member_fail_before_materialization(self):
+        path = self.repo / "src/frontend/parser/conversions.rs"
+        path.chmod(0o755)
+        self.rejects_before_materialization("changed input mode")
+        path.chmod(0o644)
+        (self.repo / "src/frontend/u8_unlisted.rs").write_bytes(b"// unlisted\n")
+        self.rejects_before_materialization("missing or extra compiler source member")
+
+    def test_u8_authority_internal_membership_and_identity_checks_are_independent(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        original = self.captured["u8_authority"]
+        retained_repo = self.root / "retained-u8-authority"
+        binding.materialize(retained_repo, self.captured["u8_inputs"])
+        variants = (
+            ("transition_paths", list(reversed(helper.PATHS)), "stale u8 source transition authority"),
+            ("compiler_additions", [], "stale u8 source transition authority"),
+            ("fixture_additions", ["unlisted"], "stale u8 source transition authority"),
+            ("source_only_tree", "0" * 40, "stale u8 source transition authority"),
+            ("current_input_identities", original["current_input_identities"][:-1], "stale u8 complete input identities"),
+            ("compile_time_fixture_inputs", original["compile_time_fixture_inputs"][:-1], "stale u8 compile-time fixture closure"),
+            ("compile_time_include_directives", original["compile_time_include_directives"][:-1], "stale u8 compile-time include inventory"),
+            ("compile_time_include_additions", [], "stale u8 compile-time include inventory"),
+            ("transition_inputs", [], "stale u8 transition input identities"),
+        )
+        for field, value, error in variants:
+            raw = binding.encoded({**original, field: value})
+            package_bytes = dict(self.captured["package_bytes"], **{
+                "u8-authority.json": raw, "current-source.json": self.captured["package_bytes"]["u8-source.json"]})
+            with self.subTest(field=field), patch.object(helper, "AUTHORITY_SHA", binding.digest(raw)), \
+                 patch.object(helper, "AUTHORITY_BYTES", len(raw)), self.assertRaisesRegex(binding.BindingError, error):
+                helper.admit(retained_repo, package_bytes, binding)
+
+    def test_u8_include_scanner_refuses_unclosed_or_retargeted_new_reference(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        with self.assertRaisesRegex(binding.BindingError, "incomplete compile-time include"):
+            helper.include_directives({"src/bad.rs": b'include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "x")'}, binding)
+        helper_inputs = dict(self.captured["u8_inputs"])
+        name = "src/frontend/oir/source/hir_import/u8_resource_successor.rs"
+        helper_inputs[name] = helper_inputs[name].replace(b"rich-source.txt", b"unlisted-source.txt")
+        rows = helper.include_directives(helper_inputs, binding)
+        self.assertNotEqual(rows, self.captured["u8_authority"]["compile_time_include_directives"])
+
     def test_cache_admission_exact_inverse_and_forward(self):
         helper = binding.load_cache_admission(self.captured["package_bytes"], self.package)
         patch_bytes = self.captured["package_bytes"]["cache-admission-transition.patch"]
-        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        restored, touched = helper.inverse(self.captured["cache_admission_inputs"], patch_bytes, binding)
         self.assertEqual(touched, ["src/runtime/packages.rs"])
         self.assertEqual(restored, self.captured["cache_preservation_inputs"])
         binding.check_bytes(restored, self.captured["cache_preservation_source"]["files"])
-        changed = [name for name in restored if restored[name] != self.captured["inputs"][name]]
+        changed = [name for name in restored if restored[name] != self.captured["cache_admission_inputs"][name]]
         self.assertEqual(changed, ["src/runtime/packages.rs"])
-        self.assertEqual(set(restored), set(self.captured["inputs"]))
+        self.assertEqual(set(restored), set(self.captured["cache_admission_inputs"]))
         forward = self.root / "forward-package"
         binding.materialize(forward, restored)
         for extra in (["--check"], []):
             result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-admission-transition.patch")],
                                     cwd=forward, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(forward, self.captured["current"]["files"], exact=True)
+        binding.check_entries(forward, self.captured["cache_admission_source"]["files"], exact=True)
         with self.assertRaises(binding.BindingError):
             helper.inverse(restored, patch_bytes, binding)
 
@@ -136,8 +520,8 @@ class SourceBindingTests(unittest.TestCase):
         }
         for name, digest in expected.items():
             self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], "98af42f3baa02f179c0437078ab1928e86f0c8f6")
-        self.assertEqual(self.captured["current"]["source_only_tree"], "1d37d040150822d4358ec1c70c8e0f227f5eaf48")
+        self.assertEqual(self.captured["cache_admission_source"]["reviewed_source_head"], "98af42f3baa02f179c0437078ab1928e86f0c8f6")
+        self.assertEqual(self.captured["cache_admission_source"]["source_only_tree"], "1d37d040150822d4358ec1c70c8e0f227f5eaf48")
         self.assertNotIn("cache_admission_helper", self.captured)
         output = self.root / "package-archive"
         output.mkdir()
@@ -2014,7 +2398,7 @@ class SourceBindingTests(unittest.TestCase):
 
     def test_compile_time_fixture_predecessor_and_current_pins_remain_distinct(self):
         before = self.captured["combined_inputs"][binding.COMPILE_FIXTURE_SOURCE]
-        current = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        current = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
         self.assertEqual(binding.digest(before),
                          "10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc")
         self.assertEqual(len(before), 44176)
@@ -2429,7 +2813,7 @@ class SourceBindingTests(unittest.TestCase):
                 self.rejects("derived predecessor resource drift|derived combined resource drift")
 
     def test_compile_time_fixture_closure_is_exact_and_identity_bound(self):
-        source = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        source = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
         paths = binding.compile_fixture_paths(source)
         references = binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, source)
         self.assertEqual(source.count(b"include_str!"), 47)
@@ -2487,7 +2871,7 @@ class SourceBindingTests(unittest.TestCase):
         self.rejects_before_materialization("unapproved current source manifest")
 
     def test_compile_time_fixture_includer_changes_are_rejected(self):
-        original = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        original = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
         for changed in (original + b"\n", original.replace(b"include_str!", b"include_bytes!", 1),
                         original.replace(b"guard-empty/main.ox", b"unlisted/main.ox", 1)):
             with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(
@@ -2495,7 +2879,7 @@ class SourceBindingTests(unittest.TestCase):
                 binding.compile_fixture_paths(changed)
 
     def test_compile_time_fixture_literal_derivation_rejects_reference_drift(self):
-        original = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        original = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
         reference = binding.re.search(binding.COMPILE_FIXTURE_PATTERN, original).group()
         for changed in (original.replace(reference, b"", 1), original + reference,
                         original.replace(b"guard-empty/main.ox", b"unlisted/main.ox", 1),
@@ -2507,7 +2891,7 @@ class SourceBindingTests(unittest.TestCase):
                     binding.compile_fixture_paths(changed)
 
     def test_compile_time_fixture_derivation_rejects_generic_roster_changes(self):
-        original = self.captured["inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        original = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
         for changed in (binding.COMBINED_FIXTURE_ADDITIONS[:-1],
                         tuple(reversed(binding.COMBINED_FIXTURE_ADDITIONS)),
                         binding.COMBINED_FIXTURE_ADDITIONS + ("tests/arbitrary-asset.txt",)):
@@ -3028,7 +3412,10 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
                           plan["formatter_source_members"],
                           plan["predecessor_source_members"], plan["archive_members"]),
-                         (345, 185, 185, 133, 129, 117))
+                         (363, 185, 185, 133, 129, 117))
+        self.assertEqual(plan["cache_admission_source_members"], 345)
+        self.assertEqual((plan["u8_compiler_additions"], plan["u8_compile_time_fixture_members"],
+                          plan["u8_compile_time_include_directives"]), (18, 78, 136))
         self.assertEqual(plan["native_storage_source_members"], 264)
         self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
         self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)
@@ -3103,7 +3490,7 @@ class SourceBindingTests(unittest.TestCase):
         run.mkdir(parents=True)
         inputs = dict(self.captured["historical_bytes"])
         inputs[binding.RESOURCE] = self.captured["resource"]
-        inputs[binding.INDEX_RESOURCE] = self.captured["index_resource"]
+        inputs[binding.INDEX_RESOURCE] = self.captured["u8_index_resource"]
         inputs[binding.UNIT2_COMPARATOR] = self.captured["unit2_comparator"]
         inputs[binding.UNIT2_FROZEN_COMPARATOR] = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
         inputs[binding.UNIT2_SEMANTIC_HELPER] = self.captured["package_bytes"][binding.SEMANTIC_HELPER]

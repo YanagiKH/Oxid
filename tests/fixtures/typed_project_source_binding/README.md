@@ -1,3 +1,113 @@
+# Test-only u8 cross-host source successor
+
+The active source checkpoint is `d204fbc684b81c6e0deac04007182ebe2bb67b00`,
+full Git tree `8c00492b24d56b842858b72da9b4442f057ab4de`. Its complete selected source
+closure remains 363 inputs: 275 src/native members and 88 noncompiler inputs,
+with 278 compiler/build bodies. Only cfg(test) code in
+`src/frontend/declaration_index/u8_integration_tests.rs` and
+`src/frontend/project.rs` changes.
+
+`current-source.json` is 71,510 bytes, SHA-256
+`20f13e26a80cc55fd1e76ee76f8ec10988e9723d644dbc9a474fa7bcf6d4e0a4`. The preceding current manifest is preserved
+byte-for-byte as `u8-source.json` (71,254 bytes, SHA-256
+`35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4`). The original `u8_source.py`,
+`u8-authority.json`, `u8-transition.patch`, both Unit2 u8 accounting artifacts,
+and every older source stage remain unchanged.
+
+The pinned `u8_cross_host.py` admits all current bytes, modes, Git blob identities,
+complete src/native membership, 78 fixture identities and 136 exact compile-time
+include expressions. The two-file patch is 17,278 bytes, SHA-256
+`8f62ca183f15292ef1cf043e5799a5e36d5a7c9b16fa95eb5a0b710e833e35a6`. Its exact recipe is
+`git diff --binary --no-ext-diff --no-renames --abbrev=7
+4c687ed5ead4786e34cea154e3b263c00bd1fd1b
+8c00492b24d56b842858b72da9b4442f057ab4de --
+src/frontend/declaration_index/u8_integration_tests.rs src/frontend/project.rs`.
+It has no additions, removals or roster exceptions.
+
+Admission reverses this patch using exact hunk offsets and contexts, verifies all
+363 reconstructed predecessor inputs, and invokes the immutable u8 helper against
+a separate closed predecessor materialization. That helper still applies its
+original 96-path inverse to all 345 cache-admission inputs. Every historical
+inverse and the final 117-member archive retain their original identities.
+
+Current Unit2 executes the newly admitted candidate source. The immutable u8
+accounting helper is evaluated with its original `u8-source.json` authority;
+all three accounting source dependencies must also be identical in the new
+candidate. The successor receipt names both complete source identities and the
+unchanged helper, authority, dependencies and derived resource bytes. No resource
+ceiling, test roster, observation, corpus or language oracle changes, and no old
+executable is reused as fresh qualification.
+
+The controls retain all 239 predecessor tests and add exact forward/inverse,
+wrong-stage/double-inversion, every changed hunk, complete identity/fixture/include,
+coherent-tampering, dependency-transport, mode, extra-member and pre-execution refusal
+checks. Preflight and archive preparation execute no compiler and establish no
+semantic or hosted pass. Fresh current Unit2 and exact-head hosted qualification
+remain separate gates.
+
+The following sections are retained predecessor documentation.
+
+# Bounded u8 source admission successor
+
+The active source checkpoint is `5e4875d19961b4eba8e465c915ac676c54a9926e`,
+full Git tree `4c687ed5ead4786e34cea154e3b263c00bd1fd1b`. Its selected closure has
+363 inputs: 275 `src`/`native` members plus the 88 unchanged noncompiler inputs.
+The 275-member inventory includes both newly added proof Markdown files; it does
+not silently drop non-Rust members. The inherited compiler/build input count is
+278 after including Cargo.toml, Cargo.lock and build.rs.
+
+`current-source.json` is 71,254 bytes, SHA-256
+`35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4`.
+The prior current manifest is preserved byte-for-byte as
+`cache-admission-source.json` (67,820 bytes, SHA-256
+`82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67`).
+All prior authorities, helper programs, inverse patches, semantic observations,
+wire formats, provider source caps and resource ceilings remain unchanged.
+
+The new pinned `u8_source.py` admits the exact source, modes, membership,
+provenance and Git blob identities before historical inversion.
+`u8-authority.json` binds the ordered 96-path transition, its 18 additions,
+every before/after input identity, and the complete current input inventory.
+`u8-transition.patch` is 484,704 bytes, SHA-256
+`133d3a599b7c95929d4b691b7390645d0fca44d8fe0fff40e1fbc79c11091d27`.
+Its recipe is `git diff --binary --no-ext-diff --no-renames --abbrev=7
+1d37d040150822d4358ec1c70c8e0f227f5eaf48
+4c687ed5ead4786e34cea154e3b263c00bd1fd1b -- PATHS`, where PATHS is the complete,
+ordered transition scope recorded in the authority. Both trees and the source
+commits were obtained from Git; these identities do not claim hosted qualification.
+
+All 78 selected fixture inputs remain byte-identical. A complete source-expression
+inventory verifies all 134 predecessor include_str!/include_bytes! expressions and
+exactly two additions in `hir_import/u8_resource_successor.rs`, referencing the
+already admitted rich v1 and 255-byte v2 source fixtures. There is no added fixture
+or generic fixture allowance. The unchanged predecessor helpers retain their
+specific macro-generated fixture closure checks after inversion. The changed
+array-test includer is first reversed to its exact predecessor bytes; the original
+47-reference/42-fixture derivation is not repinned to the new body.
+
+Admission reverses u8 with exact hunk offsets and byte contexts, checks all 345
+reconstructed cache-admission inputs, then invokes the immutable cache-admission
+helper against that exact closed materialization. Every older inverse stage is
+preserved. The final archived view still has the original 117 members and hashes.
+Actual checkout closure checks include all 18 u8 additions; the retained closure
+checks subtract exactly that pinned roster rather than allowing extra source.
+
+The current-source Unit2 command continues to execute the admitted u8 compiler
+through the unchanged historical observer and resource adapters. This source
+successor does not redirect it to a historical compiler or turn a historical
+resource failure into a pass. Source preflight and archive preparation report
+zero compiler executions and no semantic pass. Independent current semantic and
+resource qualification, including a reviewed accounting successor if a retained
+exact endpoint changes, remains a separate gate.
+
+The bounded Python controls cover exact forward/inverse reconstruction, every
+changed hunk context, each new source's missing/changed identity, wrong-stage and
+double inversion, reordered/omitted/duplicated patch sections, coherent metadata
+rewrites, source modes, extra members, independent complete identity/fixture/include
+checks, and refusal before predecessor execution or output materialization.
+
+The following sections describe retained historical transitions and observations.
+
 # Current Git cache-location admission authority
 
 The active source checkpoint is `98af42f3baa02f179c0437078ab1928e86f0c8f6`, full tree
@@ -616,3 +726,20 @@ explicit authority references; the CI wrapper independently requires the
 reviewed source-manifest digest before building and joins both profile recipes
 to their compiler/source/receipt identities. This source admission is not itself
 semantic execution, hosted qualification, or a self-hosting claim.
+
+## Current Unit2 u8 resource successor
+
+The separately named `unit2-u8-current-index-resource-v1` adapter is applied only
+after validating the unchanged enum-resource predecessor. Its two exact
+function substitutions change current mandatory admission to207 (minus-one206,
+mandatory173) and import finish to68 (minus-one67), with import commit43
+unchanged. The historical202 admission and46 finish remain in the predecessor
+authority and source;202 is also an explicit rejected current admission.
+The added post-graph source-order and primitive reservation scan accounts for
+5 mandatory units in the simple function and22 executed finish units in the
+import fixture. Exact debit-prefix, diagnostic-order and paired alias/seen
+atomicity controls cover every finish budget0..68. No ceiling is raised.
+`index_resource` and its authority remain the enum-era admitted view; only
+`u8_index_resource` is used for current materialization, with a separate receipt.
+All21 required resource test names and3603 semantic cases are preserved.
+See `tests/qualification/unit2_u8_current/README.md` for the source derivation.

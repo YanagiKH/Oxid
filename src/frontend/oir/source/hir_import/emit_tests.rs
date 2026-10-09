@@ -1,5 +1,6 @@
 //! Private LLVM-text qualification through genuine retained source ownership.
 //! No LLVM tool, executable, alternate witness or repaired observation is used.
+use super::u8_resource_successor::RICH_RESERVATION_WORK;
 use super::{candidate, leaf, SourceOwner};
 use crate::frontend::{
     declaration_index::IndexLimits,
@@ -178,7 +179,7 @@ fn original_native_rejection(text: &str, wire: &[u8]) -> Box<Diagnostic> {
 }
 
 #[test]
-fn checked_hir_import_emit_rich_smoke_matches_source_after_backing_drop() {
+fn checked_hir_import_emit_rich_smoke_matches_source_after_backing_drop_u8_successor() {
     let (output, ordinary, allocation) = {
         let mut sources = SourceMap::new();
         let id = sources.add("main.ox".into(), RICH_SOURCE.into());
@@ -269,7 +270,7 @@ fn checked_hir_import_emit_rich_smoke_matches_source_after_backing_drop() {
             + artifact.formula_work
             + artifact.body_work
     );
-    assert_eq!(output.total_work, 10_069_187);
+    assert_eq!(output.total_work, 10_069_187 + RICH_RESERVATION_WORK);
     println!("HIR_IMPORT_EMIT_SMOKE original_after_backing_drop text={} capacity={} candidate_reserves={} final_reserves=1 source_work={} canonical_work={} connection_work={} scan_work={} formula_work={} body_work={} total_work={} allocations={allocation:?}",
         artifact.bytes, artifact.capacity, verified.candidate.allocation.reserves,
         output.source_work, output.canonical_work, artifact.connection_work,

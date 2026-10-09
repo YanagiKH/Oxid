@@ -1554,7 +1554,8 @@ impl Parser<'_> {
         let height = 1 + match &kind {
             ExprKind::Group(inner)
             | ExprKind::Negate { operand: inner, .. }
-            | ExprKind::Not { operand: inner, .. } => self.heights[inner.0],
+            | ExprKind::Not { operand: inner, .. }
+            | ExprKind::Conversion { operand: inner, .. } => self.heights[inner.0],
             ExprKind::Call { args, .. } => args
                 .iter()
                 .map(|arg| match arg {
@@ -1665,6 +1666,19 @@ impl Parser<'_> {
                     .bytes()
                     .all(|byte| byte.is_ascii_digit())
                 {
+                    // The unchanged lexer retains a numeric candidate as one
+                    // token. Still blame the excluded postfix punctuation for
+                    // these exact new spellings, never a fake numeric receiver.
+                    if self.peek().kind == Kind::LParen {
+                        if let Some((number, name)) = self.source.text_at(digits).split_once('.') {
+                            if number.bytes().all(|byte| byte.is_ascii_digit())
+                                && matches!(name, "to_u8_checked" | "to_i32")
+                            {
+                                let dot = digits.start + number.len();
+                                return Err(self.array_unsupported(self.source.span(dot, dot + 1)));
+                            }
+                        }
+                    }
                     return Err(self.diagnostic(
                         "E0101",
                         "parse",
@@ -1733,6 +1747,20 @@ impl Parser<'_> {
                         base: token.span,
                         index,
                     }
+                } else if let Some(op) = self.named_conversion_ahead(path) {
+                    // The ordinary named read is a real child, independently
+                    // charged as syntax and retained before its conversion.
+                    self.node()?;
+                    let operand = self.push_expr(ExprKind::Name(token.span), token.span)?;
+                    self.bump(); // `.` established by the closed lookahead.
+                    let name_span = self.bump().span;
+                    self.bump(); // `(` established by the closed lookahead.
+                    end = self.conversion_close()?;
+                    ExprKind::Conversion {
+                        op,
+                        operand,
+                        name_span,
+                    }
                 } else if self.mode.owned()
                     && matches!(path, ItemPath::Unqualified(_))
                     && self.take(Kind::Dot).is_some()
@@ -1755,6 +1783,9 @@ impl Parser<'_> {
                         }
                         if self.peek().kind != Kind::Dot {
                             break;
+                        }
+                        if self.named_conversion_ahead(path).is_some() {
+                            return Err(self.array_unsupported(self.peek().span));
                         }
                         if hops >= 65 {
                             return Err(self.diagnostic(
@@ -1854,6 +1885,12 @@ impl Parser<'_> {
                 } else if let Some(path) = qualified {
                     ExprKind::QualifiedValue { path, args: None }
                 } else if matches!(path, ItemPath::Absolute(_)) {
+                    if self
+                        .named_conversion_ahead(ItemPath::Unqualified(token.span))
+                        .is_some()
+                    {
+                        return Err(self.array_unsupported(self.peek().span));
+                    }
                     return Err(self.diagnostic(
                         "E0101",
                         "parse",
@@ -1882,7 +1919,9 @@ impl Parser<'_> {
             }
             None => return Err(self.error("expected a bool, i32 or unit expression")),
         };
-        if self.arrays_enabled() && (self.array_punctuation("[") || self.peek().kind == Kind::Dot) {
+        if (self.arrays_enabled() && (self.array_punctuation("[") || self.peek().kind == Kind::Dot))
+            || (matches!(kind, ExprKind::Conversion { .. }) && self.peek().kind == Kind::LParen)
+        {
             return Err(self.array_unsupported(self.peek().span));
         }
         self.push_expr(kind, self.source.span(token.span.start, end))
@@ -1891,8 +1930,13 @@ impl Parser<'_> {
 
 #[path = "parser/arrays.rs"]
 mod arrays;
+#[path = "parser/conversions.rs"]
+mod conversions;
 #[path = "parser/enums.rs"]
 mod enums;
+#[cfg(test)]
+#[path = "parser/u8_syntax_tests.rs"]
+mod u8_syntax_tests;
 pub(super) use enums::SyntaxStorage;
 
 #[cfg(test)]

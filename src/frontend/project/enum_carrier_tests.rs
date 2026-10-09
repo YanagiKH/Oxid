@@ -82,7 +82,11 @@ fn declaration(project: &mut ProjectSources, count: usize) {
     let at = span(project, "E::V");
     let payload = span(project, "bool");
     let program = &mut project.programs[0];
-    program.items.push(ast::ItemId::Enum(program.enums.len()));
+    // This fabricated enum's origin is in the leading comment, before f.
+    // Preserve source item order for RFC0030's independently paid order check.
+    program
+        .items
+        .insert(0, ast::ItemId::Enum(program.enums.len()));
     program.enums.push(ast::EnumDecl {
         public: None,
         name: Span {

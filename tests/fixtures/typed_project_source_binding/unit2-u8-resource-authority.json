@@ -1,0 +1,90 @@
+{
+  "changed_controls": [
+    "reviewer_independent_exact_admission_and_failure_order",
+    "reviewer_import_resource_failures_never_partially_commit"
+  ],
+  "current_source_sha256": "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4",
+  "derivation": {
+    "admission_exact": 207,
+    "admission_minus_one": 206,
+    "finish_exact": 68,
+    "finish_minus_one": 67,
+    "finish_predecessor": 46,
+    "finish_u8_order": 10,
+    "finish_u8_reservation": 12,
+    "import_commit_unchanged": 43,
+    "mandatory_current": 173,
+    "mandatory_predecessor": 168,
+    "mandatory_u8_addition": 5,
+    "preflight": 34
+  },
+  "derived": {
+    "bytes": 25291,
+    "path": "archive/resource/resource-review-tests.rs",
+    "sha256": "1b717bef7b1d6ffebcab1fe245f60ef95ba2b4819bccddad90de078fcee05831"
+  },
+  "logical_resource_tests": 21,
+  "predecessor": {
+    "bytes": 22732,
+    "path": "archive/resource/resource-review-tests.rs",
+    "sha256": "289d310395a7abb701c03d3ca065f87accba6ed02884fbcf21e2d13235c08dde"
+  },
+  "predecessor_version": "unit2-enum-free-index-resource-v1",
+  "preserved_test_names": [
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_actual_layout_and_source_node_envelope",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_byte_comparators_and_stable_merge_bounds",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_checked_arithmetic_and_malformed_compact_identity",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_exact_queries_use_hand_costs_and_current_origins",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_exposure_and_nominal_format_work_are_independent_hand_costs",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_five_actual_parser_reserve_positions",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_fourteen_actual_index_reserve_failures",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_import_resource_failures_never_partially_commit",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_independent_exact_admission_and_failure_order",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_long_keys_keep_actual_byte_debits_and_stability",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_nine_independent_space_cases",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_normalized_long_path_comparison_charges_only_inspected_segments",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_old_declaration_admission_precedes_all_new_index_gates",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_original_association_and_corrupt_arena_reject_cleanly",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_original_conflict_debit_precedes_semantics",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_path_resource_exhaustion_immediately_precedes_semantic_failures",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_reference_exposure_uses_referent_origin_and_current_work_site",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_type_owner_and_use_site_resource_guards",
+    "frontend::parser::independent_unit2_resource_review::reviewer_checked_segment_overflow_has_zero_reserves",
+    "frontend::parser::independent_unit2_resource_review::reviewer_q_node_and_reserve_precedence",
+    "frontend::source::independent_unit2_resource_review::reviewer_identity_exhaustion_and_parallel_uniqueness"
+  ],
+  "reviewed_source_head": "5e4875d19961b4eba8e465c915ac676c54a9926e",
+  "schema": "oxid-unit2-u8-current-resource-v1",
+  "scope": "Two named current accounting successor controls only. Historical tests, ceilings, measurements, semantic corpus and remaining 19 resource controls are unchanged. Every import budget prefix 0..68 is tested; commit stays43. New 22-event suffix checks exact operations, units, origins, terminal diagnostics and no Frozen event before68.",
+  "source_dependencies": [
+    {
+      "bytes": 18128,
+      "path": "src/frontend/declaration_index/resource.rs",
+      "sha256": "a3003ffdf58e62399955f1fdca6a5b8a46c4acd4640b4c8489fd633be44de0f4"
+    },
+    {
+      "bytes": 76573,
+      "path": "src/frontend/declaration_index/sealed.rs",
+      "sha256": "2f006bf29bd0901ea7f350e9b88c0e5feea22531cfafe960b58fb7084904fcdb"
+    },
+    {
+      "bytes": 26194,
+      "path": "src/frontend/declaration_index/u8_reservation.rs",
+      "sha256": "d71816d62a1e2ff8eda15b956ab9dadedd7abe217469149a4fd8238d08b71b85"
+    }
+  ],
+  "source_only_tree": "4c687ed5ead4786e34cea154e3b263c00bd1fd1b",
+  "substitutions": [
+    {
+      "count": 1,
+      "new_sha256": "9ceaba6c8fa4550cd3300401ca9177b06b4fc4a03ee41965edef8c39984ad3d0",
+      "old_sha256": "b1b17cd1e0d64fe584af3371efb15e748b594c34b1ea19c35bbfa7da38018e52"
+    },
+    {
+      "count": 1,
+      "new_sha256": "72744a5704b31d1b442aec04a3146fa5d99a4d0b0cb5aa8031f04e665d28af05",
+      "old_sha256": "09c753a614b197d5ace353cb2cd0f4bc559ea46ecb446479af2f43273f3fb891"
+    }
+  ],
+  "version": "unit2-u8-current-index-resource-v1"
+}

@@ -366,17 +366,49 @@ fn bounded_output_association_walk_scopes_each_opcode_and_checks_unreachable_blo
         ] {
             let mut raw = builtin_lower::function(index, kind).unwrap();
             let mut count = Visitor::count();
-            function(&raw, &mut count, true, Some(kind)).unwrap();
+            function(
+                &raw,
+                &mut count,
+                true,
+                Some(kind),
+                FunctionSource::Count,
+                &mut ConversionSeen::empty(),
+            )
+            .unwrap();
             let mut validation = Visitor::validate(sources);
             validation.file(raw.span.file);
-            function(&raw, &mut validation, true, Some(kind)).unwrap();
-            assert!(function(&raw, &mut Visitor::count(), true, None).is_err());
+            function(
+                &raw,
+                &mut validation,
+                true,
+                Some(kind),
+                FunctionSource::Count,
+                &mut ConversionSeen::empty(),
+            )
+            .unwrap();
+            assert!(function(
+                &raw,
+                &mut Visitor::count(),
+                true,
+                None,
+                FunctionSource::Count,
+                &mut ConversionSeen::empty()
+            )
+            .is_err());
             let other = if output {
                 BuiltinFunction::ReadStdin
             } else {
                 BuiltinFunction::WriteStdout
             };
-            assert!(function(&raw, &mut Visitor::count(), true, Some(other)).is_err());
+            assert!(function(
+                &raw,
+                &mut Visitor::count(),
+                true,
+                Some(other),
+                FunctionSource::Count,
+                &mut ConversionSeen::empty()
+            )
+            .is_err());
             let mut unreachable = raw.blocks[0].clone();
             unreachable.statements[1].kind = if input {
                 OwnedInstruction::WriteStdout {
@@ -390,10 +422,26 @@ fn bounded_output_association_walk_scopes_each_opcode_and_checks_unreachable_blo
                 }
             };
             raw.blocks.push(unreachable);
-            assert!(function(&raw, &mut Visitor::count(), true, Some(kind)).is_err());
+            assert!(function(
+                &raw,
+                &mut Visitor::count(),
+                true,
+                Some(kind),
+                FunctionSource::Count,
+                &mut ConversionSeen::empty()
+            )
+            .is_err());
             let mut validation = Visitor::validate(sources);
             validation.file(raw.span.file);
-            assert!(function(&raw, &mut validation, true, Some(kind)).is_err());
+            assert!(function(
+                &raw,
+                &mut validation,
+                true,
+                Some(kind),
+                FunctionSource::Count,
+                &mut ConversionSeen::empty()
+            )
+            .is_err());
         }
     });
 }

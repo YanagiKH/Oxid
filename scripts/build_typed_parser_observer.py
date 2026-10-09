@@ -12,13 +12,20 @@ import subprocess
 import sys
 import time
 
+from legacy_scalar_observer_u8 import adapt_wrapper as _adapt_wrapper, SCHEMA
+
+
+def adapt_wrapper(name, original):
+    return _adapt_wrapper("parser", name, original)
+
 
 SOURCE_FILES = (
     "lexer.rs", "diagnostic.rs", "source.rs", "project/budget.rs",
-    "ast.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs",
+    "ast.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs",
     "owned_diagnostic.rs", "builtin_catalog.rs", "hir.rs",
     "declaration_index.rs", "declaration_index/enum_views.rs",
     "declaration_index/resource.rs", "declaration_index/sealed.rs",
+    "declaration_index/u8_reservation.rs",
     "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs",
     "oir/owned_types.rs", "oir/owned_types/enums.rs",
 )
@@ -65,6 +72,8 @@ def build(output):
         name: (wrapper_root / name).read_bytes()
         for name, _ in WRAPPER_FILES
     }
+    original_wrappers = wrappers.copy()
+    wrappers = {name: adapt_wrapper(name, data) for name, data in wrappers.items()}
     declaration = re.search(
         r"pub enum Kind \{([^}]+)\}", sources["lexer.rs"].decode(), re.S
     )
@@ -97,6 +106,7 @@ def build(output):
             "copied_path": target_name,
             "sha256": hashlib.sha256(data).hexdigest(),
             "byte_count": len(data),
+            "original_sha256": hashlib.sha256(original_wrappers[name]).hexdigest(),
         })
     # The complete observation/wiring addition is recorded separately from
     # unchanged canonical source files. No source substitution is hidden.
@@ -113,6 +123,7 @@ def build(output):
         "commit": commit,
         "git_read": {"argv": git_argv, "environment": git_env},
         "source_patches": [],
+        "wrapper_adaptation": SCHEMA,
         "wrapper_diff": "wrapper-only.diff",
         "entrypoint": {
             "parser": "parser::parse_typed_counted",

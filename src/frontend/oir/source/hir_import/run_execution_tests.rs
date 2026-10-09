@@ -1,6 +1,7 @@
 //! Private Run parity through genuine source ownership and the complete import
 //! leaf. Captures are unchanged producer observations; explicit tables below
 //! are hand-authored, untrusted controls, never compiler-derived wire data.
+use super::u8_resource_successor::RICH_RESERVATION_WORK;
 use super::*;
 use crate::frontend::{
     declaration_index::IndexLimits,
@@ -110,12 +111,12 @@ macro_rules! capture {
 }
 
 #[test]
-fn checked_hir_import_run_genuine_rich_capture_matches_source() {
+fn checked_hir_import_run_genuine_rich_capture_matches_source_u8_reservation_successor() {
     let (text, bytes) = capture!("rich");
     let facts = original_parity(text, bytes);
     assert_eq!(facts.verified.runtime, Some(Ok(Scalar::I32(1))));
     assert_eq!(facts.verified.entry_work, 33_792);
-    assert_eq!(facts.total_work, 1_310_659);
+    assert_eq!(facts.total_work, 1_310_659 + RICH_RESERVATION_WORK);
 }
 
 #[test]

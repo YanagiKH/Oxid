@@ -77,6 +77,13 @@ pub(super) enum OutputMode<'a> {
     Private(Admission<'a>),
 }
 impl OutputMode<'_> {
+    pub(super) fn preflight_fixed(&self) -> Result<(), Failure> {
+        match self {
+            Self::Default => Ok(()),
+            Self::Private(admission) => admission.preflight(0),
+        }
+    }
+
     pub(super) fn allocate(self, counted: usize, policy: EntryPolicy) -> Result<Emission, Failure> {
         match self {
             Self::Default => Ok(Emission {
@@ -232,6 +239,9 @@ pub(in crate::frontend::oir) fn named_bytes() -> Result<usize, Failure> {
         size_of::<&mut String>(),
         size_of::<Option<usize>>(),
         size_of::<std::fmt::Result>(),
+        // RFC0030: complete new admission/emission/helper roles, not merely
+        // unchanged enum sizes. const sizeof adds no nested inventory loop.
+        super::scalar_resource::named_bytes(),
     ];
     // Include the accounting array, move transport and actual iterator itself.
     let bank = size_of_val(&roles)

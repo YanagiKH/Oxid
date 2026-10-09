@@ -392,6 +392,12 @@ fn native_module_policy_accounted(
     if policy == NativeEntryPolicy::Process && root.result != ValueTy::Scalar(hir::Ty::I32) {
         return Err(reject("process main must return i32", Some(root.span)));
     }
+    if root.result == ValueTy::Scalar(hir::Ty::U8) {
+        return Err(reject(
+            "native main must return bool, i32 or ()",
+            Some(root.span),
+        ));
+    }
     let plan = ExecutionPlan::build(witness).map_err(|e| reject(e.name, e.span))?;
     accounting.metrics.plan_bytes = plan.metadata_bytes();
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(plan.metadata_bytes());
@@ -902,6 +908,7 @@ enum FailureKind {
     Fuel,
     Overflow,
     DivisionByZero,
+    ByteRange,
     Bounds,
     EnumTag,
     EnumPayload,
@@ -922,6 +929,7 @@ impl FailureKind {
             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
+            Self::ByteRange => RunFailure::ByteRange(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
             Self::ProcessStatus => Diagnostic::new(
                 "E0600",
@@ -1071,6 +1079,10 @@ fn diagnostic_occurrences(
                             visit(FailureKind::DivisionByZero, *operator_span)?;
                         }
                     }
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedI32ToU8 { name_span, .. },
+                        ..
+                    })) => visit(FailureKind::ByteRange, *name_span)?,
                     OwnedInstruction::Scalar(Statement::Assign(Assign {
                         value: Rvalue::CheckedNegateI32 { operator_span, .. },
                         ..
@@ -1411,7 +1423,7 @@ fn ty(t: hir::Ty) -> &'static str {
     match t {
         hir::Ty::Bool => "i1",
         hir::Ty::I32 => "i32",
-        hir::Ty::Unit => "i8",
+        hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
 fn result_ty(t: ValueTy) -> &'static str {
@@ -1493,12 +1505,14 @@ fn element_stride(element: hir::Ty) -> usize {
     match element {
         hir::Ty::I32 => 4,
         hir::Ty::Bool | hir::Ty::Unit => 1,
+        hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
     }
 }
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
         hir::Ty::I32 => "i32",
         hir::Ty::Bool | hir::Ty::Unit => "i8",
+        hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
     }
 }
 /// Resolve from the verified nominal root every time; raw offsets are never
@@ -2088,6 +2102,7 @@ fn emit(
     match result {
         hir::Ty::Bool => out.write_str("  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n").unwrap(),
         hir::Ty::I32 => out.write_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n").unwrap(),
+        hir::Ty::U8 => unreachable!("byte entry rejected before native plan"),
         hir::Ty::Unit => out.write_str("  %status = call i32 @__oxid_print_unit()\n").unwrap(),
     }
     out.write_str("  ret i32 %status\n}\n").unwrap();
@@ -2097,6 +2112,7 @@ fn emit(
 enum Continuation {
     Unsplit,
     Arithmetic,
+    Conversion,
     Bounds,
     Enum,
     Input,
@@ -2107,6 +2123,7 @@ impl Continuation {
         match self {
             Self::Unsplit => None,
             Self::Arithmetic => Some("checked_ok"),
+            Self::Conversion => Some("conversion_ok"),
             Self::Bounds => Some("bounds_ok"),
             Self::Enum => Some("enum_ok"),
             Self::Input => Some("input_ok"),
@@ -2135,7 +2152,9 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
                 Rvalue::CheckedI32 { .. } | Rvalue::CheckedNegateI32 { .. } => {
                     Continuation::Arithmetic
                 }
+                Rvalue::CheckedI32ToU8 { .. } => Continuation::Conversion,
                 Rvalue::Load(_)
+                | Rvalue::U8ToI32 { .. }
                 | Rvalue::NotBool { .. }
                 | Rvalue::Bool(_)
                 | Rvalue::I32(_)
@@ -3194,6 +3213,27 @@ fn emit_scalar(
             &format!("%s{}", storage.place_slot(p.id)),
             t,
         ),
+        Rvalue::CheckedI32ToU8 {
+            operand, name_span, ..
+        } => {
+            let operand = load_operand(out, f, &format!("{name}_operand"), operand);
+            let suffix = continuation(f, &owned_statement.kind)
+                .suffix()
+                .expect("conversion continuation");
+            writeln!(out, "  %{name}_negative = icmp slt i32 {operand}, 0\n  %{name}_large = icmp sgt i32 {operand}, 255\n  %{name}_invalid = or i1 %{name}_negative, %{name}_large\n  br i1 %{name}_invalid, label %{name}_conversion_error, label %{name}_{suffix}\n{name}_conversion_error:").unwrap();
+            emit_failure(out, diagnostics, FailureKind::ByteRange, name_span);
+            writeln!(
+                out,
+                "{name}_{suffix}:\n  %{name}_value = trunc i32 {operand} to i8"
+            )
+            .unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::U8ToI32 { operand, .. } => {
+            let operand = load_operand(out, f, &format!("{name}_operand"), operand);
+            writeln!(out, "  %{name}_value = zext i8 {operand} to i32").unwrap();
+            format!("%{name}_value")
+        }
         Rvalue::NotBool { operand, .. } => {
             let operand = load_operand(out, f, &format!("{name}_operand"), operand);
             writeln!(out, "  %{name}_value = xor i1 {operand}, true").unwrap();
@@ -3202,16 +3242,41 @@ fn emit_scalar(
         Rvalue::CompareScalar {
             op, left, right, ..
         } => {
+            let unsigned = f.locals[left.local.0].ty == hir::Ty::U8;
             let operand_type = ty(f.locals[left.local.0].ty);
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
             let predicate = match op {
                 hir::ComparisonOp::Equal => "eq",
                 hir::ComparisonOp::NotEqual => "ne",
-                hir::ComparisonOp::Less => "slt",
-                hir::ComparisonOp::LessEqual => "sle",
-                hir::ComparisonOp::Greater => "sgt",
-                hir::ComparisonOp::GreaterEqual => "sge",
+                hir::ComparisonOp::Less => {
+                    if unsigned {
+                        "ult"
+                    } else {
+                        "slt"
+                    }
+                }
+                hir::ComparisonOp::LessEqual => {
+                    if unsigned {
+                        "ule"
+                    } else {
+                        "sle"
+                    }
+                }
+                hir::ComparisonOp::Greater => {
+                    if unsigned {
+                        "ugt"
+                    } else {
+                        "sgt"
+                    }
+                }
+                hir::ComparisonOp::GreaterEqual => {
+                    if unsigned {
+                        "uge"
+                    } else {
+                        "sge"
+                    }
+                }
             };
             writeln!(
                 out,
@@ -3660,3 +3725,290 @@ mod division_tests {
 #[cfg(test)]
 #[path = "native_inventory_admission_tests.rs"]
 mod inventory_admission_tests;
+
+#[cfg(test)]
+mod u8_inventory_controls {
+    use super::*;
+
+    #[test]
+    fn owned_u8_native_inventory_exact_text_and_metadata_endpoints() {
+        for guarded in [false, true] {
+            let (sources, raw, _) = super::super::u8_tests::raw(255, guarded);
+            let witness = source::u8_tests::verify_source_raw(raw, &sources).unwrap();
+            let mut accounting = Accounting::default();
+            let ir = native_module_accounted(
+                &witness,
+                Some(hir::DefId(0)),
+                &sources,
+                12,
+                Limits::DEFAULT,
+                &mut accounting,
+            )
+            .unwrap();
+            let metrics = &accounting.metrics;
+            assert_eq!(metrics.count_bytes, ir.len());
+            assert_eq!(metrics.render_bytes, ir.len());
+            assert_eq!(
+                metrics.count_ordinary_visits,
+                metrics.render_ordinary_visits
+            );
+            assert_eq!(metrics.message_count_bytes, metrics.message_render_bytes);
+            assert!(metrics.unique >= 1);
+            assert!(
+                FailureKind::ByteRange
+                    .diagnostic(witness.functions()[0].span, &sources)
+                    .message
+                    .len()
+                    <= 64
+            );
+            for less in [0, 1] {
+                let limits = Limits {
+                    ir_bytes: ir.len() - less,
+                    ..Limits::DEFAULT
+                };
+                assert_eq!(
+                    native_module_limits(&witness, Some(hir::DefId(0)), &sources, 12, limits)
+                        .is_ok(),
+                    less == 0
+                );
+                let limits = Limits {
+                    metadata_bytes: metrics.metadata_peak - less,
+                    ..Limits::DEFAULT
+                };
+                assert_eq!(
+                    native_module_limits(&witness, Some(hir::DefId(0)), &sources, 12, limits)
+                        .is_ok(),
+                    less == 0
+                );
+            }
+            println!("RFC0030 owned native guarded={guarded} {metrics:?}");
+        }
+    }
+
+    #[test]
+    fn owned_u8_native_entry_rejects_without_plan_or_reservation() {
+        let (sources, raw) = source::u8_tests::raw_source(
+            "struct R {} fn main()->u8{let x=255;return x.to_u8_checked();}",
+        );
+        let witness = source::u8_tests::verify_source_raw(raw, &sources).unwrap();
+        let mut accounting = Accounting::default();
+        let error = native_module_accounted(
+            &witness,
+            Some(hir::DefId(0)),
+            &sources,
+            0,
+            Limits::DEFAULT,
+            &mut accounting,
+        )
+        .unwrap_err();
+        assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+        assert_eq!(accounting.metrics.plan_bytes, 0);
+        assert_eq!(accounting.metrics.allocation_attempts, 0);
+        assert_eq!(accounting.metrics.count_bytes, 0);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn owned_u8_native_containing_transport_layouts() {
+    use std::mem::{align_of, size_of};
+    macro_rules! report {($($t:ty),+)=>{$(println!("RFC0030 owned native {} size={} align={}",stringify!($t),size_of::<$t>(),align_of::<$t>());)+}}
+    report!(
+        FailureKind,
+        Continuation,
+        DiagnosticKey,
+        DiagnosticOccurrence,
+        Diagnostics,
+        Bound,
+        NativeMetrics,
+        Accounting,
+        Emission
+    );
+}
+
+// Complete named-role inventory for the RFC0030 scalar emission arms. These
+// are conservative sums of construction, return and caller roles, rather than
+// a claim about Rust's machine stack or allocator capacity. The emitted text
+// streams directly into the already-admitted Emission; no IR fragment String
+// is constructed. Operand names and the final result are the only new arm's
+// owned strings, with the same lifecycle as CheckedNegateI32.
+/// Compiler-generated callsite backing measured with this toolchain's exact
+/// conversion/predecessor format templates in owned-format-callsite.mir. The
+/// capture tuple uses thin references. Each rt::Argument is two pointer-sized
+/// words (16 bytes, alignment8 on the qualified host), separately counted for
+/// constructor return and array storage. Template and array borrows are each
+/// one pointer; template bytes themselves are static compiled data. This is a
+/// role model, not access to the private std type or a stdlib-frame estimate.
+#[allow(dead_code)]
+struct FormatCallsiteBacking<const N: usize> {
+    captures: [usize; N],
+    argument_returns: [[usize; 2]; N],
+    arguments: [[usize; 2]; N],
+    template_borrow: usize,
+    argument_array_borrow: usize,
+    forwarded_arguments: std::fmt::Arguments<'static>,
+}
+
+#[allow(dead_code)]
+struct U8EmissionCarriers {
+    storage: &'static NativeFunctionStorage<'static, 'static>,
+    plan: &'static ExecutionPlan<'static>,
+    function: &'static RawOwnedFunction,
+    instruction: &'static OwnedStatement,
+    assignment: &'static Assign,
+    name: &'static str,
+    emitter: &'static mut Emission,
+    diagnostics: &'static Diagnostics,
+    function_id: hir::DefId,
+    destination_type: hir::Ty,
+    // Both comparison operands are included even for unary conversion arms.
+    operands: [Operand; 2],
+    origin: Span,
+    continuation: Continuation,
+    suffix_option: Option<&'static str>,
+    suffix: &'static str,
+    unsigned: bool,
+    operand_type: &'static str,
+    predicate: &'static str,
+    // Caller name; name construction and load-slot/load-operand return plus
+    // caller storage for each operand; final result construction/caller; final
+    // store name and pointer. Distinct headers are not assumed to be elided.
+    strings: [String; 13],
+    diagnostic_key: DiagnosticKey,
+    diagnostic_search: Result<usize, usize>,
+    diagnostic_index: usize,
+    diagnostic_id: usize,
+    diagnostic_length: usize,
+    diagnostic_return: (usize, usize),
+    diagnostic_pattern: (usize, usize),
+    failure_helper: &'static str,
+    // Per format/write call: complete public Arguments, displayed borrowed
+    // inputs and Result. Five displayed inputs cover the unchanged comparison formatter;
+    // the conversion maximum is three. The full sequential call counts are
+    // summed, including two loads, failure emission and final store.
+    formatting: [std::fmt::Arguments<'static>; 14],
+    callsite_backing: [FormatCallsiteBacking<5>; 14],
+    formatting_results: [std::fmt::Result; 14],
+}
+// A usize has at most BITS decimal digits. All generated scalar names have
+// f{function}_b{block}_i{instruction}; the longest new owned suffix is _operand,
+// with one leading %. IDs are verifier-admitted, never source identifier text.
+const U8_NAME_BYTES: usize = 3 * usize::BITS as usize + 5 + 8 + 1;
+const U8_EMISSION_BYTES: usize = size_of::<U8EmissionCarriers>() + 13 * U8_NAME_BYTES;
+// Numerical containment check only, not a claim that unlisted predecessor
+// roles are spare. The conversion branches are dominated by predecessor checked
+// arithmetic as documented and checked in the role-comparison test below.
+const _: () = assert!(
+    U8_EMISSION_BYTES
+        + size_of::<ScalarLeaves<'static>>()
+        + plan::native_storage::FIXED_CARRIER_ALLOWANCE
+        <= EMITTER_TRANSIENT_BYTES
+);
+
+#[test]
+fn owned_u8_native_operation_carriers_fit_existing_transient_envelope() {
+    let inherited = plan::native_storage::FIXED_CARRIER_ALLOWANCE;
+    let leaves = size_of::<ScalarLeaves<'static>>();
+    assert_eq!(EMITTER_TRANSIENT_BYTES, 32_768);
+    assert!(U8_EMISSION_BYTES + leaves + inherited <= EMITTER_TRANSIENT_BYTES);
+    let name = format!("f{}_b{}_i{}", usize::MAX, usize::MAX, usize::MAX);
+    for value in [
+        format!("%{name}_operand"),
+        format!("%{name}_value"),
+        format!("{name}_store"),
+    ] {
+        assert!(value.len() <= U8_NAME_BYTES);
+    }
+    println!("RFC0030 owned native scalar_arm_headers={} name_payload={} arm_total={} inherited_native_plan={} scalar_leaves={} conservative_subdivision={} unchanged_emitter_cap={}",
+        size_of::<U8EmissionCarriers>(), 13 * U8_NAME_BYTES, U8_EMISSION_BYTES,
+        inherited, leaves, U8_EMISSION_BYTES + inherited + leaves, EMITTER_TRANSIENT_BYTES);
+}
+
+// Relative proof against the already-present CheckedI32 emitter, independent
+// of treating any part of EMITTER_TRANSIENT_BYTES as spare: both paths retain
+// the same outer emit-function/statement/scalar callers, output/diagnostic tables,
+// common result and store_slot roles. CheckedI32 retains two Operand bindings,
+// an ArithmeticOp and an operator Span; conversion retains one Operand and its
+// name Span (source_expr is not bound by the emission match). Both retain one
+// static continuation suffix. The conversion's one load uses the same helpers
+// as each of CheckedI32's two loads. The one longer _operand name is bounded by
+// the sum of CheckedI32's _left and _right names. Both call emit_failure once
+// on the relevant overflow/range branch, using the same key/search/return roles.
+// Conversion's largest write uses three captures; CheckedI32 uses four.
+// MIR-derived capture tuples, private Argument constructor returns/arrays,
+// template and argument-array borrows are explicitly included in both models.
+// Narrowing performs fewer format/write calls; widening omits the suffix/failure.
+// Different instruction text streams into the separately exact-counted output.
+#[allow(dead_code)]
+struct PredecessorCheckedArmRoles {
+    operands: [Operand; 2],
+    operator: hir::ArithmeticOp,
+    origin: Span,
+    suffix_option: Option<&'static str>,
+    suffix: &'static str,
+    operand_names: [String; 2],
+    formatted: std::fmt::Arguments<'static>,
+    backing: FormatCallsiteBacking<4>,
+    result: std::fmt::Result,
+}
+#[allow(dead_code)]
+struct CheckedByteArmRoles {
+    operand: Operand,
+    origin: Span,
+    suffix_option: Option<&'static str>,
+    suffix: &'static str,
+    operand_name: String,
+    formatted: std::fmt::Arguments<'static>,
+    backing: FormatCallsiteBacking<3>,
+    result: std::fmt::Result,
+}
+#[allow(dead_code)]
+struct PredecessorComparisonRoles {
+    operation: hir::ComparisonOp,
+    operand_type: &'static str,
+    left: String,
+    right: String,
+    predicate: &'static str,
+}
+#[allow(dead_code)]
+struct ByteComparisonRoles {
+    operation: hir::ComparisonOp,
+    unsigned: bool,
+    operand_type: &'static str,
+    left: String,
+    right: String,
+    predicate: &'static str,
+}
+#[test]
+fn owned_u8_native_roles_are_dominated_by_predecessor_operations() {
+    // Exact mirrored MIR arities: narrow [3,3], widen [2], predecessor
+    // arithmetic [2,3,4,2,2,4,1]. Repeated named placeholders are deduplicated;
+    // the old and new comparison template remains identical with five captures.
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(
+            (size_of::<[usize; 2]>(), std::mem::align_of::<[usize; 2]>()),
+            (16, 8)
+        );
+        assert_eq!(size_of::<std::fmt::Arguments<'static>>(), 16);
+        assert_eq!(size_of::<FormatCallsiteBacking<3>>(), 152);
+        assert_eq!(size_of::<FormatCallsiteBacking<4>>(), 192);
+    }
+    assert!(size_of::<CheckedByteArmRoles>() <= size_of::<PredecessorCheckedArmRoles>());
+    // The sole retained comparison addition occupies padding in the measured
+    // complete role carrier; formatting and both operand helpers are unchanged.
+    assert_eq!(
+        size_of::<ByteComparisonRoles>(),
+        size_of::<PredecessorComparisonRoles>()
+    );
+    for name in [
+        "f0_b0_i0".to_string(),
+        format!("f{}_b{}_i{}", usize::MAX, usize::MAX, usize::MAX),
+    ] {
+        assert!(
+            format!("%{name}_operand").len()
+                <= format!("%{name}_left").len() + format!("%{name}_right").len()
+        );
+    }
+    println!("RFC0030 native relative carriers checked_byte={} predecessor_checked={} byte_comparison={} predecessor_comparison={}; same outer callers and failure/store helpers", size_of::<CheckedByteArmRoles>(),size_of::<PredecessorCheckedArmRoles>(),size_of::<ByteComparisonRoles>(),size_of::<PredecessorComparisonRoles>());
+}

@@ -43,6 +43,9 @@ fn ins(kind: OwnedInstruction, span: Span) -> OwnedStatement {
 }
 fn literal(id: usize, value: Scalar, span: Span) -> OwnedStatement {
     let value = match value {
+        Scalar::U8(_) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Scalar::I32(v) => Rvalue::I32(v),
         Scalar::Bool(v) => Rvalue::Bool(v),
         Scalar::Unit => Rvalue::Unit,
@@ -97,6 +100,7 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
 }
 fn value(ty: hir::Ty, j: usize) -> Scalar {
     match ty {
+        hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(37 * j as i32 - 91),
         hir::Ty::Bool => Scalar::Bool(j.is_multiple_of(2)),
         hir::Ty::Unit => Scalar::Unit,
@@ -104,6 +108,7 @@ fn value(ty: hir::Ty, j: usize) -> Scalar {
 }
 fn replacement(ty: hir::Ty) -> Scalar {
     match ty {
+        hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(-123456789),
         hir::Ty::Bool => Scalar::Bool(false),
         hir::Ty::Unit => Scalar::Unit,
@@ -116,6 +121,9 @@ fn bytes(ty: hir::Ty, sequence: &[Scalar]) -> Vec<u8> {
     let mut out = vec![];
     for v in sequence {
         match v {
+            Scalar::U8(_) => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             Scalar::I32(v) => out.extend(v.to_le_bytes()),
             Scalar::Bool(v) => out.push(u8::from(*v)),
             Scalar::Unit => out.push(0),

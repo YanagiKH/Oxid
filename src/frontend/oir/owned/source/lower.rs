@@ -725,6 +725,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                                     frames.push(ExprFrame::Visit(*child), cause)?;
                                 }
                                 source::ExprKind::Group(inner)
+                                | source::ExprKind::Conversion { operand: inner, .. }
                                 | source::ExprKind::Negate { operand: inner, .. }
                                 | source::ExprKind::Not { operand: inner, .. }
                                 | source::ExprKind::IndexRead { index: inner, .. } => {
@@ -1237,6 +1238,23 @@ impl<'a, 'b> Walk<'a, 'b> {
                 BindingLocation::ScalarValue(local) => Rvalue::Copy(Operand { local, span }),
                 BindingLocation::ScalarPlace(id) => Rvalue::Load(Place { id, span }),
                 _ => return Err(invariant(span)),
+            },
+            source::ExprKind::Conversion {
+                source_expr,
+                op,
+                operand,
+                name_span,
+            } => match op {
+                source::ConversionOp::ToU8Checked => Rvalue::CheckedI32ToU8 {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    name_span,
+                },
+                source::ConversionOp::ToI32 => Rvalue::U8ToI32 {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    name_span,
+                },
             },
             source::ExprKind::Group(inner) => Rvalue::Copy(self.operand(inner)?),
             source::ExprKind::Negate {

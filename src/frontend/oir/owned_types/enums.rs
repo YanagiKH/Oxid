@@ -318,7 +318,9 @@ impl Limits {
 fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDeclarationError> {
     match variant.payload {
         None => Ok(None),
-        Some(ParameterTy::Value(ValueTy::Scalar(ty))) => Ok(Some(ty)),
+        Some(ParameterTy::Value(ValueTy::Scalar(
+            ty @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit),
+        ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
 }
@@ -338,7 +340,7 @@ fn prepare_with_limits<'a>(
         if declaration.id != EnumId(index) {
             return Err(EnumDeclarationError::InvalidEnumId(declaration.id));
         }
-        super::check_span(sources, declaration.span)?;
+        super::check_nominal_span(sources, declaration.span)?;
         for (index, variant) in declaration.variants.iter().enumerate() {
             if variant.id
                 != (VariantId {

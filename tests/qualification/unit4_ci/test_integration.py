@@ -21,6 +21,23 @@ from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only,
 REPO = Path(__file__).resolve().parents[3]
 
 
+class WorkflowEnvironmentControls(unittest.TestCase):
+    def test_yaml_global_environment_has_unique_keys(self):
+        workflow = (REPO / '.github/workflows/ci.yml').read_text()
+        def check(text):
+            block = text.split('\nenv:\n', 1)[1].split('\njobs:\n', 1)[0]
+            rows = [line.strip().split(':', 1) for line in block.splitlines() if line.strip()]
+            self.assertTrue(all(len(row) == 2 for row in rows))
+            keys = [row[0] for row in rows]
+            self.assertEqual(len(keys), len(set(keys)), 'duplicate YAML global env key')
+            self.assertEqual(dict(rows)['PYTHONDONTWRITEBYTECODE'].strip(), '"1"')
+        check(workflow)
+        marker = '  PYTHONDONTWRITEBYTECODE: "1"\n'
+        for duplicate in (marker, '  PYTHONDONTWRITEBYTECODE: "0"\n'):
+            with self.subTest(duplicate=duplicate), self.assertRaisesRegex(AssertionError, 'duplicate YAML'):
+                check(workflow.replace(marker, marker + duplicate))
+
+
 class GitDiffBatchControls(unittest.TestCase):
     def test_windows_length_unicode_quoting_order_and_duplicates(self):
         # Astral characters count as two UTF-16 units; quoting and backslashes
@@ -221,7 +238,7 @@ class HostPreparationControls(unittest.TestCase):
             observer = q.read(root / 'observer-source/observer-source.json')
             self.assertEqual(observer['observer_patch'], patch_identity)
             self.assertEqual(observer['base_source_manifest_sha256'], q.CURRENT_SHA)
-            self.assertEqual(len(observer['files']), 346)
+            self.assertEqual(len(observer['files']), 364)
             runtime.source_manifest(root / 'observer-source/observer-source.json', root / 'observer-source/source')
             self.assertFalse((root / 'ordinary-build').exists())
             self.assertFalse((root / 'observer-build').exists())
@@ -317,7 +334,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 self.builder.verify_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
-        self.assertEqual(len(self.manifest['files']), 346)
+        self.assertEqual(len(self.manifest['files']), 364)
         self.assertEqual(q.sha(q.canonical(self.manifest['files'])), self.builder.OBSERVER_FILES_SHA)
         for row in self.manifest['files']:
             q.verify(self.output / 'source' / row['path'], row)
@@ -411,7 +428,7 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 18)
+        self.assertEqual(len(expected), 21)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
@@ -1134,7 +1151,8 @@ def synthetic_seal_fixture(root):
             cases.append({'source': source, 'receipts': receipts})
         report = put((base, 'result', 'report.json'), {'results': cases, 'instrumented': builds[0], 'control': builds[1], 'authority_checkpoint': session})
         put((base, 'portable-passivity.json'), {'session': session, 'profile': profile, 'invocation': process(base), 'report': report})
-    result_value = {'status': 'pass', 'session': session, 'scope': 'SYNTHETIC_TRANSPORT_CONTROL_ONLY'}
+    controls = put(('u8-policy-controls', 'receipt.json'), {'cases': [], 'scope': 'SYNTHETIC_TRANSPORT_CONTROL_ONLY'})
+    result_value = {'status': 'pass', 'session': session, 'scope': 'SYNTHETIC_TRANSPORT_CONTROL_ONLY', 'u8_policy_controls': controls}
     result = put(('comparison.json',), result_value, included=False)
     tail = [str(REPO / q.PARSER / 'portable.py'), 'compare', '--session', session['path'], '--contract-dir', str(root.parent / 'contracts')]
     streams = {'stdout': put(root.parent / 'stdout', result_value, included=False), 'stderr': put(root.parent / 'stderr', b'', included=False)}
@@ -1196,7 +1214,7 @@ class ComparisonSealControls(unittest.TestCase):
             bound = reader.named(self.root / 'parser' / name)
             self.assertEqual(reader.raw(bound), self.data[bound['path']])
         report = verify_parser_seal(self.seal, reader.raw)
-        self.assertEqual(report['full_archive_only'], 1024)
+        self.assertEqual(report['full_archive_only'], 1060)
         self.assertEqual(len(metadata), 14)
 
     def test_current_candidate_missing_from_actual_compact_reader(self):
@@ -1411,7 +1429,7 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         source = q.read(REPO / q.SOURCE / 'current-source.json')
         compiler = [row for row in source['files'] if row['path'].startswith(('src/', 'native/'))
                     or row['path'] in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
-        self.assertEqual(len(compiler), 260)
+        self.assertEqual(len(compiler), 278)
         return {'root': '/synthetic/current-parser',
                 'host': {'os': 'linux', 'architecture': 'x86_64', 'python_pointer_width': 64},
                 'checkout': {'head': 'a' * 40, 'tree': 'b' * 40,

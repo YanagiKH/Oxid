@@ -341,7 +341,7 @@ impl<'s> SourceOwner<'s> {
             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
                 let text = self.text(name)?;
                 let mut builtin = false;
-                for spelling in ["bool", "i32"] {
+                for spelling in ["bool", "i32", "u8"] {
                     work.preflight(name)?;
                     let mut equal = text.len() == spelling.len();
                     if equal {
@@ -368,6 +368,48 @@ impl<'s> SourceOwner<'s> {
 mod enum_carrier_tests {
     use super::*;
     use crate::frontend::{lexer, parser, source::SourceMap};
+
+    #[test]
+    fn u8_route_type_exact_work_successors() {
+        // Type visit + spelling visits + compared bytes. Earlier primitive
+        // matches stop in place. u8 adds one spelling and its two bytes;
+        // a differently sized nominal adds only the final spelling visit.
+        for (name, owned, predecessor, added) in [
+            ("bool", false, 1 + 1 + 4, 0),
+            ("i32", false, 1 + 1 + 1 + 3, 0),
+            ("u8", false, 1 + 1 + 1, 1 + 2),
+            ("Zebra", true, 1 + 1 + 1, 1),
+        ] {
+            let mut sources = SourceMap::new();
+            let id = sources.add("route.ox".into(), format!("fn f()->{name}{{return;}}"));
+            let source = sources.get(id);
+            let ast = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+            let owner = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
+            let exact = predecessor + added;
+            let work = WorkMeter::new(exact);
+            assert_eq!(
+                owner.owned_type(ast.functions[0].result, &work).unwrap(),
+                owned
+            );
+            assert_eq!(work.used(), exact);
+            work.debit(0, ast.functions[0].name, "test deferred route admission")
+                .unwrap();
+            // Route discovery is count-only until the ordered I/J/W gates.
+            // It must not prematurely select a work error before those gates.
+            let short = WorkMeter::new(exact - 1);
+            assert_eq!(
+                owner.owned_type(ast.functions[0].result, &short).unwrap(),
+                owned
+            );
+            assert_eq!(
+                short
+                    .debit(0, ast.functions[0].name, "test deferred route admission")
+                    .unwrap_err()
+                    .code,
+                "E0400"
+            );
+        }
+    }
 
     #[test]
     fn enum_carrier_qualified_path_view_layout_is_explicit() {
@@ -418,6 +460,76 @@ mod enum_carrier_tests {
             ast.paths[0].root = root;
             let owner = SourceOwner::original(source, &ast, SourceView::Single(source)).unwrap();
             assert!(owner.segments(handle).is_err(), "{root:?}");
+        }
+    }
+}
+
+impl<'s> SourceOwner<'s> {
+    /// Same associations as ast(), but no copied owner and no diagnostic calls.
+    pub(in crate::frontend) fn try_ast_borrowed(
+        &self,
+        module: ModuleId,
+    ) -> Option<&'s ast::Program> {
+        match &self.kind {
+            Kind::Original { file, ast, .. } if module.0 == 0 => {
+                ast.belongs_to(file).then_some(*ast)
+            }
+            Kind::Project(project) => {
+                let header = project.modules().get(module.0)?;
+                let ast = project.try_file_ast(header.file)?;
+                let file = project.sources().files().get(header.file.0)?;
+                ast.belongs_to(file).then_some(ast)
+            }
+            _ => None,
+        }
+    }
+    /// One Span copy only at SourceFile::try_text, preserving all range/UTF-8 checks.
+    pub(super) fn try_text_borrowed(&self, span: &Span) -> Option<&'s str> {
+        match &self.kind {
+            Kind::Original { file, .. } => file.try_text(*span),
+            Kind::Project(project) => project.sources().files().get(span.file.0)?.try_text(*span),
+        }
+    }
+}
+
+#[cfg(test)]
+mod compact_owner_tests {
+    use super::*;
+    #[test]
+    fn original_valid_and_forged_access_parity() {
+        let mut map = super::super::super::source::SourceMap::new();
+        let a = map.add("a.ox".into(), "// ü\nfn main()->i32{return 0;}".into());
+        let b = map.add("b.ox".into(), "// ü\nfn main()->i32{return 0;}".into());
+        let ast = super::super::super::parser::parse(
+            map.get(a),
+            super::super::super::lexer::lex(map.get(a)).unwrap(),
+        )
+        .unwrap();
+        for file in [map.get(a), map.get(b)] {
+            // Intentional forgery of the private owner, solely in this module's tests.
+            let owner = SourceOwner {
+                kind: Kind::Original {
+                    file,
+                    ast: &ast,
+                    view: SourceView::Map(&map),
+                },
+            };
+            for module in [ModuleId(0), ModuleId(1), ModuleId(usize::MAX)] {
+                assert_eq!(
+                    owner.ast(module).ok().map(|p| p as *const _),
+                    owner.try_ast_borrowed(module).map(|p| p as *const _)
+                );
+            }
+            for file_id in [a, b, SourceFileId(usize::MAX)] {
+                for (start, end) in [(0, 0), (0, 5), (3, 4), (4, 5), (5, 3), (0, usize::MAX)] {
+                    let span = Span {
+                        file: file_id,
+                        start,
+                        end,
+                    };
+                    assert_eq!(owner.text(span).ok(), owner.try_text_borrowed(&span));
+                }
+            }
         }
     }
 }

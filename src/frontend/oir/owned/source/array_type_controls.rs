@@ -275,8 +275,13 @@ fn unit3b1_frozen_project_guard_and_reservation_receipts() {
                 .filter(|e| e.operation.starts_with("array "))
                 .map(|e| e.units)
                 .sum();
-            println!("CONTROL {{\"schema\":\"{SCHEMA}\",\"kind\":\"work\",\"seam\":\"private-owned-without-selector\",\"case_id\":\"reserve-across-modules\",\"limit\":{},\"used\":{},\"added_units\":{added},\"success\":true,\"ledger_sha256\":\"b49d52901fe25cb190701cf228dd8cb6c1fd7f3375a0543a27e06fcaa156a67b\",\"diagnostic\":null,\"human\":null,\"json_line\":null}}",work.limit(),work.used());
-            assert_eq!((work.used(), added), (321, 16));
+            println!("CONTROL {{\"schema\":\"oxid-array-types-work-rfc0030\",\"kind\":\"work\",\"reservation_scan_delta\":13,\"seam\":\"private-owned-without-selector\",\"case_id\":\"reserve-across-modules\",\"limit\":{},\"used\":{},\"added_units\":{added},\"success\":true,\"predecessor_ledger_sha256\":\"b49d52901fe25cb190701cf228dd8cb6c1fd7f3375a0543a27e06fcaa156a67b\",\"diagnostic\":null,\"human\":null,\"json_line\":null}}",work.limit(),work.used());
+            const PREDECESSOR_WORK: u64 = 321;
+            const RFC0030_RESERVATION_SCAN: u64 = 2 * 2 + 3 * 3;
+            assert_eq!(
+                (work.used(), added),
+                (PREDECESSOR_WORK + RFC0030_RESERVATION_SCAN, 16)
+            );
             reservation_rows(case, owner, &display);
         }
     }

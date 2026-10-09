@@ -38,6 +38,9 @@ fn loan(key: storage::LoanKey) -> String {
 
 fn scalar(value: Scalar) -> String {
     match value {
+        Scalar::U8(_) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Scalar::I32(v) => object([("type", json_string("i32")), ("value", v.to_string())]),
         Scalar::Bool(v) => object([("type", json_string("bool")), ("value", v.to_string())]),
         Scalar::Unit => object([("type", json_string("()")), ("value", "null".into())]),
@@ -549,6 +552,9 @@ fn run_case(
     )
     .map_err(|error| error.diagnostic(sources));
     let (stdout, stderr, status) = match &reference {
+        Ok(Scalar::U8(_)) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Ok(Scalar::I32(value)) => (format!("{value}\n").into_bytes(), Vec::new(), Some(0)),
         Ok(Scalar::Bool(value)) => (format!("{value}\n").into_bytes(), Vec::new(), Some(0)),
         Ok(Scalar::Unit) => (b"()\n".to_vec(), Vec::new(), Some(0)),

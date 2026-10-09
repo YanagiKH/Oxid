@@ -27,7 +27,11 @@ pub(in crate::frontend::oir) struct Dimensions {
     pub(in crate::frontend::oir) calls: u64,
     pub(in crate::frontend::oir) arguments: u64,
     pub(in crate::frontend::oir) edges: u64,
+    // Historical field name: counts all checked scalar failure occurrences,
+    // including the single range failure of checked byte narrowing.
     pub(in crate::frontend::oir) arithmetic_failures: u64,
+    /// Selects the longer E0610 diagnostic envelope without repricing old inputs.
+    pub(in crate::frontend::oir) has_byte_range_failure: bool,
     /// Any successor <= its predecessor's enumeration index. A backward edge
     /// is only a conservative work selector, never evidence of native admission
     /// or even proof that the function's CFG contains a cycle.
@@ -95,25 +99,27 @@ pub(in crate::frontend::oir) fn debit(
         .map_err(|_| Failure::Invariant)
 }
 
-fn arithmetic_failures(statement: &Statement) -> u64 {
+fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
     match statement {
         Statement::Assign(assign) => match &assign.value {
-            Rvalue::CheckedNegateI32 { .. } => 1,
+            Rvalue::CheckedI32ToU8 { .. } => (1, true),
+            Rvalue::CheckedNegateI32 { .. } => (1, false),
             Rvalue::CheckedI32 { op, .. } => match op {
                 hir::ArithmeticOp::Add
                 | hir::ArithmeticOp::Subtract
-                | hir::ArithmeticOp::Multiply => 1,
-                hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => 2,
+                | hir::ArithmeticOp::Multiply => (1, false),
+                hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => (2, false),
             },
-            Rvalue::Load(_)
+            Rvalue::U8ToI32 { .. }
+            | Rvalue::Load(_)
             | Rvalue::NotBool { .. }
             | Rvalue::Bool(_)
             | Rvalue::I32(_)
             | Rvalue::Unit
             | Rvalue::Copy(_)
-            | Rvalue::CompareScalar { .. } => 0,
+            | Rvalue::CompareScalar { .. } => (0, false),
         },
-        Statement::Initialize { .. } | Statement::Store { .. } => 0,
+        Statement::Initialize { .. } | Statement::Store { .. } => (0, false),
     }
 }
 
@@ -173,10 +179,9 @@ pub(in crate::frontend::oir) fn scan(
             }
             for statement in &block.statements {
                 debit(work, STATEMENT_WORK, origin, "private Emit scan statement")?;
-                dimensions.arithmetic_failures = add(
-                    dimensions.arithmetic_failures,
-                    arithmetic_failures(statement),
-                )?;
+                let (failures, byte_range) = arithmetic_failures(statement);
+                dimensions.arithmetic_failures = add(dimensions.arithmetic_failures, failures)?;
+                dimensions.has_byte_range_failure |= byte_range;
             }
         }
     }
@@ -240,8 +245,10 @@ struct ArithmeticBindings {
     assignment: &'static Assign,
     value: &'static Rvalue,
     operator: &'static hir::ArithmeticOp,
-    returned_count: u64,
-    caller_count: u64,
+    returned_counts: (u64, bool),
+    caller_counts: (u64, bool),
+    failures: u64,
+    byte_range: bool,
 }
 
 fn byte_add(left: usize, right: usize) -> Result<usize, Failure> {
@@ -330,6 +337,8 @@ pub(in crate::frontend::oir) fn named_bytes() -> Result<usize, Failure> {
         size_of::<(usize, usize, bool)>(),
         size_of::<(usize, usize, usize, bool, bool, bool)>(),
         size_of::<(usize, usize, bool)>(),
+        // RFC0030's paid per-statement byte-range selector OR transports.
+        size_of::<(bool, bool, bool)>(),
         // Eight fixed failure expressions: add/length/byte_add overflow,
         // reconcile mismatch, debit's two Work branches and Invariant mapping,
         // and the scan's missing-terminator invariant. Complete wrappers above
@@ -557,6 +566,7 @@ mod tests {
             arguments: 2,
             edges: 8,
             arithmetic_failures: 1,
+            has_byte_range_failure: false,
             maybe_cyclic: true,
         };
         let exact = scan_work(expected).unwrap();
@@ -686,5 +696,38 @@ mod tests {
             size_of::<SliceLoop<Statement>>(), size_of::<TerminatorBindings>(),
             size_of::<ArithmeticBindings>()
         );
+    }
+
+    #[test]
+    fn u8_emit_scan_successor_exact_and_one_under() {
+        let (verified, _) = super::super::tests::verified_with_sources(
+            "fn main()->i32{let x=255;let b=x.to_u8_checked();return b.to_i32();}",
+        );
+        // Two bindings plus literal/read/narrow/read/widen temporaries;
+        // seven assignments, one return. Widening adds no diagnostic site.
+        let expected = Dimensions {
+            functions: 1,
+            locals: 7,
+            blocks: 1,
+            statements: 7,
+            arithmetic_failures: 1,
+            has_byte_range_failure: true,
+            ..Dimensions::default()
+        };
+        let upper = Upper {
+            functions: 1,
+            blocks: 1,
+            slots: 7,
+            definitions: 7,
+        };
+        let exact = 5_376;
+        assert_eq!(scan_work(expected).unwrap(), exact);
+        let paid = WorkMeter::new(exact);
+        assert_eq!(scan(&verified, upper, &paid, origin()), Ok(expected));
+        assert_eq!(paid.used(), exact);
+        let short = WorkMeter::new(exact - 1);
+        assert_eq!(scan(&verified, upper, &short, origin()), Err(Failure::Work));
+        assert_eq!(short.used(), exact - STATEMENT_WORK);
+        println!("U8_EMIT_SCAN_SUCCESSOR exact_work={exact} named_bytes={} dimensions_bytes={} failure_bindings_bytes={}", named_bytes().unwrap(), size_of::<Dimensions>(), size_of::<ArithmeticBindings>());
     }
 }

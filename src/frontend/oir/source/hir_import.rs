@@ -501,3 +501,6 @@ mod emit_resource_tests;
 
 #[cfg(test)]
 mod emit_failure_tests;
+
+#[cfg(test)]
+mod u8_resource_successor;

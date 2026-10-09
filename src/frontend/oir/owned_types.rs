@@ -34,6 +34,9 @@ impl FixedArrayTy {
         element: hir::Ty,
         length: usize,
     ) -> Result<Self, DeclarationError> {
+        if !matches!(element, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) {
+            return Err(DeclarationError::TypeMismatch);
+        }
         if length > 1024 {
             return Err(DeclarationError::ResourceLimit("fixed array length"));
         }
@@ -53,6 +56,7 @@ impl FixedArrayTy {
         Layout::scalar(self.element).size
     }
     fn layout(self) -> Result<Layout, DeclarationError> {
+        Self::check(self.element, self.length())?;
         let scalar = Layout::scalar(self.element);
         let bytes = self
             .length()
@@ -84,6 +88,7 @@ pub(in crate::frontend) enum BorrowedTy {
 impl BorrowedTy {
     pub(in crate::frontend) fn accepts(self, authority: Self) -> bool {
         match (authority, self) {
+            (Self::ScalarSlice(hir::Ty::U8), _) | (_, Self::ScalarSlice(hir::Ty::U8)) => false,
             (Self::Exact(AggregateTy::Enum(_)), _) | (_, Self::Exact(AggregateTy::Enum(_))) => {
                 false
             }
@@ -121,9 +126,13 @@ impl BorrowedSlot {
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
             BorrowedTy::Exact(AggregateTy::FixedArray(array)) => {
+                FixedArrayTy::check(array.element(), array.length())?;
                 BorrowedSlotRepr::FixedArray(array)
             }
-            BorrowedTy::ScalarSlice(element) => BorrowedSlotRepr::ScalarSlice(element),
+            BorrowedTy::ScalarSlice(element @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit)) => {
+                BorrowedSlotRepr::ScalarSlice(element)
+            }
+            BorrowedTy::ScalarSlice(hir::Ty::U8) => return Err(DeclarationError::TypeMismatch),
         }))
     }
     pub(in crate::frontend) fn referent(self) -> BorrowedTy {
@@ -161,7 +170,10 @@ impl AggregateSlot {
             AggregateTy::Enum(id) => AggregateSlotRepr::Enum(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
             ),
-            AggregateTy::FixedArray(array) => AggregateSlotRepr::FixedArray(array),
+            AggregateTy::FixedArray(array) => {
+                FixedArrayTy::check(array.element(), array.length())?;
+                AggregateSlotRepr::FixedArray(array)
+            }
         }))
     }
     pub(in crate::frontend) fn aggregate(self) -> AggregateTy {
@@ -288,6 +300,7 @@ impl Layout {
         match ty {
             hir::Ty::Bool | hir::Ty::Unit => Self { size: 1, align: 1 },
             hir::Ty::I32 => Self { size: 4, align: 4 },
+            hir::Ty::U8 => unreachable!("u8 cannot be an aggregate scalar"),
         }
     }
 }
@@ -470,7 +483,7 @@ impl Declarations {
             if record.id != RecordId(index) {
                 return Err(DeclarationError::InvalidRecordId(record.id));
             }
-            check_span(sources, record.span)?;
+            check_nominal_span(sources, record.span)?;
             for (index, field) in record.fields.iter().enumerate() {
                 if field.id
                     != (FieldId {
@@ -644,7 +657,10 @@ impl Declarations {
                 .enumeration(id)
                 .map(|enumeration| enumeration.width())
                 .map_err(Into::into),
-            AggregateTy::FixedArray(array) => Ok(array.length().max(1)),
+            AggregateTy::FixedArray(array) => {
+                FixedArrayTy::check(array.element(), array.length())?;
+                Ok(array.length().max(1))
+            }
         }
     }
     pub(super) fn same_aggregate_type(
@@ -665,7 +681,8 @@ impl Declarations {
         match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
-            BorrowedTy::ScalarSlice(_) => Ok(()),
+            BorrowedTy::ScalarSlice(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) => Ok(()),
+            BorrowedTy::ScalarSlice(hir::Ty::U8) => Err(DeclarationError::TypeMismatch),
         }
     }
     pub(super) fn same_borrowed_type(
@@ -791,8 +808,20 @@ fn check_span(sources: &SourceMap, span: Span) -> Result<(), DeclarationError> {
     }
 }
 
+// A raw nominal declaration cannot manufacture the reserved primitive binding.
+fn check_nominal_span(sources: &SourceMap, span: Span) -> Result<(), DeclarationError> {
+    check_span(sources, span)?;
+    if sources.try_text(span) == Some("u8") {
+        return Err(DeclarationError::TypeMismatch);
+    }
+    Ok(())
+}
+
 fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
     match field.ty {
+        ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)) => {
+            Err(DeclarationError::NonScalarField(field.id))
+        }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_))) => {
             Err(DeclarationError::NonScalarField(field.id))
         }
@@ -816,6 +845,7 @@ fn value_summary(
     summaries: &[ContainmentSummary],
 ) -> Result<ContainmentSummary, DeclarationError> {
     Ok(match ty {
+        ValueTy::Scalar(hir::Ty::U8) => return Err(DeclarationError::TypeMismatch),
         ValueTy::Scalar(ty) => ContainmentSummary {
             layout: Layout::scalar(ty),
             width: 1,
@@ -1060,6 +1090,9 @@ where
                 "fields per record",
             )?;
             fields = limited_add(fields, 1, limits.fields, "field declarations")?;
+            if !matches!(ty, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) {
+                return Err(DeclarationError::TypeMismatch);
+            }
             cursor.push(Layout::scalar(ty))?;
         }
         if seen_fields != expected_fields {
@@ -1917,7 +1950,7 @@ mod tests {
         ] {
             assert_eq!(value.ty(), ty);
             assert_eq!(value.to_string(), display);
-            assert_eq!(value.json(), json);
+            assert_eq!(value.json().as_deref(), Some(json));
             assert_eq!(value, value);
         }
         assert_ne!(Scalar::Bool(false), Scalar::Unit);
@@ -1974,3 +2007,6 @@ mod composition_tests;
 
 #[cfg(test)]
 mod enum_integration_tests;
+
+#[cfg(test)]
+mod u8_tests;

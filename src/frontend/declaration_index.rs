@@ -6,6 +6,9 @@ mod enum_views;
 mod resource;
 mod sealed;
 mod source_owner;
+#[cfg(test)]
+mod u8_integration_tests;
+mod u8_reservation;
 pub(super) use source_owner::SourceOwner;
 #[cfg(test)]
 mod builtin_tests;
@@ -281,20 +284,30 @@ struct Scratch {
 // Conservative explicit fixed-state envelope. The 128-word bank covers scalar
 // item handles, counters, ranges and formatter arithmetic; row copies and other
 // association handles are listed separately. Disjoint build/query/format phases are deliberately
-// summed. Test-only event Vec headers/payloads are excluded.
+// summed, except the explicitly named u8 reservation/preflight phase overlay
+// on the noncoexisting prepared-name pair. No counter-bank credit is taken.
+// Test-only event Vec headers/payloads are excluded.
 // The prior absolute record/callee -> select -> absolute_endpoint -> segments
 // chain has four by-value ItemPathRef handles (20 measured words). Name that
 // inherited obligation inside the unchanged 128-word bank. The other 108 words
 // retain the historical scalar/range/arithmetic envelope; this change does not
 // independently re-prove that older bank's complete slot-level occupancy.
 const ITEM_HANDLE_WORDS: usize = size_of::<[ItemPathRef; 4]>() / size_of::<usize>();
+const PREPARED_OR_RESERVATION: usize = {
+    let pair = 2 * size_of::<PreparedTypeName<'static>>();
+    if u8_reservation::PHASE_BYTES > pair {
+        u8_reservation::PHASE_BYTES
+    } else {
+        pair
+    }
+};
 const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<IndexPlan>()
     + size_of::<Counts>()
     + size_of::<Tables<'static>>()
     + size_of::<[u32; 33]>() * 3
     + size_of::<ImportTxn>()
-    + size_of::<PreparedTypeName<'static>>() * 2
+    + PREPARED_OR_RESERVATION
     + size_of::<[ItemPathRef; 4]>()
     + size_of::<[usize; 128 - ITEM_HANDLE_WORDS]>()
     + size_of::<[u64; 2]>()
@@ -1203,6 +1216,9 @@ impl<'i, 's> QuerySession<'i, 's> {
                     }
                     if compare_bytes(spelling, "i32", self.work, name)? == Ordering::Equal {
                         return Ok(ValueTy::Scalar(Ty::I32));
+                    }
+                    if compare_bytes(spelling, "u8", self.work, name)? == Ordering::Equal {
+                        return Ok(ValueTy::Scalar(Ty::U8));
                     }
                 }
                 self.lookup_nominal_type(

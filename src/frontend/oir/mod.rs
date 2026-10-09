@@ -145,6 +145,16 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    CheckedI32ToU8 {
+        operand: Operand,
+        name_span: Span,
+        source_expr: crate::frontend::ast::ExprId,
+    },
+    U8ToI32 {
+        operand: Operand,
+        name_span: Span,
+        source_expr: crate::frontend::ast::ExprId,
+    },
     Load(Place),
     NotBool {
         operand: Operand,
@@ -220,6 +230,9 @@ impl VerifiedProgram {
         if function.param_count != 0 {
             return Err(RunFailure::Entry(Some(function.span)));
         }
+        if function.result == hir::Ty::U8 {
+            return Err(RunFailure::ByteEntry(function.span));
+        }
         execute::run(self, id)
     }
     pub(super) fn function_count(&self) -> usize {
@@ -246,6 +259,7 @@ enum FailureKind {
     AlreadyInitialized,
     Unreachable,
     InvalidSpan,
+    UnauthenticatedConversion,
     BuilderClosed,
     IncompleteBody,
     Accounting,
@@ -282,6 +296,7 @@ impl OirFailure {
 pub(super) enum Scalar {
     Bool(bool),
     I32(i32),
+    U8(u8),
     Unit,
 }
 impl Scalar {
@@ -289,15 +304,18 @@ impl Scalar {
         match self {
             Self::Bool(_) => hir::Ty::Bool,
             Self::I32(_) => hir::Ty::I32,
+            Self::U8(_) => hir::Ty::U8,
             Self::Unit => hir::Ty::Unit,
         }
     }
-    pub(super) fn json(self) -> String {
-        match self {
+    /// Public entry results retain the closed bool/i32/unit schema.
+    pub(super) fn json(self) -> Option<String> {
+        Some(match self {
             Self::Bool(value) => format!("{{\"type\":\"bool\",\"value\":{value}}}"),
             Self::Unit => "{\"type\":\"unit\"}".into(),
             Self::I32(value) => format!("{{\"type\":\"i32\",\"value\":{value}}}"),
-        }
+            Self::U8(_) => return None,
+        })
     }
 }
 impl std::fmt::Display for Scalar {
@@ -306,17 +324,20 @@ impl std::fmt::Display for Scalar {
             Self::Bool(value) => write!(f, "{value}"),
             Self::I32(value) => write!(f, "{value}"),
             Self::Unit => f.write_str("()"),
+            Self::U8(_) => Err(std::fmt::Error),
         }
     }
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum RunFailure {
     Entry(Option<Span>),
+    ByteEntry(Span),
     Fuel(Span),
     Frames(Span),
     Slots(Span),
     Overflow(Span),
     DivisionByZero(Span),
+    ByteRange(Span),
     Internal(OirFailure),
 }
 impl RunFailure {
@@ -328,11 +349,13 @@ impl RunFailure {
                 None,
             ),
             Self::Entry(span) => ("E0600", "typed-preview main must have no parameters", span),
+            Self::ByteEntry(span) => ("E0600", "typed-preview main must return bool, i32 or ()", Some(span)),
             Self::Fuel(span) => ("E0601", "execution fuel exhausted", Some(span)),
             Self::Frames(span) => ("E0602", "live call-frame limit exceeded", Some(span)),
             Self::Slots(span) => ("E0603", "live local-slot limit exceeded", Some(span)),
             Self::Overflow(span) => ("E0604", "checked i32 arithmetic overflow", Some(span)),
             Self::DivisionByZero(span) => ("E0607", "checked i32 division by zero", Some(span)),
+            Self::ByteRange(span) => ("E0610", "checked i32 to u8 conversion out of range", Some(span)),
             Self::Internal(ref error) => return error.diagnostic(sources),
         };
         Diagnostic::new(
@@ -406,3 +429,9 @@ mod negation_raw_tests;
 
 #[cfg(test)]
 mod unary_source_tests;
+
+#[cfg(test)]
+mod u8_tests;
+
+#[cfg(test)]
+mod u8_carrier_tests;

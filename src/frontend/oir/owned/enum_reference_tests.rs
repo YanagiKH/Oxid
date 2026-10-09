@@ -484,6 +484,9 @@ fn enum_reference_poisoned_destinations_copy_only_tag_and_active_bytes() {
             copies += 1;
             assert_eq!(&snapshot.bytes[..4], &(constructed as u32).to_le_bytes());
             match payload {
+                Some(hir::Ty::U8) => {
+                    unreachable!("u8 is outside this predecessor fixture or observation domain")
+                }
                 None => assert_eq!(&snapshot.bytes[4..], &[0xa5; 4]),
                 Some(hir::Ty::Bool) => {
                     assert_eq!(snapshot.bytes[4], 1);
@@ -921,6 +924,9 @@ fn enum_reference_changed_variant_replacement_every_fuel_and_active_bytes() {
                 assert_eq!((replaced.state, replaced.key.generation), old_identity);
                 assert_eq!(&replaced.bytes[..4], &(replacement as u32).to_le_bytes());
                 let active_end = match e::MIXED[replacement] {
+                    Some(hir::Ty::U8) => {
+                        unreachable!("u8 is outside this predecessor fixture or observation domain")
+                    }
                     None => 4,
                     Some(hir::Ty::Bool | hir::Ty::Unit) => 5,
                     Some(hir::Ty::I32) => 8,

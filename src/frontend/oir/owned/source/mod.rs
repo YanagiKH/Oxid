@@ -1,5 +1,5 @@
 //! Owned-source producer. The raw verifier alone certifies ownership.
-mod association;
+pub(super) mod association;
 mod budget;
 mod builtin_lower;
 pub(super) mod hir;
@@ -69,3 +69,8 @@ mod enum_native_source_tests;
 
 #[cfg(test)]
 mod output_source_tests;
+
+#[cfg(test)]
+pub(super) mod u8_tests;
+
+mod u8_resources;

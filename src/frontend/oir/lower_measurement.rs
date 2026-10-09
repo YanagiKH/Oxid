@@ -241,3 +241,157 @@ fn activation_rejects_nesting_and_resets_on_finish_and_unwind() {
     .is_err());
     assert_eq!(begin().finish().expression_frames_capacity_max, 0);
 }
+
+#[test]
+fn u8_lower_carrier_size_and_alignment_measurements() {
+    println!(
+        "u8_lower_carrier frame size={} align={}",
+        size_of::<Frame>(),
+        std::mem::align_of::<Frame>()
+    );
+    println!(
+        "u8_lower_carrier expression_frame size={} align={}",
+        size_of::<ExprFrame>(),
+        std::mem::align_of::<ExprFrame>()
+    );
+    println!(
+        "u8_lower_carrier binding_location size={} align={}",
+        size_of::<BindingLocation>(),
+        std::mem::align_of::<BindingLocation>()
+    );
+    println!(
+        "u8_lower_carrier loop_targets size={} align={}",
+        size_of::<LoopTargets>(),
+        std::mem::align_of::<LoopTargets>()
+    );
+    println!(
+        "u8_lower_carrier option_loop_targets size={} align={}",
+        size_of::<Option<LoopTargets>>(),
+        std::mem::align_of::<Option<LoopTargets>>()
+    );
+    println!(
+        "u8_lower_carrier hir_loop_id size={} align={}",
+        size_of::<hir::LoopId>(),
+        std::mem::align_of::<hir::LoopId>()
+    );
+    println!(
+        "u8_lower_carrier local_id size={} align={}",
+        size_of::<LocalId>(),
+        std::mem::align_of::<LocalId>()
+    );
+    println!(
+        "u8_lower_carrier block_builder size={} align={}",
+        size_of::<BlockBuilder>(),
+        std::mem::align_of::<BlockBuilder>()
+    );
+    println!(
+        "u8_lower_carrier program size={} align={}",
+        size_of::<Program>(),
+        std::mem::align_of::<Program>()
+    );
+    println!(
+        "u8_lower_carrier function size={} align={}",
+        size_of::<Function>(),
+        std::mem::align_of::<Function>()
+    );
+    println!(
+        "u8_lower_carrier local_decl size={} align={}",
+        size_of::<LocalDecl>(),
+        std::mem::align_of::<LocalDecl>()
+    );
+    println!(
+        "u8_lower_carrier place_decl size={} align={}",
+        size_of::<PlaceDecl>(),
+        std::mem::align_of::<PlaceDecl>()
+    );
+    println!(
+        "u8_lower_carrier basic_block size={} align={}",
+        size_of::<BasicBlock>(),
+        std::mem::align_of::<BasicBlock>()
+    );
+    println!(
+        "u8_lower_carrier statement size={} align={}",
+        size_of::<Statement>(),
+        std::mem::align_of::<Statement>()
+    );
+    println!(
+        "u8_lower_carrier operand size={} align={}",
+        size_of::<Operand>(),
+        std::mem::align_of::<Operand>()
+    );
+    println!(
+        "u8_lower_carrier local_map_vec size={} align={}",
+        size_of::<Vec<BindingLocation>>(),
+        std::mem::align_of::<Vec<BindingLocation>>()
+    );
+    println!(
+        "u8_lower_carrier expression_map_vec size={} align={}",
+        size_of::<Vec<LocalId>>(),
+        std::mem::align_of::<Vec<LocalId>>()
+    );
+    println!(
+        "u8_lower_carrier loop_targets_vec size={} align={}",
+        size_of::<Vec<Option<LoopTargets>>>(),
+        std::mem::align_of::<Vec<Option<LoopTargets>>>()
+    );
+    println!(
+        "u8_lower_carrier active_loops_vec size={} align={}",
+        size_of::<Vec<hir::LoopId>>(),
+        std::mem::align_of::<Vec<hir::LoopId>>()
+    );
+    println!(
+        "u8_lower_carrier frames_vec size={} align={}",
+        size_of::<Vec<Frame>>(),
+        std::mem::align_of::<Vec<Frame>>()
+    );
+    println!(
+        "u8_lower_carrier expression_frames_vec size={} align={}",
+        size_of::<Vec<ExprFrame>>(),
+        std::mem::align_of::<Vec<ExprFrame>>()
+    );
+    println!(
+        "u8_lower_carrier functions_vec size={} align={}",
+        size_of::<Vec<Function>>(),
+        std::mem::align_of::<Vec<Function>>()
+    );
+    println!(
+        "u8_lower_carrier locals_vec size={} align={}",
+        size_of::<Vec<LocalDecl>>(),
+        std::mem::align_of::<Vec<LocalDecl>>()
+    );
+    println!(
+        "u8_lower_carrier places_vec size={} align={}",
+        size_of::<Vec<PlaceDecl>>(),
+        std::mem::align_of::<Vec<PlaceDecl>>()
+    );
+    println!(
+        "u8_lower_carrier blocks_vec size={} align={}",
+        size_of::<Vec<BasicBlock>>(),
+        std::mem::align_of::<Vec<BasicBlock>>()
+    );
+    println!(
+        "u8_lower_carrier statements_vec size={} align={}",
+        size_of::<Vec<Statement>>(),
+        std::mem::align_of::<Vec<Statement>>()
+    );
+    println!(
+        "u8_lower_carrier operands_vec size={} align={}",
+        size_of::<Vec<Operand>>(),
+        std::mem::align_of::<Vec<Operand>>()
+    );
+    println!(
+        "u8_lower_carrier lower_result size={} align={}",
+        size_of::<Result<Program, OirFailure>>(),
+        std::mem::align_of::<Result<Program, OirFailure>>()
+    );
+    println!(
+        "u8_lower_carrier builder_result size={} align={}",
+        size_of::<Result<Vec<BasicBlock>, OirFailure>>(),
+        std::mem::align_of::<Result<Vec<BasicBlock>, OirFailure>>()
+    );
+    println!(
+        "u8_lower_carrier unit_result size={} align={}",
+        size_of::<Result<(), OirFailure>>(),
+        std::mem::align_of::<Result<(), OirFailure>>()
+    );
+}

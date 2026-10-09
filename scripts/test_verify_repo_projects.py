@@ -95,9 +95,17 @@ class ProjectRegistrationTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        data = Path('tests/fixtures/fixed_array_source_unit3')
-        shutil.copytree(verify_repo.ROOT / data, self.root / data)
+        for data in (Path('tests/fixtures/fixed_array_source_unit3'),
+                     Path('tests/qualification/bounded_u8_current')):
+            shutil.copytree(verify_repo.ROOT / data, self.root / data)
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
+        self.assertEqual(len(self.data_sources), 188)
+        u8_root = self.root / 'tests/qualification/bounded_u8_current/oracle'
+        u8_expected = {u8_root / ('pairs-' + mode + '-' + format(index, '02d') + '.ox')
+                       for mode in ('owned', 'scalar') for index in range(32)}
+        u8_expected |= {u8_root / 'roundtrip-owned.ox', u8_root / 'roundtrip-scalar.ox'}
+        self.assertEqual({path for path in self.data_sources if u8_root in path.parents}, u8_expected)
+        self.assertEqual(len(set(self.data_sources) - u8_expected), 122)
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]

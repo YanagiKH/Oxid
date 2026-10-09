@@ -70,3 +70,10 @@ remains a separate proposal.
 
 [RFC 0029](0029-package-sha256-integrity.md) proposes SHA-256 package-tree
 integrity with explicit legacy-FNV migration; independent acceptance is pending.
+
+[RFC 0030](0030-bounded-u8-scalar-core.md) approves a bounded unsigned-byte scalar
+contract for implementation planning: explicit checked narrowing, exact widening,
+unsigned comparison and scalar helper transport. Byte aggregates/arithmetic and
+I/O migration remain excluded. Implementation and work/byte resource admission
+remain unqualified; the contract records explicit type-name migration and
+unchanged producer-protocol boundaries.

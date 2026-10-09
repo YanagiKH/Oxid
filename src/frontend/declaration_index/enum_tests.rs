@@ -614,7 +614,13 @@ fn enum_index_duplicate_scan_has_independent_pair_and_byte_work() {
         .position(|event| event.operation == "variant duplicate pair")
         .unwrap()
         + before;
-    let actual: u64 = events[begin..]
+    // U8-INDEX-INTEGRATION-1 keeps the historical variant census at its
+    // original phase boundary; reservation's finite comparison is separately paid.
+    let end = events
+        .iter()
+        .position(|event| event.operation == "u8 order module")
+        .unwrap();
+    let actual: u64 = events[begin..end]
         .iter()
         .filter(|event| {
             matches!(
@@ -1059,7 +1065,15 @@ fn enum_index_mandatory_build_work_threshold_precedes_all_reservations() {
         (81, 17, 44)
     );
     // 30 visits*16 +128 +14 duplicate bound +96*5 +19*2 +46*2 +30+324.
-    assert_eq!(plan.build_work, 1586);
+    let predecessor = 1586;
+    // M=3, O=15, I=2, R=3, E=5: U=6+51+40=97.
+    let reservation_bound = 2 * 3 + 3 * (15 + 2) + 4 * (3 + 5 + 2);
+    assert_eq!(reservation_bound, 97);
+    assert_eq!(plan.build_work, predecessor + reservation_bound);
+    println!(
+        "U8-INDEX-INTEGRATION-1 enum predecessor=1586 successor={} delta=97",
+        plan.build_work
+    );
     let preflight: u64 = work
         .events
         .borrow()
@@ -1067,11 +1081,12 @@ fn enum_index_mandatory_build_work_threshold_precedes_all_reservations() {
         .filter(|event| event.operation == "preflight visit")
         .map(|event| event.units)
         .sum();
-    let mandatory = preflight + 1586;
+    let mandatory = preflight + predecessor + reservation_bound;
     facts.finish(&work, &mut allocator).unwrap();
     // This is a whole-pipeline single-meter control, separate from staged rollback tests.
     assert!(work.used() <= mandatory);
     for (limit, ok) in [
+        (preflight + predecessor, false),
         (mandatory - 1, false),
         (mandatory, true),
         (mandatory + 1, true),

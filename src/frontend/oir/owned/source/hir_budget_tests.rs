@@ -7,6 +7,16 @@ use crate::frontend::{
 };
 use std::mem::{align_of, size_of};
 
+// RFC0030 explicitly adds a separate carrier bank. Keep every predecessor
+// equation below intact after subtracting this named, independently measured
+// successor. Exact host measurement is not a whole-process memory claim.
+fn rfc0030_fixed_successor() -> usize {
+    let bytes = super::super::u8_resources::fixed_bytes();
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(bytes, 15_400 + 624 + 712); // association plan/caller plus actual-capacity walk roles
+    bytes
+}
+
 fn parse(sources: &SourceMap) -> ast::Program {
     let file = sources.get(SourceFileId(0));
     parser::parse_enum_candidate_counted(
@@ -702,7 +712,7 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
     assert!(size_of::<CursorTemporaries>() >= cursors);
     assert!(size_of::<ScalarReturnEnvelope>() >= scalars);
     assert_eq!(
-        plan.fixed,
+        plan.fixed - rfc0030_fixed_successor(),
         size_of::<typeck::TypedOwnedProgram<'_>>()
             + size_of::<PlanReturnEnvelope>()
             + size_of::<CapacityReturnEnvelope>()
@@ -829,6 +839,7 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
     assert_eq!(
         base.fixed
+            - rfc0030_fixed_successor()
             - legacy_fixed
             - typeck::borrowed_check_carrier_bytes()
             - resolve::denied_type_probe_carrier_bytes()
@@ -1185,7 +1196,10 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
         + production_entry_components()
         + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
-    assert_eq!(base.fixed - before_observation, observation.0);
+    assert_eq!(
+        base.fixed - rfc0030_fixed_successor() - before_observation,
+        observation.0
+    );
     for scale in [0, 1, 2, 3] {
         // Scalar resource arithmetic only, not a forged source/HIR witness.
         let c = HirCounts {
@@ -1314,7 +1328,7 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
         + size_of::<[Option<ExprCursor>; MAX_NESTING]>()
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
     let delta = resolve::enum_type_observation_return_bytes() - old_return;
-    assert_eq!(plan.fixed - old_fixed, delta);
+    assert_eq!(plan.fixed - rfc0030_fixed_successor() - old_fixed, delta);
     #[cfg(target_pointer_width = "64")]
     {
         // The added signature count widens the complete returned facts by 8.

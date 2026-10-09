@@ -86,6 +86,9 @@ fn add_other_root(
             raw::assign(
                 local,
                 literal(match ty {
+                    hir::Ty::U8 => {
+                        unreachable!("u8 is outside this predecessor fixture or observation domain")
+                    }
                     hir::Ty::Bool => Scalar::Bool(true),
                     hir::Ty::I32 => Scalar::I32(77),
                     hir::Ty::Unit => Scalar::Unit,

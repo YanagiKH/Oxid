@@ -81,7 +81,13 @@ class RecordObserverPackageControls(unittest.TestCase):
 
     def test_normal_and_optimized_reversal_and_scope_controls(self):
         with admitted_composition_view() as (view, captured):
-            self.assertEqual(len(captured['inputs']), 345)
+            current_members = {row['path'] for row in captured['current']['files']}
+            self.assertEqual(set(captured['inputs']), current_members)
+            self.assertEqual(len(current_members), 363)
+            for row in captured['current']['files']:
+                raw = captured['inputs'][row['path']]
+                self.assertEqual(len(raw), row['bytes'])
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), row['sha256'])
             self.assertEqual(len(captured['enum_inputs']), 237)
             self.assertEqual(len(captured['projected_inputs']), 201)
             self.assertEqual(len(captured['composition_inputs']), 196)

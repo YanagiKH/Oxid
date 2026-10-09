@@ -15,7 +15,9 @@ import sys
 from pathlib import Path, PurePosixPath
 from contracts import need, sha, load, save, binding, verify
 from runtime import source_manifest, process
-from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA, PROJECTED_LIFECYCLE_PATCH_SHA, ENUM_LIFECYCLE_PATCH_SHA
+from authority import CURRENT_SOURCE_SHA, CURRENT_FILES_SHA, LIFECYCLE_PATCH_SHA, OBSERVER_FILES_SHA, HISTORICAL_LIFECYCLE_PATCH_SHA, PROJECTED_LIFECYCLE_PATCH_SHA, ENUM_LIFECYCLE_PATCH_SHA, STDIN_LIFECYCLE_PATCH_SHA, CACHE_ADMISSION_AUTHORITY_SHA
+
+U8_LIFECYCLE_SEAMS = ((b'@@ -57,6 +61,7 @@\n         let verified = verify::verify(raw, sources).map_err(|e| vec![*e.diagnostic(sources)])?;\n', b'@@ -60,7 +64,8 @@\n         let verified =\n             verify::verify_associated(associated).map_err(|e| vec![*e.diagnostic(sources)])?;\n'),)
 
 # Two context-only insertions preserve the exact enum observer and event hooks.
 STDIN_LIFECYCLE_SEAMS = (
@@ -120,8 +122,15 @@ def observer_path_order(paths, root):
 
 def verify_lifecycle_successor(raw):
     """Restore both pinned predecessors without changing logical event meaning."""
+    need(sha(Path(__file__).with_name('cache_admission_authority.py').read_bytes()) == CACHE_ADMISSION_AUTHORITY_SHA, 'immutable cache admission public authority')
     need(sha(raw) == LIFECYCLE_PATCH_SHA, 'exact current lifecycle successor')
-    enum = raw
+    stdin = raw
+    for before, after in reversed(U8_LIFECYCLE_SEAMS):
+        need(stdin.count(after) == 1, "exact u8 lifecycle context")
+        stdin = stdin.replace(after, before, 1)
+    need(sha(stdin) == STDIN_LIFECYCLE_PATCH_SHA, "u8 lifecycle restores exact stdin patch")
+    need(stdin == Path(__file__).with_name("observer-stdin-v1.patch").read_bytes(), "retained stdin lifecycle changed")
+    enum = stdin
     for before, after in reversed(STDIN_LIFECYCLE_SEAMS):
         need(enum.count(after) == 1, 'exact stdin lifecycle context')
         enum = enum.replace(after, before, 1)

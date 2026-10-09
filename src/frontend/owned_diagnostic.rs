@@ -432,7 +432,7 @@ fn record_copy(bytes: usize) {
 }
 
 #[cfg(test)]
-fn fail_allocation_after<T>(count: usize, operation: impl FnOnce() -> T) -> T {
+pub(super) fn fail_allocation_after<T>(count: usize, operation: impl FnOnce() -> T) -> T {
     struct Reset(Option<usize>);
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -441,6 +441,89 @@ fn fail_allocation_after<T>(count: usize, operation: impl FnOnce() -> T) -> T {
     }
     let _reset = Reset(ALLOCATION_FAILURE.with(|point| point.replace(Some(count))));
     operation()
+}
+
+/// Repository-owned diagnostic roles used by the u8 reservation phase ledger.
+/// No constructor behavior or allocation policy is changed.
+pub(super) const fn u8_error_phase_layouts() -> [(&'static str, usize, usize); 7] {
+    macro_rules! row {
+        ($label:literal,$ty:ty) => {
+            (
+                $label,
+                std::mem::size_of::<$ty>(),
+                std::mem::align_of::<$ty>(),
+            )
+        };
+    }
+    [
+        row!(
+            "owned diagnostic arguments",
+            (
+                &'static str,
+                &'static str,
+                fmt::Arguments<'static>,
+                Option<Span>,
+                Box<Diagnostic>
+            )
+        ),
+        row!(
+            "diagnostic_with_limits arguments",
+            (
+                &'static str,
+                &'static str,
+                fmt::Arguments<'static>,
+                Option<Span>,
+                Limits,
+                Box<Diagnostic>
+            )
+        ),
+        row!(
+            "component arguments, writer and return",
+            (
+                fmt::Arguments<'static>,
+                usize,
+                BoundedText,
+                Result<String, ()>,
+                fmt::Result
+            )
+        ),
+        row!(
+            "BoundedText::new reserve branch",
+            (
+                usize,
+                String,
+                Result<BoundedText, ()>,
+                Result<(), std::collections::TryReserveError>,
+                std::ops::RangeInclusive<usize>
+            )
+        ),
+        row!(
+            "bounded writer and copy requests",
+            (
+                &'static mut BoundedText,
+                &'static str,
+                &'static mut BoundedText,
+                &'static str,
+                usize,
+                usize,
+                fmt::Result
+            )
+        ),
+        row!(
+            "resource fallback arguments and result",
+            (&'static str, Option<Span>, Box<Diagnostic>)
+        ),
+        row!(
+            "Limits::valid copied value/range/borrow/result",
+            (
+                Limits,
+                std::ops::RangeInclusive<usize>,
+                &usize,
+                &std::ops::RangeInclusive<usize>,
+                bool
+            )
+        ),
+    ]
 }
 
 #[cfg(test)]

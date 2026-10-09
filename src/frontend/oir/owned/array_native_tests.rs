@@ -175,6 +175,9 @@ fn owner(ty: hir::Ty, n: usize, kind: OwnerKind, span: Span) -> OwnerDecl {
 
 fn literal(value: Scalar) -> Rvalue {
     match value {
+        Scalar::U8(_) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Scalar::Bool(value) => Rvalue::Bool(value),
         Scalar::I32(value) => Rvalue::I32(value),
         Scalar::Unit => Rvalue::Unit,
@@ -232,6 +235,9 @@ impl Core {
 
     fn value(self, index: usize) -> Scalar {
         match self.ty {
+            hir::Ty::U8 => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             hir::Ty::I32 if self.extremes || self.n == 1024 => {
                 Scalar::I32(if index.is_multiple_of(2) {
                     i32::MIN
@@ -247,6 +253,9 @@ impl Core {
 
     fn replacement(self) -> Scalar {
         match self.ty {
+            hir::Ty::U8 => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             hir::Ty::I32 if self.extremes => {
                 Scalar::I32(if self.index == 0 { i32::MAX } else { i32::MIN })
             }
@@ -572,6 +581,9 @@ struct Transfer {
 impl Transfer {
     fn seed(self, i: usize) -> Scalar {
         match self.ty {
+            hir::Ty::U8 => {
+                unreachable!("u8 is outside this predecessor fixture or observation domain")
+            }
             hir::Ty::Bool => Scalar::Bool(i.is_multiple_of(2)),
             hir::Ty::I32 => Scalar::I32(113 - 41 * i as i32),
             hir::Ty::Unit => Scalar::Unit,

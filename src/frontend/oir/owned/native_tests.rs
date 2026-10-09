@@ -408,6 +408,9 @@ impl Drop for Scratch {
 }
 fn scalar_output(value: Scalar) -> Vec<u8> {
     match value {
+        Scalar::U8(_) => {
+            unreachable!("u8 is outside this predecessor fixture or observation domain")
+        }
         Scalar::Bool(v) => format!("{v}\n"),
         Scalar::I32(v) => format!("{v}\n"),
         Scalar::Unit => "()\n".into(),

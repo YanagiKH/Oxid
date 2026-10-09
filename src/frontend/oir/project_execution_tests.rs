@@ -46,6 +46,43 @@ fn checked(project: &ProjectSources) -> Result<CheckedSourceProgram<'_>, Vec<Dia
 }
 #[cfg(target_os = "linux")]
 #[test]
+fn u8_project_annotation_only_helpers_stay_scalar() {
+    let fixture = Fixture::new(&[
+        ("app.ox", "mod child; fn main()->i32{return 4;}"),
+        ("child.ox", "pub fn identity(value:u8)->u8{return value;}"),
+    ]);
+    let project = fixture.load();
+    let result = checked(&project).unwrap();
+    assert_eq!(result.route(), ProjectRoute::Scalar);
+    assert_eq!(result.run().unwrap(), Scalar::I32(4));
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn u8_project_byte_entry_has_scalar_entry_diagnostic() {
+    let text = "mod child; fn main()->u8{let n=0;return n.to_u8_checked();}";
+    let fixture = Fixture::new(&[("app.ox", text), ("child.ox", "fn f()->(){return;}")]);
+    let project = fixture.load();
+    let result = checked(&project).unwrap();
+    assert_eq!(result.route(), ProjectRoute::Scalar);
+    let error = result.run().unwrap_err();
+    assert_eq!((error.code, error.stage), ("E0600", "oir-run"));
+    assert_eq!(
+        error.message,
+        "typed-preview main must return bool, i32 or ()"
+    );
+    let start = text.find("main").unwrap();
+    assert_eq!(
+        error.primary,
+        Some(
+            project
+                .sources()
+                .get(crate::frontend::source::SourceFileId(0))
+                .span(start, start + 4)
+        )
+    );
+}
+#[cfg(target_os = "linux")]
+#[test]
 fn scalar_project_uses_original_root_entry_and_global_calls() {
     let fixture = Fixture::new(&[
         ("app.ox", "mod child; use crate::child::sum as add; fn helper()->i32{return 91;} fn main()->i32{return add(2,3);}"),
@@ -61,7 +98,14 @@ fn scalar_project_uses_original_root_entry_and_global_calls() {
     let counts = super::super::source::association::last_usage().unwrap();
     assert_eq!(counts.count, counts.validation);
     assert_eq!(counts.validation.declarations, 4);
-    assert_eq!(counts.dimensions, 1);
+    const PREDECESSOR_DIMENSIONS: usize = 1; // Function-count correspondence.
+                                             // One paid assignment discriminator each: helper's literal; main's two
+                                             // argument literals; sum's two read snapshots and addition; child's read.
+    const U8_ASSIGNMENT_DISCRIMINATORS: usize = 1 + 2 + (2 + 1) + 1;
+    assert_eq!(
+        counts.dimensions,
+        PREDECESSOR_DIMENSIONS + U8_ASSIGNMENT_DISCRIMINATORS
+    );
     assert!(
         counts.validation.declarations + counts.validation.spans
             <= 17 * project.usage().syntax_nodes
@@ -84,7 +128,14 @@ fn owned_project_links_nominals_and_preserves_nonzero_entry() {
     let counts = super::super::source::association::last_usage().unwrap();
     assert_eq!(counts.count, counts.validation);
     assert_eq!(counts.validation.declarations, 8);
-    assert_eq!(counts.dimensions, 3);
+    const PREDECESSOR_DIMENSIONS: usize = 3;
+    // Scalar assignments only: helper's 91; make's field literal 4; bump's
+    // literal 1, addition and unit return. Owned reads/calls are not Assign.
+    const U8_ASSIGNMENT_DISCRIMINATORS: usize = 1 + 1 + 3;
+    assert_eq!(
+        counts.dimensions,
+        PREDECESSOR_DIMENSIONS + U8_ASSIGNMENT_DISCRIMINATORS
+    );
 }
 #[cfg(target_os = "linux")]
 #[test]
