@@ -1,10 +1,10 @@
 # SHA-256 package-integrity source successor
 
-The active source checkpoint is `18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`,
-full tree `0aace4201e2e63420e72132338ccf01fff40c344`. Its 345 selected inputs,
+The active source checkpoint is `3315ad42a98cbd033f88fbec676793dec5e0be4a`,
+full tree `243e6e55d179a362569ab353aa207eaa95e5ba1b`. Its 345 selected inputs,
 257 src/native members and 260 compiler/build bodies keep the previous roster.
 Only `src/runtime/packages.rs` differs. The current manifest SHA-256 is
-`ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0`.
+`4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f`.
 
 `lexical-provider-source.json` retains the prior current manifest byte-for-byte.
 Every previous authority, helper and transition patch remains unchanged. The new
@@ -16,7 +16,7 @@ historical view cannot hide a changed input or unexpected sibling.
 
 The patch recipe is `git diff --binary --no-ext-diff --no-renames --abbrev=7
 4a9ba347757c7f7e44cb3a4a8fac23300b5c586f
-0aace4201e2e63420e72132338ccf01fff40c344 -- src/runtime/packages.rs`.
+243e6e55d179a362569ab353aa207eaa95e5ba1b -- src/runtime/packages.rs`.
 The base is published main `b50ecd3c1a8de7513f44311e85491c2ee3b2e0b0`;
 its selected source bytes exactly match the retained lexical checkpoint. This
 new source-only identity does not relabel previous historical execution evidence.

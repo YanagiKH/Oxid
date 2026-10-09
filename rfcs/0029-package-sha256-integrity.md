@@ -95,3 +95,12 @@ candidate head is required separately. This RFC does not claim v1.0 or M5 done.
 Implementation: `src/runtime/packages.rs`. Public CLI acceptance:
 `tests/package_integrity.rs`. Run the checks in `CONTRIBUTING.md`; record actual
 commands, results and unavailable checks in the validation report.
+
+### Raw filename fixture portability
+
+The observed macOS CI filesystem refuses construction of an invalid UTF-8
+filename with EILSEQ (OS error 92), before Oxid reads the directory. The raw-byte
+filename rejection fixture is therefore Linux-only; its creation must succeed
+and arbitrary I/O failures are not ignored. Included-symlink rejection remains
+a separate Unix test. Production filename validation and checksum semantics are
+unchanged. macOS qualification requires the updated exact-head hosted tests.

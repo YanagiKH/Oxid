@@ -24,7 +24,7 @@ spec = importlib.util.spec_from_file_location("bounded_stdin_controls", HELPERS 
 controls = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(controls)
 require = controls.require
-REVIEWED_SOURCE_SHA256 = "ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0"
+REVIEWED_SOURCE_SHA256 = "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f"
 MANIFEST_PATH = "tests/fixtures/typed_project_source_binding/current-source.json"
 CORE_PATHS = ("src", "native", "Cargo.toml", "Cargo.lock", "build.rs")
 HELPER_FILES = ("controls.py", "read_retry_shim.c", "calibration_probe.c", "smoke.txt", "test_controller.py")

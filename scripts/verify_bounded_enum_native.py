@@ -43,7 +43,7 @@ ELF_ENV = {"PATH": "/no-tools"}
 # Reviewed package-integrity successor executes the unchanged enum roster. The exact
 # 237-member enum predecessor remains in enum-source.json; current execution
 # uses the complete 345-member authority, never a caller-supplied subset.
-REVIEWED_SOURCE_SHA256 = 'ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0'
+REVIEWED_SOURCE_SHA256 = '4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f'
 
 
 def require(condition, message):

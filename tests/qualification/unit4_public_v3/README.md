@@ -242,7 +242,7 @@ producer-specific lifecycle events or semantic expectations are inferred.
 ### Package-integrity source successor
 
 The active source manifest now binds package checkpoint
-`18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`. Its 345 inputs differ from the retained
+`3315ad42a98cbd033f88fbec676793dec5e0be4a`. Its 345 inputs differ from the retained
 lexical-provider source only at `src/runtime/packages.rs`. The unchanged lifecycle
 patch still derives exactly 346 observer inputs and the same eight changed
 frontend paths; package bytes remain identical between ordinary and observer

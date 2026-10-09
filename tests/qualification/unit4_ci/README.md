@@ -121,9 +121,9 @@ semantic and hosted coverage requirements remain unchanged.
 
 ## Current package-integrity source view
 
-The active source checkpoint is `18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`,
+The active source checkpoint is `3315ad42a98cbd033f88fbec676793dec5e0be4a`,
 with source manifest SHA-256
-`ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0`.
+`4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f`.
 The 345-member roster is unchanged; only `src/runtime/packages.rs` changes.
 The exact package-integrity inverse restores the retained lexical source before
 all unchanged earlier inverses. Current ordinary and lifecycle-observer map pins

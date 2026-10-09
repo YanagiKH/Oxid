@@ -265,8 +265,8 @@ class CurrentAuthorityControls(unittest.TestCase):
  'tests/fixtures/producer_diagnostic/unknown-type.bin',
  'tests/typed_record_composition.rs'])
         self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 81)
-        self.assertEqual(a['current']['reviewed_source_head'], '18959c4bd6117e89e6cfe830ca38077b4f7cfcd2')
-        self.assertEqual(a['current']['source_only_tree'], '0aace4201e2e63420e72132338ccf01fff40c344')
+        self.assertEqual(a['current']['reviewed_source_head'], '3315ad42a98cbd033f88fbec676793dec5e0be4a')
+        self.assertEqual(a['current']['source_only_tree'], '243e6e55d179a362569ab353aa207eaa95e5ba1b')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read

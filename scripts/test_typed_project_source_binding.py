@@ -136,8 +136,8 @@ class SourceBindingTests(unittest.TestCase):
         }
         for name, digest in expected.items():
             self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"], "18959c4bd6117e89e6cfe830ca38077b4f7cfcd2")
-        self.assertEqual(self.captured["current"]["source_only_tree"], "0aace4201e2e63420e72132338ccf01fff40c344")
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], "3315ad42a98cbd033f88fbec676793dec5e0be4a")
+        self.assertEqual(self.captured["current"]["source_only_tree"], "243e6e55d179a362569ab353aa207eaa95e5ba1b")
         self.assertNotIn("package_integrity_helper", self.captured)
         output = self.root / "package-archive"
         output.mkdir()

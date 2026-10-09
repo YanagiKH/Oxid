@@ -1711,15 +1711,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn sha256_rejects_included_symlinks_and_non_utf8_names() {
-        use std::os::unix::{ffi::OsStringExt, fs::symlink};
-        let root = TestDir::new("sha-path-rejections");
+    fn sha256_rejects_included_symlinks() {
+        use std::os::unix::fs::symlink;
+        let root = TestDir::new("sha-symlink-rejection");
         write(root.path().join("file"), "data");
         symlink("file", root.path().join("link")).unwrap();
         assert!(hash_package_tree(root.path())
             .unwrap_err()
             .contains("symbolic links"));
-        fs::remove_file(root.path().join("link")).unwrap();
+    }
+
+    // macOS CI's filesystem rejects this name with EILSEQ before Oxid reads it.
+    // Keep raw-byte filename coverage on Linux; fixture I/O failures still fail.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn sha256_rejects_non_utf8_names_on_linux() {
+        use std::os::unix::ffi::OsStringExt;
+        let root = TestDir::new("sha-non-utf8-rejection");
         fs::write(root.path().join(OsString::from_vec(vec![255])), b"data").unwrap();
         assert!(hash_package_tree(root.path())
             .unwrap_err()

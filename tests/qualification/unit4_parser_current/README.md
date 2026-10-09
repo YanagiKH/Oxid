@@ -217,8 +217,8 @@ Admission or preparation alone never qualifies runtime execution.
 
 ## Package SHA-256 source admission successor
 
-Current checkpoint `18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`, tree
-`0aace4201e2e63420e72132338ccf01fff40c344`, changes only
+Current checkpoint `3315ad42a98cbd033f88fbec676793dec5e0be4a`, tree
+`243e6e55d179a362569ab353aa207eaa95e5ba1b`, changes only
 `src/runtime/packages.rs` in the admitted 345-input source inventory. The exact
 one-file inverse restores all 345 retained lexical-provider source inputs before
 the unchanged lexical and older inverse chain. The outer patch is based on

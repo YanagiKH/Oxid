@@ -599,7 +599,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '43bb58c81d047502c82bd5f96eac795f6742afa9c4f4bb170b8116cffa4077a8'
+AUTHORITY_SHA = '974aebf4121f323f1674a19b7442d42e495c2075e99ae9f70c6cc1f1fb59a7a5'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
