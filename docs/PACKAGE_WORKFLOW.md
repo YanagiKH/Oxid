@@ -23,3 +23,9 @@ project/
 ```
 
 Manifest scripts provide reusable project commands through `oxid script <name> [args...]`. Dependency resolution reads nested manifests and detects cycles, while application source can import installed dependencies by their declared alias.
+
+New lock entries use SHA-256. Existing FNV entries remain verifiable until you
+explicitly run `oxid update`, which also accepts dependency/content changes as
+usual. Review the resulting lock diff. `--offline` is not a read-only lock mode;
+use `--locked` when the lock must remain unchanged. See the
+[checksum migration contract](PACKAGES.md#checksum-migration).

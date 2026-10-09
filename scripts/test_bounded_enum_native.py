@@ -355,7 +355,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
         self.assertEqual(len(reduced["files"]), 262)
-        self.assertEqual(reduced["reviewed_source_head"], "41c73d527f5518e09877544fa5820f3129f55b42")
+        self.assertEqual(reduced["reviewed_source_head"], "18959c4bd6117e89e6cfe830ca38077b4f7cfcd2")
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "current-source.json"
             candidate.write_text(json.dumps(reduced, sort_keys=True, indent=2) + "\n")
@@ -373,7 +373,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
+        expected = "ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0"
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]
@@ -391,12 +391,16 @@ class BoundedEnumNativeControls(unittest.TestCase):
         stale = (package / "producer-diagnostic-source.json").read_bytes()
         self.assertEqual(hashlib.sha256(stale).hexdigest(),
                          "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
+        lexical = (package / "lexical-provider-source.json").read_bytes()
+        self.assertEqual(hashlib.sha256(lexical).hexdigest(),
+                         "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db")
         forged_head = dict(current, reviewed_source_head="c15465acb90e9f8bb18f5291a8931f5d5bbc6edb")
         forged_rows = dict(current, files=[dict(row) for row in current["files"]])
         forged_rows["files"][0]["sha256"] = "0" * 64
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "source.json"
             for label, raw in (("stale predecessor", stale),
+                               ("retained lexical predecessor", lexical),
                                ("same-count wrong head", (json.dumps(forged_head, sort_keys=True, indent=2) + "\n").encode()),
                                ("same-count wrong input", (json.dumps(forged_rows, sort_keys=True, indent=2) + "\n").encode())):
                 candidate.write_bytes(raw)

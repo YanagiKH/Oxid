@@ -54,6 +54,31 @@ class SourceAuthorityControls(unittest.TestCase):
             'src/frontend/lifecycle_observer.rs'})
         self.assertEqual(json.loads((self.output / 'prepared.json').read_bytes())['compiler_invocations'], 0)
 
+    def test_package_successor_restores_exact_prior_observer_map(self):
+        original_path = self.repo / 'tests/fixtures/typed_project_source_binding/current-source.json'
+        previous_path = self.repo / 'tests/fixtures/typed_project_source_binding/lexical-provider-source.json'
+        previous_raw = previous_path.read_bytes()
+        self.assertEqual(sha(previous_raw),
+                         '952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db')
+        current = json.loads(original_path.read_bytes())
+        previous = json.loads(previous_raw)
+        before = {row['path']: row for row in previous['files']}
+        after = {row['path']: row for row in current['files']}
+        self.assertEqual(set(before), set(after))
+        self.assertEqual([name for name in sorted(before) if before[name] != after[name]],
+                         ['src/runtime/packages.rs'])
+        name = 'src/runtime/packages.rs'
+        observed = {row['path']: row for row in self.manifest['files']}
+        self.assertEqual(observed[name], after[name])
+        self.assertNotIn(name, self.manifest['changed_paths'])
+        self.assertEqual((self.output / 'source' / name).read_bytes(), (self.repo / name).read_bytes())
+        restored = [before[name] if row['path'] == name else row for row in self.manifest['files']]
+        canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+        self.assertEqual(sha(canonical(previous['files'])),
+                         'b1155668118d1fb5dd4ce2ae650b0bf51fe26663b19a7a35531bc0519c7d68ab')
+        self.assertEqual(sha(canonical(restored)),
+                         'fe0cf3daa5b0590c1e8986403ca4d3505327c4a8e4b0781767d2271cd3190a85')
+
     def test_lexical_source_successor_preserves_prior_public_authority(self):
         retained = self.package / 'producer_diagnostic_authority.py'
         self.assertEqual(sha(retained.read_bytes()), '7224b8a3b760a339e35a57df8821f299fc48a4e3bbab09ce38731314434cbbf5')

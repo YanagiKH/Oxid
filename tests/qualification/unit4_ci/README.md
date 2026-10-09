@@ -108,9 +108,9 @@ authority. Its receipt separately binds the 345-input current execution manifest
 the final join rejects a changed or swapped authority in either role.
 
 
-## Current lexical-provider source view
+## Retained lexical-provider source view
 
-The active source successor is checkpoint `41c73d527f5518e09877544fa5820f3129f55b42`,
+The retained lexical source successor is checkpoint `41c73d527f5518e09877544fa5820f3129f55b42`,
 full tree `ea05a2c15672bdef5b596b4f9d4494e1134d6e76`, with 345 selected inputs,
 260 compiler/build bodies and exact parser maps of 508 base and 511 derived
 members per role. The explicit lexical-provider inverse first restores all 340
@@ -118,3 +118,16 @@ producer-diagnostic inputs. The unchanged diagnostic inverse then restores the
 byte-identical 330-input frontend-v2 source before every retained inverse.
 Previous current authorities remain separately preserved snapshots. Existing
 semantic and hosted coverage requirements remain unchanged.
+
+## Current package-integrity source view
+
+The active source checkpoint is `18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`,
+with source manifest SHA-256
+`ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0`.
+The 345-member roster is unchanged; only `src/runtime/packages.rs` changes.
+The exact package-integrity inverse restores the retained lexical source before
+all unchanged earlier inverses. Current ordinary and lifecycle-observer map pins
+are re-derived with the unchanged lifecycle patch. Native enum/stdin/stdout
+entrypoints and workflow arguments bind this same current source authority.
+These source identities and preparation controls do not substitute for fresh
+execution on the final adapter head or the required hosted host/join results.

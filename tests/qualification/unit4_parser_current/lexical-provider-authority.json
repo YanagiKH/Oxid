@@ -1706,9 +1706,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 67591,
+      "bytes": 57788,
       "path": "src/runtime/packages.rs",
-      "sha256": "f96e962b63bae2c3bf2adf9895644b723d939f36ec418eeec348f37a0522aa8b"
+      "sha256": "b12abbd7ecac87eb30d44d24b363dffffc9dbf4a519f4c2e2e97868e6d008770"
     },
     {
       "bytes": 262,
@@ -2571,7 +2571,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "811499d28cd61309e77a89422e3d3f10208d974028c321447260e5c1b99a780c",
+  "current_candidate_source_manifest_sha256": "9c57b3bdc8497ea1b68e83347716161b7c3ce70e04d2d2ed6ade41c6dc2239e9",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2671,7 +2671,7 @@
     {
       "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "811499d28cd61309e77a89422e3d3f10208d974028c321447260e5c1b99a780c"
+      "sha256": "9c57b3bdc8497ea1b68e83347716161b7c3ce70e04d2d2ed6ade41c6dc2239e9"
     },
     {
       "bytes": 1583,
@@ -4264,9 +4264,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 67591,
+      "bytes": 57788,
       "path": "src/runtime/packages.rs",
-      "sha256": "f96e962b63bae2c3bf2adf9895644b723d939f36ec418eeec348f37a0522aa8b"
+      "sha256": "b12abbd7ecac87eb30d44d24b363dffffc9dbf4a519f4c2e2e97868e6d008770"
     },
     {
       "bytes": 262,
@@ -7225,7 +7225,7 @@
     {
       "bytes": 89669,
       "path": "candidate-source-manifest.json",
-      "sha256": "811499d28cd61309e77a89422e3d3f10208d974028c321447260e5c1b99a780c"
+      "sha256": "9c57b3bdc8497ea1b68e83347716161b7c3ce70e04d2d2ed6ade41c6dc2239e9"
     },
     {
       "bytes": 1583,
@@ -8818,9 +8818,9 @@
       "sha256": "8b54174a9717be3e97d7ceed45c2fc8fa29448bd7fb780cdec6efb85d9c31608"
     },
     {
-      "bytes": 67591,
+      "bytes": 57788,
       "path": "src/runtime/packages.rs",
-      "sha256": "f96e962b63bae2c3bf2adf9895644b723d939f36ec418eeec348f37a0522aa8b"
+      "sha256": "b12abbd7ecac87eb30d44d24b363dffffc9dbf4a519f4c2e2e97868e6d008770"
     },
     {
       "bytes": 262,
@@ -9684,9 +9684,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 67336,
+    "bytes": 67100,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0"
+    "sha256": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -9848,16 +9848,6 @@
     "path": "tests/fixtures/typed_project_source_binding/lexical_provider.py",
     "sha256": "7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c"
   },
-  "lexical_provider_parser_authority": {
-    "bytes": 482448,
-    "path": "tests/qualification/unit4_parser_current/lexical-provider-authority.json",
-    "sha256": "209ad73bf9240366136787f044c837fffaaeae9a9909faa9855003387fdade2f"
-  },
-  "lexical_provider_source_manifest": {
-    "bytes": 67100,
-    "path": "tests/fixtures/typed_project_source_binding/lexical-provider-source.json",
-    "sha256": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db"
-  },
   "lexical_provider_transition_patch": {
     "bytes": 156583,
     "path": "tests/fixtures/typed_project_source_binding/lexical-provider-transition.patch",
@@ -9920,21 +9910,6 @@
     "substitutions": 1,
     "version": "unit4-direct-parser-closed-stdin-v1"
   },
-  "package_integrity_authority": {
-    "bytes": 94900,
-    "path": "tests/fixtures/typed_project_source_binding/package-integrity-authority.json",
-    "sha256": "fa774a14cc599419ca57faafbc32463041346b923486aee746c0b340c2b343c3"
-  },
-  "package_integrity_helper": {
-    "bytes": 5445,
-    "path": "tests/fixtures/typed_project_source_binding/package_integrity.py",
-    "sha256": "79e4dca9e9234920c3b4f5c06959c24a3513858368991247c7aabb552e53f95e"
-  },
-  "package_integrity_transition_patch": {
-    "bytes": 15948,
-    "path": "tests/fixtures/typed_project_source_binding/package-integrity-transition.patch",
-    "sha256": "f6afe660a969b2b9d4159a55f745391a8dba051a0c031274f8e6d7d52a8753af"
-  },
   "producer_diagnostic_authority": {
     "bytes": 135620,
     "path": "tests/fixtures/typed_project_source_binding/producer-diagnostic-authority.json",
@@ -9970,7 +9945,7 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "18959c4bd6117e89e6cfe830ca38077b4f7cfcd2",
+  "reviewed_source_head": "41c73d527f5518e09877544fa5820f3129f55b42",
   "schema": "oxid-unit4-current-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
@@ -9983,9 +9958,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 201696,
+    "bytes": 198778,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "dd19f822c76fb0a0fea8d837fea17a88263e244f6eafd93d76971b5ef3544f4c"
+    "sha256": "4d8a7c06f9050e50c17152bcf1e2e6eb9f72cb72dbd773560515b680502329d8"
   },
   "source_delta": [
     {
@@ -12380,19 +12355,6 @@
     },
     {
       "after": {
-        "bytes": 67591,
-        "path": "src/runtime/packages.rs",
-        "sha256": "f96e962b63bae2c3bf2adf9895644b723d939f36ec418eeec348f37a0522aa8b"
-      },
-      "before": {
-        "bytes": 57788,
-        "path": "src/runtime/packages.rs",
-        "sha256": "b12abbd7ecac87eb30d44d24b363dffffc9dbf4a519f4c2e2e97868e6d008770"
-      },
-      "path": "src/runtime/packages.rs"
-    },
-    {
-      "after": {
         "bytes": 666,
         "path": "tests/fixtures/bounded_enum_scanner/main.ox",
         "sha256": "768232ca66cd91a6439cf21393a8666f4ec10bcfac4d097caece354440278c3a"
@@ -13067,7 +13029,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "0aace4201e2e63420e72132338ccf01fff40c344",
+  "source_only_tree": "ea05a2c15672bdef5b596b4f9d4494e1134d6e76",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

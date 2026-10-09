@@ -107,14 +107,89 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
                          "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
 
+    def test_package_integrity_exact_inverse_and_forward(self):
+        helper = binding.load_package_integrity(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["package-integrity-transition.patch"]
+        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        self.assertEqual(touched, ["src/runtime/packages.rs"])
+        self.assertEqual(restored, self.captured["lexical_provider_inputs"])
+        binding.check_bytes(restored, self.captured["lexical_provider_source"]["files"])
+        changed = [name for name in restored if restored[name] != self.captured["inputs"][name]]
+        self.assertEqual(changed, ["src/runtime/packages.rs"])
+        self.assertEqual(set(restored), set(self.captured["inputs"]))
+        forward = self.root / "forward-package"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "package-integrity-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["current"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, patch_bytes, binding)
+
+    def test_package_integrity_preserves_exact_predecessor_authorities(self):
+        expected = {
+            "lexical-provider-source.json": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db",
+            "lexical-provider-authority.json": "69ea522493ab027b8dfcb3b1fb158f8dde14e7ff283e85d8e1ae6c29dc256a02",
+            "lexical-provider-transition.patch": "400270e547f1214abd9885d724641427fb8b0871f69f25176818446218d0d458",
+            "lexical_provider.py": "7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["current"]["reviewed_source_head"], "18959c4bd6117e89e6cfe830ca38077b4f7cfcd2")
+        self.assertEqual(self.captured["current"]["source_only_tree"], "0aace4201e2e63420e72132338ccf01fff40c344")
+        self.assertNotIn("package_integrity_helper", self.captured)
+        output = self.root / "package-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["package_integrity_inverse_touched"], ["src/runtime/packages.rs"])
+        self.assertEqual(receipt["lexical_provider_source_sha256"], expected["lexical-provider-source.json"])
+
+    def test_package_integrity_coherent_metadata_tampering_rejects_before_history(self):
+        for name, error in (
+            ("lexical-provider-source.json", "unapproved lexical predecessor source manifest"),
+            ("package-integrity-authority.json", "stale package integrity authority"),
+            ("package-integrity-transition.patch", "wrong transition patch"),
+            ("package_integrity.py", "unapproved package integrity source helper"),
+        ):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_lexical_provider", side_effect=AssertionError("historical layer ran")):
+                self.rejects(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_package_integrity_reconstructed_lexical_bytes_checked_before_history(self):
+        helper = binding.load_package_integrity(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["lexical_provider_inputs"])
+        damaged["src/runtime/packages.rs"] += b"\n"
+        with patch.object(binding, "load_package_integrity", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, ["src/runtime/packages.rs"])), \
+             patch.object(binding, "load_lexical_provider", side_effect=AssertionError("historical layer ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_package_integrity_changed_runtime_rejects_before_history(self):
+        path = self.repo / "src/runtime/packages.rs"
+        original = path.read_bytes()
+        for body in (None, original + b"\n"):
+            if body is None:
+                path.unlink()
+            else:
+                path.write_bytes(body)
+            with self.subTest(missing=body is None), patch.object(binding, "load_lexical_provider", side_effect=AssertionError("historical layer ran")):
+                self.rejects("missing regular input" if body is None else "changed input")
+            path.write_bytes(original)
+
     def test_lexical_provider_exact_inverse_forward_and_wrong_stages(self):
         helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
         patch_bytes = self.captured["package_bytes"]["lexical-provider-transition.patch"]
-        restored, touched = helper.inverse(self.captured["inputs"], patch_bytes, binding)
+        restored, touched = helper.inverse(self.captured["lexical_provider_inputs"], patch_bytes, binding)
         self.assertEqual(restored, self.captured["producer_diagnostic_inputs"])
         self.assertEqual(touched, list(helper.PATHS))
-        self.assertEqual((len(self.captured["inputs"]), len(restored), len(touched)), (345, 340, 9))
-        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(helper.ADDITIONS))
+        self.assertEqual((len(self.captured["lexical_provider_inputs"]), len(restored), len(touched)), (345, 340, 9))
+        self.assertEqual(set(self.captured["lexical_provider_inputs"]) - set(restored), set(helper.ADDITIONS))
         binding.check_bytes(restored, self.captured["producer_diagnostic_source"]["files"])
         source = self.root / "forward-lexical"
         binding.materialize(source, restored)
@@ -123,7 +198,7 @@ class SourceBindingTests(unittest.TestCase):
                                      str(self.package / "lexical-provider-transition.patch")],
                                     cwd=source, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
-        binding.check_entries(source, self.captured["current"]["files"], exact=True)
+        binding.check_entries(source, self.captured["lexical_provider_source"]["files"], exact=True)
         for wrong in (restored, self.captured["frontend_v2_inputs"], self.captured["archived"]):
             with self.assertRaises(binding.BindingError):
                 helper.inverse(wrong, patch_bytes, binding)
@@ -135,11 +210,11 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(binding.digest(self.captured["package_bytes"]["producer-diagnostic-source.json"]),
                          "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
         self.assertEqual(len(self.captured["producer_diagnostic_inputs"]), 340)
-        self.assertEqual(self.captured["current"]["reviewed_source_head"],
+        self.assertEqual(self.captured["lexical_provider_source"]["reviewed_source_head"],
                          "41c73d527f5518e09877544fa5820f3129f55b42")
-        self.assertEqual(self.captured["current"]["source_only_tree"],
+        self.assertEqual(self.captured["lexical_provider_source"]["source_only_tree"],
                          "ea05a2c15672bdef5b596b4f9d4494e1134d6e76")
-        self.assertEqual(len([n for n in self.captured["inputs"] if n.startswith(("src/", "native/"))]), 257)
+        self.assertEqual(len([n for n in self.captured["lexical_provider_inputs"] if n.startswith(("src/", "native/"))]), 257)
         self.assertNotIn("lexical_provider_helper", self.captured)
         binding.assert_unchanged(self.repo, self.captured, self.package)
 

@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
@@ -52,6 +53,7 @@ struct Resolver {
     project_root: PathBuf,
     options: ResolveOptions,
     packages: BTreeMap<String, LockedPackage>,
+    checksum_algorithms: HashMap<String, ChecksumAlgorithm>,
     identities: HashMap<String, String>,
     visiting: Vec<String>,
     visited: HashSet<String>,
@@ -89,10 +91,27 @@ pub fn resolve_dependencies<O: Into<ResolveOptions>>(
         return Err(format!("locked mode requires {}", lock_path.display()));
     }
 
+    // Existing lock entries retain their digest contract until explicit update.
+    let checksum_algorithms = if options.update {
+        HashMap::new()
+    } else {
+        previous
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|package| {
+                Ok((
+                    package.name.clone(),
+                    ChecksumAlgorithm::parse(&package.checksum)?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, String>>()?
+    };
     let mut resolver = Resolver {
         project_root: project_root.clone(),
         options,
         packages: BTreeMap::new(),
+        checksum_algorithms,
         identities: HashMap::new(),
         visiting: Vec::new(),
         visited: HashSet::new(),
@@ -155,7 +174,12 @@ impl Resolver {
             self.resolve_one(nested_name, nested_source, &materialized.root)?;
         }
 
-        let checksum = hash_package_tree(&materialized.root)?;
+        let algorithm = self
+            .checksum_algorithms
+            .get(name)
+            .copied()
+            .unwrap_or(ChecksumAlgorithm::Sha256);
+        let checksum = hash_package_tree_with_algorithm(&materialized.root, algorithm)?;
         self.visiting.pop();
         self.visited.insert(name.to_string());
         self.packages.insert(
@@ -733,13 +757,31 @@ fn checked_git_output(mut command: Command, args: &[OsString]) -> Result<String,
     String::from_utf8(stdout).map_err(|_| "git output was not valid UTF-8".to_string())
 }
 
+#[cfg(test)]
 fn hash_package_tree(root: &Path) -> Result<String, String> {
-    let mut entries = Vec::new();
-    collect_package_entries(root, root, &mut entries)?;
-    entries.sort_by(|left, right| left.relative.cmp(&right.relative));
+    hash_package_tree_with_algorithm(root, ChecksumAlgorithm::Sha256)
+}
 
-    let mut hasher = StableFnv::new();
-    hasher.write_bytes(b"oxid-package-fnv1a64-v1");
+fn hash_package_tree_with_algorithm(
+    root: &Path,
+    algorithm: ChecksumAlgorithm,
+) -> Result<String, String> {
+    let mut entries = Vec::new();
+    collect_package_entries(root, root, &mut entries, algorithm)?;
+    entries.sort_by(|left, right| left.relative.cmp(&right.relative));
+    if matches!(algorithm, ChecksumAlgorithm::Sha256)
+        && entries
+            .windows(2)
+            .any(|pair| pair[0].relative == pair[1].relative)
+    {
+        return Err("duplicate normalized package paths cannot be hashed with SHA-256".into());
+    }
+
+    let mut hasher = PackageHasher::new(algorithm);
+    hasher.write_bytes(match algorithm {
+        ChecksumAlgorithm::Fnv1a64 => b"oxid-package-fnv1a64-v1",
+        ChecksumAlgorithm::Sha256 => b"oxid-package-sha256-v1",
+    });
     for entry in entries {
         hasher.write_u8(if entry.directory { b'D' } else { b'F' });
         hasher.write_bytes(entry.relative.as_bytes());
@@ -756,6 +798,7 @@ fn hash_package_tree(root: &Path) -> Result<String, String> {
                 .len();
             hasher.write_u64(length);
             let mut buffer = [0u8; 16 * 1024];
+            let mut remaining = length;
             loop {
                 let count = file.read(&mut buffer).map_err(|error| {
                     format!("cannot read {}: {error}", entry.absolute.display())
@@ -763,11 +806,23 @@ fn hash_package_tree(root: &Path) -> Result<String, String> {
                 if count == 0 {
                     break;
                 }
+                remaining = remaining.checked_sub(count as u64).ok_or_else(|| {
+                    format!(
+                        "package file changed length while hashing: {}",
+                        entry.absolute.display()
+                    )
+                })?;
                 hasher.write(&buffer[..count]);
+            }
+            if remaining != 0 {
+                return Err(format!(
+                    "package file changed length while hashing: {}",
+                    entry.absolute.display()
+                ));
             }
         }
     }
-    Ok(format!("fnv1a64:{:016x}", hasher.finish()))
+    Ok(hasher.finish())
 }
 
 struct PackageEntry {
@@ -780,6 +835,7 @@ fn collect_package_entries(
     root: &Path,
     directory: &Path,
     entries: &mut Vec<PackageEntry>,
+    algorithm: ChecksumAlgorithm,
 ) -> Result<(), String> {
     let mut children = fs::read_dir(directory)
         .map_err(|error| {
@@ -805,6 +861,9 @@ fn collect_package_entries(
         ) {
             continue;
         }
+        if matches!(algorithm, ChecksumAlgorithm::Sha256) && file_name.contains('\\') {
+            return Err(format!("package entry `{file_name}` contains a backslash; rename it before creating or updating a SHA-256 lock"));
+        }
         let path = child.path();
         let file_type = child
             .file_type()
@@ -825,7 +884,7 @@ fn collect_package_entries(
                 absolute: path.clone(),
                 directory: true,
             });
-            collect_package_entries(root, &path, entries)?;
+            collect_package_entries(root, &path, entries, algorithm)?;
         } else if file_type.is_file() {
             entries.push(PackageEntry {
                 relative,
@@ -842,17 +901,55 @@ fn collect_package_entries(
     Ok(())
 }
 
-struct StableFnv(u64);
+#[derive(Clone, Copy, Debug)]
+enum ChecksumAlgorithm {
+    Fnv1a64,
+    Sha256,
+}
 
-impl StableFnv {
-    fn new() -> Self {
-        Self(FNV_OFFSET_BASIS)
+impl ChecksumAlgorithm {
+    fn parse(checksum: &str) -> Result<Self, String> {
+        let (algorithm, value, length, label) =
+            if let Some(value) = checksum.strip_prefix("fnv1a64:") {
+                (Self::Fnv1a64, value, 16, "FNV")
+            } else if let Some(value) = checksum.strip_prefix("sha256:") {
+                (Self::Sha256, value, 64, "SHA-256")
+            } else {
+                return Err(format!("unsupported package checksum `{checksum}`"));
+            };
+        if value.len() != length
+            || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || (matches!(algorithm, Self::Sha256)
+                && value.bytes().any(|byte| byte.is_ascii_uppercase()))
+        {
+            return Err(format!("invalid {label} package checksum `{checksum}`"));
+        }
+        Ok(algorithm)
+    }
+}
+
+enum PackageHasher {
+    Fnv1a64(u64),
+    Sha256(Sha256),
+}
+
+impl PackageHasher {
+    fn new(algorithm: ChecksumAlgorithm) -> Self {
+        match algorithm {
+            ChecksumAlgorithm::Fnv1a64 => Self::Fnv1a64(FNV_OFFSET_BASIS),
+            ChecksumAlgorithm::Sha256 => Self::Sha256(Sha256::new()),
+        }
     }
 
     fn write(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            self.0 ^= u64::from(*byte);
-            self.0 = self.0.wrapping_mul(FNV_PRIME);
+        match self {
+            Self::Fnv1a64(hash) => {
+                for byte in bytes {
+                    *hash ^= u64::from(*byte);
+                    *hash = hash.wrapping_mul(FNV_PRIME);
+                }
+            }
+            Self::Sha256(hash) => hash.update(bytes),
         }
     }
 
@@ -869,8 +966,11 @@ impl StableFnv {
         self.write(bytes);
     }
 
-    fn finish(self) -> u64 {
-        self.0
+    fn finish(self) -> String {
+        match self {
+            Self::Fnv1a64(hash) => format!("fnv1a64:{hash:016x}"),
+            Self::Sha256(hash) => format!("sha256:{:x}", hash.finalize()),
+        }
     }
 }
 
@@ -1089,13 +1189,7 @@ fn set_once<T>(
 }
 
 fn validate_checksum(checksum: &str) -> Result<(), String> {
-    let Some(value) = checksum.strip_prefix("fnv1a64:") else {
-        return Err(format!("unsupported package checksum `{checksum}`"));
-    };
-    if value.len() != 16 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(format!("invalid FNV package checksum `{checksum}`"));
-    }
-    Ok(())
+    ChecksumAlgorithm::parse(checksum).map(|_| ())
 }
 
 fn quote_string(value: &str) -> String {
@@ -1474,6 +1568,165 @@ mod tests {
     }
 
     #[test]
+    fn sha256_tree_known_answer_and_ordering() {
+        // Independently computed with Python hashlib over the RFC's exact bytes.
+        let first = TestDir::new("sha-vector-a");
+        let second = TestDir::new("sha-vector-b");
+        fs::write(first.path().join("data.bin"), [0, 255, 65]).unwrap();
+        fs::create_dir(first.path().join("empty")).unwrap();
+        fs::create_dir(second.path().join("empty")).unwrap();
+        fs::write(second.path().join("data.bin"), [0, 255, 65]).unwrap();
+        let expected = "sha256:70b7e1ffaa103e8f0e161878a0a53306cf31ea63163c54d67ae141f04aa89c72";
+        assert_eq!(hash_package_tree(first.path()).unwrap(), expected);
+        assert_eq!(hash_package_tree(second.path()).unwrap(), expected);
+        write(first.path().join("target/cache"), "ignored");
+        write(first.path().join(".git/config"), "ignored");
+        write(first.path().join(".oxid/cache"), "ignored");
+        write(first.path().join("oxid.lock"), "ignored");
+        assert_eq!(hash_package_tree(first.path()).unwrap(), expected);
+        fs::remove_dir(first.path().join("empty")).unwrap();
+        assert_ne!(hash_package_tree(first.path()).unwrap(), expected);
+        fs::create_dir(first.path().join("empty")).unwrap();
+        fs::rename(
+            first.path().join("data.bin"),
+            first.path().join("renamed.bin"),
+        )
+        .unwrap();
+        assert_ne!(hash_package_tree(first.path()).unwrap(), expected);
+        fs::rename(
+            first.path().join("renamed.bin"),
+            first.path().join("data.bin"),
+        )
+        .unwrap();
+        fs::write(first.path().join("data.bin"), [0, 255, 66]).unwrap();
+        assert_ne!(hash_package_tree(first.path()).unwrap(), expected);
+    }
+
+    #[test]
+    fn legacy_lock_preserved_until_explicit_update() {
+        let root = TestDir::new("legacy-migration");
+        write(root.path().join("dep/value.ox"), "const value = 1;\n");
+        let dependencies = HashMap::from([("dep".to_string(), "dep".to_string())]);
+        let legacy = LockedPackage {
+            name: "dep".into(),
+            source: "path+dep".into(),
+            revision: None,
+            checksum: "fnv1a64:137966a53d847cbc".into(),
+            dependencies: vec![],
+        };
+        write_lockfile(root.path(), std::slice::from_ref(&legacy)).unwrap();
+        let bytes = fs::read(root.path().join(LOCKFILE_NAME)).unwrap();
+        for options in [
+            ResolveOptions::default(),
+            ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+            ResolveOptions {
+                locked: true,
+                offline: true,
+                update: false,
+            },
+        ] {
+            assert_eq!(
+                resolve_dependencies(root.path(), &dependencies, options).unwrap(),
+                std::slice::from_ref(&legacy)
+            );
+            assert_eq!(fs::read(root.path().join(LOCKFILE_NAME)).unwrap(), bytes);
+        }
+        let updated = resolve_dependencies(
+            root.path(),
+            &dependencies,
+            ResolveOptions {
+                update: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(updated[0].checksum.starts_with("sha256:"));
+        assert_eq!(
+            resolve_dependencies(
+                root.path(),
+                &dependencies,
+                ResolveOptions {
+                    locked: true,
+                    ..Default::default()
+                }
+            )
+            .unwrap(),
+            updated
+        );
+    }
+
+    #[test]
+    fn offline_without_lock_keeps_local_resolution_behavior() {
+        let root = TestDir::new("offline-new-lock");
+        write(root.path().join("dep/value.ox"), "1");
+        let dependencies = HashMap::from([("dep".into(), "dep".into())]);
+        let packages = resolve_dependencies(
+            root.path(),
+            &dependencies,
+            ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(root.path().join(LOCKFILE_NAME).is_file());
+        assert_eq!(read_lockfile(root.path()).unwrap(), packages);
+    }
+
+    #[test]
+    fn checksum_algorithm_validation_is_closed() {
+        for checksum in [
+            "md5:abcd".to_string(),
+            "sha256:".to_string(),
+            format!("sha256:{}", "a".repeat(63)),
+            format!("sha256:{}", "g".repeat(64)),
+            format!("sha256:{}", "A".repeat(64)),
+        ] {
+            assert!(validate_checksum(&checksum).is_err(), "{checksum}");
+        }
+        assert!(validate_checksum(&format!("sha256:{}", "a".repeat(64))).is_ok());
+        assert!(validate_checksum("fnv1a64:ABCDEF0123456789").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sha256_rejects_ambiguous_unix_path_components_but_preserves_fnv() {
+        let first = TestDir::new("ambiguous-name");
+        let second = TestDir::new("nested-name");
+        fs::create_dir(first.path().join("a")).unwrap();
+        fs::write(first.path().join("a\\b"), b"same").unwrap();
+        fs::create_dir(second.path().join("a")).unwrap();
+        fs::write(second.path().join("a/b"), b"same").unwrap();
+        assert_eq!(
+            hash_package_tree_with_algorithm(first.path(), ChecksumAlgorithm::Fnv1a64).unwrap(),
+            hash_package_tree_with_algorithm(second.path(), ChecksumAlgorithm::Fnv1a64).unwrap()
+        );
+        let error = hash_package_tree(first.path()).unwrap_err();
+        assert!(error.contains("rename"), "{error}");
+        assert!(hash_package_tree(second.path()).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sha256_rejects_included_symlinks_and_non_utf8_names() {
+        use std::os::unix::{ffi::OsStringExt, fs::symlink};
+        let root = TestDir::new("sha-path-rejections");
+        write(root.path().join("file"), "data");
+        symlink("file", root.path().join("link")).unwrap();
+        assert!(hash_package_tree(root.path())
+            .unwrap_err()
+            .contains("symbolic links"));
+        fs::remove_file(root.path().join("link")).unwrap();
+        fs::write(root.path().join(OsString::from_vec(vec![255])), b"data").unwrap();
+        assert!(hash_package_tree(root.path())
+            .unwrap_err()
+            .contains("UTF-8"));
+    }
+
+    #[test]
     fn path_dependencies_are_recursive_sorted_and_locked() {
         let root = TestDir::new("paths");
         let alpha = root.path().join("deps/alpha");
@@ -1498,7 +1751,7 @@ mod tests {
         assert_eq!(packages[0].dependencies, ["leaf"]);
         assert!(packages
             .iter()
-            .all(|package| package.checksum.starts_with("fnv1a64:")));
+            .all(|package| package.checksum.starts_with("sha256:")));
 
         let lock_text = fs::read_to_string(root.path().join(LOCKFILE_NAME)).expect("lockfile");
         assert_eq!(lock_text.matches("[[package]]").count(), 2);

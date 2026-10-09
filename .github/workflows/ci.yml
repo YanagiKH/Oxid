@@ -681,7 +681,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db
+            --source-manifest-sha256 ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -694,7 +694,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db
+            --source-manifest-sha256 ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4

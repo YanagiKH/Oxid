@@ -1,3 +1,33 @@
+# SHA-256 package-integrity source successor
+
+The active source checkpoint is `18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`,
+full tree `0aace4201e2e63420e72132338ccf01fff40c344`. Its 345 selected inputs,
+257 src/native members and 260 compiler/build bodies keep the previous roster.
+Only `src/runtime/packages.rs` differs. The current manifest SHA-256 is
+`ca78be0500bba3b7af3d5d74c037189d453a750ae12bec24acc40f35d6268fc0`.
+
+`lexical-provider-source.json` retains the prior current manifest byte-for-byte.
+Every previous authority, helper and transition patch remains unchanged. The new
+package-integrity authority/helper/patch binds one exact runtime source delta;
+its inverse restores all 345 lexical-predecessor inputs before executing the
+unchanged lexical helper on a separately materialized predecessor. Actual source
+membership, modes and producer closure are checked before materialization so the
+historical view cannot hide a changed input or unexpected sibling.
+
+The patch recipe is `git diff --binary --no-ext-diff --no-renames --abbrev=7
+4a9ba347757c7f7e44cb3a4a8fac23300b5c586f
+0aace4201e2e63420e72132338ccf01fff40c344 -- src/runtime/packages.rs`.
+The base is published main `b50ecd3c1a8de7513f44311e85491c2ee3b2e0b0`;
+its selected source bytes exactly match the retained lexical checkpoint. This
+new source-only identity does not relabel previous historical execution evidence.
+No language semantics, parser instrumentation, provider routing, resource cap,
+native expectation or historical oracle is changed. Source admission and Python
+controls alone are not semantic/native/hosted qualification; fresh gate execution
+is required on the final adapter head. The implementation checkpoint and final
+adapter commit are intentionally distinct.
+
+The following sections describe retained historical transitions.
+
 # Source-bound streaming lexical provider successor
 
 The active source view binds checkpoint `41c73d527f5518e09877544fa5820f3129f55b42`, exact full tree

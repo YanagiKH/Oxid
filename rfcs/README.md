@@ -67,3 +67,6 @@ self-hosting claim.
 allocation layout an explicit checked, witness-bound description. Phase 1
 preserves admission, representation, ABI and fuel; native-specific admission
 remains a separate proposal.
+
+[RFC 0029](0029-package-sha256-integrity.md) proposes SHA-256 package-tree
+integrity with explicit legacy-FNV migration; independent acceptance is pending.

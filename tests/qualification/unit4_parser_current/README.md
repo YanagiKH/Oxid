@@ -214,3 +214,23 @@ snapshot, and all unrelated semantic, dependency and resource fields must
 match it. Historical parser authority, helpers, oracles and resource caps are
 unchanged. The seven-member lexical producer closure is noncompiler evidence.
 Admission or preparation alone never qualifies runtime execution.
+
+## Package SHA-256 source admission successor
+
+Current checkpoint `18959c4bd6117e89e6cfe830ca38077b4f7cfcd2`, tree
+`0aace4201e2e63420e72132338ccf01fff40c344`, changes only
+`src/runtime/packages.rs` in the admitted 345-input source inventory. The exact
+one-file inverse restores all 345 retained lexical-provider source inputs before
+the unchanged lexical and older inverse chain. The outer patch is based on
+`b50ecd3c1a8de7513f44311e85491c2ee3b2e0b0`, whose selected input bytes match that
+retained inventory. The current global historical-to-current delta has 306 paths;
+base/derived maps remain 508/511 members and compiler/build bodies remain 260.
+
+`lexical-provider-authority.json` in this directory preserves the former parser
+authority byte-for-byte. Current maps bind the package checkpoint and full
+candidate manifest; both inverse recovery and immutable predecessor pins reject
+wrong or missing members, altered hashes, extra source changes and coherent
+predecessor rebases. The package transition overlaps neither instrumentation
+roster. Historical authorities, helper bytes, predicates, parser policies,
+resource caps and dependency closure are unchanged. These controls establish
+source admission only; they are not a fresh native parser execution receipt.
