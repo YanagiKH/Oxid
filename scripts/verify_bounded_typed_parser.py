@@ -94,9 +94,21 @@ def observer_identity(binary, builder, kind):
     require([entry["original_path"] for entry in wrappers]
             == ["tests/fixtures/bounded_typed_" + kind + "/observer/" + name
                 for name, _ in builder.WRAPPER_FILES], "observer wrapper selection changed")
-    for entry in sources + wrappers:
+    for entry in sources:
         require(digest(directory / entry["copied_path"]) == entry["sha256"]
                 == digest(ROOT / entry["original_path"]), "observer source identity mismatch")
+    if hasattr(builder, "adapt_wrapper"):
+        require(manifest.get("wrapper_adaptation") == builder.SCHEMA,
+                "observer wrapper adaptation identity mismatch")
+    for entry, (name, _) in zip(wrappers, builder.WRAPPER_FILES):
+        original = (ROOT / entry["original_path"]).read_bytes()
+        expected = original
+        if hasattr(builder, "adapt_wrapper"):
+            require(entry.get("original_sha256") == hashlib.sha256(original).hexdigest(),
+                    "observer original wrapper identity mismatch")
+            expected = builder.adapt_wrapper(name, original)
+        require(digest(directory / entry["copied_path"]) == entry["sha256"]
+                == hashlib.sha256(expected).hexdigest(), "observer wrapper identity mismatch")
     return {"binary_sha256": digest(binary), "source_manifest_sha256": digest(directory / "source-manifest.json"),
             "build_evidence_sha256": digest(directory / "build-evidence.json"), "source_commit": manifest["commit"]}
 
