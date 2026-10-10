@@ -1,0 +1,20 @@
+{
+  "files": [
+    {
+      "bytes": 74565,
+      "path": "package-dependency-source-v1.json",
+      "sha256": "f67d373bf5e2f8e620e17fa3f8fc8234211338738d46d65bbdf5658e0e34eac5"
+    },
+    {
+      "bytes": 265515,
+      "path": "package-dependency-authority-v1.json",
+      "sha256": "a5b8ff80ce9610c558672e1745afa31b2552de040fa996acf10f21025bb98b5c"
+    },
+    {
+      "bytes": 752,
+      "path": "package-dependency-transition-v1.patch",
+      "sha256": "3b123cfa29136244e62038e885761e68858d2b9b472bc14231d2e7a60a13586d"
+    }
+  ],
+  "schema": "oxid-package-dependency-data-package-v1"
+}
