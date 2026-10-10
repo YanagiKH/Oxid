@@ -3376,6 +3376,26 @@ def authority():
     return result
 
 
+def phase_native_identity(row, *, root=None):
+    """Project native metadata values, never canonical phase wire bytes.
+
+    Native receipts and CI seals sort JSON keys. Their existing callers retain
+    all path/content authentication; this boundary checks the closed value
+    shape before spelling the phase driver's required identity field order.
+    """
+    require(type(row) is dict and set(row) == {'path', 'bytes', 'sha256'},
+            'exact native phase identity fields')
+    require(type(row['path']) is str and Path(row['path']).is_absolute() and
+            '..' not in Path(row['path']).parts and str(Path(row['path'])) == row['path'],
+            'canonical absolute native phase identity path')
+    require(type(row['bytes']) is int and 0 <= row['bytes'] <= 2**64 - 1,
+            'native phase identity byte count')
+    require(type(row['sha256']) is str and re.fullmatch('[0-9a-f]{64}', row['sha256']),
+            'native phase identity digest')
+    path = row['path'] if root is None else Path(row['path']).relative_to(root).as_posix()
+    return {'path': path, 'bytes': row['bytes'], 'sha256': row['sha256']}
+
+
 def phase_scope(a, session_path, scope, profile, *, emit=False, resolve=artifact,
                 identities=None, builds=None):
     """Additional witness conjunct from exact native roster, never digest lookup.
@@ -3409,11 +3429,12 @@ def phase_scope(a, session_path, scope, profile, *, emit=False, resolve=artifact
         return raw
 
     def relative(row, cap=128):
-        path = Path(row['path']).relative_to(root).as_posix()
+        projected = phase_native_identity(row, root=root)
+        path = projected['path']
         safe_relative(path)
         require(len(path.encode('ascii')) <= cap and re.fullmatch('[A-Za-z0-9_./-]+', path),
                 'bounded canonical lexical evidence path')
-        return dict(row, path=path)
+        return projected
 
     session_record = named(session_path)
     session = load(bound(session_record, root / 'session.json'))
@@ -3615,7 +3636,7 @@ def phase_evidence(a, session_path, *, resolve=artifact, identities=None, builds
     for (profile, control), build in builds.items():
         role = 'not_observed' if control else 'observed'
         binary = build['binary']
-        binaries[(profile, role)] = dict(binary, path=Path(binary['path']).relative_to(root).as_posix())
+        binaries[(profile, role)] = phase_native_identity(binary, root=root)
         layouts[binary['sha256']] = binding['approved_layouts'][profile + '-' + role]
         build_invocation_path = root / (('build-control-' if control else 'build-') + profile) / 'invocation.json'
         build_invocation_identity = (identity(build_invocation_path) if identities is None
@@ -3624,7 +3645,8 @@ def phase_evidence(a, session_path, *, resolve=artifact, identities=None, builds
         same(build_invocation['exit_code'], 0, 'successful actual build before phase controls')
         prepared_ns = max(prepared_ns, build_invocation['finished_ns'])
     require(len(layouts) == 4, 'phase controls require four distinct actual binaries')
-    inventory = None if identities is None else {path: row for path, row in identities.items()
+    inventory = None if identities is None else {path: phase_native_identity(row)
+                                                for path, row in identities.items()
                                                 if Path(path).is_relative_to(root / 'lexer-phase-controls')}
     driver.verify(root, session_sha256=session_identity['sha256'], authority_sha256=AUTHORITY_SHA,
                   driver_sha256=binding['driver']['sha256'], binaries=binaries, approved_layouts=layouts,

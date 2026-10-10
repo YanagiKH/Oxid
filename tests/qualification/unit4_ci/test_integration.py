@@ -1526,6 +1526,47 @@ def synthetic_seal_fixture(root):
             'before_finished_ns': 2000, 'after_started_ns': 5000, 'after_finished_ns': 6000}, data
 
 
+class PhaseNativeIdentityControls(unittest.TestCase):
+    """Native metadata projections only; canonical phase wire remains strict."""
+    @classmethod
+    def setUpClass(cls):
+        cls.adapter = q.module('_unit4_native_identity_projection', REPO / q.PARSER / 'portable.py')
+        cls.driver = q.module('_unit4_native_identity_wire_control', REPO / q.PARSER / 'lexer_phase_controls.py')
+        cls.root = Path(tempfile.gettempdir()).resolve() / 'synthetic-native-identity'
+        cls.row = {'path': str(cls.root / 'file'), 'bytes': 7, 'sha256': 'a' * 64}
+
+    def test_all_native_identity_orders_preserve_exact_values(self):
+        for order in __import__('itertools').permutations(self.row):
+            with self.subTest(order=order):
+                value = {key: self.row[key] for key in order}
+                original = list(value.items())
+                projected = self.adapter.phase_native_identity(value)
+                self.assertEqual(tuple(projected), ('path', 'bytes', 'sha256'))
+                self.assertEqual(projected, self.row)
+                self.assertEqual(list(value.items()), original)
+                relative = self.adapter.phase_native_identity(value, root=self.root)
+                self.assertEqual(relative, {'path': 'file', 'bytes': 7, 'sha256': 'a' * 64})
+                self.assertEqual(self.driver.validate_identity(relative), relative)
+        with self.assertRaisesRegex(self.driver.Reject, 'identity exact keys/order'):
+            self.driver.validate_identity({'bytes': 7, 'path': 'file', 'sha256': 'a' * 64})
+
+    def test_malformed_native_identity_is_rejected_before_projection(self):
+        malformed = [None, list(self.row.items()), dict(self.row, extra=0)]
+        malformed += [{key: value for key, value in self.row.items() if key != missing}
+                      for missing in self.row]
+        for field, values in (
+                ('path', (None, 7, 'relative', str(self.root / '..' / 'escape'))),
+                ('bytes', (True, -1, 2**64, 1.0, '7')),
+                ('sha256', (None, 7, 'a' * 63, 'A' * 64, 'g' * 64))):
+            malformed += [dict(self.row, **{field: value}) for value in values]
+        for value in malformed:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.adapter.phase_native_identity(value)
+        with self.assertRaises(ValueError):
+            self.adapter.phase_native_identity(dict(self.row, path=str(self.root.parent / 'outside')),
+                                               root=self.root)
+
+
 class ComparisonSealControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -1776,6 +1817,48 @@ class ComparisonSealControls(unittest.TestCase):
         rows = [row for envelope in envelopes for row in envelope['records']]
         self.assertEqual([sum(row['role'] == role for row in rows) for role in ('observed', 'not_observed')], [510, 14])
         self.assertEqual([row['process_index'] for row in envelopes[-1]['records']], list(range(9, 17)))
+
+    def test_phase_sorted_seal_metadata_roundtrip_preserves_complete_transport(self):
+        original = {path: q.sha(raw) for path, raw in self.data.items()}
+        transported = q.loads(q.canonical(self.seal))
+        self.assertEqual(tuple(transported['before'][0]), ('bytes', 'path', 'sha256'))
+        report = verify_parser_seal(transported, self.resolve)
+        self.assertEqual(len(report['required_binaries']), 4)
+        self.assertEqual(report['full_archive_only'], 1086)
+        self.assertEqual({path: q.sha(raw) for path, raw in self.data.items()}, original)
+
+    def test_phase_native_writer_parent_projection_preserves_canonical_envelopes(self):
+        adapter, authority, _, _ = self.phase_context()
+        phase = adapter.phase_module(authority)
+        root = self.root / 'parser'
+        target = self.root / 'native-parent.json'
+        for scope in ('collection', 'passivity', 'u8_controls'):
+            for profile in q.PROFILES:
+                with self.subTest(scope=scope, profile=profile):
+                    original = self.data[str(root / 'lexer-phase' / (scope + '-' + profile + '.json'))]
+                    value = q.loads(original)
+                    parent = value['parent_receipt']
+                    native = {'path': str(root / parent['path']), 'bytes': parent['bytes'],
+                              'sha256': parent['sha256']}
+                    # Exercise the actual native JSON writer and reader, not a phase-wire repair.
+                    adapter.write(target, {'parent': native})
+                    loaded = adapter.read(target)['parent']
+                    self.assertEqual(tuple(loaded), ('bytes', 'path', 'sha256'))
+                    projected = adapter.phase_native_identity(loaded, root=root)
+                    self.assertEqual(tuple(projected), ('path', 'bytes', 'sha256'))
+                    self.assertEqual(projected, parent)
+                    value['parent_receipt'] = projected
+                    self.assertEqual(phase.canonical_bytes(value), original)
+                    self.assertEqual(phase.validate_envelope(original, scope=scope, profile=profile,
+                        session_sha256=value['session_sha256'], authority_sha256=adapter.AUTHORITY_SHA,
+                        adapter_sha256=value['adapter_sha256'], parent_receipt=projected,
+                        records=value['records']), value)
+                    wrong = dict(value, parent_receipt={'bytes': parent['bytes'], 'path': parent['path'],
+                                                       'sha256': parent['sha256']})
+                    with self.assertRaises(phase.Reject):
+                        phase.validate_envelope(phase.canonical_bytes(wrong), scope=scope, profile=profile,
+                            session_sha256=value['session_sha256'], authority_sha256=adapter.AUTHORITY_SHA,
+                            adapter_sha256=value['adapter_sha256'], parent_receipt=parent, records=value['records'])
 
     def test_phase_helper_failure_precedes_frame_extraction(self):
         for scope, base, outer_name in (('collection', 'collect-debug', 'portable-collection.json'),

@@ -2583,9 +2583,9 @@
       "sha256": "974aebf4121f323f1674a19b7442d42e495c2075e99ae9f70c6cc1f1fb59a7a5"
     },
     {
-      "bytes": 243092,
+      "bytes": 244286,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "c012c1735237439edc9dde932925717c5250215d5d9683e37b731f286ce727e8"
+      "sha256": "3366c49f267ab98bd792a1cd1b01ebbaaca548bc19685d841eb688cf39f99162"
     },
     {
       "bytes": 477258,
