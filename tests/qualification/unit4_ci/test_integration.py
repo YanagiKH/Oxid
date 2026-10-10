@@ -2,10 +2,12 @@
 """Bounded admission/transport controls, never synthetic qualification claims."""
 import sys
 sys.dont_write_bytecode = True
+import ast
 import copy
 import io
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import re
 import shutil
 import tarfile
 import tempfile
@@ -19,6 +21,41 @@ import join
 from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only, full_archive, stage_compact_upload
 
 REPO = Path(__file__).resolve().parents[3]
+
+
+def literal_source_pin(source, name, kind):
+    """Read a single literal declaration without executing native controllers."""
+    tree = ast.parse(source)
+    assignments = [node for node in tree.body if isinstance(node, ast.Assign)
+                   and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                   and node.targets[0].id == name]
+    bindings = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bindings.append(node)
+        elif isinstance(node, ast.alias) and (node.asname or node.name.split('.')[0]) == name:
+            bindings.append(node)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                               ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) and node.name == name:
+            bindings.append(node)
+        elif isinstance(node, ast.MatchMapping) and node.rest == name:
+            bindings.append(node)
+        # A wildcard import could bind the pin without naming it in this tree.
+        elif isinstance(node, ast.ImportFrom):
+            q.need(all(alias.name != '*' for alias in node.names),
+                   'wildcard import can obscure source pin: ' + name)
+    q.need(len(assignments) == 1 and len(bindings) == 1
+           and bindings[0] is assignments[0].targets[0],
+           'missing, duplicate, or non-simple source pin: ' + name)
+    value = assignments[0].value
+    q.need(isinstance(value, ast.Constant) and type(value.value) is kind,
+           'nonliteral or wrongly typed source pin: ' + name)
+    if kind is str:
+        q.need(re.fullmatch('[0-9a-f]{64}', value.value) is not None,
+               'invalid SHA-256 source pin: ' + name)
+    else:
+        q.need(kind is int and value.value > 0, 'invalid source count: ' + name)
+    return value.value
 
 
 class LexerInputClosureControls(unittest.TestCase):
@@ -40,7 +77,12 @@ class LexerInputClosureControls(unittest.TestCase):
             'scripts/predecessors/byte_storage_ci_v1',
             'tests/fixtures/typed_project_unit1_independent',
             'tests/fixtures/typed_project_unit2_independent',
-            'tests/qualification/unit2_u8_current'])
+            'tests/qualification/unit2_u8_current',
+            'scripts/predecessors/lexer_reservation_source_v1'])
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (556, 15))
+        self.assertEqual(current['lexer_reservation_source_v1_preservation'], {
+            'path': 'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
+            'bytes': 24543, 'sha256': '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'})
         q.verify_package(REPO, current)
 
     def test_complete_inventory_cannot_omit_new_or_saved_adapters(self):
@@ -48,7 +90,25 @@ class LexerInputClosureControls(unittest.TestCase):
         for name in ('tests/qualification/lexer_reservation_current/current.py',
                      'tests/fixtures/typed_project_source_binding_byte_storage_v1/run.py',
                      'tests/qualification/unit4_public_v3/lexer_reservation_lifecycle.py',
-                     'tests/qualification/unit4_parser_current/lexer_reservation.py'):
+                     'tests/qualification/unit4_parser_current/lexer_reservation.py',
+                     'tests/qualification/lexer_reservation_current/generate_source_v2.py',
+                     'tests/fixtures/typed_project_source_binding/lexer-reservation-source-v2.json',
+                     'tests/fixtures/typed_project_source_binding/lexer-reservation-authority-v2.json',
+                     'tests/fixtures/typed_project_source_binding/lexer-reservation-transition-v2.patch',
+                     'tests/qualification/unit4_public_v3/generate_lexer_reservation_v2.py',
+                     'tests/qualification/unit4_public_v3/lexer-reservation-lifecycle-v2.json',
+                     'tests/qualification/unit4_public_v3/observer-lexer-reservation-v2.patch',
+                     'tests/qualification/unit4_parser_current/generate_lexer_reservation_v2.py',
+                     'tests/qualification/unit4_parser_current/generate_lexer_phase_v1.py',
+                     'tests/qualification/unit4_parser_current/lexer-reservation-authority-v2.json',
+                     'tests/qualification/unit4_parser_current/lexer-reservation-composition-v2.json',
+                     'tests/qualification/unit4_parser_current/lexer-phase-authority-v1.json',
+                     'tests/qualification/unit4_parser_current/lexer-phase-composition-v1.json',
+                     'tests/qualification/unit4_parser_current/lexer_phase.py',
+                     'tests/qualification/unit4_parser_current/lexer_phase_controls.py',
+                     'tests/qualification/unit4_parser_current/test_lexer_phase.py',
+                     'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
+                     'scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/common.py'):
             changed = copy.deepcopy(manifest)
             self.assertEqual(sum(row['path'] == name for row in changed['files']), 1)
             changed['files'] = [row for row in changed['files'] if row['path'] != name]
@@ -56,16 +116,80 @@ class LexerInputClosureControls(unittest.TestCase):
                 q.verify_package(REPO, changed)
 
     def test_current_native_and_ci_sources_share_one_manifest(self):
-        sys.path.insert(0, str(REPO / 'scripts'))
-        import verify_bounded_byte_storage as byte
-        import verify_bounded_enum_native as enum
-        import verify_bounded_stdin_native as stdin
-        import verify_bounded_stdout_native as stdout
-        self.assertEqual((byte.SOURCE_SHA256, enum.REVIEWED_SOURCE_SHA256,
-                          stdin.REVIEWED_SOURCE_SHA256, stdout.REVIEWED_SOURCE_SHA256), (q.CURRENT_SHA,) * 4)
-        self.assertEqual((stdin.REVIEWED_SOURCE_MEMBERS, stdin.REVIEWED_COMPILER_BODIES),
+        # This portable identity control reads declarations only. Executing the
+        # Linux native controllers would import their Unix-only resource helpers.
+        scripts = REPO / 'scripts'
+        declarations = ((scripts / 'verify_bounded_byte_storage.py', 'SOURCE_SHA256'),
+                        (scripts / 'verify_bounded_enum_native.py', 'REVIEWED_SOURCE_SHA256'),
+                        (scripts / 'verify_bounded_stdin_native.py', 'REVIEWED_SOURCE_SHA256'),
+                        (scripts / 'verify_bounded_stdout_native.py', 'REVIEWED_SOURCE_SHA256'))
+        self.assertEqual(tuple(literal_source_pin(path.read_bytes(), name, str)
+                               for path, name in declarations), (q.CURRENT_SHA,) * 4)
+        stdin = (scripts / 'verify_bounded_stdin_native.py').read_bytes()
+        self.assertEqual((literal_source_pin(stdin, 'REVIEWED_SOURCE_MEMBERS', int),
+                          literal_source_pin(stdin, 'REVIEWED_COMPILER_BODIES', int)),
                          (q.CURRENT_SOURCE_MEMBERS, q.CURRENT_COMPILER_BODIES))
-        self.assertEqual(q.OBSERVER_PATCH, 'tests/qualification/unit4_public_v3/observer-lexer-reservation-v1.patch')
+        self.assertEqual(q.OBSERVER_PATCH, 'tests/qualification/unit4_public_v3/observer-lexer-reservation-v2.patch')
+
+        literal = repr(q.CURRENT_SHA)
+        valid = 'PIN = ' + literal + '\n'
+        self.assertEqual(literal_source_pin(valid, 'PIN', str), q.CURRENT_SHA)
+        # Reading declarations must not execute even top-level imports or code.
+        self.assertEqual(literal_source_pin('import resource\n' + valid
+                         + "raise RuntimeError('must not execute')\n", 'PIN', str), q.CURRENT_SHA)
+        self.assertEqual(literal_source_pin('import PIN.child as OTHER\n' + valid,
+                                            'PIN', str), q.CURRENT_SHA)
+        self.assertEqual(literal_source_pin('from other import PIN as OTHER\n' + valid,
+                                            'PIN', str), q.CURRENT_SHA)
+        mutations = {
+            'missing': 'OTHER = ' + literal + '\n',
+            'duplicate': valid + valid,
+            'chained': 'PIN = OTHER = ' + literal + '\n',
+            'unpacked': 'PIN, OTHER = (' + literal + ', None)\n',
+            'annotated': 'PIN: str = ' + literal + '\n',
+            'annotated-duplicate': valid + 'PIN: str = ' + literal + '\n',
+            'augmented': valid + "PIN += ''\n",
+            'nested-only': 'if True:\n    ' + valid,
+            'nested-duplicate': valid + 'if True:\n    ' + valid,
+            'deleted': valid + 'del PIN\n',
+            'imported': valid + 'import PIN\n',
+            'import-alias': valid + 'import other as PIN\n',
+            'dotted-import': valid + 'import PIN.child\n',
+            'from-import': valid + 'from other import PIN\n',
+            'from-import-alias': valid + 'from other import value as PIN\n',
+            'wildcard-import': valid + 'from other import *\n',
+            'function': valid + 'def PIN():\n    pass\n',
+            'async-function': valid + 'async def PIN():\n    pass\n',
+            'class': valid + 'class PIN:\n    pass\n',
+            'except-alias': valid + 'try:\n    pass\nexcept Exception as PIN:\n    pass\n',
+            'match-capture': valid + 'match 0:\n    case PIN:\n        pass\n',
+            'match-star': valid + 'match []:\n    case [*PIN]:\n        pass\n',
+            'match-mapping-rest': valid + 'match {}:\n    case {**PIN}:\n        pass\n',
+            'named-expression': valid + '(PIN := ' + literal + ')\n',
+            'for-target': valid + 'for PIN in ():\n    pass\n',
+            'with-target': valid + 'with context() as PIN:\n    pass\n',
+            'nonliteral-expression': "PIN = 'a' * 64\n",
+            'nonliteral-concatenation': 'PIN = ' + literal + " + ''\n",
+            'nonliteral-call': 'PIN = str(' + literal + ')\n',
+            'wrong-type': 'PIN = 123\n',
+            'bytes': 'PIN = b' + literal + '\n',
+            'short-hash': 'PIN = ' + repr(q.CURRENT_SHA[:-1]) + '\n',
+            'uppercase-hash': 'PIN = ' + repr(q.CURRENT_SHA.upper()) + '\n',
+            'nonhex-hash': 'PIN = ' + repr('g' * 64) + '\n',
+            'hash-with-newline': 'PIN = ' + repr(q.CURRENT_SHA + '\n') + '\n',
+        }
+        for mutation, source in mutations.items():
+            with self.subTest(mutation=mutation), self.assertRaises(q.Reject):
+                literal_source_pin(source, 'PIN', str)
+        for value in ('True', '0', '-1', '376.0', "'376'", '375 + 1'):
+            with self.subTest(count=value), self.assertRaises(q.Reject):
+                literal_source_pin('PIN = ' + value, 'PIN', int)
+        # A different well-formed literal still fails the original identity assertion.
+        for value, kind, expected in ((repr('0' * 64), str, q.CURRENT_SHA),
+                                      ('377', int, q.CURRENT_SOURCE_MEMBERS),
+                                      ('292', int, q.CURRENT_COMPILER_BODIES)):
+            with self.subTest(changed=value), self.assertRaises(AssertionError):
+                self.assertEqual(literal_source_pin('PIN = ' + value, 'PIN', kind), expected)
 
 
 class WorkflowEnvironmentControls(unittest.TestCase):
@@ -502,11 +626,13 @@ class ObserverPreparationControls(unittest.TestCase):
                           for row in q.loads(old_raw)['files'] if row['path'].startswith(q.PUBLIC + '/')}
         additions = {'generate_lexer_reservation.py', 'byte_storage_source_authority.py',
                      'lexer_reservation_lifecycle.py', 'lexer-reservation-lifecycle-v1.json',
-                     'observer-lexer-reservation-v1.patch', 'test_lexer_reservation.py'}
+                     'observer-lexer-reservation-v1.patch', 'test_lexer_reservation.py',
+                     'generate_lexer_reservation_v2.py', 'lexer-reservation-lifecycle-v2.json',
+                     'observer-lexer-reservation-v2.patch'}
         self.assertEqual(len(original_names), 22)
         self.assertFalse(original_names & additions)
         self.assertEqual(run.PACKAGE_FILES, original_names | additions)
-        self.assertEqual(len(expected), 28)
+        self.assertEqual(len(expected), 31)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
@@ -1154,8 +1280,9 @@ def synthetic_seal_fixture(root):
         data[str(path)] = raw
         if included: records[str(path)] = record
         return record
-    def process(base):
-        return put((base, 'invocation.json'), {'stdout': put((base, 'driver.stdout'), b''), 'stderr': put((base, 'driver.stderr'), b'')})
+    def process(base, started=0):
+        return put((base, 'invocation.json'), {'exit_code': 0, 'started_ns': started, 'finished_ns': started + 1,
+                                              'stdout': put((base, 'driver.stdout'), b''), 'stderr': put((base, 'driver.stderr'), b'')})
     adapter = q.module('_unit4_synthetic_current_parser', REPO / q.PARSER / 'portable.py')
     authority = adapter.authority()
     overlays = {kind: put((kind, 'overlay-manifest.json'), adapter.current_overlay(root / kind, authority, kind == 'control-source'))
@@ -1188,59 +1315,215 @@ def synthetic_seal_fixture(root):
                             'current_candidate': records[str(root / directory / 'candidate-source-manifest.json')],
                             'current_overlay': overlays[directory], 'changes': authority['current']['source_delta']})
     session = put(('session.json',), {'schema': 'oxid-unit4-current-parser-session-v1', 'root': str(root), 'authority_sha256': adapter.AUTHORITY_SHA,
-                  'adapter': q.identity(REPO / q.PARSER / 'portable.py'), 'host': {'python_executable': sys.executable},
+                  'prepared_ns': 1, 'adapter': q.identity(REPO / q.PARSER / 'portable.py'), 'host': {'python_executable': sys.executable},
                   'overlay': overlays['source'], 'control_overlay': overlays['control-source'],
                   'prepare_invocation': process('prepare'), 'control_prepare_invocation': process('prepare-control'),
                   'transition_authority': put(('current-authority.json',), (REPO / q.PARSER / 'authority.json').read_bytes()),
                   'historical_authority': put(('historical-authority.json',), (REPO / q.PARSER_FROZEN / 'authority.json').read_bytes()),
                   'current_source_manifest': put(('current-source-manifest.json',), (REPO / q.SOURCE / 'current-source.json').read_bytes()),
                   'transitions': transitions})
+    phase = adapter.phase_module(authority)
+    probes = adapter.phase_module(authority, controls=True)
+    binding = adapter.phase_control_binding(authority)
+    u8 = adapter.u8_policy_module(authority)
+    builds_by_role, envelopes, ordinary_records = {}, [], []
+    nonce_number = 0
+
+    def phase_put(parts, value):
+        return put(parts, phase.canonical_bytes(value))
+
+    def relative(record):
+        return dict(record, path=Path(record['path']).relative_to(root).as_posix())
+
+    def ordinary(scope, profile, control, index, case, source, display, work, modes, source_record=None):
+        nonlocal nonce_number
+        nonce_number += 1
+        nonce = format(nonce_number, '032x')
+        role = 'not_observed' if control else 'observed'
+        source_record = source_record or put((work, 'source.ox'), source.encode())
+        lex_error = scope == 'collection' and index % 13 == 0
+        result = 'err' if lex_error else 'ok'
+        raw = put((work, 'raw.json'), {'schema': 'oxid-unit4-parser-raw-v1', 'nonce': nonce,
+                  'case_id': case, 'source_utf8': source, 'display_path': display,
+                  'observations': [{'mode': ['ProjectCandidate', 'OwnedCandidate'][i], 'mode_execution_index': i,
+                                    'executed': True, 'runtime_os': 'linux', 'runtime_architecture': 'x86_64',
+                                    'pointer_width': 64, 'source_generation': 1,
+                                    'result': 'lex_error' if lex_error else 'accepted'} for i in modes]})
+        trace = [] if control or lex_error else [{'seq': 1, 'kind': 'lexer token tape', 'length': 4,
+                                                 'element_bytes': 32, 'success': True}]
+        witness = {'schema': phase.SCHEMA, 'nonce': nonce, 'case_id': case, 'role': role,
+                   'runtime_os': 'linux', 'runtime_architecture': 'x86_64', 'pointer_width': 64,
+                   'token_bytes': 32, 'lex_attempts': 1, 'lex_result': result, 'phase': 'finished',
+                   'closed': True, 'mode_indices': modes, 'event_limit': 16, 'event_count': len(trace),
+                   'fixed_row_bytes': 8, 'fixed_rows_bytes': 128, 'occupied_row_bytes': len(trace) * 8,
+                   'ledger_bytes': 248, 'row_byte_limit': 128, 'serialized_byte_limit': 1912,
+                   'reserve_failed': None if control else False, 'rows': trace}
+        payload = phase.canonical_bytes(witness)
+        sidecar = put((work, 'lexer-phase.json'), payload)
+        stdout = b'test synthetic ... ' + phase.FRAME_PREFIX + nonce.encode() + b' ' + payload
+        stdout += b'UNIT4_EXECUTED ' + nonce.encode() + b'\ntest result: ok. 1 passed; 0 failed; 0 ignored;\n'
+        binary = builds_by_role[(profile, control)]['binary']
+        argv = ([binary['path'], '--exact', authority['recipe']['entrypoint'], '--ignored', '--nocapture']
+                if scope == 'u8_controls' else
+                [binary['path'], authority['recipe']['entrypoint'], '--exact', '--ignored', '--nocapture', '--test-threads=1'])
+        native = {'argv': argv, 'exit_code': 0,
+                  'stdout': put((work, 'driver.stdout' if scope == 'u8_controls' else 'stdout.txt'), stdout),
+                  'stderr': put((work, 'driver.stderr' if scope == 'u8_controls' else 'stderr.txt'), b'')}
+        if scope == 'collection':
+            request = put((work, 'request.json'), {'case_id': case, 'source': source_record, 'display_path': display,
+                          'original_mode_requested': len(modes) == 2,
+                          'environment': {'UNIT4_NONCE': nonce, 'UNIT4_CASE_ID': case, 'UNIT4_CONTROL': '0',
+                                          'UNIT4_SOURCE': source_record['path'], 'UNIT4_RAW_OUTPUT': raw['path'],
+                                          'UNIT4_ORIGINAL': str(int(len(modes) == 2))}})
+            row = {'case_id': case, 'execution_id': nonce, **native, 'request': request,
+                   'status': 'executed', 'raw': raw, 'observations': len(modes)}
+            put((work, 'receipt.json'), row)
+        elif scope == 'passivity':
+            row = {**native, 'raw': raw}
+        else:
+            row = {'profile': profile, 'control': control, 'case': case, 'nonce': nonce,
+                   'binary': binary, 'source': source_record, 'invocation': put((work, 'invocation.json'), native), 'raw': raw}
+        record = {'case_id': case, 'nonce': nonce, 'role': role, 'process_index': index,
+                  'process_receipt_sha256': q.sha(phase.process_projection(row)), 'binary_sha256': binary['sha256'],
+                  'source_sha256': source_record['sha256'], 'raw_sha256': raw['sha256'],
+                  'stdout_sha256': native['stdout']['sha256'], 'stderr_sha256': native['stderr']['sha256'],
+                  'sidecar': relative(sidecar)}
+        ordinary_records.append(record)
+        return row, record
+
+    def envelope(scope, profile, parent, rows):
+        record = phase_put(('lexer-phase', scope + '-' + profile + '.json'),
+                           {'schema': phase.ENVELOPE_SCHEMA, 'scope': scope, 'profile': profile,
+                            'session_sha256': session['sha256'], 'authority_sha256': adapter.AUTHORITY_SHA,
+                            'adapter_sha256': authority['current']['lexer_phase']['helper']['sha256'],
+                            'parent_receipt': relative(parent), 'record_count': len(rows), 'records': rows})
+        envelopes.append(record)
+
     for profile_index, profile in enumerate(q.PROFILES):
         builds = []
         for control in (False, True):
             base = ('build-control-' if control else 'build-') + profile
             binary = put((base, 'result', 'target', authority['recipe']['target'], profile, 'deps', 'oxid-' + str(10 + profile_index * 2 + control)), b'synthetic executable ' + base.encode())
             omitted.append(binary)
-            build = put((base, 'result', 'build-receipt.json'), {'profile': profile, 'control': control, 'binary': binary,
-                        'overlay_manifest': overlays['control-source' if control else 'source'],
-                        'stdout': put((base, 'result', 'stdout.jsonl'), b''), 'stderr': put((base, 'result', 'stderr.txt'), b'')})
-            put((base, 'portable-build.json'), {'profile': profile, 'control': control, 'session': session, 'invocation': process(base), 'receipt': build})
+            body = {'profile': profile, 'control': control, 'binary': binary,
+                    'overlay_manifest': overlays['control-source' if control else 'source'],
+                    'stdout': put((base, 'result', 'stdout.jsonl'), b''), 'stderr': put((base, 'result', 'stderr.txt'), b'')}
+            build = put((base, 'result', 'build-receipt.json'), body)
+            builds_by_role[(profile, control)] = body
+            put((base, 'portable-build.json'), {'profile': profile, 'control': control, 'session': session,
+                                                'invocation': process(base, 2 + profile_index * 2 + int(control)), 'receipt': build})
             builds.append(build)
         base = 'collect-' + profile
-        cases = []
+        cases, phase_rows = [], []
         for index in range(248):
             case = 'case-' + str(index).zfill(3)
-            source = put((base, 'result', case, 'source.ox'), b'synthetic source')
-            request = put((base, 'result', case, 'request.json'), {'source': source})
-            row = {'case_id': case, 'request': request, 'raw': put((base, 'result', case, 'raw.json'), {'synthetic': True}),
-                   'stdout': put((base, 'result', case, 'stdout.txt'), b''), 'stderr': put((base, 'result', case, 'stderr.txt'), b'')}
-            put((base, 'result', case, 'receipt.json'), row); cases.append(row)
-        manifest = put((base, 'result', 'execution-manifest.json'), {'case_count': 248, 'observation_count': 319, 'case_receipts': cases,
-                       'authority_checkpoint': session, 'build_receipt': builds[0], 'driver': records[str(root / 'helpers/run.py')],
-                       'normalizer': records[str(root / 'helpers/parse_debug.py')], 'observations': put((base, 'result', 'observations.jsonl'), b'')})
+            row, phase_row = ordinary('collection', profile, False, index, case, 'synthetic source',
+                                      case + '.ox', base + '/result/' + case, [0, 1] if index < 71 else [0])
+            cases.append(row); phase_rows.append(phase_row)
+        manifest = put((base, 'result', 'execution-manifest.json'),
+                       {'case_count': 248, 'observation_count': 319, 'case_receipts': cases, 'status': 'collected',
+                        'profile': profile, 'requested_case_ids': [row['case_id'] for row in cases],
+                        'authority_checkpoint': session, 'build_receipt': builds[0], 'driver': records[str(root / 'helpers/run.py')],
+                        'normalizer': records[str(root / 'helpers/parse_debug.py')],
+                        'observations': put((base, 'result', 'observations.jsonl'), b'')})
         for name in ('test-roster.stdout', 'test-roster.stderr'): put((base, 'result', name), b'')
-        put((base, 'portable-collection.json'), {'session': session, 'profile': profile, 'contract_dir': str(root.parent / 'contracts'), 'manifest': manifest, 'invocation': process(base)})
+        put((base, 'portable-collection.json'), {'session': session, 'profile': profile, 'contract_dir': str(root.parent / 'contracts'),
+                                                'manifest': manifest, 'invocation': process(base, 100 + profile_index * 100)})
+        envelope('collection', profile, manifest, phase_rows)
         base = 'passivity-' + profile
-        cases = []
-        for name in ('original', 'project', 'malformed'):
-            source = put((base, 'result', name + '.ox'), b'synthetic source')
-            receipts = [{key: put((base, 'result', name + '-' + role, filename), b'{}' if key == 'raw' else b'')
-                         for key, filename in (('raw', 'raw.json'), ('stdout', 'stdout.txt'), ('stderr', 'stderr.txt'))} for role in ('instrumented', 'control')]
-            cases.append({'source': source, 'receipts': receipts})
-        report = put((base, 'result', 'report.json'), {'results': cases, 'instrumented': builds[0], 'control': builds[1], 'authority_checkpoint': session})
-        put((base, 'portable-passivity.json'), {'session': session, 'profile': profile, 'invocation': process(base), 'report': report})
-    controls = put(('u8-policy-controls', 'receipt.json'), {'cases': [], 'scope': 'SYNTHETIC_TRANSPORT_CONTROL_ONLY'})
-    result_value = {'status': 'pass', 'session': session, 'scope': 'SYNTHETIC_TRANSPORT_CONTROL_ONLY', 'u8_policy_controls': controls}
+        cases, phase_rows = [], []
+        for index, (name, source_text) in enumerate(authority['recipe']['passivity']['cases']):
+            source = put((base, 'result', name + '.ox'), source_text.encode())
+            receipts = []
+            for control in (False, True):
+                work = base + '/result/' + name + ('-control' if control else '-instrumented')
+                row, phase_row = ordinary('passivity', profile, control, index * 2 + int(control), name,
+                                          source_text, name + '.ox', work, [0, 1], source)
+                receipts.append(row); phase_rows.append(phase_row)
+            cases.append({'case': name, 'source': source, 'receipts': receipts, 'pairs': 2})
+        report = put((base, 'result', 'report.json'), {'status': 'pass', 'results': cases,
+                     'instrumented': builds[0], 'control': builds[1], 'authority_checkpoint': session})
+        put((base, 'portable-passivity.json'), {'session': session, 'profile': profile, 'invocation': process(base, 400 + profile_index * 100), 'report': report})
+        envelope('passivity', profile, report, phase_rows)
+
+    u8_rows, u8_phase_rows = [], {}
+    for profile in q.PROFILES:
+        phase_rows = []
+        for control in (False, True):
+            for name, source in u8.CASES.items():
+                work = 'u8-policy-controls/' + profile + ('-control-' if control else '-observer-') + name
+                row, phase_row = ordinary('u8_controls', profile, control, len(u8_rows), name,
+                                          source, 'u8-policy.ox', work, [0, 1])
+                u8_rows.append(row); phase_rows.append(phase_row)
+            if control:
+                base = 'u8-policy-controls/' + profile + '-enabled-public'
+                u8_rows.append({'profile': profile, 'control': True, 'case': 'enabled-public',
+                                'binary': builds_by_role[(profile, control)]['binary'], 'invocation': process(base, 800)})
+        u8_phase_rows[profile] = phase_rows
+    controls = put(('u8-policy-controls', 'receipt.json'), {'schema': 'oxid-unit4-u8-policy-controls-v1',
+                   'session': session, 'closed_policy': authority['current']['u8_closed_policy'], 'cases': u8_rows,
+                   'historical_observations_changed': False, 'closed_refusal_observations': 32, 'enabled_public_tests': 2})
+    for profile in q.PROFILES:
+        envelope('u8_controls', profile, controls, u8_phase_rows[profile])
+    q.need(nonce_number == 524 and len({row['nonce'] for row in ordinary_records}) == 524,
+           'synthetic exact524 unique ordinary processes')
+    q.need([sum(row['role'] == role for row in ordinary_records) for role in ('observed', 'not_observed')] == [510, 14],
+           'synthetic exact ordinary role counts')
+    envelopes = [next(row for row in envelopes if Path(row['path']).name == scope + '-' + profile + '.json')
+                 for scope in ('collection', 'passivity', 'u8_controls') for profile in q.PROFILES]
+
+    probe_receipts = []
+    for number, (probe, profile, role) in enumerate(probes.roster(), 1):
+        binary = relative(builds_by_role[(profile, role == 'not_observed')]['binary'])
+        request = {'schema': probes.REQUEST_SCHEMA, 'nonce': format(10000 + number, '032x'),
+                   'probe': probe, 'profile': profile, 'role': role, 'session_sha256': session['sha256'],
+                   'authority_sha256': adapter.AUTHORITY_SHA, 'driver_sha256': binding['driver']['sha256'],
+                   'binary': binary, 'entrypoint': probes.ENTRYPOINT, 'expected': probes.expected(probe, profile, role)}
+        want = request['expected']
+        prefix = (probes.LAYOUT_PREFIX if want['status'] == 'measured' else
+                  probes.ARMED_PREFIX if want['status'] == 'rejected_as_expected' else probes.OK_PREFIX)
+        marker = prefix + request['nonce'].encode() + b' ' + probe.encode() + b' ' + want['boundary'].encode()
+        layout = binding['approved_layouts'][profile + '-' + role]
+        if want['status'] == 'measured': marker += b' ' + probes.canonical_bytes(layout).rstrip(b'\n')
+        summary = (b'test result: FAILED. 0 passed; 1 failed; 0 ignored;\n' if want['exit_code'] else
+                   b'test result: ok. 1 passed; 0 failed; 0 ignored;\n')
+        stdout, stderr = b'test synthetic ... ' + marker + b'\n' + summary, b''
+        if want['exit_code']:
+            message = (b'allocator event lacks actual parser position' if want['boundary'] == 'parser.position' else
+                       b'UNIT4_PHASE_V1:' + want['boundary'].encode())
+            stderr = b"thread 'synthetic' panicked at synthetic.rs:1:1:\n" + message + b'\n'
+        status, boundary, count, measured, failure = probes.validate_probe_output(
+            request, stdout, stderr, want['exit_code'], approved_layout=layout)
+        q.need(status == want['status'] and failure is None, 'synthetic transcript matches closed protocol')
+        directory = probes.process_dir(request)
+        request_id = phase_put((directory, 'request.json'), request)
+        stdout_id, stderr_id = put((directory, 'stdout'), stdout), put((directory, 'stderr'), stderr)
+        receipt = {'schema': probes.RECEIPT_SCHEMA,
+                   **{key: request[key] for key in ('nonce', 'probe', 'profile', 'role')},
+                   'request': relative(request_id), 'status': status, 'exit_code': want['exit_code'], 'boundary': boundary,
+                   'started_ns': 1000 + number * 2, 'finished_ns': 1001 + number * 2,
+                   'timed_out': False, 'stream_limit_exceeded': False, **probes.input_hashes(*probes.inputs(root, request)),
+                   'stdout': relative(stdout_id), 'stderr': relative(stderr_id), 'marker_count': count,
+                   'layout': measured, 'failure': failure}
+        probe_receipts.append(relative(phase_put((directory, 'receipt.json'), receipt)))
+    probe_index = phase_put(('lexer-phase-controls', 'probe-index.json'),
+                           {'schema': probes.INDEX_SCHEMA, 'session_sha256': session['sha256'],
+                            'authority_sha256': adapter.AUTHORITY_SHA, 'driver_sha256': binding['driver']['sha256'],
+                            'counts': dict(probes.COUNTS), 'receipts': probe_receipts})
+    q.need(len([name for name in records if Path(name).is_relative_to(root / 'lexer-phase-controls')]) == 217,
+           'synthetic exact217 probe transport members')
+    result_value = {'status': 'pass', 'session': session, 'scope': 'SYNTHETIC_TRANSPORT_CONTROL_ONLY',
+                    'u8_policy_controls': controls, 'lexer_phase_envelopes': envelopes, 'lexer_phase_controls': probe_index}
     result = put(('comparison.json',), result_value, included=False)
     tail = [str(REPO / q.PARSER / 'portable.py'), 'compare', '--session', session['path'], '--contract-dir', str(root.parent / 'contracts')]
     streams = {'stdout': put(root.parent / 'stdout', result_value, included=False), 'stderr': put(root.parent / 'stderr', b'', included=False)}
     command = put(root.parent / 'command.json', {'name': '13-parser-comparison', 'status': 0, 'timed_out': False, 'stream_limit_exceeded': False,
-                  'argv': [sys.executable, '-B', *tail], 'cwd': str(root.parent), 'started_ns': 20, 'completed_ns': 30,
+                  'argv': [sys.executable, '-B', *tail], 'cwd': str(root.parent), 'started_ns': 3000, 'completed_ns': 4000,
                   'streams': streams, 'stdout_sha256': streams['stdout']['sha256'], 'stderr_sha256': streams['stderr']['sha256']}, included=False)
     before = [records[path] for path in sorted(records)]
     return {'schema': 'oxid-unit4-parser-comparison-seal-v2', 'status': 'pass', 'before': before, 'after': copy.deepcopy(before),
             'full_archive_only': omitted, 'comparison': result, 'command': command, 'argv_tail': tail,
-            'before_finished_ns': 10, 'after_started_ns': 40, 'after_finished_ns': 50}, data
+            'before_finished_ns': 2000, 'after_started_ns': 5000, 'after_finished_ns': 6000}, data
 
 
 class ComparisonSealControls(unittest.TestCase):
@@ -1400,7 +1683,8 @@ class ComparisonSealControls(unittest.TestCase):
         with self.assertRaises(q.Reject): verify_parser_seal(self.seal, self.resolve)
 
     def test_comparison_ordering(self):
-        self.seal['before_finished_ns'] = 21
+        command = q.loads(self.data[self.seal['command']['path']])
+        self.seal['before_finished_ns'] = command['started_ns'] + 1
         with self.assertRaises(q.Reject): verify_parser_seal(self.seal, self.resolve)
 
     def test_generated_helper_manifest_cannot_be_omitted(self):
@@ -1444,6 +1728,157 @@ class ComparisonSealControls(unittest.TestCase):
                 rebind(self.seal['comparison'], q.canonical(comparison))
                 self.seal['after'] = copy.deepcopy(self.seal['before'])
                 with self.assertRaisesRegex(q.Reject, 'parser transition metadata'):
+                    verify_parser_seal(self.seal, self.resolve)
+
+    def phase_context(self):
+        adapter = q.module('_unit4_synthetic_phase_context', REPO / q.PARSER / 'portable.py')
+        authority = adapter.authority()
+        root = self.root / 'parser'
+        builds = {(profile, control): q.loads(self.data[str(root / (('build-control-' if control else 'build-') + profile) / 'result/build-receipt.json')])
+                  for profile in q.PROFILES for control in (False, True)}
+        index = {row['path']: row for row in self.seal['before']}
+        return adapter, authority, builds, index
+
+    def replace_phase_fixture_member(self, relative, value, *, wire=False):
+        path = str(self.root / 'parser' / relative)
+        if isinstance(value, bytes):
+            raw = value
+        elif wire:
+            adapter, authority, _, _ = self.phase_context()
+            raw = adapter.phase_module(authority).canonical_bytes(value)
+        else:
+            raw = q.canonical(value)
+        self.data[path] = raw
+        record = {'path': path, 'bytes': len(raw), 'sha256': q.sha(raw)}
+        for inventory in ('before', 'after'):
+            for row in self.seal[inventory]:
+                if row['path'] == path: row.update(record)
+        return record
+
+    def test_phase_compact_transport_consumes_exact_524_6_217(self):
+        reader = self.compact_reader()
+        seen = set()
+        def resolve(record):
+            seen.add(record['path'])
+            return reader.raw(record)
+        report = verify_parser_seal(self.seal, resolve)
+        root = self.root / 'parser'
+        self.assertEqual(sum(name.endswith('/lexer-phase.json') for name in seen), 524)
+        self.assertEqual(sum(Path(name).parent == root / 'lexer-phase' for name in seen), 6)
+        self.assertEqual(sum(Path(name).is_relative_to(root / 'lexer-phase-controls') for name in seen), 217)
+        self.assertEqual(report['full_archive_only'], 1086)
+        for row in self.seal['before']:
+            if row['path'].endswith('/lexer-phase.json') or Path(row['path']).is_relative_to(root / 'lexer-phase') or Path(row['path']).is_relative_to(root / 'lexer-phase-controls'):
+                self.assertFalse(parser_full_only(row, root))
+        envelopes = [q.loads(self.data[str(root / 'lexer-phase' / (scope + '-' + profile + '.json'))])
+                     for scope in ('collection', 'passivity', 'u8_controls') for profile in q.PROFILES]
+        self.assertEqual([e['record_count'] for e in envelopes], [248, 248, 6, 6, 8, 8])
+        rows = [row for envelope in envelopes for row in envelope['records']]
+        self.assertEqual([sum(row['role'] == role for row in rows) for role in ('observed', 'not_observed')], [510, 14])
+        self.assertEqual([row['process_index'] for row in envelopes[-1]['records']], list(range(9, 17)))
+
+    def test_phase_helper_failure_precedes_frame_extraction(self):
+        for scope, base, outer_name in (('collection', 'collect-debug', 'portable-collection.json'),
+                                        ('passivity', 'passivity-debug', 'portable-passivity.json')):
+            with self.subTest(scope=scope):
+                self.seal, self.data = synthetic_seal_fixture(self.root)
+                path = base + '/invocation.json'
+                invocation = q.loads(self.data[str(self.root / 'parser' / path)])
+                invocation['exit_code'] = 7
+                identity = self.replace_phase_fixture_member(path, invocation)
+                outer_path = base + '/' + outer_name
+                outer = q.loads(self.data[str(self.root / 'parser' / outer_path)])
+                outer['invocation'] = identity
+                self.replace_phase_fixture_member(outer_path, outer)
+                adapter, authority, builds, index = self.phase_context()
+                seen = []
+                def resolve(record):
+                    seen.append(record['path'])
+                    return self.resolve(record)
+                with self.assertRaisesRegex(ValueError, 'actual helper success before lexical extraction/admission'):
+                    adapter.phase_scope(authority, self.root / 'parser/session.json', scope, 'debug',
+                                        resolve=resolve, identities=index, builds=builds)
+                self.assertFalse(any(Path(name).is_relative_to(self.root / 'parser' / base / 'result') for name in seen))
+
+    def test_phase_process_failure_cannot_be_overridden_by_valid_frame(self):
+        path = 'collect-debug/result/case-000/receipt.json'
+        row = q.loads(self.data[str(self.root / 'parser' / path)])
+        row['exit_code'] = 101
+        self.replace_phase_fixture_member(path, row)
+        path = 'collect-debug/result/execution-manifest.json'
+        manifest = q.loads(self.data[str(self.root / 'parser' / path)])
+        manifest['case_receipts'][0] = row
+        identity = self.replace_phase_fixture_member(path, manifest)
+        path = 'collect-debug/portable-collection.json'
+        outer = q.loads(self.data[str(self.root / 'parser' / path)])
+        outer['manifest'] = identity
+        self.replace_phase_fixture_member(path, outer)
+        adapter, authority, builds, index = self.phase_context()
+        with self.assertRaisesRegex(ValueError, 'actual ordinary selected process success before extraction'):
+            adapter.phase_scope(authority, self.root / 'parser/session.json', 'collection', 'debug',
+                                resolve=self.resolve, identities=index, builds=builds)
+
+    def test_phase_missing_extra_or_omitted_members_reject(self):
+        names = ('collect-debug/result/case-000/lexer-phase.json',
+                 'lexer-phase/collection-debug.json', 'lexer-phase-controls/probe-index.json',
+                 'lexer-phase-controls/debug-observed-layout/stdout')
+        for relative in names:
+            for change in ('missing', 'omitted'):
+                with self.subTest(relative=relative, change=change):
+                    self.seal, self.data = synthetic_seal_fixture(self.root)
+                    name = str(self.root / 'parser' / relative)
+                    row = next(row for row in self.seal['before'] if row['path'] == name)
+                    if change == 'missing':
+                        for inventory in ('before', 'after'):
+                            self.seal[inventory] = [row for row in self.seal[inventory] if row['path'] != name]
+                    else:
+                        self.seal['full_archive_only'].append(copy.deepcopy(row))
+                    with self.assertRaises(q.Reject): verify_parser_seal(self.seal, self.resolve)
+        self.seal, self.data = synthetic_seal_fixture(self.root)
+        extra = {'path': str(self.root / 'parser/lexer-phase-controls/extra'), 'bytes': 0, 'sha256': q.sha(b'')}
+        self.data[extra['path']] = b''
+        for inventory in ('before', 'after'):
+            self.seal[inventory] = sorted([*self.seal[inventory], copy.deepcopy(extra)], key=lambda row: row['path'])
+        with self.assertRaisesRegex(q.Reject, 'exact transported 217-file inventory'):
+            verify_parser_seal(self.seal, self.resolve)
+
+    def test_phase_rehashed_wrong_association_rejects(self):
+        for field, value in (('case_id', 'different'), ('nonce', 'f' * 32), ('role', 'not_observed'),
+                             ('process_index', 1), ('binary_sha256', '0' * 64), ('source_sha256', '0' * 64),
+                             ('raw_sha256', '0' * 64), ('stdout_sha256', '0' * 64),
+                             ('stderr_sha256', '0' * 64), ('process_receipt_sha256', '0' * 64)):
+            with self.subTest(field=field):
+                self.seal, self.data = synthetic_seal_fixture(self.root)
+                path = 'lexer-phase/collection-debug.json'
+                envelope = q.loads(self.data[str(self.root / 'parser' / path)])
+                envelope['records'][0][field] = value
+                self.replace_phase_fixture_member(path, envelope, wire=True)
+                with self.assertRaisesRegex(q.Reject, 'parser lexical phase evidence'):
+                    verify_parser_seal(self.seal, self.resolve)
+
+    def test_phase_sidecar_must_equal_exact_stdout_payload(self):
+        path = 'collect-debug/result/case-000/lexer-phase.json'
+        sidecar = q.loads(self.data[str(self.root / 'parser' / path)])
+        sidecar['case_id'] = 'different'
+        self.replace_phase_fixture_member(path, sidecar, wire=True)
+        with self.assertRaisesRegex(q.Reject, 'sidecar must equal exact authenticated stdout slice'):
+            verify_parser_seal(self.seal, self.resolve)
+
+    def test_phase_probe_rehashed_input_layout_and_freshness_reject(self):
+        directory = 'lexer-phase-controls/debug-observed-layout'
+        for field, value in (('argv_sha256', '0' * 64), ('started_ns', 0),
+                             ('layout', None), ('exit_code', 101)):
+            with self.subTest(field=field):
+                self.seal, self.data = synthetic_seal_fixture(self.root)
+                path = directory + '/receipt.json'
+                receipt = q.loads(self.data[str(self.root / 'parser' / path)])
+                receipt[field] = value
+                identity = self.replace_phase_fixture_member(path, receipt, wire=True)
+                index_path = 'lexer-phase-controls/probe-index.json'
+                index = q.loads(self.data[str(self.root / 'parser' / index_path)])
+                index['receipts'][0] = dict(identity, path=path)
+                self.replace_phase_fixture_member(index_path, index, wire=True)
+                with self.assertRaisesRegex(q.Reject, 'parser lexical phase evidence'):
                     verify_parser_seal(self.seal, self.resolve)
 
 

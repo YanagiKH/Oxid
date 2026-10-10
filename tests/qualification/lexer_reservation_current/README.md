@@ -1,3 +1,17 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+The active source package has 95 manifest rows plus its manifest, 96 physical files. Its named source-v2 manifest is 74,328 bytes; source authority is 275,010 bytes / a3853a2ba52b581bf80af53cb7ddd25e990deec87c221902e7b9d88f33b15c9c; transition is 398,900 bytes / c8cbadeac02f6876b884c36d0d7d00f7dee275480cdc4b99542e10cf0a1b4438. The outer source inverse changes exactly 15 paths and 62 hunks, retaining 376 inputs, 288 src/native bodies, 291 build bodies, 78 fixture bodies and 136 include expressions. All earlier named source-v1 and byte-storage artifacts remain exact.
+
+The separate source-v1 facade archive is inert preservation data: scripts/predecessors/lexer_reservation_source_v1 contains exactly 38 original bodies plus preservation.json (SHA 8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be). Its 27 published, ten receipt-repaired and one maintenance origin records remain distinct. Do not import or execute relocated facades; replay restores original paths and complete pinned closure. Mutable current-test corrections retain their exact committed predecessors separately and do not expand this archive.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
 # Fallible lexer reservation current authority
 
 Status: **generated current adapters, independent exact review pending**.

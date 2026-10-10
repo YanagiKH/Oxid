@@ -53,6 +53,7 @@ def execute(api, session_path, a):
                'enabled_public_tests': 2}
     verify(api, receipt, api.artifact, expected_session=session)
     api.write(out / 'receipt.json', receipt)
+    phase_receipts(api, session_path, a, emit=True)
     return receipt
 
 
@@ -114,3 +115,27 @@ def verify(api, receipt, raw, expected_binaries=None, expected_session=None):
     api.same(receipt['enabled_public_tests'], 2, 'both enabled public profiles')
     api.same(receipt['historical_observations_changed'], False, 'historical observations remain separate')
     return {'closed_refusal_observations': 32, 'enabled_public_tests': 2}
+
+
+def phase_receipts(api, session_path, a, *, emit=False):
+    """Keep 18 old receipt rows exact; associate only the 16 ordinary requests."""
+    session, root = api.session_at(session_path, a)
+    envelopes = [api.phase_scope(a, session_path, 'u8_controls', profile, emit=emit)[0]
+                 for profile in ('debug', 'release')]
+    expected = {'receipt.json'}
+    for profile in ('debug', 'release'):
+        for control in (False, True):
+            for name in CASES:
+                directory = profile + ('-control-' if control else '-observer-') + name
+                expected.update(directory + '/' + filename for filename in
+                                ('source.ox', 'driver.stdout', 'driver.stderr', 'invocation.json',
+                                 'raw.json', 'lexer-phase.json'))
+        expected.update(profile + '-enabled-public/' + filename
+                        for filename in ('driver.stdout', 'driver.stderr', 'invocation.json'))
+    actual = set()
+    for path in (root / 'u8-policy-controls').rglob('*'):
+        api.require(not path.is_symlink() and (path.is_file() or path.is_dir()), 'safe u8 lexical evidence')
+        if path.is_file():
+            actual.add(path.relative_to(root / 'u8-policy-controls').as_posix())
+    api.same(actual, expected, 'complete u8 original plus lexical-sidecar inventory')
+    return envelopes

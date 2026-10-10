@@ -1,3 +1,15 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+The current binding selects C2 above while ORIGINAL_CHECKPOINT remains c8e9a72afd9866f32b96f98ae24f61390039f421. Original 16-body Unit1 package and its seven source-derived current rows remain exact. The current source manifest is 74,328 bytes; the dispatcher and package manifest authenticate its complete inverse to the unchanged predecessor. Current 69-case execution plus the one added lexer-capacity control remains a fresh-run obligation; original resource and executable receipts are not reused as current results.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
 # Current fallible-lexer Unit1 runner
 
 `unit1_run_current.py` is the separately named current runner. It retains the

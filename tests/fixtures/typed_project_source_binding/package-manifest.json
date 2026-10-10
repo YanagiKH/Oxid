@@ -101,9 +101,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 74327,
+      "bytes": 74328,
       "path": "current-source.json",
-      "sha256": "aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633"
+      "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
     },
     {
       "bytes": 29723,
@@ -221,14 +221,29 @@
       "sha256": "90e995e932ea3a0d5697936efef04569886d7d6d2f353a5e032e13e8350cb046"
     },
     {
+      "bytes": 275010,
+      "path": "lexer-reservation-authority-v2.json",
+      "sha256": "a3853a2ba52b581bf80af53cb7ddd25e990deec87c221902e7b9d88f33b15c9c"
+    },
+    {
       "bytes": 74327,
       "path": "lexer-reservation-source-v1.json",
       "sha256": "aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633"
     },
     {
+      "bytes": 74328,
+      "path": "lexer-reservation-source-v2.json",
+      "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+    },
+    {
       "bytes": 387673,
       "path": "lexer-reservation-transition-v1.patch",
       "sha256": "a9c58470b2c280a4ecc0bdd253e39354d0ae037048181952a89545fadec80255"
+    },
+    {
+      "bytes": 398900,
+      "path": "lexer-reservation-transition-v2.patch",
+      "sha256": "c8cbadeac02f6876b884c36d0d7d00f7dee275480cdc4b99542e10cf0a1b4438"
     },
     {
       "bytes": 136523,
@@ -343,7 +358,7 @@
     {
       "bytes": 2360,
       "path": "run.py",
-      "sha256": "a978de636e715d0b9283f9b0228b9d6825b2d6044bb114410f1cf1a6a54739ae"
+      "sha256": "164d1e6213e140aca02f8f4a29c716f8af6c4af26e166e18fc0777251c0c2e1e"
     },
     {
       "bytes": 55961,

@@ -181,7 +181,7 @@ def admit(root, patch):
     import authority
     need(sha(Path(__file__).read_bytes()) == authority.LEXER_LIFECYCLE_HELPER_SHA,
          'unapproved lifecycle helper bytes')
-    raw = (HERE / 'lexer-reservation-lifecycle-v1.json').read_bytes()
+    raw = (HERE / 'lexer-reservation-lifecycle-v2.json').read_bytes()
     need(sha(raw) == authority.LEXER_LIFECYCLE_AUTHORITY_SHA, 'unapproved lifecycle map authority')
     proof = json.loads(raw)
     need(sha(patch) == authority.LIFECYCLE_PATCH_SHA == proof['patch']['sha256']

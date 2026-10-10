@@ -1,3 +1,17 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+The active CI input closure is 556 files across 15 closed roots, including every source-v2/phase member and the unchanged 39-file inert source-v1 facade archive. Full ordinary source-control execution additionally restores every missing tracked A2 body from exact Git blobs; those unchanged files do not become new authority inputs or new closed roots. Final complete product paths total 2,670 when the 2,622-entry A2 tree, 39 archive files, three source-v2 files and six downstream named artifacts are present.
+
+The immutable architecture audit and ci_inventory.py remain unchanged. direct-consumer-dispositions.json is the separately named current 173-entry audit: original IDs, owner/job/step/line/original command fields and dispositions remain exact; only current source identities and the two stdin/stdout active command digests change. Existing discovery invokes five source-only adapter suites, including all 35 phase source controls, without adding a direct workflow command. The original 271-file/eight-root predecessor inventory retains its original meaning and SHA 97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
 # Current fallible-lexer CI authority
 
 The active source authority is the named lexer-reservation successor for compiler

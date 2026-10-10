@@ -32,6 +32,9 @@ class CurrentLexerAdapterSuites(unittest.TestCase):
     def test_current_parser_token_and_reserve_composition(self):
         self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_reservation.py')
 
+    def test_current_parser_lexer_phase_source_controls(self):
+        self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_phase.py')
+
 
 if __name__ == '__main__':
     unittest.main()

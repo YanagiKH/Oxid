@@ -11,8 +11,8 @@ import lexer_reservation_lifecycle as m
 class CurrentLifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.patch = (m.HERE / 'observer-lexer-reservation-v1.patch').read_bytes()
-        cls.proof = json.loads((m.HERE / 'lexer-reservation-lifecycle-v1.json').read_bytes())
+        cls.patch = (m.HERE / 'observer-lexer-reservation-v2.patch').read_bytes()
+        cls.proof = json.loads((m.HERE / 'lexer-reservation-lifecycle-v2.json').read_bytes())
         cls.inputs = {r['path']: (m.REPOSITORY / r['path']).read_bytes() for r in cls.proof['base_files']}
         cls.derived, _ = m.admit(m.REPOSITORY, cls.patch)
 

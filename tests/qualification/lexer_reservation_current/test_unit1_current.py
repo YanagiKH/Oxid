@@ -26,6 +26,17 @@ PACKAGE = support.original_package()
 
 
 class AuthenticationControls(unittest.TestCase):
+    def test_original_and_current_checkpoints_have_distinct_roles(self):
+        old = {'compiler_checkpoint': support.ORIGINAL_CHECKPOINT}
+        new = {'compiler_checkpoint': support.CHECKPOINT}
+        self.assertNotEqual(support.ORIGINAL_CHECKPOINT, support.CHECKPOINT)
+        support.check_compiler_checkpoints(old, new)
+        for bad_old, bad_new in ((new, new), (old, old), (new, old),
+                                 (dict(compiler_checkpoint='0' * 40), new),
+                                 (old, dict(compiler_checkpoint='0' * 40))):
+            with self.subTest(original=bad_old, current=bad_new), self.assertRaises(ValueError):
+                support.check_compiler_checkpoints(bad_old, bad_new)
+
     def test_complete_original_and_current_inverse(self):
         verified = support.authenticate()
         self.assertEqual(len(verified['originals']), 16)

@@ -1,3 +1,17 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+Source-v2 generation used the actual source adapter checkpoint above. The immutable source-v1 recipe and outputs remain retained. Candidate generation proceeded source -> admitted source/Unit1 facade -> public lifecycle v2 -> immutable parser prephase -> outer phase. The prephase authority is `917431fe269d807c76b2f16ae7fef7f4e6c70aa301f9823f65de4fe039b94baf`. The corrected final outer authority is `d8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c`; it differs from the retained first phase candidate only in the pinned source-control test identity. Complete maps, Rust instrumentation, correspondence and layout values remain exact.
+
+The original committed generate_lexer_phase_v1.py remains a historical generation recipe. The reviewed external source-controls successor recipe (SHA cd4f0c50d161695ca78d83c900679be39bb991be142e9a693b5d835feffb6560) and old/new candidate receipts are retained with generation evidence. It is not executed by CI admission or qualification. Earlier candidates, original source-control bodies and immutable prephase records are not overwritten.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
 # Activation status
 
 The coordinator approved generation from compiler commit

@@ -2,7 +2,7 @@
   "authority": {
     "bytes": 520099,
     "path": "authority.json",
-    "sha256": "80852ba685257b1fcb8ccba158925192c07521c8cca029f545ff2ae3087070e9"
+    "sha256": "aaf8ee9c693a99bb90f521a81e5db8583e00c76ac549b2e1df61e699e2cb538b"
   },
   "base_count": 539,
   "candidate": {

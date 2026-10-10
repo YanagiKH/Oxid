@@ -95,6 +95,7 @@ def verify_parser_seal(seal, resolver):
     for key in ('prepare_invocation', 'control_prepare_invocation'):
         invocation(session[key])
     binaries = []
+    phase_builds = {}
     contract_roots = set()
     for profile in q.PROFILES:
         for control in (False, True):
@@ -112,6 +113,7 @@ def verify_parser_seal(seal, resolver):
             q.need(Path(binary['path']).parent == expected_parent and __import__('re').fullmatch(r'oxid-[0-9a-f]+', Path(binary['path']).name), 'sealed parser executable path/profile')
             bound(binary, omit=True)
             binaries.append(binary['path'])
+            phase_builds[(profile, control)] = build
         envelope = read_bound(named('collect-' + profile, 'portable-collection.json'))
         q.need(envelope['session'] == result['session'] and envelope['profile'] == profile, 'sealed collection profile/session')
         contract_roots.add(envelope['contract_dir'])
@@ -153,6 +155,13 @@ def verify_parser_seal(seal, resolver):
         if row['case'] != 'enabled-public':
             bound(row['source']); bound(row['raw'])
     q.need(len(set(binaries)) == 4, 'sealed four executable inventory')
+    try:
+        phase = adapter.phase_evidence(authority, Path(result['session']['path']),
+                                       resolve=bound, identities=index, builds=phase_builds)
+        q.need(result['lexer_phase_envelopes'] == phase['envelopes'], 'sealed exact six lexical envelopes')
+        q.need(result['lexer_phase_controls'] == phase['probe_index'], 'sealed exact separate54 probe index')
+    except (ValueError, KeyError, TypeError) as error:
+        raise q.Reject('parser lexical phase evidence: ' + str(error)) from error
     q.need(index == required, 'missing/extra complete parser comparison closure')
     q.need(omitted == allowed_omissions, 'parser omissions must be exact derived-tree members excluding generated metadata and four binary identities')
     command = q.loads(resolver(seal['command']))

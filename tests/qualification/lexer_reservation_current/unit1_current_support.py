@@ -15,13 +15,14 @@ import types
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[2]
-CHECKPOINT = 'c8e9a72afd9866f32b96f98ae24f61390039f421'
-CURRENT_SOURCE_SHA = 'aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633'
-CURRENT_SOURCE_BYTES = 74327
-DISPATCHER_SHA = 'a978de636e715d0b9283f9b0228b9d6825b2d6044bb114410f1cf1a6a54739ae'
-SOURCE_PACKAGE_SHA = '0c201be199aff6819907419a0b09a54297026010d74f80efb406959cfef538db'
+ORIGINAL_CHECKPOINT = 'c8e9a72afd9866f32b96f98ae24f61390039f421'
+CHECKPOINT = 'b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489'
+CURRENT_SOURCE_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
+CURRENT_SOURCE_BYTES = 74328
+DISPATCHER_SHA = '164d1e6213e140aca02f8f4a29c716f8af6c4af26e166e18fc0777251c0c2e1e'  # HOLD: bind independently admitted final bytes after A2.
+SOURCE_PACKAGE_SHA = '5fb5ee78a42609dab51f8e8bb23c325305954f49c52f0d18df6bbe47e57548bc'  # HOLD: bind independently admitted final bytes after A2.
 ORIGINAL_MAP_SHA = 'd0ccbbd78ff138f15791b55aed88bb33eaf6b68c69022ccb6bf0096f9ae069c3'
-CURRENT_MAP_SHA = '05b5d227f05b63e98350c561a298a3d1362644a2cda7430ce6b029bd078b900d'
+CURRENT_MAP_SHA = '9e467aaf5f19850845840c727e3fa95f59393ac88fc2efc46e74e3f6af8e1d32'  # HOLD: bind independently admitted final bytes after A2.
 CONTROL = 'frontend::project::reviewer_unit1::current_lexer_storage_failure_full_span_and_eof'
 ORIGINAL_NAMES = (
     'README.md', 'check_resource_inventory.py', 'expectation-provenance.json',
@@ -67,6 +68,14 @@ def load_module(name, path, body=None):
     return module
 
 
+def check_compiler_checkpoints(old, new):
+    """Keep original provenance and current execution checkpoint separate."""
+    need(old['compiler_checkpoint'] == ORIGINAL_CHECKPOINT,
+         'Wrong original Unit1 compiler checkpoint')
+    need(new['compiler_checkpoint'] == CHECKPOINT,
+         'Wrong current Unit1 compiler checkpoint')
+
+
 def authenticate(package=None, current_root=None):
     """Check complete frozen and derived bytes before staging or executing helpers."""
     package = original_package() if package is None else Path(package)
@@ -77,8 +86,7 @@ def authenticate(package=None, current_root=None):
     need(sha(current_map) == CURRENT_MAP_SHA, 'Changed current Unit1 body bindings')
     old = json.loads(original_map)
     new = json.loads(current_map)
-    need(old['compiler_checkpoint'] == new['compiler_checkpoint'] == CHECKPOINT,
-         'Wrong Unit1 compiler checkpoint')
+    check_compiler_checkpoints(old, new)
     need(new['original_package'] == binding('unit1_original_package.json', original_map),
          'Current map does not bind complete original Unit1 package')
     need(not package.is_symlink() and package.is_dir(), 'Invalid original Unit1 directory')

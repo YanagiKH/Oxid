@@ -13,7 +13,8 @@
     "scripts/predecessors/byte_storage_ci_v1",
     "tests/fixtures/typed_project_unit1_independent",
     "tests/fixtures/typed_project_unit2_independent",
-    "tests/qualification/unit2_u8_current"
+    "tests/qualification/unit2_u8_current",
+    "scripts/predecessors/lexer_reservation_source_v1"
   ],
   "files": [
     {
@@ -167,19 +168,214 @@
       "sha256": "e5a5fcfe92b424167320fa1b1e63984391a989019de77736a4df0d125075e0f5"
     },
     {
+      "bytes": 67408,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/.github/workflows/ci.yml",
+      "sha256": "b32ec5d77bfc3308b78b4737426908e476a93dccf855f3fe8cbdf0b035fbcc1e"
+    },
+    {
+      "bytes": 24543,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/preservation.json",
+      "sha256": "8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be"
+    },
+    {
       "bytes": 33256,
-      "path": "scripts/test_bounded_enum_native.py",
+      "path": "scripts/predecessors/lexer_reservation_source_v1/scripts/test_bounded_enum_native.py",
       "sha256": "f0fde8a3e92b1d12aad2058f38dbec0b41d6a329bdb40c6f0b3eac1f810e12f2"
     },
     {
       "bytes": 8868,
-      "path": "scripts/test_lexer_current_ci.py",
+      "path": "scripts/predecessors/lexer_reservation_source_v1/scripts/test_lexer_current_ci.py",
       "sha256": "6aabd4f019bba997cd283684a7a951d13a7d8702975ce6c5a0e015fa686d5fc9"
     },
     {
-      "bytes": 1542,
+      "bytes": 37410,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/scripts/verify_bounded_byte_storage.py",
+      "sha256": "08752ffb02ea43a9dcf56ddef57be68d4a227b3f29809a9a6ffe8e4985d01daa"
+    },
+    {
+      "bytes": 19628,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/scripts/verify_bounded_enum_native.py",
+      "sha256": "9fa505b44275d06c90ae8707c8b2a30411d08d3f76dea27f4e5cd1cd6de0e9ea"
+    },
+    {
+      "bytes": 14373,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/scripts/verify_bounded_stdin_native.py",
+      "sha256": "5bc270877ffa282681800bd04033ae5ddfdd59e5352ba3b7e4b0829bb3ed6413"
+    },
+    {
+      "bytes": 10116,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/scripts/verify_bounded_stdout_native.py",
+      "sha256": "b5cc217576f2afc9871a157f05b5669be22c1587e9ed50cffce3ab3b2b77917a"
+    },
+    {
+      "bytes": 74327,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/fixtures/typed_project_source_binding/current-source.json",
+      "sha256": "aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633"
+    },
+    {
+      "bytes": 14821,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/fixtures/typed_project_source_binding/package-manifest.json",
+      "sha256": "91aab2e17c1537e48517182f2b112e66a10c5e38d85f79d7da6073bf23ee56a6"
+    },
+    {
+      "bytes": 2360,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/fixtures/typed_project_source_binding/run.py",
+      "sha256": "93541448c2360a6dfa46b1e166237aee6837574ffb20b2f835ad5201cfbab298"
+    },
+    {
+      "bytes": 14015,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/GENERATION.md",
+      "sha256": "3270ef55e10312e4b6dfba44007c765d1dcd88c1672ecd17a56b1daf8436de42"
+    },
+    {
+      "bytes": 7901,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/README.md",
+      "sha256": "6c4009472a61dae900d8236a986f24b7d89434fca36b6a6c4ebafbcc166c76df"
+    },
+    {
+      "bytes": 4583,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/UNIT1_CURRENT.md",
+      "sha256": "960484d6a48aa2403547ebba0e3c4382fbc1b83642b3054a8690caa740e73ea1"
+    },
+    {
+      "bytes": 191055,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/direct-consumer-dispositions.json",
+      "sha256": "6e96e48757ad1e5b7636b924683fcb72ebf422b16ed70f78c68923ae7e970855"
+    },
+    {
+      "bytes": 783,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/seal.py",
+      "sha256": "39daee1ba070ba4b9715b823b18ad5fddafeabb469f0c28703d5e3207746a9b5"
+    },
+    {
+      "bytes": 12008,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/source_transition.py",
+      "sha256": "6e86082f71df4b135ffcffec03ccbe71850dfa82cebd8378bc3b1081dec3142a"
+    },
+    {
+      "bytes": 24468,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/test_current_source.py",
+      "sha256": "8a31294a54c21bfe24aeb278dc0babc0b921d5c4bb0c225da7d8ee9f03ead8ac"
+    },
+    {
+      "bytes": 16200,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/test_unit1_current.py",
+      "sha256": "b839af77e1348e649c8c8704997c96ec725a32009ff67da9054a469523380ce3"
+    },
+    {
+      "bytes": 1578,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/unit1_current_bindings.json",
+      "sha256": "05b5d227f05b63e98350c561a298a3d1362644a2cda7430ce6b029bd078b900d"
+    },
+    {
+      "bytes": 13091,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/lexer_reservation_current/unit1_current_support.py",
+      "sha256": "ae336091420e78435f6e6746de3a5658200bbefa33f1901aa6a587e915b92713"
+    },
+    {
+      "bytes": 11865,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/DESIGN.md",
+      "sha256": "89746dbb915edcf309220103f35cb0f9061d157c161e13637f69c1e525a64638"
+    },
+    {
+      "bytes": 21182,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/README.md",
+      "sha256": "87457030a255d4c2df4951cef6afffac65e87df3881804d8e9f33c7caed8970a"
+    },
+    {
+      "bytes": 17821,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/common.py",
+      "sha256": "3472448d295fa47dfb9d6beabc217a6e5d0bd1d6634b6ff6c162ab36c6b577e7"
+    },
+    {
+      "bytes": 23151,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/evidence.py",
+      "sha256": "14202cf4ee7d3877967324dfcd3746d85d60a3a38f989f8892422db8ced42c58"
+    },
+    {
+      "bytes": 106742,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/inputs-lexer-reservation-v1.json",
+      "sha256": "f12049cc96d04f153dd3e5204a3a8f8915f3dc913e035e09225fbbe28c88771a"
+    },
+    {
+      "bytes": 106742,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/inputs.json",
+      "sha256": "f12049cc96d04f153dd3e5204a3a8f8915f3dc913e035e09225fbbe28c88771a"
+    },
+    {
+      "bytes": 130167,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/test_integration.py",
+      "sha256": "c2b8b5777be45c92ce04f6ba2602a0d3728cfb1f158f442ce2a498eb155f41fa"
+    },
+    {
+      "bytes": 25595,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_parser_current/README.md",
+      "sha256": "8a1e2b7b04404fbb1f7684af4a132da12ef17e5ba511629964a0d4f1ccf4e876"
+    },
+    {
+      "bytes": 520099,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "aaf8ee9c693a99bb90f521a81e5db8583e00c76ac549b2e1df61e699e2cb538b"
+    },
+    {
+      "bytes": 215213,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_parser_current/portable.py",
+      "sha256": "86577f7fb47c9514c55adb12900953ffd6d329d2666228aae40ec3d9cd8f1de2"
+    },
+    {
+      "bytes": 140433,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_parser_current/test_current.py",
+      "sha256": "777d9f202ef5851c67603716ea9e9a2a6f8f740c1b04670e5d616236d023417a"
+    },
+    {
+      "bytes": 7600,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_parser_current/u8_policy_controls.py",
+      "sha256": "5228fc42aedb19708e727c51266acd8760440acb973784463f02fbf70be03d35"
+    },
+    {
+      "bytes": 25644,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_public_v3/README.md",
+      "sha256": "722e86df2cda0b215749fb3c76a4f5e1979b3942b980d226a3674ecc82996f48"
+    },
+    {
+      "bytes": 1600,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_public_v3/authority.py",
+      "sha256": "b785738ddc359c2be864ce85c7d87830aa58ce021f9b711dac6cef3aefb9687f"
+    },
+    {
+      "bytes": 9393,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_public_v3/lexer_reservation_lifecycle.py",
+      "sha256": "ddedc9d280f22eaf2905aa24015153cb592971be4a7623004efe6546ba27ceef"
+    },
+    {
+      "bytes": 30759,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_public_v3/run.py",
+      "sha256": "f83018c7d1edc753d133874d5fd1a7a2b8c8f623c87a9dc2d87914b231d82e5a"
+    },
+    {
+      "bytes": 44011,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_public_v3/selftest.py",
+      "sha256": "4627e73f598acc83954ec3e5571c970b209739a2e078c1cf9019003aa39d211c"
+    },
+    {
+      "bytes": 4442,
+      "path": "scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_public_v3/test_lexer_reservation.py",
+      "sha256": "80acc7416aaa7442138fb36a2ac90418d9dc60626d338bb88ae0da2a8a8cbfa6"
+    },
+    {
+      "bytes": 33256,
+      "path": "scripts/test_bounded_enum_native.py",
+      "sha256": "803713ee9fad73f3d11f62849ca6514b0eda8414c6bd36215195b6fb738cbd0c"
+    },
+    {
+      "bytes": 15803,
+      "path": "scripts/test_lexer_current_ci.py",
+      "sha256": "342fe0fd5f9947da082891130b419fd4906436fcdd8417efe1ea31c7579eb4d9"
+    },
+    {
+      "bytes": 1703,
       "path": "scripts/test_lexer_reservation_adapters_current.py",
-      "sha256": "e347a494b256bff1b3e958bab291681d7658a78a94369890d04422d93149389f"
+      "sha256": "03898b8f9635fbcf4a5519519a02b5001d52f023a0354f575c5b132b054dd995"
     },
     {
       "bytes": 664,
@@ -204,22 +400,22 @@
     {
       "bytes": 37410,
       "path": "scripts/verify_bounded_byte_storage.py",
-      "sha256": "08752ffb02ea43a9dcf56ddef57be68d4a227b3f29809a9a6ffe8e4985d01daa"
+      "sha256": "700a01821e74ebb1e00e54023854ff1abbe9200ca27e964a3c7ec6ef09155d68"
     },
     {
       "bytes": 19628,
       "path": "scripts/verify_bounded_enum_native.py",
-      "sha256": "9fa505b44275d06c90ae8707c8b2a30411d08d3f76dea27f4e5cd1cd6de0e9ea"
+      "sha256": "c55c746259a7f79c1546ed73229964f2d3c8159313291eb1f4707e823a9e06b2"
     },
     {
       "bytes": 14373,
       "path": "scripts/verify_bounded_stdin_native.py",
-      "sha256": "5bc270877ffa282681800bd04033ae5ddfdd59e5352ba3b7e4b0829bb3ed6413"
+      "sha256": "1949dd86aaa8e39b13073448281b60e85b21ceeda90407847afd8c9ca5bbef75"
     },
     {
       "bytes": 10116,
       "path": "scripts/verify_bounded_stdout_native.py",
-      "sha256": "b5cc217576f2afc9871a157f05b5669be22c1587e9ed50cffce3ab3b2b77917a"
+      "sha256": "7b63090477b116f41dd54546c1a560354b89facc99e8a5ec8a88eb82c034c39c"
     },
     {
       "bytes": 151470,
@@ -337,9 +533,9 @@
       "sha256": "5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6"
     },
     {
-      "bytes": 74327,
+      "bytes": 74328,
       "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-      "sha256": "aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633"
+      "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
     },
     {
       "bytes": 29723,
@@ -457,14 +653,29 @@
       "sha256": "90e995e932ea3a0d5697936efef04569886d7d6d2f353a5e032e13e8350cb046"
     },
     {
+      "bytes": 275010,
+      "path": "tests/fixtures/typed_project_source_binding/lexer-reservation-authority-v2.json",
+      "sha256": "a3853a2ba52b581bf80af53cb7ddd25e990deec87c221902e7b9d88f33b15c9c"
+    },
+    {
       "bytes": 74327,
       "path": "tests/fixtures/typed_project_source_binding/lexer-reservation-source-v1.json",
       "sha256": "aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633"
     },
     {
+      "bytes": 74328,
+      "path": "tests/fixtures/typed_project_source_binding/lexer-reservation-source-v2.json",
+      "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+    },
+    {
       "bytes": 387673,
       "path": "tests/fixtures/typed_project_source_binding/lexer-reservation-transition-v1.patch",
       "sha256": "a9c58470b2c280a4ecc0bdd253e39354d0ae037048181952a89545fadec80255"
+    },
+    {
+      "bytes": 398900,
+      "path": "tests/fixtures/typed_project_source_binding/lexer-reservation-transition-v2.patch",
+      "sha256": "c8cbadeac02f6876b884c36d0d7d00f7dee275480cdc4b99542e10cf0a1b4438"
     },
     {
       "bytes": 136523,
@@ -532,9 +743,9 @@
       "sha256": "79c53c652528fe770939ba42dd7a478a309b04555e398d33298bc96644316a49"
     },
     {
-      "bytes": 14821,
+      "bytes": 15335,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "0c201be199aff6819907419a0b09a54297026010d74f80efb406959cfef538db"
+      "sha256": "5fb5ee78a42609dab51f8e8bb23c325305954f49c52f0d18df6bbe47e57548bc"
     },
     {
       "bytes": 5445,
@@ -584,7 +795,7 @@
     {
       "bytes": 2360,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "a978de636e715d0b9283f9b0228b9d6825b2d6044bb114410f1cf1a6a54739ae"
+      "sha256": "164d1e6213e140aca02f8f4a29c716f8af6c4af26e166e18fc0777251c0c2e1e"
     },
     {
       "bytes": 55961,
@@ -2102,19 +2313,19 @@
       "sha256": "8ca7534dc992c36ecf8ef00a7f0c0ab2cbfcf251fe32d9fb0bb95ac6d3ee17f5"
     },
     {
-      "bytes": 14015,
+      "bytes": 16083,
       "path": "tests/qualification/lexer_reservation_current/GENERATION.md",
-      "sha256": "3270ef55e10312e4b6dfba44007c765d1dcd88c1672ecd17a56b1daf8436de42"
+      "sha256": "1531f085bbe5303c124363f5dcbba1fdb6a0c8eddadcbfbd7162d047ece043b4"
     },
     {
-      "bytes": 7901,
+      "bytes": 10005,
       "path": "tests/qualification/lexer_reservation_current/README.md",
-      "sha256": "6c4009472a61dae900d8236a986f24b7d89434fca36b6a6c4ebafbcc166c76df"
+      "sha256": "59ff7ef7f21bb011f0e0ff2337b58159ceeb91e3a5b12e1f63855e18830359f9"
     },
     {
-      "bytes": 4583,
+      "bytes": 6077,
       "path": "tests/qualification/lexer_reservation_current/UNIT1_CURRENT.md",
-      "sha256": "960484d6a48aa2403547ebba0e3c4382fbc1b83642b3054a8690caa740e73ea1"
+      "sha256": "3c9cec33c82c419ec8460a679aef75ddf499007651eeaf8e89166863b499a67a"
     },
     {
       "bytes": 10711,
@@ -2127,14 +2338,19 @@
       "sha256": "d02b2938830cc2fe3c731cfe2ee7c44b7bd985f22ff10d0c021d788d618dac12"
     },
     {
-      "bytes": 8883,
+      "bytes": 16325,
       "path": "tests/qualification/lexer_reservation_current/current.py",
-      "sha256": "851174facf26431bb15c80480339947c5ec1db5cbca3c15e83e3650ae8ff3102"
+      "sha256": "f15abe15b48cf6a5b7a196ec77c45d8c34c8e0fca6d98dfbf2bb35fcabbcf850"
     },
     {
       "bytes": 191055,
       "path": "tests/qualification/lexer_reservation_current/direct-consumer-dispositions.json",
-      "sha256": "6e96e48757ad1e5b7636b924683fcb72ebf422b16ed70f78c68923ae7e970855"
+      "sha256": "b69f0585ffd35d889023e3bcefe668db142b0d3adbd7a18cfa3823c88ffa96f0"
+    },
+    {
+      "bytes": 13219,
+      "path": "tests/qualification/lexer_reservation_current/generate_source_v2.py",
+      "sha256": "c1dc32753b09202aca799592477f36b0a14cb3969ae59c58b1fdc73534edaab9"
     },
     {
       "bytes": 13443,
@@ -2174,17 +2390,17 @@
     {
       "bytes": 783,
       "path": "tests/qualification/lexer_reservation_current/seal.py",
-      "sha256": "39daee1ba070ba4b9715b823b18ad5fddafeabb469f0c28703d5e3207746a9b5"
+      "sha256": "fa8c298cc5cc65dee984034190ab2e1fe945812e7a873004e14b3d3e242cf878"
     },
     {
       "bytes": 12008,
       "path": "tests/qualification/lexer_reservation_current/source_transition.py",
-      "sha256": "6e86082f71df4b135ffcffec03ccbe71850dfa82cebd8378bc3b1081dec3142a"
+      "sha256": "e642061c863ac1b836eeaeea72c8fdc1152097be4dc285ee2d071ea3372da9a0"
     },
     {
-      "bytes": 12453,
+      "bytes": 25237,
       "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
-      "sha256": "7bf28b88a51aeee87ad6cec0e4db67d6c91bbd02b325dfab5c97f6e1e06e3a21"
+      "sha256": "01a3cc0ecc18b8bafddaf7904d783584f3eaf0cc8ac1a6b4036c282c11e068f1"
     },
     {
       "bytes": 12144,
@@ -2192,9 +2408,9 @@
       "sha256": "26cd482fe277cf1f4edd8c08f7772b10fd3d6c4029dc568438dd550a626b7d64"
     },
     {
-      "bytes": 16200,
+      "bytes": 16917,
       "path": "tests/qualification/lexer_reservation_current/test_unit1_current.py",
-      "sha256": "b839af77e1348e649c8c8704997c96ec725a32009ff67da9054a469523380ce3"
+      "sha256": "9229032984b3cf1807af59761ad5c99d2ffa83efdd6fcdcdb934c0dd5e4875ca"
     },
     {
       "bytes": 11340,
@@ -2204,12 +2420,12 @@
     {
       "bytes": 1578,
       "path": "tests/qualification/lexer_reservation_current/unit1_current_bindings.json",
-      "sha256": "05b5d227f05b63e98350c561a298a3d1362644a2cda7430ce6b029bd078b900d"
+      "sha256": "9e467aaf5f19850845840c727e3fa95f59393ac88fc2efc46e74e3f6af8e1d32"
     },
     {
-      "bytes": 13091,
+      "bytes": 13587,
       "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
-      "sha256": "8ba5e5ad89b1f04ffbb74130020badceee7e7ff067115ebe8944e32a1c5b75d7"
+      "sha256": "87a2d19a05366e886b431f92ec3202a56f62e36e13665e77d1b6e11fdc803579"
     },
     {
       "bytes": 7032,
@@ -2247,9 +2463,9 @@
       "sha256": "3d97411427a9afc2b090ae3d8041f2eebbe137985783f7d7819c26985c352f85"
     },
     {
-      "bytes": 7002,
+      "bytes": 8051,
       "path": "tests/qualification/unit2_u8_current/test_current.py",
-      "sha256": "1c5bc753084757567248bed9970009366e8b5dfe111d7a56f3bf660455f89296"
+      "sha256": "00ba14be7f53f24d92719d5581f2c2e81b66c8fbf54e058b306649092a494451"
     },
     {
       "bytes": 4108,
@@ -2272,14 +2488,14 @@
       "sha256": "cf88c30d66c7863b7643073a7ea104bbd95b246e96afb1aff48c0524e448a4ba"
     },
     {
-      "bytes": 25595,
+      "bytes": 27684,
       "path": "tests/qualification/unit4_parser_current/README.md",
-      "sha256": "8a1e2b7b04404fbb1f7684af4a132da12ef17e5ba511629964a0d4f1ccf4e876"
+      "sha256": "613eacb6754d91180e1e9dbffadec784b3ef11c9b3ca5bcc6d7f32db21a23969"
     },
     {
-      "bytes": 520099,
+      "bytes": 524533,
       "path": "tests/qualification/unit4_parser_current/authority.json",
-      "sha256": "80852ba685257b1fcb8ccba158925192c07521c8cca029f545ff2ae3087070e9"
+      "sha256": "d8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c"
     },
     {
       "bytes": 518280,
@@ -2302,14 +2518,54 @@
       "sha256": "f9202d30c38ca09e51879146a53864c7107a49e6e07ce581e22dfe9afa78d377"
     },
     {
+      "bytes": 23127,
+      "path": "tests/qualification/unit4_parser_current/generate_lexer_phase_v1.py",
+      "sha256": "bae2ee445dd3a5f25962fc7acf767ffd4f5379a0b3787c4cd084bc3065050cc5"
+    },
+    {
       "bytes": 8884,
       "path": "tests/qualification/unit4_parser_current/generate_lexer_reservation.py",
       "sha256": "9a138159512df7f829d721886d6a071ded7124a05b5baf929d1f073fcee2dd05"
     },
     {
+      "bytes": 11595,
+      "path": "tests/qualification/unit4_parser_current/generate_lexer_reservation_v2.py",
+      "sha256": "869ddc1cb6fb40a9d68654c84268b767ba090c7596c67e4fcece952bf5821308"
+    },
+    {
+      "bytes": 524533,
+      "path": "tests/qualification/unit4_parser_current/lexer-phase-authority-v1.json",
+      "sha256": "d8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c"
+    },
+    {
+      "bytes": 3141,
+      "path": "tests/qualification/unit4_parser_current/lexer-phase-composition-v1.json",
+      "sha256": "5cf6b9cc9a6fd7253fd2f04b7107dd5eb631bbb438c5ad94f2b63ecf73deef36"
+    },
+    {
+      "bytes": 520103,
+      "path": "tests/qualification/unit4_parser_current/lexer-reservation-authority-v2.json",
+      "sha256": "917431fe269d807c76b2f16ae7fef7f4e6c70aa301f9823f65de4fe039b94baf"
+    },
+    {
       "bytes": 2087,
       "path": "tests/qualification/unit4_parser_current/lexer-reservation-composition-v1.json",
-      "sha256": "a76ce5eced344e6ecfa957cbde0a84ab8c7fb7f385963f6fad9c5dafad78cd13"
+      "sha256": "2b135b751a3c79b0033d8713522585763a82a4acfb9fe72fe116029318a14ff8"
+    },
+    {
+      "bytes": 2108,
+      "path": "tests/qualification/unit4_parser_current/lexer-reservation-composition-v2.json",
+      "sha256": "bac7f4d819a7a12057070e9fcc259cb02c137508dadad4564ac2bea680f9c394"
+    },
+    {
+      "bytes": 54473,
+      "path": "tests/qualification/unit4_parser_current/lexer_phase.py",
+      "sha256": "1067d223defa8de2a6b0faa71910d9acc97d635491022216e5d59fd48c62ed0e"
+    },
+    {
+      "bytes": 33650,
+      "path": "tests/qualification/unit4_parser_current/lexer_phase_controls.py",
+      "sha256": "cf8667d190c9b50c2f69b623783a33c8c931f795e359a43980ef2486ad44d8c9"
     },
     {
       "bytes": 5545,
@@ -2327,9 +2583,9 @@
       "sha256": "974aebf4121f323f1674a19b7442d42e495c2075e99ae9f70c6cc1f1fb59a7a5"
     },
     {
-      "bytes": 215213,
+      "bytes": 243092,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "8be4775d1fca0db936e5588c500f900da961909e11a1064efc80b037b3effaba"
+      "sha256": "c012c1735237439edc9dde932925717c5250215d5d9683e37b731f286ce727e8"
     },
     {
       "bytes": 477258,
@@ -2347,14 +2603,19 @@
       "sha256": "30f48bd4310452067cecdd4e732f91c7ed3425e292cbae3375421cbfbac33f08"
     },
     {
-      "bytes": 140433,
+      "bytes": 142403,
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "sha256": "777d9f202ef5851c67603716ea9e9a2a6f8f740c1b04670e5d616236d023417a"
+      "sha256": "c55755b0561ef640f2dd941006927c60f72eef120b770949a26c93f34a454a83"
     },
     {
-      "bytes": 5299,
+      "bytes": 51494,
+      "path": "tests/qualification/unit4_parser_current/test_lexer_phase.py",
+      "sha256": "858e2809bde1dc52ca4f088c4131ce539ab007f2d7f70214816499e73961ec7c"
+    },
+    {
+      "bytes": 5317,
       "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
-      "sha256": "8bedb1d7a11cb471adf1a816ab9800ff065deb88ddec60bf752a246499e9ea82"
+      "sha256": "f4fada86d3088cdf6fb8cb7fd54f0fd36cbe54ed71f58536cc0bcffd155056a9"
     },
     {
       "bytes": 8920,
@@ -2377,19 +2638,19 @@
       "sha256": "29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9"
     },
     {
-      "bytes": 7600,
+      "bytes": 9018,
       "path": "tests/qualification/unit4_parser_current/u8_policy_controls.py",
-      "sha256": "5228fc42aedb19708e727c51266acd8760440acb973784463f02fbf70be03d35"
+      "sha256": "90807a872ef4b042abfc6f29d785a903c54fa00ae7dc364d26fe07dc6baa7b95"
     },
     {
-      "bytes": 25644,
+      "bytes": 27200,
       "path": "tests/qualification/unit4_public_v3/README.md",
-      "sha256": "722e86df2cda0b215749fb3c76a4f5e1979b3942b980d226a3674ecc82996f48"
+      "sha256": "6ec7732080062cf01706c4b61e851c935e65bdf9a1c6eb6272cf18e1a59a2ada"
     },
     {
       "bytes": 1600,
       "path": "tests/qualification/unit4_public_v3/authority.py",
-      "sha256": "b785738ddc359c2be864ce85c7d87830aa58ce021f9b711dac6cef3aefb9687f"
+      "sha256": "346485ecb8afed13bd784190f57f8e86a4d6d065437c2220e99928ade425aac7"
     },
     {
       "bytes": 7004,
@@ -2427,6 +2688,11 @@
       "sha256": "c717b9318186cfd65416eb3ba96e2ce7f270c1b4fdf9c1d3401e686cb4d33c57"
     },
     {
+      "bytes": 7271,
+      "path": "tests/qualification/unit4_public_v3/generate_lexer_reservation_v2.py",
+      "sha256": "96774106d176f6d7602c1ce9f3a74d6e680a6915b34c58219bd7d0c3ac92ed38"
+    },
+    {
       "bytes": 13088,
       "path": "tests/qualification/unit4_public_v3/guards.py",
       "sha256": "ee05fc93d8ce04893c1130b8186f5d15e2078bcd23e6e685cca4d65c0fa9d8fc"
@@ -2437,9 +2703,14 @@
       "sha256": "4fbc239e4a132f5d57e4e075f00ebe70cf03f04eeea62aedcf41651a06c953d1"
     },
     {
+      "bytes": 282549,
+      "path": "tests/qualification/unit4_public_v3/lexer-reservation-lifecycle-v2.json",
+      "sha256": "f8e6e92eda7c0d07dea9a73301be9318f32c4a0eddb7126a581ad17e88d10e86"
+    },
+    {
       "bytes": 9393,
       "path": "tests/qualification/unit4_public_v3/lexer_reservation_lifecycle.py",
-      "sha256": "ddedc9d280f22eaf2905aa24015153cb592971be4a7623004efe6546ba27ceef"
+      "sha256": "155471428cc243fbb7845ec2dcd21fb982f51e7e8264ccf804f1df07338c91ec"
     },
     {
       "bytes": 540,
@@ -2459,6 +2730,11 @@
     {
       "bytes": 7337,
       "path": "tests/qualification/unit4_public_v3/observer-lexer-reservation-v1.patch",
+      "sha256": "826468198bfd2575d0d01713bb803f19f31b732d482dbf336b7e37567f890824"
+    },
+    {
+      "bytes": 7337,
+      "path": "tests/qualification/unit4_public_v3/observer-lexer-reservation-v2.patch",
       "sha256": "826468198bfd2575d0d01713bb803f19f31b732d482dbf336b7e37567f890824"
     },
     {
@@ -2487,9 +2763,9 @@
       "sha256": "7224b8a3b760a339e35a57df8821f299fc48a4e3bbab09ce38731314434cbbf5"
     },
     {
-      "bytes": 30759,
+      "bytes": 30873,
       "path": "tests/qualification/unit4_public_v3/run.py",
-      "sha256": "f83018c7d1edc753d133874d5fd1a7a2b8c8f623c87a9dc2d87914b231d82e5a"
+      "sha256": "92d959a2250f3e171412f9a0ca5fb36612426ddc70e7223a3247d9580db8c8da"
     },
     {
       "bytes": 18628,
@@ -2499,12 +2775,12 @@
     {
       "bytes": 44011,
       "path": "tests/qualification/unit4_public_v3/selftest.py",
-      "sha256": "4627e73f598acc83954ec3e5571c970b209739a2e078c1cf9019003aa39d211c"
+      "sha256": "277587739661420b4d47535a98a3b6598ebc1fa8040c2509f71d39320e45080c"
     },
     {
       "bytes": 4442,
       "path": "tests/qualification/unit4_public_v3/test_lexer_reservation.py",
-      "sha256": "80acc7416aaa7442138fb36a2ac90418d9dc60626d338bb88ae0da2a8a8cbfa6"
+      "sha256": "5afea775ea089e577487c3de71ed5a803707d50d176a3d8e52a99aa4a7e1e132"
     },
     {
       "bytes": 3197,
@@ -2524,8 +2800,13 @@
   ],
   "historical_parser_head": "d9e6b9bf172abd5e15da7212c9e6224e29ccc768",
   "hosted_publication_manifest_sha256": "6a567e5867ca8a4e75de0880382772802cea777d1c81463f1c046973b2ffcf76",
-  "lexer_reservation_current_source_sha256": "aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633",
+  "lexer_reservation_current_source_sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261",
   "lexer_reservation_predecessor_inputs_sha256": "97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a",
+  "lexer_reservation_source_v1_preservation": {
+    "bytes": 24543,
+    "path": "scripts/predecessors/lexer_reservation_source_v1/preservation.json",
+    "sha256": "8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be"
+  },
   "portable_publication_manifest_sha256": "862ff9a7db65a1bdd1547bc468920f3ec2dc5e7aed31f121361ae3f7b37519b9",
   "schema": "oxid-unit4-ci-approved-inputs-v1"
 }

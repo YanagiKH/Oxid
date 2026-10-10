@@ -34,7 +34,7 @@ class SourceAuthorityControls(unittest.TestCase):
             build.prepare(SimpleNamespace(
                 source_root=cls.repo,
                 manifest=cls.repo / 'tests/fixtures/typed_project_source_binding/current-source.json',
-                observer_patch=cls.package / 'observer-lexer-reservation-v1.patch',
+                observer_patch=cls.package / 'observer-lexer-reservation-v2.patch',
                 observer_patch_sha256=build.LIFECYCLE_PATCH_SHA,
                 out=cls.output))
         cls.manifest = json.loads((cls.output / 'observer-source.json').read_bytes())
@@ -44,7 +44,7 @@ class SourceAuthorityControls(unittest.TestCase):
         import shutil
         prior_root = Path(cls.temp.name) / 'predecessor'
         shutil.copytree(cls.output / 'source', prior_root)
-        subprocess.run(['git', 'apply', '-R', str(cls.package / 'observer-lexer-reservation-v1.patch')], cwd=prior_root, check=True)
+        subprocess.run(['git', 'apply', '-R', str(cls.package / 'observer-lexer-reservation-v2.patch')], cwd=prior_root, check=True)
         binding_path = cls.repo / 'tests/fixtures/typed_project_source_binding/run.py'
         spec = importlib.util.spec_from_file_location('public_u8_source_binding', binding_path)
         api = importlib.util.module_from_spec(spec); spec.loader.exec_module(api)
@@ -52,8 +52,8 @@ class SourceAuthorityControls(unittest.TestCase):
         inputs = {row['path']: (prior_root / row['path']).read_bytes()
                   for row in json.loads((binding_path.parent / 'current-source.json').read_bytes())['files']}
         import lexer_reservation_lifecycle as lexer_current
-        outer_patch = (binding_path.parent / 'lexer-reservation-transition-v1.patch').read_bytes()
-        outer_authority = json.loads((binding_path.parent / 'lexer-reservation-authority-v1.json').read_bytes())
+        outer_patch = (binding_path.parent / 'lexer-reservation-transition-v2.patch').read_bytes()
+        outer_authority = json.loads((binding_path.parent / 'lexer-reservation-authority-v2.json').read_bytes())
         inputs, touched = api.apply_inverse_patch(inputs, outer_patch, sha(outer_patch), len(outer_patch),
                                                    tuple(outer_authority['transition_paths']))
         if list(touched) != outer_authority['transition_paths']:
@@ -239,7 +239,7 @@ class SourceAuthorityControls(unittest.TestCase):
             self.assertEqual(getattr(authority, key), old[key], key)
 
     def test_lifecycle_successor_restores_exact_historical_patch(self):
-        current = (self.package / 'observer-lexer-reservation-v1.patch').read_bytes()
+        current = (self.package / 'observer-lexer-reservation-v2.patch').read_bytes()
         projected = (self.package / 'observer-combined-v1.patch').read_bytes()
         self.assertEqual(sha(projected), self.builder.PROJECTED_LIFECYCLE_PATCH_SHA)
         historical = (self.repo / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()

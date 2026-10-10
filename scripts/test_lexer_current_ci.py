@@ -13,10 +13,12 @@ REPO = Path(__file__).resolve().parents[1]
 HELPER = REPO / 'tests/qualification/lexer_reservation_current'
 PRESERVED = REPO / 'scripts/predecessors/byte_storage_ci_v1'
 SOURCE = REPO / 'tests/fixtures/typed_project_source_binding'
-CURRENT_SHA = 'aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633'
+LEXER_PRESERVED = REPO / 'scripts/predecessors/lexer_reservation_source_v1'
+LEXER_PRESERVATION_SHA = '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'
+CURRENT_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
 PREDECESSOR_SHA = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
-COMPILER_HEAD = 'c8e9a72afd9866f32b96f98ae24f61390039f421'
-COMPILER_TREE = '9b35515f096b5619d4d5b3d4b0cb88ea2ccf2c37'
+COMPILER_HEAD = 'b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489'
+COMPILER_TREE = '7f5c9aa08c569c4d0b5a27391d8fc68337075d36'
 PRESERVATION_SHA = '38e329c1897f5c902dbfb73c6d3fbfecae2a97cb2f1a85e916b56c2a126698fc'
 sys.path.insert(0, str(HELPER))
 import ci_inventory
@@ -29,6 +31,75 @@ def sha(raw):
 def read(path):
     return json.loads(path.read_bytes())
 
+
+
+def verify_lexer_preservation_view(raw, bodies, directories, unsafe):
+    """Authenticate inert predecessor data only; never import or execute it."""
+    def need(condition, message):
+        if not condition:
+            raise ValueError(message)
+    need(sha(raw) == LEXER_PRESERVATION_SHA, 'lexer preservation manifest pin')
+    value = json.loads(raw)
+    need(set(value) == {'schema', 'selection_head', 'files'} and
+         value['schema'] == 'oxid-lexer-source-v1-facade-preservation-v1' and
+         value['selection_head'] == '59f948e8919b31ee4dcfce63153eab7d03bc6f37',
+         'lexer preservation closed schema/provenance')
+    rows = value['files']
+    names = [row['path'] for row in rows]
+    need(len(rows) == 38 and names == sorted(set(names)), 'lexer preservation ordered38')
+    fields = {'path', 'preserved_path', 'bytes', 'sha256', 'mode', 'git_blob',
+              'origin_commit', 'origin_tree', 'origin_role', 'replacement_reason'}
+    origins = {
+        ('4f5e693688a6c5b307db36dc98bd742b60be7ae5', '01a4842b27d6742b9d2012ca2a0e36b3db5c96df', 'published-source-v1'): 27,
+        ('241edce73d1d23c0c50d4c37ae46526455873a56', '28db0e7cca219082eb3a632bd84adff20d5704c4', 'accepted-receipt-only-successor'): 10,
+        ('59f948e8919b31ee4dcfce63153eab7d03bc6f37', 'b0c48ee48dd60be8fdbb82d61a22b27ad4188857', 'accepted-post-receipt-maintenance'): 1}
+    seen = {key: 0 for key in origins}
+    expected_files, expected_directories = {'preservation.json'}, set()
+    need(not unsafe, 'unsafe lexer preservation member')
+    for row in rows:
+        name = row['path']
+        need(set(row) == fields and name and not name.startswith('/') and
+             '\\' not in name and all(part not in ('', '.', '..') for part in name.split('/')),
+             'lexer preservation exact member fields/path')
+        need(row['preserved_path'] == 'scripts/predecessors/lexer_reservation_source_v1/' + name and
+             row['mode'] == '100644' and bool(row['replacement_reason']), 'lexer preservation member provenance')
+        origin = (row['origin_commit'], row['origin_tree'], row['origin_role'])
+        need(origin in origins, 'lexer preservation exact origin'); seen[origin] += 1
+        need(name in bodies, 'missing lexer preservation body')
+        body, mode = bodies[name]
+        need(mode == 0o644 and len(body) == row['bytes'] and sha(body) == row['sha256'] and
+             hashlib.sha1(b'blob ' + str(len(body)).encode() + b'\0' + body).hexdigest() == row['git_blob'],
+             'changed lexer preservation body/mode/blob')
+        expected_files.add(name)
+        expected_directories.update('/'.join(name.split('/')[:i]) for i in range(1, len(name.split('/'))))
+    need(seen == origins, 'lexer preservation origin counts')
+    need(set(bodies) == expected_files and set(directories) == expected_directories,
+         'lexer preservation exact file/directory closure')
+    need(bodies['preservation.json'] == (raw, 0o644), 'lexer preservation manifest body/mode')
+    return value
+
+
+def lexer_preservation_view():
+    root = LEXER_PRESERVED
+    bodies, directories, unsafe = {}, set(), []
+    if not root.is_dir() or any(path.is_symlink() for path in (root, *root.parents)):
+        raise ValueError('unsafe lexer preservation root')
+    manifest = root / 'preservation.json'
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError('unsafe lexer preservation manifest')
+    for path in root.rglob('*'):
+        name = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            unsafe.append(name)
+        elif path.is_file():
+            bodies[name] = (path.read_bytes(), path.stat().st_mode & 0o777)
+        elif path.is_dir():
+            directories.add(name)
+        else:
+            unsafe.append(name)
+    if 'preservation.json' not in bodies:
+        raise ValueError('unsafe lexer preservation manifest')
+    return bodies['preservation.json'][0], bodies, directories, unsafe
 
 class CurrentCIActivationControls(unittest.TestCase):
     def test_all_173_direct_entries_have_exact_individual_dispositions(self):
@@ -150,6 +221,53 @@ class CurrentCIActivationControls(unittest.TestCase):
         self.assertTrue({row['path'] for row in manifest['files']} <= set(names))
         for root in roots[-5:]:
             self.assertTrue({p.relative_to(REPO).as_posix() for p in (REPO / root).rglob('*') if p.is_file()} <= set(names))
+
+
+    def test_exact_38_lexer_facade_preservation_is_inert_and_complete(self):
+        raw, bodies, directories, unsafe = lexer_preservation_view()
+        value = verify_lexer_preservation_view(raw, bodies, directories, unsafe)
+        self.assertEqual(sum(row['bytes'] for row in value['files']), 2010708)
+        old_workflow = bodies['.github/workflows/ci.yml'][0]
+        old_sha = b'aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633'
+        self.assertEqual(old_workflow.count(old_sha), 2)
+        self.assertEqual((REPO / '.github/workflows/ci.yml').read_bytes(),
+                         old_workflow.replace(old_sha, CURRENT_SHA.encode()))
+
+    def test_lexer_facade_manifest_body_mode_membership_and_symlink_reject(self):
+        raw, bodies, directories, unsafe = lexer_preservation_view()
+        first = json.loads(raw)['files'][0]['path']
+        for mutation in ('manifest', 'missing', 'extra', 'body', 'mode', 'manifest-mode', 'empty-directory', 'symlink'):
+            changed, dirs, bad = dict(bodies), set(directories), list(unsafe)
+            candidate = raw
+            if mutation == 'manifest': candidate += b'\n'
+            elif mutation == 'missing': del changed[first]
+            elif mutation == 'extra': changed['extra'] = (b'extra', 0o644)
+            elif mutation == 'body': changed[first] = (changed[first][0] + b'\n', 0o644)
+            elif mutation == 'mode': changed[first] = (changed[first][0], 0o755)
+            elif mutation == 'manifest-mode': changed['preservation.json'] = (raw, 0o755)
+            elif mutation == 'empty-directory': dirs.add('unexpected-empty-directory')
+            else: bad.append(first)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                verify_lexer_preservation_view(candidate, changed, dirs, bad)
+
+
+    def test_lexer_facade_reader_rejects_external_manifest_symlink_before_open(self):
+        from unittest import mock
+        for symlink in (True, False):
+            root = mock.MagicMock(spec=Path)
+            root.is_dir.return_value = True
+            root.is_symlink.return_value = False
+            root.parents = ()
+            manifest = mock.MagicMock(spec=Path)
+            manifest.is_symlink.return_value = symlink
+            manifest.is_file.return_value = symlink
+            root.__truediv__.return_value = manifest
+            with self.subTest(symlink=symlink), mock.patch.dict(globals(), {'LEXER_PRESERVED': root}), mock.patch.object(Path, 'read_bytes') as reads:
+                with self.assertRaisesRegex(ValueError, 'unsafe lexer preservation manifest'):
+                    lexer_preservation_view()
+                reads.assert_not_called()
+                manifest.read_bytes.assert_not_called()
+                root.rglob.assert_not_called()
 
 
 if __name__ == '__main__':

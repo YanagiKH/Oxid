@@ -1,3 +1,15 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+The current named lifecycle proof is lexer-reservation-lifecycle-v2.json (282,549 bytes / f8e6e92eda7c0d07dea9a73301be9318f32c4a0eddb7126a581ad17e88d10e86). The current overlay is observer-lexer-reservation-v2.patch, byte-equal to the retained v1 patch (7,337 bytes / 826468198bfd2575d0d01713bb803f19f31b732d482dbf336b7e37567f890824). Full maps remain 376 base and 377 observed members. The exact flat public package is 31 files: retained 28 plus the v2 recipe, named proof and named identical patch. All earlier authorities and patches remain historical inputs with their own roles.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
 # Fallible lexer current lifecycle successor
 
 Reviewed compiler checkpoint: `c8e9a72afd9866f32b96f98ae24f61390039f421`;

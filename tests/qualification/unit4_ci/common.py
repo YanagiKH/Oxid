@@ -17,10 +17,10 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '45730f61627020193685dd23333b169b94114c239b2bac375eea8ca21dfb5948'
+INPUTS_SHA = '7c2ae3e0908245c45e7308f8c0d6a2595a7ef11542a0ed42ad9b9f0292755a1a'
 CURRENT_COMPILER_BODIES = 291
 CURRENT_SOURCE_MEMBERS = 376
-CURRENT_SHA = 'aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633'
+CURRENT_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
 ENUM_SHA = '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669'
 HISTORICAL_HEAD = 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768'
 PUBLIC = 'tests/qualification/unit4_public_v3'
@@ -30,7 +30,7 @@ PARSER_FROZEN = 'tests/fixtures/typed_project_unit4_parser_portable/frozen/v3'
 TRANSPORT = 'tests/fixtures/typed_project_unit4_contracts'
 SOURCE = 'tests/fixtures/typed_project_source_binding'
 AMENDMENT = 'tests/fixtures/typed_project_unit4_public_location_amendment_v1'
-OBSERVER_PATCH = 'tests/qualification/unit4_public_v3/observer-lexer-reservation-v1.patch'
+OBSERVER_PATCH = 'tests/qualification/unit4_public_v3/observer-lexer-reservation-v2.patch'
 RUNTIME_STAGE = 'tests/fixtures/typed_project_unit3_independent/portable/native-v1/stage_llvm_runtime.py'
 SECTIONS = ('public', 'original', 'predecessors', 'lifecycle', 'guards')
 PROFILES = ('debug', 'release')

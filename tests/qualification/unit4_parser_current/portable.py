@@ -662,7 +662,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '80852ba685257b1fcb8ccba158925192c07521c8cca029f545ff2ae3087070e9'
+AUTHORITY_SHA = 'd8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c'  # SOURCE-ONLY: independent phase authority pin review is pending.
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -1593,9 +1593,9 @@ def validate_hir_producer_transition(active, current, historical):
     return predecessor
 
 
-def authority():
-    raw = (HERE / "authority.json").read_bytes()
-    same(sha(raw), AUTHORITY_SHA, "unreviewed current parser authority")
+def _prephase_authority():
+    raw = (HERE / "lexer-reservation-authority-v2.json").read_bytes()
+    same(sha(raw), PRE_PHASE_AUTHORITY_SHA, "unreviewed immutable pre-phase C2 authority")
     active = load(raw)
     same(active["schema"], "oxid-unit4-current-parser-authority-v1", "current authority schema")
     same(active["historical_authority"]["sha256"], HISTORICAL_AUTHORITY_SHA, "historical authority pin")
@@ -2462,6 +2462,7 @@ def invoke(argv, cwd, env, out, host):
 
 def prepare(repo, checkout, output):
     a = authority()
+    predecessor = phase_previous(a)
     host = measured_host(); check_host(host, a)
     repo, checkout = Path(repo).absolute(), Path(checkout).absolute()
     same(git(repo, "rev-parse", "HEAD").decode().strip(), a["base_commit"], "historical checkout HEAD")
@@ -2494,17 +2495,17 @@ def prepare(repo, checkout, output):
             name = change["path"]
             if not control and name == "src/frontend/lexer.rs":
                 verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
-                target.write_bytes(compose_current_lexer(a, (checkout / name).read_bytes()))
+                target.write_bytes(compose_current_lexer(predecessor, (checkout / name).read_bytes()))
                 continue
             if not control and name == "src/frontend/declaration_index/resource.rs":
                 verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
-                target.write_bytes(compose_namespace_resource(a, (checkout / name).read_bytes()))
+                target.write_bytes(compose_namespace_resource(predecessor, (checkout / name).read_bytes()))
                 continue
             overlap = name in ARRAY_INSTRUMENTATION_PATHS and (not control or name != "src/frontend/project/budget.rs")
             if overlap or (not control and name == "src/frontend/source.rs"):
                 verify_map(source, [next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)])
                 raw = (checkout / name).read_bytes()
-                target.write_bytes(compose_array_instrumentation(a, name, raw, control) if overlap else compose_source_read(a, raw))
+                target.write_bytes(compose_array_instrumentation(predecessor, name, raw, control) if overlap else compose_source_read(predecessor, raw))
                 continue
             if change["before"] is None:
                 require(not target.exists(), "new current source already exists")
@@ -2515,10 +2516,14 @@ def prepare(repo, checkout, output):
             shutil.copyfile(checkout / change["path"], target)
         policy_path = "src/frontend/parser/conversions.rs"
         policy_target = source / policy_path
-        policy_target.write_bytes(compose_u8_closed_policy(a, policy_path, policy_target.read_bytes()))
+        policy_target.write_bytes(compose_u8_closed_policy(predecessor, policy_path, policy_target.read_bytes()))
         observer = source / "src/frontend/parser/unit4_observer.rs"
         verify_map(source, [next(row for row in a["derived_files"] if row["path"] == "src/frontend/parser/unit4_observer.rs")])
-        observer.write_bytes(compose_observer_initializer(a))
+        observer.write_bytes(compose_observer_initializer(predecessor))
+        phase_names = (["src/frontend/project/budget.rs", "src/frontend/lexer.rs"] if not control else [])
+        for name in [*phase_names, "src/frontend/parser/unit4_observer.rs"]:
+            target = source / name
+            target.write_bytes(phase_composed_body(a, name, target.read_bytes(), control))
         write(source / "candidate-source-manifest.json", current_candidate(a))
         write(source / "overlay-manifest.json", current_overlay(source, a, control))
         verify_overlay(out, a, control)
@@ -2884,8 +2889,10 @@ def collect(session_path, profile, contract_dir):
                 "contract_dir": str(Path(contract_dir).absolute()), "invocation": identity(out / "invocation.json"),
                 "manifest": identity(out / "result/execution-manifest.json")}
     write(out / "portable-collection.json", envelope)
+    phase_scope(a, session_path, "collection", profile, emit=True)
     if profile == "release":
         u8_policy_module(a).execute(sys.modules[__name__], session_path, a)
+        phase_module(a, controls=True).execute(sys.modules[__name__], session_path, a, phase_control_binding(a))
     return identity(out / "portable-collection.json")
 
 
@@ -2904,6 +2911,7 @@ def passivity(session_path, profile):
     envelope = {"schema": "oxid-unit4-portable-parser-passivity-v1", "session": identity(session_path), "profile": profile,
                 "invocation": identity(out / "invocation.json"), "report": identity(out / "result/report.json")}
     write(out / "portable-passivity.json", envelope)
+    phase_scope(a, session_path, "passivity", profile, emit=True)
     verify_passivity(root, session_path, profile, a, set())
     return identity(out / "portable-passivity.json")
 
@@ -2974,7 +2982,7 @@ def verify_passivity(root, session_path, profile, a, nonces):
                 same(observed["runtime_architecture"], session["host"]["architecture"], "passivity Rust runtime architecture")
                 same(observed["pointer_width"], session["host"]["python_pointer_width"], "passivity Rust runtime ABI")
             observations.append(raw["observations"])
-            inventory |= {work.name + "/" + filename for filename in ("stdout.txt", "stderr.txt", "raw.json")}
+            inventory |= {work.name + "/" + filename for filename in ("stdout.txt", "stderr.txt", "raw.json", "lexer-phase.json")}
         for left, right in zip(*observations):
             for field in prescribed["compare_fields"]:
                 same(left[field], right[field], "ordinary passivity differs: " + name + "." + left["mode"] + "." + field)
@@ -2987,6 +2995,7 @@ def verify_passivity(root, session_path, profile, a, nonces):
         require(not path.is_symlink() and (path.is_file() or path.is_dir()), "unsafe passivity evidence")
         if path.is_file(): actual.append(path.relative_to(result).as_posix())
     same(sorted(actual), sorted(inventory), "complete passivity evidence inventory")
+    phase_scope(a, session_path, "passivity", profile)
     return {"profile": profile, "pairs": pairs, "report": envelope["report"], "scope": prescribed["scope"]}
 
 
@@ -3036,7 +3045,7 @@ def admit_execution(path, contract, approval):
         request = load(artifact(row["request"]))
         artifact(request["source"], case_dir / "source.ox")
         same(read(case_dir / "receipt.json"), row, "on-disk case receipt matches manifest")
-        expected_files |= {row["case_id"] + "/" + x for x in ("request.json", "raw.json", "stdout.txt", "stderr.txt", "source.ox", "receipt.json")}
+        expected_files |= {row["case_id"] + "/" + x for x in ("request.json", "raw.json", "stdout.txt", "stderr.txt", "source.ox", "receipt.json", "lexer-phase.json")}
     files = set()
     for p in (out / "result").rglob("*"):
         require(not p.is_symlink() and (p.is_dir() or p.is_file()), "unsafe evidence member")
@@ -3044,6 +3053,7 @@ def admit_execution(path, contract, approval):
             files.add(p.relative_to(out / "result").as_posix())
     same(files, expected_files, "missing/extra complete execution inventory")
     same(manifest["observations"]["path"], str(out / "result/observations.jsonl"), "normalized rows evidence path")
+    phase_scope(a, session_path, "collection", profile)
     return manifest, host, build, profile
 
 
@@ -3206,8 +3216,423 @@ def compare(session_path, contract_dir):
     same(controls['session'], identity(session_path), 'u8 controls current session')
     same(controls['closed_policy'], a['current']['u8_closed_policy'], 'u8 controls exact policy')
     result['u8_policy_controls'] = identity(root / 'u8-policy-controls/receipt.json')
+    u8_policy_module(a).phase_receipts(sys.modules[__name__], session_path, a)
+    phase = phase_evidence(a, session_path)
+    result['lexer_phase_envelopes'] = phase['envelopes']
+    result['lexer_phase_controls'] = phase['probe_index']
     write(root / "comparison.json", result)
     return result
+
+
+# SOURCE-ONLY: both pins stay unset until independently reviewed exact bytes exist.
+PRE_PHASE_AUTHORITY_SHA = '917431fe269d807c76b2f16ae7fef7f4e6c70aa301f9823f65de4fe039b94baf'
+PHASE_DIRECTORY = 'tests/qualification/unit4_parser_current/'
+PHASE_SCOPES = ('collection', 'passivity', 'u8_controls')
+PHASE_PROFILES = ('debug', 'release')
+PHASE_ROLES = ('observed', 'not_observed')
+
+
+def phase_previous(a):
+    """Remove only the reviewed outer delta and recover every predecessor field."""
+    active = a['current']
+    binding = active['lexer_phase']
+    same(binding['predecessor']['path'], PHASE_DIRECTORY + 'lexer-reservation-authority-v2.json',
+         'exact immutable pre-phase C2 authority path')
+    require(isinstance(PRE_PHASE_AUTHORITY_SHA, str) and
+            re.fullmatch('[0-9a-f]{64}', PRE_PHASE_AUTHORITY_SHA), 'pre-phase authority pin awaits review')
+    same(binding['predecessor']['sha256'], PRE_PHASE_AUTHORITY_SHA, 'immutable pre-phase C2 authority pin')
+    verify_map(REPOSITORY, [binding['predecessor']])
+    before = read(REPOSITORY / binding['predecessor']['path'])
+    require('lexer_phase' not in before, 'phase predecessor must be exact pre-phase object')
+    restored = dict(active)
+    del restored['lexer_phase']
+    for name in ('current_derived_files', 'current_control_derived_files', 'u8_policy_controls'):
+        restored[name] = before[name]
+    same(restored, before, 'phase layer changes unrelated complete authority fields')
+    return dict(a, current=before)
+
+
+def phase_module(a, controls=False):
+    binding = a['current']['lexer_phase']
+    row = binding['controls']['driver'] if controls else binding['helper']
+    filename = 'lexer_phase_controls.py' if controls else 'lexer_phase.py'
+    same(row['path'], PHASE_DIRECTORY + filename, 'exact public phase module path')
+    verify_map(REPOSITORY, [row])
+    path = REPOSITORY / row['path']
+    module = types.ModuleType('unit4_' + filename[:-3])
+    module.__file__ = str(path)
+    exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
+    return module
+
+
+def phase_control_binding(a):
+    # The caller's authority has already passed authority(); recover its exact
+    # independently pinned predecessor again before exposing an execution gate.
+    active_raw = (HERE / 'authority.json').read_bytes()
+    same(sha(active_raw), AUTHORITY_SHA, 'phase controls require independently pinned authority bytes')
+    same(a['current'], load(active_raw), 'phase controls use exact admitted current authority')
+    phase_previous(a)
+    binding = a['current']['lexer_phase']['controls']
+    same(set(binding), {'driver', 'approved_layouts'}, 'closed phase control authority')
+    same(set(binding['approved_layouts']),
+         {profile + '-' + role for profile in PHASE_PROFILES for role in PHASE_ROLES},
+         'closed four approved layout value assignments')
+    module = phase_module(a, controls=True)
+    layouts = {}
+    for profile in PHASE_PROFILES:
+        for role in PHASE_ROLES:
+            name = profile + '-' + role
+            layout = binding['approved_layouts'][name]
+            same(set(layout), set(module.LAYOUT_KEYS), 'closed approved layout value fields')
+            # Trusted authority VALUE projection only: never repair delivered wire bytes.
+            layouts[name] = {key: layout[key] for key in module.LAYOUT_KEYS}
+            module.validate_layout(layouts[name])
+    driver = {key: binding['driver'][key] for key in ('path', 'bytes', 'sha256')}
+    verify_map(REPOSITORY, [driver])
+    return {'authority_sha256': AUTHORITY_SHA, 'driver': driver, 'approved_layouts': layouts}
+
+
+def phase_composed_body(a, name, before, control=False):
+    previous = phase_previous(a)
+    role = 'not_observed' if control else 'observed'
+    field = 'current_control_derived_files' if control else 'current_derived_files'
+    prior = next(row for row in previous['current'][field] if row['path'] == name)
+    same({'path': name, 'bytes': len(before), 'sha256': sha(before)}, prior,
+         'phase input must equal complete public predecessor body')
+    module = phase_module(a)
+    if name == 'src/frontend/parser/unit4_observer.rs':
+        after = module.compose_observer(before, role)
+        recovered = module.invert_observer(after, role)
+    else:
+        require(not control, 'control lexer and budget must remain hook-free')
+        if name == 'src/frontend/project/budget.rs':
+            after = module.compose_budget(before); recovered = module.invert_budget(after)
+        else:
+            same(name, 'src/frontend/lexer.rs', 'exact observed phase body scope')
+            after = module.compose_lexer(before); recovered = module.invert_lexer(after)
+    same(recovered, before, 'phase inverse must recover every predecessor byte')
+    expected = next(row for row in a['current'][field] if row['path'] == name)
+    same({'path': name, 'bytes': len(after), 'sha256': sha(after)}, expected,
+         'independently approved complete phase body identity')
+    return after
+
+
+def authority():
+    require(isinstance(AUTHORITY_SHA, str) and re.fullmatch('[0-9a-f]{64}', AUTHORITY_SHA),
+            'phase authority activation awaits independent review')
+    raw = (HERE / 'authority.json').read_bytes()
+    same(sha(raw), AUTHORITY_SHA, 'reviewed outer phase authority pin')
+    same((HERE / 'lexer-phase-authority-v1.json').read_bytes(), raw,
+         'active authority must equal exact immutable phase authority')
+    active = load(raw)
+    binding = active['lexer_phase']
+    same(set(binding), {'version', 'predecessor', 'helper', 'source_controls', 'correspondence', 'controls'},
+         'closed phase authority section')
+    same(binding['version'], 'oxid-unit4-lexer-phase-layer-v1', 'phase authority version')
+    for key, filename in (('predecessor', 'lexer-reservation-authority-v2.json'),
+                          ('helper', 'lexer_phase.py'), ('source_controls', 'test_lexer_phase.py'),
+                          ('correspondence', 'lexer-phase-composition-v1.json')):
+        same(binding[key]['path'], PHASE_DIRECTORY + filename, 'exact phase authority member path')
+        verify_map(REPOSITORY, [binding[key]])
+    # Run the retained complete source-v2 admission against the immutable
+    # pre-phase object. No omit relaxation or mutable current-map substitution.
+    previous = _prephase_authority()
+    result = dict(previous, current=active)
+    same(phase_previous(result), previous, 'outer authority inverse/delegation')
+    module = phase_module(result)
+    phase_control_binding(result)
+    verify_map(REPOSITORY, [active['u8_policy_controls']])
+    roles = []
+    operations = (('src/frontend/project/budget.rs', 'reserve_dispatch_v1'),
+                  ('src/frontend/lexer.rs', 'token_forward_v1'),
+                  ('src/frontend/parser/unit4_observer.rs', 'observer_phase_v1'))
+    for control in (False, True):
+        field = 'current_control_derived_files' if control else 'current_derived_files'
+        prior = previous['current'][field]
+        derived = {row['path']: row for row in prior}
+        members = []
+        for name, operation in (operations[-1:] if control else operations):
+            if name == 'src/frontend/project/budget.rs':
+                before = compose_array_instrumentation(previous, name, (REPOSITORY / name).read_bytes())
+            elif name == 'src/frontend/lexer.rs':
+                before = compose_current_lexer(previous, (REPOSITORY / name).read_bytes())
+            else:
+                before = compose_observer_initializer(previous)
+            after = phase_composed_body(result, name, before, control)
+            before_identity = {'path': name, 'bytes': len(before), 'sha256': sha(before)}
+            after_identity = {'path': name, 'bytes': len(after), 'sha256': sha(after)}
+            derived[name] = after_identity
+            members.append({'path': name, 'before': before_identity, 'after': after_identity, 'operation': operation})
+        ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
+        same(len(ordered), 542, 'independently derived complete phase role map count')
+        same(ordered, active[field], 'complete phase map may change only reviewed bodies')
+        roles.append({'role': 'not_observed' if control else 'observed',
+                      'predecessor_map_sha256': sha(module.process_projection(prior)),
+                      'derived_map_sha256': sha(module.process_projection(ordered)), 'members': members})
+    correspondence = {'schema': 'oxid-unit4-lexer-phase-composition-v1',
+                      'predecessor_authority': binding['predecessor'], 'adapter': binding['helper'], 'roles': roles}
+    same(read(REPOSITORY / binding['correspondence']['path']), correspondence,
+         'exact reviewed complete phase correspondence')
+    return result
+
+
+def phase_scope(a, session_path, scope, profile, *, emit=False, resolve=artifact,
+                identities=None, builds=None):
+    """Additional witness conjunct from exact native roster, never digest lookup.
+
+    Transport callers supply the full authenticated absolute identity mapping and
+    four already admitted native builds. Emission is live-only and fresh-only.
+    """
+    require(scope in PHASE_SCOPES and profile in PHASE_PROFILES, 'closed phase scope/profile')
+    require(not emit or (identities is None and resolve is artifact and builds is None),
+            'phase extraction cannot emit from a transported or overridden process')
+    session_path = Path(session_path).absolute()
+    root = session_path.parent
+    module = phase_module(a)
+
+    def named(path):
+        path = Path(path)
+        if identities is None:
+            return identity(path)
+        require(str(path) in identities, 'missing exact lexical evidence member')
+        row = identities[str(path)]
+        same(row['path'], str(path), 'exact lexical evidence path')
+        return row
+
+    def bound(row, path=None):
+        same(set(row), {'path', 'bytes', 'sha256'}, 'exact lexical association identity fields')
+        if path is not None:
+            same(row['path'], str(path), 'lexical association at prescribed path')
+        raw = resolve(row)
+        same({'path': row['path'], 'bytes': len(raw), 'sha256': sha(raw)}, row,
+             'lexical association exact retained bytes')
+        return raw
+
+    def relative(row, cap=128):
+        path = Path(row['path']).relative_to(root).as_posix()
+        safe_relative(path)
+        require(len(path.encode('ascii')) <= cap and re.fullmatch('[A-Za-z0-9_./-]+', path),
+                'bounded canonical lexical evidence path')
+        return dict(row, path=path)
+
+    session_record = named(session_path)
+    session = load(bound(session_record, root / 'session.json'))
+    same(session['root'], str(root), 'lexical session root')
+    same(session['authority_sha256'], AUTHORITY_SHA, 'lexical current authority')
+    if builds is None:
+        builds = {(profile, control): verify_build(root, session_path, profile, a, control)[0]
+                  for control in (False, True)}
+    for control in (False, True):
+        same(builds[(profile, control)]['profile'], profile, 'lexical exact build profile')
+        same(builds[(profile, control)]['control'], control, 'lexical exact build role')
+    native = []
+    if scope in ('collection', 'passivity'):
+        directory = root / (('collect-' if scope == 'collection' else 'passivity-') + profile)
+        outer = load(bound(named(directory / ('portable-collection.json' if scope == 'collection' else 'portable-passivity.json'))))
+        same(outer['session'], session_record, 'lexical native parent session')
+        same(outer['profile'], profile, 'lexical native parent profile')
+        invocation = load(bound(outer['invocation'], directory / 'invocation.json'))
+        same(invocation['exit_code'], 0, 'actual helper success before lexical extraction/admission')
+        bound(invocation['stdout'], directory / 'driver.stdout')
+        bound(invocation['stderr'], directory / 'driver.stderr')
+        parent_record = outer['manifest' if scope == 'collection' else 'report']
+        parent_path = directory / 'result' / ('execution-manifest.json' if scope == 'collection' else 'report.json')
+        parent = load(bound(parent_record, parent_path))
+        same(parent['authority_checkpoint'], session_record, 'lexical parent checkpoint')
+        if scope == 'collection':
+            same(parent['status'], 'collected', 'lexical collection native success')
+            same(parent['profile'], profile, 'lexical collection native profile')
+            same(parent['case_count'], 248, 'lexical exact collection count')
+            same(parent['observation_count'], 319, 'unchanged parser observation count')
+            same(len(parent['case_receipts']), 248, 'lexical complete native collection roster')
+            same([row['case_id'] for row in parent['case_receipts']], parent['requested_case_ids'],
+                 'lexical exact prescribed native order')
+            require(len(set(parent['requested_case_ids'])) == 248, 'unique native case roster')
+            for index, row in enumerate(parent['case_receipts']):
+                same(row['status'], 'executed', 'lexical ordinary process success')
+                work = directory / 'result' / safe_relative(row['case_id'])
+                require('/' not in row['case_id'], 'single-component collection case')
+                request = load(bound(row['request'], work / 'request.json'))
+                same(load(bound(named(work / 'receipt.json'))), row, 'native on-disk process row')
+                same(request['case_id'], row['case_id'], 'lexical native request case')
+                same(request['environment']['UNIT4_NONCE'], row['execution_id'], 'lexical native request nonce')
+                same(request['environment']['UNIT4_CASE_ID'], row['case_id'], 'lexical native request ID')
+                same(request['environment']['UNIT4_CONTROL'], '0', 'lexical observed native request')
+                same(request['environment']['UNIT4_SOURCE'], request['source']['path'], 'native source request path')
+                same(request['environment']['UNIT4_RAW_OUTPUT'], str(work / 'raw.json'), 'native raw request path')
+                same(type(request['original_mode_requested']), bool, 'strict original-mode request type')
+                same(request['environment']['UNIT4_ORIGINAL'], str(int(request['original_mode_requested'])),
+                     'exact original-mode environment request')
+                modes = [0, 1] if request['original_mode_requested'] else [0]
+                native.append((index, row['case_id'], row['execution_id'], False, row, row,
+                               request['source'], request['display_path'], work, modes))
+        else:
+            same(parent['status'], 'pass', 'lexical passivity native success')
+            prescribed = a['recipe']['passivity']['cases']
+            same([row['case'] for row in parent['results']], [name for name, _ in prescribed],
+                 'lexical prescribed three-case passivity order')
+            for case_index, (case, (name, source)) in enumerate(zip(parent['results'], prescribed)):
+                same(bound(case['source'], directory / 'result' / (name + '.ox')), source.encode(),
+                     'lexical passivity prescribed source')
+                same(len(case['receipts']), 2, 'lexical exact passivity role pair')
+                for control, row in zip((False, True), case['receipts']):
+                    work = directory / 'result' / (name + ('-control' if control else '-instrumented'))
+                    native.append((case_index * 2 + int(control), name, None, control, row, row,
+                                   case['source'], name + '.ox', work, [0, 1]))
+    else:
+        parent_path = root / 'u8-policy-controls/receipt.json'
+        parent_record = named(parent_path)
+        parent = load(bound(parent_record, parent_path))
+        same(parent['session'], session_record, 'u8 lexical native session')
+        cases = u8_policy_module(a).CASES
+        expected = [(p, c, name) for p in PHASE_PROFILES for c in (False, True)
+                    for name in [*cases, *(['enabled-public'] if c else [])]]
+        same([(r['profile'], r['control'], r['case']) for r in parent['cases']], expected,
+             'unchanged complete u8 native roster with public exclusions')
+        for index in (range(8) if profile == 'debug' else range(9, 17)):
+            row = parent['cases'][index]
+            same(row['profile'], profile, 'u8 lexical profile at original index')
+            control = row['control']
+            same(type(control), bool, 'strict u8 native role')
+            work = root / 'u8-policy-controls' / (profile + ('-control-' if control else '-observer-') + row['case'])
+            invocation = load(bound(row['invocation'], work / 'invocation.json'))
+            same(row['binary'], builds[(profile, control)]['binary'], 'u8 exact actual role binary')
+            same(bound(row['source'], work / 'source.ox'), cases[row['case']].encode(), 'u8 prescribed lexical source')
+            native.append((index, row['case'], row['nonce'], control, row, invocation,
+                           row['source'], 'u8-policy.ox', work, [0, 1]))
+    same(len(native), {'collection': 248, 'passivity': 6, 'u8_controls': 8}[scope], 'complete lexical parent roster')
+    records, nonces = [], set()
+    for index, case, nonce, control, row, process, source_record, display, work, modes in native:
+        # Neither a frame nor an expected lexical Err may override real failure.
+        same(process['exit_code'], 0, 'actual ordinary selected process success before extraction')
+        build = builds[(profile, control)]
+        argv = ([build['binary']['path'], '--exact', a['recipe']['entrypoint'], '--ignored', '--nocapture']
+                if scope == 'u8_controls' else
+                [build['binary']['path'], a['recipe']['entrypoint'], '--exact', '--ignored', '--nocapture', '--test-threads=1'])
+        same(process['argv'], argv, 'lexical actual exact selected binary command')
+        stdout = bound(process['stdout'], work / ('driver.stdout' if scope == 'u8_controls' else 'stdout.txt'))
+        stderr = bound(process['stderr'], work / ('driver.stderr' if scope == 'u8_controls' else 'stderr.txt'))
+        raw_bytes = bound(row['raw'], work / 'raw.json')
+        raw = load(raw_bytes)
+        same(raw['schema'], 'oxid-unit4-parser-raw-v1', 'unchanged original raw schema')
+        same(raw['case_id'], case, 'lexical original raw case')
+        if nonce is None:
+            nonce = raw['nonce']
+        same(raw['nonce'], nonce, 'lexical exact native nonce')
+        require(isinstance(nonce, str) and re.fullmatch('[0-9a-f]{32}', nonce) and nonce not in nonces,
+                'unique lexical native nonce')
+        nonces.add(nonce)
+        source = bound(source_record)
+        same(raw['source_utf8'].encode('utf-8'), source, 'lexical same actual SourceFile bytes')
+        same(raw['display_path'], display, 'lexical actual source display-path association')
+        same([r['mode_execution_index'] for r in raw['observations']], modes, 'lexical original requested mode indices')
+        same([r['mode'] for r in raw['observations']], ['ProjectCandidate', 'OwnedCandidate'][:len(modes)],
+             'lexical unchanged requested parser mode roster')
+        generations = []
+        errors = []
+        for observation in raw['observations']:
+            same(observation['executed'], True, 'lexical original actual mode execution')
+            same(observation['runtime_os'], 'linux', 'lexical original runtime OS')
+            same(observation['runtime_architecture'], 'x86_64', 'lexical original runtime architecture')
+            same(observation['pointer_width'], 64, 'lexical original runtime pointer width')
+            generation = observation['source_generation']
+            require(type(generation) is int and generation > 0, 'lexical actual source generation')
+            generations.append(generation)
+            errors.append(observation['result'] == 'lex_error')
+        require(len(set(generations)) == 1 and (all(errors) or not any(errors)),
+                'lexical original same source generation and consistent lex result')
+        lex_result = 'err' if all(errors) else 'ok'
+        role = 'not_observed' if control else 'observed'
+        require(stdout.count(('UNIT4_EXECUTED ' + nonce).encode()) == 1 and
+                re.search(rb'test result: ok\. 1 passed; 0 failed; 0 ignored;', stdout),
+                'unchanged original helper completion witness')
+        payload = module.extract_witness(stdout, nonce=nonce, case_id=case, role=role,
+                                         mode_indices=modes, lex_result=lex_result)
+        path = work / 'lexer-phase.json'
+        if emit:
+            require(not path.exists() and not path.is_symlink(), 'fresh lexical sidecar only')
+            with path.open('xb') as sink:
+                sink.write(payload)
+        sidecar_record = named(path)
+        sidecar = bound(sidecar_record, path)
+        same(sidecar, payload, 'sidecar must equal exact authenticated stdout slice including LF')
+        module.validate_sidecar(sidecar, nonce=nonce, case_id=case, role=role,
+                                mode_indices=modes, lex_result=lex_result)
+        records.append({'case_id': case, 'nonce': nonce, 'role': role, 'process_index': index,
+                        'process_receipt_sha256': sha(module.process_projection(row)),
+                        'binary_sha256': build['binary']['sha256'], 'source_sha256': source_record['sha256'],
+                        'raw_sha256': row['raw']['sha256'], 'stdout_sha256': process['stdout']['sha256'],
+                        'stderr_sha256': process['stderr']['sha256'], 'sidecar': relative(sidecar_record)})
+    expected = {'schema': 'oxid-unit4-lexer-phase-envelope-v1', 'scope': scope, 'profile': profile,
+                'session_sha256': session_record['sha256'], 'authority_sha256': AUTHORITY_SHA,
+                'adapter_sha256': a['current']['lexer_phase']['helper']['sha256'],
+                'parent_receipt': relative(parent_record, 64), 'record_count': len(records), 'records': records}
+    envelope_path = root / 'lexer-phase' / (scope + '-' + profile + '.json')
+    if emit:
+        envelope_path.parent.mkdir(exist_ok=True)
+        require(not envelope_path.parent.is_symlink(), 'safe lexical envelope directory')
+        with envelope_path.open('xb') as sink:
+            sink.write(module.canonical_bytes(expected))
+    envelope_record = named(envelope_path)
+    module.validate_envelope(bound(envelope_record, envelope_path), scope=scope, profile=profile,
+                             session_sha256=session_record['sha256'], authority_sha256=AUTHORITY_SHA,
+                             adapter_sha256=expected['adapter_sha256'], parent_receipt=expected['parent_receipt'], records=records)
+    return envelope_record, records
+
+
+def phase_evidence(a, session_path, *, resolve=artifact, identities=None, builds=None):
+    """All 524 ordinary processes, six envelopes, and separate full 54 probes."""
+    session_path = Path(session_path).absolute()
+    root = session_path.parent
+    session_identity = identity(session_path) if identities is None else identities[str(session_path)]
+    session = load(resolve(session_identity))
+    if builds is None:
+        builds = {(profile, control): verify_build(root, session_path, profile, a, control)[0]
+                  for profile in PHASE_PROFILES for control in (False, True)}
+    envelopes, records = [], []
+    for scope in PHASE_SCOPES:
+        for profile in PHASE_PROFILES:
+            envelope, rows = phase_scope(a, session_path, scope, profile, resolve=resolve,
+                                         identities=identities, builds=builds)
+            envelopes.append(envelope); records.extend(rows)
+    same(len(records), 524, 'complete separately witnessed ordinary process count')
+    same(len({row['nonce'] for row in records}), 524, 'unique complete ordinary lexical nonce roster')
+    same(sum(row['role'] == 'observed' for row in records), 510, 'complete observed lexical roster')
+    same(sum(row['role'] == 'not_observed' for row in records), 14, 'complete unobserved lexical roster')
+    expected_envelopes = {Path(row['path']).name for row in envelopes}
+    if identities is None:
+        actual = set()
+        for path in (root / 'lexer-phase').iterdir():
+            regular(path); actual.add(path.name)
+        same(actual, expected_envelopes, 'exact six lexical envelope inventory')
+    else:
+        actual = {Path(name).name for name in identities if Path(name).parent == root / 'lexer-phase'}
+        same(actual, expected_envelopes, 'exact transported six lexical envelopes')
+    driver = phase_module(a, controls=True)
+    binding = phase_control_binding(a)
+    binaries, layouts = {}, {}
+    prepared_ns = session['prepared_ns']
+    for (profile, control), build in builds.items():
+        role = 'not_observed' if control else 'observed'
+        binary = build['binary']
+        binaries[(profile, role)] = dict(binary, path=Path(binary['path']).relative_to(root).as_posix())
+        layouts[binary['sha256']] = binding['approved_layouts'][profile + '-' + role]
+        build_invocation_path = root / (('build-control-' if control else 'build-') + profile) / 'invocation.json'
+        build_invocation_identity = (identity(build_invocation_path) if identities is None
+                                     else identities[str(build_invocation_path)])
+        build_invocation = load(resolve(build_invocation_identity))
+        same(build_invocation['exit_code'], 0, 'successful actual build before phase controls')
+        prepared_ns = max(prepared_ns, build_invocation['finished_ns'])
+    require(len(layouts) == 4, 'phase controls require four distinct actual binaries')
+    inventory = None if identities is None else {path: row for path, row in identities.items()
+                                                if Path(path).is_relative_to(root / 'lexer-phase-controls')}
+    driver.verify(root, session_sha256=session_identity['sha256'], authority_sha256=AUTHORITY_SHA,
+                  driver_sha256=binding['driver']['sha256'], binaries=binaries, approved_layouts=layouts,
+                  prepared_ns=prepared_ns, resolve=None if identities is None else resolve,
+                  inventory=inventory)
+    index_path = root / 'lexer-phase-controls/probe-index.json'
+    index_record = identity(index_path) if identities is None else identities[str(index_path)]
+    return {'envelopes': envelopes, 'probe_index': index_record}
 
 
 def main():

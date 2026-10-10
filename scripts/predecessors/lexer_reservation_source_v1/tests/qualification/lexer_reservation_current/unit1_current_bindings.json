@@ -1,0 +1,53 @@
+{
+  "schema": "oxid-unit1-lexer-current-bindings-v1",
+  "compiler_checkpoint": "c8e9a72afd9866f32b96f98ae24f61390039f421",
+  "original_package": {
+    "path": "unit1_original_package.json",
+    "bytes": 4065,
+    "sha256": "d0ccbbd78ff138f15791b55aed88bb33eaf6b68c69022ccb6bf0096f9ae069c3"
+  },
+  "files": [
+    {
+      "path": "adapters.py",
+      "bytes": 10711,
+      "sha256": "0520fbf2c651f9b22897a19937c54749b0153ee234bae424dc4132d48e198e2a"
+    },
+    {
+      "path": "unit1_correspondence.json",
+      "bytes": 11340,
+      "sha256": "acecab2344d54ffac8f8e5581d40a667ad7359fd7baa5852bf4d3d7d9a699e8d"
+    },
+    {
+      "path": "unit1_derivation.py",
+      "bytes": 7032,
+      "sha256": "4e363dd5c0f697df4fd96c5a71c820c9a4a4e763d5670dc239ddf426c84c22c5"
+    },
+    {
+      "path": "unit1_lexer_controls.rs",
+      "bytes": 2834,
+      "sha256": "2ab00168c56dcbab23ba6b61d983127cc59c4b20ca3fe49e34e0032d8a359c09"
+    },
+    {
+      "path": "unit1_reviewer_additional.current.rs",
+      "bytes": 16142,
+      "sha256": "90628df4db9b9cd543f80b7b65a484c2317f240258d98940204d6f2707a706ba"
+    },
+    {
+      "path": "unit1_run_current.py",
+      "bytes": 11012,
+      "sha256": "7aeeb11b399ae0ffc7fa794cd1bb31b0a85ddd8f2f8b501cc2edd99451f88f37"
+    },
+    {
+      "path": "unit1_run_reviewer_current.py",
+      "bytes": 5235,
+      "sha256": "6af2f1a7a5226db7b2ec3ca506b73543183723979970a5c9ce316285aac80c54"
+    }
+  ],
+  "original_cases_per_profile": 69,
+  "current_controls_per_profile": 1,
+  "profiles": [
+    "debug",
+    "release"
+  ],
+  "execution_qualified": false
+}

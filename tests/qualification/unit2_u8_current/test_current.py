@@ -93,7 +93,18 @@ class CurrentResource(unittest.TestCase):
         self.assertEqual(captured['index_resource'], self.old)
         self.assertEqual(captured['u8_index_resource'], result)
         self.assertEqual(captured['u8_index_resource_authority'], authority)
-        transfer = captured['u8_accounting_source_binding']
+        transfer = captured['lexer_reservation_unit2_accounting_source_binding']
+        retained = captured['u8_accounting_source_binding']
+        self.assertEqual(transfer['predecessor_accounting_source_binding'], retained)
+        self.assertEqual(retained['version'], 'unit2-byte-storage-identical-accounting-source-v1')
+        predecessor = (PACKAGE / 'byte-storage-source-v1.json').read_bytes()
+        self.assertEqual(retained['current_source'], binding.entry('current-source.json', predecessor))
+        self.assertEqual(retained['reviewed_source_head'], json.loads(predecessor)['reviewed_source_head'])
+        self.assertEqual(retained['source_only_tree'], json.loads(predecessor)['source_only_tree'])
+        for key in ('retained_accounting_source', 'retained_reviewed_source_head',
+                    'retained_source_only_tree', 'retained_authority', 'retained_helper',
+                    'derived_resource', 'source_dependencies'):
+            self.assertEqual(transfer[key], retained[key])
         self.assertEqual(transfer['current_source'], binding.entry('current-source.json', self.current_source))
         self.assertEqual(transfer['retained_accounting_source'], binding.entry('u8-source.json', self.source))
         self.assertEqual(transfer['reviewed_source_head'], json.loads(self.current_source)['reviewed_source_head'])
@@ -104,7 +115,8 @@ class CurrentResource(unittest.TestCase):
             self.assertEqual((Path(seam['resource_package_root']) / binding.INDEX_RESOURCE).read_bytes(), result)
             self.assertEqual(seam['index_resource_adapter'], captured['index_resource_authority'])
             self.assertEqual(seam['u8_index_resource_adapter'], authority)
-            self.assertEqual(seam['u8_accounting_source_binding'], transfer)
+            self.assertEqual(seam['lexer_reservation_unit2_accounting_source_binding'], transfer)
+            self.assertEqual(seam['u8_accounting_source_binding'], retained)
 
     def test_missing_extra_or_changed_seam_rejected(self):
         for seams in [helper.SEAMS[:1], helper.SEAMS+helper.SEAMS[:1],

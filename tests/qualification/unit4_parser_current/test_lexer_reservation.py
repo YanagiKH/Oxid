@@ -14,7 +14,7 @@ import portable as p
 class CurrentLexer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.a = p.authority()
+        cls.a = p.phase_previous(p.authority())
         cls.inputs = {r['path']: (p.REPOSITORY / r['path']).read_bytes()
                       for r in cls.a['current_source']['files']}
         cls.helper = p.lexer_module(cls.a['current'])

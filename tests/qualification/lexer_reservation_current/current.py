@@ -4,6 +4,7 @@ This stage authenticates real inputs before making an isolated predecessor view.
 No compiler, private parser package, source mutation or qualification claim is made
 by admission. Historical execution retains its original selected-byte identity.
 """
+import copy
 import importlib.util
 import json
 import os
@@ -19,6 +20,14 @@ from seal import SEAL
 
 HERE = Path(__file__).resolve().parent
 RETAINED_NAME = 'typed_project_source_binding_byte_storage_v1'
+RETAINED_ACCOUNTING_KEY = 'u8_accounting_source_binding'
+CURRENT_ACCOUNTING_KEY = 'lexer_reservation_unit2_accounting_source_binding'
+RETAINED_ACCOUNTING_FIELDS = frozenset((
+    'version', 'current_source', 'reviewed_source_head', 'source_only_tree',
+    'retained_accounting_source', 'retained_reviewed_source_head',
+    'retained_source_only_tree', 'retained_authority', 'retained_helper',
+    'derived_resource', 'source_dependencies'))
+CURRENT_ACCOUNTING_FIELDS = RETAINED_ACCOUNTING_FIELDS | {'predecessor_accounting_source_binding'}
 
 
 def retained_package(package):
@@ -120,7 +129,7 @@ def preflight(repo, package):
         historical = api.preflight(target, saved)
     adapters.need(historical['inputs'] == restored and len(historical['archived']) == 117,
                   'retained inverse chain did not preserve complete source identities')
-    return {**historical,
+    captured = {**historical,
             'current': admitted['current'], 'inputs': admitted['inputs'],
             'package_bytes': package_bytes, 'package_manifest': raw,
             'byte_storage_source': historical['current'], 'byte_storage_inputs': restored,
@@ -130,6 +139,78 @@ def preflight(repo, package):
             'lexer_reservation_seal': SEAL,
             'lexer_reservation_retained_package_manifest': retained['package-manifest.json'],
             'lexer_reservation_references': references}
+    captured[CURRENT_ACCOUNTING_KEY] = unit2_accounting_binding(captured, package)
+    return captured
+
+
+def unit2_accounting_binding(captured, package):
+    """Transport exact immutable accounting to independently admitted current bytes."""
+    _, retained, api = capture_retained(package)
+    package_bytes = captured['package_bytes']
+    for name in ('u8-source.json', 'unit2-u8-resource-authority.json', 'unit2_u8_resource.py'):
+        adapters.need(package_bytes[name] == retained[name], 'changed retained accounting member: ' + name)
+    authority = json.loads(retained['unit2-u8-resource-authority.json'])
+    adapters.need(captured['u8_index_resource_authority'] == authority,
+                  'changed retained accounting authority')
+    dependencies = authority['source_dependencies']
+    adapters.need(tuple(row['path'] for row in dependencies) == source_transition.ACCOUNTING_PATHS,
+                  'wrong accounting dependency roster')
+    raw = package_bytes['current-source.json']
+    adapters.need(raw == package_bytes[source_transition.CURRENT_NAME],
+                  'wrong current accounting manifest')
+    adapters.verify(raw, SEAL['source_manifest'], source_transition.CURRENT_NAME)
+    current_source = json.loads(raw)
+    predecessor = json.loads(retained['current-source.json'])
+    u8_source = json.loads(retained['u8-source.json'])
+    adapters.need(captured['current'] == captured['lexer_reservation_source'] == current_source
+                  and current_source['reviewed_source_head'] == SEAL['compiler_head']
+                  and current_source['source_only_tree'] == SEAL['compiler_tree'],
+                  'wrong current accounting source identity')
+    adapters.need(captured['byte_storage_source'] == predecessor,
+                  'wrong retained accounting source identity')
+    for field, source in (('inputs', current_source), ('byte_storage_inputs', predecessor)):
+        rows = [api.entry(name, body) for name, body in sorted(captured[field].items())]
+        adapters.need(rows == source['files'], 'wrong complete accounting input map: ' + field)
+    for row in dependencies:
+        name = row['path']
+        adapters.need(all(row in source['files'] for source in (u8_source, predecessor, current_source)),
+                      'changed accounting source dependency: ' + name)
+        for field in ('byte_storage_inputs', 'inputs'):
+            adapters.verify(captured[field][name], row, name)
+        adapters.need(captured['inputs'][name] == captured['byte_storage_inputs'][name],
+                      'changed accounting dependency body: ' + name)
+    resource = api.entry(api.INDEX_RESOURCE, captured['u8_index_resource'])
+    adapters.need(resource == authority['derived'], 'changed derived accounting resource')
+    expected = {
+        'version': 'unit2-byte-storage-identical-accounting-source-v1',
+        'current_source': api.entry('current-source.json', retained['current-source.json']),
+        'reviewed_source_head': predecessor['reviewed_source_head'],
+        'source_only_tree': predecessor['source_only_tree'],
+        'retained_accounting_source': api.entry('u8-source.json', retained['u8-source.json']),
+        'retained_reviewed_source_head': u8_source['reviewed_source_head'],
+        'retained_source_only_tree': u8_source['source_only_tree'],
+        'retained_authority': api.entry('unit2-u8-resource-authority.json', retained['unit2-u8-resource-authority.json']),
+        'retained_helper': api.entry('unit2_u8_resource.py', retained['unit2_u8_resource.py']),
+        'derived_resource': resource,
+        'source_dependencies': dependencies,
+    }
+    historical = captured[RETAINED_ACCOUNTING_KEY]
+    adapters.need(set(historical) == RETAINED_ACCOUNTING_FIELDS and historical == expected,
+                  'changed historical accounting source binding')
+    return {**copy.deepcopy(expected),
+            'version': 'unit2-lexer-reservation-identical-accounting-source-v1',
+            'current_source': api.entry('current-source.json', raw),
+            'reviewed_source_head': current_source['reviewed_source_head'],
+            'source_only_tree': current_source['source_only_tree'],
+            'predecessor_accounting_source_binding': copy.deepcopy(expected)}
+
+
+def validate_unit2_accounting(captured, package):
+    expected = unit2_accounting_binding(captured, package)
+    actual = captured[CURRENT_ACCOUNTING_KEY]
+    adapters.need(set(actual) == CURRENT_ACCOUNTING_FIELDS and actual == expected,
+                  'changed current accounting source binding')
+    return expected
 
 
 def outer_receipt(captured):
@@ -141,7 +222,8 @@ def outer_receipt(captured):
             'lexer_reservation_compiler_head': seal['compiler_head'],
             'lexer_reservation_compiler_tree': seal['compiler_tree'],
             'lexer_reservation_adapter_head': seal['adapter_head'],
-            'lexer_reservation_predecessor_source_sha256': source_transition.PREDECESSOR_SHA}
+            'lexer_reservation_predecessor_source_sha256': source_transition.PREDECESSOR_SHA,
+            CURRENT_ACCOUNTING_KEY: copy.deepcopy(captured[CURRENT_ACCOUNTING_KEY])}
 
 
 def install(runtime, package):
@@ -151,6 +233,8 @@ def install(runtime, package):
     fixtures and the original verifier functions remain exact retained bodies.
     """
     old_archived = runtime.prepare_archived
+    old_prepare_unit2 = runtime.prepare_unit2
+    old_verify_unit2_result = runtime.verify_unit2_result
     old_write_json = runtime.write_json
     runtime.PACKAGE = Path(package)
     runtime.__file__ = str(Path(package) / 'run.py')
@@ -159,6 +243,7 @@ def install(runtime, package):
     last = {}
 
     def admitted(repo, package=runtime.PACKAGE):
+        last.pop('captured', None)
         result = preflight(repo, package)
         last['captured'] = result
         return result
@@ -168,17 +253,49 @@ def install(runtime, package):
         runtime.require(fresh == captured, 'input identity changed during operation')
 
     def archived(output, captured):
+        validate_unit2_accounting(captured, runtime.PACKAGE)
         result = old_archived(output, captured)
         result.update(outer_receipt(captured))
         return result
 
+    def prepare_unit2(output, captured):
+        current_binding = validate_unit2_accounting(captured, runtime.PACKAGE)
+        result = old_prepare_unit2(output, captured)
+        adapters.need(result[RETAINED_ACCOUNTING_KEY] == captured[RETAINED_ACCOUNTING_KEY],
+                      'changed prepared historical accounting binding')
+        result = copy.deepcopy(result)
+        result[CURRENT_ACCOUNTING_KEY] = copy.deepcopy(current_binding)
+        return result
+
+    def verify_unit2_result(output, captured, seam, prepare_only):
+        current_binding = validate_unit2_accounting(captured, runtime.PACKAGE)
+        adapters.need(seam[RETAINED_ACCOUNTING_KEY] == captured[RETAINED_ACCOUNTING_KEY]
+                      and seam[CURRENT_ACCOUNTING_KEY] == current_binding,
+                      'changed materialized accounting association')
+        result = old_verify_unit2_result(output, captured, seam, prepare_only)
+        selected = runtime.regular(output / 'unit2/derived-package', 'source-inputs.json').read_bytes()
+        adapters.need(selected == captured['package_bytes']['current-source.json']
+                      and adapters.sha(selected) == current_binding['current_source']['sha256'],
+                      'wrong materialized current accounting manifest')
+        source = output / 'unit2/run/source'
+        lexer = 'src/frontend/lexer.rs'
+        adapters.need(runtime.regular(source, lexer).read_bytes() == captured['inputs'][lexer]
+                      and captured['inputs'][lexer] != captured['byte_storage_inputs'][lexer],
+                      'wrong materialized current lexer')
+        for row in current_binding['source_dependencies']:
+            adapters.verify(runtime.regular(source, row['path']).read_bytes(), row, row['path'])
+        return {**result, CURRENT_ACCOUNTING_KEY: copy.deepcopy(current_binding)}
+
     def write_json(path, value):
         if isinstance(value, dict) and value.get('schema') == 'oxid-current-archive-binding-v1' and last:
+            validate_unit2_accounting(last['captured'], runtime.PACKAGE)
             value = {**value, **outer_receipt(last['captured'])}
         old_write_json(path, value)
 
     runtime.preflight = admitted
     runtime.prepare_archived = archived
+    runtime.prepare_unit2 = prepare_unit2
+    runtime.verify_unit2_result = verify_unit2_result
     runtime.assert_unchanged = assert_unchanged
     runtime.write_json = write_json
     return runtime

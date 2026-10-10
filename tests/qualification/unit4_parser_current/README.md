@@ -1,3 +1,17 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+The active authority.json is byte-equal to lexer-phase-authority-v1.json, `d8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c`. The separately immutable lexer-reservation-authority-v2.json is `917431fe269d807c76b2f16ae7fef7f4e6c70aa301f9823f65de4fe039b94baf` and is the prephase predecessor, not a standalone current runtime authority. Its historical u8-control identity remains unchanged; the outer layer separately binds the current reviewed u8 controls. The phase composition is 3,141 bytes / 5cf6b9cc9a6fd7253fd2f04b7107dd5eb631bbb438c5ad94f2b63ecf73deef36.
+
+Complete current maps are 539 base / 542 observed / 542 control, with 341 retained historical source-delta rows. Retained composer tests authenticate the complete outer authority and explicitly recover phase_previous before entering historical routines; outer-admission tests still exercise the outer authority. The actual approved 25 layout values include G8, FrameCarriers40, Token32 and named logical union2536; these are not stack/RSS bounds. Fresh final execution must remeasure layouts and establish full54/524/six-envelope evidence.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
 # Fallible lexer current-parser source successor
 
 The reviewed compiler checkpoint is `c8e9a72afd9866f32b96f98ae24f61390039f421`,

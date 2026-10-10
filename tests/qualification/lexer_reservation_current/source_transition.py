@@ -17,9 +17,9 @@ PREDECESSOR_BYTES = 74192
 PREDECESSOR_HEAD = "e3c1b4a1a3ef457326f11a802896c125202fe797"
 PREDECESSOR_TREE = "5fdb4f06a8fcbc61724676df55a4c3bee130eaf7"
 PREDECESSOR_NAME = "byte-storage-source-v1.json"
-CURRENT_NAME = "lexer-reservation-source-v1.json"
-AUTHORITY_NAME = "lexer-reservation-authority-v1.json"
-PATCH_NAME = "lexer-reservation-transition-v1.patch"
+CURRENT_NAME = "lexer-reservation-source-v2.json"
+AUTHORITY_NAME = "lexer-reservation-authority-v2.json"
+PATCH_NAME = "lexer-reservation-transition-v2.patch"
 RECIPE = "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS"
 ACCOUNTING_PATHS = (
     "src/frontend/declaration_index/resource.rs",
