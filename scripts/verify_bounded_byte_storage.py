@@ -41,7 +41,7 @@ PACKAGE = Path('tests/qualification/byte_storage_current')
 DATA_SHA256 = '53211d876b89c192c7636c3d0e0e78d2ad381dd47da521a2e20087fd8a16df30'
 ORACLE_SHA256 = 'de6d63aba53edfe1af802536d044ffbad345509556e804b293381ea5c39ed3a7'
 ORIGINAL_SEAL_SHA256 = '91f99de6d2632f3d6972017c7af55596490ddd00e7b16c9e6bd1abecae5b01c3'
-SOURCE_SHA256 = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
+SOURCE_SHA256 = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
 # Fixture registration is imported by cross-host repository/parser/static
 # checks. Keep its immutable identities independent of the Linux native
 # helpers, whose historical controls require the Unix-only resource module.

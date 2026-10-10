@@ -545,6 +545,7 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
     assert!(baseline.trace.iter().all(|event| event.success));
     for label in [
         "source bytes",
+        "lexer token tape",
         "file ASTs",
         "module headers",
         "enum declarations",
@@ -580,6 +581,29 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
     assert_eq!(allocator.trace.capacity(), trace_capacity);
     assert!(!allocator.observer_trace_overflow);
 
+    // From the literal fixture, before interpreting candidate trace results:
+    // main: mod/space/a/;/enum/space/E/{/V/}/EOF, child: enum/space/F/{/W/}/EOF.
+    let lexer_sites = [
+        (0, 4, 0, 3),
+        (0, 8, 6, 10),
+        (0, 16, 13, 14),
+        (1, 4, 0, 4),
+        (1, 8, 7, 8),
+    ];
+    let lexer_rows: Vec<_> = baseline
+        .trace
+        .iter()
+        .filter(|event| event.kind == "lexer token tape")
+        .collect();
+    assert_eq!(lexer_rows.len(), lexer_sites.len());
+    for (event, &(_, target, _, _)) in lexer_rows.iter().zip(&lexer_sites) {
+        assert_eq!(event.length, target);
+        assert_eq!(
+            event.element_bytes,
+            size_of::<crate::frontend::lexer::Token>()
+        );
+    }
+    let mut selected_lexer_site = 0;
     let mut maximum_failure_peak = 0;
     for fail_at in 1..=baseline.attempts {
         let mut allocator = prepared_allocator(Some(fail_at), TRACE_ROWS);
@@ -603,6 +627,11 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
                             .iter()
                             .all(|(span, _)| failure.sources.try_text(*span).is_some())
                 }),
+                failure.diagnostics[0].message == "token storage allocation failed",
+                failure.diagnostics[0].primary,
+                failure.diagnostics.len() == 1
+                    && failure.diagnostics[0].secondary.is_empty()
+                    && failure.diagnostics[0].notes.is_empty(),
             );
             // LoadFailure takes the caller's Allocator on error. Move that
             // existing observer trace back out before dropping failure-owned
@@ -613,11 +642,26 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
             receipt
         });
         assert_eq!(receipt.0, "E0400");
-        assert!(
-            matches!(receipt.1, "source-project" | "parse"),
-            "{}",
-            receipt.1
-        );
+        if baseline.trace[fail_at - 1].kind == "lexer token tape" {
+            let (file, _, start, end) = lexer_sites[selected_lexer_site];
+            selected_lexer_site += 1;
+            assert_eq!(receipt.1, "lex");
+            assert!(receipt.3 && receipt.5);
+            assert_eq!(
+                receipt.4,
+                Some(crate::frontend::source::Span {
+                    file: crate::frontend::source::SourceFileId(file),
+                    start,
+                    end,
+                })
+            );
+        } else {
+            assert!(
+                matches!(receipt.1, "source-project" | "parse"),
+                "{}",
+                receipt.1
+            );
+        }
         assert!(receipt.2);
         assert_eq!(final_live, 0, "loader failure {fail_at}");
         assert!(failure_calls > 0);
@@ -659,6 +703,7 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
         maximum_failure_peak = maximum_failure_peak.max(failure_peak);
         assert!(!integration_enabled());
     }
+    assert_eq!(selected_lexer_site, lexer_sites.len());
     println!(
         "enum candidate loader: swept {} observed reserve ordinals; failure-owned source/AST/diagnostic payload drops to zero with caller trace preserved; maximum failure logical peak={maximum_failure_peak}",
         baseline.attempts

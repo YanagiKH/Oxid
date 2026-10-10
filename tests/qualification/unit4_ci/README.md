@@ -1,3 +1,71 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+inputs.json and inputs-lexer-reservation-v1.json remain byte-equal active aliases. The final active input digest is `e65fbe5018b90bb9cbc3abe1941c391e3678b19d0b2bbe8f00b38e70b4099445`; this single late documentation seam is filled only after complete inventory review. common.py INPUTS_SHA is filled from those same bytes, outside its own input roots. The closure is 556 files / 15 roots; lexer_reservation_source_v1_preservation is a separate identity for the unchanged 38-body archive plus manifest, never a reinterpretation of the original 271-file/eight-root predecessor inventory.
+
+Current public lifecycle uses observer-lexer-reservation-v2.patch. Active parser authority is `d8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c`, with immutable prephase `917431fe269d807c76b2f16ae7fef7f4e6c70aa301f9823f65de4fe039b94baf`. The full 173 dispositions retain original audit fields and execution statuses. Script discovery keeps all four existing source-only adapter tests and adds one method running all 35 phase source controls. No workflow job, profile, host, collector, permission, failure upload or terminal join is reduced. Compiler/semantic/native/hosted execution remains pending its independently recorded actual runs.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
+# Fallible lexer reservation CI source successor
+
+Current generated compiler checkpoint: `c8e9a72afd9866f32b96f98ae24f61390039f421`.
+Full compiler tree: `9b35515f096b5619d4d5b3d4b0cb88ea2ccf2c37`.
+Current source-manifest SHA-256:
+`aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633`.
+The exact current closure still has 376 selected inputs, 288 src/native members,
+291 compiler/build bodies, 78 fixture bodies and 136 include expressions. Its
+14 changed paths and zero additions are derived from the committed source tree.
+
+This is generated source/adaptor integration, pending independent final review
+and execution under the serial build lease. Source-only controls are not current
+Unit1/Unit2/Unit4, native, semantic, lifecycle or actual-host qualification passes.
+
+The active source-binding dispatcher admits the new lexer outer transition, then
+runs the unchanged complete historical inverse chain on its exact restored
+376-member byte-storage predecessor. The complete original source package stays
+byte-identical in `tests/fixtures/typed_project_source_binding_byte_storage_v1`.
+The old 271-file/eight-root CI inventory and all changed script/workflow/CI inputs
+are retained under `scripts/predecessors/byte_storage_ci_v1`, with a pinned
+preservation manifest. The new exact CI closure has 501 files across 14 closed
+roots, retains every original entry, adds 230 entries and refreshes 13 original
+entry identities. `inputs.json` and `inputs-lexer-reservation-v1.json` are identical;
+the active digest is `f12049cc96d04f153dd3e5204a3a8f8915f3dc913e035e09225fbbe28c88771a`. Earlier authority identities and historical receipts are
+not relabeled.
+
+`tests/qualification/lexer_reservation_current/direct-consumer-dispositions.json`
+records all 173 approved direct workflow entries individually: 92 current
+execution, 26 historical execution through the outer inverse, 48 repository or
+artifact checks, and 7 terminal evidence-preservation entries. The workflow
+changes only the Unit1 runner path and both stdin/stdout source-manifest arguments.
+All original command/profile selectors, failure collectors, uploads, installed
+LLVM staging, actual-host matrix and four-host terminal join remain mandatory.
+
+The current public lifecycle patch is `observer-lexer-reservation-v1.patch`.
+Public ordinary/lifecycle maps contain 376/377 members; current parser
+base/observer/control maps contain 539/542/542 members with 341 source-delta rows.
+Ordinary/current lifecycle execution uses the current bodies, while historical
+restoration uses only the exact predecessor. Native enum/byte/u8/stdin/stdout
+entrypoints share the current source seal. Native source collection now snapshots
+every selected current fixture body; producer snapshots close over the new helper
+root and the complete preserved source-binding package.
+
+Script discovery runs the exact current outer-source controls through
+`test_lexer_reservation_source_current.py`, the current CI activation controls
+through `test_lexer_current_ci.py`, the four exact current adapter suites through
+`test_lexer_reservation_adapters_current.py`, and the retained source-binding mutation suite
+on the authenticated restored predecessor. Original case assertions stay intact.
+
+The following text is retained predecessor documentation. Its uses of “current”
+refer only to the earlier authority described in that section.
+
+## Retained byte-storage documentation
+
 # RFC0031 standalone byte-storage source successor
 
 Current reviewed source checkpoint: `e3c1b4a1a3ef457326f11a802896c125202fe797`. Full Git tree:

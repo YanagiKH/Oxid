@@ -355,12 +355,25 @@ class BoundedEnumNativeControls(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("native_byte_source_authority", binding_root / "byte_storage.py")
         byte = importlib.util.module_from_spec(spec); spec.loader.exec_module(byte)
         self.assertEqual(len(manifest["files"]), byte.CURRENT_MEMBERS)
-        self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(), byte.SOURCE_SHA)
+        self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(), gate.REVIEWED_SOURCE_SHA256)
+        predecessor_raw = original.with_name("byte-storage-source-v1.json").read_bytes()
+        self.assertEqual(hashlib.sha256(predecessor_raw).hexdigest(), byte.SOURCE_SHA)
+        predecessor = json.loads(predecessor_raw)
+        self.assertEqual(manifest["lexer_reservation_predecessor_sha256"], byte.SOURCE_SHA)
+        transition = json.loads(original.with_name("lexer-reservation-authority-v2.json").read_bytes())
+        self.assertEqual(manifest["reviewed_source_head"], "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489")
+        self.assertEqual(manifest["source_only_tree"], "7f5c9aa08c569c4d0b5a27391d8fc68337075d36")
+        current_map = {row["path"]: row for row in manifest["files"]}
+        predecessor_map = {row["path"]: row for row in predecessor["files"]}
+        self.assertEqual(set(current_map), set(predecessor_map))
+        changed = sorted(name for name in current_map if current_map[name] != predecessor_map[name])
+        self.assertEqual(changed, transition["transition_paths"])
+        self.assertEqual(len(changed), 15)
         reduced = dict(manifest, files=[row for row in manifest["files"]
             if row["path"].startswith(("src/", "native/", "tests/fixtures/bounded_enum_scanner/"))
             or row["path"] in ("Cargo.toml", "Cargo.lock", "build.rs")])
         self.assertEqual(len(reduced["files"]), byte.COMPILER_MEMBERS + 5)
-        self.assertEqual(reduced["reviewed_source_head"], byte.SOURCE_HEAD)
+        self.assertEqual(predecessor["reviewed_source_head"], byte.SOURCE_HEAD)
         previous_raw = original.with_name("u8-source.json").read_bytes()
         self.assertEqual(hashlib.sha256(previous_raw).hexdigest(), manifest["u8_source_sha256"])
         previous = json.loads(previous_raw)
@@ -370,9 +383,9 @@ class BoundedEnumNativeControls(unittest.TestCase):
         self.assertEqual(hashlib.sha256(cross_raw).hexdigest(), byte.PREDECESSOR_SHA)
         cross = json.loads(cross_raw)
         after = {row["path"]: row for row in cross["files"]}
-        current = {row["path"]: row for row in manifest["files"]}
-        self.assertEqual(set(current) - set(after), set(byte.ADDITIONS) | set(byte.FIXTURE_ADDITIONS))
-        self.assertEqual([row["path"] for row in manifest["files"] if after.get(row["path"]) != row], list(byte.PATHS))
+        byte_current = {row["path"]: row for row in predecessor["files"]}
+        self.assertEqual(set(byte_current) - set(after), set(byte.ADDITIONS) | set(byte.FIXTURE_ADDITIONS))
+        self.assertEqual([row["path"] for row in predecessor["files"] if after.get(row["path"]) != row], list(byte.PATHS))
         self.assertEqual(set(before), set(after))
         self.assertEqual({name for name in before if before[name] != after[name]},
                          {"src/frontend/project.rs", "src/frontend/declaration_index/u8_integration_tests.rs"})
@@ -393,7 +406,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
+        expected = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

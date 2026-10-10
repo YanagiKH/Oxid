@@ -1,3 +1,52 @@
+# Source-v2 and lexer-phase current integration
+
+Compiler checkpoint: `b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489`; full tree `7f5c9aa08c569c4d0b5a27391d8fc68337075d36`. Current source manifest: `9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261`. Source-generation adapter checkpoint: `ba72fa8736f639191f898c29fde9380217e378b3`. This checkpoint remains the truthful source-generation provenance; the later test-only phase source-controls correction does not relabel it.
+
+These are reviewed source and authority identities. Fresh current execution, resource/native qualification, four final parser builds, full 54-probe/524-process/six-envelope evidence, and required actual-host CI remain separate gates. Discovery binaries and earlier source-only checks do not qualify this final authority.
+
+The active CI input closure is 556 files across 15 closed roots, including every source-v2/phase member and the unchanged 39-file inert source-v1 facade archive. Full ordinary source-control execution additionally restores every missing tracked A2 body from exact Git blobs; those unchanged files do not become new authority inputs or new closed roots. Final complete product paths total 2,670 when the 2,622-entry A2 tree, 39 archive files, three source-v2 files and six downstream named artifacts are present.
+
+The immutable architecture audit and ci_inventory.py remain unchanged. direct-consumer-dispositions.json is the separately named current 173-entry audit: original IDs, owner/job/step/line/original command fields and dispositions remain exact; only current source identities and the two stdin/stdout active command digests change. Existing discovery invokes five source-only adapter suites, including all 35 phase source controls, without adding a direct workflow command. The original 271-file/eight-root predecessor inventory retains its original meaning and SHA 97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a.
+
+## Historical source-v1 reference (verbatim)
+
+The following preserved document describes earlier checkpoints and is not the active source/authority pointer above.
+
+# Current fallible-lexer CI authority
+
+The active source authority is the named lexer-reservation successor for compiler
+`c8e9a72afd9866f32b96f98ae24f61390039f421`, tree
+`9b35515f096b5619d4d5b3d4b0cb88ea2ccf2c37`, manifest
+`aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633`.
+See `README.md`, `common.py` and `inputs-lexer-reservation-v1.json` for the active
+source/closure pointers. The unchanged before-state of this complete integration
+package is preserved under `scripts/predecessors/byte_storage_ci_v1`.
+
+The current selected source map has 376 members, including all 288 src/native
+members and 291 compiler/build bodies. Public ordinary/lifecycle maps contain
+376/377 members. Current parser base/observer/control maps contain 539/542/542
+members, with 341 historical-to-current source delta rows. These are complete
+source identity maps and do not establish execution or observation cardinality.
+
+The lexer outer inverse restores every byte of the 376-member byte-storage
+predecessor before the complete retained inverse chain runs. The old source
+package is immutable at its named sibling path. Current execution uses the new
+admitted compiler bodies. The current lifecycle patch observes the genuine core
+lex invocation, and the parser token adapter observes successful append exactly
+once. Historical observer functions and previous patches remain unchanged.
+
+All 173 direct workflow entries have explicit individually authenticated
+dispositions in `lexer_reservation_current/direct-consumer-dispositions.json`.
+Their current semantic gates, historical replay, source/controller checks and
+terminal evidence preservation remain distinct. The original actual-host matrix,
+installed LLVM staging, both profiles and complete terminal joins remain required.
+No source-only adapter result substitutes for these execution gates.
+
+The following design is retained historical context. Its source/member counts
+and uses of "current" identify earlier source authorities, never this successor.
+
+## Retained predecessor integration design
+
 # Mandatory Unit4 activation integration
 
 This integration owns orchestration and evidence transport only. It does not

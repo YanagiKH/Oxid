@@ -1,0 +1,65 @@
+{
+  "authority": {
+    "bytes": 520099,
+    "path": "authority.json",
+    "sha256": "aaf8ee9c693a99bb90f521a81e5db8583e00c76ac549b2e1df61e699e2cb538b"
+  },
+  "base_count": 539,
+  "candidate": {
+    "bytes": 95353,
+    "path": "candidate-source-manifest.json",
+    "sha256": "8d8a31ba49609674dbea457078be72f2bfa50719cff1b84db6468c1f78738110"
+  },
+  "compiler_invocations": 0,
+  "control_count": 542,
+  "execution_qualified": false,
+  "hooks": [
+    {
+      "control_build_hook_sites": 0,
+      "derived": {
+        "bytes": 9432,
+        "path": "src/frontend/project/budget.rs",
+        "sha256": "81fd8a3f2d2f9dbcd6966aeb8ad977f4129f7e785b164eebf63d63589bf416fd"
+      },
+      "inverse": {
+        "bytes": 9315,
+        "path": "src/frontend/project/budget.rs",
+        "sha256": "9df928482cffae56585a6ef6486fdc4aa2a99d12e5acb90f37408e21f0fcba11"
+      },
+      "reserve_hook_sites": 1,
+      "schema": "oxid-fallible-lexer-reserve-hook-correspondence-v1",
+      "source": {
+        "bytes": 9315,
+        "path": "src/frontend/project/budget.rs",
+        "sha256": "9df928482cffae56585a6ef6486fdc4aa2a99d12e5acb90f37408e21f0fcba11"
+      }
+    },
+    {
+      "actual_core_attempt_sites": 0,
+      "derived": {
+        "bytes": 35594,
+        "path": "src/frontend/lexer.rs",
+        "sha256": "c3a56f40587fa40ceed56a15e27861039673a98eab8b9d3e3a471a3ab26a518c"
+      },
+      "eof_append_sites": 1,
+      "inverse": {
+        "bytes": 35513,
+        "path": "src/frontend/lexer.rs",
+        "sha256": "49f7ef95ba97cb1cf4929e1002c016b26a0a673ff8126d1580695dbfdb3f55e3"
+      },
+      "kind": "token",
+      "ordinary_append_sites": 1,
+      "schema": "oxid-fallible-lexer-hook-correspondence-v1",
+      "source": {
+        "bytes": 35513,
+        "path": "src/frontend/lexer.rs",
+        "sha256": "49f7ef95ba97cb1cf4929e1002c016b26a0a673ff8126d1580695dbfdb3f55e3"
+      },
+      "successful_append_hook_sites": 1,
+      "successful_eof_completion_sites": 0,
+      "wrapper_hook_sites": 0
+    }
+  ],
+  "observer_count": 542,
+  "schema": "oxid-unit4-lexer-reservation-composition-v1"
+}

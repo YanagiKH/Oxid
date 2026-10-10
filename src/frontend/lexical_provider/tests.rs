@@ -82,7 +82,7 @@ fn decode(
 ) -> Result<wire::Observation, &'static str> {
     wire::decode(source, limit, bytes, &mut Allocator::default())
 }
-fn fixture(encoder: fn(&SourceFile, usize) -> Vec<u8>) -> Provider {
+pub(super) fn fixture(encoder: fn(&SourceFile, usize) -> Vec<u8>) -> Provider {
     let mut receipts = Vec::new();
     wire::reserve(
         &mut receipts,
@@ -664,4 +664,435 @@ fn lexical_budget_refuses_inventory_work_before_traversal_and_keeps_receipt() {
     assert!(
         !provider.receipts[0].comparison_attempted && !provider.receipts[0].selected_for_parser
     );
+}
+
+// Frozen from explicit protocol numbers and hand-derived source extents, never
+// from encode() or the canonical lexer. One final E echo, one B partial group,
+// then S(13,22) or D(2,1,3); all unused echo/group bytes remain zero.
+const FROZEN_RESERVATION_TOKENS: [u8; 249] = [
+    0x4c, 0x58, 0x53, 0x31, 0x45, 0x16, 0x00, 0x00, 0x00, 0x00, 0x66, 0x6e, 0x20, 0x6d, 0x61, 0x69,
+    0x6e, 0x28, 0x29, 0x2d, 0x3e, 0x28, 0x29, 0x7b, 0x72, 0x65, 0x74, 0x75, 0x72, 0x6e, 0x3b, 0x7d,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42, 0x1a, 0x05, 0x02, 0x01, 0x03,
+    0x02, 0x07, 0x16, 0x08, 0x17, 0x09, 0x27, 0x0b, 0x16, 0x0c, 0x17, 0x0d, 0x18, 0x0e, 0x0e, 0x14,
+    0x1c, 0x15, 0x19, 0x16, 0x2f, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x53, 0x0d, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+];
+pub(super) fn frozen_reservation_tokens(source: &SourceFile, limit: usize) -> Vec<u8> {
+    assert_eq!(source.text(), ReservationFixture::Tokens.source());
+    assert_eq!(limit, 100000);
+    let captured = FROZEN_RESERVATION_TOKENS.to_vec();
+    assert_eq!(captured.capacity(), FROZEN_RESERVATION_TOKENS.len());
+    captured
+}
+const FROZEN_RESERVATION_DIAGNOSTIC: [u8; 250] = [
+    0x4c, 0x58, 0x53, 0x31, 0x45, 0x03, 0x00, 0x00, 0x00, 0x00, 0x3b, 0x2f, 0x2a, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42, 0x02, 0x1c, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x44, 0x02, 0x01, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+];
+pub(super) fn frozen_reservation_diagnostic(source: &SourceFile, limit: usize) -> Vec<u8> {
+    assert_eq!(
+        source.text(),
+        ReservationFixture::UnterminatedComment.source()
+    );
+    assert_eq!(limit, 100000);
+    let captured = FROZEN_RESERVATION_DIAGNOSTIC.to_vec();
+    assert_eq!(captured.capacity(), FROZEN_RESERVATION_DIAGNOSTIC.len());
+    captured
+}
+
+#[test]
+fn lexical_reservation_wire_independent_freeze() {
+    for (fixture, bytes) in [
+        (
+            ReservationFixture::Tokens,
+            FROZEN_RESERVATION_TOKENS.as_slice(),
+        ),
+        (
+            ReservationFixture::UnterminatedComment,
+            FROZEN_RESERVATION_DIAGNOSTIC.as_slice(),
+        ),
+    ] {
+        // Hash verification does not execute canonical lexing, decoding, capture,
+        // parsing or a selector. The input fixture is assembled from LXI1 fields.
+        assert_eq!(
+            <[u8; 32]>::from(Sha256::digest(fixture.source().as_bytes())),
+            fixture.source_sha256()
+        );
+        assert_eq!(
+            <[u8; 32]>::from(Sha256::digest(bytes)),
+            fixture.stdout_sha256()
+        );
+        assert_eq!(bytes.len(), fixture.stdout_bytes());
+        let mut input = Sha256::new();
+        input.update(b"LXI1");
+        input.update((fixture.source().len() as u32).to_le_bytes());
+        input.update(100000u32.to_le_bytes());
+        input.update(fixture.source().as_bytes());
+        assert_eq!(<[u8; 32]>::from(input.finalize()), fixture.input_sha256());
+        assert_eq!(fixture.input_bytes(), fixture.source().len() + 12);
+    }
+}
+
+#[test]
+fn lexical_reservation_bridge_layout_measurement_only() {
+    use std::mem::{align_of, offset_of};
+    let provider = Provider::reservation_fixture(ReservationFixture::Tokens);
+    let layout = provider.reservation_layout();
+    println!("concrete-provider-layout {layout:?} snapshot={} snapshot-align={} snapshot-option={} layout={} layout-align={} fixture={} fixture-align={}",
+        size_of::<ReservationReceipt>(), align_of::<ReservationReceipt>(), size_of::<Option<ReservationReceipt>>(),
+        size_of::<ReservationLayout>(), align_of::<ReservationLayout>(), size_of::<ReservationFixture>(), align_of::<ReservationFixture>());
+    println!("concrete-provider-components provider={}/{} receipt={}/{} budget={} plan={} wire-bank={} provider-scratch={} receipts-requested={} receipts-retained={}",
+        layout.provider, layout.provider_align, layout.receipt, layout.receipt_align, layout.budget,
+        layout.plan, layout.wire_bank, layout.provider_scratch, layout.receipts_requested, layout.receipts_retained);
+    macro_rules! fields {
+        ($ty:ty; $($field:ident),+ $(,)?) => {
+            $(println!("concrete-provider-field {}.{}={}", stringify!($ty), stringify!($field), offset_of!($ty, $field));)+
+        };
+    }
+    fields!(Provider; receipts, budget, fixture);
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fields!(Provider; bundle);
+    fields!(Receipt; file, identity, source_len, source_sha256, executable_sha256, input_sha256, stdout_sha256, stderr_sha256,
+        input_bytes, input_written, stdout_bytes, stderr_bytes, status, signal, stop, spawned, leader_reaped, stdin_closed,
+        stdout_eof, stderr_eof, comparison_attempted, comparison_matched, selected_for_parser, producer_allocation);
+    fields!(ReservationReceipt; file, identity, source_len, source_sha256, executable_sha256, input_sha256, stdout_sha256, stderr_sha256,
+        input_bytes, input_written, stdout_bytes, stderr_bytes, status, signal, stop, spawned, leader_reaped, stdin_closed,
+        stdout_eof, stderr_eof, comparison_attempted, comparison_matched, selected_for_parser);
+    fields!(ReservationLayout; provider, provider_align, receipt, receipt_align, budget, plan, wire_bank, provider_scratch, receipts_requested, receipts_retained);
+    fields!(Budget; limits, work, selected_capacity, receipt_work_left, fixed_retained, fixed_scratch);
+    fields!(Plan; output, retained, scratch, work);
+    assert_eq!(provider.reservation_receipt_count(), 0);
+    assert_eq!(provider.reservation_receipt(), None);
+    assert_eq!(layout.receipts_requested, layout.receipts_retained);
+}
+
+// Independently frozen before these tests were written; see the endpoint
+// evidence inventory and the predecessor semantic/resource review. Expectations
+// use the source formula and existing literal wire, never a successful Plan.
+const ENDPOINT_RECEIPT_WORK: u64 = 42_991_616;
+const ENDPOINT_INVENTORY_WORK: u64 = 168;
+const ENDPOINT_DYNAMIC_WORK: u64 = 7_968;
+
+fn endpoint_fixed_banks() -> (usize, usize) {
+    let retained = size_of::<Provider>()
+        + size_of::<crate::frontend::options::LexicalOptions>()
+        + 256 * size_of::<Receipt>();
+    let lexer_bank = 3 * size_of::<lexer::Failure>()
+        + 3 * size_of::<Result<Vec<Token>, lexer::Failure>>()
+        + 3 * size_of::<Token>()
+        + 3 * size_of::<Vec<Token>>()
+        + 32 * size_of::<usize>()
+        + 8 * size_of::<&str>()
+        + size_of::<Allocator>();
+    // These two subbanks measure source-private types. Their source-defined
+    // roles are inventoried separately; no guessed layout mirrors are used.
+    let scratch = wire::named_bytes()
+        + lexer_bank
+        + crate::frontend::project::lexical_comparison_scratch_bytes()
+        + 3 * size_of::<LexicalObservation>()
+        + 3 * size_of::<Receipt>()
+        + 3 * size_of::<Budget>()
+        + 3 * size_of::<Plan>()
+        + 3 * size_of::<Diagnostic>()
+        + 3 * size_of::<[u8; 1024]>()
+        + size_of::<[usize; 64]>()
+        + 4 * size_of::<Sha256>()
+        + 3 * size_of::<Option<&mut dyn LexicalProvider>>();
+    (retained, scratch)
+}
+
+fn endpoint_inventory() -> Inventory {
+    Inventory {
+        owner_bytes: 1,
+        source_bytes: 2,
+        source_headers: 4,
+        line_starts: 8,
+        // Logical old token length must not replace/add to selected capacity.
+        tokens: 1009,
+        ast_headers: 16,
+        ast_payload: 32,
+        module_headers: 64,
+        path_bytes: 128,
+        fixed_loader_scratch: 257,
+    }
+}
+
+fn endpoint_usage() -> SourceUsage {
+    SourceUsage {
+        syntax_nodes: 11,
+        non_eof_tokens: 7,
+        modules: 2,
+        ..SourceUsage::default()
+    }
+}
+
+fn endpoint_budget() -> Budget {
+    let mut budget = Budget::new(31, 37).unwrap();
+    budget.selected_capacity = 3 * size_of::<Token>();
+    budget
+}
+
+fn endpoint_demands() -> (usize, usize, u64) {
+    let (retained, scratch) = endpoint_fixed_banks();
+    // Source=22, bound=398, possible slots=23, requested W=32. This
+    // intentionally prices 23 possible slots, not the frozen 13 decoded tokens.
+    (
+        retained + 31 + 255 + 3 * size_of::<Token>() + 23 * size_of::<Token>(),
+        scratch + 37 + 257 + 34 + 399 + 23 * size_of::<Token>() + 48 * size_of::<Token>(),
+        ENDPOINT_RECEIPT_WORK + ENDPOINT_INVENTORY_WORK + ENDPOINT_DYNAMIC_WORK,
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+enum BudgetEndpoint {
+    Retained,
+    Scratch,
+    Work,
+}
+impl BudgetEndpoint {
+    fn lower_limit(self, budget: &mut Budget, short: u64) {
+        let (retained, scratch, work) = endpoint_demands();
+        match self {
+            Self::Retained => budget.limits.retained = retained as u64 - short,
+            Self::Scratch => budget.limits.scratch = scratch as u64 - short,
+            Self::Work => budget.limits.work = work - short,
+        }
+        assert!(budget.limits.retained <= 32 * 1024 * 1024);
+        assert!(budget.limits.scratch <= 16 * 1024 * 1024);
+        assert!(budget.limits.work <= 256_000_000);
+    }
+
+    fn refusal(self) -> &'static str {
+        match self {
+            Self::Retained => "lexical provider retained byte limit exceeded",
+            Self::Scratch => "lexical provider scratch byte limit exceeded",
+            Self::Work => "lexical provider work limit exceeded",
+        }
+    }
+}
+
+fn assert_endpoint_budget_state(budget: &Budget, before: Budget, admitted: bool) {
+    assert_eq!(
+        budget.work,
+        before.work + if admitted { ENDPOINT_DYNAMIC_WORK } else { 0 }
+    );
+    assert_eq!(budget.receipt_work_left, before.receipt_work_left);
+    assert_eq!(budget.selected_capacity, before.selected_capacity);
+    assert_eq!(budget.fixed_retained, before.fixed_retained);
+    assert_eq!(budget.fixed_scratch, before.fixed_scratch);
+    assert_eq!(budget.limits.retained, before.limits.retained);
+    assert_eq!(budget.limits.scratch, before.limits.scratch);
+    assert_eq!(budget.limits.work, before.limits.work);
+}
+
+#[test]
+fn lexical_budget_fixed_storage_exact_and_one_over_from_typed_roles() {
+    let limits = IndexLimits::default();
+    assert_eq!(limits.retained, 32 * 1024 * 1024);
+    assert_eq!(limits.scratch, 16 * 1024 * 1024);
+    assert_eq!(limits.work, 256_000_000);
+    assert_eq!(RECEIPTS, 256);
+    assert_eq!(RECEIPT_WORK, ENDPOINT_RECEIPT_WORK);
+    let (retained, scratch) = endpoint_fixed_banks();
+    let retained_extra = (32 * 1024 * 1024usize).checked_sub(retained).unwrap();
+    let scratch_extra = (16 * 1024 * 1024usize).checked_sub(scratch).unwrap();
+    for (extra_retained, extra_scratch) in [
+        (retained_extra, 0),
+        (0, scratch_extra),
+        (retained_extra, scratch_extra),
+    ] {
+        let budget = Budget::new(extra_retained, extra_scratch).unwrap();
+        assert_eq!(budget.fixed_retained, retained + extra_retained);
+        assert_eq!(budget.fixed_scratch, scratch + extra_scratch);
+        assert_eq!(budget.work, ENDPOINT_RECEIPT_WORK);
+        assert_eq!(budget.receipt_work_left, ENDPOINT_RECEIPT_WORK);
+        assert_eq!(budget.selected_capacity, 0);
+    }
+    for (extra_retained, extra_scratch) in [
+        (retained_extra + 1, 0),
+        (0, scratch_extra + 1),
+        (retained_extra + 1, scratch_extra),
+        (retained_extra, scratch_extra + 1),
+    ] {
+        assert_eq!(
+            Budget::new(extra_retained, extra_scratch).err(),
+            Some("lexical provider fixed storage limit exceeded")
+        );
+    }
+}
+
+fn check_budget_endpoint(endpoint: BudgetEndpoint) {
+    let sources = source("fn main()->(){return;}");
+    let file = sources.get(SourceFileId(0));
+    assert_eq!(file.text(), ReservationFixture::Tokens.source());
+    assert_eq!(file.text().len(), 22);
+    let inventory = endpoint_inventory();
+    let (retained, scratch, work) = endpoint_demands();
+    for short in [0, 1] {
+        let mut budget = endpoint_budget();
+        endpoint.lower_limit(&mut budget, short);
+        budget.admit_inventory_work(endpoint_usage()).unwrap();
+        assert_eq!(budget.work, ENDPOINT_RECEIPT_WORK + ENDPOINT_INVENTORY_WORK);
+        let before = budget;
+        let result = budget.admit(file, 100000, &inventory);
+        if short == 0 {
+            let plan = result.unwrap();
+            assert_eq!(plan.output, 398);
+            assert_eq!(plan.retained, retained);
+            assert_eq!(plan.scratch, scratch);
+            assert_eq!(plan.work, ENDPOINT_DYNAMIC_WORK);
+            assert_eq!(budget.work, work);
+        } else {
+            assert_eq!(result.unwrap_err(), endpoint.refusal());
+        }
+        assert_endpoint_budget_state(&budget, before, short == 0);
+    }
+}
+
+#[test]
+fn lexical_budget_retained_exact_and_one_short_from_independent_fixture() {
+    check_budget_endpoint(BudgetEndpoint::Retained);
+}
+
+#[test]
+fn lexical_budget_scratch_exact_and_one_short_from_independent_fixture() {
+    check_budget_endpoint(BudgetEndpoint::Scratch);
+}
+
+#[test]
+fn lexical_budget_total_work_exact_and_one_short_from_independent_fixture() {
+    check_budget_endpoint(BudgetEndpoint::Work);
+}
+
+#[test]
+fn lexical_provider_budget_exact_and_one_short_preflight_preserves_receipt() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static CAPTURES: AtomicUsize = AtomicUsize::new(0);
+    fn capture(source: &SourceFile, limit: usize) -> Vec<u8> {
+        CAPTURES.fetch_add(1, Ordering::SeqCst);
+        frozen_reservation_tokens(source, limit)
+    }
+
+    let sources = source("fn main()->(){return;}");
+    let file = sources.get(SourceFileId(0));
+    assert_eq!(file.text(), ReservationFixture::Tokens.source());
+    let inventory = endpoint_inventory();
+    let empty_hash: [u8; 32] = Sha256::digest([]).into();
+    for endpoint in [
+        BudgetEndpoint::Retained,
+        BudgetEndpoint::Scratch,
+        BudgetEndpoint::Work,
+    ] {
+        for short in [0, 1] {
+            let mut provider = fixture(capture);
+            provider.budget = endpoint_budget();
+            endpoint.lower_limit(&mut provider.budget, short);
+            provider.begin_module(file, endpoint_usage()).unwrap();
+            assert_eq!(provider.receipts.len(), 1);
+            let receipts_capacity = provider.receipts.capacity();
+            let mut expected = provider.reservation_receipt().unwrap();
+            assert_eq!(expected.file, SourceFileId(0));
+            assert_eq!(expected.identity, file.identity());
+            assert_eq!(expected.source_len, 22);
+            assert_eq!(
+                expected.source_sha256,
+                ReservationFixture::Tokens.source_sha256()
+            );
+            assert_eq!(expected.executable_sha256, [0; 32]);
+            assert_eq!(expected.input_sha256, empty_hash);
+            assert_eq!(expected.stdout_sha256, empty_hash);
+            assert_eq!(expected.stderr_sha256, empty_hash);
+            assert_eq!(expected.input_bytes, 0);
+            assert_eq!(expected.input_written, 0);
+            assert_eq!(expected.stdout_bytes, 0);
+            assert_eq!(expected.stderr_bytes, 0);
+            assert_eq!(expected.status, None);
+            assert_eq!(expected.signal, None);
+            assert_eq!(expected.stop, "not-started");
+            assert!(!expected.spawned && !expected.leader_reaped);
+            assert!(!expected.stdin_closed && !expected.stdout_eof && !expected.stderr_eof);
+            assert!(!expected.comparison_attempted && !expected.comparison_matched);
+            assert!(!expected.selected_for_parser);
+            assert_eq!(provider.receipts[0].producer_allocation, 0);
+            assert_eq!(
+                provider.budget.work,
+                ENDPOINT_RECEIPT_WORK + ENDPOINT_INVENTORY_WORK
+            );
+            assert_eq!(
+                provider.budget.receipt_work_left,
+                ENDPOINT_RECEIPT_WORK - 4328
+            );
+            let before = provider.budget;
+            let captures_before = CAPTURES.load(Ordering::SeqCst);
+            let mut allocator = Allocator {
+                // A rejected plan must not reach even the first input request.
+                fail_at: (short == 1).then_some(1),
+                ..Allocator::default()
+            };
+            let result = provider.observe(file, 100000, &inventory, &mut allocator);
+            if short == 0 {
+                let _observation = result.unwrap_or_else(|error| panic!("{endpoint:?}: {error:?}"));
+                assert_eq!(CAPTURES.load(Ordering::SeqCst), captures_before + 1);
+                assert_eq!(allocator.attempts, 2);
+                assert_eq!(allocator.trace.len(), 2);
+                for (event, (kind, length, element_bytes)) in allocator.trace.iter().zip([
+                    ("lexical provider input", 34, 1),
+                    ("lexical provider tokens", 13, size_of::<Token>()),
+                ]) {
+                    assert_eq!(
+                        (event.kind, event.length, event.element_bytes),
+                        (kind, length, element_bytes)
+                    );
+                    assert!(event.success);
+                }
+                expected.input_sha256 = ReservationFixture::Tokens.input_sha256();
+                expected.stdout_sha256 = ReservationFixture::Tokens.stdout_sha256();
+                expected.input_bytes = 34;
+                expected.input_written = 34;
+                expected.stdout_bytes = 249;
+                expected.stop = "test-observation";
+                assert_ne!(provider.receipts[0].producer_allocation, 0);
+            } else {
+                let error = result.err().expect("one-short provider preflight refusal");
+                assert_eq!(error.code, "E0703");
+                assert_eq!(error.stage, "lexical-provider");
+                assert_eq!(error.message, endpoint.refusal());
+                assert_eq!(error.primary, Some(file.span(0, 0)));
+                assert!(error.secondary.is_empty() && error.notes.is_empty());
+                assert_eq!(allocator.attempts, 0);
+                assert!(allocator.trace.is_empty());
+                assert_eq!(CAPTURES.load(Ordering::SeqCst), captures_before);
+                expected.stop = "host-refused";
+                assert_eq!(provider.receipts[0].producer_allocation, 0);
+            }
+            assert!(!allocator.observer_trace_overflow);
+            assert_endpoint_budget_state(&provider.budget, before, short == 0);
+            assert_eq!(provider.receipts.len(), 1);
+            assert_eq!(provider.receipts.capacity(), receipts_capacity);
+            assert_eq!(provider.reservation_receipt(), Some(expected));
+        }
+    }
 }

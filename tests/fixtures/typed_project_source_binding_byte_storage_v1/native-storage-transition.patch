@@ -1,0 +1,1399 @@
+diff --git a/src/frontend/oir/owned/native.rs b/src/frontend/oir/owned/native.rs
+index d86f273..84cf9a4 100644
+--- a/src/frontend/oir/owned/native.rs
++++ b/src/frontend/oir/owned/native.rs
+@@ -1,6 +1,7 @@
+ //! Private owned LLVM consumer. All metadata is bound to one immutable witness
+ //! by ExecutionPlan; the scalar source route does not enter this module.
+ use super::{plan::ExecutionPlan, verified::VerifiedOwnedProgram, *};
++use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
+ use std::fmt::Write;
+ use std::mem::size_of;
+ 
+@@ -42,6 +43,9 @@ const OUTPUT_CAPACITY_INVARIANT: &str =
+ // Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
+ // resolution and composite emission never retain an expanded leaf collection.
+ const EMITTER_TRANSIENT_BYTES: usize = 32_768;
++// The borrowed native plan and its fixed checking/mapping carriers occupy this
++// part of the inherited envelope; no retained table or new reserve is added.
++const _: () = assert!(plan::native_storage::FIXED_CARRIER_ALLOWANCE <= EMITTER_TRANSIENT_BYTES);
+ 
+ #[derive(Clone, Debug, Default)]
+ pub(super) struct NativeMetrics {
+@@ -435,15 +439,15 @@ fn native_module_policy_accounted(
+     let (transfer_cells, transfer_visits) = transfer_inventory(&plan)?;
+     accounting.metrics.transfer_cells = transfer_cells;
+     accounting.metrics.transfer_inventory_visits = transfer_visits;
++    let storage = NativeStoragePlan::checked(&plan, guarded).map_err(|e| mismatch(e.name))?;
+     let mut count = Emission {
+         policy,
+         ..Emission::count(limits.ir_bytes)
+     };
+     emit(
+-        &plan,
++        &storage,
+         id,
+         &diagnostics,
+-        guarded,
+         fuel.min(plan::MAX_FUEL),
+         &mut count,
+     );
+@@ -478,10 +482,9 @@ fn native_module_policy_accounted(
+         ..Emission::count(count.len)
+     };
+     emit(
+-        &plan,
++        &storage,
+         id,
+         &diagnostics,
+-        guarded,
+         fuel.min(plan::MAX_FUEL),
+         &mut output,
+     );
+@@ -1461,12 +1464,6 @@ fn slice_reference_count(f: &RawOwnedFunction) -> usize {
+         .filter(|reference| matches!(reference.referent(), BorrowedTy::ScalarSlice(_)))
+         .count()
+ }
+-fn slice_loan_count(f: &RawOwnedFunction) -> usize {
+-    f.loans
+-        .iter()
+-        .filter(|loan| matches!(loan.referent(), BorrowedTy::ScalarSlice(_)))
+-        .count()
+-}
+ fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
+     match base {
+         AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
+@@ -1973,13 +1970,14 @@ fn transfer_leaves(
+ }
+ 
+ fn emit(
+-    plan: &ExecutionPlan<'_>,
++    storage: &NativeStoragePlan<'_, '_>,
+     entry: hir::DefId,
+     diagnostics: &Diagnostics,
+-    guarded: bool,
+     fuel: usize,
+     out: &mut Emission,
+ ) {
++    let plan = storage.execution();
++    let guarded = storage.guarded();
+     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
+     if plan.witness().builtin_function().is_some() {
+         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
+@@ -2017,7 +2015,7 @@ fn emit(
+             return;
+         }
+         out.ordinary_visits += 1;
+-        emit_function(plan, f.id, diagnostics, guarded, out);
++        emit_function(storage, f.id, diagnostics, out);
+     }
+     if out.exceeded {
+         return;
+@@ -2031,7 +2029,7 @@ fn emit(
+         // Signal safety precedes even the root activation/fuel diagnostic.
+         out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();
+     }
+-    if guarded {
++    if storage.wrapper_fuel_bytes() != 0 {
+         writeln!(
+             out,
+             "  %fuel = alloca i64, align 8\n  store i64 {fuel}, ptr %fuel, align 8"
+@@ -2159,19 +2157,19 @@ fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emiss
+     format!("b{block}")
+ }
+ fn emit_function(
+-    plan: &ExecutionPlan<'_>,
++    module_storage: &NativeStoragePlan<'_, '_>,
+     id: hir::DefId,
+     diagnostics: &Diagnostics,
+-    guarded: bool,
+     out: &mut Emission,
+ ) {
+     if out.exceeded {
+         return;
+     }
+     out.ordinary_visits += 1;
+-    let f = &plan.witness().functions()[id.0];
+-    let fp = plan.function(id);
+-    let u = fp.usage();
++    let plan = module_storage.execution();
++    let guarded = module_storage.guarded();
++    let storage = module_storage.function(id);
++    let f = storage.raw();
+     write!(
+         out,
+         "\ndefine internal {} @__oxid_owned_fn_{}(",
+@@ -2209,20 +2207,20 @@ fn emit_function(
+         separator = ", ";
+     }
+     out.write_str(") noinline {\nentry:\n").unwrap();
+-    let slots = u.scalar_slots + u.arguments;
++    let slots = storage.scalar_slots();
+     if slots != 0 {
+         writeln!(out, "  %scalars = alloca [{slots} x i64], align 8").unwrap();
+     }
+     // Round the byte alloca itself to the four-byte size charged in Dnative.
+-    if u.payload_bytes != 0 {
++    if storage.owner_bytes() != 0 {
+         writeln!(
+             out,
+             "  %owners = alloca [{} x i8], align 4",
+-            u.payload_bytes.div_ceil(4) * 4
++            storage.owner_bytes()
+         )
+         .unwrap();
+     }
+-    if let Some(scratch) = plan.input_scratch_range(id) {
++    if let Some(scratch) = storage.input_scratch() {
+         debug_assert_eq!(scratch.len(), 1024);
+         // This suffix is part of the already admitted owner allocation. It is
+         // allocated once at entry and reused by every attempt in this frame.
+@@ -2233,7 +2231,7 @@ fn emit_function(
+         )
+         .unwrap();
+     }
+-    if let Some(scratch) = plan.output_scratch_range(id) {
++    if let Some(scratch) = storage.output_scratch() {
+         debug_assert_eq!(scratch.len(), 1024);
+         // A distinct builtin activation owns output staging. It cannot alias
+         // the source view or input scratch, and is admitted before any effect.
+@@ -2244,15 +2242,15 @@ fn emit_function(
+         )
+         .unwrap();
+     }
+-    if u.references + u.loans != 0 {
++    if storage.reference_slots() != 0 {
+         writeln!(
+             out,
+             "  %references = alloca [{} x ptr], align 8",
+-            u.references + u.loans
++            storage.reference_slots()
+         )
+         .unwrap();
+     }
+-    let slice_slots = slice_reference_count(f) + slice_loan_count(f);
++    let slice_slots = storage.slice_slots();
+     if slice_slots != 0 {
+         writeln!(
+             out,
+@@ -2261,38 +2259,21 @@ fn emit_function(
+         .unwrap();
+         // Only slice views retain lengths. Exact references keep their single
+         // pointer layout and array owners retain their existing payload layout.
+-        let mut slot = 0;
+-        for (i, reference) in f.references.iter().enumerate() {
+-            if out.exceeded {
+-                return;
+-            }
+-            out.ordinary_visits += 1;
+-            if matches!(reference.referent(), BorrowedTy::ScalarSlice(_)) {
+-                writeln!(
+-                    out,
+-                    "  %rl{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
+-                    slot * 4
+-                )
+-                .unwrap();
+-                slot += 1;
+-            }
+-        }
+-        for (i, loan) in f.loans.iter().enumerate() {
++        for mapping in storage.slice_mappings() {
+             if out.exceeded {
+                 return;
+             }
+             out.ordinary_visits += 1;
+-            if matches!(loan.referent(), BorrowedTy::ScalarSlice(_)) {
++            if let Some(offset) = mapping.offset {
++                let prefix = if mapping.loan { "ll" } else { "rl" };
+                 writeln!(
+                     out,
+-                    "  %ll{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
+-                    slot * 4
++                    "  %{prefix}{} = getelementptr i8, ptr %slice_lengths, i64 {offset}",
++                    mapping.logical
+                 )
+                 .unwrap();
+-                slot += 1;
+             }
+         }
+-        debug_assert_eq!(slot, slice_slots);
+     }
+     for i in 0..slots {
+         if out.exceeded {
+@@ -2302,11 +2283,11 @@ fn emit_function(
+         writeln!(
+             out,
+             "  %s{i} = getelementptr i8, ptr %scalars, i64 {}",
+-            i * 8
++            storage.scalar_offset(i)
+         )
+         .unwrap();
+     }
+-    for i in 0..u.owners {
++    for i in 0..f.owners.len() {
+         if out.exceeded {
+             return;
+         }
+@@ -2314,11 +2295,11 @@ fn emit_function(
+         writeln!(
+             out,
+             "  %o{i} = getelementptr i8, ptr %owners, i64 {}",
+-            fp.owner_offset(OwnerPlaceId(i))
++            storage.owner_offset(OwnerPlaceId(i))
+         )
+         .unwrap();
+     }
+-    for i in 0..u.references + u.loans {
++    for i in 0..storage.reference_slots() {
+         if out.exceeded {
+             return;
+         }
+@@ -2326,7 +2307,7 @@ fn emit_function(
+         writeln!(
+             out,
+             "  %r{i} = getelementptr i8, ptr %references, i64 {}",
+-            i * 8
++            storage.reference_offset(i)
+         )
+         .unwrap();
+     }
+@@ -2412,7 +2393,7 @@ fn emit_function(
+                     plan::instruction_span(statement),
+                 );
+             }
+-            emit_statement(plan, id, &name, statement, diagnostics, out);
++            emit_statement(&storage, &name, statement, diagnostics, out);
+         }
+         if out.exceeded {
+             return;
+@@ -2428,8 +2409,7 @@ fn emit_function(
+             );
+         }
+         emit_terminator(
+-            plan,
+-            id,
++            &storage,
+             &format!("f{}_b{b}_term", id.0),
+             term,
+             (diagnostics, guarded),
+@@ -2444,17 +2424,18 @@ fn emit_function(
+ /// capacity is checked before any input, result store, or destination write.
+ /// Only successful/EOF paths enter the prepaid, infallible commit loop.
+ fn emit_read_stdin(
+-    plan: &ExecutionPlan<'_>,
+-    id: hir::DefId,
++    storage: &NativeFunctionStorage<'_, '_>,
+     name: &str,
+     places: (ReferenceParamId, OwnerPlaceId),
+     failure: (&Diagnostics, Span),
+     out: &mut Emission,
+ ) {
++    let plan = storage.execution();
++    let id = storage.id();
+     let (buffer, destination) = places;
+     let (diagnostics, span) = failure;
+-    let scratch = plan
+-        .input_scratch_range(id)
++    let scratch = storage
++        .input_scratch()
+         .expect("verified input scratch suffix");
+     debug_assert_eq!(plan.witness().builtin_function(), Some(id));
+     debug_assert_eq!(scratch.len(), 1024);
+@@ -2478,7 +2459,7 @@ fn emit_read_stdin(
+         .aggregate_layout(AggregateTy::Enum(enumeration))
+         .expect("verified input result layout")
+         .size();
+-    debug_assert!(plan.function(id).owner_offset(destination) + result_extent <= scratch.start);
++    debug_assert!(storage.owner_offset(destination) + result_extent <= scratch.start);
+     let suffix = continuation(
+         &plan.witness().functions()[id.0],
+         &OwnedInstruction::ReadStdin {
+@@ -2549,17 +2530,18 @@ fn emit_read_stdin(
+ /// byte image is staged before any attempt. The only post-effect failure point
+ /// in the effect itself is the deliberately metered next-attempt fuel guard.
+ fn emit_write_stdout(
+-    plan: &ExecutionPlan<'_>,
+-    id: hir::DefId,
++    storage: &NativeFunctionStorage<'_, '_>,
+     name: &str,
+     places: (ReferenceParamId, OwnerPlaceId),
+     failure: (&Diagnostics, Span),
+     out: &mut Emission,
+ ) {
++    let plan = storage.execution();
++    let id = storage.id();
+     let (buffer, destination) = places;
+     let (diagnostics, span) = failure;
+-    let scratch = plan
+-        .output_scratch_range(id)
++    let scratch = storage
++        .output_scratch()
+         .expect("verified output scratch suffix");
+     debug_assert_eq!(plan.witness().builtin_output_function(), Some(id));
+     debug_assert_eq!(scratch.len(), 1024);
+@@ -2584,7 +2566,7 @@ fn emit_write_stdout(
+         .aggregate_layout(AggregateTy::Enum(enumeration))
+         .expect("verified output result layout")
+         .size();
+-    debug_assert!(plan.function(id).owner_offset(destination) + result_extent <= scratch.start);
++    debug_assert!(storage.owner_offset(destination) + result_extent <= scratch.start);
+     let suffix = continuation(
+         &plan.witness().functions()[id.0],
+         &OwnedInstruction::WriteStdout {
+@@ -2650,26 +2632,25 @@ fn emit_write_stdout(
+ }
+ 
+ fn emit_statement(
+-    plan: &ExecutionPlan<'_>,
+-    id: hir::DefId,
++    storage: &NativeFunctionStorage<'_, '_>,
+     name: &str,
+     statement: &OwnedStatement,
+     diagnostics: &Diagnostics,
+     out: &mut Emission,
+ ) {
++    let plan = storage.execution();
++    let id = storage.id();
+     if out.exceeded {
+         return;
+     }
+     out.ordinary_visits += 1;
+     let f = &plan.witness().functions()[id.0];
+-    let fp = plan.function(id);
+     match &statement.kind {
+         OwnedInstruction::ReadStdin {
+             buffer,
+             destination,
+         } => emit_read_stdin(
+-            plan,
+-            id,
++            storage,
+             name,
+             (*buffer, *destination),
+             (diagnostics, plan::instruction_span(statement)),
+@@ -2679,8 +2660,7 @@ fn emit_statement(
+             buffer,
+             destination,
+         } => emit_write_stdout(
+-            plan,
+-            id,
++            storage,
+             name,
+             (*buffer, *destination),
+             (diagnostics, plan::instruction_span(statement)),
+@@ -2972,7 +2952,7 @@ fn emit_statement(
+                 }
+             }
+         }
+-        OwnedInstruction::Scalar(_) => emit_scalar(plan, id, name, statement, diagnostics, out),
++        OwnedInstruction::Scalar(_) => emit_scalar(storage, name, statement, diagnostics, out),
+         OwnedInstruction::Construct {
+             destination,
+             fields,
+@@ -3073,7 +3053,7 @@ fn emit_statement(
+         } => {
+             let t = f.locals[value.local.0].ty;
+             let value = load_operand(out, f, &format!("{name}_value"), *value);
+-            let slot = fp.usage().scalar_slots + fp.call(*call).argument_start() + argument;
++            let slot = storage.argument_slot(*call, *argument);
+             store_slot(
+                 out,
+                 &format!("{name}_store"),
+@@ -3125,7 +3105,7 @@ fn emit_statement(
+             writeln!(
+                 out,
+                 "  store ptr {pointer}, ptr %r{}, align 8",
+-                f.references.len() + loan.0
++                storage.loan_slot(*loan)
+             )
+             .unwrap();
+             if matches!(declaration.referent(), BorrowedTy::ScalarSlice(_)) {
+@@ -3146,13 +3126,14 @@ fn emit_statement(
+     }
+ }
+ fn emit_scalar(
+-    plan: &ExecutionPlan<'_>,
+-    id: hir::DefId,
++    storage: &NativeFunctionStorage<'_, '_>,
+     name: &str,
+     owned_statement: &OwnedStatement,
+     diagnostics: &Diagnostics,
+     out: &mut Emission,
+ ) {
++    let plan = storage.execution();
++    let id = storage.id();
+     if out.exceeded {
+         return;
+     }
+@@ -3168,7 +3149,7 @@ fn emit_scalar(
+             store_slot(
+                 out,
+                 &format!("{name}_store"),
+-                &format!("%s{}", f.locals.len() + place.id.0),
++                &format!("%s{}", storage.place_slot(place.id)),
+                 f.places[place.id.0].ty,
+                 &value,
+             );
+@@ -3184,7 +3165,7 @@ fn emit_scalar(
+         Rvalue::Load(p) => load_slot(
+             out,
+             &format!("{name}_value"),
+-            &format!("%s{}", f.locals.len() + p.id.0),
++            &format!("%s{}", storage.place_slot(p.id)),
+             t,
+         ),
+         Rvalue::NotBool { operand, .. } => {
+@@ -3296,13 +3277,14 @@ fn emit_scalar(
+     );
+ }
+ fn emit_terminator(
+-    plan: &ExecutionPlan<'_>,
+-    id: hir::DefId,
++    storage: &NativeFunctionStorage<'_, '_>,
+     name: &str,
+     term: &OwnedTerminator,
+     context: (&Diagnostics, bool),
+     out: &mut Emission,
+ ) {
++    let plan = storage.execution();
++    let id = storage.id();
+     if out.exceeded {
+         return;
+     }
+@@ -3367,9 +3349,7 @@ fn emit_terminator(
+                             unreachable!("verified scalar parameter")
+                         };
+                         let t = callee.locals[l.0].ty;
+-                        let slot = plan.function(id).usage().scalar_slots
+-                            + plan.function(id).call(*call).argument_start()
+-                            + i;
++                        let slot = storage.argument_slot(*call, i);
+                         let value =
+                             load_slot(out, &format!("{name}_arg{i}"), &format!("%s{slot}"), t);
+                         args.push(format!("{} {value}", ty(t)));
+@@ -3379,7 +3359,7 @@ fn emit_terminator(
+                         writeln!(
+                             out,
+                             "  %{name}_arg{i} = load ptr, ptr %r{}, align 8",
+-                            f.references.len() + l.0
++                            storage.loan_slot(*l)
+                         )
+                         .unwrap();
+                         args.push(format!("ptr %{name}_arg{i}"));
+diff --git a/src/frontend/oir/owned/native_storage.rs b/src/frontend/oir/owned/native_storage.rs
+new file mode 100644
+index 0000000..3f102c4
+--- /dev/null
++++ b/src/frontend/oir/owned/native_storage.rs
+@@ -0,0 +1,392 @@
++//! Checked description of the existing LLVM arenas. No allocation or admission
++//! authority is created here. The enclosing execution plan owns every table.
++use super::*;
++use std::ops::Range;
++
++// Subdivision of the existing 32768-byte emitter transient envelope, not an
++// additional resource charge or changed ceiling. Tests measure every new fixed
++// descriptor/return/iterator role plus a conservative scalar-counter reserve.
++pub(in super::super) const FIXED_CARRIER_ALLOWANCE: usize = 1024;
++
++pub(in super::super) struct NativeStoragePlan<'p, 'w> {
++    execution: &'p ExecutionPlan<'w>,
++    guarded: bool,
++}
++
++/// Fixed, borrowed view, derived one function at a time. There is no F-sized
++/// native table alongside the execution plan.
++pub(in super::super) struct NativeFunctionStorage<'p, 'w> {
++    execution: &'p ExecutionPlan<'w>,
++    id: hir::DefId,
++    scalar_slots: usize,
++    owner_bytes: usize,
++    reference_slots: usize,
++    slice_slots: usize,
++}
++
++/// Dense physical length slots retain the original logical declaration names.
++/// Exact references/loans yield an empty offset so emitter visit order is stable.
++pub(in super::super) struct NativeSliceMapping {
++    pub(in super::super) loan: bool,
++    pub(in super::super) logical: usize,
++    pub(in super::super) offset: Option<usize>,
++}
++
++pub(in super::super) struct NativeSliceMappings<'w> {
++    function: &'w RawOwnedFunction,
++    pointer: usize,
++    length: usize,
++}
++
++impl Iterator for NativeSliceMappings<'_> {
++    type Item = NativeSliceMapping;
++    fn next(&mut self) -> Option<Self::Item> {
++        let (loan, logical, referent) = if self.pointer < self.function.references.len() {
++            (
++                false,
++                self.pointer,
++                self.function.references[self.pointer].referent(),
++            )
++        } else {
++            let logical = self.pointer - self.function.references.len();
++            (true, logical, self.function.loans.get(logical)?.referent())
++        };
++        self.pointer += 1;
++        let offset = if matches!(referent, BorrowedTy::ScalarSlice(_)) {
++            let offset = self
++                .length
++                .checked_mul(4)
++                .expect("checked native length offsets");
++            self.length += 1;
++            Some(offset)
++        } else {
++            None
++        };
++        Some(NativeSliceMapping {
++            loan,
++            logical,
++            offset,
++        })
++    }
++}
++
++fn require(ok: bool) -> Result<(), AdmissionFailure> {
++    if ok {
++        Ok(())
++    } else {
++        Err(AdmissionFailure::new("native storage inventory", None))
++    }
++}
++
++impl<'p, 'w> NativeStoragePlan<'p, 'w> {
++    pub(in super::super) fn checked(
++        execution: &'p ExecutionPlan<'w>,
++        guarded: bool,
++    ) -> Result<Self, AdmissionFailure> {
++        require(execution.functions.len() == execution.witness.functions().len())?;
++        for (i, f) in execution.witness.functions().iter().enumerate() {
++            require(f.id == hir::DefId(i))?;
++            let storage = NativeFunctionStorage::derive(execution, f.id)?;
++            storage.check()?;
++        }
++        Ok(Self { execution, guarded })
++    }
++
++    pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w> {
++        self.execution
++    }
++
++    pub(in super::super) fn guarded(&self) -> bool {
++        self.guarded
++    }
++
++    pub(in super::super) fn wrapper_fuel_bytes(&self) -> usize {
++        if self.guarded {
++            8
++        } else {
++            0
++        }
++    }
++
++    pub(in super::super) fn function(&self, id: hir::DefId) -> NativeFunctionStorage<'p, 'w> {
++        // Immutable tables: all derivation arithmetic was checked above.
++        NativeFunctionStorage::derive(self.execution, id).expect("checked native storage")
++    }
++}
++
++impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
++    fn derive(execution: &'p ExecutionPlan<'w>, id: hir::DefId) -> Result<Self, AdmissionFailure> {
++        let f = execution
++            .witness
++            .functions()
++            .get(id.0)
++            .ok_or_else(|| AdmissionFailure::new("native storage function", None))?;
++        let p = execution
++            .functions
++            .get(id.0)
++            .ok_or_else(|| AdmissionFailure::new("native storage function plan", None))?;
++        let slices = f
++            .references
++            .iter()
++            .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
++            .count();
++        let loans = f
++            .loans
++            .iter()
++            .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
++            .count();
++        Ok(Self {
++            execution,
++            id,
++            scalar_slots: add(p.usage.scalar_slots, p.usage.arguments)?,
++            owner_bytes: align(p.usage.payload_bytes, 4)?,
++            reference_slots: add(p.usage.references, p.usage.loans)?,
++            slice_slots: add(slices, loans)?,
++        })
++    }
++
++    /// Reconcile from declarations rather than accepting the usage totals as
++    /// proof. Exact sequential ranges also prove non-overlap and no omitted tail.
++    fn check(&self) -> Result<(), AdmissionFailure> {
++        let f = self.raw();
++        let p = &self.execution.functions[self.id.0];
++        let u = p.usage;
++        require(u.scalar_slots == add(f.locals.len(), f.places.len())?)?;
++        require(u.owners == f.owners.len() && p.owner_offsets.len() == f.owners.len())?;
++        require(u.references == f.references.len() && u.loans == f.loans.len())?;
++        require(u.calls == f.calls.len() && p.calls.len() == f.calls.len())?;
++        let mut end = 0;
++        let mut cells = 0;
++        for (i, owner) in f.owners.iter().enumerate() {
++            let layout = self
++                .execution
++                .witness
++                .declarations()
++                .aggregate_layout(owner.aggregate())
++                .map_err(|_| AdmissionFailure::new("native storage aggregate", Some(owner.span)))?;
++            end = align(end, layout.align())?;
++            require(p.owner_offsets[i] == end)?;
++            end = add(end, layout.size())?;
++            cells = add(
++                cells,
++                self.execution
++                    .witness
++                    .declarations()
++                    .aggregate_width(owner.aggregate())
++                    .map_err(|_| AdmissionFailure::new("native storage width", Some(owner.span)))?,
++            )?;
++        }
++        require(u.owner_cells == cells)?;
++        let input = self.execution.witness.builtin_function() == Some(self.id);
++        let output = self.execution.witness.builtin_output_function() == Some(self.id);
++        // Canonical builtin activations are distinct; no shared scratch identity.
++        require(!(input && output))?;
++        for (present, bytes, range) in [
++            (
++                input,
++                builtins::INPUT_SCRATCH_BYTES,
++                self.execution.input_scratch_range(self.id),
++            ),
++            (
++                output,
++                builtins::OUTPUT_SCRATCH_BYTES,
++                self.execution.output_scratch_range(self.id),
++            ),
++        ] {
++            if present {
++                let next = add(end, bytes)?;
++                require(range == Some(end..next))?;
++                end = next;
++            } else {
++                require(range.is_none())?;
++            }
++        }
++        require(end == u.payload_bytes && align(end, 4)? == self.owner_bytes)?;
++        let (mut arguments, mut owned, mut borrowed) = (0, 0, 0);
++        for (call, cp) in f.calls.iter().zip(&p.calls) {
++            require(
++                cp.argument_start == arguments
++                    && cp.owned_start == owned
++                    && cp.borrow_start == borrowed,
++            )?;
++            let (old_owned, old_borrowed) = (owned, borrowed);
++            let mut width = 0;
++            for argument in &call.arguments {
++                match argument {
++                    ArgumentSlot::Scalar => {}
++                    ArgumentSlot::Owned(o) => {
++                        require(p.owned_stages.get(owned) == Some(o))?;
++                        let owner = f
++                            .owners
++                            .get(o.0)
++                            .ok_or_else(|| AdmissionFailure::new("native storage stage", None))?;
++                        width = add(
++                            width,
++                            self.execution
++                                .witness
++                                .declarations()
++                                .aggregate_width(owner.aggregate())
++                                .map_err(|_| {
++                                    AdmissionFailure::new("native storage stage width", None)
++                                })?,
++                        )?;
++                        owned = add(owned, 1)?;
++                    }
++                    ArgumentSlot::Borrow(l) => {
++                        require(p.borrowed_loans.get(borrowed) == Some(l) && l.0 < f.loans.len())?;
++                        borrowed = add(borrowed, 1)?;
++                    }
++                }
++            }
++            require(
++                cp.owned_len == owned - old_owned
++                    && cp.borrow_len == borrowed - old_borrowed
++                    && cp.owned_width == width,
++            )?;
++            arguments = add(arguments, call.arguments.len())?;
++        }
++        require(
++            arguments == u.arguments
++                && owned == p.owned_stages.len()
++                && borrowed == p.borrowed_loans.len(),
++        )?;
++        require(self.scalar_slots == add(add(f.locals.len(), f.places.len())?, arguments)?)?;
++        require(self.reference_slots == add(f.references.len(), f.loans.len())?)?;
++        // Slice lengths have no holes: reference declaration order, then loans.
++        let mut slices = 0;
++        for ty in f
++            .references
++            .iter()
++            .map(|r| r.referent())
++            .chain(f.loans.iter().map(|l| l.referent()))
++        {
++            if matches!(ty, BorrowedTy::ScalarSlice(_)) {
++                slices = add(slices, 1)?;
++            }
++        }
++        require(slices == self.slice_slots)?;
++        require(self.native_bytes()? == u.native_bytes)?;
++        // Keep the common physical accounting and logical fuel representation
++        // independently reconciled, without replacing their admission policy.
++        let scalar = add(u.scalar_slots, arguments)?;
++        let mut expanded = add(scalar, cells)?;
++        let mut reference_bytes = add(mul(scalar, size_of::<Option<Scalar>>())?, end)?;
++        for (count, width, bytes) in [
++            (f.owners.len(), 4, size_of::<OwnerRuntime>()),
++            (f.references.len(), 10, size_of::<ReferenceHandle>()),
++            (f.loans.len(), 14, size_of::<LoanRuntime>()),
++            (f.calls.len(), 2, size_of::<CallRuntime>()),
++        ] {
++            expanded = add(expanded, mul(count, width)?)?;
++            reference_bytes = add(reference_bytes, mul(count, bytes)?)?;
++        }
++        require(u.expanded_cells == expanded && u.reference_bytes == reference_bytes)?;
++        self.check_slice_mappings(self.slice_mappings())
++    }
++
++    fn check_slice_mappings(
++        &self,
++        mut mappings: NativeSliceMappings<'_>,
++    ) -> Result<(), AdmissionFailure> {
++        require(
++            std::ptr::eq(mappings.function, self.raw())
++                && mappings.pointer == 0
++                && mappings.length == 0,
++        )?;
++        let mut next = 0;
++        for (loan, count) in [
++            (false, self.raw().references.len()),
++            (true, self.raw().loans.len()),
++        ] {
++            for logical in 0..count {
++                let ty = if loan {
++                    self.raw().loans[logical].referent()
++                } else {
++                    self.raw().references[logical].referent()
++                };
++                let expected = if matches!(ty, BorrowedTy::ScalarSlice(_)) {
++                    let offset = mul(next, 4)?;
++                    next = add(next, 1)?;
++                    Some(offset)
++                } else {
++                    None
++                };
++                let row = mappings
++                    .next()
++                    .ok_or_else(|| AdmissionFailure::new("native slice mapping", None))?;
++                require(row.loan == loan && row.logical == logical && row.offset == expected)?;
++            }
++        }
++        require(mappings.next().is_none() && next == self.slice_slots)
++    }
++
++    pub(in super::super) fn slice_mappings(&self) -> NativeSliceMappings<'w> {
++        NativeSliceMappings {
++            function: self.raw(),
++            pointer: 0,
++            length: 0,
++        }
++    }
++
++    pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w> {
++        self.execution
++    }
++    pub(in super::super) fn id(&self) -> hir::DefId {
++        self.id
++    }
++    pub(in super::super) fn raw(&self) -> &'w RawOwnedFunction {
++        &self.execution.witness.functions()[self.id.0]
++    }
++    pub(in super::super) fn scalar_slots(&self) -> usize {
++        self.scalar_slots
++    }
++    pub(in super::super) fn owner_bytes(&self) -> usize {
++        self.owner_bytes
++    }
++    pub(in super::super) fn reference_slots(&self) -> usize {
++        self.reference_slots
++    }
++    pub(in super::super) fn slice_slots(&self) -> usize {
++        self.slice_slots
++    }
++    pub(in super::super) fn native_bytes(&self) -> Result<usize, AdmissionFailure> {
++        add(
++            add(mul(self.scalar_slots, 8)?, self.owner_bytes)?,
++            add(mul(self.reference_slots, 8)?, mul(self.slice_slots, 4)?)?,
++        )
++    }
++    pub(in super::super) fn scalar_offset(&self, slot: usize) -> usize {
++        assert!(slot < self.scalar_slots);
++        slot * 8
++    }
++    pub(in super::super) fn reference_offset(&self, slot: usize) -> usize {
++        assert!(slot < self.reference_slots);
++        slot * 8
++    }
++    pub(in super::super) fn owner_offset(&self, owner: OwnerPlaceId) -> usize {
++        self.execution.functions[self.id.0].owner_offsets[owner.0]
++    }
++    pub(in super::super) fn input_scratch(&self) -> Option<Range<usize>> {
++        self.execution.input_scratch_range(self.id)
++    }
++    pub(in super::super) fn output_scratch(&self) -> Option<Range<usize>> {
++        self.execution.output_scratch_range(self.id)
++    }
++    pub(in super::super) fn place_slot(&self, place: PlaceId) -> usize {
++        assert!(place.0 < self.raw().places.len());
++        self.raw().locals.len() + place.0
++    }
++    pub(in super::super) fn loan_slot(&self, loan: LoanId) -> usize {
++        assert!(loan.0 < self.raw().loans.len());
++        self.raw().references.len() + loan.0
++    }
++    pub(in super::super) fn argument_slot(&self, call: CallSiteId, argument: usize) -> usize {
++        assert!(argument < self.raw().calls[call.0].arguments.len());
++        let p = &self.execution.functions[self.id.0];
++        p.usage.scalar_slots + p.calls[call.0].argument_start + argument
++    }
++}
++
++#[cfg(test)]
++#[path = "native_storage_tests.rs"]
++mod tests;
+diff --git a/src/frontend/oir/owned/native_storage_tests.rs b/src/frontend/oir/owned/native_storage_tests.rs
+new file mode 100644
+index 0000000..cd99040
+--- /dev/null
++++ b/src/frontend/oir/owned/native_storage_tests.rs
+@@ -0,0 +1,451 @@
++use super::super::super::{
++    builtin_input_fixtures as input, builtin_output_fixtures as output,
++    consumer_fixtures as fixtures, native,
++};
++use super::*;
++
++#[test]
++fn native_storage_fixed_carriers_and_existing_plan_layout() {
++    println!("native storage sizes plan={} function={} plan_result={} function_result={} slice_iter={} slice_item={} slice_option={}",
++        size_of::<NativeStoragePlan<'_, '_>>(), size_of::<NativeFunctionStorage<'_, '_>>(),
++        size_of::<Result<NativeStoragePlan<'_, '_>, AdmissionFailure>>(),
++        size_of::<Result<NativeFunctionStorage<'_, '_>, AdmissionFailure>>(),
++        size_of::<NativeSliceMappings<'_>>(), size_of::<NativeSliceMapping>(), size_of::<Option<NativeSliceMapping>>());
++    assert_eq!(size_of::<NativeStoragePlan<'_, '_>>(), 16);
++    assert_eq!(size_of::<NativeFunctionStorage<'_, '_>>(), 48);
++    assert_eq!(
++        size_of::<Result<NativeStoragePlan<'_, '_>, AdmissionFailure>>(),
++        48
++    );
++    assert_eq!(
++        size_of::<Result<NativeFunctionStorage<'_, '_>, AdmissionFailure>>(),
++        56
++    );
++    assert_eq!(size_of::<NativeSliceMappings<'_>>(), 24);
++    assert_eq!(size_of::<NativeSliceMapping>(), 32);
++    assert_eq!(size_of::<FunctionPlan>(), 184);
++    assert_eq!(size_of::<CallPlan>(), 48);
++    assert_eq!(size_of::<FrameUsage>(), 88);
++}
++
++#[test]
++fn native_storage_borrow_binds_same_shaped_distinct_witnesses() {
++    let (sources_a, raw_a, _) = fixtures::owned_relay();
++    let (sources_b, raw_b, _) = fixtures::owned_relay();
++    let witness_a = verified::verify_owned(raw_a, &sources_a).unwrap();
++    let witness_b = verified::verify_owned(raw_b, &sources_b).unwrap();
++    let a = ExecutionPlan::build(&witness_a).unwrap();
++    let b = ExecutionPlan::build(&witness_b).unwrap();
++    for (plan, other) in [(&a, &b), (&b, &a)] {
++        let storage = NativeStoragePlan::checked(plan, false).unwrap();
++        assert!(std::ptr::eq(storage.execution(), plan));
++        assert!(!std::ptr::eq(storage.execution(), other));
++        for f in plan.witness().functions() {
++            let function = storage.function(f.id);
++            assert!(std::ptr::eq(function.raw(), f));
++            assert!(std::ptr::eq(function.execution(), plan));
++            assert!(!std::ptr::eq(
++                function.execution().witness(),
++                other.witness()
++            ));
++        }
++    }
++}
++
++#[test]
++fn native_storage_rejects_private_table_and_extent_corruption() {
++    type Mutation = fn(&mut ExecutionPlan<'_>);
++    for mutate in [
++        (|p| {
++            p.functions.pop();
++        }) as Mutation,
++        |p| {
++            p.functions
++                .iter_mut()
++                .find(|f| !f.owner_offsets.is_empty())
++                .unwrap()
++                .owner_offsets
++                .clear();
++        },
++        |p| {
++            p.functions
++                .iter_mut()
++                .find(|f| !f.owner_offsets.is_empty())
++                .unwrap()
++                .owner_offsets[0] += 1;
++        },
++        |p| {
++            p.functions
++                .iter_mut()
++                .find(|f| !f.calls.is_empty())
++                .unwrap()
++                .calls
++                .pop();
++        },
++        |p| {
++            p.functions
++                .iter_mut()
++                .find(|f| !f.calls.is_empty())
++                .unwrap()
++                .calls[0]
++                .argument_start += 1;
++        },
++        |p| {
++            p.functions
++                .iter_mut()
++                .find(|f| !f.calls.is_empty())
++                .unwrap()
++                .calls[0]
++                .owned_len = usize::MAX;
++        },
++        |p| {
++            p.functions
++                .iter_mut()
++                .find(|f| !f.owned_stages.is_empty())
++                .unwrap()
++                .owned_stages[0] = OwnerPlaceId(usize::MAX);
++        },
++        |p| {
++            p.functions[0].usage.scalar_slots += 1;
++        },
++        |p| {
++            p.functions[0].usage.arguments = usize::MAX;
++        },
++        |p| {
++            p.functions[0].usage.payload_bytes = usize::MAX;
++        },
++        |p| {
++            p.functions[0].usage.native_bytes += 1;
++        },
++        |p| {
++            p.functions[0].usage.owner_cells += 1;
++        },
++        |p| {
++            p.functions[0].usage.references += 1;
++        },
++        |p| {
++            p.functions[0].usage.calls += 1;
++        },
++        |p| {
++            p.functions[0].usage.expanded_cells += 1;
++        },
++        |p| {
++            p.functions[0].usage.reference_bytes += 1;
++        },
++    ] {
++        let (sources, raw, _) = fixtures::owned_relay();
++        let witness = verified::verify_owned(raw, &sources).unwrap();
++        let mut plan = ExecutionPlan::build(&witness).unwrap();
++        mutate(&mut plan);
++        assert!(NativeStoragePlan::checked(&plan, false).is_err());
++    }
++    let (sources, raw, _) = fixtures::shared_read();
++    let witness = verified::verify_owned(raw, &sources).unwrap();
++    let mut plan = ExecutionPlan::build(&witness).unwrap();
++    let function = plan
++        .functions
++        .iter_mut()
++        .find(|p| !p.borrowed_loans.is_empty())
++        .unwrap();
++    function.borrowed_loans[0] = LoanId(usize::MAX);
++    assert!(NativeStoragePlan::checked(&plan, false).is_err());
++}
++
++#[test]
++fn native_storage_rejects_short_arenas_and_builtin_overlap() {
++    for output_case in [false, true] {
++        let (sources, raw, _) = if output_case {
++            output::program(3)
++        } else {
++            input::program(3, input::Observation::Checksum)
++        };
++        let witness = verified::verify_owned(raw, &sources).unwrap();
++        let plan = ExecutionPlan::build(&witness).unwrap();
++        let native = NativeStoragePlan::checked(&plan, true).unwrap();
++        let id = if output_case {
++            witness.builtin_output_function()
++        } else {
++            witness.builtin_function()
++        }
++        .unwrap();
++        for arena in 0..4 {
++            let mut storage = native.function(id);
++            match arena {
++                0 => storage.scalar_slots += 1,
++                1 => storage.owner_bytes -= 1,
++                2 => storage.reference_slots -= 1,
++                _ => storage.slice_slots -= 1,
++            }
++            assert!(storage.check().is_err());
++        }
++        let mut plan = ExecutionPlan::build(&witness).unwrap();
++        plan.functions[id.0].usage.payload_bytes -= 1;
++        assert!(NativeStoragePlan::checked(&plan, true).is_err());
++    }
++}
++
++/// Independent raw declaration census. It neither calls frame_usage nor reads
++/// NativeFunctionStorage sizes to generate the expected LLVM text.
++fn check_ir_census(sources: SourceMap, raw: RawOwnedProgram, entry: hir::DefId, process: bool) {
++    let witness = verified::verify_owned(raw, &sources).unwrap();
++    let plan = ExecutionPlan::build(&witness).unwrap();
++    let storage = NativeStoragePlan::checked(&plan, process).unwrap();
++    let module = if process {
++        native::native_process_module_with_fuel(&witness, entry, &sources, 100_000).unwrap()
++    } else {
++        native::native_module(&witness, Some(entry), &sources).unwrap()
++    };
++    let mut allocation_count = 0;
++    for f in witness.functions() {
++        let function_name = format!("@__oxid_owned_fn_{}(", f.id.0);
++        let body = module
++            .split("\ndefine internal ")
++            .find(|part| {
++                part.lines()
++                    .next()
++                    .is_some_and(|line| line.contains(&function_name))
++            })
++            .unwrap()
++            .split("\n}\n")
++            .next()
++            .unwrap();
++        let native = storage.function(f.id);
++        let scalar = f.locals.len()
++            + f.places.len()
++            + f.calls.iter().map(|c| c.arguments.len()).sum::<usize>();
++        let pointers = f.references.len() + f.loans.len();
++        let mut end = 0;
++        for (i, owner) in f.owners.iter().enumerate() {
++            let layout = witness
++                .declarations()
++                .aggregate_layout(owner.aggregate())
++                .unwrap();
++            while end % layout.align() != 0 {
++                end += 1;
++            }
++            assert!(body.contains(&format!(
++                "%o{i} = getelementptr i8, ptr %owners, i64 {end}\n"
++            )));
++            assert_eq!(native.owner_offset(OwnerPlaceId(i)), end);
++            end += layout.size();
++        }
++        for (builtin, name) in [
++            (witness.builtin_function(), "input"),
++            (witness.builtin_output_function(), "output"),
++        ] {
++            if builtin == Some(f.id) {
++                assert!(body.contains(&format!(
++                    "%{name}_scratch = getelementptr i8, ptr %owners, i64 {end}\n"
++                )));
++                end += 1024;
++            }
++        }
++        while end % 4 != 0 {
++            end += 1;
++        }
++        let mut slices = 0;
++        for (name, declarations) in [
++            (
++                "rl",
++                f.references
++                    .iter()
++                    .map(|r| r.referent())
++                    .collect::<Vec<_>>(),
++            ),
++            ("ll", f.loans.iter().map(|l| l.referent()).collect()),
++        ] {
++            for (i, referent) in declarations.into_iter().enumerate() {
++                let marker = format!("%{name}{i} = getelementptr");
++                if matches!(referent, BorrowedTy::ScalarSlice(_)) {
++                    assert!(body.contains(&format!(
++                        "{marker} i8, ptr %slice_lengths, i64 {}\n",
++                        slices * 4
++                    )));
++                    slices += 1;
++                } else {
++                    assert!(!body.contains(&marker));
++                }
++            }
++        }
++        for (name, count, ty, alignment) in [
++            ("scalars", scalar, "i64", 8),
++            ("owners", end, "i8", 4),
++            ("references", pointers, "ptr", 8),
++            ("slice_lengths", slices, "i32", 4),
++        ] {
++            if count != 0 {
++                allocation_count += 1;
++                assert!(body.contains(&format!(
++                    "%{name} = alloca [{count} x {ty}], align {alignment}\n"
++                )));
++            } else {
++                assert!(!body.contains(&format!("%{name} = alloca")));
++            }
++        }
++        for (name, count, arena) in [("s", scalar, "scalars"), ("r", pointers, "references")] {
++            for i in 0..count {
++                assert!(body.contains(&format!(
++                    "%{name}{i} = getelementptr i8, ptr %{arena}, i64 {}\n",
++                    i * 8
++                )));
++            }
++        }
++        assert_eq!(
++            native.native_bytes().unwrap(),
++            scalar * 8 + end + pointers * 8 + slices * 4
++        );
++    }
++    let fuel_allocations = module
++        .lines()
++        .filter(|l| l.trim() == "%fuel = alloca i64, align 8")
++        .count();
++    assert_eq!(fuel_allocations, usize::from(process));
++    assert_eq!(
++        module.lines().filter(|l| l.contains(" = alloca ")).count(),
++        allocation_count + fuel_allocations
++    );
++    assert_eq!(storage.wrapper_fuel_bytes(), fuel_allocations * 8);
++}
++
++#[test]
++fn native_storage_raw_plan_and_ir_census_agree() {
++    for build in [
++        fixtures::empty_record,
++        fixtures::owned_relay,
++        fixtures::shared_read,
++        fixtures::distinct_owned_results,
++    ] {
++        let (sources, raw, schedule) = build();
++        check_ir_census(sources, raw, schedule.entry, false);
++    }
++    for capacity in [0, 3] {
++        let (sources, raw, entry) = input::program(capacity, input::Observation::Checksum);
++        check_ir_census(sources, raw, entry, true);
++        let (sources, raw, entry) = output::program(capacity);
++        check_ir_census(sources, raw, entry, true);
++    }
++    for build in [
++        input::projected_record_program,
++        output::projected_program,
++        output::forwarded_program,
++    ] {
++        let (sources, raw, entry) = build();
++        check_ir_census(sources, raw, entry, true);
++    }
++}
++
++#[test]
++fn native_storage_mapping_identity_seed_and_no_new_reservation() {
++    let (sources, raw, _) = input::projected_record_program();
++    let witness = verified::verify_owned(raw, &sources).unwrap();
++    let plan = ExecutionPlan::build(&witness).unwrap();
++    let storage = fail_allocation_after(0, || NativeStoragePlan::checked(&plan, true)).unwrap();
++    let id = witness.builtin_function().unwrap();
++    let function = storage.function(id);
++    let mut shifted = function.slice_mappings();
++    shifted.pointer = 1;
++    assert!(function.check_slice_mappings(shifted).is_err());
++    let mut offset = function.slice_mappings();
++    offset.length = usize::MAX;
++    assert!(function.check_slice_mappings(offset).is_err());
++    let wrong_function = storage.function(hir::DefId((id.0 + 1) % witness.functions().len()));
++    assert!(function
++        .check_slice_mappings(wrong_function.slice_mappings())
++        .is_err());
++}
++
++#[test]
++fn native_storage_named_fixed_roles_fit_existing_transient_partition() {
++    let (sources, raw, _) = fixtures::owned_relay();
++    let witness = verified::verify_owned(raw, &sources).unwrap();
++    let execution = ExecutionPlan::build(&witness).unwrap();
++    let storage = NativeStoragePlan::checked(&execution, false).unwrap();
++    let function = storage.function(hir::DefId(0));
++    let raw = function.raw();
++    let fp = execution.function(raw.id);
++    // All phases coexist with these named descriptors, returns and the copied
++    // usage. The 32-word reserve covers checker counters, borrowed references
++    // and arithmetic result temporaries. It is not a machine-stack/RSS bound.
++    let common = [
++        size_of::<NativeStoragePlan<'_, '_>>(),
++        size_of::<NativeFunctionStorage<'_, '_>>(),
++        size_of::<Result<NativeStoragePlan<'_, '_>, AdmissionFailure>>(),
++        size_of::<Result<NativeFunctionStorage<'_, '_>, AdmissionFailure>>(),
++        size_of::<Result<(), AdmissionFailure>>(),
++        size_of::<FrameUsage>(),
++        std::mem::size_of_val(&witness.functions().iter().enumerate()),
++        size_of::<[usize; 32]>(),
++    ]
++    .iter()
++    .sum::<usize>();
++    let layout_result = witness
++        .declarations()
++        .aggregate_layout(raw.owners[0].aggregate());
++    let width_result = witness
++        .declarations()
++        .aggregate_width(raw.owners[0].aggregate());
++    // Arrays and their owning iterators are both counted conservatively, even
++    // though iteration moves the array. These phases are sequential in check().
++    let phases = [
++        (
++            "descriptor derivation",
++            std::mem::size_of_val(
++                &raw.references
++                    .iter()
++                    .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_))),
++            ) + std::mem::size_of_val(
++                &raw.loans
++                    .iter()
++                    .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_))),
++            ),
++        ),
++        (
++            "owner layouts",
++            std::mem::size_of_val(&raw.owners.iter().enumerate())
++                + std::mem::size_of_val(&layout_result)
++                + std::mem::size_of_val(layout_result.as_ref().unwrap())
++                + std::mem::size_of_val(&width_result),
++        ),
++        (
++            "builtin suffixes",
++            size_of::<[(bool, usize, Option<Range<usize>>); 2]>()
++                + size_of::<std::array::IntoIter<(bool, usize, Option<Range<usize>>), 2>>()
++                + size_of::<(bool, usize, Option<Range<usize>>)>()
++                + size_of::<Option<Range<usize>>>(),
++        ),
++        (
++            "call partitions",
++            std::mem::size_of_val(&raw.calls.iter().zip(&fp.calls))
++                + size_of::<std::slice::Iter<'_, ArgumentSlot>>()
++                + std::mem::size_of_val(&width_result),
++        ),
++        (
++            "usage reconciliation",
++            size_of::<[(usize, usize, usize); 4]>()
++                + size_of::<std::array::IntoIter<(usize, usize, usize), 4>>()
++                + size_of::<(usize, usize, usize)>(),
++        ),
++        (
++            "slice count",
++            std::mem::size_of_val(
++                &raw.references
++                    .iter()
++                    .map(|r| r.referent())
++                    .chain(raw.loans.iter().map(|l| l.referent())),
++            ),
++        ),
++        (
++            "slice identity",
++            size_of::<[(bool, usize); 2]>()
++                + size_of::<std::array::IntoIter<(bool, usize), 2>>()
++                + size_of::<(bool, usize)>()
++                + size_of::<NativeSliceMappings<'_>>()
++                + size_of::<NativeSliceMapping>()
++                + size_of::<Option<NativeSliceMapping>>(),
++        ),
++    ];
++    for (name, phase) in phases {
++        println!("native storage fixed {name}: common={common} phase={phase} total={} allowance={FIXED_CARRIER_ALLOWANCE}", common + phase);
++        assert!(common + phase <= FIXED_CARRIER_ALLOWANCE, "{name}");
++    }
++}
+diff --git a/src/frontend/oir/owned/native_tests.rs b/src/frontend/oir/owned/native_tests.rs
+index 2c2cc9d..f33697d 100644
+--- a/src/frontend/oir/owned/native_tests.rs
++++ b/src/frontend/oir/owned/native_tests.rs
+@@ -2310,11 +2310,11 @@ fn native_owned_count_pass_stops_wide_expansion_at_the_byte_cap() {
+         let mut visits = vec![];
+         for cap in [1_024, 4_096, 65_536] {
+             let mut count = Emission::count(cap);
++            let storage = NativeStoragePlan::checked(&plan, true).unwrap();
+             emit(
+-                &plan,
++                &storage,
+                 hir::DefId(0),
+                 &diagnostics,
+-                true,
+                 plan::MAX_FUEL,
+                 &mut count,
+             );
+diff --git a/src/frontend/oir/owned/plan.rs b/src/frontend/oir/owned/plan.rs
+index 7e107a6..e3432b7 100644
+--- a/src/frontend/oir/owned/plan.rs
++++ b/src/frontend/oir/owned/plan.rs
+@@ -3,6 +3,9 @@
+ use super::{storage::*, verified::VerifiedOwnedProgram, *};
+ use std::mem::size_of;
+ 
++#[path = "native_storage.rs"]
++pub(super) mod native_storage;
++
+ pub(super) const ENUM_VALUE_COST: usize = 3;
+ pub(super) const MATCH_DISPATCH_COST: usize = 1;
+ 
+diff --git a/src/frontend/oir/owned/slice_native_tests.rs b/src/frontend/oir/owned/slice_native_tests.rs
+index 7bb06da..6ec8b6e 100644
+--- a/src/frontend/oir/owned/slice_native_tests.rs
++++ b/src/frontend/oir/owned/slice_native_tests.rs
+@@ -135,7 +135,11 @@ fn native_slices_length_sidecars_are_the_only_added_frame_storage() {
+         observation.metrics.count_call_scratch_peak,
+         observation.metrics.render_call_scratch_peak
+     );
+-    assert!(observation.metrics.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
++    assert!(
++        observation.metrics.render_call_scratch_peak
++            + plan::native_storage::FIXED_CARRIER_ALLOWANCE
++            <= EMITTER_TRANSIENT_BYTES
++    );
+     assert!(native_module_limits(
+         &slice.witness,
+         Some(slice.entry),
+@@ -180,7 +184,11 @@ fn native_slices_keep_sixty_four_source_parameters_with_bounded_flattening() {
+         if count == 64 {
+             let module = observation.result.unwrap();
+             assert!(module.contains("ptr %arg63, i32 %arg63_length"));
+-            assert!(observation.metrics.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
++            assert!(
++                observation.metrics.render_call_scratch_peak
++                    + plan::native_storage::FIXED_CARRIER_ALLOWANCE
++                    <= EMITTER_TRANSIENT_BYTES
++            );
+             assert_eq!(
+                 observation.metrics.count_call_scratch_peak,
+                 observation.metrics.render_call_scratch_peak

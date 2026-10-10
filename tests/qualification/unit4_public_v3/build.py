@@ -120,10 +120,10 @@ def observer_path_order(paths, root):
     # Preserve the approved POSIX component order on every actual host.
     return sorted(paths, key=lambda path: PurePosixPath(path.relative_to(root).as_posix()).parts)
 
-def verify_lifecycle_successor(raw):
+def verify_byte_storage_lifecycle_successor(raw):
     """Restore both pinned predecessors without changing logical event meaning."""
     need(sha(Path(__file__).with_name('cache_admission_authority.py').read_bytes()) == CACHE_ADMISSION_AUTHORITY_SHA, 'immutable cache admission public authority')
-    need(sha(raw) == LIFECYCLE_PATCH_SHA, 'exact current lifecycle successor')
+    need(sha(raw) == 'c64b43cd0b630fcae46ac4cf73812ad0eb614696474e3af5d75d79b32f5047cf', 'exact retained byte-storage lifecycle successor')
     stdin = raw
     for before, after in reversed(U8_LIFECYCLE_SEAMS):
         need(stdin.count(after) == 1, "exact u8 lifecycle context")
@@ -152,28 +152,36 @@ def verify_lifecycle_successor(raw):
     return original
 
 
+def verify_lifecycle_successor(raw, source=None):
+    """Exact new core hooks plus the unchanged complete historical patch chain."""
+    import lexer_reservation_lifecycle as current
+    try:
+        current.admit(Path(source) if source is not None else current.REPOSITORY, raw)
+    except current.Rejected as error:
+        need(False, str(error))
+    return verify_byte_storage_lifecycle_successor(
+        Path(__file__).with_name('observer-u8-v1.patch').read_bytes())
+
+
 def prepare(args):
     source = Path(args.source_root).resolve()
     manifest_path = Path(args.manifest).resolve()
     source_manifest(manifest_path, source)
     need(sha(manifest_path.read_bytes()) == CURRENT_SOURCE_SHA, 'unapproved observer base manifest')
+    patch = Path(args.observer_patch).resolve()
+    need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
+    verify_lifecycle_successor(patch.read_bytes(), source)
+    import lexer_reservation_lifecycle as current
+    derived, _ = current.admit(source, patch.read_bytes())
     output = Path(args.out).resolve()
     output.mkdir(parents=True, exist_ok=False)
     dest = output / 'source'
     dest.mkdir()
     original = load(manifest_path)
-    for row in original['files']:
-        target = dest / row['path']
+    for name, raw in derived.items():
+        target = dest / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(verify(source / row['path'], row))
-    patch = Path(args.observer_patch).resolve()
-    need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
-    verify_lifecycle_successor(patch.read_bytes())
-    git = ['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', 'apply']
-    p = subprocess.run([*git, '--check', str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    need(p.returncode == 0, 'observer patch precondition: ' + p.stderr.decode())
-    p = subprocess.run([*git, str(patch)], cwd=dest, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    need(p.returncode == 0, 'observer patch apply: ' + p.stderr.decode())
+        target.write_bytes(raw)
     files = []
     changed = []
     before = {r['path']: r for r in original['files']}

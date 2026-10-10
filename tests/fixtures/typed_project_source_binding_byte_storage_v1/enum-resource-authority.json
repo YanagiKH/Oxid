@@ -1,0 +1,241 @@
+{
+  "changed_controls": [
+    "reviewer_nine_independent_space_cases",
+    "reviewer_independent_exact_admission_and_failure_order",
+    "reviewer_fourteen_actual_index_reserve_failures",
+    "reviewer_actual_layout_and_source_node_envelope"
+  ],
+  "current_source_sha256": "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669",
+  "derived": {
+    "bytes": 22732,
+    "path": "archive/resource/resource-review-tests.rs",
+    "sha256": "289d310395a7abb701c03d3ca065f87accba6ed02884fbcf21e2d13235c08dde"
+  },
+  "historical_identifier_note": "reviewer_fourteen_actual_index_reserve_failures is retained as the logical test identity; this exact current adapter covers all sixteen current reservation positions.",
+  "layout_provenance": {
+    "measured_head": "9d4b3dc2800d4cf427a33aa957d7f59bc9083238",
+    "measured_rows": 5753,
+    "measured_tree": "b758fd4555605e4da73c82548a7b7cee39ca9d79",
+    "profile": "actual non-test frontend rustc1.99.0 emit=obj opt0 debuginfo0 link-dead-code print-type-sizes",
+    "receipt_sha256": "7c861da79cc96a86b2fa8646527a798926e1819de772cab1eee8f0ce4b58d9d4",
+    "reuse_boundary": "Only the independently measured layout definitions checked unchanged through feature511df and CI-fix7865122 are reused. The two sizing-helper macro renames invert to exact feature511df bytes. This is not fresh current execution or a claim that all compiler-generated rows are unchanged."
+  },
+  "logical_resource_tests": 21,
+  "original": {
+    "bytes": 22687,
+    "path": "archive/resource/resource-review-tests.rs",
+    "sha256": "a5472f85b6dca1ed9e649c96575b0cf8a45fe37f204040806cd0747a237f1669"
+  },
+  "preserved_test_names": [
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_actual_layout_and_source_node_envelope",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_byte_comparators_and_stable_merge_bounds",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_checked_arithmetic_and_malformed_compact_identity",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_exact_queries_use_hand_costs_and_current_origins",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_exposure_and_nominal_format_work_are_independent_hand_costs",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_five_actual_parser_reserve_positions",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_fourteen_actual_index_reserve_failures",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_import_resource_failures_never_partially_commit",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_independent_exact_admission_and_failure_order",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_long_keys_keep_actual_byte_debits_and_stability",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_nine_independent_space_cases",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_normalized_long_path_comparison_charges_only_inspected_segments",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_old_declaration_admission_precedes_all_new_index_gates",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_original_association_and_corrupt_arena_reject_cleanly",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_original_conflict_debit_precedes_semantics",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_path_resource_exhaustion_immediately_precedes_semantic_failures",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_reference_exposure_uses_referent_origin_and_current_work_site",
+    "frontend::declaration_index::independent_unit2_resource_review::reviewer_type_owner_and_use_site_resource_guards",
+    "frontend::parser::independent_unit2_resource_review::reviewer_checked_segment_overflow_has_zero_reserves",
+    "frontend::parser::independent_unit2_resource_review::reviewer_q_node_and_reserve_precedence",
+    "frontend::source::independent_unit2_resource_review::reviewer_identity_exhaustion_and_parallel_uniqueness"
+  ],
+  "representation_derivation": {
+    "enum_free_payload_delta": "8*M",
+    "enum_row_bytes": 20,
+    "fixed_scratch_bytes": 4088,
+    "fixed_scratch_limit_unchanged": 4096,
+    "function_payload_after": 120,
+    "function_payload_before": 112,
+    "index_header_bytes": 344,
+    "module_row_bytes": 68,
+    "nine_payloads_after": [
+      68,
+      120,
+      136,
+      184,
+      180,
+      288,
+      272,
+      340,
+      380
+    ],
+    "nine_payloads_before": [
+      60,
+      112,
+      128,
+      176,
+      164,
+      272,
+      256,
+      324,
+      364
+    ],
+    "payload_formula": "40*A + 12*F + 28*R + 16*K + 20*E + 12*V + 68*M + 4*(M-1) + 40*U",
+    "reserve_attempts_after": 16,
+    "reserve_attempts_before": 14,
+    "retained_trace_entries_after": 12,
+    "retained_trace_entries_before": 10,
+    "unchanged_function_work": {
+      "admission": 202,
+      "mandatory_build": 168,
+      "preflight": 34
+    },
+    "unchanged_row_lengths": [
+      4,
+      4,
+      2,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1
+    ],
+    "variant_row_bytes": 12
+  },
+  "reviewed_source_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
+  "schema": "oxid-unit2-enum-free-index-resource-v1",
+  "scope": "Four enum-free current resource controls: module-row representation, retained payload arithmetic and complete actual reserve-position coverage. Preserve every frozen original, all twenty-one logical test identities, ten-lane enum-free row_lengths, semantics, work counts, origins and caps.",
+  "source_dependencies": [
+    {
+      "bytes": 31106,
+      "path": "src/frontend/ast.rs",
+      "sha256": "5aabe67c4bc58baaa07a7e9597103deb376c4ee1b30b154b67eb02475d2fcfc6"
+    },
+    {
+      "bytes": 53418,
+      "path": "src/frontend/declaration_index.rs",
+      "sha256": "87adb9f6ab683d011ccda913e37826f37fcc3e97e1b2df6ce4d7e4a2841f4385"
+    },
+    {
+      "bytes": 15353,
+      "path": "src/frontend/declaration_index/resource.rs",
+      "sha256": "d540e094964d298a2ff2f38b1f08e8366a5a033a1ae9b7422c48e2cf82a18cc0"
+    },
+    {
+      "bytes": 54262,
+      "path": "src/frontend/declaration_index/sealed.rs",
+      "sha256": "09b9af03820658a004cb5891ab960280dc734bc6e04ffa8031e14269367c8fcc"
+    },
+    {
+      "bytes": 65908,
+      "path": "src/frontend/parser.rs",
+      "sha256": "84396fcb2b0f2fd31fdf5ed335213c3662b921d31d64adc1c7eaca418f4c8d9d"
+    },
+    {
+      "bytes": 40160,
+      "path": "src/frontend/project.rs",
+      "sha256": "b3d1b41f9a0b89bd0f6e05caabfc7532db5f1d575815e7f753087c9c3d7ae2c9"
+    },
+    {
+      "bytes": 8208,
+      "path": "src/frontend/project/budget.rs",
+      "sha256": "578130a2766e863ba330c056cefa84615951e69a4e26592d957e9accbb5c1229"
+    },
+    {
+      "bytes": 15666,
+      "path": "src/frontend/source.rs",
+      "sha256": "38a69de7b01cc0d8160079e98d266a83af2feb969796417952663b5a2c69d176"
+    }
+  ],
+  "source_only_tree": "4970ee660f670cfcb23f42a9cb182a4ca7996388",
+  "substitutions": [
+    {
+      "count": 1,
+      "new_sha256": "14f52a241d3ae7ab5835d0c4a7638c4ad0a5598a18485a44ef4e45e2199ba22e",
+      "old_sha256": "14049ad55a1d7618a8cadf661c29d3f88bdf7f54ca6a92d964e35a503badc539"
+    },
+    {
+      "count": 1,
+      "new_sha256": "f743f51938bd9a75b5d960319c5bad634ea38ddf32dcb83434a26ac139b45ce0",
+      "old_sha256": "281d08fec13e1376ba70f370548fe412cd5dbe919d0bd95cc646195d8f3eb1d7"
+    },
+    {
+      "count": 1,
+      "new_sha256": "af67d583ce0bdc7b6967705a3561104038b082445654eff193b2fe8ae7bd5be6",
+      "old_sha256": "2410e290cd9fbccb5b5508b35ec67c95825bcc3a4381b530061e6f1633ec0e18"
+    },
+    {
+      "count": 1,
+      "new_sha256": "b3332463b0a9d73c37bdd8d7dddcc685bc20b21d8e1098468b939452fc3f79bf",
+      "old_sha256": "47faf2ef4bf54107661cba351b8b58bd6a5b9e4051b1aabd6ea2c21e20b7fec5"
+    },
+    {
+      "count": 1,
+      "new_sha256": "9e6a7cf7fc38e63b273930acce875951cacb8a31d7e41723b0b6a69a1f5d2c88",
+      "old_sha256": "2cf30babf3cdb831506b6598f39e1c068dd02bb5723847dc2e03311165897840"
+    },
+    {
+      "count": 1,
+      "new_sha256": "08a2eeabc2c461ba246a20d3bfc84b6628224e145662d74fdf27c28bfe480f0f",
+      "old_sha256": "4ccfa835073bc1963aae281880bb45f484de2dc5dc305e09514d9e5cfdb2c22b"
+    },
+    {
+      "count": 1,
+      "new_sha256": "f204dc58b8d6f58fef7e1a5ecc460f78b03251ce4b781d482a3ce428cdd720e6",
+      "old_sha256": "56b9922df0c36d29453f43409697bc39dd281db3c4030ce383d1cf82a6e95607"
+    },
+    {
+      "count": 1,
+      "new_sha256": "8570b9855ad900ee60bcf59e09f16964a053e2b99bc832294ca44643b2947c87",
+      "old_sha256": "30183cca9a2057f2c256b70bd65bb578e458b26696b3564b88106b03c3d61b23"
+    },
+    {
+      "count": 1,
+      "new_sha256": "f35629341179a904053ea7c14b976ab9e222a7798e5277a7642f322e402d2cb3",
+      "old_sha256": "353673a8b275995ddf66d13fc8637ffdcab0b94c1c4b511f67cc2f1a4e536844"
+    },
+    {
+      "count": 1,
+      "new_sha256": "dc46583ffc6dd74c50df404351d91647fb46ee76cef1d6accb25bd79968c6fc0",
+      "old_sha256": "06686cc90355386dd7e0f9931b25cc8011b30546db55b42efd1c4374f61a447b"
+    },
+    {
+      "count": 1,
+      "new_sha256": "9a705f706feea8f8ad6e1d2617ba03be223809d3f32a0f4a33d13fc529a43003",
+      "old_sha256": "def8bb427bc4de4b30c6243eb9e884333f476d046a725becb58981a441b4554d"
+    },
+    {
+      "count": 1,
+      "new_sha256": "b2d6822f7c9c722272f8aca46fc945b991eb4ec50e72a2546de35ba3df5a1598",
+      "old_sha256": "372c9e9a48191b1980455ab354b6b1f72c5bdf4cccb8b0c080996140018e6a98"
+    },
+    {
+      "count": 1,
+      "new_sha256": "fcf16465c60d65fb1d01803696e3f68b80c7797b4ecc8e7ac078c7d68285d01c",
+      "old_sha256": "760b4d5e4611d0d00b56fadf3332da3877dfd20d82b4357d26d7fb5d6788b135"
+    },
+    {
+      "count": 1,
+      "new_sha256": "4672904c2ba16cd7a550b85b3e1de4b0c6e106c17959457bbbae5f783aa1c50b",
+      "old_sha256": "8a5e7bd1c03fb4be0f24f0b8944f37ee3987a8488493d45b39c827b2baf808ea"
+    },
+    {
+      "count": 1,
+      "new_sha256": "82a6a45c7fa127140b9f04971e9cb29de0d56b1cb52c94cf0ab1a76f0c791ce7",
+      "old_sha256": "8ab7a200f7bd535adc07cafb4d68ddc660d580f51c04e7df8718b878ff670b03"
+    },
+    {
+      "count": 1,
+      "new_sha256": "26f9fcb9cf9666360fd665c78b823e12c0c8f25a1766b0621bbfb50676e41ef7",
+      "old_sha256": "664da4a6c9194a544377ee639bb9a49208244445f8462e22580875ded33fc599"
+    },
+    {
+      "count": 1,
+      "new_sha256": "1a3305ffb81cfbe72a167f66f02d46229b52800ea5930987c5843d0d459d812c",
+      "old_sha256": "beb9735edef25e216aef4599c23ac9271a2ab88779f8c544d4ae057b9814daff"
+    }
+  ],
+  "version": "unit2-enum-free-index-resource-v1"
+}

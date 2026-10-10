@@ -46,6 +46,206 @@ fn exact() -> ProjectLimits {
     }
 }
 
+// This is the root fixture's source-derived schedule, before any child work.
+// All spans are UTF-8 byte offsets in the original 15-byte root source.
+fn root_lexer_reserve(fail_at: usize) -> Option<(usize, Span, &'static str)> {
+    let (length, start, end, text) = match fail_at {
+        5 => (4, 0, 3, "mod"),
+        6 => (8, 6, 10, "enum"),
+        7 => (16, 13, 14, "V"),
+        _ => return None,
+    };
+    Some((
+        length,
+        Span {
+            file: SourceFileId(0),
+            start,
+            end,
+        },
+        text,
+    ))
+}
+
+fn assert_root_reserve_baseline(fixture: &Fixture, trace: &[budget::ReserveEvent]) {
+    let entry = fixture.0.join("main.ox");
+    let expected = [
+        ("source bytes", 15, size_of::<u8>()),
+        ("entry display", entry.to_str().unwrap().len(), 1),
+        ("line starts", 1, size_of::<usize>()),
+        ("source files", 1, size_of::<SourceFile>()),
+        ("lexer token tape", 4, size_of::<lexer::Token>()),
+        ("lexer token tape", 8, size_of::<lexer::Token>()),
+        ("lexer token tape", 16, size_of::<lexer::Token>()),
+    ];
+    assert!(trace.len() >= expected.len());
+    for (event, (kind, length, element_bytes)) in trace.iter().zip(expected) {
+        assert_eq!(
+            (event.kind, event.length, event.element_bytes, event.success),
+            (kind, length, element_bytes, true)
+        );
+    }
+}
+
+fn root_reserve_diagnostic_matches(
+    error: &Diagnostic,
+    event: &budget::ReserveEvent,
+    fail_at: usize,
+) -> bool {
+    if error.code != "E0400" || event.success {
+        return false;
+    }
+    if let Some((length, span, _)) = root_lexer_reserve(fail_at) {
+        (event.kind, event.length, event.element_bytes)
+            == ("lexer token tape", length, size_of::<lexer::Token>())
+            && error.stage == "lex"
+            && error.message == "token storage allocation failed"
+            && error.primary == Some(span)
+            && error.secondary.is_empty()
+            && error.notes.is_empty()
+    } else {
+        // Preserve the original nonlexer stage restriction. A lexer event at
+        // any other root ordinal is an error, even with an old accepted stage.
+        event.kind != "lexer token tape" && matches!(error.stage, "source-project" | "parse")
+    }
+}
+
+fn assert_root_reserve_failure(
+    failure: &LoadFailure,
+    baseline: &[budget::ReserveEvent],
+    fail_at: usize,
+) {
+    assert_eq!(failure.allocator.attempts, fail_at);
+    assert_eq!(failure.allocator.trace.len(), fail_at);
+    assert!(baseline.len() >= fail_at);
+    let event = failure.allocator.trace.last().unwrap();
+    assert!(root_reserve_diagnostic_matches(
+        &failure.diagnostics[0],
+        event,
+        fail_at
+    ));
+    if let Some((_, span, spelling)) = root_lexer_reserve(fail_at) {
+        assert_eq!(failure.diagnostics.len(), 1);
+        assert_eq!(failure.sources.files().len(), 1);
+        assert_eq!(
+            failure.sources.get(SourceFileId(0)).text(),
+            "mod a;enum E{V}"
+        );
+        assert_eq!(failure.sources.text(span), spelling);
+        assert_eq!(
+            (
+                failure.usage.source_bytes,
+                failure.usage.non_eof_tokens,
+                failure.usage.syntax_nodes,
+                failure.usage.modules,
+                failure.usage.line_starts
+            ),
+            (15, 0, 0, 0, 1)
+        );
+    }
+    // These paid-prefix and no-child checks apply to every failure, outside
+    // the narrowly admitted lexer diagnostic branch.
+    assert!(failure.sources.files().len() <= 1);
+    assert_eq!(
+        (
+            failure.usage.probes,
+            failure.usage.directory_entries,
+            failure.usage.directory_name_units
+        ),
+        (0, 0, 0)
+    );
+    assert!(!failure
+        .allocator
+        .trace
+        .iter()
+        .any(|event| event.kind == "module probe path"));
+    for (position, (actual, expected)) in failure.allocator.trace.iter().zip(baseline).enumerate() {
+        assert_eq!(
+            (
+                actual.kind,
+                actual.length,
+                actual.element_bytes,
+                actual.success
+            ),
+            (
+                expected.kind,
+                expected.length,
+                expected.element_bytes,
+                position + 1 != fail_at
+            )
+        );
+    }
+}
+
+#[test]
+fn enum_index_loader_root_reserve_diagnostic_oracle_rejects_mutations() {
+    // Pure assertion controls do not qualify any host filesystem policy.
+    for fail_at in 5..=7 {
+        let (length, span, _) = root_lexer_reserve(fail_at).unwrap();
+        let error = Diagnostic::new(
+            "E0400",
+            "lex",
+            "token storage allocation failed",
+            Some(span),
+        );
+        let event = budget::ReserveEvent {
+            kind: "lexer token tape",
+            length,
+            element_bytes: size_of::<lexer::Token>(),
+            success: false,
+        };
+        assert!(root_reserve_diagnostic_matches(&error, &event, fail_at));
+        for mutation in 0..9 {
+            let mut bad = error.clone();
+            match mutation {
+                0 => bad.code = "E0100",
+                1 => bad.stage = "parse",
+                2 => bad.message = "token resource limit exceeded".into(),
+                3 => bad.primary.as_mut().unwrap().file = SourceFileId(1),
+                4 => bad.primary.as_mut().unwrap().start += 1,
+                5 => bad.primary.as_mut().unwrap().end += 1,
+                6 => bad.primary = None,
+                7 => bad.secondary.push((span, "unexpected".into())),
+                _ => bad.notes.push("unexpected".into()),
+            }
+            assert!(!root_reserve_diagnostic_matches(&bad, &event, fail_at));
+        }
+        for (kind, length, element_bytes, success, ordinal) in [
+            ("source files", length, event.element_bytes, false, fail_at),
+            (event.kind, length + 1, event.element_bytes, false, fail_at),
+            (event.kind, length, event.element_bytes + 1, false, fail_at),
+            (event.kind, length, event.element_bytes, true, fail_at),
+            (event.kind, length, event.element_bytes, false, 4),
+            (event.kind, length, event.element_bytes, false, 8),
+        ] {
+            let bad = budget::ReserveEvent {
+                kind,
+                length,
+                element_bytes,
+                success,
+            };
+            assert!(!root_reserve_diagnostic_matches(&error, &bad, ordinal));
+        }
+    }
+    for (ordinal, kind, stage) in [
+        (4, "source files", "source-project"),
+        (8, "syntax modules", "parse"),
+    ] {
+        let mut error = Diagnostic::new("E0400", stage, "old nonlexer message", None);
+        let mut event = budget::ReserveEvent {
+            kind,
+            length: 1,
+            element_bytes: 1,
+            success: false,
+        };
+        assert!(root_reserve_diagnostic_matches(&error, &event, ordinal));
+        error.stage = "lex";
+        assert!(!root_reserve_diagnostic_matches(&error, &event, ordinal));
+        error.stage = stage;
+        event.kind = "lexer token tape";
+        assert!(!root_reserve_diagnostic_matches(&error, &event, ordinal));
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn enum_index_loader_preserves_global_limits_and_real_file_association() {
@@ -155,6 +355,7 @@ fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
     let project = fixture.load(exact(), &mut allocator).unwrap();
     let attempts = allocator.attempts;
     assert_eq!(allocator.trace.len(), attempts);
+    assert_root_reserve_baseline(&fixture, &allocator.trace);
     assert!(
         allocator
             .trace
@@ -163,6 +364,7 @@ fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
             .count()
             == 2
     );
+    let baseline_trace = allocator.trace;
     drop(project);
     for fail_at in 1..=attempts {
         let mut allocator = Allocator {
@@ -173,6 +375,11 @@ fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
         assert_eq!(failure.allocator.attempts, fail_at);
         assert_eq!(failure.allocator.trace.len(), fail_at);
         assert!(!failure.allocator.trace.last().unwrap().success);
+        // Exercise the exact shared root assertion on Linux before child I/O.
+        // The later Linux-only requests retain their existing full sweep.
+        if fail_at <= 7 {
+            assert_root_reserve_failure(&failure, &baseline_trace, fail_at);
+        }
         // LoadFailure deliberately retains the source/diagnostic evidence until drop.
         drop(failure);
     }
@@ -261,45 +468,23 @@ fn enum_index_loader_unqualified_host_reserve_failures_stop_at_the_paid_prefix()
         .unwrap_err();
     assert_eq!(baseline.diagnostics[0].code, "E0005");
     assert!(baseline.allocator.attempts > 0);
+    assert_root_reserve_baseline(&fixture, &baseline.allocator.trace);
+    assert!(baseline.allocator.trace.iter().all(|event| event.success));
+    assert_eq!(
+        baseline
+            .allocator
+            .trace
+            .iter()
+            .filter(|event| event.kind == "lexer token tape")
+            .count(),
+        3
+    );
     for fail_at in 1..=baseline.allocator.attempts {
         let mut allocator = Allocator {
             fail_at: Some(fail_at),
             ..Allocator::default()
         };
         let failure = fixture.load(exact(), &mut allocator).unwrap_err();
-        assert_eq!(failure.diagnostics[0].code, "E0400");
-        assert!(matches!(
-            failure.diagnostics[0].stage,
-            "source-project" | "parse"
-        ));
-        assert_eq!(failure.allocator.attempts, fail_at);
-        assert_eq!(failure.allocator.trace.len(), fail_at);
-        assert!(failure.sources.files().len() <= 1);
-        assert_eq!(
-            (failure.usage.probes, failure.usage.directory_entries),
-            (0, 0)
-        );
-        for (position, (actual, expected)) in failure
-            .allocator
-            .trace
-            .iter()
-            .zip(&baseline.allocator.trace)
-            .enumerate()
-        {
-            assert_eq!(
-                (
-                    actual.kind,
-                    actual.length,
-                    actual.element_bytes,
-                    actual.success
-                ),
-                (
-                    expected.kind,
-                    expected.length,
-                    expected.element_bytes,
-                    position + 1 != fail_at
-                )
-            );
-        }
+        assert_root_reserve_failure(&failure, &baseline.allocator.trace, fail_at);
     }
 }

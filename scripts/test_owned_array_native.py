@@ -796,7 +796,10 @@ class PackageTests(unittest.TestCase):
                     "scripts/preserve_unit3_ci_evidence.py", "docs/architecture/fixed-array-unit2e-native-ci.md",
                     "scripts/replay_fixed_array_unit2d.py", "scripts/replay_fixed_array_unit2d_current.py",
                     "scripts/replay_unit2d_tool_capture.py",
-                    "scripts/test_replay_fixed_array_unit2d.py")
+                    "scripts/test_replay_fixed_array_unit2d.py",
+                    "scripts/build_streaming_lexer.py", "scripts/build_hir_producers_v2.py",
+                    "fixtures/typed-frontend-v2/sources.json",
+                    "tests/fixtures/producer_diagnostic/provenance.json")
         for name in required:
             path = repo / name
             path.parent.mkdir(parents=True, exist_ok=True)

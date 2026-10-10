@@ -1,4 +1,9 @@
-"""Source-view admission controls; no compiler build or semantic expectation."""
+"""Retained source controls on the authenticated byte-storage predecessor.
+
+The current outer dispatcher is admitted first. Original mutation controls then
+receive its exact restored predecessor and preserved runner, never current lexer
+bodies under an older authority. No compiler or semantic execution is claimed.
+"""
 from contextlib import ExitStack
 import importlib.util
 from pathlib import Path
@@ -10,7 +15,8 @@ from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
-PACKAGE = REPO / "tests/fixtures/typed_project_source_binding"
+ACTIVE_PACKAGE = REPO / "tests/fixtures/typed_project_source_binding"
+PACKAGE = REPO / "tests/fixtures/typed_project_source_binding_byte_storage_v1"
 spec = importlib.util.spec_from_file_location("source_binding", PACKAGE / "run.py")
 binding = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(binding)
@@ -19,7 +25,20 @@ spec.loader.exec_module(binding)
 class SourceBindingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.captured = binding.preflight(REPO)
+        spec = importlib.util.spec_from_file_location("current_lexer_source_binding", ACTIVE_PACKAGE / "run.py")
+        current_binding = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(current_binding)
+        current = current_binding.preflight(REPO)
+        cls.predecessor_directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.predecessor_directory.cleanup)
+        restored = Path(cls.predecessor_directory.name) / "byte-storage-predecessor"
+        inputs = dict(current["byte_storage_inputs"])
+        inputs.update(current["references"])
+        inputs.update({binding.U2 + "/" + name: data for name, data in current["historical_bytes"].items()})
+        binding.materialize(restored, inputs)
+        cls.captured = binding.preflight(restored, PACKAGE)
+        if cls.captured["inputs"] != current["byte_storage_inputs"]:
+            raise binding.BindingError("historical controls did not receive the exact outer inverse")
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

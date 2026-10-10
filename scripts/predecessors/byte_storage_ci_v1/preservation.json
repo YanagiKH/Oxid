@@ -1,0 +1,121 @@
+{
+  "compiler_checkpoint": "c8e9a72afd9866f32b96f98ae24f61390039f421",
+  "files": [
+    {
+      "bytes": 67395,
+      "path": ".github/workflows/ci.yml",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/.github/workflows/ci.yml",
+      "sha256": "7ae94a3f70dd543a28b780912d7ca48fced54d39e0ba0cfdcd2152b5d5b10c57"
+    },
+    {
+      "bytes": 32178,
+      "path": "scripts/test_bounded_enum_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/test_bounded_enum_native.py",
+      "sha256": "97cfc98dfb983ea78dd0b2d0b78aa93c4b973f0f3b7d5787746265bbd3bd7ed6"
+    },
+    {
+      "bytes": 145898,
+      "path": "scripts/test_owned_array_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/test_owned_array_native.py",
+      "sha256": "47e91170a8a17d5f81cecb74f6d4897e5f4be1d395523fe74739241c9be1ce8f"
+    },
+    {
+      "bytes": 12210,
+      "path": "scripts/test_owned_source_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/test_owned_source_native.py",
+      "sha256": "b270021f269205a67bdba5f96714b6a78e75b961177ec696585fdffb94413197"
+    },
+    {
+      "bytes": 246802,
+      "path": "scripts/test_typed_project_source_binding.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/test_typed_project_source_binding.py",
+      "sha256": "9da168e36bea3e1f476702cc02d8366dcd5f0e673a9d3b8bddad439429618820"
+    },
+    {
+      "bytes": 37410,
+      "path": "scripts/verify_bounded_byte_storage.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/verify_bounded_byte_storage.py",
+      "sha256": "abe79bb997f3dd93272fa87c584823bdf22c9caea5d6e88ed251e3ce44d6beeb"
+    },
+    {
+      "bytes": 19628,
+      "path": "scripts/verify_bounded_enum_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/verify_bounded_enum_native.py",
+      "sha256": "5feeb2eb580b6271f9084546e60c4a047476e7c4aaeb2f55f62a2e12e82ba377"
+    },
+    {
+      "bytes": 14373,
+      "path": "scripts/verify_bounded_stdin_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/verify_bounded_stdin_native.py",
+      "sha256": "7d3409d766053aa861a1a98d9e1daf002bf0db9f49784bdaa67256025bcbc950"
+    },
+    {
+      "bytes": 10116,
+      "path": "scripts/verify_bounded_stdout_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/verify_bounded_stdout_native.py",
+      "sha256": "2d0008d9a02737660cb71eb03bf87ae2d0bf7bbb8afc826c301f6b22c2f8ba81"
+    },
+    {
+      "bytes": 150925,
+      "path": "scripts/verify_owned_array_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/verify_owned_array_native.py",
+      "sha256": "120a8d511b4113eb167249aa217a03f347a19615cf5573b92c291564a86db82f"
+    },
+    {
+      "bytes": 31870,
+      "path": "scripts/verify_owned_source_native.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/scripts/verify_owned_source_native.py",
+      "sha256": "1d78ea30962f87ddab505084bcdbebf29d1eb2b60a2714e2ba5b27929c7d47bf"
+    },
+    {
+      "bytes": 9811,
+      "path": "tests/qualification/unit4_ci/DESIGN.md",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/DESIGN.md",
+      "sha256": "bef2da9cd36098335d59b8fd1b33492e359362891099f4156336e2a7c091f223"
+    },
+    {
+      "bytes": 17759,
+      "path": "tests/qualification/unit4_ci/README.md",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/README.md",
+      "sha256": "d8f4d297d77b8ade884fe3d9488b81317731f57400274fa93b3cce9a096857a6"
+    },
+    {
+      "bytes": 17806,
+      "path": "tests/qualification/unit4_ci/common.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/common.py",
+      "sha256": "7e71ca4710dc88cbea192b0c818884109437ef661a894ebe85fb4207c09adb46"
+    },
+    {
+      "bytes": 23151,
+      "path": "tests/qualification/unit4_ci/evidence.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/evidence.py",
+      "sha256": "14202cf4ee7d3877967324dfcd3746d85d60a3a38f989f8892422db8ced42c58"
+    },
+    {
+      "bytes": 28816,
+      "path": "tests/qualification/unit4_ci/gate.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/gate.py",
+      "sha256": "89baea2fd1d628d21113f50e50b4c1b2f5101d25a57447c5785b8ada57a2d798"
+    },
+    {
+      "bytes": 57803,
+      "path": "tests/qualification/unit4_ci/inputs.json",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/inputs.json",
+      "sha256": "97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a"
+    },
+    {
+      "bytes": 40792,
+      "path": "tests/qualification/unit4_ci/join.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/join.py",
+      "sha256": "0b03f427eb6df06c41eeb5013d9d0400927cef6a33674b683bb8bd0385258095"
+    },
+    {
+      "bytes": 118527,
+      "path": "tests/qualification/unit4_ci/test_integration.py",
+      "preserved_path": "scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/test_integration.py",
+      "sha256": "e5a5fcfe92b424167320fa1b1e63984391a989019de77736a4df0d125075e0f5"
+    }
+  ],
+  "purpose": "Immutable pre-lexer-reservation CI consumers; historical byte identities only, no current execution claim.",
+  "schema": "oxid-byte-storage-ci-consumer-predecessors-v1"
+}

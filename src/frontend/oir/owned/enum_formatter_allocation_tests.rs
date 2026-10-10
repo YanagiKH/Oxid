@@ -37,6 +37,44 @@ const NESTED: &str = concat!(
     "E::I(w)=>{continue;},E::V=>{return;}",
     "}}}}}",
 );
+const LEXER_LABEL: &str = "lexer token tape";
+// Literal byte spans frozen by the independent fixture-only source scan.
+const SMALL_LEXER_SITES: &[(usize, usize, usize)] = &[
+    (4, 0, 4),
+    (8, 7, 8),
+    (16, 12, 13),
+    (32, 21, 22),
+    (64, 41, 41),
+];
+const MIXED_LEXER_SITES: &[(usize, usize, usize)] = &[
+    (4, 0, 31),
+    (8, 36, 39),
+    (16, 46, 49),
+    (32, 64, 65),
+    (64, 94, 97),
+    (128, 141, 142),
+    (256, 214, 215),
+    (512, 441, 442),
+];
+const NESTED_LEXER_SITES: &[(usize, usize, usize)] = &[
+    (4, 0, 4),
+    (8, 7, 8),
+    (16, 11, 14),
+    (32, 22, 23),
+    (64, 50, 51),
+    (128, 90, 91),
+];
+const EMPTY_LEXER_SITES: &[(usize, usize, usize)] = &[(4, 0, 0)];
+fn first_lexer_sites(text: &str) -> &'static [(usize, usize, usize)] {
+    match text {
+        SMALL => SMALL_LEXER_SITES,
+        MIXED => MIXED_LEXER_SITES,
+        NESTED => NESTED_LEXER_SITES,
+        "" => EMPTY_LEXER_SITES,
+        _ => panic!("fixture has no frozen first-lexer sites"),
+    }
+}
+
 const PARSER_LABELS: &[&str] = &[
     "syntax modules",
     "syntax imports",
@@ -132,7 +170,31 @@ fn ast_heap(program: &Program) -> usize {
     bytes
 }
 
-fn complete_trace(allocator: &Allocator, capacity: usize) {
+// These current success/reserve/rejection fixtures all admit an initial token
+// or EOF before any lexical error. Their parse phases have a nonempty lexer
+// request prefix and then the unchanged parser vocabulary. This helper is not
+// an oracle for malformed-first content that refuses before reserving. Checking
+// phase order is stronger than merely admitting a new label into a whitelist.
+fn parse_phase_trace(events: &[ReserveEvent]) {
+    let lexer_end = events
+        .iter()
+        .take_while(|event| event.kind == LEXER_LABEL)
+        .count();
+    assert!(
+        lexer_end > 0,
+        "this fixture must reach at least its initial token or EOF allocation"
+    );
+    for (index, event) in events[..lexer_end].iter().enumerate() {
+        // Exact-capacity qualification on this host, not a production promise.
+        assert_eq!(event.length, 4usize.checked_shl(index as u32).unwrap());
+        assert_eq!(event.element_bytes, size_of::<lexer::Token>());
+    }
+    assert!(events[lexer_end..]
+        .iter()
+        .all(|event| PARSER_LABELS.contains(&event.kind)));
+}
+
+fn trace_bounds(allocator: &Allocator, capacity: usize) {
     assert!(
         !allocator.observer_trace_overflow,
         "truncated trace cannot support evidence"
@@ -143,10 +205,44 @@ fn complete_trace(allocator: &Allocator, capacity: usize) {
         capacity,
         "observer grew inside measurement"
     );
-    assert!(allocator
+}
+
+// This separate existing test starts with an already constructed output buffer;
+// its entire qualified route is exactly the two nonempty source-owner requests.
+fn complete_source_owner_trace(allocator: &Allocator, capacity: usize) {
+    trace_bounds(allocator, capacity);
+    assert_eq!(allocator.attempts, 2);
+    for (event, expected) in allocator.trace.iter().zip([
+        ("formatted source line starts", 3, size_of::<usize>()),
+        ("formatted source files", 1, size_of::<SourceFile>()),
+    ]) {
+        assert_eq!((event.kind, event.length, event.element_bytes), expected);
+        assert!(event.success);
+    }
+}
+
+fn complete_trace(allocator: &Allocator, capacity: usize) {
+    trace_bounds(allocator, capacity);
+    if let Some(format_start) = allocator
         .trace
         .iter()
-        .all(|event| PARSER_LABELS.contains(&event.kind) || FORMAT_LABELS.contains(&event.kind)));
+        .position(|event| FORMAT_LABELS.contains(&event.kind))
+    {
+        parse_phase_trace(&allocator.trace[..format_start]);
+        let format_end = (format_start + FORMAT_LABELS.len()).min(allocator.trace.len());
+        for (event, &label) in allocator.trace[format_start..format_end]
+            .iter()
+            .zip(FORMAT_LABELS)
+        {
+            assert_eq!(event.kind, label);
+        }
+        if allocator.trace.len() > format_end {
+            assert_eq!(format_end, format_start + FORMAT_LABELS.len());
+            parse_phase_trace(&allocator.trace[format_end..]);
+        }
+    } else {
+        parse_phase_trace(&allocator.trace);
+    }
 }
 
 fn same_events(actual: &[ReserveEvent], expected: &[ReserveEvent]) {
@@ -184,9 +280,10 @@ fn independent_parse(file: &SourceFile) -> ParseEvidence {
     let trace_capacity = allocator.trace.capacity();
     let mut storage = Default::default();
     let (result, (calls, live, peak)) = integration_measured(|| {
+        let tokens = lexer::lex_with_allocator(file, lexer::MAX_TOKENS, &mut allocator).unwrap();
         parse_enum_candidate_counted(
             file,
-            lexer::lex(file).unwrap(),
+            tokens,
             SourceMode::ProjectCandidate,
             MAX_NODES,
             &mut allocator,
@@ -200,6 +297,16 @@ fn independent_parse(file: &SourceFile) -> ParseEvidence {
     assert!(program.validate_spans_and_ids(|span| file.try_text(span).is_some()));
     let heap = ast_heap(&program);
     let tokens = payload(&program.tokens);
+    let lexer_rows = allocator
+        .trace
+        .iter()
+        .take_while(|event| event.kind == LEXER_LABEL);
+    let final_request = lexer_rows.last().unwrap().length;
+    assert_eq!(
+        final_request,
+        program.tokens.len().max(4).next_power_of_two()
+    );
+    assert_eq!(program.tokens.capacity(), final_request);
     assert_eq!(live, isize::try_from(heap).unwrap());
     assert_eq!(heap, storage.retained_capacity + tokens);
     assert_eq!(storage.scratch_capacity, 0);
@@ -315,7 +422,8 @@ fn enum_formatter_lifecycle_success_retains_only_output_and_counts_both_parses()
         // Compare independently observed successful allocator-call counts for
         // both complete lexer+parser runs, plus the four formatter buffers.
         // This is deliberately NOT an equality with logical reserve attempts:
-        // lexer growth is unseamed, and empty roles/output reserve zero bytes.
+        // empty roles/output reserve zero bytes. Lexer growth now uses the same
+        // prebounded allocator trace as each corresponding formatter parse.
         let formatter_calls =
             usize::from(!file.text().is_empty()) + usize::from(output.capacity() != 0) + 2;
         assert_eq!(
@@ -448,6 +556,15 @@ fn enum_formatter_lifecycle_every_reserve_failure_drops_both_parses_and_diagnost
             assert_eq!(baseline.trace[roles + offset].kind, *label);
         }
         let second_parse = roles + FORMAT_LABELS.len();
+        let first_lexer = first_lexer_sites(text);
+        let first_lexer_rows: Vec<_> = baseline.trace[..roles]
+            .iter()
+            .filter(|event| event.kind == LEXER_LABEL)
+            .collect();
+        assert_eq!(first_lexer_rows.len(), first_lexer.len());
+        for (event, &(target, _, _)) in first_lexer_rows.iter().zip(first_lexer) {
+            assert_eq!(event.length, target);
+        }
         if !text.is_empty() {
             assert!(roles > 0 && second_parse < baseline.attempts);
         }
@@ -455,7 +572,9 @@ fn enum_formatter_lifecycle_every_reserve_failure_drops_both_parses_and_diagnost
         for fail_at in 1..=baseline.attempts {
             let ordinal = fail_at - 1;
             let expected = &baseline.trace[ordinal];
-            let expected_message = if ordinal < roles {
+            let expected_message = if ordinal < roles && expected.kind == LEXER_LABEL {
+                "token storage allocation failed"
+            } else if ordinal < roles {
                 "syntax storage allocation failed"
             } else if ordinal == roles {
                 "formatter work table allocation failed"
@@ -490,9 +609,23 @@ fn enum_formatter_lifecycle_every_reserve_failure_drops_both_parses_and_diagnost
             );
             assert_eq!(receipt.code, "E0400");
             if ordinal < roles {
-                assert_eq!(receipt.stage, "parse");
+                assert_eq!(
+                    receipt.stage,
+                    if expected.kind == LEXER_LABEL {
+                        "lex"
+                    } else {
+                        "parse"
+                    }
+                );
                 assert!(receipt.all_original_spans, "{receipt:?}");
                 assert_eq!(receipt.primary.unwrap().file, id);
+                if expected.kind == LEXER_LABEL {
+                    let &(_, start, end) = first_lexer
+                        .iter()
+                        .find(|&&(target, _, _)| target == expected.length)
+                        .unwrap();
+                    assert_eq!(receipt.primary, Some(file.span(start, end)));
+                }
                 assert_eq!(failed_metrics.parse_calls, 1);
             } else {
                 assert_eq!(receipt.stage, "format");
@@ -507,6 +640,14 @@ fn enum_formatter_lifecycle_every_reserve_failure_drops_both_parses_and_diagnost
             }
             complete_trace(&allocator, trace_capacity);
             assert!(allocator.attempts >= fail_at);
+            if expected.kind == LEXER_LABEL {
+                assert_eq!(
+                    allocator.attempts, fail_at,
+                    "no subsequent request after a lexer failure"
+                );
+                assert_eq!(receipt.count, 1);
+                assert!(receipt.no_notes);
+            }
             same_events(&allocator.trace[..ordinal], &baseline.trace[..ordinal]);
             let failed = &allocator.trace[ordinal];
             assert_eq!(
@@ -538,8 +679,9 @@ fn enum_formatter_lifecycle_every_reserve_failure_drops_both_parses_and_diagnost
             assert_eq!(file.text().as_ptr(), pointer);
             assert_eq!(file.identity(), identity);
             assert!(!integration_enabled());
-            // Lexer/diagnostic allocations are outside the seam. Failure peaks
-            // and global call counts are not compared with success ledgers.
+            // Diagnostic allocations remain outside the seam. Lexer requests
+            // are now included; failure peaks and global call counts are still
+            // not compared with successful diagnostic-free ledgers.
             maximum_failure_peak = maximum_failure_peak.max(peak);
         }
         println!("enum formatter {name}: swept {} real seam ordinals (first parse {roles}, roles/output/source-owner 4, second parse {}); all failures dropped to zero; maximum logical failure peak={maximum_failure_peak}",
@@ -569,7 +711,7 @@ fn enum_formatter_lifecycle_source_owner_moves_the_same_output_buffer_once() {
         let owner_heap = owner.heap_capacity_bytes().unwrap();
         (owner.into_single_text(), owner_heap, same_pointer)
     });
-    complete_trace(&allocator, trace_capacity);
+    complete_source_owner_trace(&allocator, trace_capacity);
     assert_eq!(allocator.attempts, 2);
     assert_eq!(allocator.trace[0].kind, "formatted source line starts");
     assert_eq!(allocator.trace[1].kind, "formatted source files");

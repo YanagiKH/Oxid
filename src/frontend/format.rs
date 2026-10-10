@@ -290,7 +290,8 @@ fn format_with_syntax_inner(
 }
 
 fn parse(source: &SourceFile, allocator: &mut Allocator) -> Result<Program, Vec<Diagnostic>> {
-    let tokens = lexer::lex_with_limit(source, lexer::MAX_TOKENS).map_err(|error| vec![*error])?;
+    let tokens = lexer::lex_with_allocator(source, lexer::MAX_TOKENS, allocator)
+        .map_err(|error| vec![*error.diagnostic()])?;
     parser::parse_counted_with_arrays(
         source,
         tokens,
@@ -312,8 +313,8 @@ fn parse_with_syntax(
             parse(source, allocator).map(|program| (program, ParseMetrics::default()))
         }
         _ => {
-            let tokens =
-                lexer::lex_with_limit(source, lexer::MAX_TOKENS).map_err(|error| vec![*error])?;
+            let tokens = lexer::lex_with_allocator(source, lexer::MAX_TOKENS, allocator)
+                .map_err(|error| vec![*error.diagnostic()])?;
             let token_bytes = tokens
                 .capacity()
                 .checked_mul(std::mem::size_of::<Token>())
@@ -762,4 +763,458 @@ fn bounded_enum_production_formatter_policy_layout() {
         std::mem::size_of::<EnumFormatMetrics>()
     );
     assert_eq!(std::mem::size_of::<FormatSyntax>(), 1);
+}
+// Append to frontend/format.rs, or keep this module in a test-only included file.
+#[cfg(test)]
+mod lexer_reservation_caller_tests {
+    use super::*;
+    use crate::frontend::source::{SourceFileId, Span};
+    use std::mem::size_of;
+
+    // Source-derived, before executing the candidate:
+    // Input: four independently retained block-comment trivia, then EOF.
+    // Candidate: four comments, three space trivia, one newline trivia, then EOF.
+    // Neither parser enters its item loop, so there are no parser reservations.
+    const INPUT: &str = "/**//**//**//**/";
+    const OUTPUT: &str = "/**/ /**/ /**/ /**/\n";
+
+    fn source() -> SourceMap {
+        let mut sources = SourceMap::new();
+        // Make first-parse origins distinguishable from candidate file 0.
+        sources.add("unrelated.ox".into(), String::new());
+        sources.add("retained-format.ox".into(), INPUT.into());
+        sources
+    }
+
+    fn schedule(syntax: FormatSyntax) -> [(&'static str, usize, usize); 9] {
+        let (line_kind, file_kind) = match syntax {
+            FormatSyntax::Closed => ("line starts", "source files"),
+            _ => ("formatted source line starts", "formatted source files"),
+        };
+        [
+            ("lexer token tape", 4, size_of::<Token>()),
+            ("lexer token tape", 8, size_of::<Token>()),
+            ("formatter token roles", INPUT.len(), 1),
+            ("formatted source", OUTPUT.len(), 1),
+            (line_kind, 2, size_of::<usize>()),
+            (file_kind, 1, size_of::<SourceFile>()),
+            ("lexer token tape", 4, size_of::<Token>()),
+            ("lexer token tape", 8, size_of::<Token>()),
+            ("lexer token tape", 16, size_of::<Token>()),
+        ]
+    }
+
+    fn assert_prefix(
+        allocator: &Allocator,
+        syntax: FormatSyntax,
+        count: usize,
+        last_success: bool,
+    ) {
+        let expected = schedule(syntax);
+        assert_eq!(allocator.attempts, count);
+        assert_eq!(allocator.trace.len(), count);
+        assert!(!allocator.observer_trace_overflow);
+        for (index, (event, &(kind, length, width))) in
+            allocator.trace.iter().zip(&expected).enumerate()
+        {
+            assert_eq!(
+                (event.kind, event.length, event.element_bytes),
+                (kind, length, width)
+            );
+            assert_eq!(event.success, index + 1 != count || last_success);
+        }
+    }
+
+    fn assert_error(errors: &[Diagnostic], stage: &str, message: &str, primary: Option<Span>) {
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        let error = &errors[0];
+        assert_eq!(error.code, "E0400");
+        assert_eq!(error.stage, stage);
+        assert_eq!(error.message, message);
+        assert_eq!(error.primary, primary);
+        assert!(error.secondary.is_empty());
+        assert!(error.notes.is_empty());
+    }
+
+    #[test]
+    fn lexer_caller_formatter_all_policies_obey_independent_phase_schedule() {
+        for syntax in [
+            FormatSyntax::Closed,
+            FormatSyntax::Enabled,
+            FormatSyntax::EnumCandidate,
+        ] {
+            let sources = source();
+            let file = sources.get(SourceFileId(1));
+            let identity = file.identity();
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(9).unwrap();
+            let (result, metrics) =
+                format_with_syntax(file, &mut allocator, Limits::DEFAULT, syntax);
+            assert_eq!(result.unwrap(), OUTPUT);
+            assert_prefix(&allocator, syntax, 9, true);
+            assert_eq!(file.text(), INPUT);
+            assert_eq!(file.path(), "retained-format.ox");
+            assert_eq!(file.identity(), identity);
+            if syntax.candidate() {
+                assert_eq!(metrics.parse_calls, 2);
+                assert_eq!(metrics.first_token_heap, 8 * size_of::<Token>());
+                assert_eq!(metrics.second_token_heap, 16 * size_of::<Token>());
+                assert_eq!(metrics.roles_heap, INPUT.len());
+                assert_eq!(metrics.output_heap, OUTPUT.len());
+            }
+        }
+    }
+
+    #[test]
+    fn lexer_caller_formatter_first_parse_initial_and_eof_failure_keep_lex_origin() {
+        // Fixed predicted request ordinals, not learned from a successful trace.
+        for syntax in [
+            FormatSyntax::Closed,
+            FormatSyntax::Enabled,
+            FormatSyntax::EnumCandidate,
+        ] {
+            for (ordinal, start, end) in [(1, 0, 4), (2, 16, 16)] {
+                let sources = source();
+                let file = sources.get(SourceFileId(1));
+                let identity = file.identity();
+                let mut allocator = Allocator {
+                    fail_at: Some(ordinal),
+                    ..Allocator::default()
+                };
+                allocator.observer_trace_bound(9).unwrap();
+                let (result, metrics) =
+                    format_with_syntax(file, &mut allocator, Limits::DEFAULT, syntax);
+                assert_error(
+                    &result.unwrap_err(),
+                    "lex",
+                    "token storage allocation failed",
+                    Some(file.span(start, end)),
+                );
+                assert_prefix(&allocator, syntax, ordinal, false);
+                // No subsequent work/emit/source-owner request follows the lexer refusal.
+                assert!(allocator
+                    .trace
+                    .iter()
+                    .all(|event| event.kind == "lexer token tape"));
+                assert_eq!(metrics.first_ast_heap, 0);
+                assert_eq!(metrics.first_token_heap, 0);
+                assert_eq!(metrics.roles_heap, 0);
+                assert_eq!(metrics.output_heap, 0);
+                assert_eq!(metrics.source_owner_heap, 0);
+                assert_eq!(metrics.second_ast_heap, 0);
+                assert_eq!(metrics.second_token_heap, 0);
+                if syntax.candidate() {
+                    // Counts parse attempts, not proof of downstream parser entry.
+                    assert_eq!(metrics.parse_calls, 1);
+                }
+                assert_eq!(file.text(), INPUT);
+                assert_eq!(file.path(), "retained-format.ox");
+                assert_eq!(file.identity(), identity);
+            }
+        }
+    }
+
+    #[test]
+    fn lexer_caller_formatter_candidate_initial_growth_and_eof_failure_keep_adapter() {
+        // Source-owner requests finish at six; candidate requests are seven,
+        // eight (third comment at 10..14), and nine (EOF at 20..20).
+        for syntax in [
+            FormatSyntax::Closed,
+            FormatSyntax::Enabled,
+            FormatSyntax::EnumCandidate,
+        ] {
+            for ordinal in [7, 8, 9] {
+                let sources = source();
+                let file = sources.get(SourceFileId(1));
+                let identity = file.identity();
+                let mut allocator = Allocator {
+                    fail_at: Some(ordinal),
+                    ..Allocator::default()
+                };
+                allocator.observer_trace_bound(9).unwrap();
+                let (result, metrics) =
+                    format_with_syntax(file, &mut allocator, Limits::DEFAULT, syntax);
+                assert_error(
+                    &result.unwrap_err(),
+                    "format",
+                    "formatted source exceeds lexer or parser resource limits",
+                    None,
+                );
+                assert_prefix(&allocator, syntax, ordinal, false);
+                assert_eq!(metrics.second_ast_heap, 0);
+                assert_eq!(metrics.second_token_heap, 0);
+                if syntax.candidate() {
+                    // Earlier first parse and candidate construction remain accounted.
+                    assert_eq!(metrics.parse_calls, 2);
+                    assert_eq!(metrics.first_token_heap, 8 * size_of::<Token>());
+                    assert_eq!(metrics.roles_heap, INPUT.len());
+                    assert_eq!(metrics.output_heap, OUTPUT.len());
+                    assert_eq!(
+                        metrics.source_owner_heap,
+                        OUTPUT.len() + 2 * size_of::<usize>() + size_of::<SourceFile>()
+                    );
+                }
+                assert_eq!(file.text(), INPUT);
+                assert_eq!(file.path(), "retained-format.ox");
+                assert_eq!(file.identity(), identity);
+            }
+        }
+    }
+    // Append INSIDE format::lexer_reservation_caller_tests before its closing brace.
+    mod actual_null_callers {
+        use super::*;
+        use crate::frontend::project::budget::{real_null_observer as null, ReserveEvent};
+        use null::growth::{self, GrowthTarget};
+        use std::alloc::Layout;
+        use std::mem::{align_of, align_of_val, offset_of, size_of_val};
+
+        #[derive(Clone, Copy, Debug)]
+        struct Facts {
+            failed: bool,
+            diagnostic: bool,
+            metrics: bool,
+            source: bool,
+            trace: bool,
+        }
+        fn action(
+            source: &SourceFile,
+            syntax: FormatSyntax,
+            ordinal: usize,
+        ) -> impl for<'a> FnOnce(&'a mut Allocator) -> Facts + '_ {
+            move |allocator| {
+                let identity = source.identity();
+                let (result, metrics) =
+                    format_with_syntax(source, allocator, Limits::DEFAULT, syntax);
+                let first = ordinal <= 2;
+                let diagnostic = result.as_ref().err().is_some_and(|errors| {
+                    let Some(error) = errors.first() else {
+                        return false;
+                    };
+                    errors.len() == 1
+                        && error.code == "E0400"
+                        && error.secondary.is_empty()
+                        && error.notes.is_empty()
+                        && if first {
+                            error.stage == "lex"
+                                && error.message == "token storage allocation failed"
+                                && error.primary
+                                    == Some(if ordinal == 1 {
+                                        source.span(0, 4)
+                                    } else {
+                                        source.span(16, 16)
+                                    })
+                        } else {
+                            error.stage == "format"
+                                && error.message
+                                    == "formatted source exceeds lexer or parser resource limits"
+                                && error.primary.is_none()
+                        }
+                });
+                let expected = schedule(syntax);
+                let trace = allocator.attempts == ordinal
+                    && allocator.trace.len() == ordinal
+                    && !allocator.observer_trace_overflow
+                    && allocator.trace.iter().zip(&expected).enumerate().all(
+                        |(index, (event, &(kind, length, width)))| {
+                            (event.kind, event.length, event.element_bytes) == (kind, length, width)
+                                && event.success == (index + 1 != ordinal)
+                        },
+                    );
+                let metrics_ok = metrics.second_ast_heap == 0
+                    && metrics.second_token_heap == 0
+                    && if first {
+                        metrics.first_ast_heap == 0
+                            && metrics.first_token_heap == 0
+                            && metrics.roles_heap == 0
+                            && metrics.output_heap == 0
+                            && metrics.source_owner_heap == 0
+                            && (!syntax.candidate() || metrics.parse_calls == 1)
+                    } else {
+                        !syntax.candidate()
+                            || (metrics.parse_calls == 2
+                                && metrics.first_token_heap == 8 * size_of::<Token>()
+                                && metrics.roles_heap == INPUT.len()
+                                && metrics.output_heap == OUTPUT.len()
+                                && metrics.source_owner_heap
+                                    == OUTPUT.len()
+                                        + 2 * size_of::<usize>()
+                                        + size_of::<SourceFile>())
+                    };
+                let facts = Facts {
+                    failed: result.is_err(),
+                    diagnostic,
+                    metrics: metrics_ok,
+                    source: source.text() == INPUT
+                        && source.path() == "retained-format.ox"
+                        && source.identity() == identity,
+                    trace,
+                };
+                // Errors, formatter output/AST owners and the failed lexical tape
+                // are destroyed before these fixed primitive facts escape selection.
+                drop(result);
+                facts
+            }
+        }
+        fn target(attempt: usize, old: usize, new: usize) -> GrowthTarget {
+            GrowthTarget {
+                attempt,
+                kind: "lexer token tape",
+                old_len: old,
+                old_capacity: old,
+                additional: new - old,
+                new_slots: new,
+                element_bytes: size_of::<Token>(),
+                element_align: align_of::<Token>(),
+                old_layout: Layout::array::<Token>(old).unwrap(),
+                new_layout: Layout::array::<Token>(new).unwrap(),
+                operation: null::Operation::Realloc,
+            }
+        }
+        #[test]
+        fn lexer_caller_actual_null_formatter_all_policies_and_five_sites() {
+            for syntax in [
+                FormatSyntax::Closed,
+                FormatSyntax::Enabled,
+                FormatSyntax::EnumCandidate,
+            ] {
+                // Frozen independently: initial/EOF first parse, initial/third
+                // comment/EOF reparse. No successful trace feeds selection.
+                for (ordinal, old, new) in [(1, 0, 4), (2, 4, 8), (7, 0, 4), (8, 4, 8), (9, 8, 16)]
+                {
+                    let sources = source();
+                    let file = sources.get(SourceFileId(1));
+                    let mut allocator = Allocator::default();
+                    allocator.observer_trace_bound(9).unwrap();
+                    let capacity = allocator.trace.capacity();
+                    let action = action(file, syntax, ordinal);
+                    let facts = if old == 0 {
+                        let target = null::Target {
+                            attempt: ordinal,
+                            kind: "lexer token tape",
+                            slots: new,
+                            element_bytes: size_of::<Token>(),
+                            layout: Layout::array::<Token>(new).unwrap(),
+                        };
+                        let (facts, report) =
+                            null::with_selected(&mut allocator, target, action).unwrap();
+                        assert_eq!(report.target, target);
+                        assert!(report.selected && report.matched && report.fired);
+                        assert_eq!(report.rejection, None);
+                        assert_eq!(
+                            report.actual,
+                            Some(null::GlobalEvent {
+                                operation: null::Operation::Alloc,
+                                layout: target.layout,
+                                new_size: None
+                            })
+                        );
+                        facts
+                    } else {
+                        let target = target(ordinal, old, new);
+                        let (facts, report) =
+                            growth::with_selected_growth(&mut allocator, target, action).unwrap();
+                        assert_eq!(report.target, target);
+                        assert!(report.selected && report.matched && report.fired);
+                        assert_eq!(report.rejection, None);
+                        assert_eq!(
+                            report.actual,
+                            Some(growth::GrowthEvent {
+                                operation: null::Operation::Realloc,
+                                layout: target.old_layout,
+                                new_size: Some(target.new_layout.size()),
+                                old_address_matches: true
+                            })
+                        );
+                        assert_eq!(report.reserve_failed, Some(true));
+                        assert!(
+                            report.owner_unchanged
+                                && report.address_unchanged
+                                && report.length_unchanged
+                                && report.capacity_unchanged
+                        );
+                        assert_eq!(report.drop_count, 1);
+                        assert_eq!(
+                            report.drop_event,
+                            Some(growth::GrowthDropEvent {
+                                layout: target.old_layout,
+                                old_address_matches: true,
+                                after_reserve_return: true
+                            })
+                        );
+                        assert!(report.trace_preserved);
+                        facts
+                    };
+                    assert!(
+                        facts.failed
+                            && facts.diagnostic
+                            && facts.metrics
+                            && facts.source
+                            && facts.trace,
+                        "{facts:?}"
+                    );
+                    assert_eq!(allocator.trace.capacity(), capacity);
+                    assert_eq!(allocator.attempts, ordinal);
+                    assert_eq!(allocator.trace.len(), ordinal);
+                }
+            }
+        }
+        #[allow(dead_code)]
+        struct FormatCarriers<'a> {
+            sources: SourceMap,
+            source: &'a SourceFile,
+            allocator: Allocator,
+            syntax: FormatSyntax,
+            ordinal: usize,
+            source_identity: u64,
+            callee: (Result<String, Vec<Diagnostic>>, EnumFormatMetrics),
+            result: Result<String, Vec<Diagnostic>>,
+            metrics: EnumFormatMetrics,
+            diagnostic_borrow: &'a [Diagnostic],
+            expected: [(&'static str, usize, usize); 9],
+            first: bool,
+            diagnostic: bool,
+            trace: bool,
+            metrics_ok: bool,
+            facts: Facts,
+            trace_capacity: usize,
+            trace_requested: usize,
+            trace_retained: usize,
+        }
+        #[test]
+        fn lexer_caller_formatter_null_layout_measurement_only() {
+            // Same actual closure/output type; no action invocation or selection.
+            let sources = source();
+            let file = sources.get(SourceFileId(1));
+            let action = action(file, FormatSyntax::EnumCandidate, 9);
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(9).unwrap();
+            println!("caller-null-bank formatter carriers={} align={} closure={} facts={} fresh-selection={} growth-selection={} trace-requested={} trace-retained={} retained-input-heap={} metrics={} observer-fixed={}",
+            size_of::<FormatCarriers<'_>>(), align_of::<FormatCarriers<'_>>(), size_of_val(&action), size_of::<Facts>(),
+            null::selection_carriers_bytes(&action), growth::selection_carriers_bytes(&action),
+            9 * size_of::<ReserveEvent>(), allocator.trace.capacity() * size_of::<ReserveEvent>(),
+            sources.heap_capacity_bytes().unwrap(),
+            size_of::<EnumFormatMetrics>(), growth::fixed_carriers_bytes::<Token>());
+            macro_rules! fields {
+            ($ty:ty; $($field:ident),+ $(,)?) => {
+                $(println!("caller-null-offset {}.{}={}", stringify!($ty), stringify!($field), offset_of!($ty, $field));)+
+            };
+        }
+            fields!(FormatCarriers<'_>; sources, source, allocator, syntax, ordinal, source_identity,
+            callee, result, metrics, diagnostic_borrow, expected, first, diagnostic, trace, metrics_ok,
+            facts, trace_capacity, trace_requested, trace_retained);
+            fields!(Facts; failed, diagnostic, metrics, source, trace);
+            let fresh = null::selection_carriers_bytes(&action);
+            let growth = growth::selection_carriers_bytes(&action);
+            let exclusive = size_of::<FormatCarriers<'_>>()
+                .checked_add(fresh.max(growth))
+                .and_then(|v| v.checked_add(growth::fixed_carriers_bytes::<Token>()))
+                .and_then(|v| v.checked_add(lexer::reservation_scratch_bytes()))
+                .and_then(|v| v.checked_add(lexer::reservation_observer_bytes()))
+                .unwrap();
+            println!("caller-null-sum formatter exclusive-controller={} conservative-both-transports={} closure-align={} facts-align={}",
+            exclusive, exclusive.checked_add(fresh.min(growth)).unwrap(), align_of_val(&action), align_of::<Facts>());
+            assert_eq!(allocator.attempts, 0);
+            assert!(allocator.trace.is_empty());
+        }
+    }
 }

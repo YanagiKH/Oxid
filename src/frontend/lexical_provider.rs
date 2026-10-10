@@ -96,6 +96,181 @@ pub(super) struct Provider {
     fixture: Option<fn(&SourceFile, usize) -> Vec<u8>>,
 }
 
+// Closed, read-only test bridge for actual SourceSetBuilder qualification. The
+// fixture still enters Provider::capture's existing test-only capture route;
+// this does not emulate a successful external process.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(super) enum ReservationFixture {
+    Tokens,
+    UnterminatedComment,
+}
+#[cfg(test)]
+impl ReservationFixture {
+    pub(super) fn source(self) -> &'static str {
+        match self {
+            Self::Tokens => "fn main()->(){return;}",
+            Self::UnterminatedComment => ";/*",
+        }
+    }
+    pub(super) fn input_bytes(self) -> usize {
+        match self {
+            Self::Tokens => 34,
+            Self::UnterminatedComment => 15,
+        }
+    }
+    pub(super) fn stdout_bytes(self) -> usize {
+        match self {
+            Self::Tokens => 249,
+            Self::UnterminatedComment => 250,
+        }
+    }
+    pub(super) fn source_sha256(self) -> [u8; 32] {
+        match self {
+            Self::Tokens => [
+                0xdb, 0x2c, 0xe8, 0x03, 0xda, 0xb6, 0x5e, 0xb3, 0x09, 0xc7, 0x84, 0x87, 0x88, 0xbe,
+                0x42, 0x2a, 0x3e, 0x60, 0xd0, 0x3e, 0x84, 0xfd, 0x45, 0xb9, 0x0f, 0xb1, 0x80, 0x2f,
+                0xb8, 0xa1, 0xd4, 0x74,
+            ],
+            Self::UnterminatedComment => [
+                0x06, 0x68, 0x5a, 0x47, 0xc7, 0x8e, 0x4c, 0x22, 0x2d, 0x13, 0xb2, 0x4d, 0x5f, 0x68,
+                0x20, 0xf9, 0xbc, 0x2d, 0x1f, 0x28, 0xfa, 0xc1, 0x11, 0x25, 0xa2, 0x56, 0x08, 0x50,
+                0xb5, 0x40, 0xd3, 0x81,
+            ],
+        }
+    }
+    pub(super) fn input_sha256(self) -> [u8; 32] {
+        match self {
+            Self::Tokens => [
+                0xa6, 0x4f, 0x1a, 0x29, 0x71, 0xff, 0xe9, 0xa4, 0xfa, 0x8a, 0x92, 0xb0, 0x0d, 0x6a,
+                0xcd, 0x2f, 0xcc, 0xdd, 0x35, 0x8b, 0x07, 0x76, 0x58, 0x69, 0x08, 0xbe, 0x1e, 0x49,
+                0xdd, 0xdf, 0xab, 0x9b,
+            ],
+            Self::UnterminatedComment => [
+                0x01, 0xda, 0x7a, 0xd9, 0xa3, 0x27, 0x8e, 0x4f, 0x32, 0x9f, 0xe4, 0x73, 0x1d, 0x0b,
+                0x1d, 0x4c, 0xd7, 0xdc, 0xa6, 0xab, 0xb8, 0x9f, 0x7f, 0xc9, 0x9e, 0xd0, 0xdb, 0x5b,
+                0xd8, 0x4b, 0x62, 0x48,
+            ],
+        }
+    }
+    pub(super) fn stdout_sha256(self) -> [u8; 32] {
+        match self {
+            Self::Tokens => [
+                0xfc, 0x05, 0x91, 0x55, 0xad, 0xb4, 0xd1, 0x8f, 0x24, 0xb9, 0x59, 0x45, 0x92, 0x66,
+                0xb1, 0x34, 0x86, 0x91, 0x45, 0x1e, 0x97, 0x21, 0x78, 0xcd, 0x0e, 0x8d, 0x4d, 0x1a,
+                0x2d, 0xb6, 0x8a, 0x28,
+            ],
+            Self::UnterminatedComment => [
+                0x7e, 0x7e, 0x17, 0x0b, 0xf9, 0x41, 0xe9, 0x3a, 0x20, 0x7d, 0xc0, 0x5c, 0xab, 0xad,
+                0x78, 0x86, 0x8b, 0x47, 0xc0, 0xdf, 0x9c, 0xc1, 0x67, 0x7c, 0x1a, 0x90, 0xc9, 0xae,
+                0x1f, 0x6f, 0xc5, 0xe4,
+            ],
+        }
+    }
+}
+
+/// All receipt facts except the existing test pointer. No owned storage,
+/// allocation address, mutable reference or receipt borrow escapes this bridge.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ReservationReceipt {
+    pub file: SourceFileId,
+    pub identity: u64,
+    pub source_len: usize,
+    pub source_sha256: [u8; 32],
+    pub executable_sha256: [u8; 32],
+    pub input_sha256: [u8; 32],
+    pub stdout_sha256: [u8; 32],
+    pub stderr_sha256: [u8; 32],
+    pub input_bytes: usize,
+    pub input_written: usize,
+    pub stdout_bytes: usize,
+    pub stderr_bytes: usize,
+    pub status: Option<i32>,
+    pub signal: Option<i32>,
+    pub stop: &'static str,
+    pub spawned: bool,
+    pub leader_reaped: bool,
+    pub stdin_closed: bool,
+    pub stdout_eof: bool,
+    pub stderr_eof: bool,
+    pub comparison_attempted: bool,
+    pub comparison_matched: bool,
+    pub selected_for_parser: bool,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ReservationLayout {
+    pub provider: usize,
+    pub provider_align: usize,
+    pub receipt: usize,
+    pub receipt_align: usize,
+    pub budget: usize,
+    pub plan: usize,
+    pub wire_bank: usize,
+    pub provider_scratch: usize,
+    pub receipts_requested: usize,
+    pub receipts_retained: usize,
+}
+
+#[cfg(test)]
+impl Provider {
+    pub(super) fn reservation_fixture(fixture: ReservationFixture) -> Self {
+        tests::fixture(match fixture {
+            ReservationFixture::Tokens => tests::frozen_reservation_tokens,
+            ReservationFixture::UnterminatedComment => tests::frozen_reservation_diagnostic,
+        })
+    }
+    pub(super) fn reservation_receipt_count(&self) -> usize {
+        self.receipts.len()
+    }
+    pub(super) fn reservation_receipt(&self) -> Option<ReservationReceipt> {
+        self.receipts.last().map(|r| ReservationReceipt {
+            file: r.file,
+            identity: r.identity,
+            source_len: r.source_len,
+            source_sha256: r.source_sha256,
+            executable_sha256: r.executable_sha256,
+            input_sha256: r.input_sha256,
+            stdout_sha256: r.stdout_sha256,
+            stderr_sha256: r.stderr_sha256,
+            input_bytes: r.input_bytes,
+            input_written: r.input_written,
+            stdout_bytes: r.stdout_bytes,
+            stderr_bytes: r.stderr_bytes,
+            status: r.status,
+            signal: r.signal,
+            stop: r.stop,
+            spawned: r.spawned,
+            leader_reaped: r.leader_reaped,
+            stdin_closed: r.stdin_closed,
+            stdout_eof: r.stdout_eof,
+            stderr_eof: r.stderr_eof,
+            comparison_attempted: r.comparison_attempted,
+            comparison_matched: r.comparison_matched,
+            selected_for_parser: r.selected_for_parser,
+        })
+    }
+    pub(super) fn reservation_scratch_bytes() -> usize {
+        fixed_bytes()
+    }
+    pub(super) fn reservation_layout(&self) -> ReservationLayout {
+        ReservationLayout {
+            provider: size_of::<Self>(),
+            provider_align: std::mem::align_of::<Self>(),
+            receipt: size_of::<Receipt>(),
+            receipt_align: std::mem::align_of::<Receipt>(),
+            budget: size_of::<Budget>(),
+            plan: size_of::<Plan>(),
+            wire_bank: wire::named_bytes(),
+            provider_scratch: fixed_bytes(),
+            receipts_requested: RECEIPTS * size_of::<Receipt>(),
+            receipts_retained: self.receipts.capacity() * size_of::<Receipt>(),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Budget {
     limits: IndexLimits,
@@ -174,9 +349,9 @@ impl Budget {
         let n = source.text().len();
         let output = wire::output_bound(n, limit)?;
         let token_slots = n.min(limit) + 1;
-        // The existing infallible canonical Vec starts at four slots and doubles.
-        // Charge its full next-power-of-two capacity AND the old allocation that
-        // may coexist during growth. This does not make old lexing fallible.
+        // Preserve requested canonical backing prepayment: power-of-two targets
+        // start at four, with requested old+new payload during growth. Actual
+        // allocator over-return is observed separately, not universally bounded.
         let canonical_capacity = token_slots
             .max(4)
             .checked_next_power_of_two()
@@ -252,6 +427,8 @@ impl Budget {
 }
 fn fixed_bytes() -> usize {
     wire::named_bytes()
+        + super::lexer::reservation_scratch_bytes()
+        + super::project::lexical_comparison_scratch_bytes()
         + 3 * size_of::<LexicalObservation>()
         + 3 * size_of::<Receipt>()
         + 3 * size_of::<Budget>()

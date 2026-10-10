@@ -44,14 +44,62 @@ class StdinParserResourceTests(unittest.TestCase):
                 binding.adapt_stdin_parser_resource(changed, reverse=True)
 
     def test_resource_seam_and_output_changes_reject(self):
-        with patch.object(binding, "STDIN_RESOURCE_SEAM", binding.STDIN_RESOURCE_SEAM + b" "):
-            with self.assertRaisesRegex(binding.BindingError, "substitution identity differs"):
-                binding.adapt_stdin_parser_resource(self.predecessor)
-        changed = copy.deepcopy(binding.STDIN_RESOURCE_ADAPTER)
-        changed["derived"]["sha256"] = "0" * 64
-        with patch.object(binding, "STDIN_RESOURCE_ADAPTER", changed):
-            with self.assertRaisesRegex(binding.BindingError, "wrong stdin parser resource output"):
-                binding.adapt_stdin_parser_resource(self.predecessor)
+        historical_path = PACKAGE.parent / "typed_project_source_binding_byte_storage_v1" / "run.py"
+        self.assertEqual(binding.digest(historical_path.read_bytes()),
+                         "584e8ee937cb2d3ef62d59d3eb69a79bfb6afce23df86de3df305f81afae7c76")
+        spec = importlib.util.spec_from_file_location("stdin_historical_source_binding", historical_path)
+        historical = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(historical)
+        historical_owner = historical.adapt_stdin_parser_resource.__globals__
+        active_owner = binding.adapt_stdin_parser_resource.__globals__
+        self.assertIs(historical_owner, vars(historical))
+        self.assertIs(active_owner, vars(binding._runtime))
+        self.assertIsNot(active_owner, vars(binding))
+        self.assertIsNot(active_owner, historical_owner)
+        self.assertEqual(active_owner["__name__"], "lexer_reservation_retained_execution")
+        self.assertEqual(binding.adapt_stdin_parser_resource.__code__,
+                         historical.adapt_stdin_parser_resource.__code__)
+        self.assertEqual(binding.STDIN_RESOURCE_ADAPTER, historical.STDIN_RESOURCE_ADAPTER)
+        self.assertEqual(binding.STDIN_RESOURCE_SEAM, historical.STDIN_RESOURCE_SEAM)
+        self.assertIsNot(binding.BindingError, historical.BindingError)
+
+        for label, api in (("immutable-historical", historical), ("active-facade", binding)):
+            with self.subTest(owner=label):
+                adapter = api.adapt_stdin_parser_resource
+                owner = adapter.__globals__
+                self.assertIs(owner["adapt_stdin_parser_resource"], adapter)
+                self.assertIs(owner["BindingError"], api.BindingError)
+                self.assertIs(owner["STDIN_RESOURCE_ADAPTER"], api.STDIN_RESOURCE_ADAPTER)
+                original_seam = owner["STDIN_RESOURCE_SEAM"]
+                original_authority = owner["STDIN_RESOURCE_ADAPTER"]
+                self.assertEqual(api.entry(api.RESOURCE, self.predecessor),
+                                 original_authority["predecessor"])
+                baseline = api.adapt_stdin_parser_resource(self.predecessor)
+                self.assertEqual(api.entry(api.RESOURCE, baseline), original_authority["derived"])
+                self.assertEqual(api.adapt_stdin_parser_resource(baseline, reverse=True), self.predecessor)
+
+                changed_seam = original_seam + b" "
+                with patch.dict(owner, {"STDIN_RESOURCE_SEAM": changed_seam}):
+                    self.assertIs(adapter.__globals__["STDIN_RESOURCE_SEAM"], changed_seam)
+                    self.assertIs(api.adapt_stdin_parser_resource, adapter)
+                    self.assertNotEqual(api.digest(owner["STDIN_RESOURCE_SEAM"]),
+                                        original_authority["substitution"]["new_sha256"])
+                    with self.assertRaisesRegex(api.BindingError, "substitution identity differs"):
+                        api.adapt_stdin_parser_resource(self.predecessor)
+                self.assertIs(owner["STDIN_RESOURCE_SEAM"], original_seam)
+
+                changed = copy.deepcopy(original_authority)
+                changed["derived"]["sha256"] = "0" * 64
+                with patch.dict(owner, {"STDIN_RESOURCE_ADAPTER": changed}):
+                    self.assertIs(adapter.__globals__["STDIN_RESOURCE_ADAPTER"], changed)
+                    self.assertIs(api.adapt_stdin_parser_resource, adapter)
+                    self.assertEqual(changed["predecessor"], original_authority["predecessor"])
+                    self.assertEqual(changed["substitution"], original_authority["substitution"])
+                    self.assertNotEqual(api.entry(api.RESOURCE, baseline), changed["derived"])
+                    with self.assertRaisesRegex(api.BindingError, "wrong stdin parser resource output"):
+                        api.adapt_stdin_parser_resource(self.predecessor)
+                self.assertIs(owner["STDIN_RESOURCE_ADAPTER"], original_authority)
+                self.assertEqual(api.adapt_stdin_parser_resource(self.predecessor), baseline)
 
 
 if __name__ == "__main__":

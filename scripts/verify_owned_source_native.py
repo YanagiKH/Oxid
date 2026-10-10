@@ -29,6 +29,7 @@ import tempfile
 import time
 
 import verify_owned_source as harness
+import verify_bounded_enum_native as current_source
 
 
 PROFILES = ('debug', 'release')
@@ -189,7 +190,7 @@ def built_test_binary(path):
     return candidates[0].resolve()
 
 
-def source_inventory(repo):
+def source_inventory(repo, reviewed=None):
     paths = [repo / name for name in ('Cargo.toml', 'Cargo.lock', 'build.rs')]
     def scan_root(name):
         directory = repo
@@ -208,6 +209,15 @@ def source_inventory(repo):
             if path.is_file():
                 paths.append(path)
     paths.extend(path for path in scan_root('scripts').glob('*owned*.py'))
+    if reviewed is not None:
+        # Production calls admit the pinned complete current manifest first.
+        # Retain all compile-time fixtures, including those outside the legacy
+        # owned-source fixture roots; the unchanged replay inventory stays separate.
+        paths.extend(scan_root(row['path']) for row in reviewed['files'])
+        current_source.reviewed_input_identities(repo, reviewed)
+        paths.extend(repo / name for name in (
+            'tests/fixtures/typed_project_source_binding/current-source.json',
+            'scripts/verify_bounded_enum_native.py'))
     paths = sorted(set(paths))
     if any(path.is_symlink() for path in paths):
         raise ValueError('source snapshots require regular input files')
@@ -339,7 +349,9 @@ def run_qualification(args, evidence):
     frozen = evidence / 'frozen'
     frozen_hashes = {path.name: digest(path) for path in frozen.iterdir()}
     snapshot = fresh_directory(evidence / 'snapshot')
-    sources = source_inventory(repo)
+    reviewed = current_source.read_reviewed_manifest(
+        repo / 'tests/fixtures/typed_project_source_binding/current-source.json')
+    sources = source_inventory(repo, reviewed)
     for name in sources:
         destination = snapshot / 'inputs' / name
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -350,7 +362,7 @@ def run_qualification(args, evidence):
     snapshot_identities = {'source-manifest.json': digest(snapshot / 'source-manifest.json')}
     tools, compilers = {}, []
     def check():
-        if source_inventory(repo) != sources:
+        if source_inventory(repo, reviewed) != sources:
             raise ValueError('source inventory changed after snapshot')
         verify_hashes(snapshot / 'inputs', sources)
         verify_hashes(snapshot, snapshot_identities)

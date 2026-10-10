@@ -1,0 +1,85 @@
+{
+  "adapter": {
+    "bytes": 54473,
+    "path": "tests/qualification/unit4_parser_current/lexer_phase.py",
+    "sha256": "1067d223defa8de2a6b0faa71910d9acc97d635491022216e5d59fd48c62ed0e"
+  },
+  "predecessor_authority": {
+    "bytes": 520103,
+    "path": "tests/qualification/unit4_parser_current/lexer-reservation-authority-v2.json",
+    "sha256": "917431fe269d807c76b2f16ae7fef7f4e6c70aa301f9823f65de4fe039b94baf"
+  },
+  "roles": [
+    {
+      "derived_map_sha256": "c5ace1521f0c4fb4c241ed7604a38a4dcee4767fbf9bf96087e154bebb144b3b",
+      "members": [
+        {
+          "after": {
+            "bytes": 9445,
+            "path": "src/frontend/project/budget.rs",
+            "sha256": "350f1f9385bd025a9864064b2ea3ee7b40494264eae76e6d4799b3e28d254549"
+          },
+          "before": {
+            "bytes": 9432,
+            "path": "src/frontend/project/budget.rs",
+            "sha256": "81fd8a3f2d2f9dbcd6966aeb8ad977f4129f7e785b164eebf63d63589bf416fd"
+          },
+          "operation": "reserve_dispatch_v1",
+          "path": "src/frontend/project/budget.rs"
+        },
+        {
+          "after": {
+            "bytes": 35607,
+            "path": "src/frontend/lexer.rs",
+            "sha256": "98abcfe678b552b3ac28ea73f294159c804429cee7e2364590777e35a8a1c379"
+          },
+          "before": {
+            "bytes": 35594,
+            "path": "src/frontend/lexer.rs",
+            "sha256": "c3a56f40587fa40ceed56a15e27861039673a98eab8b9d3e3a471a3ab26a518c"
+          },
+          "operation": "token_forward_v1",
+          "path": "src/frontend/lexer.rs"
+        },
+        {
+          "after": {
+            "bytes": 57874,
+            "path": "src/frontend/parser/unit4_observer.rs",
+            "sha256": "f25f6765ec2c27db56ad69e82db783e14ad9169abd7a597b89ef61d11a43e759"
+          },
+          "before": {
+            "bytes": 20052,
+            "path": "src/frontend/parser/unit4_observer.rs",
+            "sha256": "8b7efa8484d9636dda5329a4708fa762d09c53bd76b42c485b871973410c7928"
+          },
+          "operation": "observer_phase_v1",
+          "path": "src/frontend/parser/unit4_observer.rs"
+        }
+      ],
+      "predecessor_map_sha256": "fd82a51bd318cdbfe840cb08a745a2e61f6b31a6e51142fc14dfa9556b06171c",
+      "role": "observed"
+    },
+    {
+      "derived_map_sha256": "1a5714a4844e0e486ba5d6793456c633f731a45cd51e546cd47496e4b05ad131",
+      "members": [
+        {
+          "after": {
+            "bytes": 57873,
+            "path": "src/frontend/parser/unit4_observer.rs",
+            "sha256": "55583d8c47cd22eb408cc015a3ec8b342fbdec7746915b2a876a1ca1c726f07e"
+          },
+          "before": {
+            "bytes": 20052,
+            "path": "src/frontend/parser/unit4_observer.rs",
+            "sha256": "8b7efa8484d9636dda5329a4708fa762d09c53bd76b42c485b871973410c7928"
+          },
+          "operation": "observer_phase_v1",
+          "path": "src/frontend/parser/unit4_observer.rs"
+        }
+      ],
+      "predecessor_map_sha256": "401c1e9a3ee6a963cb229cfc3965228d7004ca1768b78f0e2d9b0eadb6994201",
+      "role": "not_observed"
+    }
+  ],
+  "schema": "oxid-unit4-lexer-phase-composition-v1"
+}
