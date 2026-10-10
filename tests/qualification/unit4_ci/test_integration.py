@@ -357,6 +357,24 @@ class ProvenanceOrderingControls(unittest.TestCase):
             self.assertEqual([p.relative_to(root).as_posix() for p in q.relative_path_order(members, root)],
                              ['tests/qualification/unit4_ci/' + name for name in sorted(names)])
 
+    def test_phase_sidecar_basename_is_exact_for_both_host_path_flavors(self):
+        # Native metadata paths only; canonical phase wire admission is unchanged.
+        relatives = ['collect-debug/result/case-000/lexer-phase.json',
+                     'passivity-release/result/case-001/lexer-phase.json',
+                     'u8-policy-controls/debug/control-09/lexer-phase.json',
+                     'lexer-phase/collection-debug.json', 'lexer-phase-controls/probe-index.json',
+                     'collect-debug/result/case-000/not-lexer-phase.json',
+                     'collect-debug/result/case-000/lexer-phase.json.extra',
+                     'collect-debug/result/case-000/LEXER-PHASE.JSON',
+                     'collect-debug/result/case-000/lexer-phase.json/receipt.json']
+        expected = [True, True, True, False, False, False, False, False, False]
+        for root in (PurePosixPath('/parser'), PureWindowsPath('C:/parser')):
+            with self.subTest(path_flavor=type(root).__name__):
+                names = [str(root / relative) for relative in relatives]
+                rows = [{'path': name} for name in names]
+                self.assertEqual([type(root)(name).name == 'lexer-phase.json' for name in names], expected)
+                self.assertEqual([type(root)(row['path']).name == 'lexer-phase.json' for row in rows], expected)
+
     def test_producer_order_preserves_exact_case_and_duplicate_members(self):
         for root in (PurePosixPath('/repo'), PureWindowsPath('C:/repo')):
             members = [root / name for name in ('a.py', 'A.py', 'a.py', 'B.py')]
@@ -1804,12 +1822,12 @@ class ComparisonSealControls(unittest.TestCase):
             return reader.raw(record)
         report = verify_parser_seal(self.seal, resolve)
         root = self.root / 'parser'
-        self.assertEqual(sum(name.endswith('/lexer-phase.json') for name in seen), 524)
+        self.assertEqual(sum(Path(name).name == 'lexer-phase.json' for name in seen), 524)
         self.assertEqual(sum(Path(name).parent == root / 'lexer-phase' for name in seen), 6)
         self.assertEqual(sum(Path(name).is_relative_to(root / 'lexer-phase-controls') for name in seen), 217)
         self.assertEqual(report['full_archive_only'], 1086)
         for row in self.seal['before']:
-            if row['path'].endswith('/lexer-phase.json') or Path(row['path']).is_relative_to(root / 'lexer-phase') or Path(row['path']).is_relative_to(root / 'lexer-phase-controls'):
+            if Path(row['path']).name == 'lexer-phase.json' or Path(row['path']).is_relative_to(root / 'lexer-phase') or Path(row['path']).is_relative_to(root / 'lexer-phase-controls'):
                 self.assertFalse(parser_full_only(row, root))
         envelopes = [q.loads(self.data[str(root / 'lexer-phase' / (scope + '-' + profile + '.json'))])
                      for scope in ('collection', 'passivity', 'u8_controls') for profile in q.PROFILES]
