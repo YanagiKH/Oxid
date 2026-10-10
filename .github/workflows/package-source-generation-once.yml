@@ -1,0 +1,50 @@
+name: Package source candidate one approved job v2
+on:
+  push:
+    branches: ['KH/package-source-generation-once-v2']
+permissions:
+  contents: read
+jobs:
+  package-source-generation-once:
+    if: >-
+      github.repository == 'YanagiKH/Oxid' &&
+      github.ref == 'refs/heads/KH/package-source-generation-once-v2' &&
+      github.event.created == true &&
+      github.event.before == '0000000000000000000000000000000000000000' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scoped temporary profile then isolated capability and conditional candidates
+        env:
+          REVIEWED_WORKFLOW_HEAD: ${{ github.sha }}
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/generate_hosted_once.py
+          --repository "$GITHUB_WORKSPACE"
+          --output "$RUNNER_TEMP/oxid-package-source-once-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          --expected-head "$REVIEWED_WORKFLOW_HEAD"
+      - name: Independently verify or finish owned profile cleanup
+        if: always()
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/generate_hosted_once.py
+          --cleanup "$RUNNER_TEMP/oxid-package-source-once-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Stage only closed public evidence and candidate outputs
+        if: always()
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/generate_hosted_once.py
+          --stage "$RUNNER_TEMP/oxid-package-source-once-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          --upload "$RUNNER_TEMP/oxid-package-source-once-upload-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: package-source-candidate-once-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/oxid-package-source-once-upload-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: false
+          overwrite: false
