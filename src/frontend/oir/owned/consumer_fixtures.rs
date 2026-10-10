@@ -263,6 +263,29 @@ pub(super) fn owned_relay() -> (SourceMap, RawOwnedProgram, Schedule) {
         },
     )
 }
+/// Fixed F=6, E=5, B=11 star. The four non-entry callers are analyzed but
+/// never executed by the published relay schedule; no allocator-dependent sizing.
+pub(super) fn fixed_owned_relay_star() -> (SourceMap, RawOwnedProgram, Schedule) {
+    let (sources, mut raw, schedule) = owned_relay();
+    let mut leaf = raw.functions.pop().expect("owned_relay leaf");
+    let caller = raw.functions.pop().expect("owned_relay caller");
+    assert!(raw.functions.is_empty());
+    let file = caller.span.file;
+    let s = |i: usize| Span { file, start: i * 2, end: i * 2 + 1 };
+    // Fixed origins: entry keeps s(0); unused callers use s(41)..s(44).
+    for (id, span) in [(0, caller.span), (1, s(41)), (2, s(42)),
+        (3, s(43)), (4, s(44))] {
+        let mut copy = caller.clone();
+        copy.id = hir::DefId(id);
+        copy.span = span;
+        copy.calls[0].target = hir::DefId(5);
+        raw.functions.push(copy);
+    }
+    leaf.id = hir::DefId(5);
+    raw.functions.push(leaf);
+    (sources, raw, schedule)
+}
+
 pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
     let (sources, s) = context();
     let field = FieldId {

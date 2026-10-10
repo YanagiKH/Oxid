@@ -172,6 +172,132 @@ impl VerifiedOwnedProgram {
         bytes.checked_add(self.declarations.observer_capacity_bytes()?)
     }
 
+    /// Closed to the fixed five-caller star: F=6, E=5, B=11.
+    /// Counts actual retained raw/declaration Vec payload capacities, even empty
+    /// vectors. No source-map, stack, allocator overhead or logical-size estimate.
+    /// Unknown nested payload shapes fail closed before any total can escape.
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(super) fn observer_fixed_owned_relay_star_capacity_bytes(&self) -> Option<usize> {
+        fn payload<T>(values: &Vec<T>) -> Option<usize> {
+            values.capacity().checked_mul(std::mem::size_of::<T>())
+        }
+        let raw = &self.program;
+        if raw.builtins != BuiltinOrigins::None || !raw.enums.is_empty()
+            || raw.records.len() != 1 || raw.functions.len() != 6 {
+            return None;
+        }
+        let record = &raw.records[0];
+        let field = FieldId { record: RecordId(0), index: 0 };
+        if record.id != RecordId(0) || record.fields.len() != 1
+            || record.fields[0].id != field
+            || record.fields[0].ty != ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32)) {
+            return None;
+        }
+        let callee = &raw.functions[5];
+        if callee.id != hir::DefId(5) || callee.entry != BlockId(0)
+            || callee.result != ValueTy::Owned(AggregateTy::Record(RecordId(0)))
+            || callee.parameters.len() != 1
+            || !matches!(callee.parameters[0], ParameterBinding::Owned(OwnerPlaceId(0)))
+            || !callee.locals.is_empty() || callee.owners.len() != 1
+            || !callee.calls.is_empty() || callee.blocks.len() != 1
+            || callee.owners[0].kind != (OwnerKind::Parameter { position: 0 }) {
+            return None;
+        }
+        let returned = &callee.blocks[0];
+        if !returned.statements.is_empty()
+            || !matches!(&returned.terminator.as_ref()?.kind,
+                OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(0))) {
+            return None;
+        }
+        for f in &raw.functions {
+            // Empty outer vectors exclude all nested loan projections/match arms.
+            if !f.places.is_empty() || !f.references.is_empty()
+                || !f.loans.is_empty() || !f.matches.is_empty() {
+                return None;
+            }
+            if f.owners.iter().any(|owner| owner.aggregate() != AggregateTy::Record(RecordId(0))) {
+                return None;
+            }
+            for block in &f.blocks {
+                if block.merge.is_some()
+                    || block.terminator.as_ref()?.diagnostic_origins.is_some()
+                    || block.statements.iter().any(|s| s.diagnostic_origins.is_some()) {
+                    return None;
+                }
+            }
+        }
+        let mut bytes = 0usize;
+        for part in [payload(&raw.enums)?, payload(&raw.records)?, payload(&raw.functions)?,
+            payload(&record.fields)?] {
+            bytes = bytes.checked_add(part)?;
+        }
+        for (id, caller) in raw.functions[..5].iter().enumerate() {
+            if caller.id != hir::DefId(id) || caller.entry != BlockId(0)
+                || caller.result != ValueTy::Scalar(hir::Ty::I32)
+                || !caller.parameters.is_empty() || caller.locals.len() != 2
+                || caller.owners.len() != 3 || caller.calls.len() != 1
+                || caller.blocks.len() != 2 {
+                return None;
+            }
+            if caller.locals.iter().any(|local| local.ty != hir::Ty::I32 || local.kind != LocalKind::Temporary)
+                || caller.owners[0].kind != (OwnerKind::Local { mutable: false })
+                || caller.owners[1].kind != (OwnerKind::StagedArgument { call: CallSiteId(0), argument: 0 })
+                || caller.owners[2].kind != (OwnerKind::CallResult { call: CallSiteId(0) }) {
+                return None;
+            }
+            let call = &caller.calls[0];
+            if call.target != hir::DefId(5) || call.parent.is_some()
+                || call.arguments.as_slice() != [ArgumentSlot::Owned(OwnerPlaceId(1))]
+                || call.result != CallResult::Owned(OwnerPlaceId(2)) {
+                return None;
+            }
+            let first = &caller.blocks[0];
+            let second = &caller.blocks[1];
+            if first.statements.len() != 5 || second.statements.len() != 4
+                || !matches!(&first.terminator.as_ref()?.kind,
+                    OwnedTerminatorKind::Invoke { call: CallSiteId(0), continuation: BlockId(1) })
+                || !matches!(&second.terminator.as_ref()?.kind,
+                    OwnedTerminatorKind::ReturnScalar(Operand { local: LocalId(1), .. })) {
+                return None;
+            }
+            // Positional allowlist excludes every other instruction, including all
+            // unhandled nested Vec variants (arrays, composites, and projections).
+            if !matches!(&first.statements[0].kind,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        destination: LocalId(0), value: Rvalue::I32(73), .. })))
+                || !matches!(&first.statements[1].kind, OwnedInstruction::StorageLive(OwnerPlaceId(0)))
+                || !matches!(&first.statements[3].kind, OwnedInstruction::OpenCall(CallSiteId(0)))
+                || !matches!(&first.statements[4].kind, OwnedInstruction::PrepareOwned {
+                    call: CallSiteId(0), argument: 0, source: OwnerPlaceId(0) })
+                || !matches!(&second.statements[0].kind, OwnedInstruction::ReadField {
+                    destination: LocalId(1), base: AccessBase::Owner(OwnerPlaceId(2)), field: f } if *f == field)
+                || !matches!(&second.statements[1].kind, OwnedInstruction::Discard(OwnerPlaceId(2)))
+                || !matches!(&second.statements[2].kind, OwnedInstruction::StorageEnd(OwnerPlaceId(0)))
+                || !matches!(&second.statements[3].kind, OwnedInstruction::StorageEnd(OwnerPlaceId(2))) {
+                return None;
+            }
+            let fields = match &first.statements[2].kind {
+                OwnedInstruction::Construct { destination: OwnerPlaceId(0), fields }
+                    if fields.len() == 1 && fields[0].0 == field
+                        && fields[0].1.local == LocalId(0) => fields,
+                _ => return None,
+            };
+            bytes = bytes.checked_add(payload(&call.arguments)?)?;
+            bytes = bytes.checked_add(payload(fields)?)?;
+        }
+        for f in &raw.functions {
+            for part in [payload(&f.parameters)?, payload(&f.locals)?, payload(&f.places)?,
+                payload(&f.owners)?, payload(&f.references)?, payload(&f.calls)?,
+                payload(&f.loans)?, payload(&f.matches)?, payload(&f.blocks)?] {
+                bytes = bytes.checked_add(part)?;
+            }
+            for block in &f.blocks {
+                bytes = bytes.checked_add(payload(&block.statements)?)?;
+            }
+        }
+        bytes.checked_add(self.declarations.observer_capacity_bytes()?)
+    }
+
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
         let rank = self
             .program
@@ -563,4 +689,58 @@ fn owned_relay_capacity_observer_rejects_extra_unused_local() {
     raw.functions[0] = caller;
     let witness = verify_owned(raw, &sources).unwrap();
     assert_eq!(witness.observer_owned_relay_capacity_bytes(), None);
+}
+
+// Source-only controls: not compiled or executed by this proposal.
+// All witnesses use normal verify_owned; no sealed witness is mutated.
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn fixed_owned_relay_star_capacity_observer_accepts_exact_fixture() {
+    let (sources, raw, schedule) = super::consumer_fixtures::fixed_owned_relay_star();
+    assert_eq!(raw.functions.len(), 6);
+    assert_eq!(raw.functions.iter().map(|f| f.calls.len()).sum::<usize>(), 5);
+    assert_eq!(raw.functions.iter().map(|f| f.blocks.len()).sum::<usize>(), 11);
+    assert_eq!(schedule.entry, hir::DefId(0));
+    assert_eq!(schedule.result, Scalar::I32(73));
+    assert_eq!(schedule.fuel(), 52);
+    assert_eq!(schedule.events.len(), 13);
+    let (_, original, original_schedule) = super::consumer_fixtures::owned_relay();
+    assert_eq!(schedule.events, original_schedule.events);
+    assert_eq!(raw.functions[0].span, original.functions[0].span);
+    assert_eq!(raw.functions[5].span, original.functions[1].span);
+    for id in 1..5 {
+        assert_eq!(raw.functions[id].span.start, 2 * (40 + id));
+        assert_eq!(raw.functions[id].span.end, 2 * (40 + id) + 1);
+        assert_eq!(raw.functions[id].span.file, raw.functions[0].span.file);
+    }
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert!(witness.observer_fixed_owned_relay_star_capacity_bytes().is_some());
+    assert_eq!(witness.observer_owned_relay_capacity_bytes(), None);
+}
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn fixed_owned_relay_star_capacity_observer_rejects_alternate_literal() {
+    // Cover every caller, including otherwise unexecuted copies.
+    for id in 0..5 {
+        let (sources, mut raw, _) = super::consumer_fixtures::fixed_owned_relay_star();
+        match &mut raw.functions[id].blocks[0].statements[0].kind {
+            OwnedInstruction::Scalar(Statement::Assign(assign)) => assign.value = Rvalue::I32(74),
+            _ => panic!("owned_relay scalar assignment changed"),
+        }
+        let witness = verify_owned(raw, &sources).unwrap();
+        assert_eq!(witness.observer_fixed_owned_relay_star_capacity_bytes(), None);
+    }
+}
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn fixed_owned_relay_star_capacity_observer_rejects_extra_unused_local() {
+    for id in 0..5 {
+        let (sources, mut raw, _) = super::consumer_fixtures::fixed_owned_relay_star();
+        let local = raw.functions[id].locals[0].clone();
+        raw.functions[id].locals.push(local);
+        let witness = verify_owned(raw, &sources).unwrap();
+        assert_eq!(witness.observer_fixed_owned_relay_star_capacity_bytes(), None);
+    }
 }
