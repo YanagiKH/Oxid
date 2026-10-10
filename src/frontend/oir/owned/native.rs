@@ -13,6 +13,10 @@ mod graph_observe;
 #[path = "native_graph_baseline.rs"]
 mod graph_baseline;
 
+#[path = "native_graph_reserve.rs"]
+mod graph_reserve;
+use graph_reserve::{Failure as GraphFailure, GraphAllocator, GraphFamily, GraphOperation, Site as GraphSite};
+
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_SLOTS: usize = 256;
@@ -547,13 +551,30 @@ fn admit_policy_accounted(
     policy: NativeEntryPolicy,
     accounting: &mut Accounting,
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
+    admit_policy_accounted_with_graph(plan, limits, policy, accounting, &mut GraphAllocator::default())
+}
+fn admit_policy_accounted_with_graph(
+    plan: &ExecutionPlan<'_>,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    graph: &mut GraphAllocator,
+) -> Result<Vec<Bound>, Box<Diagnostic>> {
     let functions = plan.witness().functions();
     let origin = functions[0].span; // Entry validation proves a nonempty program.
     limit(functions.len(), limits.functions, "function count", origin)?;
-    let mut callers = vec![Vec::new(); functions.len()];
+    let mut callers = Vec::new();
+    graph.reserve_exact_empty(&mut callers, functions.len(),
+        GraphSite::new(GraphFamily::Callers, GraphOperation::InitExact, origin))
+        .map_err(GraphFailure::diagnostic)?;
+    callers.resize_with(functions.len(), Vec::new);
     #[cfg(test)]
     graph_observe::record(graph_observe::Site::Callers, usize::MAX, usize::MAX, (0, 0), &callers);
-    let mut remaining = vec![0usize; functions.len()];
+    let mut remaining = Vec::new();
+    graph.reserve_exact_empty(&mut remaining, functions.len(),
+        GraphSite::new(GraphFamily::Remaining, GraphOperation::InitExact, origin))
+        .map_err(GraphFailure::diagnostic)?;
+    remaining.resize(functions.len(), 0usize);
     #[cfg(test)]
     graph_observe::record(graph_observe::Site::Remaining, usize::MAX, usize::MAX, (0, 0), &remaining);
     accounting.metrics.plan_bytes = plan.metadata_bytes();
@@ -594,7 +615,7 @@ fn admit_policy_accounted(
         scalar_slots = add(scalar_slots, u.scalar_slots)?;
         blocks = add(blocks, f.blocks.len())?;
         bytes = add(bytes, u.native_bytes)?;
-        for b in &f.blocks {
+        for (block_id, b) in f.blocks.iter().enumerate() {
             if let OwnedTerminatorKind::Invoke { call, .. } =
                 b.terminator.as_ref().expect("verified terminator").kind
             {
@@ -603,7 +624,12 @@ fn admit_policy_accounted(
                 let before = caller.capacity();
                 #[cfg(test)]
                 let observed_before = (caller.len(), caller.capacity());
-                caller.push(f.id.0);
+                graph.push(caller, f.id.0,
+                    GraphSite::new(GraphFamily::CallerEdges, GraphOperation::EdgePush,
+                        b.terminator.as_ref().expect("verified terminator").span)
+                        .function(f.id.0).block(block_id)
+                        .target(f.calls[call.0].target.0).caller(f.id.0))
+                    .map_err(GraphFailure::diagnostic)?;
                 #[cfg(test)]
                 graph_observe::record(graph_observe::Site::CallerEdges, f.calls[call.0].target.0, f.id.0, observed_before, caller);
                 early_scratch = add(
@@ -624,14 +650,22 @@ fn admit_policy_accounted(
     // Independent compiler inventories replace reference-runtime X here.
     // Fixed count facts end before graph, diagnostic and emission phases.
     admit_inventory_policy(plan, (limits.inventory_items, limits.owner_width))?;
-    let mut ready: Vec<_> = remaining
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &n)| (n == 0).then_some(i))
-        .collect();
+    let mut ready = Vec::new();
+    for (i, &n) in remaining.iter().enumerate() {
+        if n == 0 {
+            graph.push(&mut ready, i,
+                GraphSite::new(GraphFamily::CallReady, GraphOperation::InitialQueuePush, origin)
+                    .function(i))
+                .map_err(GraphFailure::diagnostic)?;
+        }
+    }
     #[cfg(test)]
     graph_observe::record(graph_observe::Site::CallReady, usize::MAX, usize::MAX, (0, 0), &ready);
-    let mut bounds = vec![Bound::default(); functions.len()];
+    let mut bounds = Vec::new();
+    graph.reserve_exact_empty(&mut bounds, functions.len(),
+        GraphSite::new(GraphFamily::Bounds, GraphOperation::InitExact, origin))
+        .map_err(GraphFailure::diagnostic)?;
+    bounds.resize(functions.len(), Bound::default());
     #[cfg(test)]
     graph_observe::record(graph_observe::Site::Bounds, usize::MAX, usize::MAX, (0, 0), &bounds);
     let mut caller_bytes = mul(callers.capacity(), size_of::<Vec<usize>>())?;
@@ -658,7 +692,7 @@ fn admit_policy_accounted(
         // Determine unknown cost before adding any placeholders: even a late
         // dynamic callee makes the entire static sum nonbinding. Resource and
         // known acyclic arithmetic stay checked, while unknown sums saturate.
-        let (local_cycle, cycle_scratch) = has_cycle(f)?;
+        let (local_cycle, cycle_scratch) = has_cycle_with_graph(f, graph)?;
         let scratch = add(
             add(fixed_scratch, mul(ready.capacity(), size_of::<usize>())?)?,
             cycle_scratch,
@@ -733,7 +767,10 @@ fn admit_policy_accounted(
             if remaining[caller] == 0 {
                 #[cfg(test)]
                 let observed_before = (ready.len(), ready.capacity());
-                ready.push(caller);
+                graph.push(&mut ready, caller,
+                    GraphSite::new(GraphFamily::CallReady, GraphOperation::UnlockPush,
+                        functions[caller].span).function(i).caller(caller))
+                    .map_err(GraphFailure::diagnostic)?;
                 #[cfg(test)]
                 graph_observe::record(graph_observe::Site::CallReady, usize::MAX, caller, observed_before, &ready);
             }
@@ -787,8 +824,19 @@ fn successors(f: &RawOwnedFunction, kind: &OwnedTerminatorKind) -> impl Iterator
     };
     targets.into_iter().flatten()
 }
+#[cfg(test)]
 fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
-    let mut incoming = vec![0usize; f.blocks.len()];
+    has_cycle_with_graph(f, &mut GraphAllocator::default())
+}
+fn has_cycle_with_graph(
+    f: &RawOwnedFunction,
+    graph: &mut GraphAllocator,
+) -> Result<(bool, usize), Box<Diagnostic>> {
+    let mut incoming = Vec::new();
+    graph.reserve_exact_empty(&mut incoming, f.blocks.len(),
+        GraphSite::new(GraphFamily::Incoming, GraphOperation::InitExact, f.span).function(f.id.0))
+        .map_err(GraphFailure::diagnostic)?;
+    incoming.resize(f.blocks.len(), 0usize);
     #[cfg(test)]
     graph_observe::record(graph_observe::Site::Incoming, f.id.0, usize::MAX, (0, 0), &incoming);
     for b in &f.blocks {
@@ -796,11 +844,15 @@ fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
             incoming[target.0] += 1;
         }
     }
-    let mut ready: Vec<_> = incoming
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &n)| (n == 0).then_some(i))
-        .collect();
+    let mut ready = Vec::new();
+    for (i, &n) in incoming.iter().enumerate() {
+        if n == 0 {
+            graph.push(&mut ready, i,
+                GraphSite::new(GraphFamily::CfgReady, GraphOperation::InitialQueuePush, f.span)
+                    .function(f.id.0).block(i))
+                .map_err(GraphFailure::diagnostic)?;
+        }
+    }
     #[cfg(test)]
     graph_observe::record(graph_observe::Site::CfgReady, f.id.0, usize::MAX, (0, 0), &ready);
     let mut scratch = mul(
@@ -822,7 +874,11 @@ fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
             if incoming[target.0] == 0 {
                 #[cfg(test)]
                 let observed_before = (ready.len(), ready.capacity());
-                ready.push(target.0);
+                graph.push(&mut ready, target.0,
+                    GraphSite::new(GraphFamily::CfgReady, GraphOperation::SuccessorPush,
+                        f.blocks[i].terminator.as_ref().expect("verified terminator").span)
+                        .function(f.id.0).block(i).target(target.0))
+                    .map_err(GraphFailure::diagnostic)?;
                 #[cfg(test)]
                 graph_observe::record(graph_observe::Site::CfgReady, f.id.0, target.0, observed_before, &ready);
             }
@@ -4046,3 +4102,66 @@ fn owned_u8_native_roles_are_dominated_by_predecessor_operations() {
 #[cfg(test)]
 #[path = "byte_storage_native_tests.rs"]
 mod byte_storage_tests;
+
+#[cfg(test)]
+mod graph_reservation_order_tests {
+    use super::*;
+    use super::super::consumer_fixtures;
+
+    #[test]
+    fn graph_function_limit_precedes_all_reservations() {
+        let (sources, raw, _) = consumer_fixtures::empty_record();
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let plan = ExecutionPlan::build(&witness).unwrap();
+        let mut graph = GraphAllocator::default();
+        let mut accounting = Accounting::default();
+        let error = admit_policy_accounted_with_graph(&plan,
+            Limits { functions: 0, ..Limits::DEFAULT }, NativeEntryPolicy::Result,
+            &mut accounting, &mut graph).err().unwrap();
+        assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+        assert_eq!(error.message, "native owned function count limit exceeded (0)");
+        assert_eq!(error.primary, Some(witness.functions()[0].span));
+        assert_eq!(graph.attempts(), 0);
+        assert_eq!(accounting.metrics.allocation_attempts, 0);
+    }
+
+    #[test]
+    fn graph_scalar_slot_limit_keeps_earlier_outer_reservations_only() {
+        let (sources, raw, _) = consumer_fixtures::empty_record();
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let plan = ExecutionPlan::build(&witness).unwrap();
+        let mut graph = GraphAllocator::default();
+        let mut accounting = Accounting::default();
+        let error = admit_policy_accounted_with_graph(&plan,
+            Limits { function_slots: 0, metadata_bytes: 0, ..Limits::DEFAULT },
+            NativeEntryPolicy::Result, &mut accounting, &mut graph).err().unwrap();
+        assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+        assert_eq!(error.message, "native owned scalar slots per function limit exceeded (0)");
+        assert_eq!(error.primary, Some(witness.functions()[0].span));
+        assert_eq!(graph.attempts(), 2);
+        assert_eq!(accounting.metrics.allocation_attempts, 0);
+    }
+
+    #[test]
+    fn graph_metadata_gate_remains_after_complete_admission() {
+        let (sources, raw, schedule) = consumer_fixtures::empty_record();
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let plan = ExecutionPlan::build(&witness).unwrap();
+        let mut graph = GraphAllocator::default();
+        let mut accounting = Accounting::default();
+        let limits = Limits { metadata_bytes: 0, ..Limits::DEFAULT };
+        let bounds = admit_policy_accounted_with_graph(&plan, limits,
+            NativeEntryPolicy::Result, &mut accounting, &mut graph).unwrap();
+        assert_eq!(bounds.len(), 1);
+        assert_eq!(graph.attempts(), 6);
+        assert_eq!(accounting.metrics.allocation_attempts, 0);
+        let observation = run_array_observed(&witness, Some(schedule.entry), &sources,
+            NativeControl { fuel: schedule.fuel(), limits, ..NativeControl::default() });
+        let error = observation.result.err().unwrap();
+        assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+        assert_eq!(error.message, "native owned admission metadata bytes limit exceeded (0)");
+        assert_eq!(error.primary, Some(witness.functions()[0].span));
+        assert_eq!(observation.metrics.allocation_attempts, 0);
+        assert!(observation.metrics.admission_scratch_peak > 0);
+    }
+}

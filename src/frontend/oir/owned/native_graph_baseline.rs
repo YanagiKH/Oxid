@@ -51,7 +51,10 @@ fn carrier_inventory<F: FnOnce() -> NativeObservation>(action: &F) -> CarrierInv
     // Conservative named-carrier coexistence: retained baseline + new result,
     // one Accounting + input/control/closure, TLS once, local trace/result moves,
     // Ref/RefMut and Event copies. This is NOT a machine-stack high-water bound.
-    let parts = [TLS_ELF_CARRIER_BYTES, size_of::<Input<'_>>(), size_of_val(action),
+    // Include the new production graph context and inline failure carriers.
+    // This remains a named coexistence allowance, not a stack bound.
+    let parts = [size_of::<GraphAllocator>(), size_of::<GraphSite>(),
+        size_of::<GraphFailure>(), size_of::<Result<(), GraphFailure>>(), TLS_ELF_CARRIER_BYTES, size_of::<Input<'_>>(), size_of_val(action),
         2 * size_of::<NativeObservation>(), size_of::<ObservedResult>(),
         size_of::<Accounting>(), size_of::<NativeControl>(), size_of::<NativeResult>(),
         2 * size_of::<Trace>(), roles[3], roles[4], roles[5], 3 * size_of::<Event>(),
