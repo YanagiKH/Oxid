@@ -12,6 +12,49 @@ pub(super) struct VerifiedOwnedProgram {
 #[derive(Debug)]
 struct OwnershipSeal;
 impl VerifiedOwnedProgram {
+    /// Closed to the one empty-record fixture; not a generic ownership ledger.
+    /// A rejected shape cannot silently omit an unhandled nested payload.
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(super) fn observer_empty_record_capacity_bytes(&self) -> Option<usize> {
+        fn payload<T>(values: &Vec<T>) -> Option<usize> {
+            values.capacity().checked_mul(std::mem::size_of::<T>())
+        }
+        let raw = &self.program;
+        if raw.builtins != BuiltinOrigins::None || !raw.enums.is_empty()
+            || raw.records.len() != 1 || !raw.records[0].fields.is_empty()
+            || raw.functions.len() != 1 { return None; }
+        let f = &raw.functions[0];
+        if !f.parameters.is_empty() || f.locals.len() != 1 || f.owners.len() != 1
+            || !f.places.is_empty() || !f.references.is_empty() || !f.calls.is_empty()
+            || !f.loans.is_empty() || !f.matches.is_empty() || f.blocks.len() != 1 {
+            return None;
+        }
+        let block = &f.blocks[0];
+        if block.merge.is_some() || block.statements.len() != 5
+            || !matches!(block.terminator.as_ref()?.kind, OwnedTerminatorKind::ReturnScalar(_)) {
+            return None;
+        }
+        let mut bytes = 0usize;
+        for part in [payload(&raw.enums)?, payload(&raw.records)?, payload(&raw.functions)?,
+            payload(&raw.records[0].fields)?, payload(&f.parameters)?, payload(&f.locals)?,
+            payload(&f.owners)?, payload(&f.places)?, payload(&f.references)?, payload(&f.calls)?,
+            payload(&f.loans)?, payload(&f.matches)?, payload(&f.blocks)?, payload(&block.statements)?] {
+            bytes = bytes.checked_add(part)?;
+        }
+        for statement in &block.statements {
+            match &statement.kind {
+                OwnedInstruction::Construct { fields, .. } if fields.is_empty() => {
+                    bytes = bytes.checked_add(payload(fields)?)?;
+                }
+                OwnedInstruction::StorageLive(_) | OwnedInstruction::Discard(_)
+                | OwnedInstruction::StorageEnd(_) => {}
+                OwnedInstruction::Scalar(Statement::Assign(Assign { value: Rvalue::Unit, .. })) => {}
+                _ => return None,
+            }
+        }
+        bytes.checked_add(self.declarations.observer_capacity_bytes()?)
+    }
+
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
         let rank = self
             .program

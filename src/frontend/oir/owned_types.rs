@@ -413,6 +413,13 @@ pub(super) struct Declarations {
     usage: DeclarationUsage,
 }
 impl Declarations {
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(in crate::frontend::oir) fn observer_capacity_bytes(&self) -> Option<usize> {
+        self.records.capacity().checked_mul(size_of::<RecordDecl>())?
+            .checked_add(self.fields.capacity().checked_mul(size_of::<FieldDecl>())?)?
+            .checked_add(self.enums.observer_capacity_bytes()?)
+    }
+
     pub(super) fn check(
         raw: &[RawRecordDecl],
         sources: &SourceMap,

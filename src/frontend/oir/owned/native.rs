@@ -5,6 +5,14 @@ use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
 use std::fmt::Write;
 use std::mem::size_of;
 
+#[cfg(test)]
+#[path = "native_graph_observe.rs"]
+mod graph_observe;
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[path = "native_graph_baseline.rs"]
+mod graph_baseline;
+
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_SLOTS: usize = 256;
@@ -543,7 +551,11 @@ fn admit_policy_accounted(
     let origin = functions[0].span; // Entry validation proves a nonempty program.
     limit(functions.len(), limits.functions, "function count", origin)?;
     let mut callers = vec![Vec::new(); functions.len()];
+    #[cfg(test)]
+    graph_observe::record(graph_observe::Site::Callers, usize::MAX, usize::MAX, (0, 0), &callers);
     let mut remaining = vec![0usize; functions.len()];
+    #[cfg(test)]
+    graph_observe::record(graph_observe::Site::Remaining, usize::MAX, usize::MAX, (0, 0), &remaining);
     accounting.metrics.plan_bytes = plan.metadata_bytes();
     let mut early_scratch = add(
         mul(callers.capacity(), size_of::<Vec<usize>>())?,
@@ -589,7 +601,11 @@ fn admit_policy_accounted(
                 remaining[f.id.0] = add(remaining[f.id.0], 1)?;
                 let caller = &mut callers[f.calls[call.0].target.0];
                 let before = caller.capacity();
+                #[cfg(test)]
+                let observed_before = (caller.len(), caller.capacity());
                 caller.push(f.id.0);
+                #[cfg(test)]
+                graph_observe::record(graph_observe::Site::CallerEdges, f.calls[call.0].target.0, f.id.0, observed_before, caller);
                 early_scratch = add(
                     early_scratch,
                     mul(caller.capacity() - before, size_of::<usize>())?,
@@ -613,7 +629,11 @@ fn admit_policy_accounted(
         .enumerate()
         .filter_map(|(i, &n)| (n == 0).then_some(i))
         .collect();
+    #[cfg(test)]
+    graph_observe::record(graph_observe::Site::CallReady, usize::MAX, usize::MAX, (0, 0), &ready);
     let mut bounds = vec![Bound::default(); functions.len()];
+    #[cfg(test)]
+    graph_observe::record(graph_observe::Site::Bounds, usize::MAX, usize::MAX, (0, 0), &bounds);
     let mut caller_bytes = mul(callers.capacity(), size_of::<Vec<usize>>())?;
     for caller in &callers {
         caller_bytes = add(caller_bytes, mul(caller.capacity(), size_of::<usize>())?)?;
@@ -711,7 +731,11 @@ fn admit_policy_accounted(
         for &caller in &callers[i] {
             remaining[caller] -= 1;
             if remaining[caller] == 0 {
+                #[cfg(test)]
+                let observed_before = (ready.len(), ready.capacity());
                 ready.push(caller);
+                #[cfg(test)]
+                graph_observe::record(graph_observe::Site::CallReady, usize::MAX, caller, observed_before, &ready);
             }
         }
     }
@@ -765,6 +789,8 @@ fn successors(f: &RawOwnedFunction, kind: &OwnedTerminatorKind) -> impl Iterator
 }
 fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
     let mut incoming = vec![0usize; f.blocks.len()];
+    #[cfg(test)]
+    graph_observe::record(graph_observe::Site::Incoming, f.id.0, usize::MAX, (0, 0), &incoming);
     for b in &f.blocks {
         for target in successors(f, &b.terminator.as_ref().expect("verified terminator").kind) {
             incoming[target.0] += 1;
@@ -775,6 +801,8 @@ fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
         .enumerate()
         .filter_map(|(i, &n)| (n == 0).then_some(i))
         .collect();
+    #[cfg(test)]
+    graph_observe::record(graph_observe::Site::CfgReady, f.id.0, usize::MAX, (0, 0), &ready);
     let mut scratch = mul(
         add(incoming.capacity(), ready.capacity())?,
         size_of::<usize>(),
@@ -792,7 +820,11 @@ fn has_cycle(f: &RawOwnedFunction) -> Result<(bool, usize), Box<Diagnostic>> {
         ) {
             incoming[target.0] -= 1;
             if incoming[target.0] == 0 {
+                #[cfg(test)]
+                let observed_before = (ready.len(), ready.capacity());
                 ready.push(target.0);
+                #[cfg(test)]
+                graph_observe::record(graph_observe::Site::CfgReady, f.id.0, target.0, observed_before, &ready);
             }
         }
         scratch = scratch.max(mul(

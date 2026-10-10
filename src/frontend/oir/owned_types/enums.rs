@@ -138,6 +138,12 @@ pub(in crate::frontend::oir) struct EnumDeclarations {
 }
 
 impl EnumDeclarations {
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(in crate::frontend::oir) fn observer_capacity_bytes(&self) -> Option<usize> {
+        self.enums.capacity().checked_mul(std::mem::size_of::<EnumDecl>())?
+            .checked_add(self.variants.capacity().checked_mul(std::mem::size_of::<VariantDecl>())?)
+    }
+
     pub(in crate::frontend::oir) fn check(
         raw: &[RawEnumDecl],
         sources: &SourceMap,

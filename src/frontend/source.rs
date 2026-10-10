@@ -45,6 +45,18 @@ pub struct SourceFile {
 }
 
 impl SourceMap {
+    /// Qualification-only actual retained payload; no allocation or authority.
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(in crate::frontend) fn observer_capacity_bytes(&self) -> Option<usize> {
+        let mut bytes = self.files.capacity().checked_mul(size_of::<SourceFile>())?;
+        for file in &self.files {
+            bytes = bytes.checked_add(file.path.capacity())?;
+            bytes = bytes.checked_add(file.text.capacity())?;
+            bytes = bytes.checked_add(file.line_starts.capacity().checked_mul(size_of::<usize>())?)?;
+        }
+        Some(bytes)
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
