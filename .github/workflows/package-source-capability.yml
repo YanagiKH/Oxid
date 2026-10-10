@@ -1,0 +1,40 @@
+name: Package source isolation capability
+on:
+  push:
+    branches: ['KH/package-source-capability-v1']
+permissions:
+  contents: read
+jobs:
+  package-source-capability:
+    name: Package source isolation capability only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Probe unchanged mandatory isolation without generation
+        env:
+          CAPABILITY_HEAD: ${{ github.sha }}
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/probe_hosted_capability.py
+          --repository "$GITHUB_WORKSPACE"
+          --output "$RUNNER_TEMP/package-source-capability"
+          --expected-head "$CAPABILITY_HEAD"
+      - name: Stage closed capability evidence
+        if: always()
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/probe_hosted_capability.py
+          --stage "$RUNNER_TEMP/package-source-capability"
+          --upload "$RUNNER_TEMP/package-source-capability-upload"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: package-source-capability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-source-capability-upload
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: false
+          overwrite: false
