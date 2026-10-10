@@ -172,10 +172,12 @@
         "docs/architecture/current-baseline.md"
       ],
       "implementation": [
-        "src/runtime/packages.rs"
+        "src/runtime/packages.rs",
+        "src/main.rs"
       ],
       "tests": [
-        "src/runtime/packages.rs"
+        "src/runtime/packages.rs",
+        "tests/package_manifest_validation.rs"
       ],
       "evidence": [
         "docs/architecture/baseline-validation.md"

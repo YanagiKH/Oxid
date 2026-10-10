@@ -1363,7 +1363,12 @@ fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
                 manifest.features.insert(key, enabled);
             }
             ("scripts", _) => { manifest.scripts.insert(key, value); }
-            ("dependencies", _) => { manifest.dependencies.insert(key, value); }
+            ("dependencies", _) => {
+                if manifest.dependencies.contains_key(&key) {
+                    return Err(format!("duplicate dependency `{}` in {}", key, path.display()));
+                }
+                manifest.dependencies.insert(key, value);
+            }
             _ => {}
         }
     }

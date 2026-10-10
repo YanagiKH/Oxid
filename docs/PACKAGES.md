@@ -20,6 +20,14 @@ codec = "https://github.com/example/oxid-codec.git#01234567890123456789012345678
 
 `git+https://` is also accepted. `git+file://` is available for absolute local Git repositories and testing. Branch names, tags, credentials in URLs, query strings, unpinned revisions, and non-HTTPS remote schemes are rejected.
 
+Dependency aliases must be unique within a manifest, including across repeated
+`[dependencies]` sections. Bare, quoted and escaped spellings that decode to the
+same alias are duplicates even when their sources are identical. Root manifests
+are checked before dependency resolution or build output writes; `list` and
+nested dependency manifests also reject duplicates. `script` and `doctor` use
+the same root manifest validation. This does not add full TOML validation or
+transactional rollback for `add`/`remove`.
+
 ## `oxid.lock`
 
 Resolution writes deterministic `oxid.lock` version 1. Entries are sorted and contain the package name, normalized source, pinned Git revision when applicable, package-tree checksum, and sorted nested dependencies. Git checkouts live in `.oxid/deps/<name>`; modules can import a dependency by its manifest alias.
