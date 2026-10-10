@@ -860,3 +860,7 @@ fn native_graph_cfg_fanout_disabled_enabled_baseline() {
         // Baseline/candidate/trace drop here before the next case's warmup.
     }
 }
+
+// Shared finite whole-result metadata boundary qualification.
+#[path = "native_graph_metadata_boundary.rs"]
+mod metadata_boundary;
