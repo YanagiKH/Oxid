@@ -55,6 +55,123 @@ impl VerifiedOwnedProgram {
         bytes.checked_add(self.declarations.observer_capacity_bytes()?)
     }
 
+    /// Closed to the owned-relay fixture's F=2, E=1, B=3 retained shape.
+    /// Every admitted Vec payload uses its actual capacity, including empty Vecs.
+    /// Other shapes fail closed; this is not a generic ownership ledger.
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(super) fn observer_owned_relay_capacity_bytes(&self) -> Option<usize> {
+        fn payload<T>(values: &Vec<T>) -> Option<usize> {
+            values.capacity().checked_mul(std::mem::size_of::<T>())
+        }
+        let raw = &self.program;
+        if raw.builtins != BuiltinOrigins::None || !raw.enums.is_empty()
+            || raw.records.len() != 1 || raw.functions.len() != 2 {
+            return None;
+        }
+        let record = &raw.records[0];
+        let field = FieldId { record: RecordId(0), index: 0 };
+        if record.id != RecordId(0) || record.fields.len() != 1
+            || record.fields[0].id != field
+            || record.fields[0].ty != ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32)) {
+            return None;
+        }
+        let caller = &raw.functions[0];
+        let callee = &raw.functions[1];
+        if caller.id != hir::DefId(0) || callee.id != hir::DefId(1)
+            || caller.entry != BlockId(0) || callee.entry != BlockId(0)
+            || caller.result != ValueTy::Scalar(hir::Ty::I32)
+            || callee.result != ValueTy::Owned(AggregateTy::Record(RecordId(0)))
+            || !caller.parameters.is_empty() || callee.parameters.len() != 1
+            || !matches!(callee.parameters[0], ParameterBinding::Owned(OwnerPlaceId(0)))
+            || caller.locals.len() != 2 || !callee.locals.is_empty()
+            || caller.owners.len() != 3 || callee.owners.len() != 1
+            || caller.calls.len() != 1 || !callee.calls.is_empty()
+            || caller.blocks.len() != 2 || callee.blocks.len() != 1 {
+            return None;
+        }
+        for f in &raw.functions {
+            // Empty outer vectors exclude all nested loan projections/match arms.
+            if !f.places.is_empty() || !f.references.is_empty()
+                || !f.loans.is_empty() || !f.matches.is_empty() {
+                return None;
+            }
+            if f.owners.iter().any(|owner| owner.aggregate() != AggregateTy::Record(RecordId(0))) {
+                return None;
+            }
+            for block in &f.blocks {
+                if block.merge.is_some()
+                    || block.terminator.as_ref()?.diagnostic_origins.is_some()
+                    || block.statements.iter().any(|s| s.diagnostic_origins.is_some()) {
+                    return None;
+                }
+            }
+        }
+        if caller.locals.iter().any(|local| local.ty != hir::Ty::I32 || local.kind != LocalKind::Temporary)
+            || caller.owners[0].kind != (OwnerKind::Local { mutable: false })
+            || caller.owners[1].kind != (OwnerKind::StagedArgument { call: CallSiteId(0), argument: 0 })
+            || caller.owners[2].kind != (OwnerKind::CallResult { call: CallSiteId(0) })
+            || callee.owners[0].kind != (OwnerKind::Parameter { position: 0 }) {
+            return None;
+        }
+        let call = &caller.calls[0];
+        if call.target != hir::DefId(1) || call.parent.is_some()
+            || call.arguments.as_slice() != [ArgumentSlot::Owned(OwnerPlaceId(1))]
+            || call.result != CallResult::Owned(OwnerPlaceId(2)) {
+            return None;
+        }
+        let first = &caller.blocks[0];
+        let second = &caller.blocks[1];
+        let returned = &callee.blocks[0];
+        if first.statements.len() != 5 || second.statements.len() != 4
+            || !returned.statements.is_empty()
+            || !matches!(&first.terminator.as_ref()?.kind,
+                OwnedTerminatorKind::Invoke { call: CallSiteId(0), continuation: BlockId(1) })
+            || !matches!(&second.terminator.as_ref()?.kind,
+                OwnedTerminatorKind::ReturnScalar(Operand { local: LocalId(1), .. }))
+            || !matches!(&returned.terminator.as_ref()?.kind,
+                OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(0))) {
+            return None;
+        }
+        // Positional allowlist excludes every other instruction, including all
+        // unhandled nested Vec variants (arrays, composites, and projections).
+        if !matches!(&first.statements[0].kind,
+                OwnedInstruction::Scalar(Statement::Assign(Assign {
+                    destination: LocalId(0), value: Rvalue::I32(73), .. })))
+            || !matches!(&first.statements[1].kind, OwnedInstruction::StorageLive(OwnerPlaceId(0)))
+            || !matches!(&first.statements[3].kind, OwnedInstruction::OpenCall(CallSiteId(0)))
+            || !matches!(&first.statements[4].kind, OwnedInstruction::PrepareOwned {
+                call: CallSiteId(0), argument: 0, source: OwnerPlaceId(0) })
+            || !matches!(&second.statements[0].kind, OwnedInstruction::ReadField {
+                destination: LocalId(1), base: AccessBase::Owner(OwnerPlaceId(2)), field: f } if *f == field)
+            || !matches!(&second.statements[1].kind, OwnedInstruction::Discard(OwnerPlaceId(2)))
+            || !matches!(&second.statements[2].kind, OwnedInstruction::StorageEnd(OwnerPlaceId(0)))
+            || !matches!(&second.statements[3].kind, OwnedInstruction::StorageEnd(OwnerPlaceId(2))) {
+            return None;
+        }
+        let fields = match &first.statements[2].kind {
+            OwnedInstruction::Construct { destination: OwnerPlaceId(0), fields }
+                if fields.len() == 1 && fields[0].0 == field
+                    && fields[0].1.local == LocalId(0) => fields,
+            _ => return None,
+        };
+        let mut bytes = 0usize;
+        for part in [payload(&raw.enums)?, payload(&raw.records)?, payload(&raw.functions)?,
+            payload(&record.fields)?, payload(&call.arguments)?, payload(fields)?] {
+            bytes = bytes.checked_add(part)?;
+        }
+        for f in &raw.functions {
+            for part in [payload(&f.parameters)?, payload(&f.locals)?, payload(&f.places)?,
+                payload(&f.owners)?, payload(&f.references)?, payload(&f.calls)?,
+                payload(&f.loans)?, payload(&f.matches)?, payload(&f.blocks)?] {
+                bytes = bytes.checked_add(part)?;
+            }
+            for block in &f.blocks {
+                bytes = bytes.checked_add(payload(&block.statements)?)?;
+            }
+        }
+        bytes.checked_add(self.declarations.observer_capacity_bytes()?)
+    }
+
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
         let rank = self
             .program
@@ -410,4 +527,40 @@ fn owned_u8_raw_proof_dispatch_carriers_are_separate_from_payload_limits() {
     println!("RFC0030 owned raw proof dispatch inline_bytes={} align={} raw_scratch_scope=requested_vector_payload raw_metadata_scope=requested_table_payload",
         std::mem::size_of::<ConversionProofDispatchCarriers>(), std::mem::align_of::<ConversionProofDispatchCarriers>());
     assert!(std::mem::size_of::<ConversionProofDispatchCarriers>() > 0);
+}
+
+// Optional source-only test proposal to append to verified.rs. Not compiled/run.
+// All witnesses below go through verify_owned; no fabricated or mutated seal.
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn owned_relay_capacity_observer_accepts_exact_fixture() {
+    let (sources, raw, _) = super::consumer_fixtures::owned_relay();
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert!(witness.observer_owned_relay_capacity_bytes().is_some());
+}
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn owned_relay_capacity_observer_rejects_alternate_literal() {
+    let (sources, mut raw, _) = super::consumer_fixtures::owned_relay();
+    // Change a cloned raw function before verification, never a sealed witness.
+    let mut caller = raw.functions[0].clone();
+    match &mut caller.blocks[0].statements[0].kind {
+        OwnedInstruction::Scalar(Statement::Assign(assign)) => assign.value = Rvalue::I32(74),
+        _ => panic!("owned_relay scalar assignment changed"),
+    }
+    raw.functions[0] = caller;
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(witness.observer_owned_relay_capacity_bytes(), None);
+}
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn owned_relay_capacity_observer_rejects_extra_unused_local() {
+    let (sources, mut raw, _) = super::consumer_fixtures::owned_relay();
+    let mut caller = raw.functions[0].clone();
+    caller.locals.push(caller.locals[0].clone());
+    raw.functions[0] = caller;
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(witness.observer_owned_relay_capacity_bytes(), None);
 }
