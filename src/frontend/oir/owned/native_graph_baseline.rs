@@ -680,3 +680,180 @@ fn native_graph_fixed_star_disabled_enabled_baseline() {
         // Baseline/candidate/trace drop here before the next case's warmup.
     }
 }
+
+// Fixed reachable nine-block fanout. No adaptive capacity preconditioning.
+const CFG_FANOUT_ROWS: usize = 16;
+const CFG_FANOUT_TRACE_BYTES_CAP: usize = 1536;
+
+fn cfg_fanout_trace_oracle(trace: &Trace, empty: bool) -> StarGrowthOutcome {
+    assert_eq!(trace.limit, CFG_FANOUT_ROWS);
+    assert_eq!(trace.requested_bytes, CFG_FANOUT_ROWS * size_of::<Event>());
+    assert_eq!(trace.actual_capacity, trace.rows.capacity());
+    assert_eq!(trace.actual_bytes, trace.actual_capacity.checked_mul(size_of::<Event>()).unwrap());
+    assert_eq!(trace.observer_storage_cap, CFG_FANOUT_TRACE_BYTES_CAP);
+    assert!(trace.actual_bytes <= CFG_FANOUT_TRACE_BYTES_CAP && !trace.overflow);
+    if empty {
+        assert!(trace.rows.is_empty());
+        return StarGrowthOutcome::NotApplicable;
+    }
+    assert_eq!(trace.rows.len(), 14);
+    let mut grew = false;
+    for (row, event) in trace.rows.iter().enumerate() {
+        let (site, owner, actor, before_len, after_len, width) = match row {
+            0 => (Site::Callers, usize::MAX, usize::MAX, 0, 1, 24),
+            1 => (Site::Remaining, usize::MAX, usize::MAX, 0, 1, 8),
+            2 => (Site::CallReady, usize::MAX, usize::MAX, 0, 1, 8),
+            3 => (Site::Bounds, usize::MAX, usize::MAX, 0, 1, 48),
+            4 => (Site::Incoming, 0, usize::MAX, 0, 9, 8),
+            5 => (Site::CfgReady, 0, usize::MAX, 0, 1, 8),
+            6..=13 => {
+                let before = (row - 5) / 2;
+                (Site::CfgReady, 0, row - 5, before, before + 1, 8)
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!((event.site, event.owner, event.actor), (site, owner, actor));
+        assert_eq!((event.len_before, event.len_after, event.element_bytes), (before_len, after_len, width));
+        assert!(event.capacity_before >= before_len && event.capacity_after >= after_len);
+        if row >= 6 {
+            let before = trace.rows[row - 1].capacity_after;
+            assert_eq!(event.capacity_before, before);
+            if before_len < before {
+                assert_eq!(event.capacity_after, before);
+            } else {
+                assert_eq!(before_len, before);
+                assert!(event.capacity_after > before);
+            }
+            grew |= before > 0 && event.capacity_after > before;
+        } else {
+            assert_eq!(event.capacity_before, 0);
+        }
+    }
+    if grew { StarGrowthOutcome::ObservedNonzeroCapacityGrowth } else { StarGrowthOutcome::NotObserved }
+}
+
+fn cfg_fanout_metric_oracle(trace: &Trace, metrics: &NativeMetrics, case: usize) {
+    if case == 2 {
+        assert_eq!((metrics.admission_scratch_peak, metrics.retained_bound_bytes,
+            metrics.plan_bytes, metrics.metadata_admitted_bytes, metrics.metadata_peak), (0, 0, 0, 0, 0));
+        return;
+    }
+    let bytes: [usize; 14] = std::array::from_fn(|row| {
+        trace.rows[row].capacity_after.checked_mul(trace.rows[row].element_bytes).unwrap()
+    });
+    let persistent = bytes[..4].iter().copied().try_fold(0usize, usize::checked_add).unwrap();
+    let ready_peak = bytes[5..].iter().copied().max().unwrap();
+    let scratch = persistent.checked_add(bytes[4]).unwrap().checked_add(ready_peak).unwrap();
+    assert_eq!(metrics.admission_scratch_peak, scratch);
+    let admission = metrics.plan_bytes.checked_add(scratch).unwrap();
+    assert!(metrics.plan_bytes > 0 && metrics.plan_bytes <= plan::MAX_PLAN_BYTES);
+    assert!(metrics.metadata_peak >= admission);
+    if case == 0 {
+        assert_eq!(metrics.retained_bound_bytes, size_of::<Bound>());
+        assert!(metrics.metadata_admitted_bytes <= metrics.metadata_peak);
+        assert!(metrics.metadata_peak <= Limits::DEFAULT.metadata_bytes);
+    } else {
+        assert_eq!(metrics.retained_bound_bytes, bytes[3]);
+        assert_eq!(metrics.metadata_admitted_bytes, 0);
+        assert_eq!(metrics.metadata_peak, admission);
+    }
+}
+
+#[test]
+fn native_graph_cfg_fanout_disabled_enabled_baseline() {
+    let (sources, raw, schedule) = consumer_fixtures::fixed_empty_record_cfg_fanout();
+    assert_eq!(schedule.entry, hir::DefId(0));
+    assert_eq!(schedule.result, Scalar::Unit);
+    assert_eq!(schedule.fuel(), 20);
+    assert_eq!(schedule.events.iter().map(|x| x.1).collect::<Vec<_>>(), [8, 1, 2, 2, 2, 1, 1, 1, 2]);
+    for (i, (span, _)) in schedule.events.iter().enumerate() {
+        assert_eq!(*span, Span { file: crate::frontend::source::SourceFileId(0), start: 2 * i, end: 2 * i + 1 });
+    }
+    let entry = schedule.entry;
+    drop(schedule);
+    let source = sources.get(crate::frontend::source::SourceFileId(0));
+    assert_eq!(source.path(), "raw-owned-consumers.ox");
+    assert_eq!(source.text().len(), 8192);
+    assert!(source.text().as_bytes().chunks_exact(2).all(|pair| pair == b"x\n"));
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let fixture_bytes = sources.observer_capacity_bytes().unwrap()
+        .checked_add(witness.observer_fixed_empty_record_cfg_fanout_capacity_bytes().unwrap()).unwrap();
+    assert!(fixture_bytes <= FIXTURE_PAYLOAD_CAP);
+    for case in 0..3 {
+        let mut control = NativeControl { fuel: 20, ..NativeControl::default() };
+        // Runtime fuel20 differs from the whole-CFG static admission bound31.
+        assert_eq!(control.limits.cost, Limits::DEFAULT.cost);
+        control.limits.ir_bytes = OUTPUT_PAYLOAD_CAP;
+        if case != 0 { control.limits.metadata_bytes = 0; }
+        let input = Input { witness: &witness, sources: &sources,
+            entry: (case != 2).then_some(entry), control };
+        warm_tls();
+        let baseline = invoke(&input);
+        assert!(result_payload(&baseline.result) <= OUTPUT_PAYLOAD_CAP);
+        warm_tls();
+        let action = || invoke(&input);
+        let carriers = carrier_inventory(&action);
+        assert!(carriers.fixed_upper_bound <= ADDITIONAL_FIXED_CAP);
+        assert_eq!(carriers.event, 64);
+        assert_eq!(carriers.action, size_of::<&Input<'_>>());
+        let carrier_signature = [carriers.input, carriers.action, carriers.observation,
+            carriers.observed_result, carriers.native_result, carriers.accounting,
+            carriers.diagnostic, carriers.event];
+        assert_eq!(carriers.observer_roles, [72, 72, 80, 16, 16, 0]);
+        let (candidate, trace) = observe::observe(CFG_FANOUT_ROWS, CFG_FANOUT_TRACE_BYTES_CAP, action).unwrap();
+        assert!(result_payload(&candidate.result) <= OUTPUT_PAYLOAD_CAP);
+        equal_result(&baseline.result, &candidate.result);
+        equal_metrics(&baseline.metrics, &candidate.metrics);
+        let growth = cfg_fanout_trace_oracle(&trace, case == 2);
+        cfg_fanout_metric_oracle(&trace, &candidate.metrics, case);
+        match case {
+            0 => {
+                let text = candidate.result.as_ref().unwrap();
+                assert_eq!(candidate.metrics.count_bytes, text.len());
+                assert_eq!(candidate.metrics.render_bytes, text.len());
+                assert!(!text.contains("%fuel = alloca"));
+            }
+            1 | 2 => {
+                let error = candidate.result.as_ref().unwrap_err();
+                assert_eq!((error.code, error.stage), ("E0700", "native-admission"));
+                assert!(error.secondary.is_empty() && error.notes.is_empty());
+                let expected = if case == 1 {
+                    assert_eq!(error.primary, Some(Span { file: crate::frontend::source::SourceFileId(0), start: 0, end: 1 }));
+                    assert_eq!(error.message, "native owned admission metadata bytes limit exceeded (0)");
+                    "error[E0700] (native-admission): native owned admission metadata bytes limit exceeded (0)\n  --> raw-owned-consumers.ox:1:1\n"
+                } else {
+                    assert_eq!(error.primary, None);
+                    assert_eq!(error.message, "native compile requires a declared zero-argument main");
+                    assert_eq!(candidate.metrics.plan_bytes, 0);
+                    "error[E0700] (native-admission): native compile requires a declared zero-argument main\n"
+                };
+                let rendered = error.render_human(&sources);
+                assert!(rendered.capacity() <= RENDERED_DIAGNOSTIC_CAP);
+                assert_eq!(rendered, expected);
+                drop(rendered);
+                assert_eq!(candidate.metrics.allocation_attempts, 0);
+                assert_eq!((candidate.metrics.count_bytes, candidate.metrics.render_bytes), (0, 0));
+            }
+            _ => unreachable!(),
+        }
+        // Deliberately outside action: this exposes all qualified carrier types
+        // in the fresh driver artifact and retains an auditable small receipt.
+        println!("native_graph_cfg_fanout case={case} fixture_bytes={fixture_bytes} carriers={carriers:?} signature={carrier_signature:?} trace_actual_bytes={} baseline_payload={} candidate_payload={}",
+            trace.actual_bytes, result_payload(&baseline.result), result_payload(&candidate.result));
+        // Fixed receipt only after the observed action and all case/parity checks.
+        // No intermediate String, extra graph traversal, or native invocation.
+        assert!(trace.rows.len() <= CFG_FANOUT_ROWS);
+        println!("native_graph_cfg_growth_v1 case={case} cfg_ready={growth:?}");
+        println!("native_graph_metrics_v1 case={case} rows={} admission_scratch_peak={} retained_bound_bytes={} plan_bytes={} metadata_admitted_bytes={} metadata_peak={}",
+            trace.rows.len(), candidate.metrics.admission_scratch_peak,
+            candidate.metrics.retained_bound_bytes, candidate.metrics.plan_bytes,
+            candidate.metrics.metadata_admitted_bytes, candidate.metrics.metadata_peak);
+        for (row, event) in trace.rows.iter().enumerate() {
+            // Exhaustive pattern makes a future Event field require receipt review.
+            let Event { site, owner, actor, len_before, capacity_before,
+                len_after, capacity_after, element_bytes } = event;
+            println!("native_graph_capacity_v1 case={case} row={row} site={site:?} owner={owner} actor={actor} len_before={len_before} capacity_before={capacity_before} len_after={len_after} capacity_after={capacity_after} element_bytes={element_bytes}");
+        }
+        // Baseline/candidate/trace drop here before the next case's warmup.
+    }
+}

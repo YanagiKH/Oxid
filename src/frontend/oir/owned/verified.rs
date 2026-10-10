@@ -298,6 +298,103 @@ impl VerifiedOwnedProgram {
         bytes.checked_add(self.declarations.observer_capacity_bytes()?)
     }
 
+    /// Closed to the fixed empty-record fanout: F=1, call E=0, B=9, CFG E=8.
+    /// Topology, literals, and every admitted span are checked before counting.
+    /// Counts actual retained raw/declaration Vec capacities, including empty
+    /// vectors. Unknown nested payloads fail closed; source maps are separate.
+    #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+    pub(super) fn observer_fixed_empty_record_cfg_fanout_capacity_bytes(&self) -> Option<usize> {
+        fn payload<T>(values: &Vec<T>) -> Option<usize> {
+            values.capacity().checked_mul(std::mem::size_of::<T>())
+        }
+        let raw = &self.program;
+        if raw.builtins != BuiltinOrigins::None || !raw.enums.is_empty()
+            || raw.records.len() != 1 || raw.functions.len() != 1 {
+            return None;
+        }
+        let record = &raw.records[0];
+        let f = &raw.functions[0];
+        let file = f.span.file;
+        let s = |i: usize| Span { file, start: i * 2, end: i * 2 + 1 };
+        if record.id != RecordId(0) || record.span != s(0) || !record.fields.is_empty()
+            || f.id != hir::DefId(0) || f.span != s(0) || f.entry != BlockId(0)
+            || f.result != ValueTy::Scalar(hir::Ty::Unit)
+            || !f.parameters.is_empty() || f.locals.len() != 2 || f.owners.len() != 1
+            || !f.places.is_empty() || !f.references.is_empty() || !f.calls.is_empty()
+            || !f.loans.is_empty() || !f.matches.is_empty() || f.blocks.len() != 9 {
+            return None;
+        }
+        // Empty outer vectors exclude call arguments, loan projections, match
+        // arms, enum variants, and every other unaccounted nested Vec family.
+        if f.locals[0].ty != hir::Ty::Unit || f.locals[0].span != s(0)
+            || f.locals[1].ty != hir::Ty::Bool || f.locals[1].span != s(6)
+            || f.locals.iter().any(|local| local.kind != LocalKind::Temporary)
+            || f.owners[0].aggregate() != AggregateTy::Record(RecordId(0))
+            || f.owners[0].kind != (OwnerKind::Local { mutable: false })
+            || f.owners[0].span != s(0) {
+            return None;
+        }
+        for (id, block) in f.blocks.iter().enumerate() {
+            let term = block.terminator.as_ref()?;
+            let span = s(7 + id);
+            if block.merge.is_some() || term.diagnostic_origins.is_some()
+                || block.span != (if id == 0 { s(0) } else { span })
+                || term.span != span
+                || (id == 0 && block.statements.len() != 6)
+                || (id != 0 && !block.statements.is_empty()) {
+                return None;
+            }
+            match (id, &term.kind) {
+                (0 | 2 | 4 | 6, OwnedTerminatorKind::Branch {
+                    condition, then_block, else_block,
+                }) if condition.local == LocalId(1) && condition.span == span
+                    && *then_block == BlockId(id + 1) && *else_block == BlockId(id + 2) => {}
+                (1 | 3 | 5 | 7 | 8, OwnedTerminatorKind::ReturnScalar(value))
+                    if value.local == LocalId(0) && value.span == span => {}
+                _ => return None,
+            }
+        }
+        let root = &f.blocks[0];
+        for (index, statement) in root.statements.iter().enumerate() {
+            if statement.diagnostic_origins.is_some() || statement.span != s(index + 1) {
+                return None;
+            }
+        }
+        // Positional allowlist rejects arrays, composites, projections, and all
+        // scalar variants other than the exact Unit and true assignments.
+        if !matches!(&root.statements[0].kind, OwnedInstruction::StorageLive(OwnerPlaceId(0)))
+            || !matches!(&root.statements[2].kind, OwnedInstruction::Discard(OwnerPlaceId(0)))
+            || !matches!(&root.statements[3].kind, OwnedInstruction::StorageEnd(OwnerPlaceId(0)))
+            || !matches!(&root.statements[4].kind,
+                OwnedInstruction::Scalar(Statement::Assign(Assign {
+                    destination: LocalId(0), value: Rvalue::Unit, span,
+                })) if *span == s(5))
+            || !matches!(&root.statements[5].kind,
+                OwnedInstruction::Scalar(Statement::Assign(Assign {
+                    destination: LocalId(1), value: Rvalue::Bool(true), span,
+                })) if *span == s(6)) {
+            return None;
+        }
+        let fields = match &root.statements[1].kind {
+            OwnedInstruction::Construct { destination: OwnerPlaceId(0), fields }
+                if fields.is_empty() => fields,
+            _ => return None,
+        };
+        let mut bytes = 0usize;
+        for part in [payload(&raw.enums)?, payload(&raw.records)?, payload(&raw.functions)?,
+            payload(&record.fields)?, payload(&f.parameters)?, payload(&f.locals)?,
+            payload(&f.places)?, payload(&f.owners)?, payload(&f.references)?,
+            payload(&f.calls)?, payload(&f.loans)?, payload(&f.matches)?,
+            payload(&f.blocks)?, payload(fields)?] {
+            bytes = bytes.checked_add(part)?;
+        }
+        for block in &f.blocks {
+            // Empty statement vectors may still retain nonzero capacity.
+            bytes = bytes.checked_add(payload(&block.statements)?)?;
+        }
+        bytes.checked_add(self.declarations.observer_capacity_bytes()?)
+    }
+
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
         let rank = self
             .program
@@ -743,4 +840,78 @@ fn fixed_owned_relay_star_capacity_observer_rejects_extra_unused_local() {
         let witness = verify_owned(raw, &sources).unwrap();
         assert_eq!(witness.observer_fixed_owned_relay_star_capacity_bytes(), None);
     }
+}
+
+// Source-only controls: not compiled or executed by this proposal.
+// Every witness uses normal verify_owned; no sealed witness is mutated.
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn fixed_empty_record_cfg_fanout_capacity_observer_accepts_exact_fixture() {
+    let (sources, raw, schedule) = super::consumer_fixtures::fixed_empty_record_cfg_fanout();
+    assert_eq!(raw.functions.len(), 1);
+    let f = &raw.functions[0];
+    let file = f.span.file;
+    let s = |i: usize| Span { file, start: i * 2, end: i * 2 + 1 };
+    assert!(f.calls.is_empty());
+    assert_eq!(f.blocks.len(), 9);
+    assert_eq!(f.blocks[0].span, s(0));
+    assert_eq!(f.blocks[0].statements.len(), 6);
+    assert_eq!(schedule.entry, hir::DefId(0));
+    assert_eq!(schedule.result, Scalar::Unit);
+    assert_eq!(schedule.fuel(), 20);
+    assert_eq!(schedule.events, vec![
+        (s(0), 8), (s(1), 1), (s(2), 2), (s(3), 2), (s(4), 2),
+        (s(5), 1), (s(6), 1), (s(7), 1), (s(8), 2),
+    ]);
+    let mut edges = 0usize;
+    for (id, then_id, else_id) in [(0, 1, 2), (2, 3, 4), (4, 5, 6), (6, 7, 8)] {
+        let term = f.blocks[id].terminator.as_ref().unwrap();
+        assert_eq!(term.span, s(7 + id));
+        assert!(term.diagnostic_origins.is_none());
+        assert!(matches!(&term.kind, OwnedTerminatorKind::Branch {
+            condition, then_block, else_block,
+        } if condition.local == LocalId(1) && condition.span == s(7 + id)
+            && *then_block == BlockId(then_id) && *else_block == BlockId(else_id)));
+        edges += 2;
+    }
+    assert_eq!(edges, 8);
+    for id in [1, 3, 5, 7, 8] {
+        let term = f.blocks[id].terminator.as_ref().unwrap();
+        assert_eq!(term.span, s(7 + id));
+        assert!(term.diagnostic_origins.is_none());
+        assert!(matches!(&term.kind, OwnedTerminatorKind::ReturnScalar(value)
+            if value.local == LocalId(0) && value.span == s(7 + id)));
+    }
+    for (id, block) in f.blocks.iter().enumerate().skip(1) {
+        assert_eq!(block.span, s(7 + id));
+        assert!(block.statements.is_empty());
+        assert!(block.merge.is_none());
+    }
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert!(witness.observer_fixed_empty_record_cfg_fanout_capacity_bytes().is_some());
+    assert_eq!(witness.observer_empty_record_capacity_bytes(), None);
+    assert_eq!(witness.observer_owned_relay_capacity_bytes(), None);
+    assert_eq!(witness.observer_fixed_owned_relay_star_capacity_bytes(), None);
+}
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn fixed_empty_record_cfg_fanout_capacity_observer_rejects_alternate_bool() {
+    let (sources, mut raw, _) = super::consumer_fixtures::fixed_empty_record_cfg_fanout();
+    match &mut raw.functions[0].blocks[0].statements[5].kind {
+        OwnedInstruction::Scalar(Statement::Assign(assign)) => assign.value = Rvalue::Bool(false),
+        _ => panic!("fixed fanout Bool assignment changed"),
+    }
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(witness.observer_fixed_empty_record_cfg_fanout_capacity_bytes(), None);
+}
+
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn fixed_empty_record_cfg_fanout_capacity_observer_rejects_extra_unused_local() {
+    let (sources, mut raw, _) = super::consumer_fixtures::fixed_empty_record_cfg_fanout();
+    let local = raw.functions[0].locals[0].clone();
+    raw.functions[0].locals.push(local);
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(witness.observer_fixed_empty_record_cfg_fanout_capacity_bytes(), None);
 }

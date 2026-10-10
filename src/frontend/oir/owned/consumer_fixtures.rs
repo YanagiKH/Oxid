@@ -160,6 +160,41 @@ pub(super) fn empty_record() -> (SourceMap, RawOwnedProgram, Schedule) {
         },
     )
 }
+/// Fixed F=1, call E=0, B=9, CFG E=8 reachable binary fanout.
+/// The true entry path returns through B1; the else spine grows a LIFO frontier.
+/// No allocator-dependent sizing, disconnected blocks, or alternate execution.
+pub(super) fn fixed_empty_record_cfg_fanout() -> (SourceMap, RawOwnedProgram, Schedule) {
+    let (sources, mut raw, _) = empty_record();
+    let f = &mut raw.functions[0];
+    let file = f.span.file;
+    let s = |i: usize| Span { file, start: i * 2, end: i * 2 + 1 };
+    f.locals.push(scalar(hir::Ty::Bool, s(6)));
+    // empty_record uses s(6) for its sole block; freeze this root at s(0).
+    f.blocks[0].span = s(0);
+    f.blocks[0].statements.push(assign(1, Rvalue::Bool(true), s(6)));
+    f.blocks[0].terminator = end(OwnedTerminatorKind::Branch {
+        condition: operand(1, s(7)), then_block: BlockId(1), else_block: BlockId(2),
+    }, s(7));
+    for id in 1..=8 {
+        let span = s(7 + id);
+        let kind = match id {
+            2 | 4 | 6 => OwnedTerminatorKind::Branch {
+                condition: operand(1, span),
+                then_block: BlockId(id + 1),
+                else_block: BlockId(id + 2),
+            },
+            _ => OwnedTerminatorKind::ReturnScalar(operand(0, span)),
+        };
+        f.blocks.push(block(vec![], kind, span));
+    }
+    let events = [8, 1, 2, 2, 2, 1, 1, 1, 2]
+        .into_iter()
+        .enumerate()
+        .map(|(i, cost)| (s(i), cost))
+        .collect();
+    (sources, raw, Schedule { result: Scalar::Unit, entry: hir::DefId(0), events })
+}
+
 pub(super) fn owned_relay() -> (SourceMap, RawOwnedProgram, Schedule) {
     let (sources, s) = context();
     let field = FieldId {
