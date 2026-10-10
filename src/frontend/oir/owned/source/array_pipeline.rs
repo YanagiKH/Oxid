@@ -43,6 +43,7 @@ pub(super) enum Control {
     ExpandedBoundaryFirstOperandFailure,
     FailTranscriptReservation,
     FailTraceReservation,
+    LexerNull { site: LexerNullSite },
 }
 impl Control {
     fn name(self) -> &'static str {
@@ -52,6 +53,7 @@ impl Control {
             Self::ExpandedBoundaryFirstOperandFailure => "expanded-boundary-first-operand-failure",
             Self::FailTranscriptReservation => "transcript-capacity-failure",
             Self::FailTraceReservation => "trace-capacity-failure",
+            Self::LexerNull { .. } => "lexer-real-null",
         }
     }
     fn resource_only(self) -> bool {
@@ -61,6 +63,7 @@ impl Control {
         match self {
             Self::FailLiteralOperand { ordinal } => Some(ordinal),
             Self::ExpandedBoundaryFirstOperandFailure => Some(0),
+            Self::LexerNull { site } => Some(site.ordinal()),
             _ => None,
         }
     }
@@ -570,12 +573,24 @@ fn observe_inner(
     limits: Limits,
     control: Control,
 ) -> ObservationResult<(Output, Outcome)> {
+    if matches!(control, Control::LexerNull { .. }) {
+        match input {
+            SourceInput::Bytes {
+                path: LEXER_NULL_PATH,
+                text: LEXER_NULL_TEXT,
+            } if limits.source.tokens >= 8 => {}
+            _ => return Err("lexer null fixture or token credit refused"),
+        }
+    }
     let mut out = Output::new(limits, control)?;
     let Mode::Validate = mode;
     // Include the fixed TLS wrapper while empty as well as the outside-capture
     // Output. During capture the wrapper contains that Output, not a second
     // transcript; this fixed allowance safely covers both lifetime phases.
     out.aux(size_of::<Output>() + size_of::<Allocator>() + size_of::<RefCell<Option<Output>>>())?;
+    // Additive lexer helper/result allowance and its fixed qualification sink.
+    // Preserve all earlier source/allocator/trace charges and the existing cap.
+    out.aux(lexer::reservation_scratch_bytes() + lexer::reservation_observer_bytes())?;
     out.aux(
         limits
             .trace_rows
@@ -693,8 +708,19 @@ fn observe_inner(
                 .try_add(source_path, source_text, &mut allocator)
                 .map_err(|_| "single-source map reservation failed")?;
             let source = sources.get(id);
-            let parsed = lexer::lex_with_limit(source, limits.source.tokens)
-                .map_err(|error| vec![*error])
+            let lexed = if let Control::LexerNull { site } = control {
+                Err(source_null_lex(
+                    source,
+                    limits.source.tokens,
+                    &mut allocator,
+                    &mut out,
+                    site,
+                )?)
+            } else {
+                lexer::lex_with_allocator(source, limits.source.tokens, &mut allocator)
+            };
+            let parsed = lexed
+                .map_err(|error| vec![*error.diagnostic()])
                 .and_then(|tokens| {
                     parser::parse_counted_with_arrays(
                         source,
@@ -725,6 +751,461 @@ fn observe_inner(
         }
     }
 }
+// Closed, test-only Bytes-source qualification. Selection is strictly narrower
+// than transcript emission, diagnostic conversion and trace ownership release.
+const LEXER_NULL_PATH: &str = "retained-null-source.ox";
+const LEXER_NULL_TEXT: &str = "/**//**//**//**//**//**//**//**/";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LexerNullSite {
+    First,
+    GrowEight,
+    GrowSixteen,
+}
+impl LexerNullSite {
+    fn ordinal(self) -> usize {
+        match self {
+            Self::First => 5,
+            Self::GrowEight => 6,
+            Self::GrowSixteen => 7,
+        }
+    }
+    fn slots(self) -> (usize, usize) {
+        match self {
+            Self::First => (0, 4),
+            Self::GrowEight => (4, 8),
+            Self::GrowSixteen => (8, 16),
+        }
+    }
+}
+use crate::frontend::project::budget::real_null_observer::{
+    self as lexer_null, growth as lexer_growth,
+};
+#[derive(Clone, Copy, Debug)]
+struct SourceNullFacts {
+    failure: Option<lexer::Failure>,
+    unexpected_success: bool,
+}
+#[derive(Clone, Copy, Debug)]
+enum SourceNullReport {
+    Fresh(lexer_null::Report),
+    Growth(lexer_growth::GrowthReport),
+}
+#[derive(Clone, Copy, Debug)]
+struct SourceNullRow {
+    ordinal: usize,
+    operation: &'static str,
+    old_bytes: usize,
+    new_bytes: usize,
+    fired: bool,
+    reserve_failed: bool,
+    owner_unchanged: Option<bool>,
+    address_unchanged: Option<bool>,
+    length_unchanged: Option<bool>,
+    capacity_unchanged: Option<bool>,
+    drop_count: u8,
+    trace_preserved: bool,
+    source_preserved: bool,
+}
+fn source_null_action(
+    source: &SourceFile,
+    token_limit: usize,
+) -> impl for<'a> FnOnce(&'a mut Allocator) -> SourceNullFacts + '_ {
+    move |allocator| match lexer::lex_with_allocator(source, token_limit, allocator) {
+        Err(failure) => SourceNullFacts {
+            failure: Some(failure),
+            unexpected_success: false,
+        },
+        Ok(tokens) => {
+            // Qualification refusal never leaks, returns or invents an owner.
+            drop(tokens);
+            SourceNullFacts {
+                failure: None,
+                unexpected_success: true,
+            }
+        }
+    }
+}
+#[allow(dead_code)]
+struct SourceNullControlBank<'a> {
+    control: Control,
+    caller_control: Control,
+    site: LexerNullSite,
+    dispatch_site: LexerNullSite,
+    facts: SourceNullFacts,
+    returned_facts: SourceNullFacts,
+    caller_facts: SourceNullFacts,
+    report: SourceNullReport,
+    returned_report: SourceNullReport,
+    caller_report: SourceNullReport,
+    optional_failure: Option<lexer::Failure>,
+    failure: lexer::Failure,
+    returned_failure: lexer::Failure,
+    caller_failure: lexer::Failure,
+    fresh_target: lexer_null::Target,
+    growth_target: lexer_growth::GrowthTarget,
+    old_layout: std::alloc::Layout,
+    new_layout: std::alloc::Layout,
+    old_layout_result: Result<std::alloc::Layout, std::alloc::LayoutError>,
+    new_layout_result: Result<std::alloc::Layout, std::alloc::LayoutError>,
+    source: &'a SourceFile,
+    token_limit: usize,
+    source_identity: u64,
+    source_after: u64,
+    source_matches: bool,
+    report_matches: bool,
+    trace_matches: bool,
+    ordinal: usize,
+    old_slots: usize,
+    new_slots: usize,
+    old_bytes: usize,
+    new_bytes: usize,
+    trace_len: usize,
+    trace_capacity: usize,
+    trace_limit: Option<usize>,
+    configured_trace: usize,
+    lexical_return: Result<Vec<lexer::Token>, lexer::Failure>,
+    lexical_caller: Result<Vec<lexer::Token>, lexer::Failure>,
+    returned: ObservationResult<lexer::Failure>,
+    caller: ObservationResult<lexer::Failure>,
+    selected_return: ObservationResult<(SourceNullFacts, SourceNullReport)>,
+    selected_caller: ObservationResult<(SourceNullFacts, SourceNullReport)>,
+    row: SourceNullRow,
+    row_return: Option<SourceNullRow>,
+    row_caller: Option<SourceNullRow>,
+    format_arguments: fmt::Arguments<'a>,
+    format_arguments_caller: fmt::Arguments<'a>,
+    trace_event: &'a crate::frontend::project::budget::ReserveEvent,
+    trace_index: usize,
+}
+#[allow(dead_code)]
+struct SourceNullTrackerBank<'a> {
+    raw_enabled_tls: std::cell::Cell<bool>,
+    raw_count_tls: std::cell::Cell<usize>,
+    // Existing GlobalAlloc accounting callbacks borrow these three TLS cells.
+    // These are reference transport roles, separate from the referent storage.
+    raw_enabled_callback: &'a std::cell::Cell<bool>,
+    raw_count_callback: &'a std::cell::Cell<usize>,
+    // The private source cell's referent is priced by the actual accessor.
+    // Cell<()> names only its equally thin read-only reference transport;
+    // no value/reference is constructed, cast or used to access source state.
+    source_tracker_callback: &'a std::cell::Cell<()>,
+    raw_read: bool,
+    raw_count: usize,
+    raw_increment: usize,
+    raw_write: usize,
+    // Private source tracker payload roles are added using the actual type
+    // layout accessor below, never reconstructed as tuple surrogates.
+    delta: isize,
+    allocation: bool,
+    accessor_return: (usize, usize, usize, usize, usize, usize),
+    accessor_caller: (usize, usize, usize, usize, usize, usize),
+}
+#[allow(dead_code)]
+struct SourceNullSizingCarriers<'a, F> {
+    action: &'a F,
+    source_layout: (usize, usize, usize, usize, usize, usize),
+    fresh: usize,
+    growth: usize,
+    banks: [usize; 5],
+    fold_value: usize,
+    fold_result: Option<usize>,
+    returned: ObservationResult<usize>,
+    caller: ObservationResult<usize>,
+}
+fn source_null_bank_bytes<F>(action: &F) -> ObservationResult<usize>
+where
+    F: for<'a> FnOnce(&'a mut Allocator) -> SourceNullFacts,
+{
+    let source_layout = super::reviewer_source::integration_tracker_layout();
+    let fresh = lexer_null::selection_carriers_bytes(action);
+    let growth = lexer_growth::selection_carriers_bytes(action);
+    [
+        size_of::<SourceNullControlBank<'_>>(),
+        size_of::<SourceNullTrackerBank<'_>>()
+            .checked_add(source_layout.0)
+            .and_then(|bytes| bytes.checked_add(source_layout.2))
+            .and_then(|bytes| bytes.checked_add(source_layout.2))
+            .and_then(|bytes| bytes.checked_add(source_layout.4))
+            .ok_or("lexer null bank overflow")?,
+        lexer_growth::fixed_carriers_bytes::<lexer::Token>(),
+        fresh.max(growth),
+        size_of::<SourceNullSizingCarriers<'_, F>>(),
+    ]
+    .into_iter()
+    .try_fold(0usize, usize::checked_add)
+    .ok_or("lexer null bank overflow")
+}
+fn source_null_trace_matches(allocator: &Allocator, ordinal: usize, failed: bool) -> bool {
+    allocator.attempts == ordinal
+        && allocator.trace.len() == ordinal
+        && !allocator.observer_trace_overflow
+        && allocator.trace.iter().enumerate().all(|(index, event)| {
+            event.success == (!failed || index + 1 != ordinal)
+                && match index {
+                    0 => {
+                        event.kind == "observer original source"
+                            && event.length == LEXER_NULL_TEXT.len()
+                            && event.element_bytes == 1
+                    }
+                    1 => {
+                        event.kind == "observer original path"
+                            && event.length == LEXER_NULL_PATH.len()
+                            && event.element_bytes == 1
+                    }
+                    2 => {
+                        event.kind == "line starts"
+                            && event.length == 1
+                            && event.element_bytes == size_of::<usize>()
+                    }
+                    3 => {
+                        event.kind == "source files"
+                            && event.length == 1
+                            && event.element_bytes == size_of::<SourceFile>()
+                    }
+                    4 => {
+                        event.kind == "lexer token tape"
+                            && event.length == 4
+                            && event.element_bytes == size_of::<lexer::Token>()
+                    }
+                    5 => {
+                        event.kind == "lexer token tape"
+                            && event.length == 8
+                            && event.element_bytes == size_of::<lexer::Token>()
+                    }
+                    6 => {
+                        event.kind == "lexer token tape"
+                            && event.length == 16
+                            && event.element_bytes == size_of::<lexer::Token>()
+                    }
+                    _ => false,
+                }
+        })
+}
+fn source_null_preselector(
+    allocator: &Allocator,
+    configured_trace: usize,
+    site: LexerNullSite,
+) -> ObservationResult<()> {
+    if configured_trace < site.ordinal()
+        || allocator.observer_trace_limit != Some(configured_trace)
+        || allocator.trace.capacity() < configured_trace
+        || allocator.fail_at.is_some()
+        || !source_null_trace_matches(allocator, 4, false)
+    {
+        Err("lexer null trace prepayment or prefix refused")
+    } else {
+        Ok(())
+    }
+}
+fn source_null_row(
+    report: SourceNullReport,
+    site: LexerNullSite,
+    source_preserved: bool,
+) -> Option<SourceNullRow> {
+    let (old, new) = site.slots();
+    let old_bytes = old.checked_mul(size_of::<lexer::Token>())?;
+    let new_bytes = new.checked_mul(size_of::<lexer::Token>())?;
+    match report {
+        SourceNullReport::Fresh(report) => {
+            let target = lexer_null::Target {
+                attempt: site.ordinal(),
+                kind: "lexer token tape",
+                slots: new,
+                element_bytes: size_of::<lexer::Token>(),
+                layout: std::alloc::Layout::array::<lexer::Token>(new).ok()?,
+            };
+            if site != LexerNullSite::First
+                || report.target != target
+                || !report.selected
+                || !report.matched
+                || !report.fired
+                || report.rejection.is_some()
+                || report.actual
+                    != Some(lexer_null::GlobalEvent {
+                        operation: lexer_null::Operation::Alloc,
+                        layout: target.layout,
+                        new_size: None,
+                    })
+            {
+                return None;
+            }
+            Some(SourceNullRow {
+                ordinal: site.ordinal(),
+                operation: "alloc",
+                old_bytes,
+                new_bytes,
+                fired: true,
+                reserve_failed: true,
+                owner_unchanged: None,
+                address_unchanged: None,
+                length_unchanged: None,
+                capacity_unchanged: None,
+                drop_count: 0,
+                trace_preserved: true,
+                source_preserved,
+            })
+        }
+        SourceNullReport::Growth(report) => {
+            let target = lexer_growth::GrowthTarget {
+                attempt: site.ordinal(),
+                kind: "lexer token tape",
+                old_len: old,
+                old_capacity: old,
+                additional: new.checked_sub(old)?,
+                new_slots: new,
+                element_bytes: size_of::<lexer::Token>(),
+                element_align: std::mem::align_of::<lexer::Token>(),
+                old_layout: std::alloc::Layout::array::<lexer::Token>(old).ok()?,
+                new_layout: std::alloc::Layout::array::<lexer::Token>(new).ok()?,
+                operation: lexer_null::Operation::Realloc,
+            };
+            if site == LexerNullSite::First
+                || report.target != target
+                || !report.selected
+                || !report.matched
+                || !report.fired
+                || report.rejection.is_some()
+                || report.reserve_failed != Some(true)
+                || !report.owner_unchanged
+                || !report.address_unchanged
+                || !report.length_unchanged
+                || !report.capacity_unchanged
+                || !report.trace_preserved
+                || report.drop_count != 1
+                || report.actual
+                    != Some(lexer_growth::GrowthEvent {
+                        operation: lexer_null::Operation::Realloc,
+                        layout: target.old_layout,
+                        new_size: Some(target.new_layout.size()),
+                        old_address_matches: true,
+                    })
+                || report.drop_event
+                    != Some(lexer_growth::GrowthDropEvent {
+                        layout: target.old_layout,
+                        old_address_matches: true,
+                        after_reserve_return: true,
+                    })
+            {
+                return None;
+            }
+            Some(SourceNullRow {
+                ordinal: site.ordinal(),
+                operation: "realloc",
+                old_bytes,
+                new_bytes,
+                fired: true,
+                reserve_failed: true,
+                owner_unchanged: Some(report.owner_unchanged),
+                address_unchanged: Some(report.address_unchanged),
+                length_unchanged: Some(report.length_unchanged),
+                capacity_unchanged: Some(report.capacity_unchanged),
+                drop_count: report.drop_count,
+                trace_preserved: report.trace_preserved,
+                source_preserved,
+            })
+        }
+    }
+}
+fn source_null_failure(facts: SourceNullFacts) -> ObservationResult<lexer::Failure> {
+    if facts.unexpected_success {
+        return Err("lexer null unexpected successful tape");
+    }
+    facts
+        .failure
+        .filter(|failure| failure.is_storage())
+        .ok_or("lexer null storage failure missing")
+}
+fn source_null_lex(
+    source: &SourceFile,
+    token_limit: usize,
+    allocator: &mut Allocator,
+    out: &mut Output,
+    site: LexerNullSite,
+) -> ObservationResult<lexer::Failure> {
+    if source.path() != LEXER_NULL_PATH
+        || source.text() != LEXER_NULL_TEXT
+        || source.span(0, 0).file != crate::frontend::source::SourceFileId(0)
+        || token_limit < 8
+    {
+        return Err("lexer null fixture or token credit refused");
+    }
+    // The actual closure can only be sized after this actual source is registered.
+    // Admission failure retains all four completed requests and makes no NEW selected call.
+    let action = source_null_action(source, token_limit);
+    out.aux(source_null_bank_bytes(&action)?)?;
+    source_null_preselector(allocator, out.limits.trace_rows, site)?;
+    let source_identity = source.identity();
+    let trace_capacity = allocator.trace.capacity();
+    let (old, new) = site.slots();
+    let (facts, report) = if site == LexerNullSite::First {
+        let target = lexer_null::Target {
+            attempt: site.ordinal(),
+            kind: "lexer token tape",
+            slots: new,
+            element_bytes: size_of::<lexer::Token>(),
+            layout: std::alloc::Layout::array::<lexer::Token>(new)
+                .map_err(|_| "lexer null layout refused")?,
+        };
+        let (facts, report) = lexer_null::with_selected(allocator, target, action)
+            .map_err(|_| "lexer null fresh setup refused")?;
+        (facts, SourceNullReport::Fresh(report))
+    } else {
+        let target = lexer_growth::GrowthTarget {
+            attempt: site.ordinal(),
+            kind: "lexer token tape",
+            old_len: old,
+            old_capacity: old,
+            additional: new - old,
+            new_slots: new,
+            element_bytes: size_of::<lexer::Token>(),
+            element_align: std::mem::align_of::<lexer::Token>(),
+            old_layout: std::alloc::Layout::array::<lexer::Token>(old)
+                .map_err(|_| "lexer null old layout refused")?,
+            new_layout: std::alloc::Layout::array::<lexer::Token>(new)
+                .map_err(|_| "lexer null new layout refused")?,
+            operation: lexer_null::Operation::Realloc,
+        };
+        let (facts, report) = lexer_growth::with_selected_growth(allocator, target, action)
+            .map_err(|_| "lexer null growth setup refused")?;
+        (facts, SourceNullReport::Growth(report))
+    };
+    // Both selectors are now completely ended. No diagnostics/Output/trace
+    // ownership operation appeared inside the actual selected callback.
+    let failure = source_null_failure(facts)?;
+    let source_preserved = source.identity() == source_identity
+        && source.text() == LEXER_NULL_TEXT
+        && source.path() == LEXER_NULL_PATH;
+    let row = source_null_row(report, site, source_preserved)
+        .ok_or("lexer null callback qualification refused")?;
+    if !source_preserved
+        || allocator.trace.capacity() != trace_capacity
+        || !source_null_trace_matches(allocator, site.ordinal(), true)
+    {
+        return Err("lexer null source or trace preservation refused");
+    }
+    out.row(
+        "lexer-null",
+        format_args!(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            row.ordinal,
+            Json(row.operation),
+            row.old_bytes,
+            row.new_bytes,
+            row.fired,
+            row.reserve_failed,
+            Optional(row.owner_unchanged),
+            Optional(row.address_unchanged),
+            Optional(row.length_unchanged),
+            Optional(row.capacity_unchanged),
+            row.drop_count,
+            row.trace_preserved,
+            row.source_preserved
+        ),
+    )?;
+    Ok(failure)
+}
+
 fn release_trace(out: &mut Output, allocator: &mut Allocator) -> ObservationResult<()> {
     let requested = out
         .limits

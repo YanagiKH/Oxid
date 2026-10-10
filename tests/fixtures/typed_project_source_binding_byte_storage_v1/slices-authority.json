@@ -1,0 +1,1687 @@
+{
+  "added_source_paths": [
+    "src/frontend/oir/owned/slice_native_tests.rs",
+    "src/frontend/oir/owned/source/slice_raw_tests.rs",
+    "src/frontend/oir/owned/source/slice_tests.rs"
+  ],
+  "base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
+  "compile_time_fixture_derivation": {
+    "include_str_references": 47,
+    "literal_pattern": "include_str!\\(concat!\\(env!\\(\"CARGO_MANIFEST_DIR\"\\), \"/(tests/fixtures/fixed_array_source_unit3/(?:contracts-v2|typing-contracts-v1)/fixtures/[a-z0-9-]+/main\\.ox)\"\\)\\)",
+    "ordered_references_sha256": "c93538ccae1080771921a761412b3d5380a584b663d6dcc719cfc50b98380732",
+    "source": {
+      "bytes": 44194,
+      "path": "src/frontend/oir/owned/source/array_types_tests.rs",
+      "sha256": "93dd962176ccf43c4bfd67b5fd1d138b651f4e06e3a3c7ffd25691c09f3a5dab"
+    },
+    "unique_fixture_inputs": 42
+  },
+  "compiler_bodies": 139,
+  "compiler_source_members": 136,
+  "current_input_git_modes": [
+    {
+      "mode": "100644",
+      "path": "Cargo.lock"
+    },
+    {
+      "mode": "100644",
+      "path": "Cargo.toml"
+    },
+    {
+      "mode": "100644",
+      "path": "build.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "compiler/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "compiler/providers.toml"
+    },
+    {
+      "mode": "100644",
+      "path": "fixtures/owned_source/batch.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_cpp_bridge.cpp"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_cpp_bridge.h"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_ffi.c"
+    },
+    {
+      "mode": "100644",
+      "path": "native/oxid_ffi.h"
+    },
+    {
+      "mode": "100644",
+      "path": "native/typed_preview.c"
+    },
+    {
+      "mode": "100644",
+      "path": "rfcs/0014-owned-structs-call-borrows.md"
+    },
+    {
+      "mode": "100644",
+      "path": "src/cli.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/ast.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/branch_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/resource.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/sealed.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/source_owner.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/declaration_index/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/diagnostic.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/driver.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format/ast_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format/resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/format_cli.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/hir.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/lexer.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/arithmetic_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/cfg_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/comparison_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/cyclic_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/execute.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/execute_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/i32_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/logical_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/loop_control_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/lower.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/mutable_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/allocator_review_controls.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_native_resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_native_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_observe.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_reference_boundary_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_reference_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/array_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/budget.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/cfg.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/consumer_fixtures.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/consumer_pilot.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/consumer_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/denial_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/execute.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/execute_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/flow.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/native_heldout_review.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/native_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/oracle_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/origin_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/plan.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_allocator.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_array_observer_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_heldout.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_origins.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/reviewer_reference_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/shape.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/slice_native_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_consumer_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_pipeline_transport.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_type_controls.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/array_types_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/association.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/budget.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/budget_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/candidate_adapter.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/candidate_mutations.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/candidate_native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/diagnostic.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/diagnostic_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/hir.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/lower.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/lower_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/mod.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/native_resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/program.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/resolve.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/resource_fixtures.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_heldout.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_resource_native.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_resource_runtime.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/reviewer_source.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/runtime_resource_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/slice_raw_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/slice_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/source/typeck.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/storage.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned/verified.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned_types.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/owned_types/array_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/project.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/project_execution_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source/association.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source/sealed.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/source_oracle.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/oir/verify.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/options.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/owned_diagnostic.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/owned_syntax_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/activation_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/array_syntax_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/arrays.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/parser/project_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/array_syntax_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/budget.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/filesystem.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/project/unit2_tests.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/source.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/frontend/typeck.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/legacy/syntax.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "src/main.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/artifact.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/benchmark.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/data.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/network.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "src/runtime/packages.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "stdlib/frontend/bytecode.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/typed_frontend.rs"
+    },
+    {
+      "mode": "100644",
+      "path": "tests/typed_project_dispatch.rs"
+    }
+  ],
+  "current_source_bytes": 35876,
+  "current_source_members": 188,
+  "current_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
+  "division_authority_sha256": "f2a848cf361ba2907d1f1e437256a28c0996189de9228de148f041a0ce9c0164",
+  "division_source_bytes": 35161,
+  "division_source_members": 185,
+  "division_source_sha256": "d3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33",
+  "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS",
+  "removed_source_paths": [],
+  "reviewed_source_head": "03aead9755b1dd6aaec2b4b165ee3881a7a1f7b7",
+  "schema": "oxid-borrowed-slices-source-transition-v1",
+  "source_only_tree": "450f016ed57bc3d960e0857bb8253e71a8aa718a",
+  "transition_inputs": [
+    {
+      "after": {
+        "bytes": 23344,
+        "git_blob": "ea3cf3b08db0b865080cb87de82ba2fba7c1cb28",
+        "mode": "100644",
+        "path": "src/frontend/ast.rs",
+        "sha256": "5c79fdc91a3ffea144db20193b8b93e8d08485870d26e543419096b00a971f3e"
+      },
+      "before": {
+        "bytes": 23058,
+        "git_blob": "26e7d7b6f69c10da4e1ffe8147f7c8a32cec62cc",
+        "mode": "100644",
+        "path": "src/frontend/ast.rs",
+        "sha256": "3ed1baa023f78fea84e74168c420566b9a8481e4c4465f4a1126b242052eb378"
+      },
+      "path": "src/frontend/ast.rs"
+    },
+    {
+      "after": {
+        "bytes": 37569,
+        "git_blob": "1663dfc28200a154d3b69d99d67975ed7ecab8b4",
+        "mode": "100644",
+        "path": "src/frontend/declaration_index.rs",
+        "sha256": "8fb1d0423593ae974d3ba1c41ba154543affac53fe268bbc1c9fca43c3998cf2"
+      },
+      "before": {
+        "bytes": 36931,
+        "git_blob": "cab1e3e3a66f221577e47dd4ea5e299aec39bd1c",
+        "mode": "100644",
+        "path": "src/frontend/declaration_index.rs",
+        "sha256": "92e143b2cef61cdcc4679e6075872d616c6d44d0c2580e6e5693aa9c2e927a56"
+      },
+      "path": "src/frontend/declaration_index.rs"
+    },
+    {
+      "after": {
+        "bytes": 9333,
+        "git_blob": "200a6c5562691467705fc3dc3de8116d599ecab3",
+        "mode": "100644",
+        "path": "src/frontend/declaration_index/source_owner.rs",
+        "sha256": "6865faf81392b1e756402eeecb1e3252611d59df4745189093d900ffcd750af2"
+      },
+      "before": {
+        "bytes": 9276,
+        "git_blob": "fbfffa0265643c8a7a07388371b51b84c0e04ce5",
+        "mode": "100644",
+        "path": "src/frontend/declaration_index/source_owner.rs",
+        "sha256": "e894146825b7c79d25cfbcbe92f371decad8ebcaee37dc45abbc8d3611730030"
+      },
+      "path": "src/frontend/declaration_index/source_owner.rs"
+    },
+    {
+      "after": {
+        "bytes": 18899,
+        "git_blob": "513cdcaf09546176c55adbfc8dcb5da05994b7bd",
+        "mode": "100644",
+        "path": "src/frontend/declaration_index/tests.rs",
+        "sha256": "1192f4ddd43c076ef5a8648d947cc0445482b372829212075afa6de2282ecd41"
+      },
+      "before": {
+        "bytes": 18881,
+        "git_blob": "f79bd48277e688395dbdcef4381c8bcb2782f988",
+        "mode": "100644",
+        "path": "src/frontend/declaration_index/tests.rs",
+        "sha256": "3b913bbfdc073451ce316a4b9b7071e825a82d1c5059d6a73354f131ca6e4286"
+      },
+      "path": "src/frontend/declaration_index/tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 39302,
+        "git_blob": "fa5e703e596a3f58f4bfba64afd87aec8dd16e2d",
+        "mode": "100644",
+        "path": "src/frontend/format/ast_tests.rs",
+        "sha256": "b9c483fd93c3b5a949a4c472beb63aa5b79ca96174f9711a4863630084f90a28"
+      },
+      "before": {
+        "bytes": 38717,
+        "git_blob": "edb6ecf304d41db8986ad83994a366f37488fe55",
+        "mode": "100644",
+        "path": "src/frontend/format/ast_tests.rs",
+        "sha256": "e4500f9ef87570b75a5c12acf6e0aa24263df0c07ec2d855295d3cf15d018133"
+      },
+      "path": "src/frontend/format/ast_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 24282,
+        "git_blob": "5d98f2956a59996ac6107e76d817fd9d5a4a61a9",
+        "mode": "100644",
+        "path": "src/frontend/hir.rs",
+        "sha256": "df264caebb528d3d7c9034dc396c2c9ec1ab0f9791b25eb092c79476fda4cdf5"
+      },
+      "before": {
+        "bytes": 24213,
+        "git_blob": "214db4d69a9ac0f77b426c937924bcbbcf83fbce",
+        "mode": "100644",
+        "path": "src/frontend/hir.rs",
+        "sha256": "f16591e77c660931b689dd2fbc2621b253f226d7b2c6541fc450e38ec8b799fa"
+      },
+      "path": "src/frontend/hir.rs"
+    },
+    {
+      "after": {
+        "bytes": 50162,
+        "git_blob": "ce75509c0020959719e76ef3fc3228d3c3f353b8",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_native_tests.rs",
+        "sha256": "8aea5e9748641f43597e9d904886fe49a827c692c227b0f73b91e21c638822e6"
+      },
+      "before": {
+        "bytes": 50154,
+        "git_blob": "c41f68358792156fd94b45559deba74c9c836e96",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_native_tests.rs",
+        "sha256": "40582c42818ffff22e327d48b2d5ef1161935a4d8ed7b8cd67731e116a28f887"
+      },
+      "path": "src/frontend/oir/owned/array_native_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 33205,
+        "git_blob": "46de739a2924f5b8cefd4ae13ecbd5fb9e6919a5",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_reference_boundary_tests.rs",
+        "sha256": "202ee680998b73ad169e2886cc405e38e7f44db6a9a1dd0182d50ff08cfcd76e"
+      },
+      "before": {
+        "bytes": 32949,
+        "git_blob": "796890b435f07c27af8df6d5d31e3179f85562cb",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_reference_boundary_tests.rs",
+        "sha256": "5e34adf14dbe92fc784d704a1bd48b845457ca4b95a765ba39585ab0dfbec97b"
+      },
+      "path": "src/frontend/oir/owned/array_reference_boundary_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 44064,
+        "git_blob": "a2c1b22b27f79fcab6c56b98735f87d9e23d5ff5",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_reference_tests.rs",
+        "sha256": "511ae8ce1ae2686c87057e0d263073935a29f85844a9aec0a3cfaa0eefe5e8ba"
+      },
+      "before": {
+        "bytes": 44056,
+        "git_blob": "5c3c9eee9da2d833f95cb2e024a21cadba9501ed",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_reference_tests.rs",
+        "sha256": "b64bcb442203fddbcf4dee8f58bfde544a5860302cb30a84d36c3edece9a4de3"
+      },
+      "path": "src/frontend/oir/owned/array_reference_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 32385,
+        "git_blob": "a3b4640f18905a9769252597ea456d7b06ae42b1",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_tests.rs",
+        "sha256": "81f1776b86fc31c22cba980dcf3a289fc23027d707bd1d660002f712a0566873"
+      },
+      "before": {
+        "bytes": 32124,
+        "git_blob": "3d2806cd9a65cca8e95a1759d078c2e02ef723b6",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/array_tests.rs",
+        "sha256": "a197f749b345c8f4700ca41108007cdace8352f918afb0ff3389b037704eefb8"
+      },
+      "path": "src/frontend/oir/owned/array_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 45124,
+        "git_blob": "52b02d2e9ac0ce43aff68d13d3d80142d2c2fbc7",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/consumer_fixtures.rs",
+        "sha256": "467229a3d4fbee81c79e4bafaaa0ecb48cb89c50a4720ad38d53fd6fe88f4c15"
+      },
+      "before": {
+        "bytes": 45066,
+        "git_blob": "71fb2a8bbcf06643f5f041f228f02697be576e79",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/consumer_fixtures.rs",
+        "sha256": "1ef6fcbabe38ade0a4b57d299822676303740ee3571dfa731186af6cc1ebd051"
+      },
+      "path": "src/frontend/oir/owned/consumer_fixtures.rs"
+    },
+    {
+      "after": {
+        "bytes": 34999,
+        "git_blob": "c3196a18e1e6d3b7c87747095d0df0a33e38866a",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/consumer_pilot.rs",
+        "sha256": "64b2642d8d8a1041c4046818e56047bf72ededc52a78ac8c4a28ffe7179d07ff"
+      },
+      "before": {
+        "bytes": 34987,
+        "git_blob": "44164c090acf36511a1086c2db057bae206aa317",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/consumer_pilot.rs",
+        "sha256": "2dd65029f54bc4ebf64c9df6e74edace84b0d8e1a8b56326c64ebe57963f6649"
+      },
+      "path": "src/frontend/oir/owned/consumer_pilot.rs"
+    },
+    {
+      "after": {
+        "bytes": 27053,
+        "git_blob": "e1bcebea807af94069c16f2d478cff794f508227",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/denial_tests.rs",
+        "sha256": "faa204fa339073b01628f513d7c09f819f70fb22a47c2bb375149423df64a494"
+      },
+      "before": {
+        "bytes": 26970,
+        "git_blob": "cb20ab6b06133b93bf55d2debcb9e1f6f92c396b",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/denial_tests.rs",
+        "sha256": "9350c0d5ab0787bbfaa66e18a04789e01010d2e238e7a516628da038151ed3a9"
+      },
+      "path": "src/frontend/oir/owned/denial_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 68135,
+        "git_blob": "90f16da0bb9aca74f1b02ca1eec7ad43d33101c7",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/execute.rs",
+        "sha256": "ead39edabddc2c2a54da7ff99bc5d23b73e3eb1642c0479d9694d9a16ef15006"
+      },
+      "before": {
+        "bytes": 67737,
+        "git_blob": "bd49aa0ff1dc53add66abd2b219d4db00b8a4a38",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/execute.rs",
+        "sha256": "f06e2e105e1238db4d94b3515a73870428fc81b9c85c01e07f5097600b9d317d"
+      },
+      "path": "src/frontend/oir/owned/execute.rs"
+    },
+    {
+      "after": {
+        "bytes": 35272,
+        "git_blob": "2fcbe76f68268c18e8aca8ff961b57d3b40ad6aa",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/execute_tests.rs",
+        "sha256": "5cc6ead50887fbf86454832da74eedb1024bb5e9de424e070d38cca1e7975fa0"
+      },
+      "before": {
+        "bytes": 35260,
+        "git_blob": "a21c06e7a3c4939a6ea4c1c674febc8a4c26dd98",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/execute_tests.rs",
+        "sha256": "a1c60d8575af0ea542b13af7372ca3c55fb0d905e6a8aeb5defb91bd0e15aae0"
+      },
+      "path": "src/frontend/oir/owned/execute_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 37860,
+        "git_blob": "a1ebf51ab2ce2d3cdebe60281144ff2ae544ed34",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/flow.rs",
+        "sha256": "b94329883e7d01de780a60b4b793a4f572e19c0fffeb22c464b5ed8568f9471e"
+      },
+      "before": {
+        "bytes": 37743,
+        "git_blob": "53e36d27ddc5a149cb076ee8dfdeb5e9f6992c68",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/flow.rs",
+        "sha256": "e32d8a03bce12cacb0f6c20b22be9ff1f4d5aff2b545412247ba77c3a240218c"
+      },
+      "path": "src/frontend/oir/owned/flow.rs"
+    },
+    {
+      "after": {
+        "bytes": 9651,
+        "git_blob": "7038dcef2fec43a53b809e33ce1fa5828b955cb0",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/mod.rs",
+        "sha256": "eae123ec2fe38c4e6e8d5254ea28fd910bd22aecf22d5c40a04dd87ef14a79d2"
+      },
+      "before": {
+        "bytes": 9663,
+        "git_blob": "a062b28c7c19e483f1685a0ca9b43f085d524214",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/mod.rs",
+        "sha256": "b0fff6c421514a7144f61684cc6e88b964e17d281c2182a3862c1a923293800e"
+      },
+      "path": "src/frontend/oir/owned/mod.rs"
+    },
+    {
+      "after": {
+        "bytes": 92333,
+        "git_blob": "d833f370c74c8e7370507b4f50df1b5cf1a613f9",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native.rs",
+        "sha256": "7717fb9ad41689e580ccad1aa458a8a6b31d21b421681a3ad3e4582e03ae2e8a"
+      },
+      "before": {
+        "bytes": 87934,
+        "git_blob": "22ee85a6c9b32ca9ddf621b19c3631d1606f988a",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native.rs",
+        "sha256": "ed25d30c71f2beb67d7031e551b555ef489c8808e9015bcdc21a4e063f927c07"
+      },
+      "path": "src/frontend/oir/owned/native.rs"
+    },
+    {
+      "after": {
+        "bytes": 25047,
+        "git_blob": "87080af339b96964e94d60cd77f5eb863a1e12ca",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native_heldout_review.rs",
+        "sha256": "8ee0580448a85d052d414543597992f72e3442bb0e276014037cd411e22ad829"
+      },
+      "before": {
+        "bytes": 24963,
+        "git_blob": "1f878e4c9ac52c6ee416cb395d3b985d33f7a3d5",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native_heldout_review.rs",
+        "sha256": "672056365bf6b66d6dfddd9821ab5b3ad9e49c2cbdd77ffb1209879004c2136b"
+      },
+      "path": "src/frontend/oir/owned/native_heldout_review.rs"
+    },
+    {
+      "after": {
+        "bytes": 84436,
+        "git_blob": "8e3b34d931bac0389421cff23b1b99adcbb19afc",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native_tests.rs",
+        "sha256": "ead53823682b8cf1495ac5cd00004ed66e3ee7135e20cb4c6d5b3d7c3a32dd58"
+      },
+      "before": {
+        "bytes": 84389,
+        "git_blob": "71ea04c6c37af3e90874cede191177ed25b7104f",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/native_tests.rs",
+        "sha256": "46474c3bb11b1944ed74d4cba44ad6bae4d011c242d8e873bb3e26b15ff95bc4"
+      },
+      "path": "src/frontend/oir/owned/native_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 114321,
+        "git_blob": "59ae3f1cd82c6cf9028c6766f6c16eb31aa901a4",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/oracle_tests.rs",
+        "sha256": "c938a73e7d9d0a4471691372d841bd142539672b357cd5e226787ea9fad5efe4"
+      },
+      "before": {
+        "bytes": 114100,
+        "git_blob": "79cf55320ca9b21b04ab384125993f7989f8c900",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/oracle_tests.rs",
+        "sha256": "614220b2030c5193a32bb4c807f577ac7dc12d1f48f2b014d5a85a4dc114830f"
+      },
+      "path": "src/frontend/oir/owned/oracle_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 18143,
+        "git_blob": "8910fd3698ee2ef63507f234ad3933971cef60c1",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/plan.rs",
+        "sha256": "855b3341f78540d96defefdd6b2d1d829567ed568e6a1f8d3f04db689f9ddd57"
+      },
+      "before": {
+        "bytes": 17589,
+        "git_blob": "d178ebd6c066a8c5549036ee70d289672b4a9376",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/plan.rs",
+        "sha256": "f14116dd7f19c0e6f6eba568f7025cbb5a201bd096323b1cf5b81c7adc1dfe85"
+      },
+      "path": "src/frontend/oir/owned/plan.rs"
+    },
+    {
+      "after": {
+        "bytes": 64043,
+        "git_blob": "4c08327be3d537efc499cf030189338b0e5c8251",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
+        "sha256": "ee7fb466ae43a8cd5740862522ab6b9da78d3f46a607499eda225946953e06a3"
+      },
+      "before": {
+        "bytes": 63787,
+        "git_blob": "216d5fab08072f09db14b1473f51348ba0893d61",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
+        "sha256": "35007974d3fdfdc6f923ab8ea23dfc934c05af1b155f02ae1fcb334c79b3df92"
+      },
+      "path": "src/frontend/oir/owned/reviewer_array_reference_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 57644,
+        "git_blob": "689836a1f81e11eefa6adae6b36449ffb999a417",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/reviewer_heldout.rs",
+        "sha256": "56dccfa63568c91f7d08595d830bff8b4e59c7eaebaa94e9a64920386ab0d785"
+      },
+      "before": {
+        "bytes": 57466,
+        "git_blob": "4dc316846675176d9783339d37501adee2d66177",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/reviewer_heldout.rs",
+        "sha256": "d8e5ef55d5fab0f08a7004ff62f6d649330134eb023c19ea93dd315e1dee4866"
+      },
+      "path": "src/frontend/oir/owned/reviewer_heldout.rs"
+    },
+    {
+      "after": {
+        "bytes": 70933,
+        "git_blob": "a56ae7d5f1a637eeb8ed1845ead6e90367a77e03",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/reviewer_reference_tests.rs",
+        "sha256": "f335a79c3c1530260cb986f607c48027474b713d6a600b8d250053bd73fd9b9d"
+      },
+      "before": {
+        "bytes": 70689,
+        "git_blob": "bc3b3ed64804a7d3ea8c7fed6ad8fa7cf02d15b3",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/reviewer_reference_tests.rs",
+        "sha256": "9a5555bda52c1ff7da937d0c9738fe39969c25baaf2678d3250c7100d6fdb368"
+      },
+      "path": "src/frontend/oir/owned/reviewer_reference_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 29050,
+        "git_blob": "5722ebfe10ac845e2e03db10995526e83d403cb2",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/shape.rs",
+        "sha256": "5a16e9436e625a8e356ca85df2b090543a5110f06bd589c3c80b72bf656a0090"
+      },
+      "before": {
+        "bytes": 28575,
+        "git_blob": "35422f48af7ebe5740c3a21a928f26e2608f65e2",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/shape.rs",
+        "sha256": "556fa0d9b35587250ebc2d282895c43bc19afde708c5536aff0f094a0c5a64b6"
+      },
+      "path": "src/frontend/oir/owned/shape.rs"
+    },
+    {
+      "after": {
+        "bytes": 12584,
+        "git_blob": "7bb06dab166812a67a7d1c68fd56852f97459f82",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/slice_native_tests.rs",
+        "sha256": "6734a3ba8199833fc921244fb7a2bbe7ea666b3c47699fe42a22f866a9da2784"
+      },
+      "before": null,
+      "path": "src/frontend/oir/owned/slice_native_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 49720,
+        "git_blob": "1be5bd2a359116fda291f45009f84c2594feaf62",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs",
+        "sha256": "04a14ff648425cbc3789c3f861bc291d6454e63d2c6dc8b621a955a5a11d0d20"
+      },
+      "before": {
+        "bytes": 49399,
+        "git_blob": "c1e1e632d0c8b0057e1d21694a917ea5db51dfbb",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs",
+        "sha256": "e9b79c3135d6dabc9421ef08cf323c366cd1cc2888e8159c8defdbf3f4216517"
+      },
+      "path": "src/frontend/oir/owned/source/array_pipeline_rows.rs"
+    },
+    {
+      "after": {
+        "bytes": 44194,
+        "git_blob": "aef1f1cb6d2adbd412912fadb77b2c776f85c323",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/array_types_tests.rs",
+        "sha256": "93dd962176ccf43c4bfd67b5fd1d138b651f4e06e3a3c7ffd25691c09f3a5dab"
+      },
+      "before": {
+        "bytes": 44176,
+        "git_blob": "6f7c6e04b6f9db968f02dbac48db9f9cfad97dbb",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/array_types_tests.rs",
+        "sha256": "10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc"
+      },
+      "path": "src/frontend/oir/owned/source/array_types_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 40381,
+        "git_blob": "b97638cfa9d375317cce5a369a2ce480e4b042fc",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/candidate_adapter.rs",
+        "sha256": "71cec5a6e5c1885b9ed51a767598e8fca455118ac2a475fd382656d337299f55"
+      },
+      "before": {
+        "bytes": 39938,
+        "git_blob": "3720f564698fd4b3dc644723ddafd316109a4bf9",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/candidate_adapter.rs",
+        "sha256": "5ab7d897381baa0c868db6b0db2f10bc047a5392b6bdb04ffcffc13b2f953a82"
+      },
+      "path": "src/frontend/oir/owned/source/candidate_adapter.rs"
+    },
+    {
+      "after": {
+        "bytes": 7581,
+        "git_blob": "9a648d65116b859b40b18f29c483a2930035d413",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/diagnostic.rs",
+        "sha256": "3fb7f2895d594e619026828b29ce1c12a78b7545d774abcf7074001013178255"
+      },
+      "before": {
+        "bytes": 7600,
+        "git_blob": "06d5c4cf9a8591d295091602f80d298e2bdc2886",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/diagnostic.rs",
+        "sha256": "2148447cc17f417b1e2b46527a779013dfcaf81dc19b277ac95a69f45ef3e038"
+      },
+      "path": "src/frontend/oir/owned/source/diagnostic.rs"
+    },
+    {
+      "after": {
+        "bytes": 4964,
+        "git_blob": "c515ed8bb4540cb03229cf5ee7293a7df5e5fcd0",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/hir.rs",
+        "sha256": "8337fea22556f46f6da0d8c24b4ef1b71a080de9819ce75f6739bcaf5c037e77"
+      },
+      "before": {
+        "bytes": 4952,
+        "git_blob": "14a1014e85bef3bd92c08a4aee9f2f6b541a3526",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/hir.rs",
+        "sha256": "baa7b46b0181b8cf4f4d7343417656b1afa72fbc3503caaaed5c2cb0c440df88"
+      },
+      "path": "src/frontend/oir/owned/source/hir.rs"
+    },
+    {
+      "after": {
+        "bytes": 71855,
+        "git_blob": "9add4effbb831ca828c7eb46039e6e3f2b8a3a82",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/lower.rs",
+        "sha256": "234b6c25daef3e9e58e9ffd5e7bb9efa3334d4e10301c26030260c5af0692f65"
+      },
+      "before": {
+        "bytes": 71771,
+        "git_blob": "ac053e1882a597edde2135cf05ca4c6cb554f7fa",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/lower.rs",
+        "sha256": "9eb08acf7ed6598dce3c16812df229a0b0fc1c6b099777244d57705bb805a3b2"
+      },
+      "path": "src/frontend/oir/owned/source/lower.rs"
+    },
+    {
+      "after": {
+        "bytes": 818,
+        "git_blob": "4bd933a070eef7b61aba1f51730683d20705c87a",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/mod.rs",
+        "sha256": "aa83e332b8bf646cd83c4749d6d56e1d8fa9f936b36e0bf211c8ab94e0855ae4"
+      },
+      "before": {
+        "bytes": 753,
+        "git_blob": "efa86aad1f846c990a709a69aa1cd15862b2dd5d",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/mod.rs",
+        "sha256": "9ffc4dbb0da06cd4be30f4c90b95e9b2bcfac5c648798fd01b78a34599458dd4"
+      },
+      "path": "src/frontend/oir/owned/source/mod.rs"
+    },
+    {
+      "after": {
+        "bytes": 42423,
+        "git_blob": "0d9af782f039647ebb142297ba543493a8ab277f",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/resolve.rs",
+        "sha256": "d654f0f9ee070b7c1f167560c0aaaf9aa0633ffad90c65bd542b410fa4029701"
+      },
+      "before": {
+        "bytes": 42405,
+        "git_blob": "605411eed1d0eed8ae1b0f777498eec86e344ef4",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/resolve.rs",
+        "sha256": "c98d3fff2bdf68d943453cd89162252935bc770f635b8a70e886ce589cd83c27"
+      },
+      "path": "src/frontend/oir/owned/source/resolve.rs"
+    },
+    {
+      "after": {
+        "bytes": 7006,
+        "git_blob": "d40446fb8db00dc3a14e69e13747d90c6444c2a7",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/resource_fixtures.rs",
+        "sha256": "39579764af0e7841bcd249be1e2bf1cf017c8e3349a9352d2e395cf9d6aa881f"
+      },
+      "before": {
+        "bytes": 5988,
+        "git_blob": "933a53e58dc73afed08af76d82d196a5fcb88eff",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/resource_fixtures.rs",
+        "sha256": "d443166f1caaf594ac56a334a50bced3b6f89563de8de1decfff859a86308335"
+      },
+      "path": "src/frontend/oir/owned/source/resource_fixtures.rs"
+    },
+    {
+      "after": {
+        "bytes": 26530,
+        "git_blob": "547bc82537cee430bebf4d6a8dc2db3c09a4d532",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/reviewer_heldout.rs",
+        "sha256": "77f9134c97a2f2582420c1fa2a34871376fbfe317676ebf77f300dde103f25a8"
+      },
+      "before": {
+        "bytes": 26494,
+        "git_blob": "9e868cf9e8ba144ca1f529b7db00fa0f874350ec",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/reviewer_heldout.rs",
+        "sha256": "d59914085b35a3d498b074dc75a679c2db157a6ed8490b30ab230465b4b67638"
+      },
+      "path": "src/frontend/oir/owned/source/reviewer_heldout.rs"
+    },
+    {
+      "after": {
+        "bytes": 3999,
+        "git_blob": "e94321054dd644b31e07abcaea14ffefc32ccfcf",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/slice_raw_tests.rs",
+        "sha256": "8733c03c9846d7577ec5e9aec3458e30b8d15ba891257b177d22565eb07a818f"
+      },
+      "before": null,
+      "path": "src/frontend/oir/owned/source/slice_raw_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 6645,
+        "git_blob": "df528ae3b36c1e83c60caea266b1f38826d6b743",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/slice_tests.rs",
+        "sha256": "ec12348d642da4c289daa2d0c2e57459e0e729d1a0fb1615d1a4aceee2062c3c"
+      },
+      "before": null,
+      "path": "src/frontend/oir/owned/source/slice_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 20360,
+        "git_blob": "cd9338b407021df5bf8dea627e3a8e1163a15054",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/tests.rs",
+        "sha256": "c49a1345c45df2fd8f3cd6d128a3bac3fcb0582f9f666fe0b7954c87df7cb216"
+      },
+      "before": {
+        "bytes": 20342,
+        "git_blob": "8b2c2171c13c228028d0875242f8381553dc39d4",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/tests.rs",
+        "sha256": "603301d2922a77846e779a1596d0045d939663d3c87e1e03c0b0e6dd11b8577a"
+      },
+      "path": "src/frontend/oir/owned/source/tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 44157,
+        "git_blob": "b47393c9eebc67e2004015f961be06755b8790c9",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/typeck.rs",
+        "sha256": "89645b6eac7a470c04652b8e6c634363d3d2ad4879d660a792343175cc92b9ca"
+      },
+      "before": {
+        "bytes": 43337,
+        "git_blob": "8b789bce78163e4788bbd0fc11c1782fd39c8dc5",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/source/typeck.rs",
+        "sha256": "f888e24c5f6a60192e05b036c65566e70b9acea8c81e71e02bb3bcc6bba47b27"
+      },
+      "path": "src/frontend/oir/owned/source/typeck.rs"
+    },
+    {
+      "after": {
+        "bytes": 50188,
+        "git_blob": "9a8d140a8483df7f537557f740ef50a55fa64366",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/tests.rs",
+        "sha256": "fddf2acc9829848f21e26112adcd004461575704fbe08c85afac09fdc1ee677d"
+      },
+      "before": {
+        "bytes": 49782,
+        "git_blob": "c8adc61e72524273eedafb4dd378b301a42ec7d7",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned/tests.rs",
+        "sha256": "e700b12c20f8aade8a1d963f8ff92c2605eb6d0deab6006a7bbca66ad461665c"
+      },
+      "path": "src/frontend/oir/owned/tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 53469,
+        "git_blob": "25eb0f7d9295e0d042cdc791ee7f8b70c45ceb7f",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned_types.rs",
+        "sha256": "ce0a52fd990e60fbd12cb89ffb88a7415b0b5e4767b6b0d1474aca6ee9a39e73"
+      },
+      "before": {
+        "bytes": 49930,
+        "git_blob": "3bd7675f67a05eeda2ed6750f3366f9e6624ffe8",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned_types.rs",
+        "sha256": "3d1d0be701979ed557ee2890763ea04a9448487c671b5851dfdfd6eada950c3c"
+      },
+      "path": "src/frontend/oir/owned_types.rs"
+    },
+    {
+      "after": {
+        "bytes": 12755,
+        "git_blob": "827defaca3f6f8bd02106c0778c37e8767b2132b",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned_types/array_tests.rs",
+        "sha256": "4f634bf81a1d06362420fd5b4d5e4c364a1457541b7ddde761f59493a81568ea"
+      },
+      "before": {
+        "bytes": 11087,
+        "git_blob": "77072ad90b9bfd53b6f8cc0fd0f781f530a94ceb",
+        "mode": "100644",
+        "path": "src/frontend/oir/owned_types/array_tests.rs",
+        "sha256": "2db52d5f33311cc7b8aca7ab004005f52210573bc6a91c8bed6b89ed80a9b467"
+      },
+      "path": "src/frontend/oir/owned_types/array_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 50610,
+        "git_blob": "a0bd3791e7aa7a7413f90e8f6ca5cb2fb7f60534",
+        "mode": "100644",
+        "path": "src/frontend/parser.rs",
+        "sha256": "8760694fcc91577930c00277280e7dd2c379be6a24f3431b9dc2f93e8314a858"
+      },
+      "before": {
+        "bytes": 50645,
+        "git_blob": "cdff160487df2456095f0e0256e3d24d9577fef2",
+        "mode": "100644",
+        "path": "src/frontend/parser.rs",
+        "sha256": "104438d1479ba14bc193af8a93dfe1d39772013abab44c226a7d5772dec83e83"
+      },
+      "path": "src/frontend/parser.rs"
+    },
+    {
+      "after": {
+        "bytes": 13592,
+        "git_blob": "cd628a9338ce8699554bf19d4ee36df5ad4b7773",
+        "mode": "100644",
+        "path": "src/frontend/parser/array_syntax_tests.rs",
+        "sha256": "cf4c3d8598d73672672bfa75bca7459f789c6ac0aa84b9114d4cdd727d6a968b"
+      },
+      "before": {
+        "bytes": 13509,
+        "git_blob": "e8ee9127d5bc1f50db43a53b7dd2457d8bc7afc8",
+        "mode": "100644",
+        "path": "src/frontend/parser/array_syntax_tests.rs",
+        "sha256": "c44510bb40dfc3a6c970a442f7a323fcff43ceadaa359f858a4c23a6de4e45fd"
+      },
+      "path": "src/frontend/parser/array_syntax_tests.rs"
+    },
+    {
+      "after": {
+        "bytes": 7748,
+        "git_blob": "10d1b8f4b05c388e26f541a5721635ec35bb8104",
+        "mode": "100644",
+        "path": "src/frontend/parser/arrays.rs",
+        "sha256": "317b8dd36c3e333714a13c9825b2c7010fc9926344e6fc8091d37ddbddbcb33f"
+      },
+      "before": {
+        "bytes": 6862,
+        "git_blob": "ece3c66c45814acabb8bbc2fc72f65b589c4046b",
+        "mode": "100644",
+        "path": "src/frontend/parser/arrays.rs",
+        "sha256": "4b493aab7e0cf22fad12a3a2b9c310b0f4a463f735df7f79c847c2311799929b"
+      },
+      "path": "src/frontend/parser/arrays.rs"
+    }
+  ],
+  "transition_patch_bytes": 134654,
+  "transition_patch_sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20",
+  "transition_touched_paths": [
+    "src/frontend/ast.rs",
+    "src/frontend/declaration_index.rs",
+    "src/frontend/declaration_index/source_owner.rs",
+    "src/frontend/declaration_index/tests.rs",
+    "src/frontend/format/ast_tests.rs",
+    "src/frontend/hir.rs",
+    "src/frontend/oir/owned/array_native_tests.rs",
+    "src/frontend/oir/owned/array_reference_boundary_tests.rs",
+    "src/frontend/oir/owned/array_reference_tests.rs",
+    "src/frontend/oir/owned/array_tests.rs",
+    "src/frontend/oir/owned/consumer_fixtures.rs",
+    "src/frontend/oir/owned/consumer_pilot.rs",
+    "src/frontend/oir/owned/denial_tests.rs",
+    "src/frontend/oir/owned/execute.rs",
+    "src/frontend/oir/owned/execute_tests.rs",
+    "src/frontend/oir/owned/flow.rs",
+    "src/frontend/oir/owned/mod.rs",
+    "src/frontend/oir/owned/native.rs",
+    "src/frontend/oir/owned/native_heldout_review.rs",
+    "src/frontend/oir/owned/native_tests.rs",
+    "src/frontend/oir/owned/oracle_tests.rs",
+    "src/frontend/oir/owned/plan.rs",
+    "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
+    "src/frontend/oir/owned/reviewer_heldout.rs",
+    "src/frontend/oir/owned/reviewer_reference_tests.rs",
+    "src/frontend/oir/owned/shape.rs",
+    "src/frontend/oir/owned/slice_native_tests.rs",
+    "src/frontend/oir/owned/source/array_pipeline_rows.rs",
+    "src/frontend/oir/owned/source/array_types_tests.rs",
+    "src/frontend/oir/owned/source/candidate_adapter.rs",
+    "src/frontend/oir/owned/source/diagnostic.rs",
+    "src/frontend/oir/owned/source/hir.rs",
+    "src/frontend/oir/owned/source/lower.rs",
+    "src/frontend/oir/owned/source/mod.rs",
+    "src/frontend/oir/owned/source/resolve.rs",
+    "src/frontend/oir/owned/source/resource_fixtures.rs",
+    "src/frontend/oir/owned/source/reviewer_heldout.rs",
+    "src/frontend/oir/owned/source/slice_raw_tests.rs",
+    "src/frontend/oir/owned/source/slice_tests.rs",
+    "src/frontend/oir/owned/source/tests.rs",
+    "src/frontend/oir/owned/source/typeck.rs",
+    "src/frontend/oir/owned/tests.rs",
+    "src/frontend/oir/owned_types.rs",
+    "src/frontend/oir/owned_types/array_tests.rs",
+    "src/frontend/parser.rs",
+    "src/frontend/parser/array_syntax_tests.rs",
+    "src/frontend/parser/arrays.rs"
+  ],
+  "unit2_observer_adapter": {
+    "control_tests": [
+      "frontend::oir::unit2_observer::current_unit2_aggregate_adapter_preserves_scalar_and_record_json",
+      "frontend::oir::unit2_observer::current_unit2_aggregate_adapter_denies_owned_array",
+      "frontend::oir::unit2_observer::current_unit2_aggregate_adapter_denies_shared_array",
+      "frontend::oir::unit2_observer::current_unit2_aggregate_adapter_denies_exclusive_array",
+      "frontend::oir::unit2_observer::current_unit2_aggregate_adapter_denies_shared_slice",
+      "frontend::oir::unit2_observer::current_unit2_aggregate_adapter_denies_exclusive_slice"
+    ],
+    "control_tests_per_profile": 6,
+    "derived": {
+      "bytes": 17039,
+      "path": "semantic/observer.rs",
+      "sha256": "abe639a07549c67db03df2e1d549173c327056f42e49c87795032a5266c2883b"
+    },
+    "original": {
+      "bytes": 13965,
+      "path": "semantic/observer.rs",
+      "sha256": "f2403aace53b6255a94b8b3ec0290db025638c5af94571d5729355672681fb00"
+    },
+    "predecessor_derived": {
+      "bytes": 15986,
+      "path": "semantic/observer.rs",
+      "sha256": "ddeff8bd0acfaa9af0301c74f3aabd26ef69954eb5a216fdd9cc21e1837901a3"
+    },
+    "predecessor_version": "unit2-record-aggregate-observer-v1",
+    "scope": "Seven exact substitutions after validating the unchanged four-seam aggregate adapter: BorrowedTy import, four exact reference constructors, borrowed Reference projection, and explicit fail-closed borrowed-record projection with shared/exclusive ScalarSlice controls. Owner ValueTy remains aggregate-based. Scalar/record JSON and frozen expectations remain unchanged; Exact(FixedArray) and ScalarSlice projection panic.",
+    "substitutions": [
+      {
+        "count": 1,
+        "new_sha256": "f716cdb74146402cd9e9b9bca7c75b6cf3aa800ffdfdbe6f3e812545597a72dc",
+        "old_sha256": "dfa7da68ee87bb60bd099298a4d5076b993ec3b6439091a2f5db1fa84e9d1f5e"
+      },
+      {
+        "count": 1,
+        "new_sha256": "17915f7bda0f1f0965cd729418ca6ce96a7bf763b145827e4a189965c4fae30a",
+        "old_sha256": "3b4421f9613622bfaf157ca5ba217576680a0a8cbe56aa5deea763b894afb49c"
+      },
+      {
+        "count": 1,
+        "new_sha256": "24c7128a97b919991a3ef6a02da7288aadd092c0f69de49dbe2729591e151770",
+        "old_sha256": "994ace860d137df1af8444e922775e6b4814b2cd5fb63a132e59cc8c1b73fd7c"
+      },
+      {
+        "count": 1,
+        "new_sha256": "89990e68ee29baaa1c65d49854ff2840d939df097828d69a96583c43b3d8121b",
+        "old_sha256": "75b578179dd972234917d5cfa0149d515b3bcce4cbc31df91afc2c8210ec5b43"
+      },
+      {
+        "count": 1,
+        "new_sha256": "b4f548e03d2430de42e0e689927fbf0d87870011a65a88d6aefed188cf71dfc2",
+        "old_sha256": "cde87cda13faa735c401d9c0c1401aea43fcbfb2ee0d5bc1376b88b4dfd04886"
+      },
+      {
+        "count": 1,
+        "new_sha256": "5e601f94665b6fffe25b8b481228cf8a8440fabd713bfd627550cd7c0a0f042b",
+        "old_sha256": "343b1ea6a70b1fec04379db12791b0fc66a81d7cedb9e8a159469c9330692799"
+      },
+      {
+        "count": 1,
+        "new_sha256": "8702150d179d3205177d6bf105ed344091896939d7930d455f7873f0f0e51ea4",
+        "old_sha256": "35db5aff8f3619a9b31ffb3fa6f88eafbb1b3a581a57015bf328e2c075297e5d"
+      }
+    ],
+    "version": "unit2-record-borrowed-observer-v2"
+  }
+}

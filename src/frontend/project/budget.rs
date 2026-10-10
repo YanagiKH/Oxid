@@ -151,7 +151,24 @@ impl Allocator {
                 additional,
                 self.fail_at.is_some(),
             );
-            vector.try_reserve_exact(if injected { usize::MAX } else { additional })
+            #[cfg(test)]
+            let _growth_guard = real_null_observer::growth::enter_full_exact(
+                real_null_observer::identity(self),
+                self.attempts,
+                kind,
+                vector,
+                additional,
+                self.fail_at.is_some(),
+                self.trace.len(),
+                self.trace.capacity(),
+                self.trace.as_ptr() as usize,
+                self.observer_trace_limit,
+                self.observer_trace_overflow,
+            );
+            let result = vector.try_reserve_exact(if injected { usize::MAX } else { additional });
+            #[cfg(test)]
+            real_null_observer::growth::reserve_complete(vector, result.is_err());
+            result
         };
         self.record(kind, length, size_of::<T>(), result.is_ok());
         result.map_err(|_| ReserveFailure::Allocation)

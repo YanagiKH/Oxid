@@ -74,7 +74,7 @@ jobs:
         run: python3 scripts/verify_owned_witness_privacy.py
 
       - name: Verify private typed source-set identity and resource regressions
-        run: python3 -B tests/fixtures/typed_project_unit1_independent/run.py --repo . --profile both --output "$RUNNER_TEMP/typed-project-unit1-results"
+        run: python3 -B tests/qualification/lexer_reservation_current/unit1_run_current.py --repo . --profile both --output "$RUNNER_TEMP/typed-project-unit1-results"
 
       - name: Build optimized standalone runtime
         run: cargo build --release --locked
@@ -752,7 +752,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
+            --source-manifest-sha256 aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633
       - name: Test bounded stdout controller and artifact admission
         run: |
           python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
@@ -765,7 +765,7 @@ jobs:
             --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
             --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
             --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
-            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
+            --source-manifest-sha256 aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633
       - name: Retain bounded stdout streams, native ELFs, and artifact evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,119 @@
+{
+  "schema": "oxid-unit1-frozen-package-v1",
+  "compiler_checkpoint": "c8e9a72afd9866f32b96f98ae24f61390039f421",
+  "package": "tests/fixtures/typed_project_unit1_independent",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 5101,
+      "sha256": "cb2938d8736cc8e6835240725ab1a4617af47995bc44967b66a01bfa78fb5030",
+      "mode": "100644",
+      "git_blob": "38e090b794b77d46a5f96d8b55c826e408071905"
+    },
+    {
+      "path": "check_resource_inventory.py",
+      "bytes": 1604,
+      "sha256": "707dec748db063b23fd7317cac5320800709fd724eea70dc005f4f4104af0b99",
+      "mode": "100644",
+      "git_blob": "9e3ed4a96f50377b5e203fbd492af2e44c04e274"
+    },
+    {
+      "path": "expectation-provenance.json",
+      "bytes": 2885,
+      "sha256": "c88f045de40b8de19ba1ff9e894f14af9525f84b0afcf83d1a68d477aba9ceb2",
+      "mode": "100644",
+      "git_blob": "f240eb8b195a977195ffbdd65acc8dcf989edacc"
+    },
+    {
+      "path": "expected-fixtures.json",
+      "bytes": 30911,
+      "sha256": "33cc6d06bd4487f7ef6b34d626278d6b2a8e6979526b999ef6beffa48ba21965",
+      "mode": "100644",
+      "git_blob": "83be0618c034b284a85c331504d8575145d0e178"
+    },
+    {
+      "path": "expected-resources.json",
+      "bytes": 758448,
+      "sha256": "5ecc8e2e085c8f576db81450503f5e36d1f26bd8a3fa23e34ae22bd686c1c246",
+      "mode": "100644",
+      "git_blob": "533345cd634f8db756064e8d23f7e58da6e1c445"
+    },
+    {
+      "path": "expected-test-roster.json",
+      "bytes": 5295,
+      "sha256": "331bf92273fb3f9904aeff24e279ff546387a211239e0ae7ce1ac20c04468f79",
+      "mode": "100644",
+      "git_blob": "b34740ea9da258b12cf3164ac539971aec21047b"
+    },
+    {
+      "path": "generate_reviewer_tests.py",
+      "bytes": 5573,
+      "sha256": "6a156c8bb7583a3f7963be5b7c69ae6d685d9df6e4262b8bc3169decbf030b34",
+      "mode": "100644",
+      "git_blob": "26f609db2ad30574578884221bfdff75989c0462"
+    },
+    {
+      "path": "materialize_fixtures.py",
+      "bytes": 10286,
+      "sha256": "c451d2eb217987ca0fb4eaaf5550d3d28e7e261f323cfaef786b36ae4463e5d4",
+      "mode": "100644",
+      "git_blob": "ab1fe2998beb04c6ee6915afffc7ebbdbe466b35"
+    },
+    {
+      "path": "materialize_resource_fixtures.py",
+      "bytes": 4549,
+      "sha256": "ee336761c659b567514fae35ef78822f221b944b37906e400ccc7e65ab0ffc5b",
+      "mode": "100644",
+      "git_blob": "812278db62822cca7a294a404eff564bd4a402de"
+    },
+    {
+      "path": "origin_oracle.py",
+      "bytes": 2048,
+      "sha256": "0609720e521cf429e5ddaf57eb836896e296bf58d427e43a4f03501e9eec4087",
+      "mode": "100644",
+      "git_blob": "cd5c40dd9192d8bbda6e665b8172340c4136b5b1"
+    },
+    {
+      "path": "reviewer_additional.rs",
+      "bytes": 14752,
+      "sha256": "db72d3efc3ea17abfc5a59f674a0a71b77ee784d2cfb2330e7af103910ecef61",
+      "mode": "100644",
+      "git_blob": "9bf09f85b691c44e616a3e0e0b19233c0aa09287"
+    },
+    {
+      "path": "reviewer_v2.rs",
+      "bytes": 2790,
+      "sha256": "9fb3755f9bf57d63706b967ebf165465d97764f85e1d13a4896ac92cfcc3075e",
+      "mode": "100644",
+      "git_blob": "f70c9e4d41536199d79b27a6c2789969e4d72900"
+    },
+    {
+      "path": "run.py",
+      "bytes": 10475,
+      "sha256": "dde21d9239b474186a64ddd5b9c31885e3d4435171082da8d1919c78cfad8bff",
+      "mode": "100644",
+      "git_blob": "a99e1e2d4f2b1fa7306c8527cd2cc50fb40a1aa4"
+    },
+    {
+      "path": "run_reviewer.py",
+      "bytes": 4000,
+      "sha256": "68ce63c59f2c65888462b1e928c16f4d70c2902741d54f10c91c5d551fb74b9d",
+      "mode": "100644",
+      "git_blob": "6fcea03a0d0c16553b84f205ed32ebd38a647b11"
+    },
+    {
+      "path": "rust_strings.py",
+      "bytes": 400,
+      "sha256": "1a9045893bead9c336c0a66cb4a68b750a8b2295acb009e9f79e4ccd6655edb8",
+      "mode": "100644",
+      "git_blob": "242c3888bdd3ecc2dab48310b351ef91a59c9875"
+    },
+    {
+      "path": "scalar_schedule_heldout.rs",
+      "bytes": 1630,
+      "sha256": "48251a31f3cf9217de7482182fcc7a9ac0818b0a9146a151f82dda0993150506",
+      "mode": "100644",
+      "git_blob": "14c41360ca5dc38e4b5b9055a81e0b742625f0c5"
+    }
+  ]
+}

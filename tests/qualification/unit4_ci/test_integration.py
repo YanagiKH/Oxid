@@ -21,6 +21,53 @@ from evidence import Capsule, ReadCapsule, verify_parser_seal, parser_full_only,
 REPO = Path(__file__).resolve().parents[3]
 
 
+class LexerInputClosureControls(unittest.TestCase):
+    def test_current_complete_inventory_and_named_predecessor(self):
+        original = REPO / 'scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/inputs.json'
+        old_raw = original.read_bytes()
+        self.assertEqual(q.sha(old_raw), '97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a')
+        old = q.loads(old_raw)
+        self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
+        raw = (q.HERE / 'inputs.json').read_bytes()
+        self.assertEqual(q.sha(raw), q.INPUTS_SHA)
+        self.assertEqual(raw, (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes())
+        current = q.loads(raw)
+        self.assertEqual(current['lexer_reservation_predecessor_inputs_sha256'], q.sha(old_raw))
+        self.assertTrue({row['path'] for row in old['files']} <= {row['path'] for row in current['files']})
+        self.assertEqual(current['closed_roots'], old['closed_roots'] + [
+            'tests/qualification/lexer_reservation_current',
+            'tests/fixtures/typed_project_source_binding_byte_storage_v1',
+            'scripts/predecessors/byte_storage_ci_v1',
+            'tests/fixtures/typed_project_unit1_independent',
+            'tests/fixtures/typed_project_unit2_independent',
+            'tests/qualification/unit2_u8_current'])
+        q.verify_package(REPO, current)
+
+    def test_complete_inventory_cannot_omit_new_or_saved_adapters(self):
+        manifest = q.read(q.HERE / 'inputs.json')
+        for name in ('tests/qualification/lexer_reservation_current/current.py',
+                     'tests/fixtures/typed_project_source_binding_byte_storage_v1/run.py',
+                     'tests/qualification/unit4_public_v3/lexer_reservation_lifecycle.py',
+                     'tests/qualification/unit4_parser_current/lexer_reservation.py'):
+            changed = copy.deepcopy(manifest)
+            self.assertEqual(sum(row['path'] == name for row in changed['files']), 1)
+            changed['files'] = [row for row in changed['files'] if row['path'] != name]
+            with self.subTest(name=name), self.assertRaisesRegex(q.Reject, 'changed component membership'):
+                q.verify_package(REPO, changed)
+
+    def test_current_native_and_ci_sources_share_one_manifest(self):
+        sys.path.insert(0, str(REPO / 'scripts'))
+        import verify_bounded_byte_storage as byte
+        import verify_bounded_enum_native as enum
+        import verify_bounded_stdin_native as stdin
+        import verify_bounded_stdout_native as stdout
+        self.assertEqual((byte.SOURCE_SHA256, enum.REVIEWED_SOURCE_SHA256,
+                          stdin.REVIEWED_SOURCE_SHA256, stdout.REVIEWED_SOURCE_SHA256), (q.CURRENT_SHA,) * 4)
+        self.assertEqual((stdin.REVIEWED_SOURCE_MEMBERS, stdin.REVIEWED_COMPILER_BODIES),
+                         (q.CURRENT_SOURCE_MEMBERS, q.CURRENT_COMPILER_BODIES))
+        self.assertEqual(q.OBSERVER_PATCH, 'tests/qualification/unit4_public_v3/observer-lexer-reservation-v1.patch')
+
+
 class WorkflowEnvironmentControls(unittest.TestCase):
     def test_yaml_global_environment_has_unique_keys(self):
         workflow = (REPO / '.github/workflows/ci.yml').read_text()
@@ -327,11 +374,31 @@ class ObserverPreparationControls(unittest.TestCase):
         current = (REPO / q.OBSERVER_PATCH).read_bytes()
         original = (REPO / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
         self.assertEqual(self.builder.verify_lifecycle_successor(current), original)
-        for changed in (current + b'\n', current.replace(b'ArraySyntaxPolicy', b'OtherSyntaxPolicy'),
-                        current.replace(b'parse_attempt', b'other_attempt'),
-                        current.replace(b'EnumSyntaxPolicy', b'OtherEnumSyntaxPolicy')):
-            with self.subTest(changed=q.sha(changed)), self.assertRaises(Exception):
+        with self.assertRaisesRegex(self.c.Reject, 'unapproved exact lexer lifecycle patch'):
+            self.builder.verify_lifecycle_successor(current + b'\n')
+        # Every current mutation must alter an exact present seam. The new
+        # minimal patch no longer carries the historical Array/Enum context.
+        for anchor, replacement in (
+                (b'lex_attempt', b'other_lex_attempt'),
+                (b'lex_complete', b'other_lex_complete'),
+                (b'parse_attempt', b'other_parse_attempt'),
+                (b'observer: &mut ReservationObserver,', b'observer: &mut OtherObserver,')):
+            self.assertEqual(current.count(anchor), 1)
+            changed = current.replace(anchor, replacement, 1)
+            self.assertNotEqual(changed, current)
+            with self.subTest(current_anchor=anchor), self.assertRaisesRegex(self.c.Reject, 'unapproved exact lexer lifecycle patch'):
                 self.builder.verify_lifecycle_successor(changed)
+        # Preserve both original Array/Enum rejection domains at the unchanged
+        # byte-storage stage whose complete patch still contains those seams.
+        retained = (REPO / q.PUBLIC / 'observer-u8-v1.patch').read_bytes()
+        self.assertEqual(self.builder.verify_byte_storage_lifecycle_successor(retained), original)
+        for anchor, replacement in ((b'ArraySyntaxPolicy', b'OtherSyntaxPolicy'),
+                                    (b'EnumSyntaxPolicy', b'OtherEnumSyntaxPolicy')):
+            self.assertEqual(retained.count(anchor), 1)
+            changed = retained.replace(anchor, replacement, 1)
+            self.assertNotEqual(changed, retained)
+            with self.subTest(retained_anchor=anchor), self.assertRaisesRegex(self.c.Reject, 'exact retained byte-storage lifecycle successor'):
+                self.builder.verify_byte_storage_lifecycle_successor(changed)
 
     def test_exact_approved_bodies_under_crlf_git_configuration(self):
         self.assertEqual(len(self.manifest['files']), q.CURRENT_SOURCE_MEMBERS + 1)
@@ -428,7 +495,18 @@ class ObserverPreparationControls(unittest.TestCase):
                 results.append(run.adapter_identity())
         self.assertNotEqual(*native_orders)
         self.assertEqual(results, [expected, expected])
-        self.assertEqual(len(expected), 22)
+        old_inputs = REPO / 'scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/inputs.json'
+        old_raw = old_inputs.read_bytes()
+        self.assertEqual(q.sha(old_raw), '97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a')
+        original_names = {row['path'].removeprefix(q.PUBLIC + '/')
+                          for row in q.loads(old_raw)['files'] if row['path'].startswith(q.PUBLIC + '/')}
+        additions = {'generate_lexer_reservation.py', 'byte_storage_source_authority.py',
+                     'lexer_reservation_lifecycle.py', 'lexer-reservation-lifecycle-v1.json',
+                     'observer-lexer-reservation-v1.patch', 'test_lexer_reservation.py'}
+        self.assertEqual(len(original_names), 22)
+        self.assertFalse(original_names & additions)
+        self.assertEqual(run.PACKAGE_FILES, original_names | additions)
+        self.assertEqual(len(expected), 28)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.

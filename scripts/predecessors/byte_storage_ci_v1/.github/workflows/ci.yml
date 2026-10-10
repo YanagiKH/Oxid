@@ -1,0 +1,1272 @@
+name: Repository CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  quality-and-repository:
+    name: Full repository verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Qualified private gates reproduce the reviewed Rust 1.99.0 toolchain.
+      # The separate four-host ordinary matrix deliberately follows stable.
+      - name: Install qualified Rust quality components
+        uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+
+      - name: Fetch locked dependencies before offline private qualification
+        run: cargo fetch --locked
+
+      - name: Test current u8 Unit2 accounting successor controls
+        run: python3 -B tests/qualification/unit2_u8_current/test_current.py
+
+      - name: Test current and archived source-binding admission controls
+        run: python3 -B -m unittest discover -s scripts -p test_typed_project_source_binding.py -v
+
+      # Check exact src/native membership before legacy checks can create caches.
+      - name: Preserve Unit2 semantic and resource gates with explicit current inputs
+        run: |
+          python3 -B tests/fixtures/typed_project_source_binding/run.py run-unit2 \
+            --repo . \
+            --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
+            --output "$RUNNER_TEMP/typed-project-unit2-results"
+
+      - name: Test feature status metadata validation
+        run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
+
+      - name: Test current parser authority and prescribed CI mutation controls
+        run: |
+          python3 -B tests/qualification/unit4_parser_current/test_current.py
+          python3 -B tests/qualification/unit4_parser_current/test_stdin_initializer.py
+          python3 -B tests/qualification/unit4_parser_current/test_record_composition_amendment.py
+          python3 -B tests/qualification/unit4_ci/test_integration.py
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy with warnings denied
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Rust and native bridge tests
+        run: cargo test --all-targets --all-features --locked
+
+      - name: Check private ownership witness construction and immutability
+        run: python3 scripts/verify_owned_witness_privacy.py
+
+      - name: Verify private typed source-set identity and resource regressions
+        run: python3 -B tests/fixtures/typed_project_unit1_independent/run.py --repo . --profile both --output "$RUNNER_TEMP/typed-project-unit1-results"
+
+      - name: Build optimized standalone runtime
+        run: cargo build --release --locked
+
+      - name: Preserve the 31 original public single-file cases
+        run: python3 -B tests/fixtures/typed_project_unit1_compatibility/run.py --debug target/debug/oxid --release target/release/oxid --original-only --evidence-root "$RUNNER_TEMP"
+
+      - name: Test typed-project runner identity controls
+        run: python3 -B -m unittest discover -s tests/fixtures/typed_project_unit2_independent -p 'test_protocol.py' -v
+
+      - name: Check private typed-project source and index seals
+        run: python3 -B tests/fixtures/typed_project_unit2_seal/run.py --repo . --output "$RUNNER_TEMP/typed-project-unit2-seal-results" --rustc rustc
+
+      - name: Report typed-project qualification identities and counts
+        if: always()
+        shell: bash
+        run: |
+          for receipt in "$RUNNER_TEMP/typed-project-unit2-results/result.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/result.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/debug-receipt.json" "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/release-receipt.json" "$RUNNER_TEMP/typed-project-unit2-seal-results/result.json"; do
+            if test -f "$receipt"; then
+              cat "$receipt"
+            fi
+          done
+          if test -f "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/rustc-version.stdout"; then
+            cat "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/rustc-version.stdout"
+          fi
+          for observations in "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/"*-raw.jsonl "$RUNNER_TEMP/typed-project-unit2-results/unit2/run/"*-normalized.jsonl; do
+            if test -f "$observations"; then
+              gzip -6 -k "$observations"
+            fi
+          done
+
+      - name: Retain compact typed-project qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-project-unit2-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-project-unit2-results/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/*.jsonl.gz
+            ${{ runner.temp }}/typed-project-unit2-results/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.json
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.jsonl.gz
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-results/unit2/run/*.stderr
+            ${{ runner.temp }}/typed-project-unit2-seal-results/*.json
+            ${{ runner.temp }}/typed-project-unit2-seal-results/*.stdout
+            ${{ runner.temp }}/typed-project-unit2-seal-results/*.stderr
+
+      - name: Verify exact i32 literals against the independent Python integer oracle
+        run: python3 scripts/verify_i32_literals.py target/release/oxid
+
+      - name: Verify checked i32 arithmetic and debug-release parity with Python integers
+        run: python3 scripts/verify_i32_arithmetic.py target/debug/oxid target/release/oxid
+
+      - name: Verify every Oxid source, runnable program, README, SVG, build, and doctor check
+        run: python3 scripts/verify_repo.py target/release/oxid
+
+      - name: Test source installation
+        run: |
+          cargo install --path . --locked --root "$RUNNER_TEMP/oxid-install"
+          "$RUNNER_TEMP/oxid-install/bin/oxid" --version
+
+      - name: Build container image
+        run: docker build --tag oxid:ci .
+
+      - name: Smoke-test container image
+        run: docker run --rm oxid:ci --version
+
+  cross-platform:
+    name: ${{ matrix.name }} runtime
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            binary: target/release/oxid
+            artifact: linux-x86_64
+          - name: Windows x86_64
+            os: windows-latest
+            binary: target/release/oxid.exe
+            artifact: windows-x86_64
+          - name: macOS x86_64
+            os: macos-15-intel
+            binary: target/release/oxid
+            artifact: macos-x86_64
+          - name: macOS arm64
+            os: macos-14
+            binary: target/release/oxid
+            artifact: macos-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build optimized runtime
+        run: cargo build --release --locked
+
+      - name: Run unit and native bridge tests
+        run: cargo test --all-targets --locked
+
+      - name: Verify exact typed formatter goldens
+        run: python scripts/verify_typed_formatter.py ${{ matrix.binary }}
+
+      - name: Test bounded parser selection and strict decoder controls
+        run: |
+          python -B -m unittest discover -s scripts -p test_bounded_typed_parser.py -v
+          python -B -m unittest discover -s scripts -p test_parser_ast_observation.py -v
+          python -B -m unittest discover -s scripts -p test_static_resolution_observation.py -v
+          python -B -m unittest discover -s scripts -p test_static_typed_observation.py -v
+          python -B -m unittest discover -s scripts -p test_bounded_typed_static.py -v
+
+      - name: Run Oxid language tests
+        run: cargo run --release --locked -- test
+
+      - name: Run concise syntax example
+        run: cargo run --release --locked -- run examples/oxid_shortcuts.ox
+
+      - name: Build the repository bundle
+        run: cargo run --release --locked -- build
+
+      - name: Check runtime version
+        run: cargo run --release --locked -- --version
+
+      - name: Verify compiler-demo artifact serialization round-trip
+        run: cargo run --release --locked -- bootstrap
+
+      - name: Recheck artifact round-trip without rewriting artifacts
+        run: cargo run --release --locked -- bootstrap --check
+
+      - name: Run the bounded performance framework
+        run: cargo run --release --locked -- bench --iterations 3 --json target/oxid-benchmark.json
+
+      - name: Validate the benchmark JSON schema
+        run: python scripts/verify_benchmark_report.py target/oxid-benchmark.json 3
+
+      - name: Upload the serialized compiler-demo artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiler-${{ matrix.artifact }}
+          path: .oxid/bootstrap/compiler.oxb
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  compiler-artifact-equivalence:
+    name: Cross-platform serialized-AST artifact equivalence
+    needs: cross-platform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform compiler artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: compiler-*
+          path: compiler-artifacts
+
+      - name: Verify byte-identical serialized compiler-demo artifacts
+        run: python3 scripts/verify_bootstrap_artifacts.py compiler-artifacts 4
+
+  workflow-lint:
+    name: Workflow and metadata audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow YAML
+        uses: docker://rhysd/actionlint:1.7.12
+      - name: Validate manifest metadata
+        run: python3 -c "import json, tomllib; json.load(open('license-metadata.json')); tomllib.load(open('Cargo.toml','rb')); tomllib.load(open('oxid.toml','rb'))"
+
+  native-scalar-preview:
+    name: Experimental LLVM scalar native (Linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    container: debian:trixie-slim
+    env:
+      UNIT2E_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT2E_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install the pinned LLVM preview tools and host C environment
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # Native private qualification shares the reviewed Rust/LLVM pair.
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked dependencies before offline private qualification
+        run: cargo fetch --locked
+      - name: Qualify archived Unit3 source, native and mutation cases
+        id: unit3_qualification
+        timeout-minutes: 120
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+          CARGO_INCREMENTAL: "0"
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          set -euo pipefail
+          unit3_repo="$PWD"
+          unit3_out="$RUNNER_TEMP/typed-project-unit3"
+          unit3_pkg="$unit3_repo/tests/fixtures/typed_project_unit3_independent"
+          unit3_python="$(command -v python3)"
+          unit3_rustc="$(rustup which rustc)"
+          unit3_cargo="$(rustup which cargo)"
+          unit3_rustdoc="$(rustup which rustdoc)"
+          unit3_cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          unit3_rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+          unit3_cc="$(command -v cc)"
+          unit3_cxx="$(command -v c++)"
+          unit3_ar="$(command -v ar)"
+          unit3_llvm_bin="$OXID_LLVM_BIN"
+          unit3_llvm_lib_dir="$unit3_out/llvm-runtime/libraries"
+          "$unit3_python" -B "$unit3_repo/tests/fixtures/typed_project_source_binding/run.py" prepare-archived \
+            --repo "$unit3_repo" --output "$unit3_out/source-binding"
+          "$unit3_python" -B "$unit3_pkg/portable/verify_package.py" --package "$unit3_pkg" \
+            --manifest "$unit3_pkg/package-manifest.json" --receipt "$unit3_out/package-verification.json"
+
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/stage_llvm_runtime.py" \
+            --output "$unit3_out/llvm-runtime"
+
+          "$unit3_python" -B "$unit3_pkg/portable/transport.py" materialize \
+            --archive "$unit3_pkg/source-transport/sources.tar.gz" \
+            --manifest "$unit3_pkg/source-transport/source-transport.json" \
+            --requests "$unit3_pkg/source-transport/requests.jsonl" --output "$unit3_out/inputs"
+
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" prepare \
+            --component-root "$unit3_pkg/components/oracles" \
+            --component-manifest "$unit3_pkg/portable/comparison-v1/component-manifest.json" \
+            --materialization "$unit3_out/inputs/materialization.json" \
+            --parser "$unit3_pkg/components/observer/parse_debug.py" --output "$unit3_out/comparison-view"
+
+          "$unit3_python" -B "$unit3_pkg/portable/bridge.py" --repo "$unit3_out/source-binding/archived-selected" \
+            --selected-manifest "$unit3_pkg/manifests/selected-current.json" \
+            --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --platform-patch "$unit3_pkg/manifests/platform-scope.patch" \
+            --original-test "$unit3_pkg/manifests/project_execution_tests.core-v1.rs" \
+            --output "$unit3_out/bridge"
+
+          "$unit3_python" -B "$unit3_pkg/portable/assemble.py" \
+            --repo "$unit3_out/bridge/derived-core-v1" --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --observer-root "$unit3_pkg/components/observer" \
+            --observer-freeze "$unit3_pkg/components/observer/adapter-freeze-v1.json" \
+            --output "$unit3_out/observer"
+
+          for unit3_profile in debug release; do
+            "$unit3_python" -B "$unit3_pkg/portable/build.py" \
+              --prepared-manifest "$unit3_out/observer/prepared-source.json" \
+              --output "$unit3_out/source-build-$unit3_profile" --target-dir "$unit3_out/source-target" \
+              --profile "$unit3_profile" --jobs 2 --rustc "$unit3_rustc" --cargo "$unit3_cargo" \
+              --rustdoc "$unit3_rustdoc" --cargo-home "$unit3_cargo_home" --cc "$unit3_cc" --cxx "$unit3_cxx" --ar "$unit3_ar"
+          done
+
+          "$unit3_python" -B "$unit3_pkg/portable/make_plan.py" --kind source \
+            --materialization "$unit3_out/inputs/materialization.json" \
+            --prepared "$unit3_out/observer/prepared-source.json" --wrapper "$unit3_pkg/portable/observe.py" \
+            --debug-build "$unit3_out/source-build-debug/build.json" \
+            --release-build "$unit3_out/source-build-release/build.json" \
+            --receipt-root "$unit3_out/source-receipts" --output "$unit3_out/source-plan.json"
+          unit3_source_plan_sha=$(sha256sum "$unit3_out/source-plan.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/collect.py" --plan "$unit3_out/source-plan.json" \
+            --plan-sha256 "$unit3_source_plan_sha" --python "$unit3_python" --output "$unit3_out/source-collection"
+
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/auxiliary_transport.py" \
+            --auxiliary-root "$unit3_pkg/components/native-driver/auxiliary" \
+            --original-manifest "$unit3_pkg/components/native-driver/auxiliary-manifest-v1.json" \
+            --output "$unit3_out/native-auxiliary"
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_inputs.py" \
+            --bridge-receipt "$unit3_out/bridge/bridge-receipt.json" \
+            --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --overlay-manifest "$unit3_pkg/components/native-driver/overlay-manifest-v2.json" \
+            --overlay-patch "$unit3_pkg/components/native-driver/overlay-v2.patch" \
+            --auxiliary-root "$unit3_out/native-auxiliary/inputs" --output "$unit3_out/native-inputs"
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_portable_grouped.py" prepare \
+            --repo "$unit3_out/native-inputs/inputs" --core-manifest "$unit3_pkg/manifests/core-v1.json" \
+            --native-root "$unit3_pkg/components/native-driver" \
+            --native-manifest "$unit3_pkg/components/native-driver/artifact-manifest.json" \
+            --oracle-manifest "$unit3_pkg/components/oracles/pre-execution-manifest.json" \
+            --native-supplement "$unit3_pkg/components/oracles/supplements/native-diagnostics-v1/supplement-manifest.json" \
+            --native-fuel-requests "$unit3_pkg/components/oracles/supplements/native-diagnostics-v1/fuel-requests.jsonl" \
+            --materialization "$unit3_out/inputs/materialization.json" --output "$unit3_out/native"
+          "$unit3_python" -B "$unit3_pkg/portable/native-v1/native_portable_grouped.py" build \
+            --prepared-manifest "$unit3_out/native/native-prepared.json" --profile both \
+            --rustc "$unit3_rustc" --llvm-bin "$unit3_llvm_bin" --llvm-lib-dir "$unit3_llvm_lib_dir" \
+            --cargo-home "$unit3_cargo_home" --rustup-home "$unit3_rustup_home" \
+            --receipt "$unit3_out/native-build-wrapper.json"
+          "$unit3_python" -B "$unit3_pkg/portable/make_plan.py" --kind native \
+            --materialization "$unit3_out/inputs/materialization.json" --prepared "$unit3_out/native/native-prepared.json" \
+            --wrapper "$unit3_pkg/portable/native-v1/native_portable_grouped.py" \
+            --debug-build "$unit3_out/native/native-component/build-debug/verified-build.json" \
+            --release-build "$unit3_out/native/native-component/build-release/verified-build.json" \
+            --build-wrapper "$unit3_out/native-build-wrapper.json" \
+            --receipt-root "$unit3_out/native-wrappers" --output "$unit3_out/native-plan.json"
+          unit3_native_plan_sha=$(sha256sum "$unit3_out/native-plan.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/collect.py" --plan "$unit3_out/native-plan.json" \
+            --plan-sha256 "$unit3_native_plan_sha" --python "$unit3_python" --output "$unit3_out/native-collection" \
+            --rustc "$unit3_rustc" --llvm-bin "$unit3_llvm_bin" --llvm-lib-dir "$unit3_llvm_lib_dir" \
+            --cargo-home "$unit3_cargo_home" --rustup-home "$unit3_rustup_home"
+          for unit3_variant in v2 v3; do
+            "$unit3_python" -B "$unit3_pkg/portable/mutations.py" prepare --variant "$unit3_variant" \
+              --observer-prepared "$unit3_out/observer/prepared-source.json" \
+              --component-root "$unit3_pkg/components/mutations/$unit3_variant" \
+              --oracle-manifest "$unit3_pkg/components/oracles/pre-execution-manifest.json" \
+              --mutation-requests "$unit3_pkg/components/oracles/mutation-requests.json" \
+              --effective-requests "$unit3_pkg/components/oracles/supplements/mutation-applicability-v1/requests.json" \
+              --applicability-manifest "$unit3_pkg/components/oracles/supplements/mutation-applicability-v1/supplement-manifest.json" \
+              --output "$unit3_out/mutations-$unit3_variant"
+            for unit3_profile in debug release; do
+              "$unit3_python" -B "$unit3_pkg/portable/build.py" \
+                --prepared-manifest "$unit3_out/mutations-$unit3_variant/prepared-mutation.json" \
+                --output "$unit3_out/mutation-build-$unit3_variant-$unit3_profile" \
+                --target-dir "$unit3_out/mutations-$unit3_variant/target" \
+                --profile "$unit3_profile" --jobs 2 --rustc "$unit3_rustc" --cargo "$unit3_cargo" \
+                --rustdoc "$unit3_rustdoc" --cargo-home "$unit3_cargo_home" --cc "$unit3_cc" --cxx "$unit3_cxx" --ar "$unit3_ar"
+            done
+          done
+          "$unit3_python" -B "$unit3_pkg/portable/mutation_gate.py" make \
+            --materialization "$unit3_out/inputs/materialization.json" --wrapper "$unit3_pkg/portable/mutations.py" \
+            --v2-prepared "$unit3_out/mutations-v2/prepared-mutation.json" \
+            --v3-prepared "$unit3_out/mutations-v3/prepared-mutation.json" \
+            --v2-debug-build "$unit3_out/mutation-build-v2-debug/build.json" \
+            --v2-release-build "$unit3_out/mutation-build-v2-release/build.json" \
+            --v3-debug-build "$unit3_out/mutation-build-v3-debug/build.json" \
+            --v3-release-build "$unit3_out/mutation-build-v3-release/build.json" \
+            --receipt-root "$unit3_out/mutation-receipts" --output "$unit3_out/mutation-plan.json"
+          unit3_mutation_plan_sha=$(sha256sum "$unit3_out/mutation-plan.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/mutation_gate.py" collect --plan "$unit3_out/mutation-plan.json" \
+            --plan-sha256 "$unit3_mutation_plan_sha" --python "$unit3_python" --output "$unit3_out/mutation-collection"
+
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
+            --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
+            --plan "$unit3_out/source-plan.json" --plan-sha256 "$unit3_source_plan_sha" \
+            --output "$unit3_out/source-comparison"
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
+            --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
+            --plan "$unit3_out/native-plan.json" --plan-sha256 "$unit3_native_plan_sha" \
+            --output "$unit3_out/native-comparison"
+          unit3_native_evidence_sha=$(sha256sum "$unit3_out/native-comparison/comparison.json" | cut -d' ' -f1)
+          "$unit3_python" -B "$unit3_pkg/portable/comparison-v1/portable_compare.py" compare \
+            --prepared "$unit3_out/comparison-view/prepared-comparison.json" \
+            --plan "$unit3_out/mutation-plan.json" --plan-sha256 "$unit3_mutation_plan_sha" \
+            --native-evidence "$unit3_out/native-comparison/comparison.json" \
+            --native-evidence-sha256 "$unit3_native_evidence_sha" --output "$unit3_out/mutation-comparison"
+
+      - name: Surface bounded native build failure details
+        if: failure() && steps.unit3_qualification.outcome == 'failure'
+        timeout-minutes: 1
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/collect_unit3_ci_diagnostics.py failure-logs
+
+      - name: Prepare bounded Unit3 diagnostic receipts
+        if: always()
+        timeout-minutes: 2
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/collect_unit3_ci_diagnostics.py compact
+
+      - name: Retain compact Unit3 diagnostic receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-project-unit3-compact
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-project-unit3-compact.tar.gz
+            ${{ runner.temp }}/typed-project-unit3-compact.tar.gz.sha256
+
+      - name: Index and preserve Unit3 results on every terminal state
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          UNIT3_STEP_OUTCOME: ${{ steps.unit3_qualification.outcome }}
+        run: python3 -B scripts/preserve_unit3_ci_evidence.py
+
+      - name: Retain indexed Unit3 evidence (complete or explicitly partial)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-project-unit3-evidence
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-project-unit3-evidence.tar.gz
+            ${{ runner.temp }}/typed-project-unit3-evidence.sha256
+
+      - name: Build the compiler and run admission/tool-boundary regressions
+        run: |
+          cargo test --locked --test typed_native
+          cargo build --release --locked
+          cargo test --locked --bin oxid frontend::oir::logical_tests::raw_bool_merge_uses_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::logical_tests::raw_bool_merge_uses_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::mutable_tests::raw_mutable_places_use_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::mutable_tests::raw_mutable_places_use_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::verify::cyclic_tests::execution::raw_cyclic_witnesses_use_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::verify::cyclic_tests::execution::raw_cyclic_witnesses_use_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::loop_control_tests::loop_control_uses_real_llvm -- --ignored --exact
+          cargo test --locked --bin oxid frontend::oir::owned::source::array_consumer_tests::source_array_consumers_use_real_llvm -- --ignored --exact
+          cargo test --release --locked --bin oxid frontend::oir::owned::source::array_consumer_tests::source_array_consumers_use_real_llvm -- --ignored --exact
+      - name: Qualify experimental checked-HIR import native paths in both profiles
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof_root="$RUNNER_TEMP/checked-hir-import-native"
+          mkdir "$proof_root"
+          for profile in debug release; do
+            mkdir "$proof_root/$profile"
+            profile_args=()
+            if [[ "$profile" == release ]]; then profile_args=(--release); fi
+            cargo test "${profile_args[@]}" --locked --test typed_hir_import \
+              imported_public_compile_produces_source_independent_executable \
+              -- --ignored --exact --nocapture \
+              > "$proof_root/$profile/public.stdout" \
+              2> "$proof_root/$profile/public.stderr"
+            cargo test "${profile_args[@]}" --locked --bin oxid --no-run \
+              --message-format=json \
+              > "$proof_root/$profile/build.jsonl" \
+              2> "$proof_root/$profile/build.stderr"
+            binary="$(python3 - "$proof_root/$profile/build.jsonl" <<'PY'
+          import json
+          import sys
+          rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+          assert [row.get('success') for row in rows if row.get('reason') == 'build-finished'] == [True]
+          matches = [row['executable'] for row in rows
+                     if row.get('reason') == 'compiler-artifact'
+                     and row.get('target', {}).get('name') == 'oxid'
+                     and row.get('target', {}).get('kind') == ['bin']
+                     and row.get('profile', {}).get('test') is True
+                     and row.get('executable')]
+          assert len(matches) == 1, matches
+          print(matches[0])
+          PY
+            )"
+            python3 -B scripts/verify_checked_hir_import_native.py \
+              --test-binary "$binary" --llvm-bin "$OXID_LLVM_BIN" \
+              --evidence "$proof_root/$profile/private"
+          done
+      - name: Retain checked-HIR import native build and execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checked-hir-import-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/checked-hir-import-native
+      - name: Verify public fixed-array CLI native parity in both profiles
+        run: |
+          cargo test --locked --test typed_fixed_arrays public_array_cli_compiles_source_free_native_parity -- --ignored --exact
+          cargo test --release --locked --test typed_fixed_arrays public_array_cli_compiles_source_free_native_parity -- --ignored --exact
+          cargo test --locked --test typed_fixed_arrays public_array_cli_native_module_and_fuel_parity -- --ignored --exact
+          cargo test --release --locked --test typed_fixed_arrays public_array_cli_native_module_and_fuel_parity -- --ignored --exact
+      - name: Test producer-native admission and evidence rejection controls
+        run: python3 -B -m unittest discover -s scripts -p test_owned_array_native.py -v
+      - name: Admit and retain the existing owned-native prefix in both profiles
+        id: unit2e_producer
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_owned_array_native.py run \
+            --repo "$PWD" \
+            --output "$RUNNER_TEMP/fixed-array-unit2e/producer" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
+            --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
+            --llvm-bin "$OXID_LLVM_BIN" --profile both
+      - name: Run and retain complete independent Unit2D replay (debug)
+        id: unit2e_independent_debug
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_owned_array_native.py independent \
+            --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
+            --output "$RUNNER_TEMP/fixed-array-unit2e/independent/debug" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --profile debug
+      - name: Run and retain complete independent Unit2D replay (release)
+        id: unit2e_independent_release
+        shell: bash
+        env:
+          PYTHONOPTIMIZE: "0"
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_owned_array_native.py independent \
+            --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
+            --output "$RUNNER_TEMP/fixed-array-unit2e/independent/release" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --profile release
+      - name: Verify held-out owned-source native execution
+        run: |
+          OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-debug" cargo test --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
+          OXID_REVIEWER_SOURCE_NATIVE_EVIDENCE="$PWD/target/source-review-release" cargo test --release --locked --bin oxid frontend::oir::owned::source::reviewer_source::reviewer_source_native_heldout_successes_and_failures -- --ignored --exact --nocapture
+      - name: Verify checked division and remainder native parity in both profiles
+        run: |
+          cargo test --locked --test typed_division -- --ignored
+          cargo test --release --locked --test typed_division -- --ignored
+      - name: Verify checked unary negation source-free parity in both profiles
+        run: |
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/debug-raw" cargo test --locked --bin oxid raw_negation -- --include-ignored --test-threads=1
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/release-raw" cargo test --release --locked --bin oxid raw_negation -- --include-ignored --test-threads=1
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/debug-source" cargo test --locked --test typed_unary_negation -- --ignored --test-threads=1
+          OXID_UNARY_NATIVE_EVIDENCE="$PWD/target/checked-unary-native/release-source" cargo test --release --locked --test typed_unary_negation -- --ignored --test-threads=1
+      - name: Retain checked unary negation native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checked-unary-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: target/checked-unary-native
+      - name: Verify borrowed scalar slices native parity in both profiles
+        run: |
+          cargo test --locked --test typed_slices -- --ignored
+          cargo test --release --locked --test typed_slices -- --ignored
+          cargo test --locked --bin oxid native_slices -- --ignored
+          cargo test --release --locked --bin oxid native_slices -- --ignored
+      - name: Verify owned record composition native parity in both profiles
+        run: |
+          cargo test --locked --test typed_record_composition -- --ignored --test-threads=1
+          cargo test --release --locked --test typed_record_composition -- --ignored --test-threads=1
+          cargo test --locked --bin oxid native_composition -- --include-ignored --test-threads=1
+          cargo test --release --locked --bin oxid native_composition -- --include-ignored --test-threads=1
+      - name: Verify native inventory source-free admission in both profiles
+        run: |
+          OXID_OWNED_NATIVE_EVIDENCE="$PWD/target/native-inventory/debug" cargo test --locked --bin oxid native_inventory -- --include-ignored --test-threads=1 --nocapture
+          OXID_OWNED_NATIVE_EVIDENCE="$PWD/target/native-inventory/release" cargo test --release --locked --bin oxid native_inventory -- --include-ignored --test-threads=1 --nocapture
+      - name: Retain native inventory source and fuel boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-inventory-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: target/native-inventory
+      - name: Verify projected array slice source-free parity in both profiles
+        run: |
+          OXID_OWNED_NATIVE_EVIDENCE="$PWD/target/projected-slices/debug-raw" cargo test --locked --bin oxid native_projected_slices -- --include-ignored --test-threads=1
+          OXID_OWNED_NATIVE_EVIDENCE="$PWD/target/projected-slices/release-raw" cargo test --release --locked --bin oxid native_projected_slices -- --include-ignored --test-threads=1
+          OXID_PROJECTED_NATIVE_EVIDENCE="$PWD/target/projected-slices/debug-source" cargo test --locked --test typed_projected_slices -- --ignored --test-threads=1
+          OXID_PROJECTED_NATIVE_EVIDENCE="$PWD/target/projected-slices/release-source" cargo test --release --locked --test typed_projected_slices -- --ignored --test-threads=1
+      - name: Retain projected array slice native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: projected-array-slices-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: target/projected-slices
+      - name: Verify bounded Oxid expression parser and evaluator
+        run: |
+          python3 -B scripts/verify_expression_component.py \
+            --oxid target/release/oxid \
+            --output "$RUNNER_TEMP/expression-component" --native
+      - name: Retain bounded expression component evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: expression-component-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/expression-component
+      - name: Test bounded enum native admission controls
+        run: python3 -B -m unittest discover -s scripts -p test_bounded_enum_native.py -v
+      - name: Verify exact bounded enum native groups and public CLI in both profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_bounded_enum_native.py \
+            --repo "$PWD" --output "$RUNNER_TEMP/bounded-enum-native" \
+            --cargo "$(rustup which cargo)" --llvm-bin "$OXID_LLVM_BIN" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA"
+      - name: Retain bounded enum native streams and exact artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-enum-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/bounded-enum-native
+      - name: Test bounded u8 native, resource, and exhaustive-oracle admission
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_bounded_u8_native.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_bounded_u8_native.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_u8_compatibility.py -v
+      - name: Verify bounded u8 exact tests, both exhaustive routes, and frozen providers in both profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_bounded_u8_native.py \
+            --repo "$PWD" --output "$RUNNER_TEMP/bounded-u8-native" \
+            --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA"
+      - name: Retain bounded u8 resource traces, full coverage, provider streams, and source-free ELFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-u8-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bounded-u8-native
+            !${{ runner.temp }}/bounded-u8-native/llvm-runtime/libraries/**
+      - name: Test bounded byte storage closed oracle and exact-source admission
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_bounded_byte_storage.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_bounded_byte_storage.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_byte_storage_compatibility.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_hir_byte_storage_compatibility.py -v
+      - name: Verify bounded byte storage resources, reference and native oracles in both profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export CARGO_TARGET_DIR="$PWD/target"
+          # Bind dispatch to the actual toolchain recorded by bounded-enum,
+          # rather than rustup's PATH shims. The controller verifies both tools.
+          byte_storage_cargo="$(rustup which cargo)"
+          byte_storage_toolchain_bin="$(dirname "$byte_storage_cargo")"
+          export PATH="$byte_storage_toolchain_bin:$PATH"
+          python3 -B scripts/verify_bounded_byte_storage.py --prepare-public-build \
+            --repo "$PWD" --build-evidence "$RUNNER_TEMP/bounded-enum-native" \
+            --cargo "$byte_storage_cargo" --expected-head "$UNIT2E_EXPECTED_HEAD" \
+            --output "$RUNNER_TEMP/byte-storage-public-builds"
+          python3 -B scripts/verify_bounded_byte_storage.py \
+            --repo "$PWD" --build-evidence "$RUNNER_TEMP/bounded-enum-native" \
+            --public-build-evidence "$RUNNER_TEMP/byte-storage-public-builds" \
+            --llvm-bin "$OXID_LLVM_BIN" --expected-head "$UNIT2E_EXPECTED_HEAD" \
+            --event-sha "$UNIT2E_EVENT_SHA" --output "$RUNNER_TEMP/byte-storage-current"
+      - name: Retain bounded byte storage closed-oracle, resource and source-free native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: byte-storage-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/byte-storage-public-builds
+            ${{ runner.temp }}/byte-storage-current
+            !${{ runner.temp }}/byte-storage-current/llvm-runtime/libraries/**
+      - name: Test bounded stdin controller admission
+        run: python3 -B tests/qualification/bounded_stdin_current/test_controller.py -v
+      - name: Verify bounded stdin effects and fuel in both ordinary profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_bounded_stdin_native.py \
+            --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdin-native" \
+            --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
+      - name: Test bounded stdout controller and artifact admission
+        run: |
+          python3 -B tests/qualification/bounded_stdout_current/test_controller.py -v
+          python3 -B -m unittest discover -s scripts -p test_bounded_stack_artifact.py -v
+      - name: Verify bounded stdout and public artifacts in both ordinary profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_bounded_stdout_native.py \
+            --repo "$PWD" --output "$RUNNER_TEMP/bounded-stdout-native" \
+            --build-evidence "$RUNNER_TEMP/bounded-enum-native" --llvm-bin "$OXID_LLVM_BIN" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --source-manifest-sha256 402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa
+      - name: Retain bounded stdout streams, native ELFs, and artifact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-stdout-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/bounded-stdout-native
+      - name: Verify one expression ELF across bounded stdin inputs
+        run: |
+          python3 -B scripts/verify_expression_stdin.py \
+            --oxid target/release/oxid \
+            --output "$RUNNER_TEMP/expression-stdin" --native
+      - name: Retain bounded stdin native and public application evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-stdin-native-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bounded-stdin-native
+            ${{ runner.temp }}/expression-stdin
+      - name: Verify bounded stack-code rows and independent malformed programs
+        run: |
+          python3 -B scripts/verify_stack_component.py \
+            --oxid target/release/oxid \
+            --output "$RUNNER_TEMP/stack-component" --native
+          python3 -B scripts/verify_expression_stdin.py \
+            --oxid target/release/oxid \
+            --output "$RUNNER_TEMP/stack-stdin" --native --component stack
+      - name: Retain bounded stack-code component evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-stack-component-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/stack-component
+            ${{ runner.temp }}/stack-stdin
+      - name: Verify bounded typed lexer against the canonical lexer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for source in main tape transcript lexer keywords admission buffers lexer_core; do
+            target/debug/oxid fmt --edition typed-preview --check "fixtures/typed-lexer-samples/$source.ox"
+          done
+          python3 -B scripts/build_typed_lexer_observer.py \
+            --output "$RUNNER_TEMP/typed-lexer-observer"
+          python3 -B scripts/verify_bounded_typed_lexer.py \
+            --oxid target/debug/oxid \
+            --observer "$RUNNER_TEMP/typed-lexer-observer/canonical-lexer-observer" \
+            --output "$RUNNER_TEMP/typed-lexer-proof" --native
+      - name: Retain bounded typed lexer transcripts and observer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-typed-lexer-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-lexer-observer
+            ${{ runner.temp }}/typed-lexer-proof
+      - name: Verify bounded scalar parser against complete canonical observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts -p test_bounded_typed_parser.py -v
+          python3 -B -m unittest discover -s scripts -p test_parser_ast_observation.py -v
+          python3 -B scripts/build_typed_parser_observer.py \
+            --output "$RUNNER_TEMP/typed-parser-observer"
+          python3 -B tests/fixtures/bounded_typed_parser/observer/test_observer.py \
+            --observer "$RUNNER_TEMP/typed-parser-observer/canonical-parser-observer" \
+            --report "$RUNNER_TEMP/typed-parser-observer/projection-tests.json"
+          for profile in debug release; do
+            python3 -B scripts/verify_bounded_typed_parser.py \
+              --oxid "target/$profile/oxid" \
+              --parser-observer "$RUNNER_TEMP/typed-parser-observer/canonical-parser-observer" \
+              --lexer-observer "$RUNNER_TEMP/typed-lexer-observer/canonical-lexer-observer" \
+              --output "$RUNNER_TEMP/typed-parser-proof-$profile" --native
+          done
+      - name: Retain bounded parser inputs, streams, identities and native ELFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-typed-parser-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-parser-observer
+            ${{ runner.temp }}/typed-lexer-observer
+            ${{ runner.temp }}/typed-parser-proof-debug
+            ${{ runner.temp }}/typed-parser-proof-release
+      - name: Verify bounded scalar static frontend and untrusted AST boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts -p test_static_resolution_observation.py -v
+          python3 -B -m unittest discover -s scripts -p test_static_typed_observation.py -v
+          python3 -B -m unittest discover -s scripts -p test_bounded_typed_static.py -v
+          python3 -B scripts/build_typed_static_observer.py \
+            --output "$RUNNER_TEMP/typed-static-observer"
+          for profile in debug release; do
+            python3 -B tests/fixtures/bounded_typed_static/observer/test_observer.py \
+              --observer "$RUNNER_TEMP/typed-static-observer/canonical-static-observer" \
+              --canonical "target/$profile/oxid" \
+              --evidence "$RUNNER_TEMP/typed-static-observer-tests-$profile"
+            python3 -B scripts/verify_bounded_typed_static.py \
+              --oxid "target/$profile/oxid" \
+              --static-observer "$RUNNER_TEMP/typed-static-observer/canonical-static-observer" \
+              --lexer-observer "$RUNNER_TEMP/typed-lexer-observer/canonical-lexer-observer" \
+              --output "$RUNNER_TEMP/typed-static-proof-$profile" --native
+          done
+      - name: Retain bounded static inputs, streams, identities and native ELFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-typed-static-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/typed-static-observer
+            ${{ runner.temp }}/typed-static-observer-tests-debug
+            ${{ runner.temp }}/typed-static-observer-tests-release
+            ${{ runner.temp }}/typed-static-proof-debug
+            ${{ runner.temp }}/typed-static-proof-release
+      - name: Verify production source CLI and source-free ELF outcomes
+        run: python3 scripts/verify_owned_source.py target/debug/oxid target/release/oxid --mode cli --cli-amendment projected-array-slices-v1 --jobs 2
+      - name: Verify owned-source native budgets, stores, guards, and artifact identities
+        run: python3 scripts/verify_owned_source_native.py --llvm-bin "$OXID_LLVM_BIN" --jobs 2 --evidence target/owned-source-native-ci
+      - name: Recheck native matcher rejection controls against real collected evidence
+        env:
+          NATIVE_OBSERVATIONS: target/owned-source-native-ci/collection
+          PYTHONPATH: scripts
+        run: python3 -m unittest -v test_owned_source_native_matcher test_owned_source_native_binding
+      - name: Verify actual LLVM compilation, reference parity, and ELF artifacts
+        run: python3 scripts/verify_native_suite.py target/debug/oxid target/release/oxid --jobs 2
+      - name: Index and preserve combined Unit2E evidence on every terminal state
+        id: unit2e_preservation
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          UNIT2E_PRODUCER_OUTCOME: ${{ steps.unit2e_producer.outcome }}
+          UNIT2E_INDEPENDENT_DEBUG_OUTCOME: ${{ steps.unit2e_independent_debug.outcome }}
+          UNIT2E_INDEPENDENT_RELEASE_OUTCOME: ${{ steps.unit2e_independent_release.outcome }}
+        run: |
+          printf 'upload-root=%s\n' "$RUNNER_TEMP/fixed-array-unit2e-upload" >> "$GITHUB_OUTPUT"
+          python3 -B scripts/verify_owned_array_native.py package \
+            --producer-root "$RUNNER_TEMP/fixed-array-unit2e/producer" \
+            --output "$RUNNER_TEMP/fixed-array-unit2e-upload" \
+            --expected-head "$UNIT2E_EXPECTED_HEAD" --event-sha "$UNIT2E_EVENT_SHA" \
+            --producer-step-outcome "$UNIT2E_PRODUCER_OUTCOME" \
+            --independent-root "$RUNNER_TEMP/fixed-array-unit2e/independent" \
+            --independent-debug-outcome "$UNIT2E_INDEPENDENT_DEBUG_OUTCOME" \
+            --independent-release-outcome "$UNIT2E_INDEPENDENT_RELEASE_OUTCOME"
+      - name: Retain compact Unit2E evidence and original receipt bodies
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixed-array-unit2e-compact
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-index.json
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-compact.tar.gz
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-compact.tar.gz.sha256
+      - name: Retain complete or explicitly incomplete combined Unit2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixed-array-unit2e-evidence
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-evidence.tar.gz
+            ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-evidence.tar.gz.sha256
+
+  unit4-linux:
+    name: Unit4 current typed-project qualification (Linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: unit4-current
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux native environment
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils util-linux xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+          # The runner mount may have a different owner; create an owned worktree.
+          mkdir "$GITHUB_WORKSPACE/unit4-current"
+      - uses: actions/checkout@v4
+        with:
+          # Bind the actual PR head; github.sha is retained separately as event SHA.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: unit4-current
+          set-safe-directory: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked dependencies and exact historical parser authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" fetch --no-tags origin d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" cat-file -e 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768^{commit}'
+          git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" worktree add --detach "$RUNNER_TEMP/unit4-parser-authority" d9e6b9bf172abd5e15da7212c9e6224e29ccc768
+      - name: Verify Unit4 integration failure controls
+        run: python3 -B tests/qualification/unit4_ci/test_integration.py
+      - name: Execute complete current-source public, hosted-root and parser gates
+        id: qualification
+        timeout-minutes: 165
+        shell: bash
+        run: |
+          set -euo pipefail
+          unit4_rustc="$(rustup which rustc)"
+          unit4_toolchain="$(dirname "$(dirname "$unit4_rustc")")"
+          python3 -B tests/qualification/unit4_ci/gate.py host \
+            --repo "$GITHUB_WORKSPACE/unit4-current" --output "$RUNNER_TEMP/unit4-linux" \
+            --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
+            --host 'Linux x86_64' --historical-repo "$RUNNER_TEMP/unit4-parser-authority" \
+            --toolchain "$unit4_toolchain" --cargo-cache "${CARGO_HOME:-$HOME/.cargo}"
+      - name: Preserve complete or failed Unit4 evidence
+        if: always()
+        timeout-minutes: 30
+        run: python3 -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-linux" --archives "$RUNNER_TEMP/unit4-linux-archives"
+      - name: Stage the closed compact Linux upload directory
+        if: always()
+        run: python3 -B tests/qualification/unit4_ci/evidence.py --archives "$RUNNER_TEMP/unit4-linux-archives" --stage-compact-upload "$RUNNER_TEMP/unit4-linux-compact-upload"
+      - name: Upload compact Linux raw evidence and bindings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-host-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-linux-compact-upload
+      - name: Upload full Linux source, stream and binary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-full-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-linux-archives/full-evidence.tar.gz
+
+  unit4-portable-hosts:
+    name: Unit4 current typed-project qualification (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86_64
+            os: windows-latest
+            artifact: windows-x86_64
+          - name: macOS x86_64
+            os: macos-15-intel
+            artifact: macos-x86_64
+          - name: macOS arm64
+            os: macos-14
+            artifact: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_HOST: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore and verify tracked committed bytes through a fresh checkout
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/common.py --restore-checkout --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-committed-checkout" --expected-head "$UNIT4_EXPECTED_HEAD"
+      - name: Preserve committed-byte checkout identities
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-checkout-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-committed-checkout/restoration.json
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch locked build dependencies
+        run: cargo fetch --locked
+      - name: Verify actual-host integration controls
+        run: python -B tests/qualification/unit4_ci/test_integration.py
+      - name: Execute ordinary, lifecycle and actual no-native trap gates
+        if: runner.os != 'Windows'
+        id: qualification
+        timeout-minutes: 80
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tests/qualification/unit4_ci/gate.py host \
+            --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-host" \
+            --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
+            --host "$UNIT4_HOST"
+      - name: Execute Windows gates with the native toolchain search path
+        if: runner.os == 'Windows'
+        id: qualification-windows
+        timeout-minutes: 80
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $unit4_vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path -LiteralPath $unit4_vswhere -PathType Leaf)) { throw 'Preinstalled Microsoft vswhere is missing' }
+          $unit4_vs = & $unit4_vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $unit4_vs) { throw 'Preinstalled Microsoft x64 C++ tools were not found' }
+          $unit4_dev_shell = Join-Path $unit4_vs 'Common7/Tools/Launch-VsDevShell.ps1'
+          if (-not (Test-Path -LiteralPath $unit4_dev_shell -PathType Leaf)) { throw 'Preinstalled Microsoft developer shell is missing' }
+          & $unit4_dev_shell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          python -B tests/qualification/unit4_ci/gate.py host `
+            --repo "$env:GITHUB_WORKSPACE" --output "$env:RUNNER_TEMP/unit4-host" `
+            --expected-head "$env:UNIT4_EXPECTED_HEAD" --event-sha "$env:UNIT4_EVENT_SHA" `
+            --host "$env:UNIT4_HOST"
+          exit $LASTEXITCODE
+      - name: Preserve complete or failed actual-host evidence
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/evidence.py --output "$RUNNER_TEMP/unit4-host" --archives "$RUNNER_TEMP/unit4-host-archives"
+      - name: Upload compact host raw evidence and bindings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-host-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/unit4-host-archives/compact.tar.xz
+            ${{ runner.temp }}/unit4-host-archives/export.json
+      - name: Upload full host source, stream and binary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-full-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: ${{ runner.temp }}/unit4-host-archives/full-evidence.tar.gz
+
+  unit4-qualification:
+    name: Unit4 mandatory four-host qualification join
+    needs: [unit4-linux, unit4-portable-hosts]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download exact-run host qualification capsules
+        uses: actions/download-artifact@v4
+        with:
+          pattern: unit4-host-*
+          path: ${{ runner.temp }}/unit4-host-artifacts
+      - name: Require complete raw frozen rosters from all four actual hosts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tests/qualification/unit4_ci/join.py \
+            --repo "$GITHUB_WORKSPACE" --artifacts "$RUNNER_TEMP/unit4-host-artifacts" \
+            --output "$RUNNER_TEMP/unit4-final-join" --expected-head "$UNIT4_EXPECTED_HEAD" \
+            --event-sha "$UNIT4_EVENT_SHA" --job-results "$UNIT4_JOB_RESULTS"
+      - name: Preserve final qualification result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-final-qualification
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-final-join/comparison.json
+
+  local-hir-producers:
+    name: Explicit local HIR producers (ordinary debug and release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: producer-current
+    env:
+      HIR_PRODUCER_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      HIR_PRODUCER_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux producer environment
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+          mkdir "$GITHUB_WORKSPACE/producer-current"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: producer-current
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch exact locked dependencies
+        run: cargo fetch --locked
+      - name: Test producer qualification admission and evidence controls
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_producers.py -v
+          python3 -B -m unittest discover -s scripts -p test_run_hir_producer_ci.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_hir_producers_v2.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_hir_producers_v2.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_run_hir_producer_ci.py -v
+      - name: Build exact-head executables and qualify v1, v2 and edge controls in both ordinary profiles
+        run: |
+          python3 -B scripts/run_hir_producer_ci.py \
+            --expected-head "$HIR_PRODUCER_EXPECTED_HEAD" \
+            --event-sha "$HIR_PRODUCER_EVENT_SHA" \
+            --llvm-bin "$OXID_LLVM_BIN" \
+            --output "$RUNNER_TEMP/local-hir-producers"
+      - name: Retain producer builds, observations and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-hir-producer-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/local-hir-producers
+            !${{ runner.temp }}/local-hir-producers/target/**
+
+  streaming-lexical-provider:
+    name: Source-scale lexical component (ordinary debug and release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    container: debian:trixie-slim
+    defaults:
+      run:
+        working-directory: lexical-current
+    env:
+      LEXICAL_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      LEXICAL_EVENT_SHA: ${{ github.sha }}
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install qualified Linux lexical environment
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils xz-utils \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+          mkdir "$GITHUB_WORKSPACE/lexical-current"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: lexical-current
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Fetch exact locked dependencies
+        run: cargo fetch --locked
+      - name: Test lexical framing and qualification admission
+        run: |
+          python3 -B -m unittest discover -s scripts -p test_streaming_lexer_protocol.py -v
+          python3 -B -m unittest discover -s scripts -p test_qualify_streaming_lexer.py -v
+          python3 -O -B -m unittest discover -s scripts -p test_qualify_streaming_lexer.py -v
+      - name: Rebuild actual producer closures through selected lexical tokens and test failures
+        run: |
+          python3 -B scripts/run_streaming_lexer_ci.py \
+            --expected-head "$LEXICAL_EXPECTED_HEAD" --event-sha "$LEXICAL_EVENT_SHA" \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/streaming-lexical-provider"
+      - name: Retain complete lexical source, token, provenance and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streaming-lexical-provider-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/streaming-lexical-provider
+            !${{ runner.temp }}/streaming-lexical-provider/target/**

@@ -1,0 +1,255 @@
+diff --git a/src/runtime/packages.rs b/src/runtime/packages.rs
+index 8ccf4bf..d68a5bc 100644
+--- a/src/runtime/packages.rs
++++ b/src/runtime/packages.rs
+@@ -478,22 +478,11 @@ fn materialize_git_dependency(
+     options: ResolveOptions,
+ ) -> Result<PathBuf, String> {
+     let dependency_root = project_root.join(".oxid").join("deps");
+-    fs::create_dir_all(&dependency_root).map_err(|error| {
+-        format!(
+-            "cannot create dependency cache {}: {error}",
+-            dependency_root.display()
+-        )
+-    })?;
+     let checkout = dependency_root.join(name);
+     let network_forbidden = network && (options.locked || options.offline);
++    let exists = admit_git_cache_location(project_root, name)?;
+ 
+-    if checkout.exists() {
+-        if !checkout.is_dir() {
+-            return Err(format!(
+-                "dependency cache is not a directory: {}",
+-                checkout.display()
+-            ));
+-        }
++    if exists {
+         ensure_git_repository(&checkout)?;
+         let origin = git_output(
+             &checkout,
+@@ -537,6 +526,12 @@ fn materialize_git_dependency(
+                 if options.locked { "locked" } else { "offline" }
+             ));
+         }
++        fs::create_dir_all(&dependency_root).map_err(|error| {
++            format!(
++                "cannot create dependency cache {}: {error}",
++                dependency_root.display()
++            )
++        })?;
+         let temporary = unique_sibling_path(&dependency_root, name)?;
+         let result: Result<(), String> = (|| {
+             run_git_without_repo(&[
+@@ -656,8 +651,15 @@ fn ensure_pristine_git_cache(checkout: &Path, name: &str) -> Result<(), String>
+ fn unique_sibling_path(parent: &Path, name: &str) -> Result<PathBuf, String> {
+     for attempt in 0..1_000u32 {
+         let path = parent.join(format!(".{name}.tmp-{}-{attempt}", std::process::id()));
+-        if !path.exists() {
+-            return Ok(path);
++        match fs::symlink_metadata(&path) {
++            Ok(_) => continue, // A dangling link is occupied, too.
++            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(path),
++            Err(error) => {
++                return Err(format!(
++                    "cannot inspect temporary cache path {}: {error}",
++                    path.display()
++                ))
++            }
+         }
+     }
+     Err(format!(
+@@ -666,20 +668,88 @@ fn unique_sibling_path(parent: &Path, name: &str) -> Result<PathBuf, String> {
+     ))
+ }
+ 
+-fn ensure_git_repository(path: &Path) -> Result<(), String> {
+-    let output = git_output(
+-        path,
+-        &[
+-            OsString::from("rev-parse"),
+-            OsString::from("--is-inside-work-tree"),
+-        ],
+-    )?;
+-    if output.trim() != "true" {
++// Cache admission assumes a stable filesystem. It does not prevent concurrent
++// replacement or secure arbitrary Git configuration/metadata internals.
++fn cache_directory_exists(path: &Path) -> Result<bool, String> {
++    let metadata = match fs::symlink_metadata(path) {
++        Ok(metadata) => metadata,
++        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
++        Err(error) => {
++            return Err(format!(
++                "cannot inspect dependency cache location {}: {error}",
++                path.display()
++            ))
++        }
++    };
++    #[cfg(windows)]
++    let redirected = {
++        use std::os::windows::fs::MetadataExt;
++        // Reject all reparse points, including junctions, not just symlinks.
++        metadata.file_attributes() & 0x400 != 0
++    };
++    #[cfg(not(windows))]
++    let redirected = metadata.file_type().is_symlink();
++    if redirected || !metadata.is_dir() {
++        return Err(format!("dependency cache location must be an ordinary directory without symlink or reparse redirection: {}", path.display()));
++    }
++    Ok(true)
++}
++
++fn admit_git_cache_location(project_root: &Path, name: &str) -> Result<bool, String> {
++    // project_root is already canonical. Inspect each managed component before
++    // touching any descendant; an absent ancestor means an absent checkout.
++    let mut path = project_root.to_path_buf();
++    for component in [".oxid", "deps", name] {
++        path.push(component);
++        if !cache_directory_exists(&path)? {
++            return Ok(false);
++        }
++    }
++    path.push(".git");
++    if !cache_directory_exists(&path)? {
+         return Err(format!(
+-            "dependency cache is not a Git work tree: {}",
++            "dependency cache location requires its own .git directory: {}",
+             path.display()
+         ));
+     }
++    Ok(true)
++}
++
++fn ensure_git_repository(path: &Path) -> Result<(), String> {
++    for (option, expected) in [
++        ("--show-toplevel", path.to_path_buf()),
++        ("--absolute-git-dir", path.join(".git")),
++        ("--git-common-dir", path.join(".git")),
++    ] {
++        let output = git_output(path, &[OsString::from("rev-parse"), OsString::from(option)])
++            .map_err(|error| {
++                format!(
++                    "invalid dependency cache location {}: {error}",
++                    path.display()
++                )
++            })?;
++        // Remove only the command's line ending: spaces in paths are significant.
++        let reported = output.strip_suffix('\n').unwrap_or(&output);
++        let reported = reported.strip_suffix('\r').unwrap_or(reported);
++        let actual = fs::canonicalize(path.join(reported)).map_err(|error| {
++            format!(
++                "cannot resolve dependency cache location {option} at {}: {error}",
++                path.display()
++            )
++        })?;
++        let expected = fs::canonicalize(&expected).map_err(|error| {
++            format!(
++                "cannot resolve dependency cache location {}: {error}",
++                expected.display()
++            )
++        })?;
++        if actual != expected {
++            return Err(format!(
++                "dependency cache location {option} resolves outside its intended root: {}",
++                path.display()
++            ));
++        }
++    }
+     Ok(())
+ }
+ 
+@@ -2022,7 +2092,10 @@ mod tests {
+     fn pristine_cache_preflight_does_not_refresh_index_or_accept_ignored_files() {
+         let root = TestDir::new("pristine-preflight");
+         test_git(root.path(), &["init", "--quiet"]);
+-        test_git(root.path(), &["config", "user.email", "oxid@example.invalid"]);
++        test_git(
++            root.path(),
++            &["config", "user.email", "oxid@example.invalid"],
++        );
+         test_git(root.path(), &["config", "user.name", "Oxid Test"]);
+         write(root.path().join(".gitignore"), "build/\n");
+         test_git(root.path(), &["add", "."]);
+@@ -2035,14 +2108,20 @@ mod tests {
+             .unwrap_err()
+             .contains("ignored files"));
+         assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
+-        assert_eq!(fs::read(root.path().join("build/output")).unwrap(), b"local build product");
++        assert_eq!(
++            fs::read(root.path().join("build/output")).unwrap(),
++            b"local build product"
++        );
+     }
+ 
+     #[test]
+     fn checkout_defense_refuses_ignored_path_collision_without_force() {
+         let root = TestDir::new("checkout-ignored");
+         test_git(root.path(), &["init", "--quiet"]);
+-        test_git(root.path(), &["config", "user.email", "oxid@example.invalid"]);
++        test_git(
++            root.path(),
++            &["config", "user.email", "oxid@example.invalid"],
++        );
+         test_git(root.path(), &["config", "user.name", "Oxid Test"]);
+         write(root.path().join(".gitignore"), "artifact\n");
+         test_git(root.path(), &["add", "."]);
+@@ -2056,11 +2135,59 @@ mod tests {
+         write(root.path().join("artifact"), "local data");
+         let index = fs::read(root.path().join(".git/index")).unwrap();
+         assert!(git_checkout(root.path(), second.trim()).is_err());
+-        assert_eq!(fs::read(root.path().join("artifact")).unwrap(), b"local data");
++        assert_eq!(
++            fs::read(root.path().join("artifact")).unwrap(),
++            b"local data"
++        );
+         assert_eq!(test_git(root.path(), &["rev-parse", "HEAD"]), first);
+         assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
+     }
+ 
++    #[test]
++    fn temporary_cache_names_do_not_reuse_dangling_links() {
++        let root = TestDir::new("temporary-cache-alias");
++        let occupied = root
++            .path()
++            .join(format!(".dep.tmp-{}-0", std::process::id()));
++        let target = root.path().join("missing");
++        #[cfg(unix)]
++        std::os::unix::fs::symlink(&target, &occupied).unwrap();
++        #[cfg(windows)]
++        {
++            let output = Command::new("cmd")
++                .args(["/C", "mklink", "/J"])
++                .arg(&occupied)
++                .arg(&target)
++                .output()
++                .unwrap();
++            assert!(
++                output.status.success(),
++                "Windows dangling-junction capability required: {output:?}"
++            );
++        }
++        let original_target = fs::read_link(&occupied).unwrap();
++        let selected = unique_sibling_path(root.path(), "dep").unwrap();
++        assert_eq!(
++            selected,
++            root.path()
++                .join(format!(".dep.tmp-{}-1", std::process::id()))
++        );
++        assert_eq!(fs::read_link(&occupied).unwrap(), original_target);
++        assert!(!target.exists());
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn temporary_cache_metadata_errors_are_not_absence() {
++        let root = TestDir::new("temporary-cache-error");
++        let file = root.path().join("file");
++        fs::write(&file, "sentinel").unwrap();
++        assert!(unique_sibling_path(&file, "dep")
++            .unwrap_err()
++            .contains("cannot inspect temporary cache path"));
++        assert_eq!(fs::read(&file).unwrap(), b"sentinel");
++    }
++
+     fn test_git(repository: &Path, args: &[&str]) -> String {
+         let output = Command::new("git")
+             .arg("-C")

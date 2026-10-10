@@ -13,6 +13,20 @@ from unittest.mock import patch
 import portable as p
 
 
+def stage_lexer_dispatcher_dependencies(root, active):
+    """Supply exact new dependencies before the original artifact corruption."""
+    rows = list(active['lexer_reservation'].values())
+    p.verify_map(p.REPOSITORY, rows)
+    names = [row['path'] for row in rows] + [
+        'tests/qualification/lexer_reservation_current/' + name
+        for name in ('adapters.py', 'source_transition.py', 'seal.py', 'current.py')
+    ] + ['tests/fixtures/typed_project_source_binding_byte_storage_v1/run.py']
+    for name in dict.fromkeys(names):
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((p.REPOSITORY / name).read_bytes())
+
+
 class ProjectedOverlapRosterControls(unittest.TestCase):
     def test_exact_projected_overlap_roster(self):
         self.assertEqual(p.PROJECTED_INSTRUMENTATION_PATHS,
@@ -38,11 +52,11 @@ class CurrentAuthorityControls(unittest.TestCase):
         self.assertEqual(len(p.compiler_map(a)), 291)
         self.assertNotEqual(a['candidate_source_manifest_sha256'], a['current']['current_candidate_source_manifest_sha256'])
         self.assertEqual([r['path'] for r in a['current']['source_delta']], list(p.CURRENT_PATHS))
-        self.assertEqual(len(a['current']['source_delta']), 340)
+        self.assertEqual(len(a['current']['source_delta']), 341)
         self.assertEqual([r['path'] for r in a['current']['source_delta'] if r['before'] is None], ['fixtures/typed-record-composition-samples/main.ox', 'fixtures/typed-record-composition-samples/model.ox', 'fixtures/typed-record-composition-samples/ops.ox', 'src/frontend/builtin_catalog.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/declaration_index/enum_query_tests.rs', 'src/frontend/declaration_index/enum_tests.rs', 'src/frontend/declaration_index/enum_views.rs', 'src/frontend/declaration_index/u8_integration_tests.rs', 'src/frontend/declaration_index/u8_reservation.rs', 'src/frontend/enum_public_tests.rs', 'src/frontend/format.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/format/enum_candidate_tests.rs', 'src/frontend/format/resource_tests.rs', 'src/frontend/format_cli.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/hir_protocol.rs', 'src/frontend/lexical_provider.rs', 'src/frontend/lexical_provider/bundle.rs', 'src/frontend/lexical_provider/supervisor.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/lexical_provider/wire.rs', 'src/frontend/oir/execute_measurement.rs', 'src/frontend/oir/lower_measurement.rs', 'src/frontend/oir/native_emit_cost.rs', 'src/frontend/oir/native_emit_observation.rs', 'src/frontend/oir/native_emit_work.rs', 'src/frontend/oir/native_private_emit.rs', 'src/frontend/oir/native_private_emit_tests.rs', 'src/frontend/oir/native_scalar_resource.rs', 'src/frontend/oir/native_scalar_resource_proof.md', 'src/frontend/oir/native_u8_tests.rs', 'src/frontend/oir/negation_raw_tests.rs', 'src/frontend/oir/owned/array_native_resource_tests.rs', 'src/frontend/oir/owned/array_native_tests.rs', 'src/frontend/oir/owned/array_observe.rs', 'src/frontend/oir/owned/array_reference_boundary_tests.rs', 'src/frontend/oir/owned/array_reference_tests.rs', 'src/frontend/oir/owned/array_tests.rs', 'src/frontend/oir/owned/builtin_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_input_fixtures.rs', 'src/frontend/oir/owned/builtin_input_native_tests.rs', 'src/frontend/oir/owned/builtin_input_tests.rs', 'src/frontend/oir/owned/builtin_origin_tests.rs', 'src/frontend/oir/owned/builtin_output_descriptor_tests.rs', 'src/frontend/oir/owned/builtin_output_fixtures.rs', 'src/frontend/oir/owned/builtin_output_native_tests.rs', 'src/frontend/oir/owned/builtin_output_process_tests.rs', 'src/frontend/oir/owned/builtin_output_reference_tests.rs', 'src/frontend/oir/owned/builtins.rs', 'src/frontend/oir/owned/byte_storage_codec_tests.rs', 'src/frontend/oir/owned/byte_storage_native_tests.rs', 'src/frontend/oir/owned/byte_storage_reference_tests.rs', 'src/frontend/oir/owned/composition_native_tests.rs', 'src/frontend/oir/owned/composition_reference_tests.rs', 'src/frontend/oir/owned/composition_verifier_tests.rs', 'src/frontend/oir/owned/enum_admission_tests.rs', 'src/frontend/oir/owned/enum_consumer_fixtures.rs', 'src/frontend/oir/owned/enum_formatter_allocation_tests.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/enum_layout_tests.rs', 'src/frontend/oir/owned/enum_match_tests.rs', 'src/frontend/oir/owned/enum_native_tests.rs', 'src/frontend/oir/owned/enum_parser_allocation_tests.rs', 'src/frontend/oir/owned/enum_query_allocation_tests.rs', 'src/frontend/oir/owned/enum_reference_tests.rs', 'src/frontend/oir/owned/input.rs', 'src/frontend/oir/owned/native_inventory_admission_tests.rs', 'src/frontend/oir/owned/native_inventory_tests.rs', 'src/frontend/oir/owned/native_storage.rs', 'src/frontend/oir/owned/native_storage_tests.rs', 'src/frontend/oir/owned/negation_raw_tests.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/projected_slice_native_tests.rs', 'src/frontend/oir/owned/reviewer_array_observer_tests.rs', 'src/frontend/oir/owned/reviewer_array_reference_tests.rs', 'src/frontend/oir/owned/slice_native_tests.rs', 'src/frontend/oir/owned/source/array_consumer_tests.rs', 'src/frontend/oir/owned/source/array_pipeline.rs', 'src/frontend/oir/owned/source/array_pipeline_rows.rs', 'src/frontend/oir/owned/source/array_pipeline_tests.rs', 'src/frontend/oir/owned/source/array_pipeline_transport.rs', 'src/frontend/oir/owned/source/array_type_controls.rs', 'src/frontend/oir/owned/source/array_types_tests.rs', 'src/frontend/oir/owned/source/builtin_lower.rs', 'src/frontend/oir/owned/source/builtin_signature_tests.rs', 'src/frontend/oir/owned/source/builtin_source_tests.rs', 'src/frontend/oir/owned/source/byte_storage_association_tests.rs', 'src/frontend/oir/owned/source/byte_storage_authority_tests.rs', 'src/frontend/oir/owned/source/byte_storage_fuel_tests.rs', 'src/frontend/oir/owned/source/byte_storage_native_fixture.rs', 'src/frontend/oir/owned/source/byte_storage_raw_tests.rs', 'src/frontend/oir/owned/source/byte_storage_resources.rs', 'src/frontend/oir/owned/source/byte_storage_tests.rs', 'src/frontend/oir/owned/source/byte_storage_trust_tests.rs', 'src/frontend/oir/owned/source/byte_storage_type_tests.rs', 'src/frontend/oir/owned/source/enum_native_source_tests.rs', 'src/frontend/oir/owned/source/enum_storage_failure_tests.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs', 'src/frontend/oir/owned/source/hir_budget.rs', 'src/frontend/oir/owned/source/hir_budget_tests.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/oir/owned/source/projected_slice_raw_tests.rs', 'src/frontend/oir/owned/source/resolver_enum_tests.rs', 'src/frontend/oir/owned/source/resolver_inventory_tests.rs', 'src/frontend/oir/owned/source/resolver_paid_tests.rs', 'src/frontend/oir/owned/source/resolver_storage.rs', 'src/frontend/oir/owned/source/resolver_storage_tests.rs', 'src/frontend/oir/owned/source/slice_raw_tests.rs', 'src/frontend/oir/owned/source/slice_tests.rs', 'src/frontend/oir/owned/source/type_storage.rs', 'src/frontend/oir/owned/source/type_storage_tests.rs', 'src/frontend/oir/owned/source/u8_resources.rs', 'src/frontend/oir/owned/source/u8_tests.rs', 'src/frontend/oir/owned/u8_tests.rs', 'src/frontend/oir/owned_types/array_tests.rs', 'src/frontend/oir/owned_types/byte_storage_tests.rs', 'src/frontend/oir/owned_types/composition_tests.rs', 'src/frontend/oir/owned_types/enum_integration_tests.rs', 'src/frontend/oir/owned_types/enums.rs', 'src/frontend/oir/owned_types/u8_tests.rs', 'src/frontend/oir/source/conversion_seen.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/allocation.rs', 'src/frontend/oir/source/hir_import/allocation/tests.rs', 'src/frontend/oir/source/hir_import/ast_compare.rs', 'src/frontend/oir/source/hir_import/ast_compare/tests.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/hir_import/candidate/cleanup_controls.rs', 'src/frontend/oir/source/hir_import/candidate/emit_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/emit_terminal.rs', 'src/frontend/oir/source/hir_import/candidate/resolution_controls.rs', 'src/frontend/oir/source/hir_import/candidate/run_entry_tests.rs', 'src/frontend/oir/source/hir_import/candidate/tests.rs', 'src/frontend/oir/source/hir_import/candidate/typed_compare.rs', 'src/frontend/oir/source/hir_import/candidate/verify_terminal.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/oir/source/hir_import/emit_measurements.rs', 'src/frontend/oir/source/hir_import/emit_native_tests.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/oir/source/hir_import/leaf.rs', 'src/frontend/oir/source/hir_import/pass_measurements.rs', 'src/frontend/oir/source/hir_import/producer_diagnostic.rs', 'src/frontend/oir/source/hir_import/producer_diagnostic/tests.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/oir/source/hir_import/run_execution_tests.rs', 'src/frontend/oir/source/hir_import/run_measurements.rs', 'src/frontend/oir/source/hir_import/tests.rs', 'src/frontend/oir/source/hir_import/u8_resource_successor.rs', 'src/frontend/oir/source/hir_import/verify_diagnostic_tests.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/source/hir_import/verify_tests.rs', 'src/frontend/oir/source/u8_association_resource_proof.md', 'src/frontend/oir/u8_association_tests.rs', 'src/frontend/oir/u8_carrier_tests.rs', 'src/frontend/oir/u8_execute_tests.rs', 'src/frontend/oir/u8_tests.rs', 'src/frontend/oir/unary_source_tests.rs', 'src/frontend/oir/verify_measurement.rs', 'src/frontend/parser/array_syntax_tests.rs', 'src/frontend/parser/arrays.rs', 'src/frontend/parser/builtin_tests.rs', 'src/frontend/parser/conversions.rs', 'src/frontend/parser/enum_syntax_tests.rs', 'src/frontend/parser/enums.rs', 'src/frontend/parser/u8_syntax_tests.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/project/budget_real_null_observer.rs', 'src/frontend/project/budget_string_null_tests.rs', 'src/frontend/project/builtin_tests.rs', 'src/frontend/project/enum_carrier_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/typeck_measurement.rs', 'tests/fixtures/bounded_enum_scanner/main.ox', 'tests/fixtures/bounded_enum_scanner/scanner.ox', 'tests/fixtures/checked_hir_import/public-source.txt', 'tests/fixtures/checked_hir_import/public-success.bin', 'tests/fixtures/checked_hir_import/rich-source.txt', 'tests/fixtures/checked_hir_import/rich-success.bin', 'tests/fixtures/checked_hir_import/scalar-arithmetic-source.txt', 'tests/fixtures/checked_hir_import/scalar-arithmetic-success.bin', 'tests/fixtures/checked_hir_import/scalar-assignment-source.txt', 'tests/fixtures/checked_hir_import/scalar-assignment-success.bin', 'tests/fixtures/checked_hir_import/scalar-boolean-source.txt', 'tests/fixtures/checked_hir_import/scalar-boolean-success.bin', 'tests/fixtures/checked_hir_import/scalar-comparison-source.txt', 'tests/fixtures/checked_hir_import/scalar-comparison-success.bin', 'tests/fixtures/checked_hir_import/scalar-loop-source.txt', 'tests/fixtures/checked_hir_import/scalar-loop-success.bin', 'tests/fixtures/checked_hir_import/scalar-unit-source.txt', 'tests/fixtures/checked_hir_import/scalar-unit-success.bin', 'tests/fixtures/checked_hir_import/synthetic-division-source.txt', 'tests/fixtures/checked_hir_import/synthetic-division-success.bin', 'tests/fixtures/checked_hir_import/synthetic-overflow-source.txt', 'tests/fixtures/checked_hir_import/synthetic-overflow-success.bin', 'tests/fixtures/checked_hir_import_v2/source-255.txt', 'tests/fixtures/checked_hir_import_v2/success-255.bin', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-call-context-excluded/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-no-context/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-nonzero-annotation/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-reassignment-context-excluded/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-return-context-excluded/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/empty-scalar-context/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/grouped-complete-access-and-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-first-heterogeneous-element/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-length-max-trailing-comma/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/literal-nested-nonempty-is-nonscalar/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/nested-empty-does-not-inherit-context/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-array-bad-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-base-kind-before-index-kind/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-internal-type-first/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-literal-range-before-base-type/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-index-resolution-before-base-type/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/read-unknown-base-first/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-0/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-bool-length-1/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-0/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-i32-length-1/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-0/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/scalar-unit-length-1/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/structural-identities-pairwise-distinct/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/utf8-read-primary/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/whole-program-resolution-before-earlier-function-type/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-base-kind-before-index-kind/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-both-subtree-errors-rhs-wins/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-element-before-mutability/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-internal-type-before-base/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-index-kind-before-rhs-element/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-element/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-one-conflict-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-owner-mutability-last/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-base-before-both-operands/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-resolve-rhs-before-index/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-rhs-internal-type-first/main.ox', 'tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/write-whole-resolution-before-rhs-typing/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-array-free/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-record-only/main.ox', 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/reference-access-modes/main.ox', 'tests/fixtures/producer_diagnostic/duplicate-source.txt', 'tests/fixtures/producer_diagnostic/duplicate.bin', 'tests/fixtures/producer_diagnostic/end255-source.txt', 'tests/fixtures/producer_diagnostic/end255.bin', 'tests/fixtures/producer_diagnostic/multiple-source.txt', 'tests/fixtures/producer_diagnostic/multiple.bin', 'tests/fixtures/producer_diagnostic/unknown-type-source.txt', 'tests/fixtures/producer_diagnostic/unknown-type.bin', 'tests/typed_record_composition.rs'])
-        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 84)
-        self.assertEqual(a['current']['reviewed_source_head'], 'e3c1b4a1a3ef457326f11a802896c125202fe797')
-        self.assertEqual(a['current']['source_only_tree'], '5fdb4f06a8fcbc61724676df55a4c3bee130eaf7')
+        self.assertEqual(sum(r['before'] is not None for r in a['current']['source_delta']), 85)
+        self.assertEqual(a['current']['reviewed_source_head'], 'c8e9a72afd9866f32b96f98ae24f61390039f421')
+        self.assertEqual(a['current']['source_only_tree'], '9b35515f096b5619d4d5b3d4b0cb88ea2ccf2c37')
 
     def test_native_storage_transition_rejects_parser_instrumentation_overlap(self):
         original_read = p.read
@@ -90,7 +104,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         old, new = functions(old_text), functions(new_text)
         allowed = {'verify_build', 'cargo_cache', 'authority', 'compiler_map', 'verify_checkout', 'prepare', 'verify_overlay',
                    'session_at', 'verify_cargo', 'collect', 'comparator', 'effective_authority', 'compare', 'main'}
-        self.assertEqual(set(new) - set(old), {'byte_storage_predecessor_active', 'restore_byte_storage_source', 'byte_storage_predecessor_body', 'verify_u8_cross_host_parser_predecessor', 'restore_u8_cross_host_source', 'u8_policy_module', 'u8_binding_api', 'u8_predecessor_active', 'restore_u8_source', 'validate_u8_transition', 'u8_predecessor_body', 'compose_u8_closed_policy', 'restore_cache_admission_source', 'validate_cache_admission_transition', 'restore_cache_preservation_source', 'validate_cache_preservation_transition', 'restore_package_integrity_source', 'validate_package_integrity_transition', 'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
+        self.assertEqual(set(new) - set(old), {'lexer_module', 'lexer_api', 'lexer_predecessor_active', 'restore_lexer_source', 'lexer_predecessor_body', 'compose_current_lexer', 'byte_storage_predecessor_active', 'restore_byte_storage_source', 'byte_storage_predecessor_body', 'verify_u8_cross_host_parser_predecessor', 'restore_u8_cross_host_source', 'u8_policy_module', 'u8_binding_api', 'u8_predecessor_active', 'restore_u8_source', 'validate_u8_transition', 'u8_predecessor_body', 'compose_u8_closed_policy', 'restore_cache_admission_source', 'validate_cache_admission_transition', 'restore_cache_preservation_source', 'validate_cache_preservation_transition', 'restore_package_integrity_source', 'validate_package_integrity_transition', 'restore_lexical_provider_source', 'validate_lexical_provider_transition', 'restore_producer_diagnostic_source', 'validate_producer_diagnostic_transition', 'validate_current_dependencies', 'dependency_files', 'restore_frontend_v2_source', 'validate_frontend_v2_transition', 'restore_hir_producer_source', 'validate_hir_producer_transition', 'compose_source_read', 'compose_array_instrumentation', 'restore_division_source', 'restore_slices_source', 'restore_composition_source', 'restore_unary_source', 'restore_projected_source', 'restore_enum_source', 'restore_stdin_source', 'restore_stdout_source', 'restore_hir_import_source', 'compose_namespace_resource', 'compose_enum_parser_helper', 'project_enum_observations', 'compose_division_lexer', 'compose_observer_initializer', 'current_candidate', 'current_overlay', 'verify_transition_records', 'verify_historical_overlay', 'current_parser_contract'})
         self.assertEqual(set(old) - set(new), set())
         for name in set(old) - allowed:
             with self.subTest(function=name): self.assertEqual(new[name], old[name])
@@ -108,7 +122,7 @@ class CurrentAuthorityControls(unittest.TestCase):
                     self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path), {'path': path, 'bytes': len(raw), 'sha256': p.sha(raw)})
                     continue
                 if role == 'derived_files' and path == 'src/frontend/lexer.rs':
-                    raw = p.compose_division_lexer(a, (p.REPOSITORY / path).read_bytes())
+                    raw = p.compose_current_lexer(a, (p.REPOSITORY / path).read_bytes())
                     self.assertEqual(next(r for r in a['current']['current_' + role] if r['path'] == path),
                                      {'path': path, 'bytes': len(raw), 'sha256': p.sha(raw)})
                     continue
@@ -157,7 +171,7 @@ class CurrentAuthorityControls(unittest.TestCase):
         current = copy.deepcopy(original_read(manifest_path))
         transform(current['files'])
         with patch.object(p, 'read', side_effect=lambda path: current if Path(path) == manifest_path else original_read(path)):
-            with self.assertRaisesRegex(p.Rejected, 'parser source must equal admitted complete byte storage source'):
+            with self.assertRaisesRegex(p.Rejected, 'complete admitted lexer source'):
                 p.authority()
 
     def test_duplicate_current_member_rejects(self):
@@ -308,7 +322,7 @@ class SourceReadCompositionControls(unittest.TestCase):
         changed = self.raw + b'// changed historical body\n'
         row = next(row for row in self.a['current']['source_delta'] if row['path'] == 'src/frontend/source.rs')
         row['after'].update(bytes=len(changed), sha256=p.sha(changed))
-        with self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+        with self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
             p.compose_source_read(self.a, changed)
 
 
@@ -356,7 +370,7 @@ class ArrayCompositionControls(unittest.TestCase):
             raw = (p.REPOSITORY / name).read_bytes()
             for control in (False, True):
                 if control and name.endswith('/budget.rs'): continue
-                with self.subTest(path=name, control=control), self.assertRaisesRegex(p.Rejected, 'composition current array identity'):
+                with self.subTest(path=name, control=control), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity' if name.endswith('/budget.rs') else 'composition current array identity'):
                     p.compose_array_instrumentation(self.a, name, raw + b'// changed\n', control)
 
     def test_unknown_path_and_unapproved_control_overlap_reject(self):
@@ -374,7 +388,7 @@ class ArrayCompositionControls(unittest.TestCase):
                        else 'division transition must recover exact combined source' if name in p.DIVISION_INSTRUMENTATION_PATHS
                        else 'hir_import transition must recover exact native inventory source' if name in p.HIR_IMPORT_INSTRUMENTATION_PATHS
                        else 'enum transition must recover exact projected source')
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.compose_array_instrumentation(a, name, raw)
 
     def test_changed_inverse_patch_and_runner_reject_before_transform(self):
@@ -435,14 +449,15 @@ class DivisionCompositionControls(unittest.TestCase):
     def test_lexer_composition_preserves_exactly_two_frozen_hooks(self):
         name = 'src/frontend/lexer.rs'
         raw = (p.REPOSITORY / name).read_bytes()
-        composed = p.compose_division_lexer(self.a, raw)
+        previous, raw = p.lexer_predecessor_body(self.a, name, raw)
+        composed = p.compose_division_lexer(previous, raw)
         token = b'        crate::frontend::parser::unit4_observer::lex_token(*tokens.last().unwrap());\n'
         eof = b'    crate::frontend::parser::unit4_observer::lex_token(*tokens.last().unwrap());\n'
         self.assertEqual(composed.count(token), 1)
         without_token = composed.replace(token, b'', 1)
         self.assertEqual(without_token.count(eof), 1)
         self.assertEqual(without_token.replace(eof, b'', 1), raw)
-        self.assertEqual(next(row for row in self.a['current']['current_derived_files'] if row['path'] == name),
+        self.assertEqual(next(row for row in previous['current']['current_derived_files'] if row['path'] == name),
                          {'path': name, 'bytes': len(composed), 'sha256': p.sha(composed)})
 
     def test_changed_and_coherently_rehashed_division_source_rejects(self):
@@ -454,7 +469,7 @@ class DivisionCompositionControls(unittest.TestCase):
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
             message = (('exact current byte storage composition body') if name in p.UNARY_INSTRUMENTATION_PATHS
                        else 'division transition must recover exact combined source')
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_division_source(altered, name, raw)
         with self.assertRaisesRegex(p.Rejected, 'unapproved division instrumentation path'):
             p.restore_division_source(self.a, 'src/frontend/project/budget.rs', b'')
@@ -465,6 +480,7 @@ class DivisionCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -505,7 +521,7 @@ class SlicesCompositionControls(unittest.TestCase):
                 p.restore_slices_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_slices_source(altered, name, raw)
 
 
@@ -514,6 +530,7 @@ class SlicesCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -548,7 +565,7 @@ class RecordCompositionControls(unittest.TestCase):
                 p.restore_composition_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_composition_source(altered, name, raw)
 
 
@@ -557,6 +574,7 @@ class RecordCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -591,7 +609,7 @@ class UnaryCompositionControls(unittest.TestCase):
                 p.restore_unary_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_unary_source(altered, name, raw)
 
 
@@ -600,6 +618,7 @@ class UnaryCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -634,7 +653,7 @@ class ProjectedCompositionControls(unittest.TestCase):
                 p.restore_projected_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_projected_source(altered, name, raw)
 
 
@@ -643,6 +662,7 @@ class ProjectedCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -712,7 +732,7 @@ class StdoutCompositionControls(unittest.TestCase):
             p.restore_stdout_source(self.a, self.name, raw)
         altered = copy.deepcopy(self.a)
         next(row for row in altered['current']['source_delta'] if row['path'] == self.name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-        with self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+        with self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
             p.restore_stdout_source(altered, self.name, raw)
 
 
@@ -730,6 +750,7 @@ class StdoutCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -741,7 +762,7 @@ class StdoutCompositionControls(unittest.TestCase):
     def test_forged_stdin_predecessor_identity_rejects(self):
         altered = copy.deepcopy(self.a)
         altered['current']['stdin_source_manifest']['sha256'] = '0' * 64
-        with self.assertRaisesRegex(p.Rejected, 'byte storage changes unrelated cross-host parser authority'):
+        with self.assertRaisesRegex(p.Rejected, 'lexer changes unrelated parser authority'):
             p.restore_stdout_source(altered, self.name, self.raw)
 
     def test_missing_duplicate_and_wrong_patch_section_reject(self):
@@ -761,6 +782,7 @@ class StdoutCompositionControls(unittest.TestCase):
         for label, raw in mutations.items():
             with self.subTest(mutation=label), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 altered = copy.deepcopy(previous)
                 for field in fields:
                     row = altered['current'][field]
@@ -796,7 +818,7 @@ class StdinCompositionControls(unittest.TestCase):
                 p.restore_stdin_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_stdin_source(altered, name, raw)
 
 
@@ -805,6 +827,7 @@ class StdinCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -842,7 +865,7 @@ class EnumCompositionControls(unittest.TestCase):
                 p.restore_enum_source(self.a, name, raw)
             altered = copy.deepcopy(self.a)
             next(row for row in altered['current']['source_delta'] if row['path'] == name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+            with self.subTest(path=name), self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
                 p.restore_enum_source(altered, name, raw)
 
 
@@ -851,6 +874,7 @@ class EnumCompositionControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -874,7 +898,7 @@ class EnumCompositionControls(unittest.TestCase):
             self.assertEqual(composed.count(hook), 1)
             composed = composed.replace(hook, b'', 1)
         self.assertEqual(composed, raw)
-        with self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+        with self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
             p.compose_namespace_resource(self.a, raw + b'// changed\n')
 
     def test_helper_reversal_closed_bridge_and_preserved_unary_gate_label(self):
@@ -1126,7 +1150,7 @@ class HirImportOverlapControls(unittest.TestCase):
             p.restore_hir_import_source(self.a, self.name, raw)
         altered = copy.deepcopy(self.a)
         next(row for row in altered['current']['source_delta'] if row['path'] == self.name)['after'].update(bytes=len(raw), sha256=p.sha(raw))
-        with self.assertRaisesRegex(p.Rejected, 'exact current byte storage composition body'):
+        with self.assertRaisesRegex(p.Rejected, 'current lexer composition identity'):
             p.restore_hir_import_source(altered, self.name, raw)
 
 
@@ -1159,6 +1183,7 @@ class HirImportOverlapControls(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
+                stage_lexer_dispatcher_dependencies(root, self.a['current'])
                 for key in dict.fromkeys((*fields, *p.U8_FIELDS, *p.U8_CROSS_HOST_FIELDS, *p.BYTE_STORAGE_FIELDS)):
                     relative = self.a['current'][key]['path']
                     target = root / relative
@@ -1696,7 +1721,7 @@ class ByteStorageTransitionControls(unittest.TestCase):
     def test_byte_storage_cannot_mutate_parser_domain_or_semantics(self):
         for key in ('u8_closed_policy', 'enum_ast_schema_adapter', 'current_dependency_closure'):
             active = copy.deepcopy(self.active); active[key] = {}
-            with self.subTest(field=key), self.assertRaisesRegex(p.Rejected, 'byte storage changes unrelated'):
+            with self.subTest(field=key), self.assertRaisesRegex(p.Rejected, 'lexer changes unrelated parser authority'):
                 p.byte_storage_predecessor_active(active)
         for key in p.BYTE_STORAGE_FIELDS:
             active = copy.deepcopy(self.active); active[key]['sha256'] = '0' * 64
@@ -1787,7 +1812,7 @@ class U8TransitionControls(unittest.TestCase):
     def test_unrelated_parser_authority_cannot_drift(self):
         active = copy.deepcopy(self.active)
         active['enum_ast_schema_adapter']['semantic_changes_permitted'] = True
-        with self.assertRaisesRegex(p.Rejected, 'byte storage changes unrelated cross-host parser authority'):
+        with self.assertRaisesRegex(p.Rejected, 'lexer changes unrelated parser authority'):
             p.validate_u8_transition(active, self.a['current_source'], self.a)
 
     def test_u8_overlap_rosters_cannot_expand(self):

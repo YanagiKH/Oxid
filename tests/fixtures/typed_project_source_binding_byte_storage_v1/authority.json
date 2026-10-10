@@ -1,0 +1,221 @@
+{
+  "current_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
+  "derived_resource": {
+    "bytes": 1974,
+    "path": "archive/resource/parser-resource-review-tests.rs",
+    "sha256": "4052ec3b5e7e57c9cf0df9ef1f7522f6ea97b16c770907f68293f96547461af6"
+  },
+  "derived_resource_scope": "Single initializer field project_recovery:false; every assertion remains byte-identical; historical artifact-manifest.json is preserved historical evidence, not retargeted",
+  "inverse_only_inputs": [
+    {
+      "bytes": 16357,
+      "path": "tests/typed_frontend.rs",
+      "sha256": "fd305fa8b4608819a286fde53e1d287badccee42dcf65d5212e488e9a4b35014"
+    }
+  ],
+  "repository_inputs": [
+    {
+      "bytes": 5836,
+      "path": "tests/fixtures/typed_project_unit2_independent/package-inputs.json",
+      "sha256": "4dae6a8de321b09d972d7dc345d19001332fe397ed05ccd3edaaf4f38a5db916"
+    },
+    {
+      "bytes": 7162,
+      "path": "tests/fixtures/typed_project_unit3_compatibility/run.py",
+      "sha256": "5e2a7daec99812fcc709afc9356537172d10c2dad991a5d91a9407e5b92cd73e"
+    },
+    {
+      "bytes": 19899,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/core-v1.json",
+      "sha256": "53ed114674e59266c8e9a809f6cba5ef35c9ea819318ab64a7ae6d9aebd20910"
+    },
+    {
+      "bytes": 2581,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/platform-scope.patch",
+      "sha256": "a6c0a70927fcc44f68244038e88ceb371fe0a78a8b8d4c0aa1d83475d415a1d9"
+    },
+    {
+      "bytes": 6567,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/project_execution_tests.core-v1.rs",
+      "sha256": "1185aa4c2e86644c3b14acae290adb043ec27d2a222018b1e67997317dc5851d"
+    },
+    {
+      "bytes": 20051,
+      "path": "tests/fixtures/typed_project_unit3_independent/manifests/selected-current.json",
+      "sha256": "a8e24a8d14c8b47140297f9b2b37adc75b2932911f8745df5937d58bdb2dc963"
+    },
+    {
+      "bytes": 5487,
+      "path": "tests/fixtures/typed_project_unit3_independent/portable/assemble.py",
+      "sha256": "6eaa0333a0c6cede58c85a57cd51901b25e8e1423c1b96b3a177d4caafa1d965"
+    },
+    {
+      "bytes": 3844,
+      "path": "tests/fixtures/typed_project_unit3_independent/portable/bridge.py",
+      "sha256": "0a67058d7592c1ce50ba52933784826f6883f566445bfe3da4aff49662f12e25"
+    },
+    {
+      "bytes": 3521,
+      "path": "tests/fixtures/typed_project_unit3_independent/portable/common.py",
+      "sha256": "7b8b6d476c66eb7c2e833dff9dfe7eb42308bf8a67fd38a9a501f3b490eb7297"
+    }
+  ],
+  "schema": 1,
+  "transition_patch_bytes": 605300,
+  "transition_patch_prefix": {
+    "bytes": 28881,
+    "sha256": "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8"
+  },
+  "transition_patch_sha256": "63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18",
+  "transition_source_delta": {
+    "base_head": "0ef3be1df3643febdff1f859a4eb1ce567ab8164",
+    "bytes": 576419,
+    "paths": [
+      "src/frontend/declaration_index.rs",
+      "src/frontend/declaration_index/tests.rs",
+      "src/frontend/diagnostic.rs",
+      "src/frontend/oir/owned/array_native_resource_tests.rs",
+      "src/frontend/oir/owned/array_native_tests.rs",
+      "src/frontend/oir/owned/array_observe.rs",
+      "src/frontend/oir/owned/array_reference_boundary_tests.rs",
+      "src/frontend/oir/owned/array_reference_tests.rs",
+      "src/frontend/oir/owned/array_tests.rs",
+      "src/frontend/oir/owned/budget.rs",
+      "src/frontend/oir/owned/cfg.rs",
+      "src/frontend/oir/owned/consumer_fixtures.rs",
+      "src/frontend/oir/owned/consumer_pilot.rs",
+      "src/frontend/oir/owned/denial_tests.rs",
+      "src/frontend/oir/owned/execute.rs",
+      "src/frontend/oir/owned/execute_tests.rs",
+      "src/frontend/oir/owned/flow.rs",
+      "src/frontend/oir/owned/mod.rs",
+      "src/frontend/oir/owned/native.rs",
+      "src/frontend/oir/owned/native_heldout_review.rs",
+      "src/frontend/oir/owned/native_tests.rs",
+      "src/frontend/oir/owned/oracle_tests.rs",
+      "src/frontend/oir/owned/origin_tests.rs",
+      "src/frontend/oir/owned/plan.rs",
+      "src/frontend/oir/owned/reviewer_array_observer_tests.rs",
+      "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
+      "src/frontend/oir/owned/reviewer_heldout.rs",
+      "src/frontend/oir/owned/reviewer_origins.rs",
+      "src/frontend/oir/owned/reviewer_reference_tests.rs",
+      "src/frontend/oir/owned/shape.rs",
+      "src/frontend/oir/owned/source/association.rs",
+      "src/frontend/oir/owned/source/budget.rs",
+      "src/frontend/oir/owned/source/candidate_adapter.rs",
+      "src/frontend/oir/owned/source/candidate_mutations.rs",
+      "src/frontend/oir/owned/source/candidate_native.rs",
+      "src/frontend/oir/owned/source/diagnostic.rs",
+      "src/frontend/oir/owned/source/hir.rs",
+      "src/frontend/oir/owned/source/lower.rs",
+      "src/frontend/oir/owned/source/resolve.rs",
+      "src/frontend/oir/owned/source/reviewer_heldout.rs",
+      "src/frontend/oir/owned/source/reviewer_source.rs",
+      "src/frontend/oir/owned/source/tests.rs",
+      "src/frontend/oir/owned/source/typeck.rs",
+      "src/frontend/oir/owned/tests.rs",
+      "src/frontend/oir/owned/verified.rs",
+      "src/frontend/oir/owned_types.rs",
+      "src/frontend/oir/owned_types/array_tests.rs"
+    ],
+    "recipe": "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE CHECKPOINT -- PATHS",
+    "reviewed_source_head": "f8a30b2443d9d7a89498e0c243f75072cbf26c2f",
+    "sha256": "d76d1aec1a4a15912c47fd1b80e6800006c49fcbaa5b96b9817b4479db2b0d62",
+    "source_only_tree": "18a4611f46b3cdf59f37a9f2241dc4e39e2d8ba6"
+  },
+  "transition_touched_paths": [
+    "src/frontend/driver.rs",
+    "src/frontend/oir/project.rs",
+    "src/frontend/parser.rs",
+    "src/frontend/parser/activation_tests.rs",
+    "src/frontend/parser/project_tests.rs",
+    "src/frontend/project.rs",
+    "src/frontend/project/unit2_tests.rs",
+    "tests/typed_frontend.rs",
+    "tests/typed_project_dispatch.rs",
+    "src/frontend/declaration_index.rs",
+    "src/frontend/declaration_index/tests.rs",
+    "src/frontend/diagnostic.rs",
+    "src/frontend/oir/owned/array_native_resource_tests.rs",
+    "src/frontend/oir/owned/array_native_tests.rs",
+    "src/frontend/oir/owned/array_observe.rs",
+    "src/frontend/oir/owned/array_reference_boundary_tests.rs",
+    "src/frontend/oir/owned/array_reference_tests.rs",
+    "src/frontend/oir/owned/array_tests.rs",
+    "src/frontend/oir/owned/budget.rs",
+    "src/frontend/oir/owned/cfg.rs",
+    "src/frontend/oir/owned/consumer_fixtures.rs",
+    "src/frontend/oir/owned/consumer_pilot.rs",
+    "src/frontend/oir/owned/denial_tests.rs",
+    "src/frontend/oir/owned/execute.rs",
+    "src/frontend/oir/owned/execute_tests.rs",
+    "src/frontend/oir/owned/flow.rs",
+    "src/frontend/oir/owned/mod.rs",
+    "src/frontend/oir/owned/native.rs",
+    "src/frontend/oir/owned/native_heldout_review.rs",
+    "src/frontend/oir/owned/native_tests.rs",
+    "src/frontend/oir/owned/oracle_tests.rs",
+    "src/frontend/oir/owned/origin_tests.rs",
+    "src/frontend/oir/owned/plan.rs",
+    "src/frontend/oir/owned/reviewer_array_observer_tests.rs",
+    "src/frontend/oir/owned/reviewer_array_reference_tests.rs",
+    "src/frontend/oir/owned/reviewer_heldout.rs",
+    "src/frontend/oir/owned/reviewer_origins.rs",
+    "src/frontend/oir/owned/reviewer_reference_tests.rs",
+    "src/frontend/oir/owned/shape.rs",
+    "src/frontend/oir/owned/source/association.rs",
+    "src/frontend/oir/owned/source/budget.rs",
+    "src/frontend/oir/owned/source/candidate_adapter.rs",
+    "src/frontend/oir/owned/source/candidate_mutations.rs",
+    "src/frontend/oir/owned/source/candidate_native.rs",
+    "src/frontend/oir/owned/source/diagnostic.rs",
+    "src/frontend/oir/owned/source/hir.rs",
+    "src/frontend/oir/owned/source/lower.rs",
+    "src/frontend/oir/owned/source/resolve.rs",
+    "src/frontend/oir/owned/source/reviewer_heldout.rs",
+    "src/frontend/oir/owned/source/reviewer_source.rs",
+    "src/frontend/oir/owned/source/tests.rs",
+    "src/frontend/oir/owned/source/typeck.rs",
+    "src/frontend/oir/owned/tests.rs",
+    "src/frontend/oir/owned/verified.rs",
+    "src/frontend/oir/owned_types.rs",
+    "src/frontend/oir/owned_types/array_tests.rs"
+  ],
+  "unit2_observer_adapter": {
+    "derived": {
+      "bytes": 15986,
+      "path": "semantic/observer.rs",
+      "sha256": "ddeff8bd0acfaa9af0301c74f3aabd26ef69954eb5a216fdd9cc21e1837901a3"
+    },
+    "original": {
+      "bytes": 13965,
+      "path": "semantic/observer.rs",
+      "sha256": "f2403aace53b6255a94b8b3ec0290db025638c5af94571d5729355672681fb00"
+    },
+    "scope": "Four exact substitutions in an isolated current Unit2 copy: AggregateTy import, fail-closed record projection and four compiled adapter controls, Owned projection, Reference aggregate projection. Scalar/record JSON and frozen expectations remain unchanged; FixedArray projection panics.",
+    "substitutions": [
+      {
+        "count": 1,
+        "new_sha256": "dfa7da68ee87bb60bd099298a4d5076b993ec3b6439091a2f5db1fa84e9d1f5e",
+        "old_sha256": "2f313dddd6535d27ac633a9bcb60f52139b0bd621cf191a71522d99f47ed1c80"
+      },
+      {
+        "count": 1,
+        "new_sha256": "d1345ede392987a06a688c1d07670f67dd9d897d39952bf28c9b88dfc4432c73",
+        "old_sha256": "35db5aff8f3619a9b31ffb3fa6f88eafbb1b3a581a57015bf328e2c075297e5d"
+      },
+      {
+        "count": 1,
+        "new_sha256": "d207f60932f10d273226306cdea2024c52842da0334cfd0294e9ce1f8636e5a5",
+        "old_sha256": "552dd2b591c39be46bec24e1be476ae20ec7765ccb1367e3f0ebbedb5c4439b1"
+      },
+      {
+        "count": 1,
+        "new_sha256": "343b1ea6a70b1fec04379db12791b0fc66a81d7cedb9e8a159469c9330692799",
+        "old_sha256": "ae15eb94c2aa94274cac8413ae0345a54b18e1fccadf29c6ad889a149f697105"
+      }
+    ],
+    "version": "unit2-record-aggregate-observer-v1"
+  }
+}

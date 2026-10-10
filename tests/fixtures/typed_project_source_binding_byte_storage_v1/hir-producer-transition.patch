@@ -1,0 +1,2479 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 0e26ef9..7f20ce6 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2,6 +2,15 @@
+ # It is not intended for manual editing.
+ version = 4
+ 
++[[package]]
++name = "block-buffer"
++version = "0.10.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
++dependencies = [
++ "generic-array",
++]
++
+ [[package]]
+ name = "cc"
+ version = "1.4.0"
+@@ -12,17 +21,81 @@ dependencies = [
+  "shlex",
+ ]
+ 
++[[package]]
++name = "cfg-if"
++version = "1.0.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
++
++[[package]]
++name = "cpufeatures"
++version = "0.2.17"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
++dependencies = [
++ "libc",
++]
++
++[[package]]
++name = "crypto-common"
++version = "0.1.7"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
++dependencies = [
++ "generic-array",
++ "typenum",
++]
++
++[[package]]
++name = "digest"
++version = "0.10.7"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
++dependencies = [
++ "block-buffer",
++ "crypto-common",
++]
++
+ [[package]]
+ name = "find-msvc-tools"
+ version = "0.1.9"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+ 
++[[package]]
++name = "generic-array"
++version = "0.14.7"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
++dependencies = [
++ "typenum",
++ "version_check",
++]
++
++[[package]]
++name = "libc"
++version = "0.2.177"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
++
+ [[package]]
+ name = "oxid"
+ version = "0.9.0"
+ dependencies = [
+  "cc",
++ "libc",
++ "sha2",
++]
++
++[[package]]
++name = "sha2"
++version = "0.10.9"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
++dependencies = [
++ "cfg-if",
++ "cpufeatures",
++ "digest",
+ ]
+ 
+ [[package]]
+@@ -30,3 +103,15 @@ name = "shlex"
+ version = "2.0.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
++
++[[package]]
++name = "typenum"
++version = "1.20.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
++
++[[package]]
++name = "version_check"
++version = "0.9.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+diff --git a/Cargo.toml b/Cargo.toml
+index 78c0c28..b1dce4f 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -12,6 +12,8 @@ name = "oxid"
+ path = "src/cli.rs"
+ 
+ [dependencies]
++libc = "=0.2.177"
++sha2 = "=0.10.9"
+ 
+ [build-dependencies]
+ cc = "1"
+diff --git a/src/frontend/driver.rs b/src/frontend/driver.rs
+index 14a22b2..76c32b3 100644
+--- a/src/frontend/driver.rs
++++ b/src/frontend/driver.rs
+@@ -15,6 +15,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
+ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
+     match route {
+         Route::TypedImport { request } => Some(process_import(&request[0])),
++        Route::TypedProducer { request } => Some(process_producer(&request[0])),
+         Route::ProcessError { message } => Some(process_option_error(&message)),
+         Route::TypedRun {
+             json: true,
+@@ -177,6 +178,98 @@ fn process_import(request: &options::ImportOptions) -> i32 {
+     }
+ }
+ 
++/// New producer-only CLI and driver carriers, debited by its import facade.
++/// Complete types name conservative local, moved and result transport roles;
++/// this is requested storage accounting, not a physical stack or RSS estimate.
++/// The loaded ProjectSources and ordinary reporting keep their prior baseline.
++pub(super) fn producer_transport_bytes() -> usize {
++    use super::hir_producer;
++    use std::{mem::size_of, path::Path};
++
++    // New classifier selection/local extraction, options input/local/moved box
++    // payload, and exact reserve/box-conversion transports. The already owned
++    // argv String payloads retain their baseline; these headers are additional.
++    2 * size_of::<Option<String>>()
++        + size_of::<String>()
++        + 3 * size_of::<options::ProducerOptions>()
++        + size_of::<Vec<options::ProducerOptions>>()
++        + 2 * size_of::<Box<[options::ProducerOptions; 1]>>()
++        + size_of::<Box<[options::ProducerOptions]>>()
++        + size_of::<Result<Box<[options::ProducerOptions; 1]>, Box<[options::ProducerOptions]>>>()
++        + 2 * size_of::<&options::ProducerOptions>()
++        // Producer return/local and the complete fixed observation extraction.
++        + 2 * size_of::<hir_producer::Outcome>()
++        + size_of::<Option<[u8; oir::IMPORT_BYTES]>>()
++        + size_of::<[u8; oir::IMPORT_BYTES]>()
++        + 2 * size_of::<&hir_producer::Outcome>()
++        + 2 * size_of::<&ProjectSources>()
++        + 2 * size_of::<&Path>()
++        + 2 * size_of::<&[u8; oir::IMPORT_BYTES]>()
++        + 2 * size_of::<&[u8]>()
++        // Imported call, held result and match/closure return carriers.
++        + 3 * size_of::<Result<oir::Imported, Vec<Diagnostic>>>()
++        + 3 * size_of::<oir::Imported>()
++        + 3 * size_of::<Result<Summary, Vec<Diagnostic>>>()
++        + 2 * size_of::<Option<&'static str>>()
++        + 2 * size_of::<Operation>()
++        + 2 * size_of::<bool>()
++}
++
++/// Explicit producer Result route. Load genuine source once, run the producer
++/// pipeline, and submit its unchanged fixed observation to the checked importer.
++fn process_producer(request: &options::ProducerOptions) -> i32 {
++    use super::hir_producer;
++    use std::path::Path;
++
++    let project = match ProjectSources::load_typed(&request.path, ProjectLimits::default()) {
++        Ok(project) => project,
++        Err(failure) => {
++            return report(
++                &failure.sources,
++                failure.diagnostics,
++                request.json,
++                Summary::empty(request.operation),
++            )
++        }
++    };
++    let outcome = hir_producer::produce(&project, Path::new(&request.bundle));
++    hir_producer::print_records(&outcome, request.json);
++    let result = (|| {
++        if let Some(error) = outcome.error {
++            return Err(vec![*Diagnostic::new("E0703", "hir-producer", error, None)]);
++        }
++        let Some(observation) = outcome.observation else {
++            return Err(vec![*Diagnostic::new(
++                "E0703",
++                "hir-producer",
++                "experimental HIR producers returned no observation",
++                None,
++            )]);
++        };
++        match oir::import_produced(&project, &observation, request.operation)? {
++            oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
++            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
++            oir::Imported::Emitted(module) => {
++                let output = request
++                    .output
++                    .as_deref()
++                    .expect("producer compile validates output");
++                super::native::compile(&module, output).map_err(|error| vec![*error])?;
++                Ok(Summary::Compile(Some(output.to_string())))
++            }
++        }
++    })();
++    match result {
++        Ok(summary) => report(project.sources(), Vec::new(), request.json, summary),
++        Err(errors) => report(
++            project.sources(),
++            errors,
++            request.json,
++            Summary::empty(request.operation),
++        ),
++    }
++}
++
+ enum Summary {
+     Check(Option<usize>),
+     Run(Option<oir::Scalar>),
+diff --git a/src/frontend/hir_producer.rs b/src/frontend/hir_producer.rs
+new file mode 100644
+index 0000000..23646ae
+--- /dev/null
++++ b/src/frontend/hir_producer.rs
+@@ -0,0 +1,226 @@
++//! Explicit two-process observation pipeline. The compiler still owns source,
++//! canonical checking and executable authority; producer bytes stay untrusted.
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++use crate::frontend::project::ModuleId;
++use crate::frontend::{declaration_index::SourceOwner, project::ProjectSources};
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++use sha2::{Digest, Sha256};
++use std::{fmt, path::Path};
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++mod bundle;
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++mod supervisor;
++
++// Immutable executable and bounded leader cleanup boundary reviewed at33f11cd.
++// Enable only this explicit route for its separate functional qualification.
++const PRODUCER_PIPELINE_ADMITTED: bool = true;
++const OPA_BYTES: usize = 1559;
++const OBSERVATION_BYTES: usize = 2607;
++const SOURCE_MAX: usize = 128;
++const AST1_MAX: usize = 5 + SOURCE_MAX + OPA_BYTES;
++
++#[derive(Clone, Copy)]
++pub(super) struct Record {
++    role: &'static str,
++    executable_sha256: [u8; 32],
++    input_sha256: [u8; 32],
++    stdout_sha256: [u8; 32],
++    stderr_sha256: [u8; 32],
++    input_written: usize,
++    stdout_bytes: usize,
++    stderr_bytes: usize,
++    status: Option<i32>,
++    signal: Option<i32>,
++    stop: &'static str,
++    spawned: bool,
++    leader_reaped: bool,
++}
++
++pub(super) struct Outcome {
++    pub(super) observation: Option<[u8; OBSERVATION_BYTES]>,
++    pub(super) error: Option<&'static str>,
++    pub(super) records: [Option<Record>; 2],
++}
++impl Outcome {
++    fn empty() -> Self {
++        Self {
++            observation: None,
++            error: None,
++            records: [None; 2],
++        }
++    }
++    fn reject(mut self, error: &'static str) -> Self {
++        self.error = Some(error);
++        self
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++fn record(
++    role: &'static str,
++    hash: [u8; 32],
++    input: &[u8],
++    captured: &supervisor::Capture,
++) -> Record {
++    Record {
++        role,
++        executable_sha256: hash,
++        input_sha256: Sha256::digest(input).into(),
++        stdout_sha256: Sha256::digest(&captured.stdout[..captured.stdout_len]).into(),
++        stderr_sha256: Sha256::digest(&captured.stderr[..captured.stderr_len]).into(),
++        input_written: captured.input_written,
++        stdout_bytes: captured.stdout_len,
++        stderr_bytes: captured.stderr_len,
++        status: captured.code(),
++        signal: captured.signal(),
++        stop: captured.stop.name(),
++        spawned: captured.spawned,
++        leader_reaped: captured.status.is_some(),
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++fn completed(captured: &supervisor::Capture, input_len: usize) -> bool {
++    captured.status.is_some()
++        && captured.stop == supervisor::Stop::Exited
++        && captured.code() == Some(0)
++        && captured.input_written == input_len
++        && captured.stderr_len == 0
++}
++
++pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
++    let result = Outcome::empty();
++    if !PRODUCER_PIPELINE_ADMITTED {
++        return result.reject("experimental HIR producer pipeline is not yet admitted");
++    }
++    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++    {
++        let _ = (project, directory);
++        result.reject("experimental HIR producers require Linux x86_64")
++    }
++    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++    {
++        let mut result = result;
++        let owner = SourceOwner::project(project);
++        if owner.count() != 1 {
++            return result
++                .reject("experimental HIR producers require one retained root-only source");
++        }
++        let Ok(source) = owner.file(ModuleId(0)) else {
++            return result.reject("experimental HIR producer source owner is unavailable");
++        };
++        let input = source.text().as_bytes();
++        if input.len() > SOURCE_MAX || !input.is_ascii() {
++            return result
++                .reject("experimental HIR producers require at most 128 ASCII source bytes");
++        }
++        let selected = match bundle::Bundle::load(directory) {
++            Ok(bundle) => bundle,
++            Err(message) => return result.reject(message),
++        };
++        let parser = supervisor::run(
++            selected.parser(),
++            selected.directory(),
++            input,
++            OPA_BYTES,
++            supervisor::DEADLINE,
++        );
++        result.records[0] = Some(record("parser", selected.parser_hash(), input, &parser));
++        if !completed(&parser, input.len()) {
++            return result.reject("parser producer failed its bounded process/transport contract");
++        }
++        if parser.stdout_len != OPA_BYTES
++            || &parser.stdout[..4] != b"OPA1"
++            || parser.stdout[4..8] != [0; 4]
++            || usize::from(parser.stdout[10]) != input.len()
++        {
++            return result
++                .reject("parser producer did not return one complete successful OPA1 frame");
++        }
++        // Transport exact original bytes and unchanged OPA1. No host-derived
++        // name/type/flow data, repaired row or substituted source is introduced.
++        let mut ast1 = [0u8; AST1_MAX];
++        ast1[..4].copy_from_slice(b"AST1");
++        ast1[4] = input.len() as u8;
++        ast1[5..5 + input.len()].copy_from_slice(input);
++        ast1[5 + input.len()..5 + input.len() + OPA_BYTES]
++            .copy_from_slice(&parser.stdout[..OPA_BYTES]);
++        let framed = &ast1[..5 + input.len() + OPA_BYTES];
++        let typed = supervisor::run(
++            selected.static_consumer(),
++            selected.directory(),
++            framed,
++            OBSERVATION_BYTES,
++            supervisor::DEADLINE,
++        );
++        result.records[1] = Some(record("static", selected.static_hash(), framed, &typed));
++        if !completed(&typed, framed.len()) {
++            return result.reject("static producer failed its bounded process/transport contract");
++        }
++        if typed.stdout_len != OBSERVATION_BYTES
++            || typed.stdout[..OPA_BYTES] != parser.stdout[..OPA_BYTES]
++            || &typed.stdout[OPA_BYTES..OPA_BYTES + 5] != b"STF1\0"
++        {
++            return result.reject("static producer did not return one complete successful unchanged OPA1/STF1 observation");
++        }
++        let mut observation = [0u8; OBSERVATION_BYTES];
++        observation.copy_from_slice(&typed.stdout[..OBSERVATION_BYTES]);
++        result.observation = Some(observation);
++        result
++        // The verified private executable snapshots drop here, after the
++        // supervisor has killed each process group and reaped its leader.
++    }
++}
++
++struct Hex<'a>(&'a [u8; 32]);
++impl fmt::Display for Hex<'_> {
++    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
++        for byte in self.0 {
++            write!(out, "{byte:02x}")?;
++        }
++        Ok(())
++    }
++}
++struct Number(Option<i32>);
++impl fmt::Display for Number {
++    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            Some(n) => write!(out, "{n}"),
++            None => out.write_str("null"),
++        }
++    }
++}
++
++pub(super) fn print_records(outcome: &Outcome, json: bool) {
++    for record in outcome.records.iter().flatten() {
++        if json {
++            println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"hir-producer\",\"role\":\"{}\",\"executable_sha256\":\"{}\",\"input_sha256\":\"{}\",\"input_written\":{},\"captured_stdout_bytes\":{},\"captured_stdout_sha256\":\"{}\",\"captured_stderr_bytes\":{},\"captured_stderr_sha256\":\"{}\",\"spawned\":{},\"leader_reaped\":{},\"stop\":\"{}\",\"exit_status\":{},\"signal\":{}}}",
++                record.role, Hex(&record.executable_sha256), Hex(&record.input_sha256), record.input_written,
++                record.stdout_bytes, Hex(&record.stdout_sha256), record.stderr_bytes, Hex(&record.stderr_sha256),
++                record.spawned, record.leader_reaped, record.stop, Number(record.status), Number(record.signal));
++        } else {
++            eprintln!("experimental HIR producer {} sha256={} spawned={} leader_reaped={} stop={} exit={} signal={} captured_stdout={} captured_stderr={}",
++                record.role, Hex(&record.executable_sha256), record.spawned, record.leader_reaped, record.stop, Number(record.status), Number(record.signal), record.stdout_bytes, record.stderr_bytes);
++        }
++    }
++}
++
++/// Conservative enclosing Rust carriers, separate from the bounded filesystem
++/// copies and external process costs. No total RSS or CPU tariff is claimed.
++pub(super) fn named_bytes() -> usize {
++    use std::mem::size_of;
++    let carriers = 3 * size_of::<Outcome>()
++        + size_of::<[Record; 8]>()
++        + 3 * size_of::<[u8; AST1_MAX]>()
++        + 2 * size_of::<SourceOwner<'static>>()
++        + size_of::<[usize; 16]>()
++        + size_of::<[&[u8]; 8]>();
++    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++    {
++        carriers + 3 * size_of::<supervisor::Capture>() + 3 * size_of::<bundle::Bundle>()
++    }
++    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++    {
++        carriers
++    }
++}
+diff --git a/src/frontend/hir_producer/bundle.rs b/src/frontend/hir_producer/bundle.rs
+new file mode 100644
+index 0000000..eff87ec
+--- /dev/null
++++ b/src/frontend/hir_producer/bundle.rs
+@@ -0,0 +1,929 @@
++//! Closed, local producer bundles and their owned executable snapshots.
++//!
++//! A manifest digest is a local byte-identity assertion, not a signature or a
++//! provenance claim. Only sealed memfd copies are returned for execution. The
++//! caller must keep this owner alive until both producer processes have ended.
++
++use std::path::{Path, PathBuf};
++
++#[derive(Debug)]
++pub(super) struct Bundle {
++    workspace: Workspace,
++    parser: Executable,
++    static_consumer: Executable,
++}
++
++#[derive(Debug)]
++struct Executable {
++    // This owned descriptor, rather than a mutable filesystem name, is the
++    // executable's lifetime and identity. CLOEXEC closes it after ELF loading.
++    _file: std::fs::File,
++    path: PathBuf,
++    hash: [u8; 32],
++}
++
++impl Bundle {
++    pub(super) fn load(root: &Path) -> Result<Self, &'static str> {
++        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++        {
++            linux::load(root, &std::env::temp_dir(), linux::EXECUTABLE_LIMIT)
++        }
++        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
++        {
++            let _ = root;
++            Err("producer bundles require Linux x86_64")
++        }
++    }
++
++    pub(super) fn parser(&self) -> &Path {
++        &self.parser.path
++    }
++
++    pub(super) fn static_consumer(&self) -> &Path {
++        &self.static_consumer.path
++    }
++
++    pub(super) fn directory(&self) -> &Path {
++        &self.workspace.path
++    }
++
++    pub(super) fn parser_hash(&self) -> [u8; 32] {
++        self.parser.hash
++    }
++
++    pub(super) fn static_hash(&self) -> [u8; 32] {
++        self.static_consumer.hash
++    }
++}
++
++/// Constructed only after an exclusive, successful creation of this directory.
++/// Input bundle paths are never stored here or passed to recursive removal.
++#[derive(Debug)]
++struct Workspace {
++    path: PathBuf,
++}
++
++impl Drop for Workspace {
++    fn drop(&mut self) {
++        // Best effort on filesystem errors; never expand cleanup to the parent.
++        let _ = std::fs::remove_dir_all(&self.path);
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++mod linux {
++    use super::{Bundle, Executable, Workspace};
++    use sha2::{Digest, Sha256};
++    use std::ffi::CStr;
++    use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
++    use std::io::{self, Read, Write};
++    use std::os::fd::{AsRawFd, FromRawFd};
++    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
++    use std::path::{Path, PathBuf};
++    use std::sync::atomic::{AtomicU64, Ordering};
++    use std::time::{SystemTime, UNIX_EPOCH};
++
++    pub(super) const EXECUTABLE_LIMIT: usize = 16 * 1024 * 1024;
++    const MAGIC: &[u8] = b"OXID-HIR-PRODUCERS-1\n";
++    const MANIFEST_LEN: usize = MAGIC.len() + 7 + 64 + 1 + 7 + 64 + 1;
++    const ELF_HEADER_LEN: usize = 64;
++    const REQUIRED_SEALS: libc::c_int = libc::F_SEAL_WRITE
++        | libc::F_SEAL_GROW
++        | libc::F_SEAL_SHRINK
++        | libc::F_SEAL_SEAL
++        | libc::F_SEAL_EXEC;
++    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
++
++    #[derive(Debug, PartialEq, Eq)]
++    struct Manifest {
++        parser: [u8; 32],
++        static_consumer: [u8; 32],
++    }
++
++    pub(super) fn load(
++        root: &Path,
++        temporary_parent: &Path,
++        executable_limit: usize,
++    ) -> Result<Bundle, &'static str> {
++        let executable_limit = executable_limit.min(EXECUTABLE_LIMIT);
++        let root = open_directory(root)?;
++        let manifest = read_manifest(&root)?;
++        let workspace = create_workspace(temporary_parent)?;
++        let parser = snapshot(
++            open_regular_at(&root, c"parser")?,
++            manifest.parser,
++            executable_limit,
++        )?;
++        let static_consumer = snapshot(
++            open_regular_at(&root, c"static")?,
++            manifest.static_consumer,
++            executable_limit,
++        )?;
++        Ok(Bundle {
++            workspace,
++            parser,
++            static_consumer,
++        })
++    }
++
++    fn open_directory(path: &Path) -> Result<File, &'static str> {
++        // Lexically remove trailing slashes and dot components without resolving
++        // links. Otherwise link/ and link/. bypass O_NOFOLLOW on the final link.
++        let normalized: PathBuf = path.components().collect();
++        let file = OpenOptions::new()
++            .read(true)
++            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
++            .open(normalized)
++            .map_err(|_| "producer bundle root must be an accessible nonsymlink directory")?;
++        if !file
++            .metadata()
++            .map_err(|_| "cannot inspect opened producer bundle directory")?
++            .is_dir()
++        {
++            return Err("opened producer bundle root must be a directory");
++        }
++        Ok(file)
++    }
++
++    fn open_regular_at(directory: &File, name: &CStr) -> Result<File, &'static str> {
++        // Names are fixed call-site constants, never data read from a manifest.
++        // SAFETY: stat is caller-owned writable storage; the live directory
++        // descriptor and NUL-terminated name remain valid for both syscalls.
++        let mut metadata: libc::stat = unsafe { std::mem::zeroed() };
++        if unsafe {
++            libc::fstatat(
++                directory.as_raw_fd(),
++                name.as_ptr(),
++                &mut metadata,
++                libc::AT_SYMLINK_NOFOLLOW,
++            )
++        } != 0
++        {
++            return Err("cannot inspect producer bundle file");
++        }
++        if metadata.st_mode & libc::S_IFMT != libc::S_IFREG {
++            return Err("producer bundle files must be regular nonsymlink files");
++        }
++        // O_NONBLOCK prevents a raced-in FIFO from blocking. O_NOFOLLOW rejects
++        // a raced-in symlink. fstat then checks the opened object itself.
++        let descriptor = unsafe {
++            libc::openat(
++                directory.as_raw_fd(),
++                name.as_ptr(),
++                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
++            )
++        };
++        if descriptor < 0 {
++            return Err("cannot safely open producer bundle file");
++        }
++        // SAFETY: successful openat returned a new descriptor owned only here.
++        let file = unsafe { File::from_raw_fd(descriptor) };
++        if !file
++            .metadata()
++            .map_err(|_| "cannot inspect opened producer bundle file")?
++            .file_type()
++            .is_file()
++        {
++            return Err("opened producer bundle file must be regular");
++        }
++        Ok(file)
++    }
++
++    fn read_manifest(directory: &File) -> Result<Manifest, &'static str> {
++        let mut file = open_regular_at(directory, c"manifest.txt")?;
++        // One extra byte detects trailing data without an unbounded allocation
++        // or read, even when the manifest grows after open.
++        let mut bytes = [0u8; MANIFEST_LEN + 1];
++        let mut used = 0;
++        while used < bytes.len() {
++            let count = read_retry(&mut file, &mut bytes[used..])
++                .map_err(|_| "cannot read producer bundle manifest")?;
++            if count == 0 {
++                break;
++            }
++            used += count;
++        }
++        parse_manifest(&bytes[..used])
++    }
++
++    fn parse_manifest(bytes: &[u8]) -> Result<Manifest, &'static str> {
++        const INVALID: &str = "producer bundle manifest does not match the closed format";
++        if bytes.len() != MANIFEST_LEN || !bytes.starts_with(MAGIC) {
++            return Err(INVALID);
++        }
++        let parser_line = &bytes[MAGIC.len()..MAGIC.len() + 72];
++        let static_line = &bytes[MAGIC.len() + 72..];
++        if !parser_line.starts_with(b"parser ")
++            || parser_line[71] != b'\n'
++            || !static_line.starts_with(b"static ")
++            || static_line[71] != b'\n'
++        {
++            return Err(INVALID);
++        }
++        Ok(Manifest {
++            parser: decode_hash(&parser_line[7..71]).ok_or(INVALID)?,
++            static_consumer: decode_hash(&static_line[7..71]).ok_or(INVALID)?,
++        })
++    }
++
++    fn decode_hash(bytes: &[u8]) -> Option<[u8; 32]> {
++        fn digit(byte: u8) -> Option<u8> {
++            match byte {
++                b'0'..=b'9' => Some(byte - b'0'),
++                b'a'..=b'f' => Some(byte - b'a' + 10),
++                _ => None,
++            }
++        }
++        if bytes.len() != 64 {
++            return None;
++        }
++        let mut hash = [0u8; 32];
++        for (index, result) in hash.iter_mut().enumerate() {
++            *result = (digit(bytes[index * 2])? << 4) | digit(bytes[index * 2 + 1])?;
++        }
++        Some(hash)
++    }
++
++    fn create_workspace(parent: &Path) -> Result<Workspace, &'static str> {
++        // TMPDIR may be relative. Snapshot paths must remain absolute when the
++        // supervisor selects a different working directory for the processes.
++        let parent = fs::canonicalize(parent)
++            .map_err(|_| "cannot resolve private producer workspace parent")?;
++        let timestamp = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap_or_default()
++            .as_nanos();
++        // Name unpredictability is not the isolation boundary: atomic mkdir
++        // must succeed, and mode 0700 is applied at creation, never afterward.
++        for _ in 0..128 {
++            let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
++            let path = parent.join(format!(
++                "oxid-hir-producers-{}-{timestamp}-{sequence}",
++                std::process::id()
++            ));
++            match DirBuilder::new().mode(0o700).create(&path) {
++                Ok(()) => return Ok(Workspace { path }),
++                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
++                Err(_) => return Err("cannot create private producer workspace"),
++            }
++        }
++        Err("cannot allocate a unique private producer workspace")
++    }
++
++    fn snapshot(
++        mut input: File,
++        declared: [u8; 32],
++        limit: usize,
++    ) -> Result<Executable, &'static str> {
++        if input
++            .metadata()
++            .map_err(|_| "cannot inspect producer executable size")?
++            .len()
++            > limit as u64
++        {
++            return Err("producer executable exceeds size limit");
++        }
++        let mut output = create_memfd()?;
++        let mut buffer = [0u8; 8192];
++        let mut header = [0u8; ELF_HEADER_LEN];
++        let mut copied = 0usize;
++        let mut digest = Sha256::new();
++        loop {
++            // Read at most the remaining allowance plus one overflow byte.
++            // The fixed stack buffer also bounds memory for large executables.
++            let read_limit = buffer.len().min(limit.saturating_sub(copied) + 1);
++            let count = read_retry(&mut input, &mut buffer[..read_limit])
++                .map_err(|_| "cannot read producer executable")?;
++            if count == 0 {
++                break;
++            }
++            if count > limit.saturating_sub(copied) {
++                return Err("producer executable exceeds size limit");
++            }
++            if copied < header.len() {
++                let header_count = count.min(header.len() - copied);
++                header[copied..copied + header_count].copy_from_slice(&buffer[..header_count]);
++            }
++            output
++                .write_all(&buffer[..count])
++                .map_err(|_| "cannot write private producer snapshot")?;
++            digest.update(&buffer[..count]);
++            copied += count;
++        }
++        check_elf(&header, copied)?;
++        let actual: [u8; 32] = digest.finalize().into();
++        if actual != declared {
++            return Err("producer executable digest does not match the bundle manifest");
++        }
++        output
++            .flush()
++            .map_err(|_| "cannot flush private producer snapshot")?;
++        output
++            .set_permissions(Permissions::from_mode(0o500))
++            .map_err(|_| "cannot make private producer snapshot executable")?;
++        // Seals protect the bytes even from another process with the same UID
++        // that chmods/reopens /proc/<pid>/fd/<fd>. F_SEAL_EXEC also freezes the
++        // executable bits. No permission/unsupported-kernel fallback is used.
++        // SAFETY: output owns a live memfd and fcntl receives integer arguments.
++        if unsafe { libc::fcntl(output.as_raw_fd(), libc::F_ADD_SEALS, REQUIRED_SEALS) } < 0 {
++            return Err("cannot seal producer executable snapshot");
++        }
++        let seals = unsafe { libc::fcntl(output.as_raw_fd(), libc::F_GET_SEALS) };
++        if seals < 0 || seals & REQUIRED_SEALS != REQUIRED_SEALS {
++            return Err("producer executable snapshot seals are incomplete");
++        }
++        // Reopen this kernel-owned descriptor link read-only, then close the
++        // writable handle before execution. This is not a bundle/workspace
++        // pathname and cannot be redirected by renaming any user-owned file.
++        let readonly = File::open(descriptor_path(&output))
++            .map_err(|_| "cannot retain sealed producer executable snapshot")?;
++        let mut readonly = avoid_stdio(readonly)?;
++        // Record the bytes after immutability is established as well as checking
++        // the streaming copy. This also detects a same-UID modification made
++        // before sealing; subsequent pathname/permission changes cannot alter
++        // these sealed bytes. The readback has the same fixed-buffer bound.
++        let mut sealed_digest = Sha256::new();
++        let mut verified = 0usize;
++        loop {
++            let read_limit = buffer.len().min(copied.saturating_sub(verified) + 1);
++            let count = read_retry(&mut readonly, &mut buffer[..read_limit])
++                .map_err(|_| "cannot verify sealed producer executable snapshot")?;
++            if count == 0 {
++                break;
++            }
++            if count > copied.saturating_sub(verified) {
++                return Err("sealed producer snapshot size differs from copied bytes");
++            }
++            sealed_digest.update(&buffer[..count]);
++            verified += count;
++        }
++        let sealed_hash: [u8; 32] = sealed_digest.finalize().into();
++        if verified != copied || sealed_hash != actual {
++            return Err("sealed producer snapshot differs from copied bytes");
++        }
++        drop(output);
++        Ok(Executable {
++            path: descriptor_path(&readonly),
++            _file: readonly,
++            hash: sealed_hash,
++        })
++    }
++
++    fn create_memfd() -> Result<File, &'static str> {
++        // MFD_EXEC is explicit. A kernel/policy that does not support or allow
++        // executable memfds makes this experimental route unavailable.
++        // SAFETY: the fixed name is NUL terminated; flags are valid constants.
++        let descriptor = unsafe {
++            libc::memfd_create(
++                c"oxid-hir-producer".as_ptr(),
++                libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING | libc::MFD_EXEC,
++            )
++        };
++        if descriptor < 0 {
++            return Err("cannot create executable memfd producer snapshot");
++        }
++        // SAFETY: successful memfd_create returned an exclusively owned fd.
++        let file = unsafe { File::from_raw_fd(descriptor) };
++        file.set_permissions(Permissions::from_mode(0o600))
++            .map_err(|_| "cannot set producer snapshot build permissions")?;
++        avoid_stdio(file)
++    }
++
++    fn avoid_stdio(file: File) -> Result<File, &'static str> {
++        if file.as_raw_fd() >= 3 {
++            return Ok(file);
++        }
++        // SAFETY: this live owned descriptor is duplicated at fd >= 3 with
++        // CLOEXEC. The original remains owned and is closed by ordinary Drop.
++        let descriptor = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
++        if descriptor < 0 {
++            return Err("cannot retain producer snapshot outside standard descriptors");
++        }
++        // SAFETY: fcntl returned a fresh, valid descriptor owned only here.
++        Ok(unsafe { File::from_raw_fd(descriptor) })
++    }
++
++    fn descriptor_path(file: &File) -> PathBuf {
++        PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()))
++    }
++
++    fn read_retry(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
++        loop {
++            match reader.read(buffer) {
++                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
++                result => return result,
++            }
++        }
++    }
++
++    fn check_elf(header: &[u8; ELF_HEADER_LEN], copied: usize) -> Result<(), &'static str> {
++        // This is a target/header check, not a complete ELF verifier. The OS
++        // loader can still reject malformed program headers or missing loaders.
++        if copied < ELF_HEADER_LEN
++            || &header[..4] != b"\x7fELF"
++            || header[4] != 2 // ELFCLASS64
++            || header[5] != 1 // ELFDATA2LSB
++            || header[6] != 1 // EV_CURRENT
++            || !matches!(u16::from_le_bytes([header[16], header[17]]), 2 | 3)
++            || u16::from_le_bytes([header[18], header[19]]) != 62 // EM_X86_64
++            || header[20..24] != [1, 0, 0, 0]
++            || u16::from_le_bytes([header[52], header[53]]) != ELF_HEADER_LEN as u16
++        {
++            return Err("producer executable must have a Linux x86_64 ELF64 header");
++        }
++        Ok(())
++    }
++
++    #[cfg(test)]
++    mod tests {
++        use super::*;
++        use std::os::unix::fs::{symlink, FileExt, FileTypeExt, MetadataExt};
++
++        struct Fixture {
++            _owner: Workspace,
++            root: PathBuf,
++            temporary: PathBuf,
++            parser: Vec<u8>,
++            static_consumer: Vec<u8>,
++        }
++
++        impl Fixture {
++            fn new() -> Self {
++                let owner = create_workspace(&std::env::temp_dir()).unwrap();
++                let root = owner.path.join("input");
++                let temporary = owner.path.join("snapshots");
++                fs::create_dir(&root).unwrap();
++                fs::create_dir(&temporary).unwrap();
++                let parser = fake_elf(91);
++                let static_consumer = fake_elf(105);
++                fs::write(root.join("parser"), &parser).unwrap();
++                fs::write(root.join("static"), &static_consumer).unwrap();
++                fs::write(
++                    root.join("manifest.txt"),
++                    manifest_bytes(&parser, &static_consumer),
++                )
++                .unwrap();
++                Self {
++                    _owner: owner,
++                    root,
++                    temporary,
++                    parser,
++                    static_consumer,
++                }
++            }
++
++            fn load(&self) -> Result<Bundle, &'static str> {
++                load(&self.root, &self.temporary, EXECUTABLE_LIMIT)
++            }
++
++            fn assert_no_snapshots(&self) {
++                assert_eq!(fs::read_dir(&self.temporary).unwrap().count(), 0);
++                assert!(self.root.join("manifest.txt").exists());
++            }
++        }
++
++        // These deliberately incomplete ELF-shaped byte fixtures exercise
++        // validation/ownership only. They are not native execution evidence.
++        fn fake_elf(length: usize) -> Vec<u8> {
++            assert!(length >= ELF_HEADER_LEN);
++            let mut bytes = vec![0u8; length];
++            bytes[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
++            bytes[16..18].copy_from_slice(&2u16.to_le_bytes());
++            bytes[18..20].copy_from_slice(&62u16.to_le_bytes());
++            bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
++            bytes[52..54].copy_from_slice(&(ELF_HEADER_LEN as u16).to_le_bytes());
++            bytes
++        }
++
++        fn digest(bytes: &[u8]) -> [u8; 32] {
++            Sha256::digest(bytes).into()
++        }
++
++        fn hex(bytes: &[u8]) -> String {
++            bytes.iter().map(|byte| format!("{byte:02x}")).collect()
++        }
++
++        fn manifest_bytes(parser: &[u8], static_consumer: &[u8]) -> Vec<u8> {
++            format!(
++                "OXID-HIR-PRODUCERS-1\nparser {}\nstatic {}\n",
++                hex(&digest(parser)),
++                hex(&digest(static_consumer))
++            )
++            .into_bytes()
++        }
++
++        #[test]
++        fn exact_manifest_grammar_and_known_sha256() {
++            let known = b"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
++            assert_eq!(decode_hash(known).unwrap(), digest(b"abc"));
++            let bytes = manifest_bytes(b"abc", b"other");
++            assert_eq!(bytes.len(), MANIFEST_LEN);
++            assert_eq!(
++                parse_manifest(&bytes).unwrap(),
++                Manifest {
++                    parser: digest(b"abc"),
++                    static_consumer: digest(b"other"),
++                }
++            );
++        }
++
++        #[test]
++        fn rejects_noncanonical_manifest_variants() {
++            let valid = manifest_bytes(b"abc", b"other");
++            let text = String::from_utf8(valid.clone()).unwrap();
++            let variants = [
++                text.replace("PRODUCERS-1", "PRODUCERS-2"),
++                text.replace("parser ", "parser\t"),
++                text.replace("parser ", "static "),
++                text.replace("static ", "parser "),
++                text.replace('\n', "\r\n"),
++                text.trim_end().to_owned(),
++                format!("{text}\n"),
++                format!("{text}ignored"),
++                text.replace("ba7816", "BA7816"),
++                text.replace("ba7816", "ga7816"),
++                text.replace("parser ", "parser ../"),
++                text.replace("parser ", "parser  "),
++            ];
++            for variant in variants {
++                assert!(parse_manifest(variant.as_bytes()).is_err(), "{variant:?}");
++            }
++            let mut nul = valid;
++            nul[MAGIC.len() + 7] = 0;
++            assert!(parse_manifest(&nul).is_err());
++        }
++
++        #[test]
++        fn manifest_read_rejects_trailing_bytes_and_large_tail() {
++            let fixture = Fixture::new();
++            let mut bytes = manifest_bytes(&fixture.parser, &fixture.static_consumer);
++            bytes.extend_from_slice(&[b'x'; 4096]);
++            fs::write(fixture.root.join("manifest.txt"), bytes).unwrap();
++            assert!(fixture.load().is_err());
++            fixture.assert_no_snapshots();
++        }
++
++        #[test]
++        fn verified_snapshots_are_private_readonly_and_owned() {
++            let fixture = Fixture::new();
++            let bundle = fixture.load().unwrap();
++            assert_eq!(bundle.parser_hash(), digest(&fixture.parser));
++            assert_eq!(bundle.static_hash(), digest(&fixture.static_consumer));
++            assert_eq!(bundle.parser(), descriptor_path(&bundle.parser._file));
++            assert_eq!(
++                bundle.static_consumer(),
++                descriptor_path(&bundle.static_consumer._file)
++            );
++            assert_eq!(fs::read_dir(bundle.directory()).unwrap().count(), 0);
++            assert!(bundle.directory().starts_with(&fixture.temporary));
++            assert_eq!(
++                fs::metadata(bundle.directory())
++                    .unwrap()
++                    .permissions()
++                    .mode()
++                    & 0o777,
++                0o700
++            );
++            for path in [bundle.parser(), bundle.static_consumer()] {
++                assert_eq!(
++                    fs::metadata(path).unwrap().permissions().mode() & 0o777,
++                    0o500
++                );
++            }
++            for snapshot in [&bundle.parser, &bundle.static_consumer] {
++                assert!(snapshot._file.as_raw_fd() >= 3);
++                // SAFETY: both queries use the currently owned descriptor.
++                assert_ne!(
++                    unsafe { libc::fcntl(snapshot._file.as_raw_fd(), libc::F_GETFD) }
++                        & libc::FD_CLOEXEC,
++                    0
++                );
++                assert_eq!(
++                    unsafe { libc::fcntl(snapshot._file.as_raw_fd(), libc::F_GET_SEALS) }
++                        & REQUIRED_SEALS,
++                    REQUIRED_SEALS
++                );
++            }
++            let directory = bundle.directory().to_path_buf();
++            drop(bundle);
++            assert!(!directory.exists());
++            fixture.assert_no_snapshots();
++            assert_eq!(
++                fs::read(fixture.root.join("parser")).unwrap(),
++                fixture.parser
++            );
++            assert_eq!(
++                fs::read(fixture.root.join("static")).unwrap(),
++                fixture.static_consumer
++            );
++        }
++
++        #[test]
++        fn snapshots_survive_input_replacement_and_removal() {
++            let fixture = Fixture::new();
++            let bundle = fixture.load().unwrap();
++            fs::write(fixture.root.join("replacement"), b"replacement").unwrap();
++            fs::rename(
++                fixture.root.join("replacement"),
++                fixture.root.join("parser"),
++            )
++            .unwrap();
++            fs::remove_file(fixture.root.join("static")).unwrap();
++            // An earlier same-UID producer may freely replace/chmod filenames
++            // in its cwd. Neither descriptor-backed executable resolves there.
++            fs::write(bundle.directory().join("parser"), b"cwd replacement").unwrap();
++            fs::write(bundle.directory().join("static"), b"cwd replacement").unwrap();
++            fs::set_permissions(
++                bundle.directory().join("static"),
++                Permissions::from_mode(0o700),
++            )
++            .unwrap();
++            assert_eq!(fs::read(bundle.parser()).unwrap(), fixture.parser);
++            assert_eq!(
++                fs::read(bundle.static_consumer()).unwrap(),
++                fixture.static_consumer
++            );
++            assert_eq!(
++                digest(&fs::read(bundle.parser()).unwrap()),
++                bundle.parser_hash()
++            );
++        }
++
++        #[test]
++        fn snapshot_streams_and_hashes_multiple_buffer_lengths() {
++            let fixture = Fixture::new();
++            let mut parser = fake_elf(8192 * 2 + 127);
++            for (index, byte) in parser[ELF_HEADER_LEN..].iter_mut().enumerate() {
++                *byte = (index % 251) as u8;
++            }
++            fs::write(fixture.root.join("parser"), &parser).unwrap();
++            fs::write(
++                fixture.root.join("manifest.txt"),
++                manifest_bytes(&parser, &fixture.static_consumer),
++            )
++            .unwrap();
++            let bundle = load(&fixture.root, &fixture.temporary, parser.len()).unwrap();
++            assert_eq!(bundle.parser_hash(), digest(&parser));
++            assert_eq!(fs::read(bundle.parser()).unwrap(), parser);
++        }
++
++        #[test]
++        fn rejects_hash_mismatch_and_cleans_partial_success() {
++            for name in ["parser", "static"] {
++                let fixture = Fixture::new();
++                let mut bytes = fs::read(fixture.root.join(name)).unwrap();
++                bytes[64] = 1;
++                fs::write(fixture.root.join(name), bytes).unwrap();
++                assert!(fixture.load().unwrap_err().contains("digest"));
++                fixture.assert_no_snapshots();
++                assert!(fixture.root.join("parser").exists());
++                assert!(fixture.root.join("static").exists());
++            }
++        }
++
++        #[test]
++        fn rejects_symlinks_for_each_fixed_input() {
++            for name in ["manifest.txt", "parser", "static"] {
++                let fixture = Fixture::new();
++                let destination = fixture.root.join(format!("original-{name}"));
++                fs::rename(fixture.root.join(name), &destination).unwrap();
++                symlink(&destination, fixture.root.join(name)).unwrap();
++                assert!(fixture.load().is_err());
++                fixture.assert_no_snapshots();
++                assert!(destination.exists());
++            }
++        }
++
++        #[test]
++        fn rejects_symlink_or_nondirectory_bundle_root() {
++            let fixture = Fixture::new();
++            let link = fixture.temporary.join("link");
++            symlink(&fixture.root, &link).unwrap();
++            for spelling in [
++                link.clone(),
++                PathBuf::from(format!("{}/", link.display())),
++                link.join("."),
++                PathBuf::from(format!("{}//./", link.display())),
++            ] {
++                assert!(load(&spelling, &fixture.temporary, EXECUTABLE_LIMIT).is_err());
++            }
++            assert!(load(
++                &fixture.root.join("parser"),
++                &fixture.temporary,
++                EXECUTABLE_LIMIT
++            )
++            .is_err());
++        }
++
++        #[test]
++        fn rejects_directories_and_device_files() {
++            for name in ["manifest.txt", "parser", "static"] {
++                let fixture = Fixture::new();
++                fs::remove_file(fixture.root.join(name)).unwrap();
++                fs::create_dir(fixture.root.join(name)).unwrap();
++                assert!(fixture.load().is_err());
++                fixture.assert_no_snapshots();
++            }
++            let device = Path::new("/dev/null");
++            assert!(fs::symlink_metadata(device)
++                .unwrap()
++                .file_type()
++                .is_char_device());
++            assert!(open_regular_at(&open_directory(Path::new("/dev")).unwrap(), c"null").is_err());
++        }
++
++        #[test]
++        fn rejects_wrong_elf_target_and_truncated_header() {
++            let fixture = Fixture::new();
++            for (offset, value) in [
++                (0, 0),
++                (4, 1),
++                (5, 2),
++                (6, 0),
++                (16, 1),
++                (18, 3),
++                (20, 0),
++                (52, 0),
++            ] {
++                let mut parser = fixture.parser.clone();
++                parser[offset] = value;
++                fs::write(fixture.root.join("parser"), &parser).unwrap();
++                fs::write(
++                    fixture.root.join("manifest.txt"),
++                    manifest_bytes(&parser, &fixture.static_consumer),
++                )
++                .unwrap();
++                assert!(fixture.load().unwrap_err().contains("ELF64"));
++                fixture.assert_no_snapshots();
++            }
++            for parser in [&fixture.parser[..63], &fixture.parser[..0]] {
++                fs::write(fixture.root.join("parser"), parser).unwrap();
++                fs::write(
++                    fixture.root.join("manifest.txt"),
++                    manifest_bytes(parser, &fixture.static_consumer),
++                )
++                .unwrap();
++                assert!(fixture.load().unwrap_err().contains("ELF64"));
++                fixture.assert_no_snapshots();
++            }
++        }
++
++        #[test]
++        fn executable_limit_is_inclusive_and_cleans_oversized_second_file() {
++            let fixture = Fixture::new();
++            let parser = fake_elf(64);
++            let static_consumer = fake_elf(65);
++            fs::write(fixture.root.join("parser"), &parser).unwrap();
++            fs::write(fixture.root.join("static"), &static_consumer).unwrap();
++            fs::write(
++                fixture.root.join("manifest.txt"),
++                manifest_bytes(&parser, &static_consumer),
++            )
++            .unwrap();
++            assert!(load(&fixture.root, &fixture.temporary, 64)
++                .unwrap_err()
++                .contains("size limit"));
++            fixture.assert_no_snapshots();
++            let bundle = load(&fixture.root, &fixture.temporary, 65).unwrap();
++            assert_eq!(fs::read(bundle.static_consumer()).unwrap().len(), 65);
++        }
++
++        #[test]
++        fn descriptor_root_cannot_be_redirected_by_directory_replacement() {
++            let fixture = Fixture::new();
++            let root = open_directory(&fixture.root).unwrap();
++            let moved = fixture.temporary.join("original-input");
++            fs::rename(&fixture.root, &moved).unwrap();
++            fs::create_dir(&fixture.root).unwrap();
++            fs::write(fixture.root.join("parser"), b"replacement").unwrap();
++            fs::write(fixture.root.join("manifest.txt"), b"replacement").unwrap();
++            assert_eq!(
++                read_manifest(&root).unwrap().parser,
++                digest(&fixture.parser)
++            );
++            let executable = snapshot(
++                open_regular_at(&root, c"parser").unwrap(),
++                digest(&fixture.parser),
++                EXECUTABLE_LIMIT,
++            )
++            .unwrap();
++            assert_eq!(fs::read(executable.path).unwrap(), fixture.parser);
++        }
++
++        #[test]
++        fn sealed_bytes_resist_reopened_descriptor_writes_and_resize() {
++            let fixture = Fixture::new();
++            let bundle = fixture.load().unwrap();
++            for (path, expected) in [
++                (bundle.parser(), &fixture.parser),
++                (bundle.static_consumer(), &fixture.static_consumer),
++            ] {
++                // A same-UID process can restore write permission. The seals,
++                // rather than mode bits, must still block every mutation.
++                fs::set_permissions(path, Permissions::from_mode(0o700)).unwrap();
++                let reopened = OpenOptions::new()
++                    .read(true)
++                    .write(true)
++                    .open(path)
++                    .unwrap();
++                for result in [
++                    reopened.write_at(b"replacement", 0).map(|_| ()),
++                    reopened.set_len((expected.len() - 1) as u64),
++                    reopened.set_len((expected.len() + 1) as u64),
++                ] {
++                    assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::EPERM));
++                }
++                assert_eq!(fs::read(path).unwrap(), *expected);
++                fs::set_permissions(path, Permissions::from_mode(0o500)).unwrap();
++            }
++        }
++
++        #[test]
++        fn executable_seals_and_execute_permission_cannot_be_relaxed() {
++            let fixture = Fixture::new();
++            let bundle = fixture.load().unwrap();
++            fs::set_permissions(bundle.parser(), Permissions::from_mode(0o700)).unwrap();
++            let reopened = OpenOptions::new()
++                .read(true)
++                .write(true)
++                .open(bundle.parser())
++                .unwrap();
++            // SAFETY: reopened is a live descriptor; these operations only
++            // attempt changes to its already-finalized seal mask.
++            let before = unsafe { libc::fcntl(reopened.as_raw_fd(), libc::F_GET_SEALS) };
++            for attempted in [0, libc::F_SEAL_WRITE, libc::F_SEAL_FUTURE_WRITE] {
++                assert_eq!(
++                    unsafe { libc::fcntl(reopened.as_raw_fd(), libc::F_ADD_SEALS, attempted) },
++                    -1
++                );
++                assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EPERM));
++            }
++            assert_eq!(
++                unsafe { libc::fcntl(reopened.as_raw_fd(), libc::F_GET_SEALS) },
++                before
++            );
++            assert_eq!(before & REQUIRED_SEALS, REQUIRED_SEALS);
++            assert_eq!(
++                reopened
++                    .set_permissions(Permissions::from_mode(0o400))
++                    .unwrap_err()
++                    .raw_os_error(),
++                Some(libc::EPERM)
++            );
++        }
++
++        #[test]
++        fn owned_descriptors_and_workspace_are_released_on_drop() {
++            let fixture = Fixture::new();
++            let bundle = fixture.load().unwrap();
++            let identities: Vec<_> = [bundle.parser(), bundle.static_consumer()]
++                .into_iter()
++                .map(|path| {
++                    let metadata = fs::metadata(path).unwrap();
++                    (path.to_path_buf(), metadata.dev(), metadata.ino())
++                })
++                .collect();
++            let workspace = bundle.directory().to_path_buf();
++            drop(bundle);
++            assert!(!workspace.exists());
++            for (path, device, inode) in identities {
++                // Parallel tests may immediately reuse the fd number. It must
++                // no longer designate the owned memfd after Bundle is dropped.
++                if let Ok(metadata) = fs::metadata(path) {
++                    assert_ne!((metadata.dev(), metadata.ino()), (device, inode));
++                }
++            }
++        }
++
++        #[test]
++        fn cleanup_preserves_sibling_and_input_files() {
++            let fixture = Fixture::new();
++            let sibling = fixture.temporary.join("keep");
++            fs::write(&sibling, b"unrelated").unwrap();
++            let bundle = fixture.load().unwrap();
++            let private = bundle.directory().to_path_buf();
++            drop(bundle);
++            assert!(!private.exists());
++            assert_eq!(fs::read(sibling).unwrap(), b"unrelated");
++            assert!(fixture.root.join("manifest.txt").exists());
++        }
++
++        #[test]
++        fn workspace_paths_are_absolute() {
++            let workspace = create_workspace(Path::new(".")).unwrap();
++            assert!(workspace.path.is_absolute());
++            let private = workspace.path.clone();
++            drop(workspace);
++            assert!(!private.exists());
++        }
++
++        #[test]
++        fn public_loader_uses_only_private_snapshot_paths() {
++            let fixture = Fixture::new();
++            let bundle = Bundle::load(&fixture.root).unwrap();
++            assert_ne!(bundle.directory(), fixture.root);
++            assert!(!bundle.parser().starts_with(&fixture.root));
++            assert!(!bundle.static_consumer().starts_with(&fixture.root));
++        }
++    }
++}
+diff --git a/src/frontend/hir_producer/supervisor.rs b/src/frontend/hir_producer/supervisor.rs
+new file mode 100644
+index 0000000..e5e0c83
+--- /dev/null
++++ b/src/frontend/hir_producer/supervisor.rs
+@@ -0,0 +1,480 @@
++//! Linux bounded-stdio supervisor for explicitly selected local producers.
++//! This is process lifetime/transport control, not an OS sandbox or RSS bound.
++use std::{
++    io::{self, Read, Write},
++    os::{
++        fd::AsRawFd,
++        unix::process::{CommandExt, ExitStatusExt},
++    },
++    path::Path,
++    process::{Child, Command, ExitStatus, Stdio},
++    thread,
++    time::{Duration, Instant},
++};
++
++pub(super) const INPUT_MAX: usize = 1692;
++pub(super) const OUTPUT_MAX: usize = 2607;
++pub(super) const STDERR_MAX: usize = 4096;
++pub(super) const DEADLINE: Duration = Duration::from_secs(5);
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(super) enum Stop {
++    Exited,
++    Spawn,
++    Io,
++    Timeout,
++    StdoutLimit,
++    StderrLimit,
++    InputLimit,
++}
++impl Stop {
++    pub(super) fn name(self) -> &'static str {
++        match self {
++            Self::Exited => "exited",
++            Self::Spawn => "spawn-failed",
++            Self::Io => "transport-failed",
++            Self::Timeout => "deadline",
++            Self::StdoutLimit => "stdout-limit",
++            Self::StderrLimit => "stderr-limit",
++            Self::InputLimit => "input-limit",
++        }
++    }
++}
++
++pub(super) struct Capture {
++    pub(super) stdout: [u8; OUTPUT_MAX + 1],
++    pub(super) stdout_len: usize,
++    pub(super) stderr: [u8; STDERR_MAX + 1],
++    pub(super) stderr_len: usize,
++    pub(super) input_written: usize,
++    pub(super) status: Option<ExitStatus>,
++    pub(super) stop: Stop,
++    pub(super) spawned: bool,
++}
++impl Capture {
++    fn empty() -> Self {
++        Self {
++            stdout: [0; OUTPUT_MAX + 1],
++            stdout_len: 0,
++            stderr: [0; STDERR_MAX + 1],
++            stderr_len: 0,
++            input_written: 0,
++            status: None,
++            stop: Stop::Spawn,
++            spawned: false,
++        }
++    }
++    pub(super) fn code(&self) -> Option<i32> {
++        self.status.and_then(|status| status.code())
++    }
++    pub(super) fn signal(&self) -> Option<i32> {
++        self.status.and_then(|status| status.signal())
++    }
++}
++
++struct ChildGroup {
++    child: Child,
++    finished: bool,
++}
++impl ChildGroup {
++    fn finish(&mut self) -> Option<ExitStatus> {
++        // WNOWAIT retained the leader PID. Kill both its original group and
++        // the owned leader individually; never rely solely on group membership.
++        // SAFETY: this is our unreaped child PID, not the caller's group.
++        unsafe {
++            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
++        }
++        let _ = self.child.kill();
++        self.finished = true;
++        let cleanup_started = Instant::now();
++        loop {
++            match self.child.try_wait() {
++                Ok(Some(status)) => return Some(status),
++                Ok(None) => (),
++                Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
++                Err(_) => return None,
++            }
++            if cleanup_started.elapsed() >= Duration::from_millis(500) {
++                // Do not turn a failed/undeliverable kill into an unbounded
++                // wait. The caller reports missing leader-reap evidence as a
++                // failed contract. Kernel-stalled processes are not concealed.
++                return None;
++            }
++            thread::sleep(Duration::from_millis(1));
++        }
++    }
++}
++impl Drop for ChildGroup {
++    fn drop(&mut self) {
++        if !self.finished {
++            self.finish();
++        }
++    }
++}
++
++fn nonblocking(pipe: &impl AsRawFd) -> io::Result<()> {
++    let fd = pipe.as_raw_fd();
++    // SAFETY: fd is a live owned child pipe. Only its status flags are changed;
++    // ownership, descriptor lifetime and inherited process policy are untouched.
++    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
++    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
++        return Err(io::Error::last_os_error());
++    }
++    Ok(())
++}
++
++fn exited(child: &Child) -> io::Result<bool> {
++    // SAFETY: zero is a valid empty siginfo value; waitid fills this caller-owned
++    // value. WNOWAIT observes only our child and does not reap/release its PID.
++    let mut information: libc::siginfo_t = unsafe { std::mem::zeroed() };
++    let result = unsafe {
++        libc::waitid(
++            libc::P_PID,
++            child.id(),
++            &mut information,
++            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
++        )
++    };
++    if result != 0 {
++        return Err(io::Error::last_os_error());
++    }
++    Ok(unsafe { information.si_pid() } != 0)
++}
++
++fn drain(reader: &mut impl Read, bytes: &mut [u8], used: &mut usize) -> io::Result<bool> {
++    while *used < bytes.len() {
++        match reader.read(&mut bytes[*used..]) {
++            Ok(0) => return Ok(true),
++            Ok(count) => *used += count,
++            Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
++            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
++            Err(error) => return Err(error),
++        }
++    }
++    Ok(false)
++}
++
++pub(super) fn run(
++    program: &Path,
++    directory: &Path,
++    input: &[u8],
++    output_limit: usize,
++    deadline: Duration,
++) -> Capture {
++    let mut captured = Capture::empty();
++    if input.len() > INPUT_MAX || output_limit > OUTPUT_MAX {
++        captured.stop = Stop::InputLimit;
++        return captured;
++    }
++    let started = Instant::now();
++    let mut command = Command::new(program);
++    command
++        .current_dir(directory)
++        .env_clear()
++        .env("PATH", "/no-tools")
++        .env("LC_ALL", "C")
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::piped());
++    let parent = std::process::id() as libc::pid_t;
++    // SAFETY: pre_exec uses only async-signal-safe Linux syscalls and constructs
++    // an errno value on failure. No allocation, locks or inherited Rust state.
++    unsafe {
++        command.pre_exec(move || {
++            // A fresh session prevents the producer leader from joining the
++            // compiler group. Deliberately escaping descendants are outside
++            // this trusted-producer lifetime control, not silently sandboxed.
++            if libc::setsid() < 0 {
++                return Err(io::Error::last_os_error());
++            }
++            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
++                return Err(io::Error::last_os_error());
++            }
++            if libc::getppid() != parent {
++                return Err(io::Error::from_raw_os_error(libc::ESRCH));
++            }
++            Ok(())
++        });
++    }
++    let Ok(child) = command.spawn() else {
++        return captured;
++    };
++    let mut group = ChildGroup {
++        child,
++        finished: false,
++    };
++    captured.spawned = true;
++    captured.stop = Stop::Io;
++    let mut stdin = group.child.stdin.take();
++    let mut stdout = group.child.stdout.take().expect("piped stdout");
++    let mut stderr = group.child.stderr.take().expect("piped stderr");
++    if nonblocking(stdin.as_ref().expect("piped stdin")).is_err()
++        || nonblocking(&stdout).is_err()
++        || nonblocking(&stderr).is_err()
++    {
++        captured.status = group.finish();
++        return captured;
++    }
++    let mut out_eof = false;
++    let mut err_eof = false;
++    loop {
++        if started.elapsed() >= deadline {
++            captured.stop = Stop::Timeout;
++            break;
++        }
++        if captured.input_written == input.len() {
++            stdin.take();
++        }
++        if let Some(pipe) = &mut stdin {
++            match pipe.write(&input[captured.input_written..]) {
++                Ok(0) => break,
++                Ok(count) => captured.input_written += count,
++                Err(error)
++                    if matches!(
++                        error.kind(),
++                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
++                    ) => {}
++                Err(_) => break,
++            }
++        }
++        if !out_eof {
++            match drain(
++                &mut stdout,
++                &mut captured.stdout[..output_limit + 1],
++                &mut captured.stdout_len,
++            ) {
++                Ok(eof) => out_eof = eof,
++                Err(_) => break,
++            }
++        }
++        if captured.stdout_len > output_limit {
++            captured.stop = Stop::StdoutLimit;
++            break;
++        }
++        if !err_eof {
++            match drain(&mut stderr, &mut captured.stderr, &mut captured.stderr_len) {
++                Ok(eof) => err_eof = eof,
++                Err(_) => break,
++            }
++        }
++        if captured.stderr_len > STDERR_MAX {
++            captured.stop = Stop::StderrLimit;
++            break;
++        }
++        match exited(&group.child) {
++            Ok(true) if out_eof && err_eof && captured.input_written == input.len() => {
++                captured.stop = Stop::Exited;
++                break;
++            }
++            Ok(_) => (),
++            Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
++            Err(_) => break,
++        }
++        thread::sleep(Duration::from_millis(1));
++    }
++    stdin.take();
++    captured.status = group.finish();
++    if captured.stop == Stop::Exited {
++        // Recheck the fixed pipes after termination/reap. A prior EOF is not
++        // treated as authority for a process that has not yet exited.
++        let final_out = drain(
++            &mut stdout,
++            &mut captured.stdout[..output_limit + 1],
++            &mut captured.stdout_len,
++        );
++        let final_err = drain(&mut stderr, &mut captured.stderr, &mut captured.stderr_len);
++        if captured.stdout_len > output_limit {
++            captured.stop = Stop::StdoutLimit;
++        } else if captured.stderr_len > STDERR_MAX {
++            captured.stop = Stop::StderrLimit;
++        } else if !matches!((final_out, final_err), (Ok(true), Ok(true)))
++            || captured.status.is_none()
++        {
++            captured.stop = Stop::Io;
++        }
++    }
++    captured
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{
++        fs,
++        path::PathBuf,
++        sync::atomic::{AtomicUsize, Ordering},
++    };
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    struct Fixture(PathBuf);
++    impl Fixture {
++        fn new(mode: i32) -> Self {
++            let path = std::env::temp_dir().join(format!(
++                "oxid-producer-supervisor-{}-{}",
++                std::process::id(),
++                NEXT.fetch_add(1, Ordering::Relaxed)
++            ));
++            fs::create_dir(&path).unwrap();
++            fs::write(path.join("mode"), mode.to_string()).unwrap();
++            fs::write(path.join("helper.c"), r#"
++#include <unistd.h>
++#include <signal.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <sys/types.h>
++int main(void) {
++  FILE *mode_file=fopen("mode","r"); int mode=-1;
++  if (!mode_file || fscanf(mode_file,"%d",&mode)!=1) return 80;
++  fclose(mode_file);
++  if (mode==7) { FILE*f=fopen("static","w"); if(!f)return 85; fputs("replaced cwd executable",f); fclose(f); mode=0; }
++  if (mode==0) { char b; while(read(0,&b,1)==1) { if(write(1,&b,1)!=1)return 81; usleep(1000); } return 0; }
++  if (mode==1 || mode==2) { char bytes[256]={0}; for(;;) { if(write(mode,bytes,sizeof bytes)<0)return 82; } }
++  if (mode==3) { for(;;)pause(); }
++  if (mode==4) { int result=setpgid(0,getpgid(getppid())); FILE*f=fopen("join-result","w"); fprintf(f,"%d",result); fclose(f); for(;;)pause(); }
++  if (mode==5 || mode==6) {
++    pid_t pid=fork(); if(pid<0)return 83;
++    if(pid==0) { FILE*f=fopen("descendant.pid","w"); fprintf(f,"%d",getpid()); fclose(f); close(0); if(mode==5){close(1);close(2);} for(;;)pause(); }
++    while(access("descendant.pid",F_OK))usleep(1000);
++    return 0;
++  }
++  return 84;
++}
++"#).unwrap();
++            let output = Command::new("cc")
++                .args(["-O0", "helper.c", "-o", "helper"])
++                .current_dir(&path)
++                .output()
++                .unwrap();
++            assert!(output.status.success(), "{output:?}");
++            Self(path)
++        }
++        fn run(&self, input: &[u8], cap: usize, deadline: Duration) -> Capture {
++            run(&self.0.join("helper"), &self.0, input, cap, deadline)
++        }
++        fn descendant_dead(&self) {
++            let pid: i32 = fs::read_to_string(self.0.join("descendant.pid"))
++                .unwrap()
++                .parse()
++                .unwrap();
++            for _ in 0..100 {
++                match fs::read_to_string(format!("/proc/{pid}/stat")) {
++                    Ok(state) if state.split_once(") ").unwrap().1.starts_with('Z') => return,
++                    Err(error) if error.kind() == io::ErrorKind::NotFound => return,
++                    _ => thread::sleep(Duration::from_millis(1)),
++                }
++            }
++            // A failed test must not leave its own synthetic child running.
++            unsafe {
++                libc::kill(pid, libc::SIGKILL);
++            }
++            panic!("ordinary process-group descendant survived cleanup");
++        }
++    }
++    impl Drop for Fixture {
++        fn drop(&mut self) {
++            let _ = fs::remove_dir_all(&self.0);
++        }
++    }
++
++    #[test]
++    fn producer_supervisor_fragmented_stdio_is_exact_and_leader_reaped() {
++        let f = Fixture::new(0);
++        let output = f.run(b"hello", 5, DEADLINE);
++        assert_eq!(output.stop, Stop::Exited);
++        assert_eq!(output.code(), Some(0));
++        assert_eq!(&output.stdout[..output.stdout_len], b"hello");
++        assert_eq!(output.stderr_len, 0);
++        assert_eq!(output.input_written, 5);
++    }
++    #[test]
++    fn producer_supervisor_stream_caps_use_one_witness_and_fail_closed() {
++        let output = Fixture::new(1).run(b"", 8, DEADLINE);
++        assert_eq!(output.stop, Stop::StdoutLimit);
++        assert_eq!(output.stdout_len, 9);
++        assert!(output.status.is_some());
++        let output = Fixture::new(2).run(b"", 8, DEADLINE);
++        assert_eq!(output.stop, Stop::StderrLimit);
++        assert_eq!(output.stderr_len, STDERR_MAX + 1);
++        assert!(output.status.is_some());
++    }
++    #[test]
++    fn producer_supervisor_timeout_cannot_be_defeated_by_joining_parent_group() {
++        for mode in [3, 4] {
++            let f = Fixture::new(mode);
++            let started = Instant::now();
++            let output = f.run(b"", 0, Duration::from_millis(250));
++            assert_eq!(output.stop, Stop::Timeout);
++            assert_eq!(output.signal(), Some(libc::SIGKILL));
++            assert!(started.elapsed() < Duration::from_secs(2));
++            if mode == 4 {
++                assert_eq!(fs::read_to_string(f.0.join("join-result")).unwrap(), "-1");
++            }
++        }
++    }
++    #[test]
++    fn producer_supervisor_kills_group_descendants_after_success_and_timeout() {
++        for mode in [5, 6] {
++            let f = Fixture::new(mode);
++            let output = f.run(b"", 0, Duration::from_millis(250));
++            assert_eq!(
++                output.stop,
++                if mode == 5 {
++                    Stop::Exited
++                } else {
++                    Stop::Timeout
++                }
++            );
++            assert_eq!(output.code(), Some(0));
++            f.descendant_dead();
++        }
++    }
++    #[test]
++    fn producer_supervisor_executes_sealed_descriptors_across_peer_path_replacement() {
++        use sha2::{Digest, Sha256};
++        let f = Fixture::new(0);
++        let executable = fs::read(f.0.join("helper")).unwrap();
++        fs::write(f.0.join("parser"), &executable).unwrap();
++        fs::write(f.0.join("static"), &executable).unwrap();
++        let hash: [u8; 32] = Sha256::digest(&executable).into();
++        let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
++        fs::write(
++            f.0.join("manifest.txt"),
++            format!("OXID-HIR-PRODUCERS-1\nparser {hex}\nstatic {hex}\n"),
++        )
++        .unwrap();
++        let bundle = super::super::bundle::Bundle::load(&f.0).unwrap();
++        fs::write(bundle.directory().join("mode"), b"7").unwrap();
++        let parser = run(bundle.parser(), bundle.directory(), b"parser", 6, DEADLINE);
++        assert_eq!(parser.stop, Stop::Exited);
++        assert_eq!(parser.code(), Some(0));
++        assert_eq!(&parser.stdout[..parser.stdout_len], b"parser");
++        assert_eq!(
++            fs::read(bundle.directory().join("static")).unwrap(),
++            b"replaced cwd executable"
++        );
++        fs::write(f.0.join("static"), b"replaced source executable").unwrap();
++        fs::write(bundle.directory().join("mode"), b"0").unwrap();
++        let typed = run(
++            bundle.static_consumer(),
++            bundle.directory(),
++            b"static",
++            6,
++            DEADLINE,
++        );
++        assert_eq!(typed.stop, Stop::Exited);
++        assert_eq!(typed.code(), Some(0));
++        assert_eq!(&typed.stdout[..typed.stdout_len], b"static");
++        assert_eq!(bundle.static_hash(), hash);
++    }
++
++    #[test]
++    fn producer_supervisor_input_limit_and_spawn_failure_are_not_success() {
++        let f = Fixture::new(0);
++        let output = f.run(&[0; INPUT_MAX + 1], 0, DEADLINE);
++        assert_eq!(output.stop, Stop::InputLimit);
++        assert!(!output.spawned);
++        let output = run(&f.0.join("absent"), &f.0, b"", 0, DEADLINE);
++        assert_eq!(output.stop, Stop::Spawn);
++        assert!(!output.spawned);
++        assert!(output.status.is_none());
++    }
++}
+diff --git a/src/frontend/mod.rs b/src/frontend/mod.rs
+index 624863c..f942977 100644
+--- a/src/frontend/mod.rs
++++ b/src/frontend/mod.rs
+@@ -7,6 +7,7 @@ mod driver;
+ mod format;
+ mod format_cli;
+ mod hir;
++mod hir_producer;
+ mod lexer;
+ mod native;
+ mod oir;
+diff --git a/src/frontend/oir/mod.rs b/src/frontend/oir/mod.rs
+index 6f088fa..3258b36 100644
+--- a/src/frontend/oir/mod.rs
++++ b/src/frontend/oir/mod.rs
+@@ -10,7 +10,8 @@ mod verify;
+ 
+ pub(in crate::frontend) use owned::process;
+ pub(super) use source::{
+-    check_source, import_checked, CheckedSourceProgram, Imported, ProcessFailure, IMPORT_BYTES,
++    check_source, import_checked, import_produced, CheckedSourceProgram, Imported, ProcessFailure,
++    IMPORT_BYTES,
+ };
+ 
+ use super::{
+diff --git a/src/frontend/oir/source.rs b/src/frontend/oir/source.rs
+index 9a70edd..1252441 100644
+--- a/src/frontend/oir/source.rs
++++ b/src/frontend/oir/source.rs
+@@ -8,7 +8,7 @@ mod sealed;
+ // Explicit import is separate from every default source route.
+ #[allow(dead_code)]
+ mod hir_import;
+-pub(in crate::frontend) use hir_import::{import_checked, Imported, IMPORT_BYTES};
++pub(in crate::frontend) use hir_import::{import_checked, import_produced, Imported, IMPORT_BYTES};
+ pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;
+ pub(in crate::frontend::oir) use sealed::{
+     check_project_candidate, check_project_executable_candidate,
+diff --git a/src/frontend/oir/source/hir_import.rs b/src/frontend/oir/source/hir_import.rs
+index da816ac..328176c 100644
+--- a/src/frontend/oir/source/hir_import.rs
++++ b/src/frontend/oir/source/hir_import.rs
+@@ -18,7 +18,9 @@ mod candidate;
+ // Paid leaves retain source ownership and fully compare untrusted observations.
+ mod leaf;
+ mod public_facade;
+-pub(in crate::frontend) use public_facade::{import_checked, Imported, IMPORT_BYTES};
++pub(in crate::frontend) use public_facade::{
++    import_checked, import_produced, Imported, IMPORT_BYTES,
++};
+ 
+ const CELLS: usize = 129;
+ const MAX_ROWS: usize = 128;
+diff --git a/src/frontend/oir/source/hir_import/public_facade.rs b/src/frontend/oir/source/hir_import/public_facade.rs
+index 764d0a1..29a3a19 100644
+--- a/src/frontend/oir/source/hir_import/public_facade.rs
++++ b/src/frontend/oir/source/hir_import/public_facade.rs
+@@ -105,6 +105,38 @@ pub(in crate::frontend) fn import_checked(
+     )
+ }
+ 
++/// Producer orchestration has additional complete transport carriers. Only
++/// this closed entry derives their debit; no external caller supplies a byte
++/// allowance, source owner, witness, fuel or producer-derived compiler fact.
++pub(in crate::frontend) fn import_produced(
++    project: &ProjectSources,
++    observation: &[u8],
++    operation: Operation,
++) -> Result {
++    let defaults = IndexLimits::default();
++    let extra = crate::frontend::hir_producer::named_bytes()
++        .checked_add(crate::frontend::driver::producer_transport_bytes())
++        .and_then(|bytes| u64::try_from(bytes).ok())
++        .ok_or_else(|| refusal("experimental HIR producer carrier accounting overflow"))?;
++    let limited = (|| {
++        Some(IndexLimits {
++            retained: defaults.retained.checked_sub(extra)?,
++            scratch: defaults.scratch.checked_sub(extra)?,
++            // Source-independent dispatch/projection only. Bounded hashing/I/O and
++            // external process costs have their own limits, not this work tariff.
++            work: defaults.work.checked_sub(8_192)?,
++        })
++    })()
++    .ok_or_else(|| refusal("experimental HIR producer resource limit exceeded"))?;
++    execute(
++        project,
++        observation,
++        operation,
++        limited,
++        &mut Allocator::default(),
++    )
++}
++
+ fn execute(
+     project: &ProjectSources,
+     observation: &[u8],
+diff --git a/src/frontend/options.rs b/src/frontend/options.rs
+index d93c2e9..08382a7 100644
+--- a/src/frontend/options.rs
++++ b/src/frontend/options.rs
+@@ -14,6 +14,9 @@ pub enum Route {
+     TypedImport {
+         request: Box<[ImportOptions; 1]>,
+     },
++    TypedProducer {
++        request: Box<[ProducerOptions; 1]>,
++    },
+     TypedFormat {
+         path: String,
+         check: bool,
+@@ -59,6 +62,17 @@ pub struct ImportOptions {
+     pub operation: Operation,
+ }
+ 
++/// Explicit producer-only CLI ownership, separate from the stable import route.
++/// The fallible one-element carrier owns already classified argv strings.
++#[derive(Debug, PartialEq, Eq)]
++pub struct ProducerOptions {
++    pub path: String,
++    pub bundle: String,
++    pub output: Option<String>,
++    pub json: bool,
++    pub operation: Operation,
++}
++
+ /// Transient entry selection, never retained in a checked source program.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub enum EntryPolicy {
+@@ -219,6 +233,8 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+     let mut format_seen = false;
+     let mut import_seen = false;
+     let mut import = None;
++    let mut producer_seen = false;
++    let mut producer = None;
+     let mut json = false;
+     let mut error = None;
+     let mut index = 0;
+@@ -240,6 +256,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             "--message-format",
+             "--entry-mode",
+             "--experimental-hir-import",
++            "--experimental-hir-producers",
+         ]
+         .into_iter()
+         .find(|name| {
+@@ -259,6 +276,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             "--message-format" => &mut format_seen,
+             "--entry-mode" => &mut entry.seen,
+             "--experimental-hir-import" => &mut import_seen,
++            "--experimental-hir-producers" => &mut producer_seen,
+             _ => unreachable!("the option name is selected from a closed list"),
+         };
+         if *seen {
+@@ -281,6 +299,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+                 error.get_or_insert_with(|| format!("{name} requires a value"));
+             }
+             ("--experimental-hir-import", Some(value)) => import = Some(value.to_string()),
++            ("--experimental-hir-producers", Some(value)) => producer = Some(value.to_string()),
+             ("--edition", Some(value @ ("legacy-0.9" | "typed-preview"))) => {
+                 edition = Some(value);
+             }
+@@ -345,6 +364,26 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             "--experimental-hir-import supports only Result entry mode".into()
+         });
+     }
++    if producer_seen
++        && (edition != Some("typed-preview")
++            || !matches!(command, Some("check" | "run" | "compile")))
++    {
++        error.get_or_insert_with(|| {
++            "--experimental-hir-producers requires explicit typed-preview check, run or compile"
++                .into()
++        });
++    }
++    if producer_seen && entry.policy == EntryPolicy::Process {
++        error.get_or_insert_with(|| {
++            "--experimental-hir-producers supports only Result entry mode".into()
++        });
++    }
++    if import_seen && producer_seen {
++        error.get_or_insert_with(|| {
++            "--experimental-hir-import and --experimental-hir-producers are mutually exclusive"
++                .into()
++        });
++    }
+     if format_seen && edition != Some("typed-preview") {
+         error
+             .get_or_insert_with(|| "--message-format requires --edition typed-preview".to_string());
+@@ -450,6 +489,23 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
+             };
+         }
+     }
++    if let Some(bundle) = producer {
++        let Some(path) = path else {
++            return Route::Error {
++                message: format!("typed-preview {command} requires exactly one source path"),
++                json,
++                operation,
++            };
++        };
++        let options = ProducerOptions {
++            path,
++            bundle,
++            output,
++            json,
++            operation,
++        };
++        return producer_route(options, &mut super::project::budget::Allocator::default());
++    }
+     if let Some(observation) = import {
+         let Some(path) = path else {
+             return Route::Error {
+@@ -522,6 +578,36 @@ fn import_route(
+     Route::TypedImport { request }
+ }
+ 
++fn producer_route(
++    options: ProducerOptions,
++    allocator: &mut super::project::budget::Allocator,
++) -> Route {
++    let json = options.json;
++    let operation = options.operation;
++    // One exact, fallible allocation owns the new opt-in carrier. Conversion
++    // cannot need a shrink/reallocation because actual capacity is exactly one.
++    let mut storage = Vec::new();
++    if std::mem::size_of::<ProducerOptions>() as u64
++        > super::declaration_index::IndexLimits::default().retained
++        || allocator
++            .vector_exact(&mut storage, 1, "experimental producer options")
++            .is_err()
++        || storage.capacity() != 1
++    {
++        return Route::Error {
++            message: "cannot allocate experimental producer options".into(),
++            json,
++            operation,
++        };
++    }
++    storage.push(options);
++    let request = storage
++        .into_boxed_slice()
++        .try_into()
++        .expect("one admitted producer option");
++    Route::TypedProducer { request }
++}
++
+ /// A selected formatter has its own text-only, exit-2 error contract.
+ /// Keep it outside Operation so it cannot enter semantic loading or summaries.
+ fn route_format(forwarded: Vec<String>, json: bool) -> Route {
+@@ -1324,3 +1410,333 @@ mod import_options_tests {
+         assert_eq!(std::mem::size_of::<Route>(), 56);
+     }
+ }
++
++#[cfg(test)]
++mod producer_options_tests {
++    use super::*;
++
++    fn parse(values: &[&str]) -> Route {
++        route(
++            &values
++                .iter()
++                .map(|value| (*value).into())
++                .collect::<Vec<_>>(),
++        )
++    }
++
++    fn expect_error(values: &[&str], expected: &str) {
++        match parse(values) {
++            Route::Error { message, .. } | Route::ProcessError { message } => {
++                assert!(message.contains(expected), "{values:?}: {message}");
++            }
++            other => panic!("expected {expected} error for {values:?}, got {other:?}"),
++        }
++    }
++
++    #[test]
++    fn producers_accept_all_result_operations_and_global_option_positions() {
++        for (command, operation) in [
++            ("check", Operation::Check),
++            ("run", Operation::Run),
++            ("compile", Operation::Compile),
++        ] {
++            for prefix in [true, false] {
++                for json in [false, true] {
++                    let mut values = vec!["--edition=typed-preview"];
++                    if prefix {
++                        values.extend(["--experimental-hir-producers", "bundle dir"]);
++                    }
++                    values.extend([command, "source.ox"]);
++                    if !prefix {
++                        values.push("--experimental-hir-producers=bundle dir");
++                    }
++                    if json {
++                        values.push("--message-format=json");
++                    }
++                    if command != "check" {
++                        values.push("--entry-mode=result");
++                    }
++                    if command == "compile" {
++                        values.extend([
++                            "--backend=llvm",
++                            "--target=x86_64-unknown-linux-gnu",
++                            "--output=new.elf",
++                        ]);
++                    }
++                    let Route::TypedProducer { request } = parse(&values) else {
++                        panic!("producer route was not selected for {values:?}");
++                    };
++                    assert_eq!(request[0].path, "source.ox");
++                    assert_eq!(request[0].bundle, "bundle dir");
++                    assert_eq!(request[0].operation, operation);
++                    assert_eq!(request[0].json, json);
++                    assert_eq!(
++                        request[0].output.as_deref(),
++                        (command == "compile").then_some("new.elf")
++                    );
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn producers_require_explicit_typed_edition_and_semantic_command() {
++        for edition in [None, Some("--edition=legacy-0.9")] {
++            let mut values = vec!["run", "missing.ox", "--experimental-hir-producers=bundle"];
++            values.extend(edition);
++            expect_error(&values, "requires explicit typed-preview");
++        }
++        for command in ["fmt", "build", "check-other", "script", "help", "unknown"] {
++            // Place the recognized option before script's command-owned tail.
++            expect_error(
++                &[
++                    "--edition=typed-preview",
++                    "--experimental-hir-producers=bundle",
++                    command,
++                    "missing.ox",
++                ],
++                "requires explicit typed-preview",
++            );
++        }
++        expect_error(
++            &[
++                "--edition=typed-preview",
++                "--experimental-hir-producers=bundle",
++            ],
++            "requires explicit typed-preview",
++        );
++    }
++
++    #[test]
++    fn producers_reject_empty_duplicate_conflicting_and_process_selections() {
++        for selection in [
++            vec!["--experimental-hir-producers"],
++            vec!["--experimental-hir-producers="],
++            vec!["--experimental-hir-producers", ""],
++            vec!["--experimental-hir-producers", "--message-format=text"],
++        ] {
++            let mut values = vec!["run", "missing.ox", "--edition=typed-preview"];
++            values.extend(selection);
++            expect_error(&values, "requires a value");
++        }
++        for selection in [
++            vec![
++                "--experimental-hir-producers=a",
++                "--experimental-hir-producers=b",
++            ],
++            vec![
++                "--experimental-hir-producers",
++                "a",
++                "--experimental-hir-producers",
++                "a",
++            ],
++        ] {
++            let mut values = vec!["run", "missing.ox", "--edition=typed-preview"];
++            values.extend(selection);
++            expect_error(&values, "may only be specified once");
++        }
++        for selection in [
++            [
++                "--experimental-hir-import=wire",
++                "--experimental-hir-producers=bundle",
++            ],
++            [
++                "--experimental-hir-producers=bundle",
++                "--experimental-hir-import=wire",
++            ],
++        ] {
++            let mut values = vec!["run", "missing.ox", "--edition=typed-preview"];
++            values.extend(selection);
++            expect_error(&values, "mutually exclusive");
++        }
++        for command in ["run", "compile"] {
++            for json in [false, true] {
++                let mut values = vec![
++                    command,
++                    "missing.ox",
++                    "--edition=typed-preview",
++                    "--experimental-hir-producers=bundle",
++                    "--entry-mode=process",
++                ];
++                if json {
++                    values.push("--message-format=json");
++                }
++                expect_error(&values, "only Result entry mode");
++                match parse(&values) {
++                    Route::ProcessError { .. } => assert_eq!(command, "run"),
++                    Route::Error { json: actual, .. } => {
++                        assert_eq!(command, "compile");
++                        assert_eq!(actual, json);
++                    }
++                    other => panic!("wrong process error channel: {other:?}"),
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn producers_keep_script_and_separator_ownership() {
++        let values = [
++            "script",
++            "test",
++            "--experimental-hir-producers=bundle",
++            "--experimental-hir-import=wire",
++            "--edition=typed-preview",
++        ];
++        assert_eq!(
++            parse(&values),
++            Route::Legacy(values.iter().map(|value| (*value).into()).collect())
++        );
++        assert_eq!(
++            parse(&[
++                "run",
++                "--edition=typed-preview",
++                "--",
++                "--experimental-hir-producers=bundle"
++            ]),
++            Route::TypedRun {
++                path: "--experimental-hir-producers=bundle".into(),
++                json: false,
++                entry_policy: EntryPolicy::Result,
++            }
++        );
++        let Route::TypedProducer { request } = parse(&[
++            "run",
++            "--edition=typed-preview",
++            "--experimental-hir-producers=bundle",
++            "--",
++            "--experimental-hir-import=literal-source",
++        ]) else {
++            panic!("separator did not preserve a literal producer source");
++        };
++        assert_eq!(request[0].path, "--experimental-hir-import=literal-source");
++        expect_error(
++            &[
++                "run",
++                "--edition=typed-preview",
++                "--experimental-hir-producers=bundle",
++                "--",
++                "source.ox",
++                "--entry-mode=process",
++            ],
++            "exactly one source path",
++        );
++    }
++
++    #[test]
++    fn producers_preserve_compile_backend_output_and_source_validation() {
++        for (tail, expected) in [
++            (vec!["source.ox"], "requires --backend llvm"),
++            (vec!["source.ox", "--backend=llvm"], "requires --output"),
++            (
++                vec!["source.ox", "--backend=other", "--output=new.elf"],
++                "requires --backend llvm",
++            ),
++            (
++                vec![
++                    "source.ox",
++                    "--backend=llvm",
++                    "--output=new.elf",
++                    "--target=other",
++                ],
++                "only --target",
++            ),
++            (
++                vec!["source.ox", "--backend=llvm", "--output="],
++                "requires one nonempty value",
++            ),
++            (
++                vec!["source.ox", "--backend=llvm", "--output=a", "--output=b"],
++                "may occur only once",
++            ),
++            (
++                vec!["--backend=llvm", "--output=new.elf"],
++                "exactly one source path",
++            ),
++            (
++                vec![
++                    "source.ox",
++                    "other.ox",
++                    "--backend=llvm",
++                    "--output=new.elf",
++                ],
++                "exactly one source path",
++            ),
++        ] {
++            let mut values = vec![
++                "compile",
++                "--edition=typed-preview",
++                "--experimental-hir-producers=bundle",
++            ];
++            values.extend(tail);
++            expect_error(&values, expected);
++        }
++        expect_error(
++            &[
++                "check",
++                "source.ox",
++                "--edition=typed-preview",
++                "--experimental-hir-producers=bundle",
++                "--output=new.elf",
++            ],
++            "unsupported option",
++        );
++    }
++
++    #[test]
++    fn producer_box_uses_one_fallible_exact_allocation_and_moves_strings() {
++        let options = || ProducerOptions {
++            path: "source.ox".into(),
++            bundle: "bundle".into(),
++            output: Some("new.elf".into()),
++            json: true,
++            operation: Operation::Compile,
++        };
++        let mut allocator = super::super::project::budget::Allocator {
++            fail_at: Some(1),
++            ..Default::default()
++        };
++        assert!(matches!(
++            producer_route(options(), &mut allocator),
++            Route::Error {
++                json: true,
++                operation: Operation::Compile,
++                ..
++            }
++        ));
++        assert_eq!(allocator.attempts, 1);
++        assert_eq!(allocator.trace[0].kind, "experimental producer options");
++        assert!(!allocator.trace[0].success);
++
++        let mut allocator = super::super::project::budget::Allocator::default();
++        allocator.observer_trace_bound(1).unwrap();
++        let options = options();
++        let original = (
++            options.path.as_ptr(),
++            options.bundle.as_ptr(),
++            options.output.as_ref().unwrap().as_ptr(),
++        );
++        let Route::TypedProducer { request } = producer_route(options, &mut allocator) else {
++            panic!("producer allocation failed");
++        };
++        assert_eq!(allocator.attempts, 1);
++        assert_eq!(allocator.trace.len(), 1);
++        assert_eq!(allocator.trace[0].kind, "experimental producer options");
++        assert_eq!(allocator.trace[0].length, 1);
++        assert_eq!(
++            allocator.trace[0].element_bytes,
++            std::mem::size_of::<ProducerOptions>()
++        );
++        assert!(allocator.trace[0].success);
++        assert_eq!(
++            original,
++            (
++                request[0].path.as_ptr(),
++                request[0].bundle.as_ptr(),
++                request[0].output.as_ref().unwrap().as_ptr(),
++            )
++        );
++        #[cfg(target_pointer_width = "64")]
++        assert_eq!(std::mem::size_of::<Route>(), 56);
++    }
++}

@@ -34,7 +34,7 @@ class SourceAuthorityControls(unittest.TestCase):
             build.prepare(SimpleNamespace(
                 source_root=cls.repo,
                 manifest=cls.repo / 'tests/fixtures/typed_project_source_binding/current-source.json',
-                observer_patch=cls.package / 'observer-u8-v1.patch',
+                observer_patch=cls.package / 'observer-lexer-reservation-v1.patch',
                 observer_patch_sha256=build.LIFECYCLE_PATCH_SHA,
                 out=cls.output))
         cls.manifest = json.loads((cls.output / 'observer-source.json').read_bytes())
@@ -44,13 +44,20 @@ class SourceAuthorityControls(unittest.TestCase):
         import shutil
         prior_root = Path(cls.temp.name) / 'predecessor'
         shutil.copytree(cls.output / 'source', prior_root)
-        subprocess.run(['git', 'apply', '-R', str(cls.package / 'observer-u8-v1.patch')], cwd=prior_root, check=True)
+        subprocess.run(['git', 'apply', '-R', str(cls.package / 'observer-lexer-reservation-v1.patch')], cwd=prior_root, check=True)
         binding_path = cls.repo / 'tests/fixtures/typed_project_source_binding/run.py'
         spec = importlib.util.spec_from_file_location('public_u8_source_binding', binding_path)
         api = importlib.util.module_from_spec(spec); spec.loader.exec_module(api)
         helper = api.load_u8_source({name: (binding_path.parent / name).read_bytes() for name in ('u8_source.py',)})
         inputs = {row['path']: (prior_root / row['path']).read_bytes()
                   for row in json.loads((binding_path.parent / 'current-source.json').read_bytes())['files']}
+        import lexer_reservation_lifecycle as lexer_current
+        outer_patch = (binding_path.parent / 'lexer-reservation-transition-v1.patch').read_bytes()
+        outer_authority = json.loads((binding_path.parent / 'lexer-reservation-authority-v1.json').read_bytes())
+        inputs, touched = api.apply_inverse_patch(inputs, outer_patch, sha(outer_patch), len(outer_patch),
+                                                   tuple(outer_authority['transition_paths']))
+        if list(touched) != outer_authority['transition_paths']:
+            raise Reject('outer lexer predecessor inverse scope')
         byte = api.load_byte_storage({'byte_storage.py': (binding_path.parent / 'byte_storage.py').read_bytes()})
         inputs, _ = byte.inverse(inputs, (binding_path.parent / 'byte-storage-transition.patch').read_bytes(), api)
         cross = api.load_u8_cross_host({'u8_cross_host.py': (binding_path.parent / 'u8_cross_host.py').read_bytes()})
@@ -178,7 +185,7 @@ class SourceAuthorityControls(unittest.TestCase):
         self.assertEqual(initial['CURRENT_SOURCE_SHA'], '35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4')
         self.assertEqual(initial['CACHE_ADMISSION_AUTHORITY_SHA'], authority.CACHE_ADMISSION_AUTHORITY_SHA)
         for field in ('LIFECYCLE_PATCH_SHA', 'ENUM_SOURCE_SHA', 'LLVM_CONTENT_SHA'):
-            self.assertEqual(initial[field], getattr(authority, field))
+            self.assertEqual(initial[field], getattr(__import__('byte_storage_source_authority'), field))
         retained_cross = self.package / 'u8_cross_host_source_authority.py'
         self.assertEqual(sha(retained_cross.read_bytes()), authority.U8_CROSS_HOST_SOURCE_AUTHORITY_SHA)
         cross = {}; exec(compile(retained_cross.read_bytes(), str(retained_cross), 'exec'), cross)
@@ -232,12 +239,12 @@ class SourceAuthorityControls(unittest.TestCase):
             self.assertEqual(getattr(authority, key), old[key], key)
 
     def test_lifecycle_successor_restores_exact_historical_patch(self):
-        current = (self.package / 'observer-u8-v1.patch').read_bytes()
+        current = (self.package / 'observer-lexer-reservation-v1.patch').read_bytes()
         projected = (self.package / 'observer-combined-v1.patch').read_bytes()
         self.assertEqual(sha(projected), self.builder.PROJECTED_LIFECYCLE_PATCH_SHA)
         historical = (self.repo / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
         self.assertEqual(self.builder.verify_lifecycle_successor(current), historical)
-        for changed in (current + b'\n', current.replace(b'EnumSyntaxPolicy', b'OtherSyntaxPolicy'),
+        for changed in (current + b'\n', current.replace(b'ReservationObserver', b'OtherObserver'),
                         current.replace(b'parse_attempt', b'other_attempt')):
             with self.subTest(changed=sha(changed)), self.assertRaises(Reject):
                 self.builder.verify_lifecycle_successor(changed)

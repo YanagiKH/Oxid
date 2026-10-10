@@ -665,7 +665,12 @@ def source_members(repo, tracked):
     names = {row["path"] for row in current["files"]}
     names.update(row["path"] for row in authority["repository_inputs"])
     prefixes = ("src/", "native/", "compiler/", "stdlib/", "rfcs/", ".cargo/", BINDING + "/",
-                "tests/fixtures/fixed_array_unit2d_independent/")
+                "tests/fixtures/fixed_array_unit2d_independent/",
+                "tests/qualification/lexer_reservation_current/",
+                "tests/fixtures/typed_project_source_binding_byte_storage_v1/",
+                "tests/qualification/unit2_u8_current/",
+                "tests/fixtures/typed_project_unit2_independent/",
+                "fixtures/typed-streaming-lexer/")
     selected_names = {name for name in tracked if name.startswith(prefixes)}
     actual_names = set()
     for prefix in prefixes:
@@ -684,7 +689,10 @@ def source_members(repo, tracked):
                   "scripts/preserve_unit3_ci_evidence.py", "docs/architecture/fixed-array-unit2e-native-ci.md",
                   "scripts/replay_fixed_array_unit2d.py", "scripts/replay_fixed_array_unit2d_current.py",
                   "scripts/replay_unit2d_tool_capture.py",
-                  "scripts/test_replay_fixed_array_unit2d.py"))
+                  "scripts/test_replay_fixed_array_unit2d.py",
+                  "scripts/build_streaming_lexer.py", "scripts/build_hir_producers_v2.py",
+                  "fixtures/typed-frontend-v2/sources.json",
+                  "tests/fixtures/producer_diagnostic/provenance.json"))
     require(not any(Path(name).name in ("credentials", "credentials.toml") for name in names),
             "credential files cannot be source or authority inputs")
     return current, sorted(names)

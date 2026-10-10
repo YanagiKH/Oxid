@@ -621,3 +621,17 @@ pub(in crate::frontend::oir::owned) fn integration_measured<T>(
 pub(in crate::frontend::oir::owned) fn integration_enabled() -> bool {
     TRACKING.with(|cell| cell.get().is_some())
 }
+
+/// Read-only test sizing; neither exposes tracker state nor starts tracking.
+#[cfg(test)]
+pub(in crate::frontend::oir::owned) fn integration_tracker_layout(
+) -> (usize, usize, usize, usize, usize, usize) {
+    (
+        std::mem::size_of::<Cell<Option<AllocationStats>>>(),
+        std::mem::align_of::<Cell<Option<AllocationStats>>>(),
+        std::mem::size_of::<AllocationStats>(),
+        std::mem::align_of::<AllocationStats>(),
+        std::mem::size_of::<Option<AllocationStats>>(),
+        std::mem::align_of::<Option<AllocationStats>>(),
+    )
+}

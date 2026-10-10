@@ -1,0 +1,349 @@
+{
+  "schema": "oxid-unit1-lexer-reservation-correspondence-v1",
+  "original": {
+    "path": "reviewer_additional.rs",
+    "bytes": 14752,
+    "sha256": "db72d3efc3ea17abfc5a59f674a0a71b77ee784d2cfb2330e7af103910ecef61"
+  },
+  "derived": {
+    "path": "reviewer_additional.lexer-reservation-v1.rs",
+    "bytes": 16142,
+    "sha256": "90628df4db9b9cd543f80b7b65a484c2317f240258d98940204d6f2707a706ba"
+  },
+  "inverse_sha256": "db72d3efc3ea17abfc5a59f674a0a71b77ee784d2cfb2330e7af103910ecef61",
+  "cases": [
+    {
+      "name": "frontend::project::reviewer_unit1::compatibility_schedule::compatibility_scalar_duplicate_signature_interleaving",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_bytes_exact",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_bytes_over",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_checked_counter_overflow_stays_distinct_from_allocation_failure",
+      "adaptation": "lexer-counter-overflow-only"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_count_overflow_beats_all_dimension_caps",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_dangling_symlink",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_directory_symlink",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_final_directory",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_final_fifo",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_final_symlink",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_intermediate_file",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_lex_before_sibling",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_child_parse_before_descendants",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_depth_exact",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_depth_over",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_dfs_module_major",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_display_components",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_distinct_hardlinks",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_empty_child",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_entries_exact",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_entries_over",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_entry_hardlink_distinct",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_entry_symlink_directory",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_every_controlled_reserve_failure_has_valid_origin",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_exact_and_fold",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_file_local_expr_blocks",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_first_missing_before_collision",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_fold_only",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_frozen_bytes_survive_disk_replacement_and_removal",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_initial_dimension_precedence_over_root_path_cap",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_inline_mod_rejected",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_intermediate_fold_only",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_invalid_utf8",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_line_index_dense_source_is_separately_preflighted",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_load_before_resolution",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_local_keys_keep_file_and_function_owners",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_measure_source_and_ast_layouts",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_minimal",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_missing_unused",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_modules_exact",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_modules_over",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_name_units_exact",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_name_units_over",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_native_path_identity",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_neither_exact_nor_fold",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_nested_mod_rejected",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_no_mod_ox_fallback",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_no_mod_sources_have_no_new_path_or_depth_policy",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_no_textual_mod_discovery",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_origin_bytes_and_three_file_labels",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_oxbc_before_utf8",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_parent_directory_symlink",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_public_module_header",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_reduced_global_limits_and_preflight_traces",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_repeated_entry_path",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_retained_paths_exact_and_one_below",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_root_parse_before_missing",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_scan_caps_and_checked_arithmetic_precede_iterator_error",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_scan_is_complete_bounded_and_order_independent",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_separate_parent_names",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_sibling_exact_collision",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_sibling_fold_collision",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_source_bytes_precede_artifact_and_encoding",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_tokens_exact",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_tokens_over",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_unrelated_malformed",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_unrelated_nonutf8",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_unrelated_special",
+      "adaptation": "unchanged"
+    },
+    {
+      "name": "frontend::project::reviewer_unit1::heldout_utf8_crlf_origins",
+      "adaptation": "unchanged"
+    }
+  ],
+  "label": "lexer token tape",
+  "new_diagnostic": [
+    "E0400",
+    "lex",
+    "token storage resource limit exceeded"
+  ],
+  "old_nonlexer_stage_text_primary_prefix_rules": "retained",
+  "original_roster_sha256": "331bf92273fb3f9904aeff24e279ff546387a211239e0ae7ce1ac20c04468f79",
+  "original_cases": 69,
+  "execution_qualified": false,
+  "current_controls": {
+    "count": 1,
+    "names": [
+      "frontend::project::reviewer_unit1::current_lexer_storage_failure_full_span_and_eof"
+    ],
+    "source": {
+      "path": "unit1_lexer_controls.rs",
+      "bytes": 2834,
+      "sha256": "2ab00168c56dcbab23ba6b61d983127cc59c4b20ca3fe49e34e0032d8a359c09"
+    }
+  },
+  "runner_correspondence": [
+    {
+      "original": {
+        "path": "run.py",
+        "bytes": 10475,
+        "sha256": "dde21d9239b474186a64ddd5b9c31885e3d4435171082da8d1919c78cfad8bff"
+      },
+      "derived": {
+        "path": "unit1_run_current.py",
+        "bytes": 11012,
+        "sha256": "7aeeb11b399ae0ffc7fa794cd1bb31b0a85ddd8f2f8b501cc2edd99451f88f37"
+      },
+      "inverse_sha256": "dde21d9239b474186a64ddd5b9c31885e3d4435171082da8d1919c78cfad8bff",
+      "exact_single_occurrence_seams": 13
+    },
+    {
+      "original": {
+        "path": "run_reviewer.py",
+        "bytes": 4000,
+        "sha256": "68ce63c59f2c65888462b1e928c16f4d70c2902741d54f10c91c5d551fb74b9d"
+      },
+      "derived": {
+        "path": "unit1_run_reviewer_current.py",
+        "bytes": 5235,
+        "sha256": "6af2f1a7a5226db7b2ec3ca506b73543183723979970a5c9ce316285aac80c54"
+      },
+      "inverse_sha256": "68ce63c59f2c65888462b1e928c16f4d70c2902741d54f10c91c5d551fb74b9d",
+      "exact_single_occurrence_seams": 5
+    }
+  ],
+  "profiles": [
+    "debug",
+    "release"
+  ],
+  "original_cases_per_profile": 69,
+  "current_controls_per_profile": 1
+}

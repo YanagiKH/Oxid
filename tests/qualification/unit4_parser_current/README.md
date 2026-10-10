@@ -1,3 +1,40 @@
+# Fallible lexer current-parser source successor
+
+The reviewed compiler checkpoint is `c8e9a72afd9866f32b96f98ae24f61390039f421`,
+tree `9b35515f096b5619d4d5b3d4b0cb88ea2ccf2c37`; selected source manifest
+SHA-256 is `aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633`.
+The complete maps remain 539 base, 542 observer and 542 control members.
+The historical-to-current delta has 341 paths: `project/tests.rs` now also
+differs from its historical body, without adding any selected input.
+
+`byte-storage-authority-v1.json` preserves the previous authority byte-for-byte.
+`lexer_reservation.py` verifies the complete exact outer inverse, preserves all
+old semantic/policy/dependency fields, and uses the unchanged public historical
+composers to authenticate predecessor relationships. `compose_division_lexer`
+remains byte-identical. The new current branch inserts one retained token hook
+immediately after the shared successful push. The budget reserve hook retains
+its original location before trace insertion. Control bodies receive neither
+hook. Every other instrumented body remains byte-identical to its predecessor.
+
+`authority.json` binds the complete maps and candidate manifest.
+`lexer-reservation-composition-v1.json` records exact new hook identities and
+inverses. The original 638 observations, 12 passivity pairs, closed policies,
+semantic amendments, dependency closure and host obligations are unchanged.
+Source-only admission and controls do not qualify runtime hook counts, historical
+token-event equality, no-subsequent-work behavior, or native/hosted execution.
+Those execution gates remain required after independent final review.
+
+The early authenticated-row fence is an implementation awaiting independent
+acceptance. It compares incoming manifest rows with the pinned outer source
+authority before preflight or materialization, stripping only `mode` and
+`git_blob`. Valid inputs still run every complete admission, whole-manifest
+comparison and exact inverse. This source-authority check changes no production
+diagnostic, resource cap, accepted domain, policy or oracle. The original
+mutation test roster remains, with one additional preflight/materialization
+sentinel in the six new lexer-adapter controls.
+
+The following sections are retained predecessor documentation.
+
 # RFC0031 standalone byte-storage source successor
 
 Current reviewed source checkpoint: `e3c1b4a1a3ef457326f11a802896c125202fe797`. Full Git tree:

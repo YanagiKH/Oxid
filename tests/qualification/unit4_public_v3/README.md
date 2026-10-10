@@ -1,3 +1,31 @@
+# Fallible lexer current lifecycle successor
+
+Reviewed compiler checkpoint: `c8e9a72afd9866f32b96f98ae24f61390039f421`;
+tree `9b35515f096b5619d4d5b3d4b0cb88ea2ccf2c37`. Current source manifest:
+`aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633`.
+The complete ordinary/lifecycle maps remain 376/377 members; all 288
+`src`/`native` members and 78 fixture bodies are included.
+
+`observer-lexer-reservation-v1.patch` is the new exact-offset overlay.
+`lexer-reservation-lifecycle-v1.json` binds both complete current maps, both
+complete predecessor maps, and every inserted byte. One attempt runs at
+`lex_core` entry; one completion follows the successful EOF append. Delegating
+wrappers receive no hook. Every nonlexer insertion remains byte-identical.
+
+`byte_storage_source_authority.py` preserves the previous authority unchanged;
+`observer-u8-v1.patch` and every earlier patch remain unchanged. The source-only
+controls prove exact forward/inverse recovery, all 16 existing-body hunk
+contexts, stale/duplicate/reordered patch rejection, and missing/double/wrapper
+hook rejection. The retained predecessor observer map was independently
+reconstructed and matched its original `8805b56d...` digest.
+
+Preparation authenticates complete source membership, maps and exact inverse
+before creating output. Source-only controls do not establish runtime event
+cardinality, token-stream equality, semantic/resource/native execution or hosted
+qualification. Those gates remain required against the final reviewed adapter.
+
+The following sections are retained predecessor documentation.
+
 # RFC0031 standalone byte-storage source successor
 
 Current reviewed source checkpoint: `e3c1b4a1a3ef457326f11a802896c125202fe797`. Full Git tree:

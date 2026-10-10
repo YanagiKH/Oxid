@@ -219,6 +219,30 @@ class RunnerControls(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.source_inventory(self.root)
 
+    def test_current_reviewed_fixture_outside_legacy_roots_is_retained(self):
+        for name in ('Cargo.toml', 'Cargo.lock', 'build.rs',
+                     'tests/fixtures/typed_project_source_binding/current-source.json',
+                     'scripts/verify_bounded_enum_native.py'):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('fixture')
+        name = 'tests/fixtures/current-extra/body.txt'
+        path = self.root / name
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b'complete compile-time fixture')
+        row = {'path': name, 'bytes': path.stat().st_size, 'sha256': runner.digest(path)}
+        reviewed = {'files': [row]}
+        actual = runner.source_inventory(self.root, reviewed)
+        self.assertEqual(actual[name], row['sha256'])
+        self.assertIn('tests/fixtures/typed_project_source_binding/current-source.json', actual)
+        path.write_bytes(b'changed fixture')
+        with self.assertRaisesRegex(ValueError, 'reviewed input changed'):
+            runner.source_inventory(self.root, reviewed)
+        path.unlink()
+        path.symlink_to(self.root / 'Cargo.toml')
+        with self.assertRaisesRegex(ValueError, 'reject symlink'):
+            runner.source_inventory(self.root, reviewed)
+
     def test_relocated_batch_fixture_is_in_source_inventory(self):
         for name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
             (self.root / name).write_text('fixture')

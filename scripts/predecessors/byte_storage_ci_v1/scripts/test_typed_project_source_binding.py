@@ -1,0 +1,3667 @@
+"""Source-view admission controls; no compiler build or semantic expectation."""
+from contextlib import ExitStack
+import importlib.util
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.dont_write_bytecode = True
+REPO = Path(__file__).resolve().parents[1]
+PACKAGE = REPO / "tests/fixtures/typed_project_source_binding"
+spec = importlib.util.spec_from_file_location("source_binding", PACKAGE / "run.py")
+binding = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(binding)
+
+
+class SourceBindingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.captured = binding.preflight(REPO)
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.repo = self.root / "repo"
+        inputs = dict(self.captured["inputs"])
+        inputs.update(self.captured["references"])
+        inputs.update({binding.U2 + "/" + name: data for name, data in self.captured["historical_bytes"].items()})
+        binding.materialize(self.repo, inputs)
+        package_inputs = dict(self.captured["package_bytes"])
+        package_inputs["package-manifest.json"] = self.captured["package_manifest"]
+        self.package = self.root / "package"
+        binding.materialize(self.package, package_inputs)
+
+    def rejects(self, text):
+        with self.assertRaisesRegex(binding.BindingError, text):
+            binding.preflight(self.repo, self.package)
+
+    def rehash_package(self):
+        """Model coherent metadata tampering without replacing the trusted helper."""
+        manifest = binding.read_json(self.package / "package-manifest.json")
+        manifest["files"] = [binding.entry(row["path"], (self.package / row["path"]).read_bytes())
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "package-manifest.json", manifest)
+
+    def rejects_before_materialization(self, text):
+        output = self.root / ("rejected-" + binding.uuid.uuid4().hex)
+        sentinel = self.root / "tool-ran"
+        tool = self.root / "cargo"
+        tool.write_text("#!/bin/sh\ntouch '" + str(sentinel) + "'\nexit 0\n")
+        tool.chmod(0o755)
+        result = subprocess.run([sys.executable, "-B", str(self.package / "run.py"), "run-unit2",
+                                 "--repo", str(self.repo), "--output", str(output),
+                                 "--cargo", str(tool), "--rustc", str(tool)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(text, result.stderr)
+        failure = binding.read_json(output / "failure.json")
+        self.assertEqual(failure["compiler_executions"], 0)
+        self.assertFalse(failure["semantic_pass"])
+        self.assertFalse(sentinel.exists())
+        for name in ("plan.json", "compatibility", "archived-selected", "result.json"):
+            self.assertFalse((output / name).exists(), name)
+
+    def test_current_and_archived_views_are_distinct_and_exact(self):
+        captured = binding.preflight(self.repo, self.package)
+        self.assertEqual(len(captured["inputs"]), binding.load_byte_storage(captured["package_bytes"]).CURRENT_MEMBERS)
+        self.assertEqual(len(captured["cache_admission_inputs"]), 345)
+        self.assertEqual(len(captured["stdin_inputs"]), 252)
+        self.assertEqual(len(captured["enum_inputs"]), 237)
+        self.assertEqual(len(captured["slices_inputs"]), 188)
+        self.assertEqual(len(captured["division_inputs"]), 185)
+        self.assertEqual(len(captured["combined_inputs"]), 185)
+        self.assertEqual(len(captured["formatter_inputs"]), 133)
+        self.assertEqual(len(captured["predecessor_inputs"]), 129)
+        self.assertEqual(len(captured["archived"]), 117)
+        self.assertNotEqual(captured["inputs"]["src/frontend/driver.rs"], captured["archived"]["src/frontend/driver.rs"])
+        output = self.root / "archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, captured)
+        self.assertEqual(receipt["compiler_executions"], 0)
+        self.assertFalse(receipt["semantic_pass"])
+        self.assertEqual(receipt["division_inverse_touched"], list(binding.DIVISION_PATHS))
+        self.assertEqual(receipt["division_inverse_patch_sha256"], binding.DIVISION_PATCH_SHA)
+        self.assertEqual(receipt["combined_source_sha256"], binding.COMBINED_SOURCE_SHA)
+        self.assertEqual(receipt["slices_inverse_touched"], list(binding.SLICES_PATHS))
+        self.assertEqual(receipt["slices_inverse_patch_sha256"], binding.SLICES_PATCH_SHA)
+        self.assertEqual(receipt["division_source_sha256"], binding.DIVISION_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", captured["selected"]["files"], exact=True)
+
+
+    def test_enum_inverse_restores_exact_projected_predecessor(self):
+        restored, touched = binding.inverse_enum_patch(
+            self.captured["enum_inputs"], self.captured["package_bytes"]["enum-transition.patch"])
+        self.assertEqual(restored, self.captured["projected_inputs"])
+        binding.check_bytes(restored, self.captured["projected_source"]["files"])
+        self.assertEqual(touched, list(binding.ENUM_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.ENUM_ADDITIONS)), (102, 201, 36))
+        self.assertEqual(set(self.captured["enum_inputs"]) - set(restored), set(binding.ENUM_ADDITIONS))
+        self.assertEqual(len([p for p in self.captured["enum_inputs"] if p.startswith(("src/", "native/"))]), 179)
+        self.assertEqual(self.captured["enum_source"]["reviewed_source_head"],
+                         "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd")
+        self.assertEqual(self.captured["enum_source"]["source_only_tree"],
+                         "4970ee660f670cfcb23f42a9cb182a4ca7996388")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["projected-source.json"]),
+                         "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304")
+
+    def test_byte_storage_exact_inverse_and_forward_preserves_cross_host_inputs(self):
+        helper = binding.load_byte_storage(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["byte-storage-transition.patch"]
+        restored, touched = helper.inverse(self.captured["inputs"], raw, binding)
+        self.assertEqual(restored, self.captured["u8_cross_host_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual(len(restored), 363)
+        self.assertEqual(set(self.captured["inputs"]) - set(restored), set(helper.ADDITIONS) | set(helper.FIXTURE_ADDITIONS))
+        binding.check_bytes(restored, self.captured["u8_cross_host_source"]["files"])
+        forward = self.root / "byte-storage-forward"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "byte-storage-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["current"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, raw, binding)
+
+    def test_byte_storage_complete_membership_identities_and_include_closure(self):
+        helper = binding.load_byte_storage(self.captured["package_bytes"], self.package)
+        scanner = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        authority = self.captured["byte_storage_authority"]
+        self.assertEqual(authority["current_input_identities"], [
+            helper.identity(name, body, binding) for name, body in self.captured["inputs"].items()])
+        current = scanner.include_directives(self.captured["inputs"], binding)
+        previous = scanner.include_directives(self.captured["u8_cross_host_inputs"], binding)
+        self.assertEqual(len(previous), 136)
+        self.assertTrue(all(row in current for row in previous))
+        self.assertEqual([row for row in current if row not in previous], list(helper.INCLUDE_ADDITIONS))
+        self.assertEqual(current, authority["compile_time_include_directives"])
+        self.assertEqual(len(authority["compile_time_fixture_inputs"]), helper.FIXTURE_MEMBERS)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["u8-cross-host-source.json"]), helper.PREDECESSOR_SHA)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["u8-cross-host-authority.json"]),
+                         'c602ed97acae3437929069a2aa01244de9d54a9611167e0abefa289f6aa3c26c')
+
+    def test_byte_storage_coherent_tampering_rejects_before_materialization(self):
+        for name, error in (
+            ("current-source.json", "unapproved current source manifest"),
+            ("u8-cross-host-source.json", "unapproved cross-host predecessor source manifest"),
+            ("byte-storage-authority.json", "stale byte storage source authority"),
+            ("byte-storage-transition.patch", "wrong transition patch"),
+            ("byte_storage.py", "unapproved byte storage source helper"),
+        ):
+            original = (self.package / name).read_bytes()
+            (self.package / name).write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                self.rejects(error)
+                self.rejects_before_materialization(error)
+            (self.package / name).write_bytes(original)
+            self.rehash_package()
+
+    def test_byte_storage_each_source_and_membership_reject_before_predecessor(self):
+        helper = binding.load_byte_storage(self.captured["package_bytes"], self.package)
+        for name in helper.PATHS:
+            path = self.repo / name
+            original = path.read_bytes()
+            with self.subTest(path=name), patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                path.unlink()
+                self.rejects("missing regular input")
+                path.write_bytes(original + b"\n")
+                self.rejects("changed input")
+                path.write_bytes(original)
+                path.chmod(0o755)
+                self.rejects("changed input mode")
+                path.chmod(0o644)
+        (self.repo / "src/byte_storage_unlisted.rs").write_bytes(b"// unauthorized\n")
+        self.rejects_before_materialization("missing or extra compiler source member")
+
+    def test_byte_storage_internal_authority_checks_are_independent(self):
+        helper = binding.load_byte_storage(self.captured["package_bytes"], self.package)
+        original = self.captured["byte_storage_authority"]
+        variants = (
+            ("transition_paths", list(reversed(helper.PATHS))), ("compiler_additions", ["unlisted"]),
+            ("fixture_additions", ["unlisted"]), ("removed_paths", ["src/main.rs"]),
+            ("source_only_tree", "0" * 40), ("base_head", "0" * 40),
+            ("current_source_members", helper.CURRENT_MEMBERS - 1),
+            ("current_input_identities", original["current_input_identities"][:-1]),
+            ("compile_time_fixture_inputs", original["compile_time_fixture_inputs"][:-1]),
+            ("compile_time_include_directives", original["compile_time_include_directives"][:-1]),
+            ("compile_time_include_additions", [{"unlisted": True}]), ("transition_inputs", []),
+        )
+        for field, value in variants:
+            raw = binding.encoded({**original, field: value})
+            package_bytes = dict(self.captured["package_bytes"], **{"byte-storage-authority.json": raw})
+            with self.subTest(field=field), patch.object(helper, "AUTHORITY_SHA", binding.digest(raw)), \
+                 patch.object(helper, "AUTHORITY_BYTES", len(raw)), self.assertRaises(binding.BindingError):
+                helper.admit(self.repo, package_bytes, binding)
+
+    def test_byte_storage_requires_every_changed_hunk_context(self):
+        helper = binding.load_byte_storage(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["byte-storage-transition.patch"]
+        sections = [b"diff --git " + part for part in raw.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), len(helper.PATHS))
+        for name, section in zip(helper.PATHS, sections):
+            for hunk in (line for line in section.splitlines() if line.startswith(b"@@ ")):
+                with self.subTest(path=name, hunk=hunk):
+                    inputs = dict(self.captured["inputs"])
+                    offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                    lines = inputs[name].splitlines(keepends=True)
+                    lines[offset] = b"X" + lines[offset]
+                    inputs[name] = b"".join(lines)
+                    with self.assertRaisesRegex(binding.BindingError, "transition current context differs|added transition content differs"):
+                        helper.inverse(inputs, raw, binding)
+
+    def test_u8_cross_host_exact_inverse_and_forward_preserves_363_inputs(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-cross-host-transition.patch"]
+        restored, touched = helper.inverse(self.captured["u8_cross_host_inputs"], raw, binding)
+        self.assertEqual(restored, self.captured["u8_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(touched), len(restored)), (2, 363))
+        self.assertEqual(set(restored), set(self.captured["u8_cross_host_inputs"]))
+        binding.check_bytes(restored, self.captured["u8_source"]["files"])
+        forward = self.root / "cross-host-forward"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "u8-cross-host-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["u8_cross_host_source"]["files"], exact=True)
+        for old in (restored, self.captured["cache_admission_inputs"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(old, raw, binding)
+
+    def test_u8_cross_host_retains_original_u8_and_accounting_bytes(self):
+        expected = {
+            "u8-source.json": "35ee91911bb62c38c831aecb97c918bd14d9516013f5da3e62f445a1153e1cc4",
+            "u8-authority.json": "407d3319bbc2dc404d65768cbe117d314dc486eb5b99169e0104c5536c029cda",
+            "u8-transition.patch": "133d3a599b7c95929d4b691b7390645d0fca44d8fe0fff40e1fbc79c11091d27",
+            "u8_source.py": "a89918a6016a008a44ad0e0c8afe8771d225ee3fb8cf3ea56c32acc5ac3922ec",
+            "unit2-u8-resource-authority.json": "9cad87cddf974c53b94bb5883884fd895ca50eef6ea939b300dcbcd09930d612",
+            "unit2_u8_resource.py": "eb7c611e986a46d8468edc57a51b7ba708dbac81eb7d0a05bde190f2a530394b",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["u8_source"]["reviewed_source_head"],
+                         "5e4875d19961b4eba8e465c915ac676c54a9926e")
+        self.assertEqual(self.captured["u8_source"]["source_only_tree"],
+                         "4c687ed5ead4786e34cea154e3b263c00bd1fd1b")
+        self.assertEqual(len(self.captured["u8_inputs"]), 363)
+        self.assertEqual(len(self.captured["archived"]), 117)
+        self.assertNotIn("u8_cross_host_helper", self.captured)
+
+    def test_u8_cross_host_complete_identities_and_compile_time_closure(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        authority = self.captured["u8_cross_host_authority"]
+        self.assertEqual(authority["current_input_identities"], [
+            helper.identity(name, data, binding) for name, data in self.captured["u8_cross_host_inputs"].items()])
+        self.assertEqual(helper.include_directives(self.captured["u8_cross_host_inputs"], binding),
+                         helper.include_directives(self.captured["u8_inputs"], binding))
+        self.assertEqual(authority["compile_time_include_directives"],
+                         self.captured["u8_authority"]["compile_time_include_directives"])
+        self.assertEqual(authority["compile_time_fixture_inputs"],
+                         self.captured["u8_authority"]["compile_time_fixture_inputs"])
+        self.assertEqual((len(authority["compile_time_fixture_inputs"]),
+                          len(authority["compile_time_include_directives"])), (78, 136))
+        for name in helper.PATHS:
+            result = subprocess.run(["git", "hash-object", "--stdin"], input=self.captured["u8_cross_host_inputs"][name],
+                                    capture_output=True, check=True, timeout=30)
+            self.assertEqual(helper.identity(name, self.captured["u8_cross_host_inputs"][name], binding)["git_blob"],
+                             result.stdout.decode().strip())
+
+    def test_u8_cross_host_coherent_package_tampering_fails_before_u8(self):
+        for name, error in (
+            ("current-source.json", "unapproved current source manifest"),
+            ("u8-source.json", "unapproved u8 predecessor source manifest"),
+            ("u8-cross-host-authority.json", "stale u8 cross-host source authority"),
+            ("u8-cross-host-transition.patch", "wrong transition patch"),
+            ("u8_cross_host.py", "unapproved u8 cross-host source helper"),
+        ):
+            original = (self.package / name).read_bytes()
+            (self.package / name).write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                self.rejects(error)
+                self.rejects_before_materialization(error)
+            (self.package / name).write_bytes(original)
+            self.rehash_package()
+
+    def test_u8_cross_host_checks_reconstructed_inputs_before_predecessor(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        for label, change in (("changed", lambda d: d.__setitem__("src/frontend/parser.rs", d["src/frontend/parser.rs"] + b"\n")),
+                              ("missing", lambda d: d.pop("src/frontend/parser.rs")),
+                              ("extra", lambda d: d.__setitem__("src/extra.rs", b""))):
+            damaged = dict(self.captured["u8_inputs"])
+            change(damaged)
+            with self.subTest(kind=label), patch.object(binding, "load_u8_cross_host", return_value=helper), \
+                 patch.object(helper, "inverse", return_value=(damaged, list(helper.PATHS))), \
+                 patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                self.rejects("changed reconstructed input|missing or extra reconstructed member")
+
+    def test_u8_cross_host_requires_every_changed_hunk_context(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-cross-host-transition.patch"]
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 2)
+        for name, section in zip(helper.PATHS, sections):
+            for hunk in (line for line in section.splitlines() if line.startswith(b"@@ ")):
+                with self.subTest(path=name, hunk=hunk):
+                    inputs = dict(self.captured["u8_cross_host_inputs"])
+                    offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                    lines = inputs[name].splitlines(keepends=True)
+                    lines[offset] = b"X" + lines[offset]
+                    inputs[name] = b"".join(lines)
+                    with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                        helper.inverse(inputs, raw, binding)
+
+    def test_u8_cross_host_rejects_reordered_missing_and_duplicate_patch_members(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-cross-host-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            helper.inverse(self.captured["u8_cross_host_inputs"], raw + b"\n", binding)
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        for changed, error in ((b"".join(reversed(sections)), "wrong transition scope"),
+                               (b"".join(sections[:-1]), "wrong transition scope"),
+                               (raw + sections[0], "duplicate transition member|transition current context differs")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, error):
+                binding.apply_inverse_patch(self.captured["u8_cross_host_inputs"], changed, binding.digest(changed),
+                                            len(changed), helper.PATHS)
+
+    def test_u8_cross_host_each_changed_source_fails_before_predecessor(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        for name in helper.PATHS:
+            path = self.repo / name
+            original = path.read_bytes()
+            with self.subTest(path=name), patch.object(binding, "load_u8_source", side_effect=AssertionError("predecessor ran")):
+                path.unlink()
+                self.rejects("missing regular input")
+                path.write_bytes(original + b"\n")
+                self.rejects("changed input")
+                path.write_bytes(original)
+                path.chmod(0o755)
+                self.rejects_before_materialization("changed input mode")
+                path.chmod(0o644)
+        (self.repo / "src/frontend/cross_host_unlisted.rs").write_bytes(b"// unexpected\n")
+        self.rejects_before_materialization("missing or extra compiler source member")
+
+    def test_u8_cross_host_internal_authority_checks_are_independent(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        original = self.captured["u8_cross_host_authority"]
+        predecessor_repo = self.root / "cross-host-authority-controls"
+        binding.materialize(predecessor_repo, self.captured["u8_cross_host_inputs"])
+        variants = (
+            ("transition_paths", list(reversed(helper.PATHS)), "stale u8 cross-host source transition authority"),
+            ("compiler_additions", ["unlisted"], "stale u8 cross-host source transition authority"),
+            ("fixture_additions", ["unlisted"], "stale u8 cross-host source transition authority"),
+            ("source_only_tree", "0" * 40, "stale u8 cross-host source transition authority"),
+            ("base_head", "0" * 40, "stale u8 cross-host source transition authority"),
+            ("current_source_members", 362, "stale u8 cross-host source transition authority"),
+            ("current_input_identities", original["current_input_identities"][:-1], "stale u8 cross-host complete input identities"),
+            ("compile_time_fixture_inputs", original["compile_time_fixture_inputs"][:-1], "stale u8 cross-host compile-time fixture closure"),
+            ("compile_time_include_directives", original["compile_time_include_directives"][:-1], "stale u8 cross-host compile-time include inventory"),
+            ("transition_inputs", [], "stale u8 cross-host transition input identities"),
+        )
+        for field, value, error in variants:
+            raw = binding.encoded({**original, field: value})
+            package_bytes = dict(self.captured["package_bytes"], **{"u8-cross-host-authority.json": raw, "current-source.json": self.captured["package_bytes"]["u8-cross-host-source.json"]})
+            with self.subTest(field=field), patch.object(helper, "AUTHORITY_SHA", binding.digest(raw)), \
+                 patch.object(helper, "AUTHORITY_BYTES", len(raw)), self.assertRaisesRegex(binding.BindingError, error):
+                helper.admit(predecessor_repo, package_bytes, binding)
+
+    def test_u8_cross_host_unit2_keeps_accounting_source_distinct_from_execution(self):
+        receipt = self.captured["u8_accounting_source_binding"]
+        self.assertEqual(receipt["current_source"],
+                         binding.entry("current-source.json", self.captured["package_bytes"]["current-source.json"]))
+        self.assertEqual(receipt["retained_accounting_source"],
+                         binding.entry("u8-source.json", self.captured["package_bytes"]["u8-source.json"]))
+        self.assertNotEqual(receipt["current_source"]["sha256"], receipt["retained_accounting_source"]["sha256"])
+        self.assertEqual(receipt["source_dependencies"], self.captured["u8_index_resource_authority"]["source_dependencies"])
+        self.assertEqual(len(receipt["source_dependencies"]), 3)
+        for row in receipt["source_dependencies"]:
+            self.assertEqual(self.captured["inputs"][row["path"]], self.captured["u8_inputs"][row["path"]])
+        output = self.root / "cross-host-unit2"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        self.assertEqual(seam["u8_accounting_source_binding"], receipt)
+        self.assertEqual(binding.digest(self.captured["u8_index_resource"]),
+                         "1b717bef7b1d6ffebcab1fe245f60ef95ba2b4819bccddad90de078fcee05831")
+
+    def test_u8_cross_host_refuses_changed_accounting_dependency(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        changed = {**self.captured["u8_cross_host_source"], "files": [dict(row) for row in self.captured["u8_cross_host_source"]["files"]]}
+        names = [row["path"] for row in self.captured["u8_index_resource_authority"]["source_dependencies"]]
+        for name in names:
+            row = next(row for row in changed["files"] if row["path"] == name)
+            original = row["sha256"]
+            row["sha256"] = "0" * 64
+            admitted = (changed, self.captured["u8_cross_host_inputs"], self.captured["u8_cross_host_authority"],
+                        self.captured["u8_inputs"], self.captured["u8_cross_host_touched"])
+            with self.subTest(path=name), patch.object(binding, "load_u8_cross_host", return_value=helper), \
+                 patch.object(helper, "admit", return_value=admitted):
+                self.rejects("changed retained Unit2 u8 accounting dependency")
+            row["sha256"] = original
+
+    def test_u8_cross_host_archive_receipt_names_both_source_stages(self):
+        helper = binding.load_u8_cross_host(self.captured["package_bytes"], self.package)
+        output = self.root / "cross-host-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["u8_cross_host_inverse_touched"], list(helper.PATHS))
+        self.assertEqual(receipt["u8_cross_host_inverse_patch_sha256"], helper.PATCH_SHA)
+        self.assertEqual(receipt["u8_source_sha256"], helper.U8_SOURCE_SHA)
+        self.assertEqual(receipt["u8_cross_host_source_sha256"], helper.SOURCE_SHA)
+        self.assertEqual(len(receipt["archived_files"]), 117)
+        self.assertEqual(receipt["compiler_executions"], 0)
+        self.assertFalse(receipt["semantic_pass"])
+        self.assertFalse(receipt["direct_current_execution"])
+
+    def test_u8_exact_inverse_and_forward_preserves_complete_predecessor(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-transition.patch"]
+        restored, touched = helper.inverse(self.captured["u8_inputs"], raw, binding)
+        self.assertEqual(restored, self.captured["cache_admission_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(touched), len(helper.ADDITIONS), len(restored)), (96, 18, 345))
+        self.assertEqual(set(self.captured["u8_inputs"]) - set(restored), set(helper.ADDITIONS))
+        binding.check_bytes(restored, self.captured["cache_admission_source"]["files"])
+        forward = self.root / "u8-forward"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "u8-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["u8_source"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, raw, binding)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(self.captured["cache_preservation_inputs"], raw, binding)
+
+    def test_u8_source_git_identities_and_preserved_authorities(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        self.assertEqual(self.captured["u8_source"]["reviewed_source_head"], "5e4875d19961b4eba8e465c915ac676c54a9926e")
+        self.assertEqual(self.captured["u8_source"]["source_only_tree"], "4c687ed5ead4786e34cea154e3b263c00bd1fd1b")
+        expected = {
+            "cache-admission-source.json": "82cd3f0733ee6b457341e7607ff3883593138aa64b3763e217f0e53ef1662c67",
+            "cache-admission-authority.json": "07ff6c8427fdc108a2d995a6d94a5788df77e0f85d12892446956eb9d6a43440",
+            "cache-admission-transition.patch": "302fab79c45fb34a41a3a641e44fe0880bbfb765554dfe306bcc07cdf67cc01d",
+            "cache_admission.py": "f6ef6f7e5dcb01d8f21bdc4911bf7072f401750c971b0d5c6f136935608e0077",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        authority = self.captured["u8_authority"]
+        self.assertEqual(authority["current_input_identities"], [
+            helper.identity(name, body, binding) for name, body in self.captured["u8_inputs"].items()])
+        sample = "src/frontend/parser/conversions.rs"
+        result = subprocess.run(["git", "hash-object", "--stdin"], input=self.captured["u8_inputs"][sample],
+                                capture_output=True, check=True, timeout=30)
+        self.assertEqual(helper.identity(sample, self.captured["u8_inputs"][sample], binding)["git_blob"],
+                         result.stdout.decode().strip())
+        self.assertNotIn("u8_helper", self.captured)
+        output = self.root / "u8-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["u8_inverse_touched"], list(helper.PATHS))
+        self.assertEqual(receipt["u8_inverse_patch_sha256"], helper.PATCH_SHA)
+        self.assertEqual(receipt["cache_admission_source_sha256"], helper.CACHE_ADMISSION_SOURCE_SHA)
+        self.assertFalse(receipt["semantic_pass"])
+        self.assertEqual(receipt["compiler_executions"], 0)
+
+    def test_u8_compile_time_closure_preserves_every_old_directive_and_fixture(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        before = helper.include_directives(self.captured["cache_admission_inputs"], binding)
+        current = helper.include_directives(self.captured["u8_inputs"], binding)
+        self.assertEqual((len(before), len(current)), (134, 136))
+        self.assertEqual([row for row in current if row not in before], list(helper.INCLUDE_ADDITIONS))
+        self.assertTrue(all(row in current for row in before))
+        fixtures = self.captured["u8_authority"]["compile_time_fixture_inputs"]
+        self.assertEqual(len(fixtures), 78)
+        for row in fixtures:
+            name = row["path"]
+            self.assertEqual(self.captured["u8_inputs"][name], self.captured["cache_admission_inputs"][name])
+            self.assertEqual(row, helper.identity(name, self.captured["u8_inputs"][name], binding))
+        self.assertNotEqual(self.captured["u8_inputs"][binding.COMPILE_FIXTURE_SOURCE],
+                            self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE])
+        self.assertEqual(binding.re.findall(binding.COMPILE_FIXTURE_PATTERN,
+                            self.captured["u8_inputs"][binding.COMPILE_FIXTURE_SOURCE]),
+                         binding.re.findall(binding.COMPILE_FIXTURE_PATTERN,
+                            self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]))
+
+    def test_u8_coherent_package_tampering_rejects_before_predecessor(self):
+        for name, error in (
+            ("cache-admission-source.json", "unapproved cache admission predecessor source manifest"),
+            ("u8-authority.json", "stale u8 source authority"),
+            ("u8-transition.patch", "wrong transition patch"),
+            ("u8_source.py", "unapproved u8 source helper"),
+        ):
+            original = (self.package / name).read_bytes()
+            (self.package / name).write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_cache_admission", side_effect=AssertionError("predecessor ran")):
+                self.rejects(error)
+            (self.package / name).write_bytes(original)
+            self.rehash_package()
+
+    def test_u8_reconstructed_bytes_checked_before_predecessor(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        for label, change in (("changed", lambda d: d.__setitem__("src/frontend/parser.rs", d["src/frontend/parser.rs"] + b"\n")),
+                              ("missing", lambda d: d.pop("src/frontend/parser.rs")),
+                              ("extra", lambda d: d.__setitem__("src/extra.rs", b""))):
+            damaged = dict(self.captured["cache_admission_inputs"])
+            change(damaged)
+            with self.subTest(kind=label), patch.object(binding, "load_u8_source", return_value=helper), \
+                 patch.object(helper, "inverse", return_value=(damaged, list(helper.PATHS))), \
+                 patch.object(binding, "load_cache_admission", side_effect=AssertionError("predecessor ran")):
+                self.rejects("changed reconstructed input|missing or extra reconstructed member")
+
+    def test_u8_each_changed_context_is_required_by_the_inverse(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-transition.patch"]
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 96)
+        for name, section in zip(helper.PATHS, sections):
+            with self.subTest(path=name):
+                inputs = dict(self.captured["u8_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    helper.inverse(inputs, raw, binding)
+
+    def test_u8_inverse_rejects_unapproved_and_reordered_missing_duplicate_paths(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        raw = self.captured["package_bytes"]["u8-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            helper.inverse(self.captured["u8_inputs"], raw + b"\n", binding)
+        sections = [b"diff --git " + item for item in raw.split(b"diff --git ")[1:]]
+        for changed, error in ((b"".join(reversed(sections)), "wrong transition scope"),
+                               (b"".join(sections[:-1]), "wrong transition scope"),
+                               (raw + sections[0], "duplicate transition member|transition current context differs")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, error):
+                binding.apply_inverse_patch(self.captured["u8_inputs"], changed, binding.digest(changed),
+                                            len(changed), helper.PATHS)
+
+    def test_u8_each_addition_missing_or_changed_fails_before_predecessor(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        for name in helper.ADDITIONS:
+            path = self.repo / name
+            original = path.read_bytes()
+            with self.subTest(path=name), patch.object(binding, "load_cache_admission", side_effect=AssertionError("predecessor ran")):
+                path.unlink()
+                self.rejects("missing regular input")
+                path.write_bytes(original + b"\n")
+                self.rejects("changed input")
+            path.write_bytes(original)
+
+    def test_u8_added_source_mode_and_extra_member_fail_before_materialization(self):
+        path = self.repo / "src/frontend/parser/conversions.rs"
+        path.chmod(0o755)
+        self.rejects_before_materialization("changed input mode")
+        path.chmod(0o644)
+        (self.repo / "src/frontend/u8_unlisted.rs").write_bytes(b"// unlisted\n")
+        self.rejects_before_materialization("missing or extra compiler source member")
+
+    def test_u8_authority_internal_membership_and_identity_checks_are_independent(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        original = self.captured["u8_authority"]
+        retained_repo = self.root / "retained-u8-authority"
+        binding.materialize(retained_repo, self.captured["u8_inputs"])
+        variants = (
+            ("transition_paths", list(reversed(helper.PATHS)), "stale u8 source transition authority"),
+            ("compiler_additions", [], "stale u8 source transition authority"),
+            ("fixture_additions", ["unlisted"], "stale u8 source transition authority"),
+            ("source_only_tree", "0" * 40, "stale u8 source transition authority"),
+            ("current_input_identities", original["current_input_identities"][:-1], "stale u8 complete input identities"),
+            ("compile_time_fixture_inputs", original["compile_time_fixture_inputs"][:-1], "stale u8 compile-time fixture closure"),
+            ("compile_time_include_directives", original["compile_time_include_directives"][:-1], "stale u8 compile-time include inventory"),
+            ("compile_time_include_additions", [], "stale u8 compile-time include inventory"),
+            ("transition_inputs", [], "stale u8 transition input identities"),
+        )
+        for field, value, error in variants:
+            raw = binding.encoded({**original, field: value})
+            package_bytes = dict(self.captured["package_bytes"], **{
+                "u8-authority.json": raw, "current-source.json": self.captured["package_bytes"]["u8-source.json"]})
+            with self.subTest(field=field), patch.object(helper, "AUTHORITY_SHA", binding.digest(raw)), \
+                 patch.object(helper, "AUTHORITY_BYTES", len(raw)), self.assertRaisesRegex(binding.BindingError, error):
+                helper.admit(retained_repo, package_bytes, binding)
+
+    def test_u8_include_scanner_refuses_unclosed_or_retargeted_new_reference(self):
+        helper = binding.load_u8_source(self.captured["package_bytes"], self.package)
+        with self.assertRaisesRegex(binding.BindingError, "incomplete compile-time include"):
+            helper.include_directives({"src/bad.rs": b'include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "x")'}, binding)
+        helper_inputs = dict(self.captured["u8_inputs"])
+        name = "src/frontend/oir/source/hir_import/u8_resource_successor.rs"
+        helper_inputs[name] = helper_inputs[name].replace(b"rich-source.txt", b"unlisted-source.txt")
+        rows = helper.include_directives(helper_inputs, binding)
+        self.assertNotEqual(rows, self.captured["u8_authority"]["compile_time_include_directives"])
+
+    def test_cache_admission_exact_inverse_and_forward(self):
+        helper = binding.load_cache_admission(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["cache-admission-transition.patch"]
+        restored, touched = helper.inverse(self.captured["cache_admission_inputs"], patch_bytes, binding)
+        self.assertEqual(touched, ["src/runtime/packages.rs"])
+        self.assertEqual(restored, self.captured["cache_preservation_inputs"])
+        binding.check_bytes(restored, self.captured["cache_preservation_source"]["files"])
+        changed = [name for name in restored if restored[name] != self.captured["cache_admission_inputs"][name]]
+        self.assertEqual(changed, ["src/runtime/packages.rs"])
+        self.assertEqual(set(restored), set(self.captured["cache_admission_inputs"]))
+        forward = self.root / "forward-package"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-admission-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["cache_admission_source"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, patch_bytes, binding)
+
+    def test_cache_admission_preserves_exact_predecessor_authorities(self):
+        expected = {
+            "cache-preservation-source.json": "481bc1f3f7b68530151d2b0d1e9bed76467b744f9087197320dfe286cbe98102",
+            "cache-preservation-authority.json": "e9f62aaa5d6544c999dc857427f6c5c52abb8308502f980be822e2ebf55eae99",
+            "cache-preservation-transition.patch": "ea517427d0fa75bf5fbc09aaa0c5ad504cb9e66b747895953716a1137e75f1c1",
+            "cache_preservation.py": "a2a2a8c65a97eaba7fcfcf709d7430179ebef24c5ac0625e8c226eec74aebaf1",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["cache_admission_source"]["reviewed_source_head"], "98af42f3baa02f179c0437078ab1928e86f0c8f6")
+        self.assertEqual(self.captured["cache_admission_source"]["source_only_tree"], "1d37d040150822d4358ec1c70c8e0f227f5eaf48")
+        self.assertNotIn("cache_admission_helper", self.captured)
+        output = self.root / "package-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["cache_admission_inverse_touched"], ["src/runtime/packages.rs"])
+        self.assertEqual(receipt["cache_preservation_source_sha256"], expected["cache-preservation-source.json"])
+
+    def test_cache_admission_coherent_metadata_tampering_rejects_before_history(self):
+        for name, error in (
+            ("cache-preservation-source.json", "unapproved cache preservation predecessor source manifest"),
+            ("cache-admission-authority.json", "stale cache admission authority"),
+            ("cache-admission-transition.patch", "wrong transition patch"),
+            ("cache_admission.py", "unapproved cache admission source helper"),
+        ):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_cache_preservation", side_effect=AssertionError("historical layer ran")):
+                self.rejects(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_cache_admission_reconstructed_package_bytes_checked_before_history(self):
+        helper = binding.load_cache_admission(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["cache_preservation_inputs"])
+        damaged["src/runtime/packages.rs"] += b"\n"
+        with patch.object(binding, "load_cache_admission", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, ["src/runtime/packages.rs"])), \
+             patch.object(binding, "load_cache_preservation", side_effect=AssertionError("historical layer ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_cache_admission_changed_runtime_rejects_before_history(self):
+        path = self.repo / "src/runtime/packages.rs"
+        original = path.read_bytes()
+        for body in (None, original + b"\n"):
+            if body is None:
+                path.unlink()
+            else:
+                path.write_bytes(body)
+            with self.subTest(missing=body is None), patch.object(binding, "load_cache_preservation", side_effect=AssertionError("historical layer ran")):
+                self.rejects("missing regular input" if body is None else "changed input")
+            path.write_bytes(original)
+
+    def test_cache_preservation_exact_inverse_and_forward(self):
+        helper = binding.load_cache_preservation(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["cache-preservation-transition.patch"]
+        restored, touched = helper.inverse(self.captured["cache_preservation_inputs"], patch_bytes, binding)
+        self.assertEqual(touched, ["src/runtime/packages.rs"])
+        self.assertEqual(restored, self.captured["package_integrity_inputs"])
+        binding.check_bytes(restored, self.captured["package_integrity_source"]["files"])
+        changed = [name for name in restored if restored[name] != self.captured["cache_preservation_inputs"][name]]
+        self.assertEqual(changed, ["src/runtime/packages.rs"])
+        self.assertEqual(set(restored), set(self.captured["cache_preservation_inputs"]))
+        forward = self.root / "forward-package"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "cache-preservation-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["cache_preservation_source"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, patch_bytes, binding)
+
+    def test_cache_preservation_preserves_exact_predecessor_authorities(self):
+        expected = {
+            "package-integrity-source.json": "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f",
+            "package-integrity-authority.json": "f5a44432927c0e84d58226fcb988860098b2c44d9fe01e4874a771632f89f724",
+            "package-integrity-transition.patch": "79c53c652528fe770939ba42dd7a478a309b04555e398d33298bc96644316a49",
+            "package_integrity.py": "263e898f966fbc1cb007dfab86a0b16504a2a65d11c4edcdb3cbbbcba34af857",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["cache_preservation_source"]["reviewed_source_head"], "e8a4d357c18fa7f4ca0f722b8fcf123dbb0bc55b")
+        self.assertEqual(self.captured["cache_preservation_source"]["source_only_tree"], "cf4dbd4fb02a219795b366b6be76d53e8e77ee20")
+        self.assertNotIn("cache_preservation_helper", self.captured)
+        output = self.root / "package-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["cache_preservation_inverse_touched"], ["src/runtime/packages.rs"])
+        self.assertEqual(receipt["package_integrity_source_sha256"], expected["package-integrity-source.json"])
+
+    def test_cache_preservation_coherent_metadata_tampering_rejects_before_history(self):
+        for name, error in (
+            ("package-integrity-source.json", "unapproved package integrity predecessor source manifest"),
+            ("cache-preservation-authority.json", "stale cache preservation authority"),
+            ("cache-preservation-transition.patch", "wrong transition patch"),
+            ("cache_preservation.py", "unapproved cache preservation source helper"),
+        ):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_package_integrity", side_effect=AssertionError("historical layer ran")):
+                self.rejects(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_cache_preservation_reconstructed_package_bytes_checked_before_history(self):
+        helper = binding.load_cache_preservation(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["package_integrity_inputs"])
+        damaged["src/runtime/packages.rs"] += b"\n"
+        with patch.object(binding, "load_cache_preservation", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, ["src/runtime/packages.rs"])), \
+             patch.object(binding, "load_package_integrity", side_effect=AssertionError("historical layer ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_cache_preservation_changed_runtime_rejects_before_history(self):
+        path = self.repo / "src/runtime/packages.rs"
+        original = path.read_bytes()
+        for body in (None, original + b"\n"):
+            if body is None:
+                path.unlink()
+            else:
+                path.write_bytes(body)
+            with self.subTest(missing=body is None), patch.object(binding, "load_package_integrity", side_effect=AssertionError("historical layer ran")):
+                self.rejects("missing regular input" if body is None else "changed input")
+            path.write_bytes(original)
+
+    def test_package_integrity_exact_inverse_and_forward(self):
+        helper = binding.load_package_integrity(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["package-integrity-transition.patch"]
+        restored, touched = helper.inverse(self.captured["package_integrity_inputs"], patch_bytes, binding)
+        self.assertEqual(touched, ["src/runtime/packages.rs"])
+        self.assertEqual(restored, self.captured["lexical_provider_inputs"])
+        binding.check_bytes(restored, self.captured["lexical_provider_source"]["files"])
+        changed = [name for name in restored if restored[name] != self.captured["package_integrity_inputs"][name]]
+        self.assertEqual(changed, ["src/runtime/packages.rs"])
+        self.assertEqual(set(restored), set(self.captured["package_integrity_inputs"]))
+        forward = self.root / "forward-package"
+        binding.materialize(forward, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "package-integrity-transition.patch")],
+                                    cwd=forward, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(forward, self.captured["package_integrity_source"]["files"], exact=True)
+        with self.assertRaises(binding.BindingError):
+            helper.inverse(restored, patch_bytes, binding)
+
+    def test_package_integrity_preserves_exact_predecessor_authorities(self):
+        expected = {
+            "lexical-provider-source.json": "952c7cf86d2be1036781155d38f81af8854c0fb26487c4dfa1dc24bc575309db",
+            "lexical-provider-authority.json": "69ea522493ab027b8dfcb3b1fb158f8dde14e7ff283e85d8e1ae6c29dc256a02",
+            "lexical-provider-transition.patch": "400270e547f1214abd9885d724641427fb8b0871f69f25176818446218d0d458",
+            "lexical_provider.py": "7fde52366254948674a447063b028ca1277bec5671a32f2a0500c2ad7871ad4c",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(self.captured["package_integrity_source"]["reviewed_source_head"], "3315ad42a98cbd033f88fbec676793dec5e0be4a")
+        self.assertEqual(self.captured["package_integrity_source"]["source_only_tree"], "243e6e55d179a362569ab353aa207eaa95e5ba1b")
+        self.assertNotIn("package_integrity_helper", self.captured)
+        output = self.root / "package-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["package_integrity_inverse_touched"], ["src/runtime/packages.rs"])
+        self.assertEqual(receipt["lexical_provider_source_sha256"], expected["lexical-provider-source.json"])
+
+    def test_package_integrity_coherent_metadata_tampering_rejects_before_history(self):
+        for name, error in (
+            ("lexical-provider-source.json", "unapproved lexical predecessor source manifest"),
+            ("package-integrity-authority.json", "stale package integrity authority"),
+            ("package-integrity-transition.patch", "wrong transition patch"),
+            ("package_integrity.py", "unapproved package integrity source helper"),
+        ):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name), patch.object(binding, "load_lexical_provider", side_effect=AssertionError("historical layer ran")):
+                self.rejects(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_package_integrity_reconstructed_lexical_bytes_checked_before_history(self):
+        helper = binding.load_package_integrity(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["lexical_provider_inputs"])
+        damaged["src/runtime/packages.rs"] += b"\n"
+        with patch.object(binding, "load_package_integrity", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, ["src/runtime/packages.rs"])), \
+             patch.object(binding, "load_lexical_provider", side_effect=AssertionError("historical layer ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_package_integrity_changed_runtime_rejects_before_history(self):
+        path = self.repo / "src/runtime/packages.rs"
+        original = path.read_bytes()
+        for body in (None, original + b"\n"):
+            if body is None:
+                path.unlink()
+            else:
+                path.write_bytes(body)
+            with self.subTest(missing=body is None), patch.object(binding, "load_lexical_provider", side_effect=AssertionError("historical layer ran")):
+                self.rejects("missing regular input" if body is None else "changed input")
+            path.write_bytes(original)
+
+    def test_lexical_provider_exact_inverse_forward_and_wrong_stages(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["lexical-provider-transition.patch"]
+        restored, touched = helper.inverse(self.captured["lexical_provider_inputs"], patch_bytes, binding)
+        self.assertEqual(restored, self.captured["producer_diagnostic_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(self.captured["lexical_provider_inputs"]), len(restored), len(touched)), (345, 340, 9))
+        self.assertEqual(set(self.captured["lexical_provider_inputs"]) - set(restored), set(helper.ADDITIONS))
+        binding.check_bytes(restored, self.captured["producer_diagnostic_source"]["files"])
+        source = self.root / "forward-lexical"
+        binding.materialize(source, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra,
+                                     str(self.package / "lexical-provider-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["lexical_provider_source"]["files"], exact=True)
+        for wrong in (restored, self.captured["frontend_v2_inputs"], self.captured["archived"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(wrong, patch_bytes, binding)
+
+    def test_lexical_provider_preserves_all_historical_package_members(self):
+        expected = {'authority.json': '73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce', 'combined-authority.json': 'f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670', 'combined-source.json': '221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487', 'combined-transition.patch': '8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683', 'composition-authority.json': 'f387deb3d73643cf51109e1aee7a59717c12cfe1ac70cd3a6e14f1aafa01ee8a', 'composition-source.json': 'eff7e18f49b30ebd24a10645f352502211b03de1359127edefc9a43d004f2c16', 'composition-transition.patch': '5862ed320a9823b20eb1854b888fd2f66d3498cf58289fecac469a087cef09a6', 'division-authority.json': 'f2a848cf361ba2907d1f1e437256a28c0996189de9228de148f041a0ce9c0164', 'division-source.json': 'd3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33', 'division-transition.patch': '65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1', 'enum-authority.json': 'e539957635eaa99b1ca806f73ecc04e99a05d7319231f2385c213c63902a9923', 'enum-enabled-qualified-values-v1.json': 'aad90776af8cda1a305efc9581d8fcbb40e4eedb8da0ca9aef703fc4fd8af425', 'enum-resource-authority.json': '9e81f265f1cef93ee41ca326580d19f2728133569d4453310a4a086545031527', 'enum-source.json': '21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669', 'enum-transition.patch': '57b5f94476c5c419c66dae9dd609de4350a1e224209290221bf80190c8b39204', 'enum_enabled_qualified_values_v1.py': '999e9f8cd75ae2010a11d20a40c357bf28d42b658d6293e93cb73a36cb665288', 'formatter-authority.json': 'f060dd4e264a7261517f496176d9d3def438a1e151616e313972db0545f9b4d2', 'formatter-source.json': '69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06', 'formatter-transition.patch': '8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4', 'frontend-v2-authority.json': '597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6', 'frontend-v2-source.json': 'd294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a', 'frontend-v2-transition.patch': 'b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32', 'frontend_v2.py': 'c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7', 'hir-import-authority.json': 'a4105c042d49b8145393d59482ae1e6b3872cb1de5ef6760fd098c71bb42ce34', 'hir-import-source.json': '8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746', 'hir-import-transition.patch': 'a3a0b5f8e109e7baf6a9713418ce6bc132a9a2e481be5a6a4f42dee08efb8947', 'hir-producer-authority.json': 'b6054a027220f74d8a6c5210b033569c51ea2e1ff991c73e70488a548060806d', 'hir-producer-source.json': '17d7473695424f8ccf570b3cb4129b08d0291650eab45356c66f8b6864a96680', 'hir-producer-transition.patch': '3ebdfff79cc4b4cc2b8c73c8efdf5b8532af33b2d6375e3e509027e8cd43ecdb', 'native-inventory-authority.json': '7c8edaeea1a69abce66b40f7b59bd29584c4927584fbb3f05a633b0ebdb8ca58', 'native-inventory-source.json': '52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842', 'native-inventory-transition.patch': '4be68264904f4c059d98f49fb86de16dc9f9af6332801a175b0e118bf2277f76', 'native-storage-authority.json': '1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da', 'native-storage-source.json': '0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303', 'native-storage-transition.patch': '9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c', 'predecessor-source.json': '7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8', 'producer-diagnostic-authority.json': 'fa52793cd0717dbf2bf44b819afc32258e257cb0522b0f503d8d7cefbfea0dfb', 'producer-diagnostic-transition.patch': 'c344823854314d8569d04055cd14031d2b6cd48cd95b8ea6a8301027af0ffe7e', 'producer_diagnostic.py': '15afd2ed29427665fbbad206efc00d1abf8ba0fd214bb98913d7f2d414db5823', 'projected-authority.json': 'f3d9ea09236fd17532cf896ae8df510945a93f5d7b576295cfe05c030d809bdc', 'projected-source.json': '850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304', 'projected-transition.patch': '55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73', 'slices-authority.json': '2e8dc2ab5506e179ffe5628e8a46eb6ec362ddb2e26a8a007800eb7029f3069f', 'slices-source.json': 'f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660', 'slices-transition.patch': '7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20', 'source-transition.patch': '63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18', 'stdin-authority.json': 'ff9f806e0211367c8c31d1084ce5aa80f3175b0e65c54a0d3860df0ced8cac08', 'stdin-source.json': 'bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f', 'stdin-transition.patch': '3bebb1cb45dab0cc5a24c6d1f7aac0b011ef543f35cab984b51fa2dd91e518e8', 'stdout-authority.json': '3015dfb1237578b4903b5a865f3ae7daf7819485c3399c2bfd589b8749d4066e', 'stdout-source.json': '3ae8ee6cbaf6697f0735fcf4e0cb345724d76c2bae6f5046fdfb441d02ecc936', 'stdout-transition.patch': '80dad62cc0e9fa87b026753401b3e5bb59e0bc200696b1fa825676cd662fb1ea', 'unary-authority.json': 'ed2d16dd5b24a55005e399630f3ad7402017fca9e8615b98d232d273ec418a31', 'unary-source.json': 'd9a1e93d59a479f3965b6770257583ec66e06c98a5a74063f7fe29db17df5220', 'unary-transition.patch': '4a1e4bfa577ff02bb3c5320eb1994b281831929692acd347daf243b15ae31796'}
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest, name)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["producer-diagnostic-source.json"]),
+                         "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
+        self.assertEqual(len(self.captured["producer_diagnostic_inputs"]), 340)
+        self.assertEqual(self.captured["lexical_provider_source"]["reviewed_source_head"],
+                         "41c73d527f5518e09877544fa5820f3129f55b42")
+        self.assertEqual(self.captured["lexical_provider_source"]["source_only_tree"],
+                         "ea05a2c15672bdef5b596b4f9d4494e1134d6e76")
+        self.assertEqual(len([n for n in self.captured["lexical_provider_inputs"] if n.startswith(("src/", "native/"))]), 257)
+        self.assertNotIn("lexical_provider_helper", self.captured)
+        binding.assert_unchanged(self.repo, self.captured, self.package)
+
+    def test_lexical_provider_paths_and_producer_closure_reject_before_history(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        for name in [*helper.PATHS, *(row["path"] for row in helper.PRODUCER_CLOSURE)]:
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                if replacement is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(replacement)
+                with self.subTest(path=name, missing=replacement is None), patch.object(
+                        binding, "load_producer_diagnostic", side_effect=AssertionError("historical inverse ran")):
+                    self.rejects("missing regular input" if replacement is None else "changed input")
+                path.write_bytes(original)
+
+    def test_lexical_provider_coherent_package_tampering_rejects(self):
+        for name, error in (("producer-diagnostic-source.json", "unapproved producer diagnostic source manifest"),
+                            ("lexical-provider-authority.json", "stale lexical provider authority"),
+                            ("lexical-provider-transition.patch", "wrong transition patch"),
+                            ("lexical_provider.py", "unapproved lexical provider source helper")):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name):
+                self.rejects_before_materialization(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_lexical_provider_modes_membership_and_symlinks_are_closed(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        for name in [*helper.ADDITIONS, *(row["path"] for row in helper.PRODUCER_CLOSURE)]:
+            path = self.repo / name
+            original_mode = path.stat().st_mode
+            path.chmod(0o755)
+            with self.subTest(path=name), patch.object(
+                    binding, "load_producer_diagnostic", side_effect=AssertionError("historical inverse ran")):
+                self.rejects("changed input mode")
+            path.chmod(original_mode)
+        extra = self.repo / "src/frontend/lexical_provider/unapproved.rs"
+        extra.write_bytes(b"// unapproved\n")
+        self.rejects("missing or extra compiler source member")
+        extra.unlink()
+        extra = self.repo / "fixtures/typed-streaming-lexer/unapproved.ox"
+        extra.write_bytes(b"// unapproved\n")
+        self.rejects("lexical producer source closure differs")
+        extra.unlink()
+        path = self.repo / helper.ADDITIONS[0]
+        raw = path.read_bytes()
+        target = self.root / "aliased-source.rs"
+        target.write_bytes(raw)
+        path.unlink()
+        path.symlink_to(target)
+        self.rejects("symlink input")
+
+    def test_lexical_provider_inverse_output_is_checked_before_history(self):
+        helper = binding.load_lexical_provider(self.captured["package_bytes"], self.package)
+        damaged = dict(self.captured["producer_diagnostic_inputs"])
+        damaged["src/frontend/driver.rs"] += b"\n"
+        with patch.object(binding, "load_lexical_provider", return_value=helper), \
+             patch.object(helper, "inverse", return_value=(damaged, list(helper.PATHS))), \
+             patch.object(binding, "load_producer_diagnostic", side_effect=AssertionError("historical inverse ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_lexical_provider_archive_receipt_names_exact_current_and_predecessor(self):
+        output = self.root / "lexical-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["lexical_provider_inverse_touched"], self.captured["lexical_provider_touched"])
+        self.assertEqual(receipt["producer_diagnostic_source_sha256"],
+                         "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29")
+        self.assertEqual((receipt["compiler_executions"], receipt["semantic_pass"]), (0, False))
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_producer_diagnostic_exact_inverse_forward_and_retained_v2(self):
+        helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["producer-diagnostic-transition.patch"]
+        restored, touched = helper.inverse(self.captured["producer_diagnostic_inputs"], patch_bytes, binding)
+        self.assertEqual(restored, self.captured["frontend_v2_inputs"])
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual((len(self.captured["producer_diagnostic_inputs"]), len(restored), len(touched)), (340, 330, 8))
+        self.assertEqual(set(self.captured["producer_diagnostic_inputs"]) - set(restored),
+                         set(helper.ADDITIONS) | {row["path"] for row in helper.FIXTURES})
+        binding.check_bytes(restored, self.captured["frontend_v2_source"]["files"])
+        source = self.root / "forward-diagnostic"
+        binding.materialize(source, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra,
+                                     str(self.package / "producer-diagnostic-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for row in helper.FIXTURES:
+            target = source / row["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(self.captured["producer_diagnostic_inputs"][row["path"]])
+        binding.check_entries(source, self.captured["producer_diagnostic_source"]["files"], exact=True)
+        for wrong in (restored, self.captured["hir_producer_inputs"], self.captured["archived"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(wrong, patch_bytes, binding)
+
+    def test_producer_diagnostic_preserves_all_frontend_v2_authorities(self):
+        expected = {
+            "frontend-v2-source.json": "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a",
+            "frontend-v2-authority.json": "597982c5f195a304bcc7bad4c7afba776db8fc40c7286e5ed3f8da6fa55c16f6",
+            "frontend-v2-transition.patch": "b0fbd3b34584d76c7ff3bc074732b62c9c1b6b381ff1ca4cc88f99f93d964d32",
+            "frontend_v2.py": "c5b514f24e0dc4be32117198f4604d8e1f36b29cecdd17962666ebf3d43a62d7",
+        }
+        for name, digest in expected.items():
+            self.assertEqual(binding.digest(self.captured["package_bytes"][name]), digest)
+        self.assertEqual(len(self.captured["frontend_v2_inputs"]), 330)
+        self.assertEqual(self.captured["frontend_v2_source"]["reviewed_source_head"],
+                         "5f5a6639db9f779bb2453695f64ea980f7ea1790")
+        self.assertNotIn("producer_diagnostic_helper", self.captured)
+        binding.assert_unchanged(self.repo, self.captured, self.package)
+
+    def test_producer_diagnostic_additions_and_provenance_reject_before_v2(self):
+        helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
+        paths = [*helper.ADDITIONS, *(row["path"] for row in helper.FIXTURES),
+                 *(row["path"] for row in helper.DIAGNOSTIC_CLOSURE)]
+        for name in paths:
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                if replacement is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(replacement)
+                with self.subTest(path=name, missing=replacement is None), patch.object(
+                        binding, "load_frontend_v2", side_effect=AssertionError("v2 inverse ran")):
+                    self.rejects("missing regular input" if replacement is None else "changed input")
+                path.write_bytes(original)
+
+    def test_producer_diagnostic_coherent_package_tampering_rejects(self):
+        for name, error in (("frontend-v2-source.json", "unapproved frontend v2 source manifest"),
+                            ("producer-diagnostic-authority.json", "changed retained producer diagnostic binding"),
+                            ("producer-diagnostic-transition.patch", "changed retained producer diagnostic binding"),
+                            ("producer_diagnostic.py", "changed retained producer diagnostic binding")):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            with self.subTest(path=name):
+                self.rejects_before_materialization(error)
+            path.write_bytes(original)
+            self.rehash_package()
+
+    def test_producer_diagnostic_new_modes_and_extra_compiler_are_closed(self):
+        helper = binding.load_producer_diagnostic(self.captured["package_bytes"], self.package)
+        for name in [*helper.ADDITIONS, *(row["path"] for row in helper.FIXTURES)]:
+            path = self.repo / name
+            original_mode = path.stat().st_mode
+            path.chmod(0o755)
+            with self.subTest(path=name), patch.object(
+                    binding, "load_frontend_v2", side_effect=AssertionError("v2 inverse ran")):
+                self.rejects("changed input mode")
+            path.chmod(original_mode)
+        (self.repo / "src/diagnostic-extra.rs").write_bytes(b"// unexpected\n")
+        with patch.object(binding, "load_frontend_v2", side_effect=AssertionError("v2 inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_producer_diagnostic_archive_receipt_names_both_inverse_layers(self):
+        output = self.root / "diagnostic-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["producer_diagnostic_inverse_touched"],
+                         self.captured["producer_diagnostic_touched"])
+        self.assertEqual(receipt["frontend_v2_source_sha256"],
+                         "d294963af70126d6415e035f5ef1652c00953a22e6d26d586e0e1c1352cd6c8a")
+        self.assertEqual(receipt["frontend_v2_inverse_touched"], self.captured["frontend_v2_touched"])
+        self.assertEqual((receipt["compiler_executions"], receipt["semantic_pass"]), (0, False))
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_frontend_v2_identity_receipt_rechecks_without_live_module_state(self):
+        binding.assert_unchanged(self.repo, self.captured, self.package)
+        self.assertEqual(binding.preflight(self.repo, self.package), self.captured)
+        self.assertNotIn("frontend_v2_helper", self.captured)
+
+    def test_frontend_v2_exact_inverse_forward_and_frozen_producer(self):
+        helper = binding.load_frontend_v2(self.captured["package_bytes"], self.package)
+        patch_bytes = self.captured["package_bytes"]["frontend-v2-transition.patch"]
+        restored, touched = helper.inverse(self.captured["frontend_v2_inputs"], patch_bytes, binding)
+        self.assertEqual(restored, self.captured["hir_producer_inputs"])
+        self.assertEqual(len(restored), 327)
+        self.assertEqual(touched, list(helper.PATHS))
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["hir-producer-source.json"]), binding.PRODUCER_SOURCE_SHA)
+        source = self.root / "forward-v2"
+        binding.materialize(source, restored)
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "apply", *extra, str(self.package / "frontend-v2-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for row in helper.FIXTURES:
+            target = source / row["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(self.captured["frontend_v2_inputs"][row["path"]])
+        binding.check_entries(source, self.captured["frontend_v2_source"]["files"], exact=True)
+        for wrong in (restored, self.captured["hir_import_inputs"], self.captured["archived"]):
+            with self.assertRaises(binding.BindingError):
+                helper.inverse(wrong, patch_bytes, binding)
+
+    def test_frontend_v2_new_inputs_and_predecessor_are_closed(self):
+        helper = binding.load_frontend_v2(self.captured["package_bytes"], self.package)
+        for name in ("src/frontend/hir_protocol.rs", *(row["path"] for row in helper.FIXTURES)):
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                if replacement is None: path.unlink()
+                else: path.write_bytes(replacement)
+                with patch.object(binding, "inverse_hir_producer_patch", side_effect=AssertionError("historical inverse ran")):
+                    self.rejects("missing regular input" if replacement is None else "changed input")
+                path.write_bytes(original)
+        for name, error in (("hir-producer-source.json", "unapproved HIR producer source manifest"),
+                            ("frontend-v2-authority.json", "changed retained frontend v2 binding"),
+                            ("frontend-v2-transition.patch", "changed retained frontend v2 binding"),
+                            ("frontend_v2.py", "changed retained frontend v2 binding")):
+            path=self.package/name; original=path.read_bytes();path.write_bytes(original+b"\n")
+            self.rehash_package()
+            self.rejects_before_materialization(error)
+            path.write_bytes(original);self.rehash_package()
+
+    def test_producer_inverse_restores_exact_hir_and_dependency_closure(self):
+        restored, touched = binding.inverse_hir_producer_patch(
+            self.captured["hir_producer_inputs"], self.captured["package_bytes"]["hir-producer-transition.patch"])
+        self.assertEqual(restored, self.captured["hir_import_inputs"])
+        self.assertEqual(touched, list(binding.HIR_PRODUCER_PATHS))
+        self.assertEqual((len(self.captured["hir_producer_inputs"]), len(restored), len(touched)), (327, 324, 12))
+        self.assertEqual(set(self.captured["hir_producer_inputs"]) - set(restored), {
+            "src/frontend/hir_producer.rs", "src/frontend/hir_producer/bundle.rs",
+            "src/frontend/hir_producer/supervisor.rs"})
+        self.assertEqual(len([n for n in self.captured["hir_producer_inputs"] if n.startswith(("src/", "native/"))]), 249)
+        self.assertEqual(self.captured["hir_producer_source"]["reviewed_source_head"], binding.HIR_PRODUCER_HEAD)
+        self.assertEqual(self.captured["hir_producer_source"]["source_only_tree"], binding.HIR_PRODUCER_TREE)
+        for name in ("Cargo.toml", "Cargo.lock"):
+            self.assertNotEqual(self.captured["hir_producer_inputs"][name], restored[name])
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["hir-import-source.json"]),
+                         "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746")
+
+
+    def test_producer_forward_patch_recreates_exact_current(self):
+        source = self.root / "forward-producer"
+        binding.materialize(source, self.captured["hir_import_inputs"])
+        for extra in (["--check"], []):
+            result = subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+                                     "apply", *extra, str(self.package / "hir-producer-transition.patch")],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["hir_producer_source"]["files"], exact=True)
+
+
+    def test_producer_dependencies_and_modules_reject_before_inverse(self):
+        for name in ("Cargo.toml", "Cargo.lock", *binding.HIR_PRODUCER_ADDITIONS):
+            path = self.repo / name
+            original = path.read_bytes()
+            for replacement in (None, original + b"\n"):
+                with self.subTest(name=name, missing=replacement is None):
+                    if replacement is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(replacement)
+                    with patch.object(binding, "inverse_hir_producer_patch", side_effect=AssertionError("inverse ran")):
+                        self.rejects("missing regular input" if replacement is None else "changed input")
+                    path.write_bytes(original)
+        extra = self.repo / "src/frontend/hir_producer/unapproved.rs"
+        extra.write_bytes(b"")
+        with patch.object(binding, "inverse_hir_producer_patch", side_effect=AssertionError("inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_producer_coherent_metadata_and_member_omission_reject(self):
+        for name, error in (("hir-producer-authority.json", "stale HIR producer authority"),
+                            ("hir-import-source.json", "unapproved HIR import source manifest"),
+                            ("hir-producer-transition.patch", "wrong transition patch")):
+            path = self.package / name
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.rehash_package()
+            self.rejects_before_materialization(error)
+            path.write_bytes(original)
+            self.rehash_package()
+        path = self.package / "current-source.json"
+        current = binding.json.loads(path.read_bytes())
+        current["files"] = [r for r in current["files"] if r["path"] != binding.HIR_PRODUCER_ADDITIONS[0]]
+        binding.write_json(path, current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_producer_wrong_stage_and_recovery_reject_before_hir_inverse(self):
+        raw = self.captured["package_bytes"]["hir-producer-transition.patch"]
+        for key in ("hir_import_inputs", "native_inventory_inputs", "archived"):
+            with self.subTest(key=key), self.assertRaises(binding.BindingError):
+                binding.inverse_hir_producer_patch(self.captured[key], raw)
+        damaged = dict(self.captured["hir_import_inputs"])
+        damaged["Cargo.lock"] += b"\n"
+        with patch.object(binding, "inverse_hir_producer_patch", return_value=(damaged, list(binding.HIR_PRODUCER_PATHS))), \
+                patch.object(binding, "inverse_hir_import_patch", side_effect=AssertionError("HIR inverse ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_hir_import_inverse_restores_exact_native_inventory_and_archive(self):
+        restored, touched = binding.inverse_hir_import_patch(
+            self.captured["hir_import_inputs"], self.captured["package_bytes"]["hir-import-transition.patch"])
+        self.assertEqual(restored, self.captured["native_inventory_inputs"])
+        self.assertEqual(touched, list(binding.HIR_IMPORT_PATHS))
+        self.assertEqual((len(restored), len(touched), len(binding.HIR_IMPORT_ADDITIONS),
+                          len(binding.HIR_IMPORT_FIXTURES)), (266, 52, 38, 20))
+        self.assertEqual(len(self.captured["hir_import_inputs"]), 324)
+        self.assertEqual(len([n for n in self.captured["hir_import_inputs"] if n.startswith(("src/", "native/"))]), 246)
+        self.assertEqual(self.captured["hir_import_source"]["reviewed_source_head"], binding.HIR_IMPORT_HEAD)
+        self.assertEqual(self.captured["hir_import_source"]["source_only_tree"], binding.HIR_IMPORT_TREE)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["native-inventory-source.json"]),
+                         "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7adf944d9be92f842")
+        self.assertEqual(self.captured["hir_import_authority"]["recipe"],
+                         "git diff --binary --no-ext-diff --no-renames --abbrev=7 BASE_TREE CHECKPOINT_TREE -- PATHS")
+
+    def test_hir_import_forward_patch_and_additive_fixtures_recreate_current(self):
+        source = self.root / "forward-hir-import"
+        binding.materialize(source, self.captured["native_inventory_inputs"])
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(self.package / 'hir-import-transition.patch')],
+                                    cwd=source, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for name in binding.HIR_IMPORT_FIXTURES:
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(self.captured["hir_import_inputs"][name])
+        binding.check_entries(source, self.captured["hir_import_source"]["files"], exact=True)
+
+    def test_hir_import_fixtures_verified_before_any_removal_or_inverse(self):
+        original_patch = self.captured["package_bytes"]["hir-import-transition.patch"]
+        for name in binding.HIR_IMPORT_FIXTURES:
+            with self.subTest(name=name):
+                original = self.captured["inputs"][name]
+                for replacement in (None, original + b'X'):
+                    inputs = dict(self.captured["inputs"])
+                    if replacement is None:
+                        del inputs[name]
+                    else:
+                        inputs[name] = replacement
+                    with patch.object(binding, 'apply_inverse_patch', side_effect=AssertionError('inverse ran')):
+                        with self.assertRaisesRegex(binding.BindingError, 'changed HIR import fixture input'):
+                            binding.inverse_hir_import_patch(inputs, original_patch)
+                    self.assertEqual(self.captured["inputs"][name], original)
+        extra = self.repo / 'tests/fixtures/checked_hir_import/unapproved-success.bin'
+        extra.write_bytes(b'')
+        with patch.object(binding, 'inverse_hir_import_patch', side_effect=AssertionError('inverse ran')):
+            self.rejects('missing or extra HIR import fixture member')
+
+    def test_hir_import_fixture_modes_and_missing_members_reject_before_inverse(self):
+        name = binding.HIR_IMPORT_FIXTURES[0]
+        path = self.repo / name
+        raw = path.read_bytes()
+        path.unlink()
+        self.rejects('missing regular input')
+        path.write_bytes(raw)
+        if sys.platform != 'win32':
+            path.chmod(0o755)
+            with patch.object(binding, 'inverse_hir_import_patch', side_effect=AssertionError('inverse ran')):
+                self.rejects('changed input mode')
+
+    def test_hir_import_coherent_authority_and_source_mutations_reject(self):
+        path = self.package / 'hir-import-authority.json'
+        original = path.read_bytes()
+        for key, value in (('base_tree', '0' * 40), ('predecessor_source_head', '0' * 40),
+                           ('source_only_tree', '0' * 40), ('current_source_members', 323),
+                           ('compiler_bodies', 248), ('fixture_additions', []), ('fixture_inputs', []),
+                           ('compiler_additions', []), ('current_input_identities', []),
+                           ('transition_inputs', []), ('removed_paths', ['src/main.rs'])):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization('stale HIR import authority')
+        path.write_bytes(original)
+        manifest = self.package / 'current-source.json'
+        current = binding.json.loads(manifest.read_bytes())
+        current['files'] = [r for r in current['files'] if r['path'] != binding.HIR_IMPORT_FIXTURES[0]]
+        binding.write_json(manifest, current)
+        self.rehash_package()
+        self.rejects_before_materialization('unapproved current source manifest')
+
+    def test_hir_import_predecessor_patch_and_wrong_stage_reject(self):
+        for name, error in (('native-inventory-source.json', 'unapproved native inventory source manifest'),
+                            ('hir-import-transition.patch', 'wrong transition patch')):
+            path = self.package / name
+            raw = path.read_bytes()
+            path.write_bytes(raw + b'\n')
+            self.rehash_package()
+            self.rejects_before_materialization(error)
+            path.write_bytes(raw)
+        self.rehash_package()
+        original = self.captured['package_bytes']['hir-import-transition.patch']
+        for stage in ('native_inventory_inputs', 'native_storage_inputs', 'archived'):
+            with self.subTest(stage=stage), self.assertRaises(binding.BindingError):
+                binding.inverse_hir_import_patch(self.captured[stage], original)
+
+    def test_hir_import_recovery_verified_before_older_inverse(self):
+        damaged = dict(self.captured['native_inventory_inputs'])
+        damaged['src/frontend/driver.rs'] += b'// invalid recovery\n'
+        with patch.object(binding, 'inverse_hir_import_patch', return_value=(damaged, list(binding.HIR_IMPORT_PATHS))), \
+                patch.object(binding, 'inverse_native_inventory_patch', side_effect=AssertionError('older inverse ran')):
+            self.rejects('changed reconstructed input')
+
+    def test_hir_import_compiler_patch_scope_and_context_reject(self):
+        original = self.captured['package_bytes']['hir-import-transition.patch']
+        sections = [b'diff --git ' + item for item in original.split(b'diff --git ')[1:]]
+        reduced = {n: b for n, b in self.captured['inputs'].items() if n not in binding.HIR_IMPORT_FIXTURES}
+        for changed in (b''.join(reversed(sections)), b''.join(sections[:-1]),
+                        original + sections[0], original + b'unexpected tail\n'):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(reduced, changed, binding.digest(changed), len(changed), binding.HIR_IMPORT_PATHS)
+        for name, section in zip(binding.HIR_IMPORT_PATHS, sections):
+            inputs = dict(self.captured['inputs'])
+            hunk = next(line for line in section.splitlines() if line.startswith(b'@@ '))
+            offset = max(int(hunk.split(b' +', 1)[1].split(b' ', 1)[0].split(b',', 1)[0]) - 1, 0)
+            lines = inputs[name].splitlines(keepends=True)
+            lines[offset] = b'X' + lines[offset]
+            inputs[name] = b''.join(lines)
+            with self.subTest(name=name), self.assertRaises(binding.BindingError):
+                binding.inverse_hir_import_patch(inputs, original)
+
+    def test_native_inventory_inverse_restores_complete_native_storage_and_archive(self):
+        restored, touched = binding.inverse_native_inventory_patch(
+            self.captured["native_inventory_inputs"], self.captured["package_bytes"]["native-inventory-transition.patch"])
+        self.assertEqual(restored, self.captured["native_storage_inputs"])
+        binding.check_bytes(restored, self.captured["native_storage_source"]["files"])
+        self.assertEqual(touched, list(binding.NATIVE_INVENTORY_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.NATIVE_INVENTORY_ADDITIONS)), (7, 264, 2))
+        self.assertEqual(set(self.captured["native_inventory_inputs"]) - set(restored), set(binding.NATIVE_INVENTORY_ADDITIONS))
+        self.assertEqual(len([name for name in self.captured["native_inventory_inputs"]
+                              if name.startswith(("src/", "native/"))]), 208)
+        self.assertEqual(self.captured["native_inventory_source"]["reviewed_source_head"], binding.NATIVE_INVENTORY_HEAD)
+        self.assertEqual(self.captured["native_inventory_source"]["source_only_tree"], binding.NATIVE_INVENTORY_TREE)
+        output = self.root / "native-inventory-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["native_inventory_inverse_touched"], list(binding.NATIVE_INVENTORY_PATHS))
+        self.assertEqual(receipt["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)
+        self.assertEqual(receipt["native_storage_source_sha256"], binding.NATIVE_STORAGE_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_native_inventory_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-native_storage"
+        binding.materialize(source, self.captured["native_storage_inputs"])
+        patch_path = self.package / "native-inventory-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["native_inventory_source"]["files"], exact=True)
+
+    def test_native_inventory_members_bound_before_any_inverse(self):
+        for name in binding.NATIVE_INVENTORY_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_native_inventory_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.NATIVE_INVENTORY_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_native_inventory_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+            source.chmod(0o644)
+        (self.repo / "src/extra.rs").write_bytes(b"")
+        with patch.object(binding, "inverse_native_inventory_patch", side_effect=AssertionError("inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_native_inventory_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "native-inventory-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.NATIVE_STORAGE_HEAD), ("source_only_tree", binding.NATIVE_STORAGE_TREE),
+                           ("base_head", binding.NATIVE_STORAGE_HEAD), ("base_tree", binding.NATIVE_STORAGE_TREE),
+                           ("current_source_members", 264), ("compiler_source_members", 206), ("compiler_bodies", 209),
+                           ("native_storage_source_members", 262), ("native_storage_source_bytes", 50843),
+                           ("transition_patch_sha256", "0" * 64), ("transition_patch_bytes", 0),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("native_storage_authority_sha256", "0" * 64),
+                           ("native_storage_source_sha256", "0" * 64)):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale native inventory authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_native_inventory_predecessor_and_patch_tampering_reject(self):
+        for name, error in (("native-storage-source.json", "unapproved native storage source manifest"),
+                            ("native-inventory-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "native-inventory-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_native_inventory_inverse_context_wrong_stage_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["native-inventory-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 7)
+        for name, section in zip(binding.NATIVE_INVENTORY_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["native_inventory_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_native_inventory_patch(inputs, original)
+        for stage in ("native_storage_inputs", "stdout_inputs", "stdin_inputs", "archived"):
+            with self.subTest(stage=stage), self.assertRaises(binding.BindingError):
+                binding.inverse_native_inventory_patch(self.captured[stage], original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_native_storage_patch(self.captured["native_inventory_inputs"], self.captured["package_bytes"]["native-storage-transition.patch"])
+
+    def test_native_inventory_inverse_scope_order_duplicates_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["native-inventory-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.NATIVE_INVENTORY_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["native_inventory_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.NATIVE_INVENTORY_PATHS)
+
+    def test_native_inventory_recovered_phase1_is_verified_before_older_inverse(self):
+        damaged = dict(self.captured["native_storage_inputs"])
+        damaged["src/frontend/oir/owned/native.rs"] += b"// invalid recovery\n"
+        with patch.object(binding, "inverse_native_inventory_patch",
+                          return_value=(damaged, list(binding.NATIVE_INVENTORY_PATHS))), \
+                patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("older inverse ran")):
+            self.rejects("changed reconstructed input")
+
+    def test_native_inventory_preserves_frozen_phase1_authorities(self):
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["native-storage-source.json"]),
+                         "0a4d6471f394e42e0a584cadab2c758190c25b79fb2e49bebde99aae06884303")
+        self.assertEqual(len(self.captured["package_bytes"]["native-storage-source.json"]), 50842)
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["native-storage-authority.json"]),
+                         "1124d02c4aa34b6c6caf31bfac47332ea9938294d8813ae49d42a975e3bce4da")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["native-storage-transition.patch"]),
+                         "9e2260d93e908363833cd114902a6f73aa54a5f2528a92d98fa317e26240565c")
+        self.assertEqual(self.captured["native_inventory_authority"]["base_head"],
+                         "cbd44c3fff9f2c843cf1d8c03ed1c67e7bfd7050")
+        self.assertEqual(self.captured["native_inventory_authority"]["base_tree"],
+                         "4c315696f1e7d324dcf3f00f077fbf9e17f9a722")
+        self.assertEqual(self.captured["native_inventory_source"]["reviewed_source_head"],
+                         "ffa2e00543b7a1958321b719677ed3b48f42bc74")
+        self.assertEqual(self.captured["native_inventory_source"]["source_only_tree"],
+                         "8a717f36016d86130ad5acc28a23f87852c76064")
+        self.assertEqual(self.captured["native_inventory_authority"]["compiler_bodies"], 211)
+        self.assertEqual(self.captured["native_storage_authority"]["compiler_bodies"], 209)
+        self.assertNotEqual(self.captured["native_inventory_inputs"]["src/frontend/oir/owned/native.rs"],
+                            self.captured["native_storage_inputs"]["src/frontend/oir/owned/native.rs"])
+
+    def test_native_storage_inverse_restores_complete_stdout_and_archive(self):
+        restored, touched = binding.inverse_native_storage_patch(
+            self.captured["native_storage_inputs"], self.captured["package_bytes"]["native-storage-transition.patch"])
+        self.assertEqual(restored, self.captured["stdout_inputs"])
+        binding.check_bytes(restored, self.captured["stdout_source"]["files"])
+        self.assertEqual(touched, list(binding.NATIVE_STORAGE_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.NATIVE_STORAGE_ADDITIONS)), (6, 262, 2))
+        self.assertEqual(set(self.captured["native_storage_inputs"]) - set(restored), set(binding.NATIVE_STORAGE_ADDITIONS))
+        self.assertEqual(len([name for name in self.captured["native_storage_inputs"]
+                              if name.startswith(("src/", "native/"))]), 206)
+        self.assertEqual(self.captured["native_storage_source"]["reviewed_source_head"], binding.NATIVE_STORAGE_HEAD)
+        self.assertEqual(self.captured["native_storage_source"]["source_only_tree"], binding.NATIVE_STORAGE_TREE)
+        output = self.root / "native-storage-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["native_storage_inverse_touched"], list(binding.NATIVE_STORAGE_PATHS))
+        self.assertEqual(receipt["native_storage_inverse_patch_sha256"], binding.NATIVE_STORAGE_PATCH_SHA)
+        self.assertEqual(receipt["stdout_source_sha256"], binding.STDOUT_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_native_storage_forward_patch_recreates_every_historical_input(self):
+        source = self.root / "forward-stdout"
+        binding.materialize(source, self.captured["stdout_inputs"])
+        patch_path = self.package / "native-storage-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["native_storage_source"]["files"], exact=True)
+
+    def test_native_storage_members_bound_before_any_inverse(self):
+        for name in binding.NATIVE_STORAGE_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.NATIVE_STORAGE_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+            source.chmod(0o644)
+        (self.repo / "src/extra.rs").write_bytes(b"")
+        with patch.object(binding, "inverse_native_storage_patch", side_effect=AssertionError("inverse ran")):
+            self.rejects("missing or extra compiler source member")
+
+    def test_native_storage_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "native-storage-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.STDOUT_HEAD), ("source_only_tree", binding.STDOUT_TREE),
+                           ("current_source_members", 262), ("compiler_source_members", 204),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("stdout_authority_sha256", "0" * 64),
+                           ("stdout_source_sha256", "0" * 64)):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale native storage authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_native_storage_predecessor_and_patch_tampering_reject(self):
+        for name, error in (("stdout-source.json", "unapproved stdout source manifest"),
+                            ("native-storage-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "native-storage-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_native_storage_inverse_context_wrong_stage_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["native-storage-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 6)
+        for name, section in zip(binding.NATIVE_STORAGE_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["native_storage_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_native_storage_patch(inputs, original)
+        for stage in ("stdout_inputs", "stdin_inputs", "archived"):
+            with self.subTest(stage=stage), self.assertRaises(binding.BindingError):
+                binding.inverse_native_storage_patch(self.captured[stage], original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_stdout_patch(self.captured["native_storage_inputs"], self.captured["package_bytes"]["stdout-transition.patch"])
+
+    def test_native_storage_inverse_scope_order_duplicates_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["native-storage-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.NATIVE_STORAGE_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["native_storage_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.NATIVE_STORAGE_PATHS)
+
+    def test_stdout_inverse_restores_exact_stdin_predecessor_and_complete_chain(self):
+        restored, touched = binding.inverse_stdout_patch(
+            self.captured["stdout_inputs"], self.captured["package_bytes"]["stdout-transition.patch"])
+        self.assertEqual(restored, self.captured["stdin_inputs"])
+        binding.check_bytes(restored, self.captured["stdin_source"]["files"])
+        self.assertEqual(touched, list(binding.STDOUT_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.STDOUT_ADDITIONS)), (53, 252, 10))
+        self.assertEqual(set(self.captured["stdout_inputs"]) - set(restored), set(binding.STDOUT_ADDITIONS))
+        compiler_paths = [name for name in self.captured["stdout_inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler_paths), 204)
+        self.assertEqual(self.captured["stdout_source"]["reviewed_source_head"],
+                         "63db2c290031d76b5925fdd672c38eac2ca50578")
+        self.assertEqual(self.captured["stdout_source"]["source_only_tree"],
+                         "f01525a95f2e4b3dfa69237108cfbc67a1f43eab")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["stdin-source.json"]),
+                         "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f")
+        output = self.root / "stdout-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["stdout_inverse_touched"], list(binding.STDOUT_PATHS))
+        self.assertEqual(receipt["stdout_inverse_patch_sha256"], binding.STDOUT_PATCH_SHA)
+        self.assertEqual(receipt["stdin_source_sha256"], binding.STDIN_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_stdout_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-stdin"
+        binding.materialize(source, self.captured["stdin_inputs"])
+        patch_path = self.package / "stdout-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["stdout_source"]["files"], exact=True)
+
+    def test_stdout_members_required_byte_and_mode_bound_before_inverse(self):
+        for name in binding.STDOUT_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_stdout_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.STDOUT_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.STDOUT_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_stdout_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+
+    def test_stdout_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "stdout-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.STDIN_HEAD), ("source_only_tree", binding.STDIN_TREE),
+                           ("current_source_members", 252), ("compiler_source_members", 194),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("stdin_authority_sha256", "0" * 64),
+                           ("stdin_source_sha256", "0" * 64)):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale stdout authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_stdout_stdin_manifest_and_patch_coherent_tampering_reject(self):
+        for name, error in (("stdin-source.json", "unapproved stdin source manifest"),
+                            ("stdout-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "stdout-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_stdout_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["stdout-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 53)
+        for name, section in zip(binding.STDOUT_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["stdout_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_stdout_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_stdout_patch(self.captured["stdin_inputs"], original)
+
+    def test_stdout_inverse_scope_order_duplicates_unknown_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["stdout-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.STDOUT_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["stdout_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.STDOUT_PATHS)
+
+    def test_stdin_inverse_restores_exact_enum_predecessor_and_complete_chain(self):
+        restored, touched = binding.inverse_stdin_patch(
+            self.captured["stdin_inputs"], self.captured["package_bytes"]["stdin-transition.patch"])
+        self.assertEqual(restored, self.captured["enum_inputs"])
+        binding.check_bytes(restored, self.captured["enum_source"]["files"])
+        self.assertEqual(touched, list(binding.STDIN_PATHS))
+        self.assertEqual((len(touched), len(restored), len(binding.STDIN_ADDITIONS)), (82, 237, 15))
+        self.assertEqual(set(self.captured["stdin_inputs"]) - set(restored), set(binding.STDIN_ADDITIONS))
+        compiler_paths = [name for name in self.captured["stdin_inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler_paths), 194)
+        self.assertEqual(self.captured["stdin_source"]["reviewed_source_head"],
+                         "c1d73740268d64d4e908ad86ed9dabaa48dd1c23")
+        self.assertEqual(self.captured["stdin_source"]["source_only_tree"],
+                         "b19991275b22426397d708ac0afa1874e6511b00")
+        self.assertEqual(binding.digest(self.captured["package_bytes"]["enum-source.json"]),
+                         "21ebc2e9f7c1b29111b35488334850aa27317bfc2400ad32963c3d7e18a16669")
+        output = self.root / "stdin-archive"
+        output.mkdir()
+        receipt = binding.prepare_archived(output, self.captured)
+        self.assertEqual(receipt["stdin_inverse_touched"], list(binding.STDIN_PATHS))
+        self.assertEqual(receipt["stdin_inverse_patch_sha256"], binding.STDIN_PATCH_SHA)
+        self.assertEqual(receipt["enum_source_sha256"], binding.ENUM_SOURCE_SHA)
+        binding.check_entries(output / "archived-selected", self.captured["selected"]["files"], exact=True)
+
+    def test_stdin_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-enum"
+        binding.materialize(source, self.captured["enum_inputs"])
+        patch_path = self.package / "stdin-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["stdin_source"]["files"], exact=True)
+
+    def test_stdin_members_required_byte_and_mode_bound_before_inverse(self):
+        for name in binding.STDIN_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_stdin_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.STDIN_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.STDIN_ADDITIONS[0]
+            source.chmod(0o755)
+            with patch.object(binding, "inverse_stdin_patch", side_effect=AssertionError("inverse ran")):
+                self.rejects("changed input mode")
+
+    def test_stdin_coherent_authority_mutations_reject_before_materialization(self):
+        path = self.package / "stdin-authority.json"
+        original = path.read_bytes()
+        for key, value in (("reviewed_source_head", binding.ENUM_HEAD), ("source_only_tree", binding.ENUM_TREE),
+                           ("current_source_members", 237), ("compiler_source_members", 179),
+                           ("transition_paths", []), ("additions", []), ("removed_paths", ["src/main.rs"]),
+                           ("current_input_git_modes", []), ("current_input_identities", []),
+                           ("transition_inputs", []), ("resource_adapter", {}), ("unit2_semantic_adapter", {})):
+            with self.subTest(key=key):
+                authority = binding.json.loads(original)
+                authority[key] = value
+                binding.write_json(path, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale stdin authority")
+        path.write_bytes(original)
+        self.rehash_package()
+
+    def test_stdin_enum_manifest_and_patch_coherent_tampering_reject(self):
+        for name, error in (("enum-source.json", "unapproved enum source manifest"),
+                            ("stdin-transition.patch", "wrong transition patch")):
+            with self.subTest(name=name):
+                path = self.package / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization(error)
+                path.write_bytes(original)
+        self.rehash_package()
+        (self.package / "stdin-transition.patch").unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_stdin_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["stdin-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 82)
+        for name, section in zip(binding.STDIN_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["stdin_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_stdin_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_stdin_patch(self.captured["enum_inputs"], original)
+
+    def test_stdin_inverse_scope_order_duplicates_unknown_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["stdin-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.STDIN_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["stdin_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.STDIN_PATHS)
+
+    def test_stdin_semantic_redirect_is_reversible_and_preserves_enum_authority(self):
+        original = self.captured["enum_unit2_comparator"]
+        derived = binding.adapt_stdin_unit2_comparator(original)
+        self.assertEqual(derived, self.captured["unit2_comparator"])
+        self.assertEqual(binding.adapt_stdin_unit2_comparator(derived, reverse=True), original)
+        self.assertIn(binding.STDIN_COMPARATOR_NEW, derived)
+        self.assertNotIn(binding.STDIN_COMPARATOR_OLD, derived)
+        compile(derived, "stdin-unit2-comparator", "exec")
+        for changed in (original + b"\n", original[:-1], derived):
+            with self.assertRaisesRegex(binding.BindingError, "wrong stdin Unit2 comparator input"):
+                binding.adapt_stdin_unit2_comparator(changed)
+        with patch.object(binding, "STDIN_COMPARATOR_NEW", binding.STDIN_COMPARATOR_NEW + b"# changed"):
+            with self.assertRaisesRegex(binding.BindingError, "wrong stdin Unit2 comparator output"):
+                binding.adapt_stdin_unit2_comparator(original)
+        self.assertEqual(self.captured["semantic_amendment"]["source_manifest"]["sha256"], binding.ENUM_SOURCE_SHA)
+        self.assertEqual(self.captured["index_resource_authority"]["current_source_sha256"], binding.ENUM_SOURCE_SHA)
+
+    def test_enum_forward_patch_recreates_every_current_input(self):
+        source = self.root / "forward-projected"
+        binding.materialize(source, self.captured["projected_inputs"])
+        patch_path = self.package / "enum-transition.patch"
+        for extra in (['--check'], []):
+            result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                     'apply', *extra, str(patch_path)], cwd=source,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        binding.check_entries(source, self.captured["enum_source"]["files"], exact=True)
+
+    def test_enum_members_required_byte_and_mode_bound(self):
+        for name in binding.ENUM_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_enum_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.ENUM_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+        if sys.platform != "win32":
+            source = self.repo / binding.ENUM_SCANNER_PATHS[0]
+            source.chmod(0o755)
+            self.rejects("changed input mode")
+
+    def test_enum_authority_coherent_rehash_rejects(self):
+        authority = binding.read_json(self.package / "enum-authority.json")
+        authority["transition_paths"] = authority["transition_paths"][:-1]
+        binding.write_json(self.package / "enum-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale enum authority")
+
+    def test_projected_predecessor_manifest_coherent_rehash_rejects(self):
+        source = self.package / "projected-source.json"
+        value = binding.read_json(source)
+        value["files"].pop()
+        binding.write_json(source, value)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved projected source manifest")
+
+    def test_enum_patch_changed_or_missing_rejects(self):
+        source = self.package / "enum-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_enum_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["enum-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 102)
+        for name, section in zip(binding.ENUM_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["enum_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_enum_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_enum_patch(self.captured["projected_inputs"], original)
+
+    def test_enum_inverse_scope_order_duplicates_unknown_and_extra_tail_reject(self):
+        original = self.captured["package_bytes"]["enum-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        unknown = sections[0].replace(binding.ENUM_PATHS[0].encode(), b"src/unknown.rs")
+        for changed in (b"".join(reversed(sections)), b"".join(sections[:-1]),
+                        original + sections[0], original + unknown, original + b"unexpected tail\n"):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaises(binding.BindingError):
+                binding.apply_inverse_patch(self.captured["enum_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.ENUM_PATHS)
+
+    def test_enum_scanner_closure_is_separate_and_ordered(self):
+        closure = self.captured["enum_authority"]["scanner_include_closure"]
+        self.assertEqual([row["includer"]["path"] for row in closure], list(binding.ENUM_SCANNER_INCLUDERS))
+        self.assertEqual([row["ordered_references"] for row in closure], [list(binding.ENUM_SCANNER_PATHS)] * 2)
+        self.assertEqual(sum(len(row["ordered_references"]) for row in closure), 4)
+        self.assertEqual(len({name for row in closure for name in row["ordered_references"]}), 2)
+        self.assertEqual((self.captured["current"]["compile_time_fixture_members"],
+                          self.captured["current"]["compile_time_fixture_references"]), (42, 47))
+
+    def test_enum_observer_adapter_is_exact_reversible_and_fail_closed(self):
+        prior = self.captured["borrowed_observer"]
+        current = binding.adapt_enum_unit2_observer(prior)
+        self.assertEqual(current, self.captured["observer"])
+        self.assertEqual(len(binding.ENUM_OBSERVER_SEAMS), 3)
+        self.assertIn(b'AggregateTy::Enum(_) => panic!("current Unit2 observer excludes enum projection")', current)
+        self.assertIn(b'BorrowedTy::Exact(AggregateTy::Enum(_)) => panic!("current Unit2 observer excludes enum projection")', current)
+        self.assertEqual(current.count(b"fn current_unit2_aggregate_adapter_"), 6)
+        restored = current
+        for old, new in reversed(binding.ENUM_OBSERVER_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, prior)
+        for changed in (prior + b"\n", prior[:-1], current):
+            with self.assertRaisesRegex(binding.BindingError, "wrong predecessor enum Unit2 observer"):
+                binding.adapt_enum_unit2_observer(changed)
+        for index, (old, new) in enumerate(binding.ENUM_OBSERVER_SEAMS):
+            seams = binding.ENUM_OBSERVER_SEAMS
+            with patch.object(binding, "ENUM_OBSERVER_SEAMS", seams[:index] + ((old, new + b"// mutation"),) + seams[index + 1:]):
+                with self.assertRaisesRegex(binding.BindingError, "wrong derived enum Unit2 observer"):
+                    binding.adapt_enum_unit2_observer(prior)
+
+    def test_enum_index_resource_preserves_frozen_bytes_and_exact_four_control_scope(self):
+        original = self.captured["historical_bytes"][binding.INDEX_RESOURCE]
+        current = binding.adapt_enum_index_resource(original)
+        self.assertEqual(current, self.captured["index_resource"])
+        self.assertEqual(len(binding.ENUM_INDEX_RESOURCE_SEAMS), 17)
+        restored = current
+        for old, new in reversed(binding.ENUM_INDEX_RESOURCE_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        import re
+        def functions(raw):
+            return {match[1]: match[0] for match in re.finditer(
+                rb'#\[test\]\nfn (reviewer_[a-z_]+)\(\) \{.*?(?=\n#\[test\]|\Z)', raw, re.S)}
+        old_functions, new_functions = functions(original), functions(current)
+        self.assertEqual(set(old_functions), set(new_functions))
+        self.assertEqual([name.decode() for name in old_functions if old_functions[name] != new_functions[name]],
+                         list(binding.ENUM_INDEX_RESOURCE_CONTROLS))
+        self.assertEqual(len(self.captured["index_resource_authority"]["preserved_test_names"]), 21)
+        self.assertIn(b'fn reviewer_fourteen_actual_index_reserve_failures()', current)
+        self.assertIn(b'for fail in 1..=16 {', current)
+        for unchanged in (b'index.row_lengths(),[4,4,2,1,1,2,1,1,1,1]',
+                          b'assert!(FIXED_SCRATCH<=4096)', b'ast_payload,28800',
+                          b'plan().build_work,168', b'assert_eq!(count,usize::MAX)'):
+            if unchanged in original:
+                self.assertIn(unchanged, current)
+
+    def test_enum_index_resource_derivation_matches_independent_prescribed_rows(self):
+        derivation = self.captured["index_resource_authority"]["representation_derivation"]
+        self.assertEqual(derivation["nine_payloads_after"], [68,120,136,184,180,288,272,340,380])
+        self.assertEqual((derivation["module_row_bytes"], derivation["enum_row_bytes"],
+                          derivation["variant_row_bytes"], derivation["index_header_bytes"],
+                          derivation["fixed_scratch_bytes"]), (68,20,12,344,4088))
+        self.assertEqual(derivation["unchanged_function_work"], {"preflight":34,"mandatory_build":168,"admission":202})
+        current = self.captured["index_resource"]
+        self.assertIn(b'("index enums",0,20),("index variants",0,12),("index modules",2,68)', current)
+        self.assertIn(b'al.trace.iter().take(12)', current)
+        self.assertIn(b'al.trace.iter().skip(12)', current)
+        self.assertIn(b'let retained=120+size_of::<DeclarationIndex', current)
+
+    def test_enum_index_resource_coherent_authority_mutations_reject_before_materialization(self):
+        name = self.package / "enum-resource-authority.json"
+        original = name.read_bytes()
+        for field, value in (("logical_resource_tests", 20), ("changed_controls", []),
+                             ("source_dependencies", []), ("preserved_test_names", [])):
+            with self.subTest(field=field):
+                authority = binding.read_json(name)
+                authority[field] = value
+                binding.write_json(name, authority)
+                self.rehash_package()
+                self.rejects_before_materialization("stale enum index resource authority")
+                name.write_bytes(original)
+        self.rehash_package()
+
+    def test_enum_index_resource_rejects_source_tail_unknown_seams_and_reapplication(self):
+        original = self.captured["historical_bytes"][binding.INDEX_RESOURCE]
+        for changed in (original + b"\n", original[:-1], self.captured["index_resource"]):
+            with self.assertRaisesRegex(binding.BindingError, "wrong original enum index resource"):
+                binding.adapt_enum_index_resource(changed)
+        seams = binding.ENUM_INDEX_RESOURCE_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with patch.object(binding, "ENUM_INDEX_RESOURCE_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong enum index resource substitution count"):
+                    binding.adapt_enum_index_resource(original)
+        for index, (old, new) in enumerate(seams):
+            for changed in ((b"unknown seam", new), (old, new + b"// altered")):
+                with self.subTest(index=index), patch.object(binding, "ENUM_INDEX_RESOURCE_SEAMS", seams[:index] + (changed,) + seams[index+1:]):
+                    with self.assertRaisesRegex(binding.BindingError, "enum index resource seam drift|wrong derived enum index resource"):
+                        binding.adapt_enum_index_resource(original)
+
+    def test_enum_semantic_comparator_is_exact_reversible_and_retains_frozen_report(self):
+        original = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
+        current = binding.adapt_enum_unit2_comparator(original)
+        self.assertEqual(current, self.captured["enum_unit2_comparator"])
+        restored = current
+        for old, new in reversed(binding.UNIT2_COMPARATOR_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        compile(current, "current-unit2-comparator", "exec")
+        self.assertIn(b'compare_before_enum_enabled_qualified_values.py', current)
+        self.assertIn(b"historical_report['counts']=={'match':3599,'mismatch':4}", current)
+        self.assertIn(b"report['historical_semantic_comparison']=historical_binding", current)
+        output = self.root / "semantic-package"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        prepared = Path(seam["resource_package_root"])
+        self.assertEqual((prepared / binding.UNIT2_FROZEN_COMPARATOR).read_bytes(), original)
+        self.assertEqual((prepared / binding.UNIT2_COMPARATOR).read_bytes(),
+                         binding.adapt_stdin_unit2_comparator(current))
+        self.assertEqual((prepared / "enum-source.json").read_bytes(),
+                         self.captured["package_bytes"]["enum-source.json"])
+        self.assertEqual((prepared / "semantic/corpus.jsonl.gz").read_bytes(),
+                         self.captured["historical_bytes"]["semantic/corpus.jsonl.gz"])
+        self.assertEqual(seam["semantic_amendment"]["cases"], [
+            "parser/bare-relative-prefix", "parser/qualified-function-value",
+            "parser/self-relative-prefix", "parser/super-relative-prefix"])
+
+    def test_enum_semantic_helper_or_descriptor_coherent_changes_reject(self):
+        for name in (binding.SEMANTIC_HELPER, binding.SEMANTIC_DESCRIPTOR):
+            with self.subTest(name=name):
+                path = self.package / name
+                old = path.read_bytes()
+                path.write_bytes(old + b"\n")
+                self.rehash_package()
+                self.rejects_before_materialization("unapproved enum semantic amendment")
+                path.write_bytes(old)
+        self.rehash_package()
+
+    def test_enum_semantic_comparator_rejects_wrong_original_and_seams(self):
+        original = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
+        for changed in (original + b"\n", self.captured["unit2_comparator"]):
+            with self.assertRaisesRegex(binding.BindingError, "wrong original Unit2 comparator"):
+                binding.adapt_enum_unit2_comparator(changed)
+        seams = binding.UNIT2_COMPARATOR_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with patch.object(binding, "UNIT2_COMPARATOR_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong enum Unit2 comparator substitution count"):
+                    binding.adapt_enum_unit2_comparator(original)
+        for index, (old, new) in enumerate(seams):
+            with patch.object(binding, "UNIT2_COMPARATOR_SEAMS", seams[:index] + ((old, new + b"# altered\n"),) + seams[index+1:]):
+                with self.assertRaisesRegex(binding.BindingError, "wrong derived enum Unit2 comparator"):
+                    binding.adapt_enum_unit2_comparator(original)
+
+    def test_enum_resource_adapter_is_exact_reversible(self):
+        prior = self.captured["combined_resource"]
+        current = self.captured["enum_resource"]
+        self.assertEqual(current.replace(binding.ENUM_RESOURCE_SEAM, binding.NEW_SEAM), prior)
+        self.assertEqual(current.count(binding.ENUM_RESOURCE_SEAM), 1)
+        self.assertIn(b"enums:EnumSyntaxPolicy::Closed,storage:enums::SyntaxStorage::default()", current)
+        self.assertEqual(self.captured["enum_authority"]["resource_adapter"]["derived"],
+                         binding.entry(binding.RESOURCE, current))
+        self.assertEqual(binding.adapt_stdin_parser_resource(current), self.captured["resource"])
+
+    def test_projected_inverse_restores_exact_unary(self):
+        restored, touched = binding.inverse_projected_patch(
+            self.captured["projected_inputs"], self.captured["package_bytes"]["projected-transition.patch"])
+        self.assertEqual(restored, self.captured["unary_inputs"])
+        self.assertEqual(touched, list(binding.PROJECTED_PATHS))
+        self.assertEqual(len(touched), 40)
+        self.assertEqual(len(binding.PROJECTED_ADDITIONS), 2)
+        self.assertEqual(len(restored), 199)
+        self.assertEqual(self.captured["projected_source"]["reviewed_source_head"],
+                         "052ad52ac876c01b91701132cffb466689b24d01")
+        self.assertEqual(self.captured["projected_source"]["source_only_tree"],
+                         "a573ca3d279bc3e14ad6da1bd84cae9917d0fe50")
+
+    def test_projected_members_required_and_byte_bound(self):
+        for name in binding.PROJECTED_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_projected_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.PROJECTED_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+
+    def test_projected_authority_coherent_tampering_rejects(self):
+        authority = binding.read_json(self.package / "projected-authority.json")
+        authority["transition_paths"] = []
+        binding.write_json(self.package / "projected-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale projected authority")
+
+    def test_unary_predecessor_manifest_coherent_tampering_rejects(self):
+        current = binding.read_json(self.package / "unary-source.json")
+        current["files"] = current["files"][:-1]
+        binding.write_json(self.package / "unary-source.json", current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved unary source manifest")
+
+    def test_projected_patch_changed_or_missing_rejects(self):
+        source = self.package / "projected-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_projected_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["projected-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 40)
+        for name, section in zip(binding.PROJECTED_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["projected_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_projected_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_projected_patch(self.captured["unary_inputs"], original)
+
+    def test_projected_inverse_scope_order_and_duplicates_reject(self):
+        original = self.captured["package_bytes"]["projected-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["projected_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.PROJECTED_PATHS)
+
+    def test_unary_inverse_restores_exact_composition(self):
+        restored, touched = binding.inverse_unary_patch(
+            self.captured["unary_inputs"], self.captured["package_bytes"]["unary-transition.patch"])
+        self.assertEqual(restored, self.captured["composition_inputs"])
+        self.assertEqual(touched, list(binding.UNARY_PATHS))
+        self.assertEqual(len(touched), 25)
+        self.assertEqual(len(binding.UNARY_ADDITIONS), 3)
+        self.assertEqual(len(restored), 196)
+        self.assertEqual(self.captured["unary_source"]["reviewed_source_head"],
+                         "bf48512acf86e2d23c28b6b9b16de3be3d127051")
+        self.assertEqual(self.captured["unary_source"]["source_only_tree"],
+                         "715d047f37db8b7658bda688ff4e5961609193f8")
+
+    def test_unary_members_required_and_byte_bound(self):
+        for name in binding.UNARY_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// mutation\n")
+                with patch.object(binding, "inverse_unary_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+        for name in binding.UNARY_ADDITIONS:
+            source = self.repo / name
+            raw = source.read_bytes()
+            source.unlink()
+            self.rejects("missing regular input")
+            source.write_bytes(raw)
+
+    def test_unary_authority_coherent_tampering_rejects(self):
+        authority = binding.read_json(self.package / "unary-authority.json")
+        authority["transition_paths"] = []
+        binding.write_json(self.package / "unary-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale unary authority")
+
+    def test_composition_predecessor_manifest_coherent_tampering_rejects(self):
+        current = binding.read_json(self.package / "composition-source.json")
+        current["files"] = current["files"][:-1]
+        binding.write_json(self.package / "composition-source.json", current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved composition source manifest")
+
+    def test_unary_patch_changed_or_missing_rejects(self):
+        source = self.package / "unary-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_unary_inverse_context_and_double_application_reject(self):
+        original = self.captured["package_bytes"]["unary-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 25)
+        for name, section in zip(binding.UNARY_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["unary_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaises(binding.BindingError):
+                    binding.inverse_unary_patch(inputs, original)
+        with self.assertRaises(binding.BindingError):
+            binding.inverse_unary_patch(self.captured["composition_inputs"], original)
+
+    def test_unary_inverse_scope_order_and_duplicates_reject(self):
+        original = self.captured["package_bytes"]["unary-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["unary_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.UNARY_PATHS)
+
+    def test_composition_inverse_restores_exact_slice_predecessor(self):
+        captured = self.captured
+        restored, touched = binding.inverse_composition_patch(
+            captured["composition_inputs"], captured["package_bytes"]["composition-transition.patch"])
+        self.assertEqual(restored, captured["slices_inputs"])
+        self.assertEqual(touched, list(binding.COMPOSITION_PATHS))
+        self.assertEqual(len(touched), 40)
+        self.assertEqual(len(set(touched)), 40)
+        self.assertEqual(len(binding.COMPOSITION_ADDITIONS), 8)
+        self.assertEqual(set(captured["composition_inputs"]) - set(restored), set(binding.COMPOSITION_ADDITIONS))
+        binding.check_bytes(restored, captured["slices_source"]["files"])
+        self.assertEqual(binding.digest(captured["package_bytes"]["slices-source.json"]),
+                         "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660")
+        self.assertEqual(captured["composition_source"]["reviewed_source_head"],
+                         "8ae66ef5543bcb1251868b84ea38a82c2649a3a4")
+        self.assertEqual(captured["composition_source"]["source_only_tree"],
+                         "f6b7dee8bac4ebcc27ad020db9940344c5e4ae41")
+        self.assertEqual(len([n for n in captured["composition_inputs"] if n.startswith(("src/", "native/"))]), 140)
+
+    def test_composition_members_are_required_and_byte_bound(self):
+        for name in binding.COMPOSITION_PATHS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.write_bytes(raw + b"// changed composition member\n")
+                with patch.object(binding, "inverse_composition_patch", side_effect=AssertionError("inverse ran")):
+                    self.rejects("changed input")
+                source.write_bytes(raw)
+
+    def test_composition_additions_cannot_be_omitted(self):
+        for name in binding.COMPOSITION_ADDITIONS:
+            with self.subTest(name=name):
+                source = self.repo / name
+                raw = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(raw)
+
+    def test_composition_manifest_coherent_tampering_rejects(self):
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = current["files"][:-1]
+        binding.write_json(self.package / "current-source.json", current)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_composition_authority_coherent_tampering_rejects(self):
+        authority = binding.read_json(self.package / "composition-authority.json")
+        authority["public_sample_closure"]["references"] = 2
+        binding.write_json(self.package / "composition-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale composition authority")
+
+    def test_composition_patch_changed_or_missing_rejects(self):
+        source = self.package / "composition-transition.patch"
+        original = source.read_bytes()
+        source.write_bytes(original + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("wrong transition patch")
+        source.unlink()
+        self.rejects("missing or extra adapter member")
+
+    def test_composition_inverse_requires_each_exact_context(self):
+        original = self.captured["package_bytes"]["composition-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 40)
+        for name, section in zip(binding.COMPOSITION_PATHS, sections):
+            with self.subTest(name=name):
+                inputs = dict(self.captured["composition_inputs"])
+                hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[name].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[name] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_composition_patch(inputs, original)
+
+    def test_composition_inverse_scope_order_and_duplicate_controls(self):
+        original = self.captured["package_bytes"]["composition-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["composition_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.COMPOSITION_PATHS)
+
+    def test_division_successor_restores_every_combined_input_before_older_stages(self):
+        captured = self.captured
+        restored, touched = binding.inverse_division_patch(
+            captured["division_inputs"], captured["package_bytes"]["division-transition.patch"])
+        self.assertEqual(touched, list(binding.DIVISION_PATHS))
+        self.assertEqual(len(touched), 14)
+        self.assertEqual(len(set(touched)), 14)
+        self.assertEqual(len(restored), 185)
+        self.assertEqual(set(restored), set(captured["division_inputs"]))
+        self.assertEqual(restored, captured["combined_inputs"])
+        binding.check_bytes(restored, captured["combined_source"]["files"])
+        self.assertEqual([name for name in restored if restored[name] != captured["division_inputs"][name]],
+                         list(binding.DIVISION_PATHS))
+        self.assertEqual(captured["division_source"]["reviewed_source_head"],
+                         "2c46521caa902b2afb88ef6b7bae58b9a1382776")
+        self.assertEqual(captured["division_source"]["source_only_tree"],
+                         "7a74bf86edb53469dbcfd7839a8d3717a0d59a9a")
+        self.assertEqual(captured["division_source"]["division_base_head"],
+                         "8a3b8683d911bdabfcdc7ca7d3ba867f6235ded3")
+        self.assertEqual(binding.digest(captured["package_bytes"]["combined-source.json"]),
+                         "221524ad3faf7ea8e8b336cf8497a2eb7e2fbe476a1e829f510b2ee98dc82487")
+        self.assertEqual(len(captured["package_bytes"]["combined-source.json"]), 35021)
+        self.assertEqual(binding.digest(captured["package_bytes"]["combined-authority.json"]),
+                         "f28aae703e7f3c1010d91e2f53a4f66a9f728fe5248edf1f4832f12f59d90670")
+        self.assertEqual(binding.digest(captured["package_bytes"]["division-transition.patch"]),
+                         "65319908325ce79bd46fb6014b0392b697e3a9d16447562d213dd882a0e2efb1")
+        self.assertEqual(len(captured["package_bytes"]["division-transition.patch"]), 49895)
+        self.assertEqual(captured["division_authority"]["added_source_paths"], [])
+        self.assertEqual(captured["division_authority"]["removed_source_paths"], [])
+        compiler = [name for name in captured["division_inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler), 133)
+        self.assertEqual(len(compiler) + 3, 136)
+        self.assertEqual(captured["division_authority"]["current_input_git_modes"],
+                         [{"path": name, "mode": "100644"} for name in captured["division_inputs"]])
+        formatter, _ = binding.inverse_combined_patch(restored, captured["package_bytes"]["combined-transition.patch"])
+        predecessor, _ = binding.inverse_formatter_patch(formatter, captured["package_bytes"]["formatter-transition.patch"])
+        archive, _ = binding.inverse_patch(predecessor, captured["package_bytes"]["source-transition.patch"])
+        for extra in captured["authority"]["inverse_only_inputs"]:
+            self.assertEqual(binding.entry(extra["path"], archive.pop(extra["path"])), extra)
+        binding.check_bytes(archive, captured["selected"]["files"])
+
+    def test_division_stage_precedes_all_historical_reconstruction(self):
+        calls = []
+        def record(name, original):
+            def wrapper(*args):
+                calls.append(name)
+                return original(*args)
+            return wrapper
+        names = ("inverse_enum_patch", "inverse_projected_patch", "inverse_unary_patch", "inverse_composition_patch", "inverse_slices_patch", "inverse_division_patch", "inverse_combined_patch", "inverse_formatter_patch", "inverse_patch")
+        with ExitStack() as stack:
+            for name in names:
+                stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
+            binding.preflight(self.repo, self.package)
+        self.assertEqual(calls, list(names))
+
+    def test_slices_successor_restores_exact_division_before_older_stages(self):
+        captured = self.captured
+        restored, touched = binding.inverse_slices_patch(
+            captured["slices_inputs"], captured["package_bytes"]["slices-transition.patch"])
+        self.assertEqual(touched, list(binding.SLICES_PATHS))
+        self.assertEqual(len(touched), 47)
+        self.assertEqual(len(set(touched)), 47)
+        self.assertEqual(restored, captured["division_inputs"])
+        self.assertEqual(set(captured["slices_inputs"]) - set(restored), set(binding.SLICES_ADDITIONS))
+        self.assertEqual(len(binding.SLICES_ADDITIONS), 3)
+        self.assertEqual(len(restored), 185)
+        binding.check_bytes(restored, captured["division_source"]["files"])
+        self.assertEqual([name for name in captured["slices_inputs"]
+                          if captured["slices_inputs"][name] != restored.get(name)], list(binding.SLICES_PATHS))
+        self.assertEqual(captured["slices_source"]["reviewed_source_head"],
+                         "03aead9755b1dd6aaec2b4b165ee3881a7a1f7b7")
+        self.assertEqual(captured["slices_source"]["source_only_tree"],
+                         "450f016ed57bc3d960e0857bb8253e71a8aa718a")
+        self.assertEqual(captured["slices_source"]["slices_base_head"],
+                         "c5798a232ebdacaf720d580007ee8d760957a081")
+        self.assertEqual(binding.entry("division-source.json", captured["package_bytes"]["division-source.json"]),
+                         {"path": "division-source.json", "bytes": 35161,
+                          "sha256": "d3f3d2c8dc254bdb2b86381325a943925a39fde0eb2b89a10d1de8e6bfbd7f33"})
+        compiler = [name for name in captured["slices_inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler), 136)
+        self.assertEqual(len(compiler) + 3, 139)
+        self.assertEqual(captured["slices_authority"]["current_input_git_modes"],
+                         [{"path": name, "mode": "100644"} for name in captured["slices_inputs"]])
+        for row in captured["slices_authority"]["transition_inputs"]:
+            self.assertEqual(row["before"] is None, row["path"] in binding.SLICES_ADDITIONS)
+            self.assertEqual(row["after"]["mode"], "100644")
+
+    def test_each_slices_source_is_required_and_byte_bound(self):
+        for path in binding.SLICES_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed slices source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_each_slices_addition_omission_rejects_before_materialization(self):
+        for path in binding.SLICES_ADDITIONS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects_before_materialization("missing regular input")
+                source.write_bytes(original)
+
+    def test_slices_changed_source_and_mode_reject_before_materialization(self):
+        source = self.repo / binding.SLICES_ADDITIONS[0]
+        original = source.read_bytes()
+        source.write_bytes(original + b"// changed slices native tests\n")
+        self.rejects_before_materialization("changed input")
+        source.write_bytes(original)
+        source.chmod(0o755)
+        self.rejects_before_materialization("changed input mode")
+
+    def test_coherently_rehashed_slices_source_rejects_before_reconstruction(self):
+        name = "src/frontend/oir/owned_types.rs"
+        source = self.repo / name
+        source.write_bytes(source.read_bytes() + b"// coherent borrowed type change\n")
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = [binding.entry(name, source.read_bytes()) if row["path"] == name else row
+                            for row in current["files"]]
+        binding.write_json(self.package / "current-source.json", current)
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved current source manifest")
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_slices_source_cannot_relax_membership(self):
+        name = binding.SLICES_ADDITIONS[0]
+        (self.repo / name).unlink()
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = [row for row in current["files"] if row["path"] != name]
+        binding.write_json(self.package / "current-source.json", current)
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        authority["added_source_paths"].remove(name)
+        authority["current_source_members"] -= 1
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_division_manifest_rejects_before_reconstruction(self):
+        source = self.package / "division-source.json"
+        source.write_bytes(source.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["division_source_sha256"] = binding.digest(source.read_bytes())
+        authority["division_source_bytes"] = source.stat().st_size
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved division source manifest")
+        self.rejects_before_materialization("unapproved division source manifest")
+
+    def test_missing_slices_patch_rejects_before_materialization(self):
+        (self.package / "slices-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_rehashed_slices_patch_rejects_before_reconstruction(self):
+        source = self.package / "slices-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("wrong slices transition patch")
+        self.rejects_before_materialization("wrong slices transition patch")
+
+    def test_coherently_rehashed_slices_patch_rejects_before_materialization(self):
+        source = self.package / "slices-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(source.read_bytes())
+        authority["transition_patch_bytes"] = source.stat().st_size
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale slices authority")
+
+    def test_slices_checkpoint_scope_modes_and_recipe_are_pinned(self):
+        original = (self.package / "slices-authority.json").read_bytes()
+        for field, value in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                              ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                              ("transition_touched_paths", list(reversed(binding.SLICES_PATHS))),
+                              ("transition_touched_paths", list(binding.SLICES_PATHS[:-1])),
+                              ("added_source_paths", []), ("removed_source_paths", [binding.SLICES_PATHS[0]]),
+                              ("compiler_bodies", 140), ("current_source_members", 189),
+                              ("division_source_members", 184), ("current_input_git_modes", []),
+                              ("transition_inputs", []), ("unit2_observer_adapter", {}),
+                              ("compile_time_fixture_derivation", {})):
+            with self.subTest(field=field, value=value):
+                authority = binding.json.loads(original)
+                authority[field] = value
+                binding.write_json(self.package / "slices-authority.json", authority)
+                self.rehash_package()
+                with patch.object(binding, "inverse_slices_patch", side_effect=AssertionError("reconstruction started")):
+                    self.rejects("stale slices authority")
+
+    def test_slices_inverse_requires_exact_patch_and_each_current_context(self):
+        original = self.captured["package_bytes"]["slices-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_slices_patch(self.captured["slices_inputs"], original + b"\n")
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 47)
+        for path, section in zip(binding.SLICES_PATHS, sections):
+            with self.subTest(path=path):
+                inputs = dict(self.captured["slices_inputs"])
+                first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[path].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[path] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_slices_patch(inputs, original)
+
+    def test_slices_inverse_rejects_reordered_missing_and_duplicate_paths(self):
+        original = self.captured["package_bytes"]["slices-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["slices_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.SLICES_PATHS)
+
+    def test_compile_time_fixture_predecessor_and_current_pins_remain_distinct(self):
+        before = self.captured["combined_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        current = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        self.assertEqual(binding.digest(before),
+                         "10687b76ac4c048d21467653b55a4c322ac011209f6d1ebd503ce2fc778810cc")
+        self.assertEqual(len(before), 44176)
+        self.assertEqual(binding.compile_fixture_paths(before, combined=True), binding.compile_fixture_paths(current))
+        self.assertEqual(binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, before),
+                         binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, current))
+        for source, combined in ((before, False), (current, True)):
+            with self.assertRaisesRegex(binding.BindingError, "wrong compile-time fixture includer"):
+                binding.compile_fixture_paths(source, combined=combined)
+
+    def test_each_division_source_is_required_and_byte_bound(self):
+        for path in binding.DIVISION_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed division source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_division_source_mutation_rejects_before_materialization(self):
+        source = self.repo / "src/frontend/oir/native.rs"
+        source.write_bytes(source.read_bytes() + b"// changed division lowering\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_division_source_omission_rejects_before_materialization(self):
+        (self.repo / "src/frontend/oir/arithmetic_tests.rs").unlink()
+        self.rejects_before_materialization("missing regular input")
+
+    def test_current_source_mode_changes_reject_before_materialization(self):
+        source = self.repo / "src/frontend/oir/owned/native.rs"
+        source.chmod(0o755)
+        self.rejects_before_materialization("changed input mode")
+
+    def test_unchanged_current_input_modes_are_also_bound(self):
+        for name in ("Cargo.toml", "src/frontend/driver.rs", binding.COMBINED_FIXTURE_ADDITIONS[0]):
+            with self.subTest(path=name):
+                source = self.repo / name
+                source.chmod(0o755)
+                self.rejects("changed input mode")
+                source.chmod(0o644)
+
+    def test_coherently_rehashed_division_source_rejects_before_reconstruction(self):
+        name = "src/frontend/oir/execute.rs"
+        source = self.repo / name
+        source.write_bytes(source.read_bytes() + b"// coherent division change\n")
+        current = binding.read_json(self.package / "current-source.json")
+        current["files"] = [binding.entry(name, source.read_bytes()) if row["path"] == name else row
+                            for row in current["files"]]
+        binding.write_json(self.package / "current-source.json", current)
+        authority = binding.read_json(self.package / "division-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "division-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_division_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved current source manifest")
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_combined_manifest_rejects_before_reconstruction(self):
+        source = self.package / "combined-source.json"
+        source.write_bytes(source.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "division-authority.json")
+        authority["combined_source_sha256"] = binding.digest(source.read_bytes())
+        authority["combined_source_bytes"] = source.stat().st_size
+        binding.write_json(self.package / "division-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_division_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved combined source manifest")
+        self.rejects_before_materialization("unapproved combined source manifest")
+
+    def test_missing_division_patch_rejects_before_materialization(self):
+        (self.package / "division-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_rehashed_division_patch_rejects_before_reconstruction(self):
+        source = self.package / "division-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rehash_package()
+        with patch.object(binding, "inverse_division_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("wrong division transition patch")
+        self.rejects_before_materialization("wrong division transition patch")
+
+    def test_coherently_rehashed_division_patch_rejects_before_materialization(self):
+        source = self.package / "division-transition.patch"
+        source.write_bytes(source.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "division-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(source.read_bytes())
+        authority["transition_patch_bytes"] = source.stat().st_size
+        binding.write_json(self.package / "division-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale division authority")
+
+    def test_division_checkpoint_scope_modes_and_recipe_are_pinned(self):
+        original = (self.package / "division-authority.json").read_bytes()
+        for field, value in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                              ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                              ("transition_touched_paths", list(reversed(binding.DIVISION_PATHS))),
+                              ("transition_touched_paths", list(binding.DIVISION_PATHS[:-1])),
+                              ("added_source_paths", [binding.DIVISION_PATHS[0]]),
+                              ("removed_source_paths", [binding.DIVISION_PATHS[0]]),
+                              ("compiler_bodies", 137), ("current_source_members", 186),
+                              ("combined_source_members", 184), ("current_input_git_modes", []),
+                              ("transition_inputs", [])):
+            with self.subTest(field=field, value=value):
+                authority = binding.json.loads(original)
+                authority[field] = value
+                binding.write_json(self.package / "division-authority.json", authority)
+                self.rehash_package()
+                with patch.object(binding, "inverse_division_patch", side_effect=AssertionError("reconstruction started")):
+                    self.rejects("stale division authority")
+
+    def test_division_inverse_requires_exact_patch_and_each_current_context(self):
+        original = self.captured["package_bytes"]["division-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_division_patch(self.captured["division_inputs"], original + b"\n")
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 14)
+        for path, section in zip(binding.DIVISION_PATHS, sections):
+            with self.subTest(path=path):
+                inputs = dict(self.captured["division_inputs"])
+                first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[path].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[path] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_division_patch(inputs, original)
+
+    def test_division_inverse_rejects_reordered_missing_and_duplicate_paths(self):
+        original = self.captured["package_bytes"]["division-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["division_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.DIVISION_PATHS)
+
+    def test_cumulative_array_transition_restores_the_published_archive(self):
+        captured = binding.preflight(self.repo, self.package)
+        self.assertEqual(len(captured["touched"]), 56)
+        self.assertEqual(len(set(captured["touched"])), 56)
+        delta = captured["authority"]["transition_source_delta"]
+        self.assertEqual(captured["touched"][9:], delta["paths"])
+        self.assertEqual(len(delta["paths"]), 47)
+        self.assertFalse(set(captured["touched"][:9]) & set(delta["paths"]))
+        additions = binding.EXTRA - {"src/frontend/parser/activation_tests.rs",
+                                   "tests/typed_frontend.rs", "tests/typed_project_dispatch.rs"}
+        self.assertEqual(len(additions), 9)
+        for path in delta["paths"]:
+            if path in additions:
+                self.assertNotIn(path, captured["archived"])
+            else:
+                self.assertNotEqual(captured["inputs"][path], captured["archived"][path])
+        patch = captured["package_bytes"]["source-transition.patch"]
+        self.assertEqual(binding.digest(patch[:28881]),
+                         "04f0588360aac12b96cd69a34b282329ea696eb69d7b979c8ffc385b7a42aab8")
+        self.assertEqual(binding.digest(patch[28881:]), delta["sha256"])
+        restored, _ = binding.inverse_patch(captured["predecessor_inputs"], patch)
+        extra = captured["authority"]["inverse_only_inputs"][0]
+        self.assertEqual(binding.entry(extra["path"], restored.pop(extra["path"])), extra)
+        binding.check_bytes(restored, captured["selected"]["files"])
+
+    def test_formatter_successor_restores_exact_predecessor_and_archive(self):
+        captured = self.captured
+        predecessor = binding.read_json(self.package / "predecessor-source.json")
+        restored, touched = binding.inverse_formatter_patch(
+            captured["formatter_inputs"], captured["package_bytes"]["formatter-transition.patch"])
+        self.assertEqual(touched, list(binding.FORMATTER_PATHS))
+        self.assertEqual(len(touched), 8)
+        self.assertEqual(len(set(touched)), 8)
+        binding.check_bytes(restored, predecessor["files"])
+        self.assertEqual(restored, captured["predecessor_inputs"])
+        self.assertEqual(set(captured["formatter_inputs"]) - set(restored), set(binding.FORMATTER_ADDITIONS))
+        self.assertEqual(len(binding.FORMATTER_ADDITIONS), 4)
+        self.assertEqual(binding.digest(captured["package_bytes"]["predecessor-source.json"]),
+                         "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8")
+        self.assertEqual(binding.digest(captured["package_bytes"]["authority.json"]),
+                         "73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce")
+        self.assertEqual(binding.digest(captured["package_bytes"]["source-transition.patch"]),
+                         "63055a4b1a2cb63ce6a160a53e5c8131c4c288c198cd9af6ea421b5c2931fc18")
+        archived, _ = binding.inverse_patch(restored, captured["package_bytes"]["source-transition.patch"])
+        for extra in captured["authority"]["inverse_only_inputs"]:
+            self.assertEqual(binding.entry(extra["path"], archived.pop(extra["path"])), extra)
+        binding.check_bytes(archived, captured["selected"]["files"])
+        self.assertEqual(captured["formatter_source"]["reviewed_source_head"],
+                         "8a08a2908b2ceb73c80112e6ddd82e2dbda91976")
+        self.assertEqual(captured["formatter_source"]["source_only_tree"],
+                         "afa181dab5aa3341ceae4f7b882a81a635e08fa0")
+
+    def test_combined_successor_restores_exact_formatter_predecessor_and_archive(self):
+        captured = self.captured
+        restored, touched = binding.inverse_combined_patch(
+            captured["combined_inputs"], captured["package_bytes"]["combined-transition.patch"])
+        self.assertEqual(touched, list(binding.COMBINED_PATHS))
+        self.assertEqual(len(touched), 80)
+        self.assertEqual(len(set(touched)), 80)
+        self.assertEqual(len(binding.COMBINED_ADDITIONS), 52)
+        self.assertEqual(len(binding.COMBINED_SOURCE_ADDITIONS), 10)
+        self.assertEqual(len(binding.COMBINED_FIXTURE_ADDITIONS), 42)
+        self.assertEqual(len(restored), 133)
+        binding.check_bytes(restored, captured["formatter_source"]["files"])
+        self.assertEqual(restored, captured["formatter_inputs"])
+        self.assertEqual(set(captured["combined_inputs"]) - set(restored), set(binding.COMBINED_ADDITIONS))
+        for path in binding.COMBINED_PATHS:
+            if path not in binding.COMBINED_ADDITIONS:
+                self.assertNotEqual(captured["combined_inputs"][path], restored[path])
+        self.assertEqual(captured["combined_source"]["reviewed_source_head"],
+                         "a5fb98b4f1ad2fa95ee6e4637f4e9d7700cbe909")
+        self.assertEqual(captured["combined_source"]["source_only_tree"],
+                         "b30b0628c45e4a308bbb0ae5b35122794cd7ac12")
+        self.assertEqual(captured["combined_source"]["combined_base_head"],
+                         "595f681c2a906d686ddea90c65d060cff97e0a75")
+        self.assertEqual(binding.digest(captured["package_bytes"]["formatter-source.json"]),
+                         "69d89c46f23a99f7dc20911a4054cde7d97a98352d3fc1349e63ee7949ffcf06")
+        self.assertEqual(binding.digest(captured["package_bytes"]["formatter-authority.json"]),
+                         "f060dd4e264a7261517f496176d9d3def438a1e151616e313972db0545f9b4d2")
+        self.assertEqual(binding.digest(captured["package_bytes"]["formatter-transition.patch"]),
+                         "8e3bb083c6fbf8846a99476a57a80cb19c7163e5ebbabbd7f3e0305f9ac752b4")
+        self.assertEqual(binding.digest(captured["package_bytes"]["combined-transition.patch"]),
+                         "8ef58e282f1e37a7c04e653222fb74cb40f144aaa4364723773a608df2182683")
+        self.assertEqual(len(captured["package_bytes"]["combined-transition.patch"]), 376315)
+        compiler = [name for name in captured["combined_inputs"] if name.startswith(("src/", "native/"))]
+        self.assertEqual(len(compiler), 133)
+        self.assertEqual(len(compiler) + 3, 136)
+        retained = {name: data for name, data in captured["combined_inputs"].items()
+                    if name not in compiler and name not in binding.COMBINED_FIXTURE_ADDITIONS}
+        self.assertEqual(list(sorted(retained)), list(binding.RETAINED_NON_SOURCE_PATHS))
+        self.assertEqual(len(retained), 10)
+        self.assertEqual(retained, {name: restored[name] for name in retained})
+
+    def test_each_combined_source_is_required_and_byte_bound(self):
+        for path in binding.COMBINED_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed combined source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_each_combined_addition_omission_rejects_before_materialization(self):
+        for index, path in enumerate(binding.COMBINED_ADDITIONS):
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                # The helper deliberately requires a fresh output for each probe.
+                output = self.root / "rejected"
+                if output.exists():
+                    output.rename(self.root / ("previous-rejection-" + str(index)))
+                self.rejects_before_materialization("missing regular input")
+                source.write_bytes(original)
+
+    def test_changed_combined_source_rejects_before_materialization(self):
+        source = self.repo / "src/frontend/parser/arrays.rs"
+        source.write_bytes(source.read_bytes() + b"// changed\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_coherently_rehashed_combined_source_rejects_before_reconstruction(self):
+        path = "src/frontend/oir/owned/source/array_pipeline.rs"
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent change\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "inverse_combined_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("unapproved current source manifest")
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_combined_source_cannot_relax_membership(self):
+        path = binding.COMBINED_ADDITIONS[0]
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        authority["added_source_paths"].remove(path)
+        authority["current_source_members"] -= 1
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_formatter_manifest_is_rejected(self):
+        path = self.package / "formatter-source.json"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["formatter_source_sha256"] = binding.digest(path.read_bytes())
+        authority["formatter_source_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved formatter source manifest")
+
+    def test_missing_combined_patch_rejects_before_materialization(self):
+        (self.package / "combined-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_rehashed_combined_patch_rejects_before_reconstruction(self):
+        path = self.package / "combined-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.rehash_package()
+        with patch.object(binding, "inverse_combined_patch", side_effect=AssertionError("reconstruction started")):
+            self.rejects("wrong combined transition patch")
+        self.rejects_before_materialization("wrong combined transition patch")
+
+    def test_coherently_rehashed_combined_patch_rejects_before_materialization(self):
+        path = self.package / "combined-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(path.read_bytes())
+        authority["transition_patch_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale combined authority")
+
+    def test_combined_checkpoint_scope_and_recipe_metadata_are_pinned(self):
+        original = (self.package / "combined-authority.json").read_bytes()
+        for field, replacement in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                                   ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                                   ("transition_touched_paths", list(reversed(binding.COMBINED_PATHS))),
+                                   ("transition_touched_paths", list(binding.COMBINED_PATHS[:-1])),
+                                   ("added_source_paths", list(binding.COMBINED_SOURCE_ADDITIONS[:-1])),
+                                   ("retained_non_source_paths", list(binding.RETAINED_NON_SOURCE_PATHS[:-1])),
+                                   ("compiler_bodies", 135), ("current_source_members", 184)):
+            with self.subTest(field=field, replacement=replacement):
+                authority = binding.json.loads(original)
+                authority[field] = replacement
+                binding.write_json(self.package / "combined-authority.json", authority)
+                self.rehash_package()
+                with patch.object(binding, "inverse_combined_patch", side_effect=AssertionError("reconstruction started")):
+                    self.rejects("stale combined authority")
+        (self.package / "combined-authority.json").write_bytes(original)
+        self.rehash_package()
+
+    def test_combined_inverse_requires_exact_patch_and_each_current_context(self):
+        original = self.captured["package_bytes"]["combined-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_combined_patch(self.captured["combined_inputs"], original + b"\n")
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        self.assertEqual(len(sections), 80)
+        for path, section in zip(binding.COMBINED_PATHS, sections):
+            with self.subTest(path=path):
+                inputs = dict(self.captured["combined_inputs"])
+                if not inputs[path]:
+                    inputs[path] = b"unexpected empty-file bytes"
+                    with self.assertRaisesRegex(binding.BindingError, "invalid empty transition addition"):
+                        binding.inverse_combined_patch(inputs, original)
+                    continue
+                first_hunk = next(line for line in section.splitlines() if line.startswith(b"@@ "))
+                offset = max(int(first_hunk.split(b" +", 1)[1].split(b" ", 1)[0].split(b",", 1)[0]) - 1, 0)
+                lines = inputs[path].splitlines(keepends=True)
+                lines[offset] = b"X" + lines[offset]
+                inputs[path] = b"".join(lines)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_combined_patch(inputs, original)
+
+    def test_combined_inverse_rejects_reordered_missing_and_duplicate_paths(self):
+        original = self.captured["package_bytes"]["combined-transition.patch"]
+        sections = [b"diff --git " + item for item in original.split(b"diff --git ")[1:]]
+        for changed, expected in ((b"".join(reversed(sections)), "wrong transition scope"),
+                                  (b"".join(sections[:-1]), "wrong transition scope"),
+                                  (original + sections[0], "duplicate transition member")):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(binding.BindingError, expected):
+                binding.apply_inverse_patch(self.captured["combined_inputs"], changed, binding.digest(changed),
+                                            len(changed), binding.COMBINED_PATHS)
+
+    def test_current_resource_derives_through_unchanged_predecessor_authority(self):
+        original = self.captured["historical_bytes"][binding.RESOURCE]
+        predecessor = original.replace(binding.OLD_SEAM, binding.PREDECESSOR_SEAM)
+        current = predecessor.replace(binding.PREDECESSOR_SEAM, binding.NEW_SEAM)
+        self.assertEqual(binding.entry(binding.RESOURCE, predecessor),
+                         self.captured["authority"]["derived_resource"])
+        self.assertEqual(predecessor, self.captured["predecessor_resource"])
+        self.assertEqual(binding.entry(binding.RESOURCE, current),
+                         self.captured["combined_authority"]["derived_resource"])
+        self.assertEqual(current, self.captured["combined_resource"])
+        self.assertEqual(current.replace(binding.NEW_SEAM, binding.OLD_SEAM), original)
+        self.assertEqual(current.count(b"arrays:ArraySyntaxPolicy::Closed"), 1)
+        self.assertEqual(binding.digest(current),
+                         "7c3b0d1cc06124be9a432525acdad2bf622f1061c6f474fc8fa049ce267e360f")
+        self.assertEqual(len(current), 2007)
+
+    def test_coherently_changed_combined_resource_authority_is_rejected(self):
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["derived_resource"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale combined authority")
+
+    def test_changed_predecessor_resource_authority_is_still_rejected(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["derived_resource"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("derived predecessor resource drift")
+
+    def test_resource_seam_changes_are_rejected(self):
+        for name, replacement in (("PREDECESSOR_SEAM", binding.PREDECESSOR_SEAM + b" "),
+                                   ("NEW_SEAM", binding.NEW_SEAM.replace(b"Closed", b"Candidate"))):
+            with self.subTest(name=name), patch.object(binding, name, replacement):
+                self.rejects("derived predecessor resource drift|derived combined resource drift")
+
+    def test_compile_time_fixture_closure_is_exact_and_identity_bound(self):
+        source = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        paths = binding.compile_fixture_paths(source)
+        references = binding.re.findall(binding.COMPILE_FIXTURE_PATTERN, source)
+        self.assertEqual(source.count(b"include_str!"), 47)
+        self.assertEqual(len(references), 47)
+        self.assertEqual(len(set(references)), 42)
+        self.assertEqual(paths, list(binding.COMBINED_FIXTURE_ADDITIONS))
+        self.assertEqual(binding.digest(source),
+                         "93dd962176ccf43c4bfd67b5fd1d138b651f4e06e3a3c7ffd25691c09f3a5dab")
+        self.assertEqual(len(source), 44194)
+        self.assertEqual(self.captured["slices_authority"]["compile_time_fixture_derivation"]["source"],
+                         binding.entry(binding.COMPILE_FIXTURE_SOURCE, source))
+        self.assertEqual(self.captured["combined_authority"]["added_fixture_paths"], paths)
+        self.assertEqual(self.captured["combined_authority"]["added_input_paths"], list(binding.COMBINED_ADDITIONS))
+        self.assertTrue(all(name in self.captured["inputs"] for name in paths))
+        self.assertTrue(all(name not in self.captured["formatter_inputs"] for name in paths))
+        self.assertTrue(all(name not in self.captured["predecessor_inputs"] for name in paths))
+        self.assertTrue(all(name not in self.captured["archived"] for name in paths))
+
+    def test_changed_compile_time_fixture_rejects_before_materialization(self):
+        source = self.repo / binding.COMBINED_FIXTURE_ADDITIONS[0]
+        source.write_bytes(source.read_bytes() + b"// changed compile-time fixture\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_coherently_omitted_compile_time_fixture_rejects_before_materialization(self):
+        path = binding.COMBINED_FIXTURE_ADDITIONS[0]
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        manifest["compile_time_fixture_members"] -= 1
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        authority["added_fixture_paths"].remove(path)
+        authority["added_input_paths"].remove(path)
+        authority["compile_time_fixture_derivation"]["unique_fixture_inputs"] -= 1
+        authority["current_source_members"] -= 1
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_changed_compile_time_fixture_rejects_before_materialization(self):
+        path = binding.COMBINED_FIXTURE_ADDITIONS[0]
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent fixture change\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "combined-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        authority["current_source_bytes"] = (self.package / "current-source.json").stat().st_size
+        binding.write_json(self.package / "combined-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_compile_time_fixture_includer_changes_are_rejected(self):
+        original = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        for changed in (original + b"\n", original.replace(b"include_str!", b"include_bytes!", 1),
+                        original.replace(b"guard-empty/main.ox", b"unlisted/main.ox", 1)):
+            with self.subTest(sha=binding.digest(changed)), self.assertRaisesRegex(
+                    binding.BindingError, "wrong compile-time fixture includer"):
+                binding.compile_fixture_paths(changed)
+
+    def test_compile_time_fixture_literal_derivation_rejects_reference_drift(self):
+        original = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        reference = binding.re.search(binding.COMPILE_FIXTURE_PATTERN, original).group()
+        for changed in (original.replace(reference, b"", 1), original + reference,
+                        original.replace(b"guard-empty/main.ox", b"unlisted/main.ox", 1),
+                        original.replace(b'CARGO_MANIFEST_DIR', b'CARGO_OTHER_DIR', 1)):
+            with self.subTest(sha=binding.digest(changed)), patch.object(
+                    binding, "COMPILE_FIXTURE_SOURCE_SHA", binding.digest(changed)), patch.object(
+                    binding, "COMPILE_FIXTURE_SOURCE_BYTES", len(changed)):
+                with self.assertRaisesRegex(binding.BindingError, "wrong literal compile-time fixture references"):
+                    binding.compile_fixture_paths(changed)
+
+    def test_compile_time_fixture_derivation_rejects_generic_roster_changes(self):
+        original = self.captured["cache_admission_inputs"][binding.COMPILE_FIXTURE_SOURCE]
+        for changed in (binding.COMBINED_FIXTURE_ADDITIONS[:-1],
+                        tuple(reversed(binding.COMBINED_FIXTURE_ADDITIONS)),
+                        binding.COMBINED_FIXTURE_ADDITIONS + ("tests/arbitrary-asset.txt",)):
+            with self.subTest(count=len(changed)), patch.object(binding, "COMBINED_FIXTURE_ADDITIONS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong compile-time fixture path roster"):
+                    binding.compile_fixture_paths(original)
+
+    def test_coherently_changed_compile_time_fixture_authority_is_rejected(self):
+        original = (self.package / "combined-authority.json").read_bytes()
+        for field, value in (("include_str_references", 46), ("unique_fixture_inputs", 41),
+                             ("literal_pattern", ".*"), ("ordered_references_sha256", "0" * 64)):
+            with self.subTest(field=field):
+                authority = binding.json.loads(original)
+                authority["compile_time_fixture_derivation"][field] = value
+                binding.write_json(self.package / "combined-authority.json", authority)
+                self.rehash_package()
+                self.rejects("stale combined authority")
+        (self.package / "combined-authority.json").write_bytes(original)
+        self.rehash_package()
+
+    def test_empty_compile_time_fixture_addition_reverses_only_exact_empty_blob(self):
+        path = "tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox"
+        original = self.captured["package_bytes"]["combined-transition.patch"]
+        section = next(b"diff --git " + item for item in original.split(b"diff --git ")[1:]
+                       if item.startswith(("a/" + path + " ").encode()))
+        self.assertEqual(self.captured["inputs"][path], b"")
+        self.assertEqual(section.splitlines()[-1], b"index 0000000..e69de29")
+        self.assertNotIn(b"@@", section)
+        self.assertEqual(binding.apply_inverse_patch({path: b""}, section, binding.digest(section),
+                                                    len(section), (path,)), ({}, [path]))
+        for changed_section, data in ((section, b"\n"),
+                                       (section.replace(b"e69de29", b"1111111"), b""),
+                                       (section.replace(b"new file mode 100644\n", b""), b"")):
+            with self.subTest(sha=binding.digest(changed_section), data=data):
+                with self.assertRaisesRegex(binding.BindingError, "invalid empty transition addition"):
+                    binding.apply_inverse_patch({path: data}, changed_section, binding.digest(changed_section),
+                                                len(changed_section), (path,))
+
+    def test_each_formatter_source_is_required_and_byte_bound(self):
+        for path in binding.FORMATTER_PATHS:
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original + b"// changed formatter source\n")
+                self.rejects("changed input")
+                source.write_bytes(original)
+
+    def test_formatter_addition_omission_rejects_before_materialization(self):
+        (self.repo / binding.FORMATTER_ADDITIONS[0]).unlink()
+        self.rejects_before_materialization("missing regular input")
+
+    def test_coherently_rehashed_formatter_manifest_cannot_replace_source_authority(self):
+        path = binding.FORMATTER_ADDITIONS[0]
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent formatter mutation\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "formatter-authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        binding.write_json(self.package / "formatter-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_formatter_source_cannot_relax_membership(self):
+        path = binding.FORMATTER_ADDITIONS[0]
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        binding.write_json(self.package / "current-source.json", manifest)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_missing_formatter_patch_rejects_before_materialization(self):
+        (self.package / "formatter-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_coherently_rehashed_formatter_patch_rejects_before_materialization(self):
+        path = self.package / "formatter-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "formatter-authority.json")
+        authority["transition_patch_sha256"] = binding.digest(path.read_bytes())
+        authority["transition_patch_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "formatter-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale formatter authority")
+
+    def test_formatter_inverse_rejects_changed_patch_and_each_changed_current_context(self):
+        original = self.captured["package_bytes"]["formatter-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_formatter_patch(self.captured["formatter_inputs"], original + b"\n")
+        for path in binding.FORMATTER_PATHS:
+            with self.subTest(path=path):
+                inputs = dict(self.captured["formatter_inputs"])
+                # Mutate a byte consumed by a hunk, even for a late-file change.
+                marker = b"mod format;" if path.endswith("/mod.rs") else (
+                    b"pub(super) fn into_single_text" if path.endswith("/source.rs") else (
+                        b"Route::FormatError" if path.endswith("/driver.rs") else (
+                            b"TypedFormat" if path.endswith("/options.rs") else inputs[path][:20])))
+                self.assertIn(marker, inputs[path])
+                inputs[path] = inputs[path].replace(marker, b"X" + marker[1:], 1)
+                with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+                    binding.inverse_formatter_patch(inputs, original)
+
+    def test_coherently_changed_predecessor_manifest_is_rejected(self):
+        path = self.package / "predecessor-source.json"
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved predecessor source manifest")
+
+    def test_formatter_checkpoint_scope_and_recipe_metadata_are_pinned(self):
+        original = (self.package / "formatter-authority.json").read_bytes()
+        for field, replacement in (("base_head", "0" * 40), ("source_only_tree", "0" * 40),
+                                   ("reviewed_source_head", "0" * 40), ("recipe", "unreviewed"),
+                                   ("transition_touched_paths", list(binding.FORMATTER_PATHS[:-1]))):
+            with self.subTest(field=field):
+                authority = binding.json.loads(original)
+                authority[field] = replacement
+                binding.write_json(self.package / "formatter-authority.json", authority)
+                self.rehash_package()
+                self.rejects("stale formatter authority")
+        (self.package / "formatter-authority.json").write_bytes(original)
+        self.rehash_package()
+
+    def test_every_array_addition_is_required(self):
+        additions = binding.EXTRA - {"src/frontend/parser/activation_tests.rs",
+                                   "tests/typed_frontend.rs", "tests/typed_project_dispatch.rs"}
+        for path in sorted(additions):
+            with self.subTest(path=path):
+                source = self.repo / path
+                original = source.read_bytes()
+                source.unlink()
+                self.rejects("missing regular input")
+                source.write_bytes(original)
+
+    def test_missing_groundwork_member_rejects_before_materialization(self):
+        (self.repo / "src/frontend/oir/owned_types/array_tests.rs").unlink()
+        self.rejects_before_materialization("missing regular input")
+
+    def test_changed_groundwork_member_rejects_before_materialization(self):
+        path = self.repo / "src/frontend/oir/owned_types/array_tests.rs"
+        path.write_bytes(path.read_bytes() + b"// changed\n")
+        self.rejects_before_materialization("changed input")
+
+    def test_coherently_rehashed_groundwork_source_rejects_before_reconstruction(self):
+        path = "src/frontend/oir/owned_types/array_tests.rs"
+        source = self.repo / path
+        source.write_bytes(source.read_bytes() + b"// coherent change\n")
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [binding.entry(path, source.read_bytes()) if row["path"] == path else row
+                             for row in manifest["files"]]
+        binding.write_json(self.package / "current-source.json", manifest)
+        authority = binding.read_json(self.package / "authority.json")
+        authority["current_source_sha256"] = binding.digest((self.package / "current-source.json").read_bytes())
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_coherently_omitted_groundwork_member_rejects_before_reconstruction(self):
+        path = "src/frontend/oir/owned_types/array_tests.rs"
+        (self.repo / path).unlink()
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["files"] = [row for row in manifest["files"] if row["path"] != path]
+        binding.write_json(self.package / "current-source.json", manifest)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_stale_checkpoint_metadata_rejects_before_reconstruction(self):
+        manifest = binding.read_json(self.package / "current-source.json")
+        manifest["reviewed_source_head"] = "0" * 40
+        binding.write_json(self.package / "current-source.json", manifest)
+        self.rehash_package()
+        self.rejects_before_materialization("unapproved current source manifest")
+
+    def test_missing_patch_rejects_before_materialization(self):
+        (self.package / "source-transition.patch").unlink()
+        self.rejects_before_materialization("missing or extra adapter member")
+
+    def test_coherently_rehashed_patch_rejects_before_materialization(self):
+        path = self.package / "source-transition.patch"
+        path.write_bytes(path.read_bytes() + b"\n")
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_patch_sha256"] = binding.digest(path.read_bytes())
+        authority["transition_patch_bytes"] = path.stat().st_size
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale transition authority")
+
+    def test_stale_transition_scope_rejects_before_materialization(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_touched_paths"].pop()
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale transition authority")
+
+    def test_coherently_rewritten_transition_base_rejects(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_source_delta"]["base_head"] = "0" * 40
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale source delta authority")
+
+    def test_coherently_rewritten_transition_recipe_rejects(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["transition_source_delta"]["recipe"] = "unreviewed transformation"
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale source delta authority")
+
+    def test_groundwork_inverse_requires_exact_current_context(self):
+        inputs = dict(self.captured["predecessor_inputs"])
+        path = "src/frontend/oir/owned_types/array_tests.rs"
+        inputs[path] = b"X" + inputs[path][1:]
+        with self.assertRaisesRegex(binding.BindingError, "transition current context differs"):
+            binding.inverse_patch(inputs, self.captured["package_bytes"]["source-transition.patch"])
+
+    def test_missing_source_fails(self):
+        (self.repo / "src/frontend/driver.rs").unlink()
+        self.rejects("missing regular input")
+
+    def test_changed_source_fails(self):
+        source = self.repo / "src/frontend/driver.rs"
+        source.write_bytes(b"X" + source.read_bytes()[1:])
+        self.rejects("changed input")
+
+    def test_extra_source_fails(self):
+        (self.repo / "src/unlisted.rs").write_bytes(b"// no admission\n")
+        self.rejects("missing or extra compiler source")
+
+    def test_symlink_source_fails(self):
+        source = self.repo / "src/frontend/driver.rs"
+        source.rename(source.with_suffix(".original"))
+        source.symlink_to(source.with_suffix(".original").name)
+        self.rejects("symlink input")
+
+    def test_extra_package_fails(self):
+        (self.package / "unlisted.json").write_bytes(b"{}")
+        self.rejects("missing or extra adapter member")
+
+    def test_changed_published_manifest_fails(self):
+        source = self.repo / binding.U3 / "manifests/core-v1.json"
+        source.write_bytes(source.read_bytes() + b"\n")
+        self.rejects("changed input")
+
+    def test_changed_compatibility_runner_fails(self):
+        (self.repo / binding.COMPAT).write_bytes(b"raise SystemExit(0)\n")
+        self.rejects("changed input")
+
+    def test_changed_current_manifest_fails(self):
+        path = self.package / "current-source.json"
+        value = binding.read_json(path)
+        value["files"].pop()
+        binding.write_json(path, value)
+        self.rejects("changed input")
+
+    def test_changed_patch_fails(self):
+        patch = self.captured["package_bytes"]["source-transition.patch"]
+        with self.assertRaisesRegex(binding.BindingError, "wrong transition patch"):
+            binding.inverse_patch(self.captured["inputs"], patch + b"\n")
+
+    def test_current_unit2_package_has_exact_declared_adapters(self):
+        output = self.root / "unit2"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        root = Path(seam["resource_package_root"])
+        changes = [name for name, data in self.captured["historical_bytes"].items()
+                   if (root / name).read_bytes() != data]
+        self.assertEqual(sorted(changes), sorted([binding.RESOURCE, binding.INDEX_RESOURCE, binding.OBSERVER, binding.UNIT2_COMPARATOR]))
+        self.assertEqual(seam["resource_package_changes"],
+                         [binding.RESOURCE, binding.INDEX_RESOURCE, binding.OBSERVER, binding.UNIT2_COMPARATOR,
+                          binding.UNIT2_FROZEN_COMPARATOR, binding.UNIT2_SEMANTIC_HELPER,
+                          binding.UNIT2_SEMANTIC_DESCRIPTOR, "enum-source.json", "package-inputs.json"])
+        self.assertEqual(seam["observer_adapter"], self.captured["enum_authority"]["unit2_observer_adapter"])
+        self.assertEqual((root / binding.OBSERVER).read_bytes(), self.captured["observer"])
+        modified = (root / binding.RESOURCE).read_bytes()
+        self.assertEqual(modified.replace(binding.STDIN_RESOURCE_SEAM, binding.OLD_SEAM),
+                         self.captured["historical_bytes"][binding.RESOURCE])
+        self.assertEqual(seam["resource_enum_predecessor"],
+                         self.captured["enum_authority"]["resource_adapter"]["derived"])
+        self.assertEqual(seam["resource_adapter"], self.captured["stdin_authority"]["resource_adapter"])
+        self.assertEqual(seam["resource_after"], binding.entry(binding.RESOURCE, modified))
+        self.assertEqual((Path(seam["compatibility_runner"])).read_bytes(), self.captured["references"][binding.COMPAT])
+
+    def test_current_observer_substitutions_are_exact_and_reversible(self):
+        original = self.captured["historical_bytes"][binding.OBSERVER]
+        adapted = binding.adapt_unit2_observer(original)
+        self.assertEqual(len(binding.OBSERVER_SEAMS), 4)
+        self.assertEqual(binding.digest(original), binding.OBSERVER_ORIGINAL_SHA)
+        self.assertEqual(binding.digest(adapted), binding.OBSERVER_DERIVED_SHA)
+        restored = adapted
+        for old, new in reversed(binding.OBSERVER_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        # These compiled controls are required in the isolated observer; this
+        # bounded test checks admitted bytes, never claims they executed.
+        for name in ("preserves_scalar_and_record_json", "denies_owned_array",
+                     "denies_shared_array", "denies_exclusive_array"):
+            self.assertIn(("fn current_unit2_aggregate_adapter_" + name + "()").encode(), adapted)
+        self.assertEqual(adapted.count(b'#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]'), 3)
+
+    def test_wrong_original_observer_is_rejected(self):
+        original = self.captured["historical_bytes"][binding.OBSERVER]
+        for data in (original + b"\n", original[:-1], original.replace(b"record.0", b"record.1", 1)):
+            with self.subTest(sha=binding.digest(data)), self.assertRaisesRegex(binding.BindingError, "wrong original Unit2 observer"):
+                binding.adapt_unit2_observer(data)
+
+    def test_borrowed_observer_successor_is_exact_and_reversible(self):
+        original = self.captured["historical_bytes"][binding.OBSERVER]
+        aggregate = binding.adapt_unit2_observer(original)
+        borrowed = binding.adapt_borrowed_unit2_observer(aggregate)
+        self.assertEqual(aggregate, self.captured["aggregate_observer"])
+        self.assertEqual(borrowed, self.captured["borrowed_observer"])
+        self.assertEqual(len(binding.BORROWED_OBSERVER_SEAMS), 7)
+        self.assertEqual(len(borrowed), 17039)
+        self.assertEqual(binding.digest(borrowed),
+                         "abe639a07549c67db03df2e1d549173c327056f42e49c87795032a5266c2883b")
+        restored = borrowed
+        for old, new in reversed(binding.BORROWED_OBSERVER_SEAMS):
+            self.assertEqual(restored.count(new), 1)
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, aggregate)
+        for old, new in reversed(binding.OBSERVER_SEAMS):
+            restored = restored.replace(new, old)
+        self.assertEqual(restored, original)
+        self.assertNotIn(b"ParameterTy::Reference { aggregate", borrowed)
+        self.assertIn(b"BorrowedTy::Exact(AggregateTy::Record(record)) => record.0", borrowed)
+        self.assertIn(b'BorrowedTy::Exact(AggregateTy::FixedArray(_)) => panic!("current Unit2 observer excludes fixed-array projection")', borrowed)
+        self.assertIn(b'BorrowedTy::ScalarSlice(_) => panic!("current Unit2 observer excludes scalar-slice projection")', borrowed)
+        # The owner helper and projection are retained exactly, without borrowed wrapping.
+        self.assertIn(binding.OBSERVER_SEAMS[2][1], borrowed)
+        owner_helper = aggregate.split(b"fn current_unit2_record_ordinal", 1)[1].split(b"\n#[test]", 1)[0]
+        self.assertIn(b"fn current_unit2_record_ordinal" + owner_helper, borrowed)
+        self.assertEqual(borrowed.count(b"fn current_unit2_aggregate_adapter_"), 6)
+        self.assertEqual(borrowed.count(b'#[should_panic(expected = "current Unit2 observer excludes fixed-array projection")]'), 3)
+        self.assertEqual(borrowed.count(b'#[should_panic(expected = "current Unit2 observer excludes scalar-slice projection")]'), 2)
+        for name in binding.OBSERVER_CONTROL_NAMES:
+            self.assertIn(("fn " + name.rsplit("::", 1)[1] + "()").encode(), borrowed)
+
+    def test_predecessor_observer_is_verified_before_borrowed_derivation(self):
+        calls = []
+        def record(name, original):
+            def wrapper(*args):
+                calls.append(name)
+                return original(*args)
+            return wrapper
+        names = ("adapt_unit2_observer", "adapt_borrowed_unit2_observer")
+        with ExitStack() as stack:
+            for name in names:
+                stack.enter_context(patch.object(binding, name, side_effect=record(name, getattr(binding, name))))
+            binding.preflight(self.repo, self.package)
+        self.assertEqual(calls, list(names))
+        authority = binding.read_json(self.package / "authority.json")
+        authority["unit2_observer_adapter"]["derived"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        with patch.object(binding, "adapt_borrowed_unit2_observer", side_effect=AssertionError("borrowed derivation started")):
+            self.rejects("stale Unit2 observer adapter authority")
+
+    def test_borrowed_observer_requires_exact_predecessor_and_seven_seams(self):
+        aggregate = self.captured["aggregate_observer"]
+        for changed in (aggregate + b"\n", aggregate[:-1], self.captured["historical_bytes"][binding.OBSERVER]):
+            with self.assertRaisesRegex(binding.BindingError, "wrong predecessor Unit2 observer"):
+                binding.adapt_borrowed_unit2_observer(changed)
+        seams = binding.BORROWED_OBSERVER_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with patch.object(binding, "BORROWED_OBSERVER_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong borrowed Unit2 observer substitution count"):
+                    binding.adapt_borrowed_unit2_observer(aggregate)
+
+    def test_borrowed_observer_projection_changes_are_rejected(self):
+        seams = binding.BORROWED_OBSERVER_SEAMS
+        for at, (old, new) in enumerate(seams):
+            for changed in ((b"missing borrowed seam", new), (old, new + b"// altered")):
+                with self.subTest(at=at), patch.object(binding, "BORROWED_OBSERVER_SEAMS", seams[:at] + (changed,) + seams[at + 1:]):
+                    with self.assertRaisesRegex(binding.BindingError, "borrowed Unit2 observer seam drift|wrong derived borrowed Unit2 observer"):
+                        binding.adapt_borrowed_unit2_observer(self.captured["aggregate_observer"])
+
+    def test_coherently_rehashed_borrowed_observer_authority_is_rejected(self):
+        authority = binding.read_json(self.package / "slices-authority.json")
+        authority["unit2_observer_adapter"]["derived"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "slices-authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale slices authority")
+
+    def test_missing_or_extra_observer_substitution_is_rejected(self):
+        seams = binding.OBSERVER_SEAMS
+        for changed in (seams[:-1], seams + (seams[0],)):
+            with self.subTest(count=len(changed)), patch.object(binding, "OBSERVER_SEAMS", changed):
+                with self.assertRaisesRegex(binding.BindingError, "wrong Unit2 observer substitution count"):
+                    binding.adapt_unit2_observer(self.captured["historical_bytes"][binding.OBSERVER])
+
+    def test_observer_seam_or_projection_change_is_rejected(self):
+        seams = binding.OBSERVER_SEAMS
+        variants = [(b"missing seam", seams[0][1]), (seams[0][0], seams[0][1] + b"// altered")]
+        for replacement in variants:
+            with self.subTest(replacement=replacement), patch.object(binding, "OBSERVER_SEAMS", (replacement,) + seams[1:]):
+                with self.assertRaisesRegex(binding.BindingError, "observer seam drift|wrong derived Unit2 observer"):
+                    binding.adapt_unit2_observer(self.captured["historical_bytes"][binding.OBSERVER])
+
+    def test_coherently_rehashed_observer_authority_is_rejected(self):
+        authority = binding.read_json(self.package / "authority.json")
+        authority["unit2_observer_adapter"]["derived"]["sha256"] = "0" * 64
+        binding.write_json(self.package / "authority.json", authority)
+        self.rehash_package()
+        self.rejects_before_materialization("stale Unit2 observer adapter authority")
+
+    def observer_protocol(self):
+        spec = importlib.util.spec_from_file_location("_observer_control_test_protocol", REPO / binding.U2 / "protocol.py")
+        protocol = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(protocol)
+        return protocol
+
+    def observer_control_streams(self):
+        names = binding.OBSERVER_CONTROL_NAMES
+        listing = "\n".join(name + ": test" for name in names) + "\n\n6 tests, 0 benchmarks\n"
+        results = [name + (" - should panic" if "_denies_" in name else "") for name in names]
+        execution = "running 6 tests\n" + "\n".join("test " + name + " ... ok" for name in results)
+        execution += "\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.00s\n"
+        return listing, execution
+
+    def test_observer_control_protocol_rejects_incomplete_results(self):
+        listing, execution = self.observer_control_streams()
+        protocol = self.observer_protocol()
+        self.assertEqual(binding.verify_observer_control_output(protocol, listing, execution)["passed"], 6)
+        for changed_listing, changed_execution in (
+                (listing.replace(binding.OBSERVER_CONTROL_NAMES[0] + ": test\n", ""), execution),
+                (listing + "unexpected: test\n", execution),
+                (listing, execution.replace(" ... ok", " ... ignored", 1)),
+                (listing, execution.replace(" ... ok", " ... FAILED", 1)),
+                (listing, execution.replace("6 passed", "0 passed")),
+                (listing, execution.replace(" - should panic", "", 1))):
+            with self.subTest(listing=changed_listing, execution=changed_execution), self.assertRaises(ValueError):
+                binding.verify_observer_control_output(protocol, changed_listing, changed_execution)
+
+    def test_observer_control_protocol_rejects_complete_old_four_test_roster(self):
+        listing, execution = self.observer_control_streams()
+        for name in binding.OBSERVER_CONTROL_NAMES[-2:]:
+            listing = listing.replace(name + ": test\n", "")
+            execution = execution.replace("test " + name + " - should panic ... ok\n", "")
+        listing = listing.replace("6 tests", "4 tests")
+        execution = execution.replace("6 tests", "4 tests").replace("6 passed", "4 passed")
+        with self.assertRaises(ValueError):
+            binding.verify_observer_control_output(self.observer_protocol(), listing, execution)
+
+    def synthetic_observer_controls(self, fail=False):
+        """Exercise orchestration with synthetic stream producers; no Rust execution claim."""
+        output = self.root / "synthetic-observer-controls"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        run = output / "unit2/run"
+        source = run / "source"
+        binding.materialize(source, {"synthetic-source.txt": b"synthetic orchestration only\n"})
+        binding.write_json(run / "assembly.json", {"files": [binding.entry("synthetic-source.txt", (source / "synthetic-source.txt").read_bytes())]})
+        listing, execution = self.observer_control_streams()
+        script = ("#!" + sys.executable + "\nimport sys\n"
+                  + "print(" + repr(listing) + " if '--list' in sys.argv else " + repr(execution) + ", end='')\n"
+                  + ("sys.stderr.write('synthetic control failure\\n')\nraise SystemExit(7 if '--list' not in sys.argv else 0)\n" if fail else ""))
+        for profile in ("debug", "release"):
+            binary = run / "target" / profile / "synthetic-test-producer"
+            binary.parent.mkdir(parents=True)
+            binary.write_text(script)
+            binary.chmod(0o755)
+            binding.write_json(run / (profile + "-receipt.json"), {"binary": str(binary), "binary_sha256": binding.digest(binary.read_bytes())})
+        return output, seam
+
+    @unittest.skipIf(sys.platform == "win32", "synthetic executable uses a POSIX shebang")
+    def test_observer_controls_bind_both_profiles_and_keep_streams(self):
+        output, seam = self.synthetic_observer_controls()
+        receipt = binding.run_unit2_observer_controls(self.repo, output, self.captured, seam)
+        self.assertEqual(receipt["observer_adapter_version"], binding.ENUM_OBSERVER_ADAPTER_VERSION)
+        self.assertEqual(receipt["observer_adapter_version"], seam["observer_adapter"]["version"])
+        self.assertEqual(receipt["observer_control_tests_per_profile"], 6)
+        self.assertEqual(receipt["test_function_executions"], 56)
+        self.assertEqual(len(receipt["observer_control_receipts"]), 2)
+        for row in receipt["observer_control_receipts"]:
+            report = binding.read_json(output / row["path"])
+            self.assertEqual(report["tests"], list(binding.OBSERVER_CONTROL_NAMES))
+            self.assertEqual(report["observer_adapter"], seam["observer_adapter"])
+            self.assertEqual(report["observer_adapter"]["version"], receipt["observer_adapter_version"])
+            self.assertEqual(report["source_inputs_sha256"], binding.CURRENT_SOURCE_SHA)
+            commands = binding.read_json(output / "observer-adapter-controls" / report["commands"]["path"])
+            self.assertEqual(len(commands), 2)
+            for command in commands:
+                self.assertEqual(command["exit_status"], 0)
+                self.assertFalse(command["timed_out"])
+                binding.check_entries(output / "observer-adapter-controls", [command["stdout"], command["stderr"]])
+
+    @unittest.skipIf(sys.platform == "win32", "synthetic executable uses a POSIX shebang")
+    def test_observer_control_failure_keeps_evidence(self):
+        output, seam = self.synthetic_observer_controls(fail=True)
+        with self.assertRaisesRegex(binding.BindingError, "observer controls failed"):
+            binding.run_unit2_observer_controls(self.repo, output, self.captured, seam)
+        commands = binding.read_json(output / "observer-adapter-controls/debug-commands.json")
+        self.assertEqual(commands[-1]["exit_status"], 7)
+        self.assertEqual((output / "observer-adapter-controls/debug-run.stderr").read_text(), "synthetic control failure\n")
+        self.assertFalse((output / "observer-adapter-controls/debug-receipt.json").exists())
+        self.assertFalse((output / "observer-adapter-controls/release-commands.json").exists())
+
+    def test_preflight_retains_zero_execution_metadata(self):
+        output = self.root / "preflight"
+        result = subprocess.run([sys.executable, "-B", str(self.package / "run.py"), "preflight",
+                                 "--repo", str(self.repo), "--output", str(output)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        prepared = binding.read_json(output / "prepared.json")
+        self.assertEqual(prepared["compiler_executions"], 0)
+        self.assertFalse(prepared["semantic_pass"])
+        self.assertFalse((output / "result.json").exists())
+        self.assertEqual(prepared["plan_sha256"], binding.digest((output / "plan.json").read_bytes()))
+        plan = binding.read_json(output / "plan.json")
+        self.assertEqual(plan["slices_source_members"], 188)
+        self.assertEqual(plan["composition_authority_sha256"], binding.COMPOSITION_AUTHORITY_SHA)
+        self.assertEqual(plan["slices_source_sha256"], binding.SLICES_SOURCE_SHA)
+        self.assertEqual((plan["current_source_members"], plan["division_source_members"], plan["combined_source_members"],
+                          plan["formatter_source_members"],
+                          plan["predecessor_source_members"], plan["archive_members"]),
+                         (376, 185, 185, 133, 129, 117))
+        self.assertEqual(plan["cache_admission_source_members"], 345)
+        self.assertEqual((plan["u8_compiler_additions"], plan["u8_compile_time_fixture_members"],
+                          plan["u8_compile_time_include_directives"]), (18, 78, 136))
+        self.assertEqual(plan["native_storage_source_members"], 264)
+        self.assertEqual(prepared["native_inventory_authority_sha256"], binding.NATIVE_INVENTORY_AUTHORITY_SHA)
+        self.assertEqual(prepared["native_inventory_inverse_patch_sha256"], binding.NATIVE_INVENTORY_PATCH_SHA)
+        self.assertEqual(prepared["native_storage_source_sha256"], binding.NATIVE_STORAGE_SOURCE_SHA)
+        self.assertEqual(plan["stdin_source_members"], 252)
+        self.assertEqual(plan["enum_source_members"], 237)
+        self.assertEqual(prepared["stdout_authority_sha256"], binding.STDOUT_AUTHORITY_SHA)
+        self.assertEqual(prepared["stdin_source_sha256"], binding.STDIN_SOURCE_SHA)
+        self.assertEqual(prepared["stdin_authority_sha256"], binding.STDIN_AUTHORITY_SHA)
+        self.assertEqual(prepared["enum_source_sha256"], binding.ENUM_SOURCE_SHA)
+        self.assertEqual((plan["compile_time_fixture_members"], plan["compile_time_fixture_references"]), (42, 47))
+        self.assertEqual(plan["unit2_current_observer_controls_per_profile"], 6)
+        self.assertEqual(prepared["slices_authority_sha256"], binding.SLICES_AUTHORITY_SHA)
+        self.assertEqual(prepared["division_source_sha256"], binding.DIVISION_SOURCE_SHA)
+        self.assertEqual(prepared["division_authority_sha256"], binding.DIVISION_AUTHORITY_SHA)
+        self.assertEqual(prepared["combined_source_sha256"], binding.COMBINED_SOURCE_SHA)
+        self.assertEqual(prepared["combined_authority_sha256"], binding.COMBINED_AUTHORITY_SHA)
+        self.assertEqual(prepared["formatter_source_sha256"], binding.FORMATTER_SOURCE_SHA)
+        self.assertEqual(prepared["current_source_sha256"], binding.CURRENT_SOURCE_SHA)
+        self.assertEqual(prepared["formatter_authority_sha256"], binding.FORMATTER_AUTHORITY_SHA)
+        self.assertEqual(prepared["predecessor_source_sha256"], binding.PREDECESSOR_SOURCE_SHA)
+
+    def test_failed_preflight_retains_failure_without_executing_tools(self):
+        (self.repo / "src/frontend/driver.rs").unlink()
+        output = self.root / "failed"
+        sentinel = self.root / "tool-ran"
+        tool = self.root / "cargo"
+        tool.write_text("#!/bin/sh\ntouch '" + str(sentinel) + "'\nexit 0\n")
+        tool.chmod(0o755)
+        result = subprocess.run([sys.executable, "-B", str(self.package / "run.py"), "run-unit2",
+                                 "--repo", str(self.repo), "--output", str(output), "--cargo", str(tool),
+                                 "--rustc", str(tool)], capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        failure = binding.read_json(output / "failure.json")
+        self.assertEqual(failure["status"], "failed")
+        self.assertEqual(failure["compiler_executions"], 0)
+        self.assertFalse(sentinel.exists())
+        self.assertFalse((output / "compatibility").exists())
+        self.assertFalse((output / "result.json").exists())
+
+    def test_occupied_output_preserves_previous_evidence(self):
+        output = self.root / "occupied"
+        output.mkdir()
+        (output / "prepared.json").write_bytes(b"previous run")
+        result = subprocess.run([sys.executable, "-B", str(self.package / "run.py"), "preflight",
+                                 "--repo", str(self.repo), "--output", str(output)], capture_output=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((output / "prepared.json").read_bytes(), b"previous run")
+
+    def test_optimized_python_fails_before_materialization(self):
+        output = self.root / "optimized"
+        result = subprocess.run([sys.executable, "-O", "-B", str(self.package / "run.py"), "prepare-archived",
+                                 "--repo", str(self.repo), "--output", str(output)], capture_output=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((output / "archived-selected").exists())
+        self.assertEqual(binding.read_json(output / "failure.json")["compiler_executions"], 0)
+
+    def test_stale_post_admission_source_fails(self):
+        captured = binding.preflight(self.repo, self.package)
+        source = self.repo / "src/frontend/driver.rs"
+        source.write_bytes(source.read_bytes() + b"\n")
+        with self.assertRaisesRegex(binding.BindingError, "changed input"):
+            binding.assert_unchanged(self.repo, captured, self.package)
+
+    def synthetic_preparation(self):
+        """Untrusted metadata fixture only; never describes executed tests."""
+        output = self.root / "synthetic"
+        output.mkdir()
+        seam = binding.prepare_unit2(output, self.captured)
+        compatibility = output / "unit2"
+        run = compatibility / "run"
+        run.mkdir(parents=True)
+        inputs = dict(self.captured["historical_bytes"])
+        inputs[binding.RESOURCE] = self.captured["resource"]
+        inputs[binding.INDEX_RESOURCE] = self.captured["u8_index_resource"]
+        inputs[binding.UNIT2_COMPARATOR] = self.captured["unit2_comparator"]
+        inputs[binding.UNIT2_FROZEN_COMPARATOR] = self.captured["historical_bytes"][binding.UNIT2_COMPARATOR]
+        inputs[binding.UNIT2_SEMANTIC_HELPER] = self.captured["package_bytes"][binding.SEMANTIC_HELPER]
+        inputs[binding.UNIT2_SEMANTIC_DESCRIPTOR] = self.captured["package_bytes"][binding.SEMANTIC_DESCRIPTOR]
+        inputs["enum-source.json"] = self.captured["package_bytes"]["enum-source.json"]
+        inputs[binding.OBSERVER] = self.captured["observer"]
+        inputs["source-inputs.json"] = self.captured["package_bytes"]["current-source.json"]
+        manifest = {**self.captured["historical"], "files": [binding.entry(n, d) for n, d in sorted(inputs.items())]}
+        inputs["package-inputs.json"] = binding.encoded(manifest)
+        binding.materialize(compatibility / "derived-package", inputs)
+        child = {"invocation_id": "synthetic-zero-execution", "status": "prepared", "compiler_executions": 0,
+                 "source_inputs_sha256": binding.digest(inputs["source-inputs.json"]),
+                 "package_inputs_sha256": binding.digest(inputs["package-inputs.json"])}
+        outer = {"status": "prepared", "compiler_executions": 0,
+                 "historical_package_inputs_sha256": seam["resource_package_inputs_sha256"],
+                 "derived_package_inputs_sha256": child["package_inputs_sha256"],
+                 "child_invocation_id": child["invocation_id"],
+                 "source_inputs_sha256": child["source_inputs_sha256"]}
+        binding.write_json(run / "invocation.json", child)
+        self.write_synthetic(compatibility, child, outer, "prepared.json")
+        return output, seam, child, outer
+
+    def write_synthetic(self, compatibility, child, outer, artifact):
+        binding.write_json(compatibility / "run" / artifact, child)
+        outer["child_result_sha256"] = binding.digest((compatibility / "run" / artifact).read_bytes())
+        binding.write_json(compatibility / artifact, outer)
+
+    def test_stale_child_invocation_is_rejected(self):
+        output, seam, child, outer = self.synthetic_preparation()
+        child["invocation_id"] = "stale-other-run"
+        self.write_synthetic(output / "unit2", child, outer, "prepared.json")
+        with self.assertRaisesRegex(binding.BindingError, "stale child invocation"):
+            binding.verify_unit2_result(output, self.captured, seam, True)
+
+    def test_stale_child_source_is_rejected(self):
+        output, seam, child, outer = self.synthetic_preparation()
+        child["source_inputs_sha256"] = "0" * 64
+        self.write_synthetic(output / "unit2", child, outer, "prepared.json")
+        with self.assertRaisesRegex(binding.BindingError, "stale child binding"):
+            binding.verify_unit2_result(output, self.captured, seam, True)
+
+    def test_zero_execution_pass_is_rejected(self):
+        output, seam, child, outer = self.synthetic_preparation()
+        child.update(status="passed", profiles=["debug", "release"], semantic_cases_per_profile=0,
+                     resource_tests_per_profile=0, receipts=[])
+        outer["status"] = "passed"
+        self.write_synthetic(output / "unit2", child, outer, "result.json")
+        with self.assertRaisesRegex(binding.BindingError, "zero or partial Unit2 result"):
+            binding.verify_unit2_result(output, self.captured, seam, False)
+
+    def test_preparation_cannot_be_relabelled_pass(self):
+        output, seam, child, outer = self.synthetic_preparation()
+        child["status"] = outer["status"] = "passed"
+        self.write_synthetic(output / "unit2", child, outer, "prepared.json")
+        with self.assertRaisesRegex(binding.BindingError, "preparation claimed execution"):
+            binding.verify_unit2_result(output, self.captured, seam, True)
+
+    def test_modified_derived_package_is_rejected(self):
+        output, seam, child, outer = self.synthetic_preparation()
+        (output / "unit2/derived-package/semantic/compare.py").write_bytes(b"raise SystemExit(0)\n")
+        with self.assertRaisesRegex(binding.BindingError, "changed input"):
+            binding.verify_unit2_result(output, self.captured, seam, True)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,3 +1,25 @@
+# Active fallible-lexer source facade
+
+The active `run.py` and `current-source.json` now admit the separately named
+`lexer-reservation-source-v1.json` (SHA-256
+`aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633`).
+Exact immutable byte-storage predecessor package bytes, including its original
+`run.py`, `current-source.json` (402db5), package manifest (c68a8070), and this
+historical README, are preserved in sibling
+`typed_project_source_binding_byte_storage_v1/`.
+
+The new outer stage authenticates the current 376 inputs, exactly restores the
+old 376, and calls the unchanged predecessor dispatcher only on that old view.
+Current Unit2 execution uses the new body map. Source-only admission does not
+claim semantic, resource, native, parser, or hosted qualification. See
+`tests/qualification/lexer_reservation_current/README.md` for current outputs,
+trusted helper pins, and independent review status.
+
+## Preserved byte-storage-era documentation
+
+The remainder describes the predecessor checkpoint and historical receipts;
+its current-source references identify that named predecessor package.
+
 # RFC0031 standalone byte-storage source successor
 
 Current reviewed source checkpoint: `e3c1b4a1a3ef457326f11a802896c125202fe797`. Full Git tree:

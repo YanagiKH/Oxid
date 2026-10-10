@@ -544,41 +544,102 @@ fn checked_preflight_arithmetic_wins_before_caps_without_reserving() {
 #[test]
 fn every_new_original_reserve_has_handled_failure_and_honest_origin() {
     let f = Fixture::new();
-    f.write("app.ox", "fn main()->(){return;}");
+    let text = "fn main()->(){return;}";
+    f.write("app.ox", text);
+    let entry = f.entry();
+    // Independently frozen predecessor schedule plus the three approved lexer
+    // growth sites: source bytes, display, line/file owners, 4/8/16 tokens,
+    // file ASTs and module headers. No original parser reservation is added.
+    let expected = [
+        ("source bytes", text.len(), size_of::<u8>()),
+        ("entry display", entry.len(), size_of::<u8>()),
+        ("line starts", 1, size_of::<usize>()),
+        ("source files", 1, size_of::<SourceFile>()),
+        ("lexer token tape", 4, size_of::<lexer::Token>()),
+        ("lexer token tape", 8, size_of::<lexer::Token>()),
+        ("lexer token tape", 16, size_of::<lexer::Token>()),
+        ("file ASTs", 1, size_of::<ast::Program>()),
+        ("module headers", 1, size_of::<ModuleHeader>()),
+    ];
     let mut allocator = Allocator::default();
     ProjectSources::load(
-        &f.entry(),
+        &entry,
         ProjectLimits::default(),
         parser::SourceMode::OwnedCandidate,
         &mut allocator,
     )
     .unwrap();
-    assert_eq!(allocator.attempts, 6);
-    for fail_at in 1..=allocator.attempts {
+    assert_eq!(allocator.attempts, expected.len());
+    assert_eq!(allocator.trace.len(), expected.len());
+    for (event, &(kind, length, width)) in allocator.trace.iter().zip(&expected) {
+        assert_eq!(
+            (event.kind, event.length, event.element_bytes),
+            (kind, length, width)
+        );
+        assert!(event.success);
+    }
+    for fail_at in 1..=expected.len() {
         let mut injected = Allocator {
             fail_at: Some(fail_at),
             ..Allocator::default()
         };
         let failure = ProjectSources::load(
-            &f.entry(),
+            &entry,
             ProjectLimits::default(),
             parser::SourceMode::OwnedCandidate,
             &mut injected,
         )
         .unwrap_err();
+        assert_eq!(failure.diagnostics.len(), 1);
         let d = &failure.diagnostics[0];
-        assert_eq!((d.code, d.stage), ("E0400", "source-project"));
+        assert_eq!(d.code, "E0400");
+        assert!(d.secondary.is_empty());
+        assert!(d.notes.is_empty());
         assert_eq!(failure.allocator.attempts, fail_at);
-        assert!(!failure.allocator.trace.last().unwrap().success);
-        if fail_at <= 4 {
-            assert!(d.primary.is_none());
-            assert!(failure.sources.files().is_empty());
-        } else {
+        assert_eq!(failure.allocator.trace.len(), fail_at);
+        for (index, (event, &(kind, length, width))) in
+            failure.allocator.trace.iter().zip(&expected).enumerate()
+        {
+            assert_eq!(
+                (event.kind, event.length, event.element_bytes),
+                (kind, length, width)
+            );
+            assert_eq!(event.success, index + 1 != fail_at);
+        }
+        if expected[fail_at - 1].0 == "lexer token tape" {
+            assert_eq!(
+                (d.stage, d.message.as_str()),
+                ("lex", "token storage allocation failed")
+            );
+            let (start, end) = [(0, 2), (8, 9), (13, 14)][fail_at - 5];
             assert_eq!(
                 d.primary,
-                Some(failure.sources.get(SourceFileId(0)).span(22, 22))
+                Some(failure.sources.get(SourceFileId(0)).span(start, end))
             );
+            assert_eq!(failure.usage.non_eof_tokens, 0);
+            assert_eq!(failure.usage.syntax_nodes, 0);
+        } else {
+            assert_eq!(
+                (d.stage, d.message.as_str()),
+                ("source-project", "project source allocation failed")
+            );
+            if fail_at <= 4 {
+                assert!(d.primary.is_none());
+                assert!(failure.sources.files().is_empty());
+                assert_eq!(failure.usage.non_eof_tokens, 0);
+            } else {
+                assert_eq!(
+                    d.primary,
+                    Some(failure.sources.get(SourceFileId(0)).span(22, 22))
+                );
+                assert_eq!(failure.usage.non_eof_tokens, 12);
+            }
         }
+        if fail_at >= 5 {
+            assert_eq!(failure.sources.files().len(), 1);
+            assert_eq!(failure.sources.get(SourceFileId(0)).text(), text);
+        }
+        assert_eq!(fs::read_to_string(&entry).unwrap(), text);
     }
 }
 

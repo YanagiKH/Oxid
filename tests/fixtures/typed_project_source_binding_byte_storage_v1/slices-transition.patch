@@ -1,0 +1,2956 @@
+diff --git a/src/frontend/ast.rs b/src/frontend/ast.rs
+index 26e7d7b..ea3cf3b 100644
+--- a/src/frontend/ast.rs
++++ b/src/frontend/ast.rs
+@@ -126,6 +126,10 @@ pub enum TypeSyntaxKind {
+         referent: ItemPath,
+     },
+     Array(FixedArraySyntax),
++    SliceReference {
++        mutable: bool,
++        element: ScalarTypeSyntax,
++    },
+     ArrayReference {
+         mutable: bool,
+         array: FixedArraySyntax,
+@@ -349,7 +353,7 @@ impl Program {
+         let type_valid = |ty: TypeSyntax, valid: &mut dyn FnMut(Span) -> bool| {
+             valid(ty.span)
+                 && match ty.kind {
+-                    TypeSyntaxKind::Unit => true,
++                    TypeSyntaxKind::Unit | TypeSyntaxKind::SliceReference { .. } => true,
+                     TypeSyntaxKind::Array(array) | TypeSyntaxKind::ArrayReference { array, .. } => {
+                         usize::from(array.length) <= super::parser::MAX_ARRAY_ELEMENTS
+                     }
+@@ -475,7 +479,9 @@ impl Program {
+                     || !type_valid(field.ty, &mut valid)
+                     || matches!(
+                         field.ty.kind,
+-                        TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. }
++                        TypeSyntaxKind::Array(_)
++                            | TypeSyntaxKind::ArrayReference { .. }
++                            | TypeSyntaxKind::SliceReference { .. }
+                     )
+                     || field.public.is_some_and(|span| !valid(span))
+                 {
+@@ -670,7 +676,9 @@ impl Program {
+         let owned_type = |ty: &TypeSyntax| match ty.kind {
+             TypeSyntaxKind::Unit => false,
+             TypeSyntaxKind::Reference { .. } => true,
+-            TypeSyntaxKind::Array(_) | TypeSyntaxKind::ArrayReference { .. } => true,
++            TypeSyntaxKind::Array(_)
++            | TypeSyntaxKind::ArrayReference { .. }
++            | TypeSyntaxKind::SliceReference { .. } => true,
+             TypeSyntaxKind::Name(ItemPath::Unqualified(name)) => {
+                 !matches!(source.text_at(name), "bool" | "i32")
+             }
+diff --git a/src/frontend/declaration_index.rs b/src/frontend/declaration_index.rs
+index cab1e3e..1663dfc 100644
+--- a/src/frontend/declaration_index.rs
++++ b/src/frontend/declaration_index.rs
+@@ -13,7 +13,7 @@ use super::{
+     diagnostic::Diagnostic,
+     hir::{DefId, Ty},
+     oir::owned_types::{
+-        AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
++        AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+     },
+     owned_diagnostic,
+     project::{
+@@ -651,22 +651,22 @@ impl<'i, 's> QuerySession<'i, 's> {
+                 .array_type(requester, array, ty.span)
+                 .map(|array| ValueTy::Owned(AggregateTy::FixedArray(array))),
+             ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
+-            ast::TypeSyntaxKind::Reference { .. } | ast::TypeSyntaxKind::ArrayReference { .. } => {
+-                Err(diagnostic(
+-                    if matches!(context, TypeContext::Scalar) {
+-                        "E0500"
+-                    } else {
+-                        "E0202"
+-                    },
+-                    "resolve",
+-                    if matches!(context, TypeContext::Scalar) {
+-                        "owned syntax entered scalar resolution"
+-                    } else {
+-                        "reference types are restricted to parameters"
+-                    },
+-                    ty.span,
+-                ))
+-            }
++            ast::TypeSyntaxKind::Reference { .. }
++            | ast::TypeSyntaxKind::ArrayReference { .. }
++            | ast::TypeSyntaxKind::SliceReference { .. } => Err(diagnostic(
++                if matches!(context, TypeContext::Scalar) {
++                    "E0500"
++                } else {
++                    "E0202"
++                },
++                "resolve",
++                if matches!(context, TypeContext::Scalar) {
++                    "owned syntax entered scalar resolution"
++                } else {
++                    "reference types are restricted to parameters"
++                },
++                ty.span,
++            )),
+             ast::TypeSyntaxKind::Name(path) => {
+                 self.tables.sources.path_span(ItemPathRef {
+                     file: ty.span.file,
+@@ -716,7 +716,7 @@ impl<'i, 's> QuerySession<'i, 's> {
+         requester: ModuleId,
+         ty: ast::TypeSyntax,
+     ) -> Result<ParameterTy, Box<Diagnostic>> {
+-        let (mutable, aggregate) = match ty.kind {
++        let (mutable, referent) = match ty.kind {
+             ast::TypeSyntaxKind::Reference { mutable, referent } => {
+                 let record = self.record_type(
+                     requester,
+@@ -726,12 +726,25 @@ impl<'i, 's> QuerySession<'i, 's> {
+                     },
+                     TypeContext::Reference,
+                 )?;
+-                (mutable, AggregateTy::Record(record))
++                (mutable, BorrowedTy::Exact(AggregateTy::Record(record)))
+             }
+             ast::TypeSyntaxKind::ArrayReference { mutable, array } => (
+                 mutable,
+-                AggregateTy::FixedArray(self.array_type(requester, array, ty.span)?),
++                BorrowedTy::Exact(AggregateTy::FixedArray(
++                    self.array_type(requester, array, ty.span)?,
++                )),
+             ),
++            ast::TypeSyntaxKind::SliceReference { mutable, element } => {
++                self.work.debit(1, ty.span, "query slice type")?;
++                self.requester(requester, ty.span)?;
++                self.tables.sources.text(ty.span)?;
++                let element = match element {
++                    ast::ScalarTypeSyntax::Bool => Ty::Bool,
++                    ast::ScalarTypeSyntax::I32 => Ty::I32,
++                    ast::ScalarTypeSyntax::Unit => Ty::Unit,
++                };
++                (mutable, BorrowedTy::ScalarSlice(element))
++            }
+             _ => {
+                 return self
+                     .value_type(requester, ty, TypeContext::Value)
+@@ -739,7 +752,7 @@ impl<'i, 's> QuerySession<'i, 's> {
+             }
+         };
+         Ok(ParameterTy::Reference {
+-            aggregate,
++            referent,
+             kind: if mutable {
+                 BorrowKind::Exclusive
+             } else {
+diff --git a/src/frontend/declaration_index/source_owner.rs b/src/frontend/declaration_index/source_owner.rs
+index fbfffa0..200a6c5 100644
+--- a/src/frontend/declaration_index/source_owner.rs
++++ b/src/frontend/declaration_index/source_owner.rs
+@@ -215,6 +215,7 @@ impl<'s> SourceOwner<'s> {
+             ast::TypeSyntaxKind::Reference { .. }
+             | ast::TypeSyntaxKind::Array(_)
+             | ast::TypeSyntaxKind::ArrayReference { .. }
++            | ast::TypeSyntaxKind::SliceReference { .. }
+             | ast::TypeSyntaxKind::Name(ast::ItemPath::Absolute(_)) => Ok(true),
+             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
+                 let text = self.text(name)?;
+diff --git a/src/frontend/declaration_index/tests.rs b/src/frontend/declaration_index/tests.rs
+index f79bd48..513cdca 100644
+--- a/src/frontend/declaration_index/tests.rs
++++ b/src/frontend/declaration_index/tests.rs
+@@ -558,7 +558,7 @@ fn passive_trace_records_completed_whole_value_borrow() {
+             function: DefId(1),
+             binding: 0,
+             ty: super::super::oir::owned_types::ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 ..
+             },
+             ..
+diff --git a/src/frontend/format/ast_tests.rs b/src/frontend/format/ast_tests.rs
+index edb6ecf..fa5e703 100644
+--- a/src/frontend/format/ast_tests.rs
++++ b/src/frontend/format/ast_tests.rs
+@@ -203,6 +203,15 @@ impl<'a> Fingerprint<'a> {
+                 self.tag("array-type");
+                 self.array_type(array);
+             }
++            TypeSyntaxKind::SliceReference { mutable, element } => {
++                self.tag("slice-reference-type");
++                self.flag(mutable);
++                self.tag(match element {
++                    ScalarTypeSyntax::Bool => "bool",
++                    ScalarTypeSyntax::I32 => "i32",
++                    ScalarTypeSyntax::Unit => "unit",
++                });
++            }
+             TypeSyntaxKind::ArrayReference { mutable, array } => {
+                 self.tag("array-reference-type");
+                 self.flag(mutable);
+@@ -663,6 +672,10 @@ mod absent;use crate::absent::item;
+ fn types(a:[bool;0],b:[i32;0002],c:[();1],s:&[bool;0],m:&mut [i32;2])->[();0]{
+ let z:[();0]=([]);let mut values=[0001,- 2,];values[(0)]=m[1]+values.len();
+ sink(&values,&mut *m,&*s);return [];}
++"#),
++    ("slice-types-and-reborrows", r#"
++fn view(s:&[i32],b:&[bool],u:&[()])->i32{return s.len();}
++fn mutate(p:&mut /* view */ [i32])->(){p[0]=p[0]+1;mutate(&mut *p);view(&*p,&*p,&*p);return;}
+ "#),
+     ("array-syntax-only-and-multiline", r#"
+ fn loose()->(){let nested=[[1],[]];let mixed=[true,(),missing(),Record{x:1},[2],];
+diff --git a/src/frontend/hir.rs b/src/frontend/hir.rs
+index 214db4d..5d98f29 100644
+--- a/src/frontend/hir.rs
++++ b/src/frontend/hir.rs
+@@ -154,7 +154,9 @@ fn type_syntax(
+ ) -> Result<Ty, Box<Diagnostic>> {
+     if matches!(
+         ty.kind,
+-        ast::TypeSyntaxKind::Array(_) | ast::TypeSyntaxKind::ArrayReference { .. }
++        ast::TypeSyntaxKind::Array(_)
++            | ast::TypeSyntaxKind::ArrayReference { .. }
++            | ast::TypeSyntaxKind::SliceReference { .. }
+     ) {
+         return Err(Diagnostic::new(
+             "E0500",
+diff --git a/src/frontend/oir/owned/array_native_tests.rs b/src/frontend/oir/owned/array_native_tests.rs
+index c41f683..ce75509 100644
+--- a/src/frontend/oir/owned/array_native_tests.rs
++++ b/src/frontend/oir/owned/array_native_tests.rs
+@@ -1147,7 +1147,7 @@ impl Effects {
+             argument: 0,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+             kind: BorrowKind::Exclusive,
+-            aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
+             span: s(8),
+         });
+         caller.blocks.push(block(
+@@ -1221,7 +1221,7 @@ impl Effects {
+             .parameters
+             .push(ParameterBinding::Reference(ReferenceParamId(0)));
+         helper.references.push(ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
+             kind: BorrowKind::Exclusive,
+             position: 0,
+             span: s(29),
+diff --git a/src/frontend/oir/owned/array_reference_boundary_tests.rs b/src/frontend/oir/owned/array_reference_boundary_tests.rs
+index 796890b..46de739 100644
+--- a/src/frontend/oir/owned/array_reference_boundary_tests.rs
++++ b/src/frontend/oir/owned/array_reference_boundary_tests.rs
+@@ -172,10 +172,10 @@ fn unit2c_closed_provenance_faults_precede_bounds_and_zero_length_permission() {
+             owner.aggregate = zero;
+         }
+         for reference in &mut function.references {
+-            reference.aggregate = zero;
++            reference.referent = BorrowedSlot::check(BorrowedTy::Exact(zero.aggregate())).unwrap();
+         }
+         for loan in &mut function.loans {
+-            loan.aggregate = zero;
++            loan.referent = BorrowedSlot::check(BorrowedTy::Exact(zero.aggregate())).unwrap();
+         }
+         for block in &mut function.blocks {
+             for statement in &mut block.statements {
+@@ -638,10 +638,11 @@ fn nested_arrays(exclusive: bool) -> (SourceMap, RawOwnedProgram, Vec<(Span, usi
+             owner.aggregate = aggregate;
+         }
+         for reference in &mut function.references {
+-            reference.aggregate = aggregate;
++            reference.referent =
++                BorrowedSlot::check(BorrowedTy::Exact(aggregate.aggregate())).unwrap();
+         }
+         for loan in &mut function.loans {
+-            loan.aggregate = aggregate;
++            loan.referent = BorrowedSlot::check(BorrowedTy::Exact(aggregate.aggregate())).unwrap();
+         }
+         let index = function.locals.len();
+         function
+diff --git a/src/frontend/oir/owned/array_reference_tests.rs b/src/frontend/oir/owned/array_reference_tests.rs
+index 5c3c9ee..a2c1b22 100644
+--- a/src/frontend/oir/owned/array_reference_tests.rs
++++ b/src/frontend/oir/owned/array_reference_tests.rs
+@@ -926,7 +926,7 @@ enum HelperCase {
+ 
+ fn reference(kind: BorrowKind, position: usize, span: Span) -> ReferenceDecl {
+     ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
+         kind,
+         position,
+         span,
+@@ -972,7 +972,7 @@ fn helper_raw(case: HelperCase, s: &impl Fn(usize) -> Span) -> RawOwnedProgram {
+         argument,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+         kind,
+-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 2)).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),
+         span: s(span),
+     })
+     .collect();
+diff --git a/src/frontend/oir/owned/array_tests.rs b/src/frontend/oir/owned/array_tests.rs
+index 3d2806c..a3b4640 100644
+--- a/src/frontend/oir/owned/array_tests.rs
++++ b/src/frontend/oir/owned/array_tests.rs
+@@ -449,7 +449,10 @@ fn unit2b_denials_preserve_distinct_operation_role_and_origins() {
+                 flow::ObservedState::Moved
+             )
+         );
+-        assert_eq!(facts.subject.aggregate(), expected_aggregate);
++        assert_eq!(
++            facts.subject.referent(),
++            BorrowedTy::Exact(expected_aggregate)
++        );
+         assert_eq!(charge_span, at(s, 71));
+     }
+     let mut raw = fixture(s, hir::Ty::I32, 2);
+@@ -619,14 +622,14 @@ fn unit2b_structural_identity_controls_loans_moves_and_returns() {
+                 o.aggregate = slot;
+             }
+             for r in &mut f.references {
+-                r.aggregate = slot;
++                r.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
+                 r.span = Span {
+                     file: foreign,
+                     ..r.span
+                 };
+             }
+             for l in &mut f.loans {
+-                l.aggregate = slot;
++                l.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
+             }
+             for b in &mut f.blocks {
+                 for i in &mut b.statements {
+@@ -641,7 +644,9 @@ fn unit2b_structural_identity_controls_loans_moves_and_returns() {
+         }
+         // Structural identity carries no first-use file association.
+         assert!(probe(&raw, &sources).is_ok());
+-        raw.functions[1].references[0].aggregate = array_slot(hir::Ty::Bool, 0);
++        raw.functions[1].references[0].referent =
++            BorrowedSlot::check(BorrowedTy::Exact(array_slot(hir::Ty::Bool, 0).aggregate()))
++                .unwrap();
+         let call_span = raw.functions[0].calls[0].span;
+         malformed(&raw, &sources, Malformed::Binding, Some(call_span));
+     }
+diff --git a/src/frontend/oir/owned/consumer_fixtures.rs b/src/frontend/oir/owned/consumer_fixtures.rs
+index 71fb2a8..52b02d2 100644
+--- a/src/frontend/oir/owned/consumer_fixtures.rs
++++ b/src/frontend/oir/owned/consumer_fixtures.rs
+@@ -279,7 +279,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+         kind: BorrowKind::Shared,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: s(5),
+     }];
+     f.blocks.push(block(
+@@ -320,7 +320,7 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
+     let mut callee = function(1, ValueTy::Scalar(hir::Ty::I32), s(20));
+     callee.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+     callee.references = vec![ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: BorrowKind::Shared,
+         position: 0,
+         span: s(20),
+@@ -395,7 +395,8 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
+             argument: i,
+             authority: AccessBase::Parameter(ReferenceParamId(0)),
+             kind: BorrowKind::Shared,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: s(if i == 0 { 22 } else { 24 }),
+         })
+         .collect();
+@@ -464,7 +465,8 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
+         .collect();
+     pair.references = (0..2)
+         .map(|position| ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: BorrowKind::Shared,
+             position,
+             span: s(40),
+@@ -1225,7 +1227,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
+         argument: 0,
+         authority: root,
+         kind: BorrowKind::Exclusive,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: s(24),
+     }];
+     let init = |place, value, origin| {
+@@ -1422,7 +1424,7 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
+     let mut increment = function(1, ValueTy::Scalar(I32), s(50));
+     increment.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+     increment.references = vec![ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: BorrowKind::Exclusive,
+         position: 0,
+         span: s(50),
+diff --git a/src/frontend/oir/owned/consumer_pilot.rs b/src/frontend/oir/owned/consumer_pilot.rs
+index 44164c0..c3196a1 100644
+--- a/src/frontend/oir/owned/consumer_pilot.rs
++++ b/src/frontend/oir/owned/consumer_pilot.rs
+@@ -152,7 +152,7 @@ fn reference_function(
+     let span = o.at(label);
+     let mut f = function(id, ValueTy::Scalar(result), span);
+     f.references = vec![ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind,
+         position: 0,
+         span,
+@@ -273,7 +273,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
+         argument: 0,
+         authority: root,
+         kind,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: o.at(label),
+     })
+     .collect();
+@@ -581,7 +581,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
+         argument: 0,
+         authority: parameter,
+         kind: BorrowKind::Exclusive,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: o.at("dispatch.prepare_exclusive_child"),
+     }];
+     dispatch.blocks.push(bb(
+diff --git a/src/frontend/oir/owned/denial_tests.rs b/src/frontend/oir/owned/denial_tests.rs
+index cb20ab6..e1bcebe 100644
+--- a/src/frontend/oir/owned/denial_tests.rs
++++ b/src/frontend/oir/owned/denial_tests.rs
+@@ -143,7 +143,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
+         argument: 0,
+         authority: AccessBase::Owner(source),
+         kind,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: at(s, 7),
+     });
+     f.blocks[0].statements.extend([
+@@ -175,7 +175,7 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
+         .parameters
+         .push(ParameterBinding::Reference(ReferenceParamId(0)));
+     callee.references.push(ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind,
+         position: 0,
+         span: at(s, 30),
+@@ -274,7 +274,7 @@ fn shared_reference_write_denial_preserves_granted_mode_without_invented_state()
+     f.parameters
+         .push(ParameterBinding::Reference(ReferenceParamId(0)));
+     f.references.push(ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: BorrowKind::Shared,
+         position: 0,
+         span: at(s, 1),
+@@ -303,7 +303,8 @@ fn shared_reference_write_denial_preserves_granted_mode_without_invented_state()
+         facts.subject,
+         DeniedSubject::Reference {
+             id: ReferenceParamId(0),
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             granted: BorrowKind::Shared,
+             declaration: at(s, 1)
+         }
+@@ -316,7 +317,7 @@ fn exclusive_reborrow_permission_retains_requested_and_granted_modes() {
+     let mut p = borrowed(s, BorrowKind::Exclusive);
+     let f = &mut p.functions[0];
+     f.references.push(ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: BorrowKind::Shared,
+         position: 0,
+         span: at(s, 1),
+@@ -654,7 +655,7 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
+         let f = &mut p.functions[0];
+         let authority = if through_reference {
+             f.references.push(ReferenceDecl {
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                     .unwrap(),
+                 kind: BorrowKind::Exclusive,
+                 position: 0,
+@@ -673,7 +674,8 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
+             argument: 1,
+             authority,
+             kind: BorrowKind::Exclusive,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: at(s, 8),
+         });
+         f.blocks[0].statements.push(ins(
+@@ -689,7 +691,8 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
+             .parameters
+             .push(ParameterBinding::Reference(ReferenceParamId(1)));
+         callee.references.push(ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: BorrowKind::Exclusive,
+             position: 1,
+             span: at(s, 31),
+diff --git a/src/frontend/oir/owned/execute.rs b/src/frontend/oir/owned/execute.rs
+index bd49aa0..90f16da 100644
+--- a/src/frontend/oir/owned/execute.rs
++++ b/src/frontend/oir/owned/execute.rs
+@@ -503,18 +503,18 @@ impl<'p, 'w> Machine<'p, 'w> {
+         let key = self.base(frame, base, access, span)?;
+         let f = self.function(self.frames[frame].function);
+         let expected = match base {
+-            AccessBase::Owner(owner) => f.owners[owner.0].aggregate(),
++            AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
+             AccessBase::Parameter(reference) => f
+                 .references
+                 .get(reference.0)
+                 .ok_or_else(|| bad("reference declaration", span))?
+-                .aggregate(),
++                .referent(),
+         };
+         let actual = self.aggregate(key, span)?;
+         self.plan
+             .witness()
+             .declarations()
+-            .same_aggregate_type(actual, expected)
++            .check_borrowed_view(BorrowedTy::Exact(actual), expected)
+             .map_err(|_| bad("array base type", span))?;
+         Ok((key, self.array_type(key, span)?))
+     }
+@@ -735,6 +735,14 @@ impl<'p, 'w> Machine<'p, 'w> {
+             Access::Borrow(descriptor.kind),
+             span,
+         )?;
++        self.plan
++            .witness()
++            .declarations()
++            .check_borrowed_view(
++                BorrowedTy::Exact(self.aggregate(root, span)?),
++                descriptor.referent(),
++            )
++            .map_err(|_| bad("loan borrowed view", span))?;
+         let parent = match descriptor.authority {
+             AccessBase::Owner(_) => LoanKey::default(),
+             AccessBase::Parameter(p) => self.frames[frame].references[p.0].permission,
+@@ -1227,9 +1235,11 @@ impl<'p, 'w> Machine<'p, 'w> {
+                         .plan
+                         .witness()
+                         .declarations()
+-                        .same_aggregate_type(
+-                            root_function.owners[handle.root.owner as usize].aggregate(),
+-                            declared.aggregate(),
++                        .check_borrowed_view(
++                            BorrowedTy::Exact(
++                                root_function.owners[handle.root.owner as usize].aggregate(),
++                            ),
++                            declared.referent(),
+                         )
+                         .is_err()
+                         || self.loan_kind(handle.permission, span)? != declared.kind
+diff --git a/src/frontend/oir/owned/execute_tests.rs b/src/frontend/oir/owned/execute_tests.rs
+index a21c06e..2fcbe76 100644
+--- a/src/frontend/oir/owned/execute_tests.rs
++++ b/src/frontend/oir/owned/execute_tests.rs
+@@ -935,7 +935,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+         kind: BorrowKind::Shared,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: s(2),
+     }];
+     main.blocks = vec![
+@@ -983,7 +983,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
+     recursive.locals = vec![scalar(hir::Ty::Unit, s(5))];
+     recursive.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+     recursive.references = vec![ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: BorrowKind::Shared,
+         position: 0,
+         span: s(5),
+@@ -1000,7 +1000,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
+         argument: 0,
+         authority: AccessBase::Parameter(ReferenceParamId(0)),
+         kind: BorrowKind::Shared,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: s(7),
+     }];
+     recursive.blocks = vec![
+diff --git a/src/frontend/oir/owned/flow.rs b/src/frontend/oir/owned/flow.rs
+index 53e36d2..a1ebf51 100644
+--- a/src/frontend/oir/owned/flow.rs
++++ b/src/frontend/oir/owned/flow.rs
+@@ -33,16 +33,16 @@ pub(super) enum DeniedSubject {
+     Owner(OwnerSubject),
+     Reference {
+         id: ReferenceParamId,
+-        aggregate: AggregateSlot,
++        referent: BorrowedSlot,
+         granted: BorrowKind,
+         declaration: Span,
+     },
+ }
+ impl DeniedSubject {
+-    pub(super) fn aggregate(self) -> AggregateTy {
++    pub(super) fn referent(self) -> BorrowedTy {
+         match self {
+-            Self::Owner(owner) => owner.aggregate(),
+-            Self::Reference { aggregate, .. } => aggregate.aggregate(),
++            Self::Owner(owner) => BorrowedTy::Exact(owner.aggregate()),
++            Self::Reference { referent, .. } => referent.referent(),
+         }
+     }
+ }
+@@ -108,7 +108,7 @@ impl DenialContext {
+                 let r = f.references.get(id.0)?;
+                 DeniedSubject::Reference {
+                     id,
+-                    aggregate: r.aggregate,
++                    referent: r.referent,
+                     granted: r.kind,
+                     declaration: r.span,
+                 }
+@@ -728,12 +728,15 @@ enum Access {
+     End,
+     Borrow(BorrowKind),
+ }
++fn views_may_alias(a: BorrowedTy, b: BorrowedTy) -> bool {
++    a.accepts(b) || b.accepts(a)
++}
+ fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
+     match (a, b) {
+         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
+         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
+             a == b
+-                || (f.references[a.0].aggregate() == f.references[b.0].aggregate()
++                || (views_may_alias(f.references[a.0].referent(), f.references[b.0].referent())
+                     && f.references[a.0].kind == BorrowKind::Shared
+                     && f.references[b.0].kind == BorrowKind::Shared)
+         }
+diff --git a/src/frontend/oir/owned/mod.rs b/src/frontend/oir/owned/mod.rs
+index a062b28..7038dce 100644
+--- a/src/frontend/oir/owned/mod.rs
++++ b/src/frontend/oir/owned/mod.rs
+@@ -69,14 +69,14 @@ enum OwnerKind {
+ }
+ #[derive(Clone, Debug)]
+ struct ReferenceDecl {
+-    aggregate: AggregateSlot,
++    referent: BorrowedSlot,
+     kind: BorrowKind,
+     position: usize,
+     span: Span,
+ }
+ impl ReferenceDecl {
+-    fn aggregate(&self) -> AggregateTy {
+-        self.aggregate.aggregate()
++    fn referent(&self) -> BorrowedTy {
++        self.referent.referent()
+     }
+ }
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -90,12 +90,12 @@ struct LoanDecl {
+     argument: usize,
+     authority: AccessBase,
+     kind: BorrowKind,
+-    aggregate: AggregateSlot,
++    referent: BorrowedSlot,
+     span: Span,
+ }
+ impl LoanDecl {
+-    fn aggregate(&self) -> AggregateTy {
+-        self.aggregate.aggregate()
++    fn referent(&self) -> BorrowedTy {
++        self.referent.referent()
+     }
+ }
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+diff --git a/src/frontend/oir/owned/native.rs b/src/frontend/oir/owned/native.rs
+index 22ee85a..d833f37 100644
+--- a/src/frontend/oir/owned/native.rs
++++ b/src/frontend/oir/owned/native.rs
+@@ -470,6 +470,14 @@ fn admit_accounted(
+             "parameter count",
+             f.span,
+         )?;
++        // A slice contributes exactly one private i32 length beside its pointer.
++        // Keep the source parameter limit unchanged while bounding ABI expansion.
++        limit(
++            add(f.parameters.len(), slice_reference_count(f))?,
++            mul(limits.parameters, 2)?,
++            "flattened parameter count",
++            f.span,
++        )?;
+         limit(
+             u.scalar_slots,
+             limits.function_slots,
+@@ -1223,15 +1231,47 @@ fn field_pointer(out: &mut Emission, name: &str, base: &str, offset: usize) -> S
+     .unwrap();
+     format!("%{name}_ptr")
+ }
+-fn array_base(f: &RawOwnedFunction, base: AccessBase) -> FixedArrayTy {
+-    let aggregate = match base {
+-        AccessBase::Owner(owner) => f.owners[owner.0].aggregate(),
+-        AccessBase::Parameter(reference) => f.references[reference.0].aggregate(),
+-    };
+-    let AggregateTy::FixedArray(array) = aggregate else {
+-        unreachable!("verified array base")
+-    };
+-    array
++fn slice_reference_count(f: &RawOwnedFunction) -> usize {
++    f.references
++        .iter()
++        .filter(|reference| matches!(reference.referent(), BorrowedTy::ScalarSlice(_)))
++        .count()
++}
++fn slice_loan_count(f: &RawOwnedFunction) -> usize {
++    f.loans
++        .iter()
++        .filter(|loan| matches!(loan.referent(), BorrowedTy::ScalarSlice(_)))
++        .count()
++}
++fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
++    match base {
++        AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
++        AccessBase::Parameter(reference) => f.references[reference.0].referent(),
++    }
++}
++fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
++    match indexed_base(f, base) {
++        BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
++        BorrowedTy::ScalarSlice(_) => {
++            let AccessBase::Parameter(reference) = base else {
++                unreachable!("slices are borrowed parameter views")
++            };
++            writeln!(
++                out,
++                "  %{name}_length = load i32, ptr %rl{}, align 4",
++                reference.0
++            )
++            .unwrap();
++            format!("%{name}_length")
++        }
++        BorrowedTy::Exact(AggregateTy::Record(_)) => unreachable!("verified indexed base"),
++    }
++}
++fn element_stride(element: hir::Ty) -> usize {
++    match element {
++        hir::Ty::I32 => 4,
++        hir::Ty::Bool | hir::Ty::Unit => 1,
++    }
+ }
+ fn sentinel_ty(array: FixedArrayTy) -> &'static str {
+     match array.element() {
+@@ -1246,26 +1286,29 @@ fn index_pointer(
+     statement: &OwnedStatement,
+     diagnostics: &Diagnostics,
+     out: &mut Emission,
+-) -> (FixedArrayTy, String) {
++) -> (hir::Ty, String) {
+     let (base, index) = match statement.kind {
+         OwnedInstruction::ReadIndex { base, index, .. }
+         | OwnedInstruction::WriteIndex { base, index, .. } => (base, index),
+         _ => unreachable!("indexed operation"),
+     };
+     let f = &plan.witness().functions()[id.0];
+-    let array = array_base(f, base);
++    let element = indexed_base(f, base)
++        .element()
++        .expect("verified indexed base");
++    let length = index_length(out, f, name, base);
+     let index = load_operand(out, f, &format!("{name}_index"), index);
+     let suffix = continuation(&statement.kind)
+         .suffix()
+         .expect("indexed continuation");
+-    writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", array.length()).unwrap();
++    writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", length).unwrap();
+     emit_failure(
+         out,
+         diagnostics,
+         FailureKind::Bounds,
+         plan::instruction_span(statement),
+     );
+-    writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", array.stride()).unwrap();
++    writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", element_stride(element)).unwrap();
+     // Even resolving a reference base happens only on the successful edge.
+     let base = base_pointer(out, name, base);
+     writeln!(
+@@ -1273,7 +1316,7 @@ fn index_pointer(
+         "  %{name}_ptr = getelementptr i8, ptr {base}, i64 %{name}_offset"
+     )
+     .unwrap();
+-    (array, format!("%{name}_ptr"))
++    (element, format!("%{name}_ptr"))
+ }
+ 
+ /// O(raw emit sites), never an eager walk of expanded scalar cells.
+@@ -1556,6 +1599,14 @@ fn emit_function(
+             _ => "ptr",
+         };
+         write!(out, "{separator}{t} %arg{i}").unwrap();
++        if let ParameterBinding::Reference(reference) = parameter {
++            if matches!(
++                f.references[reference.0].referent(),
++                BorrowedTy::ScalarSlice(_)
++            ) {
++                write!(out, ", i32 %arg{i}_length").unwrap();
++            }
++        }
+         separator = ", ";
+     }
+     out.write_str(") noinline {\nentry:\n").unwrap();
+@@ -1580,6 +1631,48 @@ fn emit_function(
+         )
+         .unwrap();
+     }
++    let slice_slots = slice_reference_count(f) + slice_loan_count(f);
++    if slice_slots != 0 {
++        writeln!(
++            out,
++            "  %slice_lengths = alloca [{slice_slots} x i32], align 4"
++        )
++        .unwrap();
++        // Only slice views retain lengths. Exact references keep their single
++        // pointer layout and array owners retain their existing payload layout.
++        let mut slot = 0;
++        for (i, reference) in f.references.iter().enumerate() {
++            if out.exceeded {
++                return;
++            }
++            out.ordinary_visits += 1;
++            if matches!(reference.referent(), BorrowedTy::ScalarSlice(_)) {
++                writeln!(
++                    out,
++                    "  %rl{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
++                    slot * 4
++                )
++                .unwrap();
++                slot += 1;
++            }
++        }
++        for (i, loan) in f.loans.iter().enumerate() {
++            if out.exceeded {
++                return;
++            }
++            out.ordinary_visits += 1;
++            if matches!(loan.referent(), BorrowedTy::ScalarSlice(_)) {
++                writeln!(
++                    out,
++                    "  %ll{i} = getelementptr i8, ptr %slice_lengths, i64 {}",
++                    slot * 4
++                )
++                .unwrap();
++                slot += 1;
++            }
++        }
++        debug_assert_eq!(slot, slice_slots);
++    }
+     for i in 0..slots {
+         if out.exceeded {
+             return;
+@@ -1631,7 +1724,10 @@ fn emit_function(
+                 &format!("%arg{i}"),
+             ),
+             ParameterBinding::Reference(r) => {
+-                writeln!(out, "  store ptr %arg{i}, ptr %r{}, align 8", r.0).unwrap()
++                writeln!(out, "  store ptr %arg{i}, ptr %r{}, align 8", r.0).unwrap();
++                if matches!(f.references[r.0].referent(), BorrowedTy::ScalarSlice(_)) {
++                    writeln!(out, "  store i32 %arg{i}_length, ptr %rl{}, align 4", r.0).unwrap();
++                }
+             }
+             ParameterBinding::Owned(o) => transfer(
+                 out,
+@@ -1770,41 +1866,36 @@ fn emit_statement(
+             }
+         }
+         OwnedInstruction::ReadIndex { destination, .. } => {
+-            let (array, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
++            let (element, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
+             writeln!(
+                 out,
+                 "  %{name}_value = load {}, ptr {ptr}, align 1",
+-                ty(array.element())
++                ty(element)
+             )
+             .unwrap();
+             store_slot(
+                 out,
+                 &format!("{name}_store"),
+                 &format!("%s{}", destination.0),
+-                array.element(),
++                element,
+                 &format!("%{name}_value"),
+             );
+         }
+         OwnedInstruction::WriteIndex { value, .. } => {
+-            let (array, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
++            let (element, ptr) = index_pointer(plan, id, name, statement, diagnostics, out);
+             // The operand is the scalar snapshot made before the index helper;
+             // it is never recomputed from the mutated aggregate.
+             let value = load_operand(out, f, &format!("{name}_value"), *value);
+-            writeln!(
+-                out,
+-                "  store {} {value}, ptr {ptr}, align 1",
+-                ty(array.element())
+-            )
+-            .unwrap();
++            writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(element)).unwrap();
+         }
+         OwnedInstruction::ArrayLength { destination, base } => {
+-            let array = array_base(f, *base);
++            let length = index_length(out, f, name, *base);
+             store_slot(
+                 out,
+                 &format!("{name}_store"),
+                 &format!("%s{}", destination.0),
+                 hir::Ty::I32,
+-                &array.length().to_string(),
++                &length,
+             );
+         }
+         OwnedInstruction::Scalar(_) => emit_scalar(plan, id, name, statement, diagnostics, out),
+@@ -1942,6 +2033,12 @@ fn emit_statement(
+                 f.references.len() + loan.0
+             )
+             .unwrap();
++            if matches!(f.loans[loan.0].referent(), BorrowedTy::ScalarSlice(_)) {
++                // Stage the target view's length when its loan begins, alongside
++                // the pointer, before evaluating any later call argument.
++                let length = index_length(out, f, name, f.loans[loan.0].authority);
++                writeln!(out, "  store i32 {length}, ptr %ll{}, align 4", loan.0).unwrap();
++            }
+         }
+         // The witness proves these logical transitions. Backing storage remains
+         // allocated throughout the activation, including suspended staging.
+@@ -2132,7 +2229,8 @@ fn emit_terminator(
+             let callee = &plan.witness().functions()[descriptor.target.0];
+             // Bounded by MAX_PARAMS; argument strings are emission scratch only,
+             // never runtime A-sized scalar or owned result scratch.
+-            let mut args = Vec::with_capacity(descriptor.arguments.len() + 2);
++            let mut args =
++                Vec::with_capacity(descriptor.arguments.len() + slice_reference_count(callee) + 2);
+             if guarded {
+                 args.push("ptr %fuel".into());
+             }
+@@ -2166,6 +2264,15 @@ fn emit_terminator(
+                         )
+                         .unwrap();
+                         args.push(format!("ptr %{name}_arg{i}"));
++                        if matches!(f.loans[l.0].referent(), BorrowedTy::ScalarSlice(_)) {
++                            writeln!(
++                                out,
++                                "  %{name}_arg{i}_length = load i32, ptr %ll{}, align 4",
++                                l.0
++                            )
++                            .unwrap();
++                            args.push(format!("i32 %{name}_arg{i}_length"));
++                        }
+                     }
+                 }
+             }
+diff --git a/src/frontend/oir/owned/native_heldout_review.rs b/src/frontend/oir/owned/native_heldout_review.rs
+index 1f878e4..87080af 100644
+--- a/src/frontend/oir/owned/native_heldout_review.rs
++++ b/src/frontend/oir/owned/native_heldout_review.rs
+@@ -81,7 +81,8 @@ fn mixed_parameter_fixture(
+             argument: 4,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+             kind: BorrowKind::Shared,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: s(0),
+         },
+         LoanDecl {
+@@ -89,7 +90,8 @@ fn mixed_parameter_fixture(
+             argument: 1,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+             kind: BorrowKind::Shared,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: s(0),
+         },
+     ];
+@@ -250,13 +252,15 @@ fn mixed_parameter_fixture(
+     ];
+     callee.references = vec![
+         ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: BorrowKind::Shared,
+             position: 4,
+             span: s(100),
+         },
+         ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: BorrowKind::Shared,
+             position: 1,
+             span: s(100),
+diff --git a/src/frontend/oir/owned/native_tests.rs b/src/frontend/oir/owned/native_tests.rs
+index 71ea04c..8e3b34d 100644
+--- a/src/frontend/oir/owned/native_tests.rs
++++ b/src/frontend/oir/owned/native_tests.rs
+@@ -2357,3 +2357,6 @@ mod array_resources;
+ 
+ #[path = "array_native_tests.rs"]
+ mod arrays;
++
++#[path = "slice_native_tests.rs"]
++mod slices;
+diff --git a/src/frontend/oir/owned/oracle_tests.rs b/src/frontend/oir/owned/oracle_tests.rs
+index 79cf553..59ae3f1 100644
+--- a/src/frontend/oir/owned/oracle_tests.rs
++++ b/src/frontend/oir/owned/oracle_tests.rs
+@@ -655,7 +655,8 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
+             argument: position,
+             authority: AccessBase::Owner(OwnerPlaceId(root)),
+             kind,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: acquisition,
+         });
+         statements.push(instruction(
+@@ -670,7 +671,8 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
+             .parameters
+             .push(ParameterBinding::Reference(ReferenceParamId(position)));
+         target.references.push(ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind,
+             position,
+             span: at(span, 1_100 + position),
+@@ -1104,7 +1106,7 @@ fn region_raw(graph: &model::Graph, case: RegionCase, span: Span) -> RawOwnedPro
+                 .parameters
+                 .push(ParameterBinding::Reference(ReferenceParamId(0)));
+             caller.references.push(ReferenceDecl {
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                     .unwrap(),
+                 kind: if matches!(case.authority, RegionAuthority::SharedParameter) {
+                     BorrowKind::Shared
+@@ -1962,9 +1964,9 @@ impl NestedRawBuilder<'_> {
+                         argument,
+                         authority,
+                         kind,
+-                        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(
++                        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
+                             RecordId(0),
+-                        ))
++                        )))
+                         .unwrap(),
+                         span,
+                     });
+@@ -2042,7 +2044,7 @@ fn nested_raw(model: &nested_model::Program, span: Span) -> RawOwnedProgram {
+             raw.parameters
+                 .push(ParameterBinding::Reference(ReferenceParamId(position)));
+             raw.references.push(ReferenceDecl {
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                     .unwrap(),
+                 kind: if *mode == nested_model::Mode::Shared {
+                     BorrowKind::Shared
+@@ -2245,10 +2247,10 @@ fn array_raw(mut raw: RawOwnedProgram, probe: ArrayProbe, length: usize) -> RawO
+             owner.aggregate = slot;
+         }
+         for reference in &mut f.references {
+-            reference.aggregate = slot;
++            reference.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
+         }
+         for loan in &mut f.loans {
+-            loan.aggregate = slot;
++            loan.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
+         }
+         let index = f.locals.len();
+         f.locals.push(local(hir::Ty::I32, f.span));
+@@ -2878,8 +2880,10 @@ fn array_model_staged_access_and_reference_permissions_match_class_table() {
+                 f.parameters
+                     .push(ParameterBinding::Reference(ReferenceParamId(0)));
+                 f.references.push(ReferenceDecl {
+-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+-                        .unwrap(),
++                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
++                        RecordId(0),
++                    )))
++                    .unwrap(),
+                     kind,
+                     position: 0,
+                     span,
+diff --git a/src/frontend/oir/owned/plan.rs b/src/frontend/oir/owned/plan.rs
+index d178ebd..8910fd3 100644
+--- a/src/frontend/oir/owned/plan.rs
++++ b/src/frontend/oir/owned/plan.rs
+@@ -366,6 +366,19 @@ fn usage(
+         )?,
+         align(u.payload_bytes, 4)?,
+     )?;
++    // Slice descriptors add native-only i32 length slots. The reference consumer
++    // derives length from validated whole-owner provenance and stores no sidecar.
++    let slice_references = f
++        .references
++        .iter()
++        .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
++        .count();
++    let slice_loans = f
++        .loans
++        .iter()
++        .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
++        .count();
++    u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
+     Ok(u)
+ }
+ pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
+diff --git a/src/frontend/oir/owned/reviewer_array_reference_tests.rs b/src/frontend/oir/owned/reviewer_array_reference_tests.rs
+index 216d5fa..4c08327 100644
+--- a/src/frontend/oir/owned/reviewer_array_reference_tests.rs
++++ b/src/frontend/oir/owned/reviewer_array_reference_tests.rs
+@@ -839,7 +839,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
+             argument: 0,
+             authority: AccessBase::Owner(OwnerPlaceId(0)),
+             kind: BorrowKind::Exclusive,
+-            aggregate: slot,
++            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
+             span: s(base, 11 + 10 * j),
+         });
+     }
+@@ -930,7 +930,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
+         g.locals = (0..4).map(|_| local(hir::Ty::I32, base)).collect();
+         g.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+         g.references = vec![ReferenceDecl {
+-            aggregate: slot,
++            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
+             kind: BorrowKind::Exclusive,
+             position: 0,
+             span: base,
+@@ -1112,10 +1112,10 @@ fn adapt_one_i32_record(
+             o.aggregate = slot;
+         }
+         for r in &mut f.references {
+-            r.aggregate = slot;
++            r.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
+         }
+         for l in &mut f.loans {
+-            l.aggregate = slot;
++            l.referent = BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap();
+         }
+         for b in &mut f.blocks {
+             if let Some(OwnedTerminator {
+@@ -1289,7 +1289,7 @@ fn reference_fixture(
+     f.calls.truncate(1);
+     f.loans.truncate(1);
+     f.owners[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();
+-    f.loans[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();
++    f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();
+     f.locals[0].ty = ty;
+     f.locals.push(local(other_ty, base));
+     f.owners
+@@ -1340,7 +1340,7 @@ fn reference_fixture(
+     ));
+     raw.functions.truncate(2);
+     let g = &mut raw.functions[1];
+-    g.references[0].aggregate = AggregateSlot::try_from_aggregate(a).unwrap();
++    g.references[0].referent = BorrowedSlot::check(BorrowedTy::Exact(a)).unwrap();
+     g.locals[1].ty = ty;
+     g.locals[3].ty = if mode == 2 { hir::Ty::I32 } else { ty };
+     g.blocks[0].statements[0] =
+@@ -1518,7 +1518,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
+         argument: 1,
+         authority: AccessBase::Owner(OwnerPlaceId(1)),
+         kind: BorrowKind::Exclusive,
+-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),
+         span: s(base, 7),
+     });
+     raw.functions[0].blocks[0].statements.push(ins(
+@@ -1533,7 +1533,7 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
+         .parameters
+         .push(ParameterBinding::Reference(ReferenceParamId(1)));
+     raw.functions[1].references.push(ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(array(hir::Ty::I32, 1)).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),
+         kind: BorrowKind::Exclusive,
+         position: 1,
+         span: base,
+diff --git a/src/frontend/oir/owned/reviewer_heldout.rs b/src/frontend/oir/owned/reviewer_heldout.rs
+index 4dc3168..689836a 100644
+--- a/src/frontend/oir/owned/reviewer_heldout.rs
++++ b/src/frontend/oir/owned/reviewer_heldout.rs
+@@ -144,7 +144,8 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
+             .parameters
+             .push(ParameterBinding::Reference(ReferenceParamId(i)));
+         callee.references.push(ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: *kind,
+             position: i,
+             span: s,
+@@ -172,7 +173,8 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
+             argument: i,
+             authority: AccessBase::Owner(OwnerPlaceId(*owner)),
+             kind: *kind,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: t,
+         });
+         f.blocks[0].statements.push(ins(
+@@ -706,8 +708,10 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
+                 leaf.parameters
+                     .push(ParameterBinding::Reference(ReferenceParamId(0)));
+                 leaf.references.push(ReferenceDecl {
+-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+-                        .unwrap(),
++                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
++                        RecordId(0),
++                    )))
++                    .unwrap(),
+                     kind: child,
+                     position: 0,
+                     span: s,
+@@ -728,8 +732,10 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
+                     argument: 0,
+                     authority: AccessBase::Parameter(ReferenceParamId(0)),
+                     kind: child,
+-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
+-                        .unwrap(),
++                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
++                        RecordId(0),
++                    )))
++                    .unwrap(),
+                     span: s,
+                 });
+                 f.blocks[0].statements.extend([
+@@ -787,7 +793,8 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
+         leaf.parameters
+             .push(ParameterBinding::Reference(ReferenceParamId(i)));
+         leaf.references.push(ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: BorrowKind::Shared,
+             position: i,
+             span: s,
+@@ -815,7 +822,8 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
+             argument: i,
+             authority: AccessBase::Parameter(ReferenceParamId(i)),
+             kind: BorrowKind::Shared,
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: s,
+         });
+         f.blocks[0].statements.push(ins(
+diff --git a/src/frontend/oir/owned/reviewer_reference_tests.rs b/src/frontend/oir/owned/reviewer_reference_tests.rs
+index bc3b3ed..a56ae7d 100644
+--- a/src/frontend/oir/owned/reviewer_reference_tests.rs
++++ b/src/frontend/oir/owned/reviewer_reference_tests.rs
+@@ -355,7 +355,8 @@ fn rv_alias(
+             argument: i,
+             authority: AccessBase::Owner(OwnerPlaceId(roots[i])),
+             kind: modes[i],
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             span: rv_span(s, 8 + i),
+         })
+         .collect();
+@@ -433,7 +434,8 @@ fn rv_alias(
+         .collect();
+     g.references = (0..2)
+         .map(|i| ReferenceDecl {
+-            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                .unwrap(),
+             kind: modes[i],
+             position: i,
+             span: s,
+@@ -752,7 +754,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+         kind: BorrowKind::Shared,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: rv_span(s, 13),
+     }];
+     f.blocks = vec![
+@@ -889,7 +891,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
+     let mut g = rv_fn(1, ValueTy::Scalar(hir::Ty::I32), rv_span(s, 100));
+     g.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+     g.references = vec![ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: BorrowKind::Shared,
+         position: 0,
+         span: s,
+@@ -1101,7 +1103,8 @@ fn rv_chain(
+             .collect();
+         f.references = (0..refs)
+             .map(|i| ReferenceDecl {
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                    .unwrap(),
+                 kind: mode(shared),
+                 position: i,
+                 span,
+@@ -1159,7 +1162,10 @@ fn rv_chain(
+                     argument: i,
+                     authority: base,
+                     kind: mode(edge.shared),
+-                    aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++                    referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
++                        RecordId(0),
++                    )))
++                    .unwrap(),
+                     span: at(if i == 0 { 1 } else { 3 }),
+                 })
+                 .collect();
+@@ -1458,7 +1464,8 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
+                 argument: i,
+                 authority: AccessBase::Owner(OwnerPlaceId(0)),
+                 kind: BorrowKind::Shared,
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                    .unwrap(),
+                 span: rv_span(s, 1000 + i),
+             })
+             .collect();
+@@ -1478,7 +1485,8 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
+             .collect();
+         raw.functions[1].references = (0..count)
+             .map(|i| ReferenceDecl {
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
++                    .unwrap(),
+                 kind: BorrowKind::Shared,
+                 position: i,
+                 span: s,
+@@ -1618,7 +1626,11 @@ fn rv_owned_chain(depth: usize, a: i32, b: i32) -> (SourceMap, RawOwnedProgram)
+     ];
+     let mut functions = vec![root];
+     for id in 1..=depth {
+-        let mut f = rv_fn(id, ValueTy::Owned(AggregateTy::Record(RecordId(0))), rv_span(s, 100 + id));
++        let mut f = rv_fn(
++            id,
++            ValueTy::Owned(AggregateTy::Record(RecordId(0))),
++            rv_span(s, 100 + id),
++        );
+         f.parameters = vec![ParameterBinding::Owned(OwnerPlaceId(0))];
+         f.owners = vec![rv_owner(OwnerKind::Parameter { position: 0 }, s)];
+         if id == depth {
+diff --git a/src/frontend/oir/owned/shape.rs b/src/frontend/oir/owned/shape.rs
+index 35422f4..5722ebf 100644
+--- a/src/frontend/oir/owned/shape.rs
++++ b/src/frontend/oir/owned/shape.rs
+@@ -114,11 +114,20 @@ fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure>
+         AggregateTy::Record(_) => Err(bad(Malformed::Type, s)),
+     }
+ }
++fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
++    match ty {
++        BorrowedTy::Exact(aggregate) => record(aggregate, s),
++        BorrowedTy::ScalarSlice(_) => Err(bad(Malformed::Type, s)),
++    }
++}
++fn array_element(ty: BorrowedTy, s: Span) -> Result<hir::Ty, OwnedFailure> {
++    ty.element().ok_or_else(|| bad(Malformed::Type, s))
++}
+ pub(super) fn base(
+     f: &RawOwnedFunction,
+     b: AccessBase,
+     s: Span,
+-) -> Result<(AggregateTy, bool), OwnedFailure> {
++) -> Result<(BorrowedTy, bool), OwnedFailure> {
+     match b {
+         AccessBase::Owner(id) => {
+             let o = owner(f, id, s)?;
+@@ -126,13 +135,13 @@ pub(super) fn base(
+                 return Err(bad(Malformed::OwnerClass, s));
+             }
+             Ok((
+-                o.aggregate(),
++                BorrowedTy::Exact(o.aggregate()),
+                 matches!(o.kind, OwnerKind::Local { mutable: true }),
+             ))
+         }
+         AccessBase::Parameter(id) => {
+             let r = reference(f, id, s)?;
+-            Ok((r.aggregate(), r.kind == BorrowKind::Exclusive))
++            Ok((r.referent(), r.kind == BorrowKind::Exclusive))
+         }
+     }
+ }
+@@ -165,7 +174,7 @@ pub(super) fn parameter(
+         ParameterBinding::Reference(id) => {
+             let r = reference(f, id, s)?;
+             ParameterTy::Reference {
+-                aggregate: r.aggregate(),
++                referent: r.referent(),
+                 kind: r.kind,
+             }
+         }
+@@ -252,7 +261,7 @@ pub(super) fn signatures(
+         }
+         for (id, r) in f.references.iter().enumerate() {
+             span(sources, r.span)?;
+-            d.check_aggregate_type(r.aggregate())?;
++            d.check_borrowed_type(r.referent())?;
+             if !matches!(f.parameters.get(r.position),Some(ParameterBinding::Reference(p)) if p.0==id)
+             {
+                 return Err(bad(Malformed::Binding, r.span));
+@@ -323,7 +332,7 @@ pub(super) fn check(
+                 (
+                     ArgumentSlot::Borrow(l),
+                     ParameterTy::Reference {
+-                        aggregate: record,
++                        referent: record,
+                         kind,
+                     },
+                 ) => {
+@@ -331,7 +340,8 @@ pub(super) fn check(
+                     if loan.call != CallSiteId(id) || loan.argument != arg {
+                         return Err(bad(Malformed::Binding, c.span));
+                     }
+-                    same_aggregate(d, loan.aggregate(), record, Malformed::Binding, c.span)?;
++                    d.same_borrowed_type(loan.referent(), record)
++                        .map_err(|_| bad(Malformed::Binding, c.span))?;
+                     if loan.kind != kind {
+                         return Err(bad(Malformed::Binding, c.span));
+                     }
+@@ -362,7 +372,8 @@ pub(super) fn check(
+             return Err(bad(Malformed::Binding, l.span));
+         }
+         let (record, _) = base(f, l.authority, l.span)?;
+-        same_aggregate(d, record, l.aggregate(), Malformed::Type, l.span)?;
++        d.check_borrowed_view(record, l.referent())
++            .map_err(|_| bad(Malformed::Type, l.span))?;
+         if let AccessBase::Owner(o) = l.authority {
+             if !matches!(
+                 owner(f, o, l.span)?.kind,
+@@ -499,7 +510,7 @@ pub(super) fn check(
+                     let (r, _) = base(f, *b, s)?;
+                     equal(
+                         local(f, *destination, s)?,
+-                        d.field(record(r, s)?, *field)?.ty(),
++                        d.field(borrowed_record(r, s)?, *field)?.ty(),
+                         s,
+                     )?;
+                 }
+@@ -511,7 +522,7 @@ pub(super) fn check(
+                     let (r, _) = base(f, *b, s)?;
+                     equal(
+                         operand(f, *value, sources)?,
+-                        d.field(record(r, s)?, *field)?.ty(),
++                        d.field(borrowed_record(r, s)?, *field)?.ty(),
+                         value.span,
+                     )?;
+                 }
+@@ -521,9 +532,9 @@ pub(super) fn check(
+                     index,
+                 } => {
+                     let (aggregate, _) = base(f, *b, s)?;
+-                    let declared = array(aggregate, s)?;
++                    let element = array_element(aggregate, s)?;
+                     equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+-                    equal(local(f, *destination, s)?, declared.element(), s)?;
++                    equal(local(f, *destination, s)?, element, s)?;
+                 }
+                 OwnedInstruction::WriteIndex {
+                     base: b,
+@@ -531,8 +542,8 @@ pub(super) fn check(
+                     value,
+                 } => {
+                     let (aggregate, _) = base(f, *b, s)?;
+-                    let declared = array(aggregate, s)?;
+-                    equal(operand(f, *value, sources)?, declared.element(), value.span)?;
++                    let element = array_element(aggregate, s)?;
++                    equal(operand(f, *value, sources)?, element, value.span)?;
+                     equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                 }
+                 OwnedInstruction::ArrayLength {
+@@ -540,7 +551,7 @@ pub(super) fn check(
+                     base: b,
+                 } => {
+                     let (aggregate, _) = base(f, *b, s)?;
+-                    array(aggregate, s)?;
++                    array_element(aggregate, s)?;
+                     equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
+                 }
+                 OwnedInstruction::OpenCall(c) => {
+diff --git a/src/frontend/oir/owned/slice_native_tests.rs b/src/frontend/oir/owned/slice_native_tests.rs
+new file mode 100644
+index 0000000..7bb06da
+--- /dev/null
++++ b/src/frontend/oir/owned/slice_native_tests.rs
+@@ -0,0 +1,309 @@
++//! Borrowed slices exercise the production source/verifier/native path. Numeric
++//! outcomes below are hand-calculated; fuel sweeps are consumer differential
++//! checks and do not claim an independent source-fuel oracle.
++use super::*;
++use crate::frontend::oir::owned::source::resource_fixtures as source;
++
++const SUM: &str = "fn sum(xs:&[i32])->i32{let mut i=0;let mut total=0;while i<xs.len(){total=total+xs[i];i=i+1;}return total;}";
++const SHARED_MAIN: &str = "fn main()->i32{let a=[1,2];let b=[3,4,5];let empty:[i32;0]=[];return sum(&a)*100+sum(&b)+sum(&empty);}";
++const MUTATION: &str = "fn bump(xs:&mut[i32])->(){let mut i=0;while i<xs.len(){xs[i]=xs[i]+1;i=i+1;}return;} fn relay(xs:&mut[i32])->i32{bump(&mut *xs);return sum(&*xs);} fn main()->i32{let mut a=[1,2];let mut b=[3,4,5];let empty:[i32;0]=[];let first=relay(&mut a);let second=relay(&mut b);return first*100+second+sum(&empty);}";
++
++fn checked_module(text: &str) -> (source::CheckedSource, String) {
++    let case = source::checked_arrays(text);
++    let module = native_module(&case.witness, Some(case.entry), &case.sources).unwrap();
++    (case, module)
++}
++
++fn assert_safe_index_emission(module: &str) {
++    for forbidden in [
++        "inbounds",
++        "noalias",
++        "nonnull",
++        "dereferenceable",
++        "undef",
++        "poison",
++    ] {
++        assert!(!module.contains(forbidden), "{forbidden}");
++    }
++    for (prefix, _) in module.match_indices("_index64 = zext i32") {
++        let prior = &module[..prefix];
++        let bounds = prior.rfind("_bounds_ok:\n").expect("bounds success block");
++        let branch = prior[..bounds]
++            .rfind("_in_range, label")
++            .expect("bounds branch");
++        let signed = prior[..branch]
++            .rfind("_nonnegative = icmp sge i32")
++            .expect("signed bound");
++        assert!(signed < branch && branch < bounds);
++    }
++}
++
++#[test]
++fn native_slices_shared_sum_has_one_dynamic_body_for_lengths_two_three_zero() {
++    let (case, module) = checked_module(&format!("{SUM}{SHARED_MAIN}"));
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(312))
++    );
++    assert_eq!(
++        module
++            .matches("define internal i32 @__oxid_owned_fn_0(")
++            .count(),
++        1
++    );
++    assert!(module.contains("ptr %arg0, i32 %arg0_length"));
++    assert!(module.contains("= load i32, ptr %rl0, align 4"));
++    for length in [0, 2, 3] {
++        assert!(module.contains(&format!("store i32 {length}, ptr %ll")));
++    }
++    assert!(module.contains("_below = icmp slt i32"));
++    assert_safe_index_emission(&module);
++}
++
++#[test]
++fn native_slices_reborrow_forwards_dynamic_lengths_and_keeps_exact_abi() {
++    let (case, module) = checked_module(&format!("{SUM}{MUTATION}"));
++    assert_eq!(
++        execute::run(&case.witness, Some(case.entry)),
++        Ok(Scalar::I32(515))
++    );
++    assert!(module.contains("_length = load i32, ptr %rl0, align 4"));
++    assert!(module.contains("_arg0_length = load i32, ptr %ll"));
++    assert_safe_index_emission(&module);
++    let (_, exact) = checked_module(
++        "fn read(p:&[i32;2])->i32{return p[1];}fn main()->i32{let a=[3,7];return read(&a);}",
++    );
++    assert!(exact.contains("define internal i32 @__oxid_owned_fn_0(ptr %arg0)"));
++    assert!(!exact.contains("slice_lengths"));
++    assert!(!exact.contains("arg0_length"));
++    assert_safe_index_emission(&exact);
++}
++
++#[test]
++fn native_slices_length_sidecars_are_the_only_added_frame_storage() {
++    let exact = source::checked_arrays(
++        "fn read(p:&[i32;2])->i32{return p.len();}fn main()->i32{let a=[3,7];return read(&a);}",
++    );
++    let slice = source::checked_arrays(
++        "fn read(p:&[i32])->i32{return p.len();}fn main()->i32{let a=[3,7];return read(&a);}",
++    );
++    let exact_plan = ExecutionPlan::build(&exact.witness).unwrap();
++    let slice_plan = ExecutionPlan::build(&slice.witness).unwrap();
++    assert_eq!(exact_plan.metadata_bytes(), slice_plan.metadata_bytes());
++    for (before, after) in exact_plan.functions().iter().zip(slice_plan.functions()) {
++        let mut expected = before.usage();
++        expected.native_bytes += 4;
++        assert_eq!(after.usage(), expected);
++    }
++    let bytes = slice_plan
++        .functions()
++        .iter()
++        .map(|f| f.usage().native_bytes)
++        .sum();
++    assert!(admit(
++        &slice_plan,
++        Limits {
++            bytes,
++            ..Limits::DEFAULT
++        }
++    )
++    .is_ok());
++    assert!(admit(
++        &slice_plan,
++        Limits {
++            bytes: bytes - 1,
++            ..Limits::DEFAULT
++        }
++    )
++    .unwrap_err()
++    .message
++    .contains("aggregate storage bytes"));
++    let observation = run_array_observed(
++        &slice.witness,
++        Some(slice.entry),
++        &slice.sources,
++        NativeControl::default(),
++    );
++    let module = observation.result.unwrap();
++    assert_eq!(observation.metrics.count_bytes, module.len());
++    assert_eq!(observation.metrics.render_bytes, module.len());
++    assert_eq!(
++        observation.metrics.count_ordinary_visits,
++        observation.metrics.render_ordinary_visits
++    );
++    assert_eq!(
++        observation.metrics.count_call_scratch_peak,
++        observation.metrics.render_call_scratch_peak
++    );
++    assert!(observation.metrics.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
++    assert!(native_module_limits(
++        &slice.witness,
++        Some(slice.entry),
++        &slice.sources,
++        plan::MAX_FUEL,
++        Limits {
++            ir_bytes: module.len(),
++            ..Limits::DEFAULT
++        }
++    )
++    .is_ok());
++    assert!(native_module_limits(
++        &slice.witness,
++        Some(slice.entry),
++        &slice.sources,
++        plan::MAX_FUEL,
++        Limits {
++            ir_bytes: module.len() - 1,
++            ..Limits::DEFAULT
++        }
++    )
++    .unwrap_err()
++    .message
++    .contains("LLVM bytes"));
++}
++
++#[test]
++fn native_slices_keep_sixty_four_source_parameters_with_bounded_flattening() {
++    for count in [64, 65] {
++        let parameters = (0..count)
++            .map(|i| format!("p{i}:&[i32]"))
++            .collect::<Vec<_>>()
++            .join(",");
++        let arguments = vec!["&a"; count].join(",");
++        let case = source::checked_arrays(&format!("fn read({parameters})->i32{{return p{}.len();}}fn main()->i32{{let a=[4];return read({arguments});}}", count-1));
++        let observation = run_array_observed(
++            &case.witness,
++            Some(case.entry),
++            &case.sources,
++            NativeControl::default(),
++        );
++        if count == 64 {
++            let module = observation.result.unwrap();
++            assert!(module.contains("ptr %arg63, i32 %arg63_length"));
++            assert!(observation.metrics.render_call_scratch_peak < EMITTER_TRANSIENT_BYTES);
++            assert_eq!(
++                observation.metrics.count_call_scratch_peak,
++                observation.metrics.render_call_scratch_peak
++            );
++        } else {
++            assert!(observation
++                .result
++                .unwrap_err()
++                .message
++                .contains("parameter count"));
++            assert_eq!(observation.metrics.count_bytes, 0);
++        }
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++#[test]
++#[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
++fn native_slices_checkpoint_and_mutation_use_source_free_llvm() {
++    let scratch = Scratch::new();
++    for (name, text, expected) in [
++        ("slice-shared-312", format!("{SUM}{SHARED_MAIN}"), 312),
++        ("slice-mutate-515", format!("{SUM}{MUTATION}"), 515),
++        ("slice-fixed-forward", format!("{SUM}fn relay(p:&[i32;2])->i32{{return sum(&*p);}}fn main()->i32{{let a=[8,13];return relay(&a);}}"), 21),
++        ("slice-rhs-snapshot", "fn index(p:&mut[i32])->i32{p[0]=9;return 0;}fn edit(p:&mut[i32])->i32{p[index(&mut *p)]=p[0];return p[0];}fn main()->i32{let mut a=[1,2];return edit(&mut a);}".into(), 1),
++        ("slice-bool-unit", "fn flip(p:&mut[bool])->(){p[0]=!p[0];return;}fn unit(p:&mut[()])->i32{p[0]=();p[0];return p.len();}fn main()->i32{let mut a=[false,true];let mut b=[(),(),()];flip(&mut a);if a[0]&&a[1]{return unit(&mut b);}else{return 99;}}".into(), 3),
++    ] {
++        let (case, module) = checked_module(&text);
++        assert_eq!(execute::run(&case.witness, Some(case.entry)), Ok(Scalar::I32(expected)));
++        let binary = scratch.compile(&module, name);
++        assert_result(scratch.run(&binary, &[]), format!("{expected}\n").as_bytes(), b"", 0);
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++#[test]
++#[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
++fn native_slices_signed_bounds_and_fuel_use_source_free_llvm() {
++    let scratch = Scratch::new();
++    for (case_index, (ty, initializer, result_ty, n)) in [
++        ("i32", "[17,29]", "i32", 2),
++        ("bool", "[true,false]", "bool", 2),
++        ("()", "[(),()]", "()", 2),
++        ("i32", "[]", "i32", 0),
++        ("bool", "[]", "bool", 0),
++        ("()", "[]", "()", 0),
++    ]
++    .into_iter()
++    .enumerate()
++    {
++        for index in [i32::MIN, -1, n, i32::MAX] {
++            let text = format!("fn read(p:&[{ty}])->{result_ty}{{return p[{index}];}}fn main()->{result_ty}{{let a:[{ty};{n}]={initializer};return read(&a);}}fn guard()->(){{while false{{}}return;}}");
++            let (case, module) = checked_module(&text);
++            let span = case.span(&format!("p[{index}]"));
++            let bounds = || execute::OwnedRunFailure::Bounds(span);
++            assert_eq!(execute::run(&case.witness, Some(case.entry)), Err(bounds()));
++            let harness = argv_fuel_harness(&module, plan::MAX_FUEL);
++            let binary = scratch.compile(&harness, &format!("slice-bounds-{case_index}-{index}"));
++            let first_bounds = (0..1000)
++                .find(|&fuel| {
++                    execute::run_limits(
++                        &case.witness,
++                        Some(case.entry),
++                        execute::Limits {
++                            fuel,
++                            ..execute::Limits::default()
++                        },
++                    ) == Err(bounds())
++                })
++                .expect("small fixture reaches bounds");
++            for fuel in [0, first_bounds - 1, first_bounds, first_bounds + 1] {
++                let failure = execute::run_limits(
++                    &case.witness,
++                    Some(case.entry),
++                    execute::Limits {
++                        fuel,
++                        ..execute::Limits::default()
++                    },
++                )
++                .unwrap_err();
++                if fuel == first_bounds - 1 {
++                    assert_eq!(
++                        failure,
++                        execute::OwnedRunFailure::Scalar(RunFailure::Fuel(span))
++                    );
++                }
++                let stderr = failure
++                    .diagnostic(&case.sources)
++                    .render_human(&case.sources);
++                assert_result(
++                    scratch.run(&binary, &[fuel.to_string()]),
++                    b"",
++                    stderr.as_bytes(),
++                    1,
++                );
++            }
++        }
++    }
++}
++
++#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++#[test]
++#[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
++fn native_slices_acyclic_phi_and_rhs_failure_use_source_free_llvm() {
++    let scratch = Scratch::new();
++    for prefix in ["", "while false {}"] {
++        let (case, module) = checked_module(&format!("fn test(p:&[i32])->bool{{return p[0]/2==4&&p[1]%3==1;}}fn main()->bool{{{prefix}let a=[8,7];return test(&a);}}"));
++        assert_eq!(
++            execute::run(&case.witness, Some(case.entry)),
++            Ok(Scalar::Bool(true))
++        );
++        let binary = scratch.compile(&module, &format!("slice-phi-{}", prefix.len()));
++        assert_result(scratch.run(&binary, &[]), b"true\n", b"", 0);
++    }
++    let (case, module) = checked_module("fn edit(p:&mut[i32])->(){p[1/0]=7%0;return;}fn main()->(){let mut a=[1];edit(&mut a);return;}");
++    let failure = execute::run(&case.witness, Some(case.entry)).unwrap_err();
++    assert_eq!(
++        failure,
++        execute::OwnedRunFailure::Scalar(RunFailure::DivisionByZero(case.span("%")))
++    );
++    let stderr = failure
++        .diagnostic(&case.sources)
++        .render_human(&case.sources);
++    let binary = scratch.compile(&module, "slice-rhs-failure");
++    assert_result(scratch.run(&binary, &[]), b"", stderr.as_bytes(), 1);
++}
+diff --git a/src/frontend/oir/owned/source/array_pipeline_rows.rs b/src/frontend/oir/owned/source/array_pipeline_rows.rs
+index c1e1e63..1be5bd2 100644
+--- a/src/frontend/oir/owned/source/array_pipeline_rows.rs
++++ b/src/frontend/oir/owned/source/array_pipeline_rows.rs
+@@ -65,6 +65,17 @@ impl fmt::Display for Aggregate {
+         }
+     }
+ }
++struct Borrowed(BorrowedTy);
++impl fmt::Display for Borrowed {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self.0 {
++            BorrowedTy::Exact(aggregate) => Aggregate(aggregate).fmt(f),
++            BorrowedTy::ScalarSlice(element) => {
++                write!(f, "[\"scalar-slice\",{}]", ScalarType(element))
++            }
++        }
++    }
++}
+ struct ValueType(ValueTy);
+ impl fmt::Display for ValueType {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+@@ -89,12 +100,9 @@ impl fmt::Display for ParameterType {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         match self.0 {
+             ParameterTy::Value(ty) => write!(f, "[\"value\",{}]", ValueType(ty)),
+-            ParameterTy::Reference { aggregate, kind } => write!(
+-                f,
+-                "[\"reference\",{},{}]",
+-                Aggregate(aggregate),
+-                Borrow(kind)
+-            ),
++            ParameterTy::Reference { referent, kind } => {
++                write!(f, "[\"reference\",{},{}]", Borrowed(referent), Borrow(kind))
++            }
+         }
+     }
+ }
+@@ -1092,7 +1100,7 @@ pub(super) fn raw(out: &mut Output, raw: &RawOwnedProgram) -> ObservationResult<
+                 "raw-reference",
+                 format_args!(
+                     "{id},{reference},{},{},{},{}",
+-                    Aggregate(r.aggregate()),
++                    Borrowed(r.referent()),
+                     Borrow(r.kind),
+                     r.position,
+                     SpanRow(r.span)
+@@ -1127,7 +1135,7 @@ pub(super) fn raw(out: &mut Output, raw: &RawOwnedProgram) -> ObservationResult<
+                     l.argument,
+                     Base(l.authority),
+                     Borrow(l.kind),
+-                    Aggregate(l.aggregate()),
++                    Borrowed(l.referent()),
+                     SpanRow(l.span)
+                 ),
+             )?;
+diff --git a/src/frontend/oir/owned/source/array_types_tests.rs b/src/frontend/oir/owned/source/array_types_tests.rs
+index 6f7c6e0..aef1f1c 100644
+--- a/src/frontend/oir/owned/source/array_types_tests.rs
++++ b/src/frontend/oir/owned/source/array_types_tests.rs
+@@ -733,7 +733,7 @@ fn unit3b1_reference_access_retains_modes_without_ownership_qualification() {
+         assert_eq!(
+             view.binding_ty(BindingId(0)),
+             ParameterTy::Reference {
+-                aggregate: array,
++                referent: BorrowedTy::Exact(array),
+                 kind
+             }
+         );
+diff --git a/src/frontend/oir/owned/source/candidate_adapter.rs b/src/frontend/oir/owned/source/candidate_adapter.rs
+index 3720f56..b97638c 100644
+--- a/src/frontend/oir/owned/source/candidate_adapter.rs
++++ b/src/frontend/oir/owned/source/candidate_adapter.rs
+@@ -455,7 +455,10 @@ fn raw_function(value: &RawOwnedFunction) -> String {
+                                     reference.span,
+                                     object([
+                                         ("mode", borrow_kind(reference.kind)),
+-                                        ("record", record_id(reference.aggregate()).0.to_string()),
++                                        (
++                                            "record",
++                                            borrowed_record_id(reference.referent()).0.to_string(),
++                                        ),
+                                     ]),
+                                 )
+                             }
+@@ -514,7 +517,10 @@ fn raw_function(value: &RawOwnedFunction) -> String {
+             array(value.references.iter().enumerate().map(|(id, reference)| {
+                 object([
+                     ("id", id.to_string()),
+-                    ("record", record_id(reference.aggregate()).0.to_string()),
++                    (
++                        "record",
++                        borrowed_record_id(reference.referent()).0.to_string(),
++                    ),
+                     ("mode", borrow_kind(reference.kind)),
+                     ("position", reference.position.to_string()),
+                     ("span", span(reference.span)),
+@@ -530,7 +536,7 @@ fn raw_function(value: &RawOwnedFunction) -> String {
+                     ("argument", loan.argument.to_string()),
+                     ("authority", access_base(loan.authority)),
+                     ("mode", borrow_kind(loan.kind)),
+-                    ("record", record_id(loan.aggregate()).0.to_string()),
++                    ("record", borrowed_record_id(loan.referent()).0.to_string()),
+                     ("span", span(loan.span)),
+                 ])
+             })),
+@@ -1069,3 +1075,10 @@ fn record_id(aggregate: AggregateTy) -> RecordId {
+         AggregateTy::FixedArray(_) => panic!("source array gate"),
+     }
+ }
++
++fn borrowed_record_id(referent: BorrowedTy) -> RecordId {
++    match referent {
++        BorrowedTy::Exact(aggregate) => record_id(aggregate),
++        BorrowedTy::ScalarSlice(_) => panic!("source slice gate"),
++    }
++}
+diff --git a/src/frontend/oir/owned/source/diagnostic.rs b/src/frontend/oir/owned/source/diagnostic.rs
+index 06d5c4c..9a648d6 100644
+--- a/src/frontend/oir/owned/source/diagnostic.rs
++++ b/src/frontend/oir/owned/source/diagnostic.rs
+@@ -61,7 +61,7 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str>
+     ) && facts.role == Role::ArrayBase
+         && facts.counterpart.is_none()
+         && facts.requested_borrow.is_none()
+-        && matches!(facts.subject.aggregate(), AggregateTy::FixedArray(_))
++        && facts.subject.referent().element().is_some()
+         && named_subject(facts.subject);
+     let borrow = facts.operation == Op::PrepareBorrow
+         && facts.role == Role::BorrowAuthority
+diff --git a/src/frontend/oir/owned/source/hir.rs b/src/frontend/oir/owned/source/hir.rs
+index 14a1014..c515ed8 100644
+--- a/src/frontend/oir/owned/source/hir.rs
++++ b/src/frontend/oir/owned/source/hir.rs
+@@ -2,7 +2,7 @@
+ pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
+ pub(super) use crate::frontend::hir::{DefId, Ty};
+ pub(super) use crate::frontend::oir::owned_types::{
+-    AggregateTy, BorrowKind, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
++    AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
+ };
+ use crate::frontend::source::Span;
+ 
+diff --git a/src/frontend/oir/owned/source/lower.rs b/src/frontend/oir/owned/source/lower.rs
+index ac053e1..9add4ef 100644
+--- a/src/frontend/oir/owned/source/lower.rs
++++ b/src/frontend/oir/owned/source/lower.rs
+@@ -229,10 +229,7 @@ impl<'a, 'b> Walk<'a, 'b> {
+                     self.register(owner, binding.span)?;
+                     BindingLocation::Owner(owner)
+                 }
+-                ParameterTy::Reference {
+-                    aggregate: record,
+-                    kind,
+-                } => {
++                ParameterTy::Reference { referent, kind } => {
+                     let id = ReferenceParamId(self.counts.references);
+                     self.counts.references = budget::add(self.counts.references, 1)?;
+                     self.counts.ownership_active = true;
+@@ -240,7 +237,7 @@ impl<'a, 'b> Walk<'a, 'b> {
+                         budget::append(
+                             &mut out.raw.references,
+                             ReferenceDecl {
+-                                aggregate: AggregateSlot::try_from_aggregate(record)?,
++                                referent: BorrowedSlot::check(referent)?,
+                                 kind,
+                                 position: index,
+                                 span: binding.span,
+@@ -1135,13 +1132,16 @@ impl<'a, 'b> Walk<'a, 'b> {
+                     let binding = match place {
+                         source::BorrowPlace::Owner(id) | source::BorrowPlace::Forwarded(id) => *id,
+                     };
+-                    let record = match self.view.binding_ty(binding) {
+-                        ParameterTy::Value(ValueTy::Owned(record))
+-                        | ParameterTy::Reference {
+-                            aggregate: record, ..
+-                        } => record,
+-                        _ => return Err(invariant(*span)),
++                    // The argument retains its original authority identity, while the
++                    // loan carries exactly the callee's contextual borrowed view.
++                    let ParameterTy::Reference {
++                        referent,
++                        kind: expected_kind,
++                    } = self.view.call_parameter_ty(*target, argument)
++                    else {
++                        return Err(invariant(*span));
+                     };
++                    require(*kind == expected_kind, *span)?;
+                     let authority = self.base(binding, *span)?;
+                     let loan = LoanId(self.counts.loans);
+                     self.counts.loans = budget::add(self.counts.loans, 1)?;
+@@ -1153,7 +1153,7 @@ impl<'a, 'b> Walk<'a, 'b> {
+                                 argument,
+                                 authority,
+                                 kind: *kind,
+-                                aggregate: AggregateSlot::try_from_aggregate(record)?,
++                                referent: BorrowedSlot::check(referent)?,
+                                 span: *span,
+                             },
+                             out.expected.loans,
+diff --git a/src/frontend/oir/owned/source/mod.rs b/src/frontend/oir/owned/source/mod.rs
+index efa86aa..4bd933a 100644
+--- a/src/frontend/oir/owned/source/mod.rs
++++ b/src/frontend/oir/owned/source/mod.rs
+@@ -39,3 +39,8 @@ mod array_pipeline;
+ 
+ #[cfg(test)]
+ mod array_consumer_tests;
++
++#[cfg(test)]
++mod slice_raw_tests;
++#[cfg(test)]
++mod slice_tests;
+diff --git a/src/frontend/oir/owned/source/resolve.rs b/src/frontend/oir/owned/source/resolve.rs
+index 605411e..0d9af78 100644
+--- a/src/frontend/oir/owned/source/resolve.rs
++++ b/src/frontend/oir/owned/source/resolve.rs
+@@ -378,7 +378,7 @@ fn resolve_index(
+                     match *ty {
+                         ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
+                         | ParameterTy::Reference {
+-                            aggregate: AggregateTy::Record(r),
++                            referent: BorrowedTy::Exact(AggregateTy::Record(r)),
+                             ..
+                         } => Some(r),
+                         _ => None,
+diff --git a/src/frontend/oir/owned/source/resource_fixtures.rs b/src/frontend/oir/owned/source/resource_fixtures.rs
+index 933a53e..d40446f 100644
+--- a/src/frontend/oir/owned/source/resource_fixtures.rs
++++ b/src/frontend/oir/owned/source/resource_fixtures.rs
+@@ -184,3 +184,29 @@ pub(in crate::frontend::oir::owned) fn assert_owner_classes(plan: &plan::Executi
+         1
+     );
+ }
++
++/// Native slice qualification uses the enabled array grammar while preserving
++/// the historical record-only helper and its frozen resource fixtures.
++pub(in crate::frontend::oir::owned) fn checked_arrays(text: &str) -> CheckedSource {
++    let mut sources = SourceMap::new();
++    let file = sources.add("slice-native.ox".into(), text.into());
++    let source = sources.get(file);
++    let (ast, _) = parser::parse_counted_with_arrays(
++        source,
++        lexer::lex(source).unwrap(),
++        parser::SourceMode::OwnedCandidate,
++        parser::MAX_NODES,
++        &mut crate::frontend::project::budget::Allocator::default(),
++        parser::ArraySyntaxPolicy::Enabled,
++    )
++    .unwrap();
++    let typed = typeck::check(resolve::resolve_in_map(source, &ast, &sources).unwrap()).unwrap();
++    let entry = typed.entry().unwrap();
++    let raw = lower::lower(&typed).unwrap();
++    let witness = verified::verify_owned(raw, &sources).unwrap();
++    CheckedSource {
++        sources,
++        witness,
++        entry,
++    }
++}
+diff --git a/src/frontend/oir/owned/source/reviewer_heldout.rs b/src/frontend/oir/owned/source/reviewer_heldout.rs
+index 9e868cf..547bc82 100644
+--- a/src/frontend/oir/owned/source/reviewer_heldout.rs
++++ b/src/frontend/oir/owned/source/reviewer_heldout.rs
+@@ -226,12 +226,12 @@ fn heldout_mixed_signature_binding_positions_and_projection_views_are_complete()
+         let expected = [
+             ParameterTy::Value(ValueTy::Scalar(Ty::I32)),
+             ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 kind: BorrowKind::Shared,
+             },
+             ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0)))),
+             ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 kind: BorrowKind::Exclusive,
+             },
+             ParameterTy::Value(ValueTy::Scalar(Ty::Bool)),
+diff --git a/src/frontend/oir/owned/source/slice_raw_tests.rs b/src/frontend/oir/owned/source/slice_raw_tests.rs
+new file mode 100644
+index 0000000..e943210
+--- /dev/null
++++ b/src/frontend/oir/owned/source/slice_raw_tests.rs
+@@ -0,0 +1,94 @@
++//! Raw verifier controls for borrowed views; source typing is not authority.
++use super::super::*;
++use super::{lower, resolve, typeck};
++use crate::frontend::{lexer, parser};
++
++fn raw(text: &str) -> (SourceMap, RawOwnedProgram) {
++    let mut sources = SourceMap::new();
++    let id = sources.add("slice-raw.ox".into(), text.into());
++    let file = sources.get(id);
++    let (ast, _) = parser::parse_counted_with_arrays(
++        file,
++        lexer::lex(file).unwrap(),
++        parser::SourceMode::OwnedCandidate,
++        parser::MAX_NODES,
++        &mut crate::frontend::project::budget::Allocator::default(),
++        parser::ArraySyntaxPolicy::Enabled,
++    )
++    .unwrap();
++    let typed = typeck::check(resolve::resolve_in_map(file, &ast, &sources).unwrap()).unwrap();
++    let raw = lower::lower(&typed).unwrap();
++    (sources, raw)
++}
++const SHARED: &str =
++    "fn len(xs:&[i32])->i32{return xs.len();} fn main()->i32{let a=[1,2];return len(&a);}";
++
++#[test]
++fn slice_raw_target_view_and_source_authority_are_independently_checked() {
++    let (sources, original) = raw(SHARED);
++    let witness = verified::verify_owned(original, &sources).unwrap();
++    assert_eq!(
++        execute::run(&witness, Some(hir::DefId(1))).unwrap(),
++        Scalar::I32(2)
++    );
++    for changed in 0..4 {
++        let (sources, mut program) = raw(SHARED);
++        let other = BorrowedSlot::check(BorrowedTy::ScalarSlice(hir::Ty::Bool)).unwrap();
++        match changed {
++            0 => program.functions[1].loans[0].referent = other,
++            1 => program.functions[0].references[0].referent = other,
++            2 => {
++                // Matching loan and callee still cannot change the owner's element type.
++                program.functions[1].loans[0].referent = other;
++                program.functions[0].references[0].referent = other;
++            }
++            _ => {
++                let invalid =
++                    BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(99))))
++                        .unwrap();
++                program.functions[1].loans[0].referent = invalid;
++                program.functions[0].references[0].referent = invalid;
++            }
++        }
++        assert!(
++            verified::verify_owned(program, &sources).is_err(),
++            "mutation {changed}"
++        );
++    }
++}
++
++#[test]
++fn slice_raw_cannot_narrow_a_slice_authority_back_to_fixed() {
++    let text = "fn len(xs:&[i32])->i32{return xs.len();} fn relay(xs:&[i32])->i32{return len(&*xs);} fn main()->i32{let a=[1,2];return relay(&a);}";
++    let (sources, mut program) = raw(text);
++    let fixed = BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::FixedArray(
++        FixedArrayTy::check(hir::Ty::I32, 2).unwrap(),
++    )))
++    .unwrap();
++    program.functions[0].references[0].referent = fixed;
++    program.functions[1].loans[0].referent = fixed;
++    assert!(verified::verify_owned(program, &sources).is_err());
++}
++
++#[test]
++fn slice_native_sidecars_are_accounted_without_runtime_handle_growth() {
++    let (sources, program) = raw(SHARED);
++    let witness = verified::verify_owned(program, &sources).unwrap();
++    let slices = plan::ExecutionPlan::build(&witness).unwrap();
++    let (exact_sources, exact_program) = raw(&SHARED.replace("&[i32]", "&[i32;2]"));
++    let exact_witness = verified::verify_owned(exact_program, &exact_sources).unwrap();
++    let exact = plan::ExecutionPlan::build(&exact_witness).unwrap();
++    assert_eq!(std::mem::size_of::<storage::ReferenceHandle>(), 64);
++    assert_eq!(
++        std::mem::size_of::<BorrowedSlot>(),
++        std::mem::size_of::<AggregateSlot>()
++    );
++    for i in 0..2 {
++        let dynamic = slices.function(hir::DefId(i)).usage();
++        let fixed = exact.function(hir::DefId(i)).usage();
++        assert_eq!(dynamic.expanded_cells, fixed.expanded_cells);
++        assert_eq!(dynamic.reference_bytes, fixed.reference_bytes);
++        assert_eq!(dynamic.native_bytes, fixed.native_bytes + 4);
++    }
++    assert_eq!(slices.metadata_bytes(), exact.metadata_bytes());
++}
+diff --git a/src/frontend/oir/owned/source/slice_tests.rs b/src/frontend/oir/owned/source/slice_tests.rs
+new file mode 100644
+index 0000000..df528ae
+--- /dev/null
++++ b/src/frontend/oir/owned/source/slice_tests.rs
+@@ -0,0 +1,144 @@
++//! Whole-array scalar slice source tests, independent of native representation.
++use super::{lower, program, resolve, typeck};
++use crate::frontend::{
++    ast,
++    diagnostic::Diagnostic,
++    hir::Ty,
++    lexer,
++    oir::{
++        owned_types::{AggregateTy, BorrowedTy, FixedArrayTy},
++        Scalar,
++    },
++    parser,
++    project::budget::Allocator,
++    source::{SourceFileId, SourceMap},
++};
++
++fn parsed(text: &str) -> Result<(SourceMap, ast::Program), Vec<Diagnostic>> {
++    let mut sources = SourceMap::new();
++    let file = sources.add("slices.ox".into(), text.into());
++    let source = sources.get(file);
++    let (ast, _) = parser::parse_counted_with_arrays(
++        source,
++        lexer::lex(source).map_err(|error| vec![*error])?,
++        parser::SourceMode::OwnedCandidate,
++        parser::MAX_NODES,
++        &mut Allocator::default(),
++        parser::ArraySyntaxPolicy::Enabled,
++    )?;
++    Ok((sources, ast))
++}
++
++fn run(text: &str) -> Result<Scalar, Vec<Diagnostic>> {
++    let (sources, ast) = parsed(text)?;
++    let (program, entry) = program::check_source(sources.get(SourceFileId(0)), &ast, &sources)?;
++    program.run(entry, &sources).map_err(|error| vec![*error])
++}
++
++const SUM: &str = "fn sum(p:&[i32])->i32{let mut i=0;let mut total=0;while i<p.len(){total=total+p[i];i=i+1;}return total;}";
++
++#[test]
++fn borrowed_slice_same_sum_helper_preserves_each_actual_length() {
++    let text = format!("{SUM} fn main()->i32{{let a=[10,20];let b=[50,70,162];let c:[i32;0]=[];return sum(&a)+sum(&b)+sum(&c);}}");
++    assert_eq!(run(&text).unwrap(), Scalar::I32(312));
++}
++
++#[test]
++fn borrowed_slice_loan_uses_target_view_and_preserves_owner_authority() {
++    let text = "fn view(p:&[i32])->i32{return p.len();} fn exact(p:&[i32;2])->i32{return view(&*p);} fn main()->i32{let a=[10,20];return exact(&a)+view(&a);}";
++    let (sources, ast) = parsed(text).unwrap();
++    let typed = typeck::check(
++        resolve::resolve_in_map(sources.get(SourceFileId(0)), &ast, &sources).unwrap(),
++    )
++    .unwrap();
++    let raw = lower::lower(&typed).unwrap();
++    let exact = BorrowedTy::Exact(AggregateTy::FixedArray(
++        FixedArrayTy::check(Ty::I32, 2).unwrap(),
++    ));
++    assert_eq!(
++        raw.functions[0].references[0].referent(),
++        BorrowedTy::ScalarSlice(Ty::I32)
++    );
++    assert_eq!(raw.functions[1].references[0].referent(), exact);
++    assert_eq!(
++        raw.functions[1].loans[0].referent(),
++        BorrowedTy::ScalarSlice(Ty::I32)
++    );
++    assert_eq!(raw.functions[2].loans[0].referent(), exact);
++    assert_eq!(
++        raw.functions[2].loans[1].referent(),
++        BorrowedTy::ScalarSlice(Ty::I32)
++    );
++    assert_eq!(run(text).unwrap(), Scalar::I32(4));
++}
++
++#[test]
++fn borrowed_slice_exclusive_reborrow_restores_whole_owner_access() {
++    let text = format!("{SUM} fn bump(p:&mut [i32])->(){{let mut i=0;while i<p.len(){{p[i]=p[i]+1;i=i+1;}}return;}} fn relay(p:&mut [i32])->i32{{bump(&mut *p);let n=sum(&*p);p[0]=p[0]+n;return sum(&*p);}} fn main()->i32{{let mut a=[2,3];let n=relay(&mut a);return n*10+a[0];}}");
++    assert_eq!(run(&text).unwrap(), Scalar::I32(150));
++}
++
++#[test]
++fn borrowed_slice_bool_unit_and_zero_length_views() {
++    for (text, expected) in [
++        ("fn toggle(p:&mut [bool])->(){p[0]=!p[0];return;} fn read(p:&[bool])->bool{return p[0];} fn main()->bool{let mut a=[false];toggle(&mut a);return read(&a);}", Scalar::Bool(true)),
++        ("fn touch(p:&mut [()])->i32{let mut i=0;while i<p.len(){p[i]=p[i];i=i+1;}return p.len();} fn main()->i32{let mut a=[(),()];let mut z:[();0]=[];return touch(&mut a)+touch(&mut z);}", Scalar::I32(2)),
++        ("fn empty(p:&[bool])->i32{return p.len();} fn main()->i32{let a:[bool;0]=[];return empty(&a);}", Scalar::I32(0)),
++    ] {
++        assert_eq!(run(text).unwrap(), expected, "{text}");
++    }
++}
++
++#[test]
++fn borrowed_slice_retains_type_and_whole_root_permission_rejections() {
++    for (text, code, stage) in [
++        ("fn take(p:&[i32])->(){return;} fn forward(p:&[i32])->(){take(p);return;}", "E0312", "type"),
++        ("fn fixed(p:&[i32;2])->(){return;} fn erased(p:&[i32])->(){fixed(&*p);return;}", "E0300", "type"),
++        ("fn take(p:&[i32])->(){return;} fn main()->(){let a=[true];take(&a);return;}", "E0300", "type"),
++        ("fn take(p:&[i32])->(){return;} fn main()->(){let mut a=[1];take(&mut a);return;}", "E0300", "type"),
++        ("fn take(p:&mut [i32])->(){return;} fn main()->(){let a=[1];take(&mut a);return;}", "E0304", "type"),
++        ("fn pair(p:&[i32],q:&mut [i32;1])->(){return;} fn main()->(){let mut a=[1];pair(&a,&mut a);return;}", "E0311", "ownership"),
++        ("fn write(p:&[i32])->(){p[0]=7;return;}", "E0313", "ownership"),
++        ("fn write(p:&mut [i32])->(){return;} fn forward(p:&[i32])->(){write(&mut *p);return;}", "E0313", "ownership"),
++        ("fn take(p:&mut [i32],n:i32)->(){return;} fn main()->(){let mut a=[1];take(&mut a,a.len());return;}", "E0311", "ownership"),
++        ("fn take(p:&[i32])->(){return;} fn main()->(){let a=[1];let b=a;take(&a);return;}", "E0310", "ownership"),
++    ] {
++        let errors = run(text).unwrap_err();
++        assert_eq!((errors[0].code, errors[0].stage), (code, stage), "{text}: {errors:?}");
++    }
++}
++
++#[test]
++fn borrowed_slice_bounds_use_actual_length_and_preserve_rhs_first_failure() {
++    for (text, code) in [
++        ("fn read(p:&[i32])->i32{return p[p.len()];} fn main()->i32{let a=[7,8];return read(&a);}", "E0606"),
++        ("fn read(p:&[i32])->i32{return p[0];} fn main()->i32{let a:[i32;0]=[];return read(&a);}", "E0606"),
++        ("fn write(p:&mut [i32])->(){p[-1]=3;return;} fn main()->(){let mut a=[1];write(&mut a);return;}", "E0606"),
++        ("fn write(p:&mut [i32])->(){p[1/0]=7%0;return;} fn main()->(){let mut a=[1];write(&mut a);return;}", "E0607"),
++    ] {
++        let errors = run(text).unwrap_err();
++        assert_eq!(errors[0].code, code, "{text}: {errors:?}");
++        if code == "E0607" {
++            let (sources, _) = parsed(text).unwrap();
++            assert_eq!(sources.get(SourceFileId(0)).text_at(errors[0].primary.unwrap()), "%");
++        }
++    }
++}
++
++#[test]
++fn borrowed_slice_syntax_remains_parameter_only_and_scalar_only() {
++    for text in [
++        "fn f(p:[i32])->(){return;}",
++        "fn f()->[i32]{return [];}",
++        "fn f()->&[i32]{return [];}",
++        "struct R{p:&[i32]}",
++        "fn f()->(){let p:&[i32]=[];return;}",
++        "fn f(p:&[[i32;1]])->(){return;}",
++        "struct R{} fn f(p:&[R])->(){return;}",
++        "fn f(p:&[&i32])->(){return;}",
++        "fn f(p:&[i32])->(){p[0..1];return;}",
++    ] {
++        let errors = parsed(text).unwrap_err();
++        assert_eq!(errors[0].stage, "parse", "{text}: {errors:?}");
++    }
++}
+diff --git a/src/frontend/oir/owned/source/tests.rs b/src/frontend/oir/owned/source/tests.rs
+index 8b2c217..cd9338b 100644
+--- a/src/frontend/oir/owned/source/tests.rs
++++ b/src/frontend/oir/owned/source/tests.rs
+@@ -388,7 +388,7 @@ fn typed_views_retain_identity_order_modes_projections_and_exact_origins() {
+     assert_eq!(
+         view.binding_ty(BindingId(1)),
+         ParameterTy::Reference {
+-            aggregate: AggregateTy::Record(RecordId(0)),
++            referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+             kind: BorrowKind::Exclusive
+         }
+     );
+diff --git a/src/frontend/oir/owned/source/typeck.rs b/src/frontend/oir/owned/source/typeck.rs
+index 8b789bc..b47393c 100644
+--- a/src/frontend/oir/owned/source/typeck.rs
++++ b/src/frontend/oir/owned/source/typeck.rs
+@@ -81,7 +81,7 @@ impl FlowSummary {
+ pub(super) struct TypedOwnedFunction<'a> {
+     admission: SourceAdmission,
+     function: &'a Function,
+-    signature: &'a Signature,
++    signatures: &'a [Signature],
+     body: &'a TypedBody,
+ }
+ impl TypedOwnedProgram<'_> {
+@@ -122,7 +122,7 @@ impl TypedOwnedProgram<'_> {
+                 TypedOwnedFunction {
+                     admission: self.admission(),
+                     function,
+-                    signature,
++                    signatures: self.signatures(),
+                     body,
+                 }
+             })
+@@ -136,7 +136,10 @@ impl<'a> TypedOwnedFunction<'a> {
+         self.function
+     }
+     pub(super) fn signature(&self) -> &'a Signature {
+-        self.signature
++        &self.signatures[self.function.id.0]
++    }
++    pub(super) fn call_parameter_ty(&self, target: DefId, position: usize) -> ParameterTy {
++        self.signatures[target.0].params[position]
+     }
+     pub(super) fn expression_ty(&self, id: ExprId) -> ValueTy {
+         self.body.expressions[id.0]
+@@ -269,7 +272,7 @@ fn projection(
+             (record, AccessBase::Owner(binding))
+         }
+         ParameterTy::Reference {
+-            aggregate: AggregateTy::Record(record),
++            referent: BorrowedTy::Exact(AggregateTy::Record(record)),
+             kind,
+         } => (record, AccessBase::Reference { binding, kind }),
+         _ => {
+@@ -305,15 +308,15 @@ fn array_access(
+     binding: BindingId,
+     access_span: Span,
+     bindings: &[Option<ParameterTy>],
+-) -> Result<(AccessBase, FixedArrayTy), Box<Diagnostic>> {
++) -> Result<(AccessBase, Ty), Box<Diagnostic>> {
+     match bindings[binding.0].expect("resolved array base initialized") {
+         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
+-            Ok((AccessBase::Owner(binding), array))
++            Ok((AccessBase::Owner(binding), array.element()))
+         }
+-        ParameterTy::Reference {
+-            aggregate: AggregateTy::FixedArray(array),
+-            kind,
+-        } => Ok((AccessBase::Reference { binding, kind }, array)),
++        ParameterTy::Reference { referent, kind } if referent.element().is_some() => Ok((
++            AccessBase::Reference { binding, kind },
++            referent.element().expect("array or slice"),
++        )),
+         _ => Err(error(
+             "E0305",
+             "array access requires an array binding",
+@@ -337,7 +340,7 @@ fn borrow_type(
+                     if kind == BorrowKind::Exclusive && !function.bindings[binding.0].mutable {
+                         return Err(immutable(function, binding, span));
+                     }
+-                    record
++                    BorrowedTy::Exact(record)
+                 }
+                 ParameterTy::Value(ValueTy::Scalar(_)) => {
+                     return Err(error(
+@@ -358,7 +361,7 @@ fn borrow_type(
+         BorrowPlace::Forwarded(binding) => {
+             match bindings[binding.0].expect("borrow binding initialized") {
+                 ParameterTy::Reference {
+-                    aggregate: record, ..
++                    referent: record, ..
+                 } => record,
+                 ParameterTy::Value(_) => {
+                     return Err(error(
+@@ -373,7 +376,7 @@ fn borrow_type(
+     // Requested permission is retained even if the parent grants only shared.
+     // The authoritative raw verifier diagnoses that ownership permission error.
+     Ok(ParameterTy::Reference {
+-        aggregate: record,
++        referent: record,
+         kind,
+     })
+ }
+@@ -511,7 +514,20 @@ fn expression_type(
+             for (_position, ((actual, span), expected)) in
+                 actuals.into_iter().zip(&called.params).enumerate()
+             {
+-                if actual != *expected {
++                let matches = match (actual, *expected) {
++                    (
++                        ParameterTy::Reference {
++                            referent: authority,
++                            kind: actual_kind,
++                        },
++                        ParameterTy::Reference {
++                            referent: target,
++                            kind: expected_kind,
++                        },
++                    ) => actual_kind == expected_kind && target.accepts(authority),
++                    _ => actual == *expected,
++                };
++                if !matches {
+                     return Err(error(
+                         "E0300",
+                         "call argument type or borrow mode does not match parameter",
+@@ -529,7 +545,7 @@ fn expression_type(
+                             function: function.id,
+                             origin: span,
+                             binding: binding.0,
+-                            ty: actual,
++                            ty: *expected,
+                         },
+                     );
+                 }
+@@ -604,7 +620,7 @@ fn expression_type(
+             program.work().debit(1, expr.span, "array type read")?;
+             let actual = child(*index)?;
+             program.work().debit(1, expr.span, "array type access")?;
+-            let (_, array) = array_access(function, *base, expr.span, bindings)?;
++            let (_, element) = array_access(function, *base, expr.span, bindings)?;
+             if actual != scalar(Ty::I32) {
+                 return Err(mismatch(
+                     program,
+@@ -613,7 +629,7 @@ fn expression_type(
+                     function.expressions[index.0].span,
+                 ));
+             }
+-            scalar(array.element())
++            scalar(element)
+         }
+         ExprKind::ArrayLength { base, .. } => {
+             program.work().debit(1, expr.span, "array type length")?;
+@@ -984,7 +1000,7 @@ fn check_body(
+                 ..
+             } => {
+                 program.work().debit(1, target_span, "array type access")?;
+-                let (access, array) = array_access(function, base, target_span, &bindings)?;
++                let (access, element) = array_access(function, base, target_span, &bindings)?;
+                 let index_ty = expressions[index.0].expect("typed store index");
+                 if index_ty != ValueTy::Scalar(Ty::I32) {
+                     return Err(mismatch(
+@@ -995,7 +1011,7 @@ fn check_body(
+                     ));
+                 }
+                 let actual = expressions[value.0].expect("typed store value");
+-                let expected = ValueTy::Scalar(array.element());
++                let expected = ValueTy::Scalar(element);
+                 if actual != expected {
+                     return Err(mismatch(
+                         program,
+diff --git a/src/frontend/oir/owned/tests.rs b/src/frontend/oir/owned/tests.rs
+index c8adc61..9a8d140 100644
+--- a/src/frontend/oir/owned/tests.rs
++++ b/src/frontend/oir/owned/tests.rs
+@@ -154,7 +154,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
+         .parameters
+         .push(ParameterBinding::Reference(ReferenceParamId(0)));
+     callee.references.push(ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind,
+         position: 0,
+         span,
+@@ -178,7 +178,7 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
+         argument: 0,
+         authority: AccessBase::Owner(OwnerPlaceId(0)),
+         kind,
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span,
+     });
+     f.blocks[0].statements.extend([
+@@ -651,7 +651,7 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
+         let mut f = unit_function(0, s);
+         f.references = (0..count)
+             .map(|position| ReferenceDecl {
+-                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0)))
++                referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
+                     .unwrap(),
+                 kind: BorrowKind::Shared,
+                 position,
+@@ -1121,7 +1121,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
+     f.owners.clear();
+     f.parameters = vec![ParameterBinding::Reference(ReferenceParamId(0))];
+     f.references = vec![ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: parent,
+         position: 0,
+         span: s,
+@@ -1140,7 +1140,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
+         argument: 1,
+         authority: AccessBase::Parameter(ReferenceParamId(0)),
+         kind: children[1],
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         span: s,
+     });
+     f.blocks[0].statements.push(instruction(
+@@ -1156,7 +1156,7 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
+         .parameters
+         .push(ParameterBinding::Reference(ReferenceParamId(1)));
+     target.references.push(ReferenceDecl {
+-        aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(0))).unwrap(),
++        referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
+         kind: children[1],
+         position: 1,
+         span: s,
+@@ -1295,7 +1295,8 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
+                     }
+                     3 | 4 => {
+                         function.references.push(ReferenceDecl {
+-                            aggregate: slot,
++                            referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate()))
++                                .unwrap(),
+                             kind: BorrowKind::Shared,
+                             position: 0,
+                             span: s,
+@@ -1307,7 +1308,7 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
+                         }
+                     }
+                     5 => function.loans.push(LoanDecl {
+-                        aggregate: slot,
++                        referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
+                         kind: BorrowKind::Shared,
+                         call: CallSiteId(0),
+                         argument: 0,
+@@ -1377,7 +1378,7 @@ fn array_preflight_and_declarations_still_precede_shape_checks() {
+     for ty in [
+         ParameterTy::Value(ValueTy::Owned(aggregate)),
+         ParameterTy::Reference {
+-            aggregate,
++            referent: BorrowedTy::Exact(aggregate),
+             kind: BorrowKind::Shared,
+         },
+     ] {
+@@ -1410,7 +1411,7 @@ fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
+         let mut raw = borrowed(s, BorrowKind::Shared);
+         let f = &mut raw.functions[0];
+         f.calls[0].span = at(10);
+-        f.loans[0].aggregate = invalid;
++        f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(invalid.aggregate())).unwrap();
+         match defect {
+             0 => (),
+             1 => f.loans[0].call = CallSiteId(4096),
+@@ -1434,7 +1435,10 @@ fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
+                 raw.functions[0].result = ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))
+             }
+             1 => raw.functions[0].owners[0].aggregate = invalid,
+-            2 => raw.functions[1].references[0].aggregate = invalid,
++            2 => {
++                raw.functions[1].references[0].referent =
++                    BorrowedSlot::check(BorrowedTy::Exact(invalid.aggregate())).unwrap()
++            }
+             _ => unreachable!(),
+         }
+         let failure = error(raw, &sources);
+@@ -1474,8 +1478,9 @@ fn unit2b_promoted_record_loan_defects_preserve_all_short_circuits() {
+                 }
+             }
+             if defects & 1 != 0 {
+-                f.loans[0].aggregate =
+-                    AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(4096))).unwrap();
++                f.loans[0].referent =
++                    BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(4096))))
++                        .unwrap();
+             }
+             if defects & 2 != 0 {
+                 f.loans[0].call = CallSiteId(4096);
+diff --git a/src/frontend/oir/owned_types.rs b/src/frontend/oir/owned_types.rs
+index 3bd7675..25eb0f7 100644
+--- a/src/frontend/oir/owned_types.rs
++++ b/src/frontend/oir/owned_types.rs
+@@ -65,6 +65,66 @@ pub(in crate::frontend) enum AggregateTy {
+     FixedArray(FixedArrayTy),
+ }
+ 
++/// A call-only borrowed view. Unsized slices are never owned value types.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(in crate::frontend) enum BorrowedTy {
++    Exact(AggregateTy),
++    ScalarSlice(hir::Ty),
++}
++impl BorrowedTy {
++    pub(in crate::frontend) fn accepts(self, authority: Self) -> bool {
++        match (authority, self) {
++            (Self::Exact(actual), Self::Exact(expected)) => actual == expected,
++            (Self::Exact(AggregateTy::FixedArray(array)), Self::ScalarSlice(element)) => {
++                array.element() == element
++            }
++            (Self::ScalarSlice(actual), Self::ScalarSlice(expected)) => actual == expected,
++            _ => false,
++        }
++    }
++    pub(in crate::frontend) fn element(self) -> Option<hir::Ty> {
++        match self {
++            Self::Exact(AggregateTy::FixedArray(array)) => Some(array.element()),
++            Self::ScalarSlice(element) => Some(element),
++            Self::Exact(AggregateTy::Record(_)) => None,
++        }
++    }
++}
++/// Compact retained borrowed identity; it cannot be used as an owner descriptor.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(in crate::frontend) struct BorrowedSlot(BorrowedSlotRepr);
++#[repr(C, align(8))]
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum BorrowedSlotRepr {
++    Record(u32),
++    FixedArray(FixedArrayTy),
++    ScalarSlice(hir::Ty),
++}
++impl BorrowedSlot {
++    pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
++        Ok(Self(match ty {
++            BorrowedTy::Exact(AggregateTy::Record(id)) => BorrowedSlotRepr::Record(
++                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
++            ),
++            BorrowedTy::Exact(AggregateTy::FixedArray(array)) => {
++                BorrowedSlotRepr::FixedArray(array)
++            }
++            BorrowedTy::ScalarSlice(element) => BorrowedSlotRepr::ScalarSlice(element),
++        }))
++    }
++    pub(in crate::frontend) fn referent(self) -> BorrowedTy {
++        match self.0 {
++            BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
++                usize::try_from(id).expect("qualified ordinal width"),
++            ))),
++            BorrowedSlotRepr::FixedArray(array) => {
++                BorrowedTy::Exact(AggregateTy::FixedArray(array))
++            }
++            BorrowedSlotRepr::ScalarSlice(element) => BorrowedTy::ScalarSlice(element),
++        }
++    }
++}
++
+ /// Compact retained identity, never an ownership or declaration witness.
+ /// The independent tag cannot reinterpret malformed nominal IDs as arrays.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -130,7 +190,7 @@ pub(in crate::frontend) enum BorrowKind {
+ pub(in crate::frontend) enum ParameterTy {
+     Value(ValueTy),
+     Reference {
+-        aggregate: AggregateTy,
++        referent: BorrowedTy,
+         kind: BorrowKind,
+     },
+ }
+@@ -432,6 +492,38 @@ impl Declarations {
+             Err(DeclarationError::TypeMismatch)
+         }
+     }
++    pub(super) fn check_borrowed_type(&self, ty: BorrowedTy) -> Result<(), DeclarationError> {
++        match ty {
++            BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
++            BorrowedTy::ScalarSlice(_) => Ok(()),
++        }
++    }
++    pub(super) fn same_borrowed_type(
++        &self,
++        actual: BorrowedTy,
++        expected: BorrowedTy,
++    ) -> Result<(), DeclarationError> {
++        self.check_borrowed_type(actual)?;
++        self.check_borrowed_type(expected)?;
++        if actual == expected {
++            Ok(())
++        } else {
++            Err(DeclarationError::TypeMismatch)
++        }
++    }
++    pub(super) fn check_borrowed_view(
++        &self,
++        authority: BorrowedTy,
++        target: BorrowedTy,
++    ) -> Result<(), DeclarationError> {
++        self.check_borrowed_type(authority)?;
++        self.check_borrowed_type(target)?;
++        if target.accepts(authority) {
++            Ok(())
++        } else {
++            Err(DeclarationError::TypeMismatch)
++        }
++    }
+     pub(super) fn check_value_type(&self, ty: ValueTy) -> Result<(), DeclarationError> {
+         match ty {
+             ValueTy::Scalar(_) => Ok(()),
+@@ -441,7 +533,7 @@ impl Declarations {
+     pub(super) fn check_parameter_type(&self, ty: ParameterTy) -> Result<(), DeclarationError> {
+         match ty {
+             ParameterTy::Value(value) => self.check_value_type(value),
+-            ParameterTy::Reference { aggregate, .. } => self.check_aggregate_type(aggregate),
++            ParameterTy::Reference { referent, .. } => self.check_borrowed_type(referent),
+         }
+     }
+     pub(super) fn same_value_type(
+@@ -822,11 +914,11 @@ mod tests {
+             ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(0)))),
+             ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(usize::MAX)))),
+             ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 kind: BorrowKind::Shared,
+             },
+             ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 kind: BorrowKind::Exclusive,
+             },
+         ] {
+@@ -926,14 +1018,14 @@ mod tests {
+         for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
+             assert_eq!(
+                 table.check_parameter_type(ParameterTy::Reference {
+-                    aggregate: AggregateTy::Record(RecordId(0)),
++                    referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                     kind
+                 }),
+                 Ok(())
+             );
+             assert_eq!(
+                 table.check_parameter_type(ParameterTy::Reference {
+-                    aggregate: AggregateTy::Record(RecordId(1)),
++                    referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(1))),
+                     kind
+                 }),
+                 Err(DeclarationError::InvalidRecordId(RecordId(1)))
+@@ -961,11 +1053,11 @@ mod tests {
+         }
+         assert_ne!(
+             ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 kind: BorrowKind::Shared
+             },
+             ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(RecordId(0)),
++                referent: BorrowedTy::Exact(AggregateTy::Record(RecordId(0))),
+                 kind: BorrowKind::Exclusive
+             }
+         );
+diff --git a/src/frontend/oir/owned_types/array_tests.rs b/src/frontend/oir/owned_types/array_tests.rs
+index 77072ad..827defa 100644
+--- a/src/frontend/oir/owned_types/array_tests.rs
++++ b/src/frontend/oir/owned_types/array_tests.rs
+@@ -287,7 +287,7 @@ fn retained_slot_roundtrips_without_validating_or_conflating_identities() {
+             for kind in [BorrowKind::Shared, BorrowKind::Exclusive] {
+                 assert_eq!(
+                     declarations.check_parameter_type(ParameterTy::Reference {
+-                        aggregate: ty,
++                        referent: BorrowedTy::Exact(ty),
+                         kind
+                     }),
+                     Ok(())
+@@ -314,10 +314,49 @@ fn retained_slot_rejects_unrepresentable_full_ids_before_raw_construction() {
+         );
+         assert_eq!(
+             table().check_parameter_type(ParameterTy::Reference {
+-                aggregate: AggregateTy::Record(id),
++                referent: BorrowedTy::Exact(AggregateTy::Record(id)),
+                 kind: BorrowKind::Shared,
+             }),
+             Err(DeclarationError::InvalidRecordId(id))
+         );
+     }
+ }
++
++#[test]
++fn borrowed_slice_identity_is_directional_and_never_an_owned_type() {
++    let declarations = table();
++    for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
++        let slice = BorrowedTy::ScalarSlice(element);
++        assert_eq!(BorrowedSlot::check(slice).unwrap().referent(), slice);
++        for length in [0, 1, 2, 3, 1024] {
++            let exact = BorrowedTy::Exact(array(element, length));
++            assert_eq!(declarations.check_borrowed_view(exact, slice), Ok(()));
++            assert_eq!(declarations.check_borrowed_view(slice, slice), Ok(()));
++            assert_eq!(
++                declarations.check_borrowed_view(slice, exact),
++                Err(DeclarationError::TypeMismatch)
++            );
++            for wrong in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
++                if wrong != element {
++                    assert_eq!(
++                        declarations.check_borrowed_view(exact, BorrowedTy::ScalarSlice(wrong)),
++                        Err(DeclarationError::TypeMismatch)
++                    );
++                }
++            }
++        }
++        assert_eq!(
++            declarations
++                .check_borrowed_view(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))), slice),
++            Err(DeclarationError::TypeMismatch)
++        );
++    }
++    let malformed = BorrowedTy::Exact(AggregateTy::Record(RecordId(usize::MAX)));
++    assert!(declarations
++        .same_borrowed_type(malformed, malformed)
++        .is_err());
++    assert!(declarations
++        .check_borrowed_view(malformed, malformed)
++        .is_err());
++    assert!(BorrowedSlot::check(malformed).is_err());
++}
+diff --git a/src/frontend/parser.rs b/src/frontend/parser.rs
+index cdff160..a0bd379 100644
+--- a/src/frontend/parser.rs
++++ b/src/frontend/parser.rs
+@@ -694,10 +694,10 @@ impl Parser<'_> {
+             let start = self.bump().span.start;
+             let mutable = self.take(Kind::Mut).is_some();
+             if self.arrays_enabled() && self.array_punctuation("[") {
+-                let (array, end) = self.array_type()?;
++                let (kind, end) = self.array_parameter_type(mutable)?;
+                 return Ok(TypeSyntax {
+                     span: self.source.span(start, end),
+-                    kind: TypeSyntaxKind::ArrayReference { mutable, array },
++                    kind,
+                 });
+             }
+             let (referent, span) =
+diff --git a/src/frontend/parser/array_syntax_tests.rs b/src/frontend/parser/array_syntax_tests.rs
+index e8ee912..cd628a9 100644
+--- a/src/frontend/parser/array_syntax_tests.rs
++++ b/src/frontend/parser/array_syntax_tests.rs
+@@ -93,7 +93,9 @@ fn unit3a_structural_queries_are_checked_without_execution() {
+     use crate::frontend::{
+         declaration_index::TypeContext,
+         hir::Ty,
+-        oir::owned_types::{AggregateTy, BorrowKind, FixedArrayTy, ParameterTy, ValueTy},
++        oir::owned_types::{
++            AggregateTy, BorrowKind, BorrowedTy, FixedArrayTy, ParameterTy, ValueTy,
++        },
+     };
+     let map = source("fn f(a:[bool;0],b:[i32;0],c:[();0],d:&[i32;0])->[i32;0000]{}");
+     let file = map.get(SourceFileId(0));
+@@ -125,7 +127,9 @@ fn unit3a_structural_queries_are_checked_without_execution() {
+     assert_eq!(
+         query.parameter_type(ModuleId(0), param).unwrap(),
+         ParameterTy::Reference {
+-            aggregate: AggregateTy::FixedArray(FixedArrayTy::check(Ty::I32, 0).unwrap()),
++            referent: BorrowedTy::Exact(AggregateTy::FixedArray(
++                FixedArrayTy::check(Ty::I32, 0).unwrap()
++            )),
+             kind: BorrowKind::Shared,
+         }
+     );
+diff --git a/src/frontend/parser/arrays.rs b/src/frontend/parser/arrays.rs
+index ece3c66..10d1b8f 100644
+--- a/src/frontend/parser/arrays.rs
++++ b/src/frontend/parser/arrays.rs
+@@ -62,6 +62,25 @@ impl Parser<'_> {
+     }
+ 
+     pub(super) fn array_type(&mut self) -> Result<(FixedArraySyntax, usize), Box<Diagnostic>> {
++        let element = self.array_element_type()?;
++        self.fixed_array_type_tail(element)
++    }
++
++    pub(super) fn array_parameter_type(
++        &mut self,
++        mutable: bool,
++    ) -> Result<(TypeSyntaxKind, usize), Box<Diagnostic>> {
++        let element = self.array_element_type()?;
++        if self.array_punctuation("]") {
++            let end = self.bump().span.end;
++            Ok((TypeSyntaxKind::SliceReference { mutable, element }, end))
++        } else {
++            let (array, end) = self.fixed_array_type_tail(element)?;
++            Ok((TypeSyntaxKind::ArrayReference { mutable, array }, end))
++        }
++    }
++
++    fn array_element_type(&mut self) -> Result<ScalarTypeSyntax, Box<Diagnostic>> {
+         self.bump(); // The caller checked the opening bracket.
+         let token = self.peek();
+         let element = match token.kind {
+@@ -80,6 +99,13 @@ impl Parser<'_> {
+             }
+             _ => return Err(self.array_unsupported(token.span)),
+         };
++        Ok(element)
++    }
++
++    fn fixed_array_type_tail(
++        &mut self,
++        element: ScalarTypeSyntax,
++    ) -> Result<(FixedArraySyntax, usize), Box<Diagnostic>> {
+         if self.take(Kind::Semi).is_none() {
+             return Err(self.array_missing("array type requires `;` after its element type"));
+         }

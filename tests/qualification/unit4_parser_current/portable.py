@@ -310,6 +310,7 @@ CURRENT_PATHS = ('Cargo.lock',
  'src/frontend/project/builtin_tests.rs',
  'src/frontend/project/enum_carrier_tests.rs',
  'src/frontend/project/enum_index_tests.rs',
+ 'src/frontend/project/tests.rs',
  'src/frontend/project/unit2_tests.rs',
  'src/frontend/source.rs',
  'src/frontend/stdin_public_tests.rs',
@@ -661,7 +662,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '446f9c022dd7ae3070a9fe8a07e4973fdbb12f4623b8a293b6826ed3ef576c5b'
+AUTHORITY_SHA = '80852ba685257b1fcb8ccba158925192c07521c8cca029f545ff2ae3087070e9'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -804,6 +805,41 @@ def compose_u8_closed_policy(a, name, raw, reverse=False):
     return result
 
 
+def lexer_module(active):
+    row = active['lexer_reservation']['helper']
+    same(row['path'], 'tests/qualification/unit4_parser_current/lexer_reservation.py', 'exact current lexer parser helper')
+    verify_map(REPOSITORY, [row])
+    path = REPOSITORY / row['path']
+    helper = types.ModuleType('unit4_lexer_reservation')
+    helper.__file__ = str(path)
+    exec(compile(path.read_bytes(), str(path), 'exec'), helper.__dict__)
+    return helper
+
+
+def lexer_api():
+    # Public composer functions remain in this module; no private implementation
+    # is copied or rewritten by the current adapter.
+    return types.SimpleNamespace(**globals())
+
+
+def lexer_predecessor_active(active):
+    return lexer_module(active).previous(lexer_api(), active)
+
+
+def restore_lexer_source(active, inputs):
+    return lexer_module(active).restore(lexer_api(), active, inputs)
+
+
+def lexer_predecessor_body(a, name, raw):
+    return lexer_module(a['current']).body(lexer_api(), a, name, raw)
+
+
+def compose_current_lexer(a, raw):
+    if 'lexer_reservation' not in a['current']:
+        return compose_division_lexer(a, raw)
+    return lexer_module(a['current']).compose(lexer_api(), a, 'src/frontend/lexer.rs', raw)
+
+
 BYTE_STORAGE_PARSER_PREDECESSOR_SHA = '29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9'
 BYTE_STORAGE_FIELDS = ('byte_storage_authority', 'byte_storage_transition_patch',
                        'byte_storage_helper', 'u8_cross_host_source_manifest',
@@ -812,6 +848,8 @@ BYTE_STORAGE_FIELDS = ('byte_storage_authority', 'byte_storage_transition_patch'
 
 def byte_storage_predecessor_active(active):
     """Keep every prior parser contract; replace only exact current source maps."""
+    if 'lexer_reservation' in active:
+        active = lexer_predecessor_active(active)
     retained = active['u8_cross_host_parser_authority']
     same(retained['path'], 'tests/qualification/unit4_parser_current/u8-cross-host-authority.json',
          'retained cross-host parser authority path')
@@ -829,6 +867,9 @@ def byte_storage_predecessor_active(active):
 
 
 def restore_byte_storage_source(active, inputs):
+    if 'lexer_reservation' in active:
+        inputs = restore_lexer_source(active, inputs)
+        active = lexer_predecessor_active(active)
     previous = byte_storage_predecessor_active(active)
     api = u8_binding_api(active)
     path = REPOSITORY / active['byte_storage_helper']['path']
@@ -849,6 +890,8 @@ def restore_byte_storage_source(active, inputs):
 
 
 def byte_storage_predecessor_body(a, name, raw):
+    if 'lexer_reservation' in a['current']:
+        a, raw = lexer_predecessor_body(a, name, raw)
     active = a['current']
     previous = byte_storage_predecessor_active(active)
     row = next(r for r in active['current_base_files'] if r['path'] == name)
@@ -963,6 +1006,25 @@ def restore_u8_source(active, inputs):
 
 
 def validate_u8_transition(active, current, historical):
+    outer = active if 'lexer_reservation' in active else None
+    outer_inputs = None
+    if outer is not None:
+        lexer_predecessor_active(active)
+        transition = read(REPOSITORY / active['lexer_reservation']['source_authority']['path'])
+        expected_rows = [{key: value for key, value in row.items() if key not in ('mode', 'git_blob')}
+                         for row in transition['current_input_identities']]
+        same(current['files'], expected_rows, 'complete admitted lexer source')
+        for field, expected in (('instrumentation', ['src/frontend/lexer.rs', 'src/frontend/project/budget.rs']),
+                                ('control_instrumentation', [])):
+            same(sorted(set(transition['transition_paths']).intersection(r['path'] for r in historical[field])),
+                 expected, 'exact lexer reservation instrumentation overlap roster')
+        api = u8_binding_api(active)
+        captured = api.preflight(REPOSITORY)
+        same(captured['current'], current, 'complete admitted lexer source')
+        outer_inputs = restore_lexer_source(active, captured['inputs'])
+        same(outer_inputs, captured['byte_storage_inputs'], 'independent complete lexer inverse')
+        current = captured['byte_storage_source']
+        active = lexer_predecessor_active(active)
     api = u8_binding_api(active)
     for key, filename in zip(U8_FIELDS[:4], ('u8-authority.json', 'u8-transition.patch',
                                            'u8_source.py', 'cache-admission-source.json')):
@@ -991,7 +1053,14 @@ def validate_u8_transition(active, current, historical):
                       'u8-cross-host-source.json')}
     try:
         byte_helper = api.load_byte_storage(package_bytes)
-        byte_admitted, _, _, cross_inputs, _ = byte_helper.admit(REPOSITORY, package_bytes, api)
+        if outer is None:
+            byte_admitted, _, _, cross_inputs, _ = byte_helper.admit(REPOSITORY, package_bytes, api)
+        else:
+            package_bytes['current-source.json'] = (REPOSITORY / outer['lexer_reservation']['source_predecessor']['path']).read_bytes()
+            with tempfile.TemporaryDirectory(prefix='unit4-lexer-predecessor-') as directory:
+                root = Path(directory) / 'source'
+                api.materialize(root, outer_inputs)
+                byte_admitted, _, _, cross_inputs, _ = byte_helper.admit(root, package_bytes, api)
         # Refuse forged current metadata before staging any retained predecessor.
         same(byte_admitted, current, 'parser source must equal admitted complete byte storage source')
         cross = api.load_u8_cross_host(package_bytes)
@@ -1691,7 +1760,7 @@ def authority():
             derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
         if not control:
             name = "src/frontend/lexer.rs"
-            raw = compose_division_lexer(result, (REPOSITORY / name).read_bytes())
+            raw = compose_current_lexer(result, (REPOSITORY / name).read_bytes())
             derived[name] = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
             name = "src/frontend/declaration_index/resource.rs"
             raw = compose_namespace_resource(result, (REPOSITORY / name).read_bytes())
@@ -1783,6 +1852,8 @@ def compose_array_instrumentation(a, name, raw, control=False):
     """Apply the frozen hooks only at three explicitly bound array-overlap paths."""
     require(name in ARRAY_INSTRUMENTATION_PATHS, "unapproved array instrumentation path")
     require(not control or name != "src/frontend/project/budget.rs", "unapproved control composition")
+    if 'lexer_reservation' in a['current'] and name == 'src/frontend/project/budget.rs':
+        return lexer_module(a['current']).compose(lexer_api(), a, name, raw)
     active = a["current"]
     current = next(row for row in active["source_delta"] if row["path"] == name)
     same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current array identity")
@@ -2423,7 +2494,7 @@ def prepare(repo, checkout, output):
             name = change["path"]
             if not control and name == "src/frontend/lexer.rs":
                 verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
-                target.write_bytes(compose_division_lexer(a, (checkout / name).read_bytes()))
+                target.write_bytes(compose_current_lexer(a, (checkout / name).read_bytes()))
                 continue
             if not control and name == "src/frontend/declaration_index/resource.rs":
                 verify_map(source, [next(row for row in a["derived_files"] if row["path"] == name)])
