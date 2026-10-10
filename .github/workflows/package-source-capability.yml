@@ -1,0 +1,40 @@
+name: Package source metadata diagnostics
+on:
+  push:
+    branches: ['KH/package-source-diagnostics-v1']
+permissions:
+  contents: read
+jobs:
+  package-source-diagnostics:
+    name: Read-only source and namespace policy metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Capture sanitized metadata without package or sandbox execution
+        timeout-minutes: 1
+        env:
+          DIAGNOSTIC_HEAD: ${{ github.sha }}
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/probe_hosted_capability.py
+          --diagnostics-only --output "$RUNNER_TEMP/package-source-diagnostics"
+          --expected-head "$DIAGNOSTIC_HEAD"
+      - name: Stage closed diagnostic evidence
+        if: always()
+        run: >-
+          /usr/bin/python3 -B tests/qualification/package_dependency_current/probe_hosted_capability.py
+          --stage "$RUNNER_TEMP/package-source-diagnostics"
+          --upload "$RUNNER_TEMP/package-source-diagnostics-upload"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: package-source-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-source-diagnostics-upload
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: false
+          overwrite: false
