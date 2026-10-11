@@ -1,0 +1,18 @@
+{
+  "execution_qualified": false,
+  "files": [
+    {
+      "bytes": 90684,
+      "path": "machine.py",
+      "sha256": "71778d16008dbb8cf6cc6f506b1bdc2fd36cfc185a1e9424375738964cb5e4ae"
+    },
+    {
+      "bytes": 80517,
+      "path": "test_machine.py",
+      "sha256": "4494e98793ccff8e78a8c14e9fd13379eb047d6684e9712eadc48a3731f6ac7d"
+    }
+  ],
+  "machine_capture_executed": false,
+  "schema": "oxid-package-dependency-unit4-machine-package-v1",
+  "status": "NotReady"
+}

@@ -1,0 +1,22 @@
+{
+  "execution_qualified": false,
+  "files": [
+    {
+      "bytes": 6993,
+      "path": "dependencies.json",
+      "sha256": "83e768cd10a7ede6e000829fa009b24723046987c578c78bd5b67bf2d35c1434"
+    },
+    {
+      "bytes": 17328,
+      "path": "run.py",
+      "sha256": "7d756df3bad6fb1c62da22110c0706e552699cdf06a71ccc218eaed24ba41e2f"
+    },
+    {
+      "bytes": 22051,
+      "path": "test_run.py",
+      "sha256": "0e04a15bb764c7914a44279e69ef145c30921ba1db8b50b71d5888760e845783"
+    }
+  ],
+  "schema": "oxid-unit4-session-package-v1",
+  "status": "NotReady"
+}

@@ -1,0 +1,60 @@
+{
+  "files": [
+    {
+      "bytes": 5178,
+      "path": "README.md",
+      "sha256": "06807048c65faf5bcc57e043e8c706e8d117fb732eda41759b96825a84e69bf3"
+    },
+    {
+      "bytes": 21763,
+      "path": "common.py",
+      "sha256": "017a0b034ac120b246d2f9b88600cc3515534fe97c3e033b73a9f363e7b76e3d"
+    },
+    {
+      "bytes": 255807,
+      "path": "consumer-dispositions.json",
+      "sha256": "8688b172cb9dc55ba886f5b66a68708299eba5d48e1e227b53688fb8ba452808"
+    },
+    {
+      "bytes": 48356,
+      "path": "evidence.py",
+      "sha256": "44144894d49cf467f94d56a4f2fae60cde6f74771980052e4d836ccaed0b2f3c"
+    },
+    {
+      "bytes": 2655,
+      "path": "facade.py",
+      "sha256": "adecec6c793534f68dc305ae7e206a7299349305127a3410caa91fec0311299c"
+    },
+    {
+      "bytes": 27131,
+      "path": "gate.py",
+      "sha256": "2ae6af67414d7fb542e243c202cacd2fa6669315e3c3859d1c70972669ac0eb2"
+    },
+    {
+      "bytes": 131959,
+      "path": "inputs.json",
+      "sha256": "e4dfb7b1d52f251ceaf61ddd439a625697a3e4ce16bb54172cfd8544113d6a34"
+    },
+    {
+      "bytes": 133638,
+      "path": "join.py",
+      "sha256": "cf15f8f3322995b91577e84a39da256663427efe650b582c3e04bc4e142a46ea"
+    },
+    {
+      "bytes": 34583,
+      "path": "staging.py",
+      "sha256": "52c697c91b7a34385f82aaa8a2f0cc6768d77e23efc5ab68c7c715aa301fdb51"
+    },
+    {
+      "bytes": 14558,
+      "path": "test_facades.py",
+      "sha256": "07f6176b42721dee7b08f0544c02e12ce4b2b18080e4326b276a81e749bec59f"
+    },
+    {
+      "bytes": 36496,
+      "path": "test_integration.py",
+      "sha256": "e023aa0df0bfb8ea0d75374c342e4d3d619f91ba07896b107e3007aaa36c858f"
+    }
+  ],
+  "schema": "oxid-package-unit4-ci-package-v1"
+}
