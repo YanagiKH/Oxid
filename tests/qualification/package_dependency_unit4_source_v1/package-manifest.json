@@ -1,0 +1,54 @@
+{
+  "current_execution_status": "NotReady",
+  "execution_qualified": false,
+  "files": [
+    {
+      "bytes": 95354,
+      "path": "parser-candidate-source.json",
+      "sha256": "f04152f3d8ae1c74ae83e3ffe16f89fe6bd2f921d0d08e341dab96a4ae5368bb"
+    },
+    {
+      "bytes": 316676,
+      "path": "parser-source-successor-authority.json",
+      "sha256": "8473ef19379f0c12995d4e8ac10b71abc5af99023f68af1add493ae852adc0be"
+    },
+    {
+      "bytes": 11958,
+      "path": "parser_maps.py",
+      "sha256": "0cb1497c59b0ccc65fd8cfad2fbec32405494903de0d7c57d30a0692bfaf040b"
+    },
+    {
+      "bytes": 299981,
+      "path": "public-source-successor-authority.json",
+      "sha256": "392071a60bccbf00882a9419ca1ab7ec5197455d803189a9638abcf792650ac3"
+    },
+    {
+      "bytes": 9821,
+      "path": "public_maps.py",
+      "sha256": "381028469c64d724b9871d5ee3daa43f87d0f02a5bdd193f438d12855e570742"
+    },
+    {
+      "bytes": 5103,
+      "path": "source.py",
+      "sha256": "ddffc38c26098f6727d4d253c08af0423027f0536efb97905938208320a3c7d9"
+    },
+    {
+      "bytes": 7284,
+      "path": "test_parser_maps.py",
+      "sha256": "676aec03ae8e6223231acc205ccb395998461fe6fb38fe9aa5fe6570232743ee"
+    },
+    {
+      "bytes": 6820,
+      "path": "test_public_maps.py",
+      "sha256": "21004e37706a34e1083e120aa0e7a175b0e7c28943e87065dfb4aeb944253320"
+    },
+    {
+      "bytes": 2038,
+      "path": "test_source.py",
+      "sha256": "86578a603ac97e79fbfb0e257d9fdc23b84694b06e239faef2100bb1fc1745d4"
+    }
+  ],
+  "physical_preparation_performed": false,
+  "schema": "package-unit4-source-only-derivation-inventory-v1",
+  "scope": "authenticated pure public ordinary/lifecycle and public parser source-map derivations; no target execution"
+}
