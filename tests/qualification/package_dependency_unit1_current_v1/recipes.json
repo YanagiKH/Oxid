@@ -1,0 +1,3053 @@
+{
+  "approved_plan_sha256": "b74dac3925bfaead871d88b4a117223a6e43c237d80ed172135da012db4cb616",
+  "ast_normalization": "explicit-fields-no-locations-v1",
+  "coverage": {
+    "control_name": "frontend::project::reviewer_unit1::current_lexer_storage_failure_full_span_and_eof",
+    "fixture_expectations": [
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok",
+          "usage": {
+            "bytes": 27,
+            "entries": 2,
+            "eofs": 2,
+            "name_units": 10,
+            "nodes": 3,
+            "probes": 1,
+            "tokens": 18
+          }
+        },
+        "id": "minimal",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok",
+          "usage": {
+            "bytes": 11,
+            "eofs": 2,
+            "nodes": 1,
+            "tokens": 7
+          },
+          "visibility_span": [
+            0,
+            3
+          ]
+        },
+        "id": "public_module_header",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            ""
+          ],
+          "result": "ok"
+        },
+        "id": "no_textual_mod_discovery",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0101",
+          "primary_file": 0,
+          "result": "error",
+          "retained_files": 1,
+          "stage": "parse"
+        },
+        "id": "nested_mod_rejected",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0101",
+          "primary_file": 0,
+          "result": "error",
+          "retained_files": 1,
+          "stage": "parse"
+        },
+        "id": "inline_mod_rejected",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "function_handles": [
+            [
+              0,
+              0,
+              "r0"
+            ],
+            [
+              0,
+              1,
+              "r1"
+            ],
+            [
+              1,
+              0,
+              "a0"
+            ],
+            [
+              1,
+              1,
+              "a1"
+            ],
+            [
+              2,
+              0,
+              "c0"
+            ],
+            [
+              3,
+              0,
+              "b0"
+            ]
+          ],
+          "module_paths": [
+            "",
+            "a",
+            "a/c",
+            "b"
+          ],
+          "record_handles": [
+            [
+              0,
+              0,
+              "R0"
+            ],
+            [
+              0,
+              1,
+              "R1"
+            ],
+            [
+              1,
+              0,
+              "A0"
+            ],
+            [
+              1,
+              1,
+              "A1"
+            ],
+            [
+              2,
+              0,
+              "C0"
+            ],
+            [
+              3,
+              0,
+              "B0"
+            ]
+          ],
+          "result": "ok"
+        },
+        "id": "dfs_module_major",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0002",
+          "primary": {
+            "end": 10,
+            "file": 0,
+            "literal_hex": "616273656e74",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "missing_unused",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0002",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "no_mod_ox_fallback",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "unrelated_malformed",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "unrelated_special",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0100",
+          "primary_file": 0,
+          "result": "error",
+          "retained_files": 1,
+          "stage": "parse"
+        },
+        "id": "root_parse_before_missing",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0100",
+          "primary": {
+            "end": 2,
+            "file": 1,
+            "start": 0
+          },
+          "result": "error",
+          "stage": "lex"
+        },
+        "id": "child_lex_before_sibling",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0100",
+          "primary_file": 1,
+          "result": "error",
+          "retained_files": 2,
+          "stage": "parse"
+        },
+        "id": "child_parse_before_descendants",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0002",
+          "primary": {
+            "end": 50,
+            "file": 0,
+            "literal_hex": "616273656e74",
+            "start": 44
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "load_before_resolution",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "entry_symlink_directory",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "parent_directory_symlink",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "display_components",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_final_symlink",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_dangling_symlink",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 1,
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_directory_symlink",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_final_directory",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_final_fifo",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_final_socket",
+        "unavailable": [
+          {
+            "kind": "socket",
+            "reason": "Prior socket.socket(AF_UNIX) failed: [Errno 1] Operation not permitted; creation stopped"
+          }
+        ]
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 1,
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "child_intermediate_file",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "secondary": {
+            "end": 7,
+            "file": 0,
+            "start": 7
+          },
+          "stage": "source"
+        },
+        "id": "repeated_entry_path",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a",
+            "b"
+          ],
+          "record_handles": [
+            [
+              1,
+              0,
+              "Item"
+            ],
+            [
+              2,
+              0,
+              "Item"
+            ]
+          ],
+          "result": "ok"
+        },
+        "id": "distinct_hardlinks",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0002",
+          "primary": {
+            "end": 5,
+            "file": 1,
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "entry_hardlink_distinct",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 8,
+            "file": 0,
+            "literal_hex": "6a6f6273",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "fold_only",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "jobs"
+          ],
+          "result": "ok"
+        },
+        "id": "exact_and_fold",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0002",
+          "primary": {
+            "end": 8,
+            "file": 0,
+            "literal_hex": "6a6f6273",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "neither_exact_nor_fold",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 18,
+            "file": 0,
+            "literal_hex": "6a6f6273",
+            "start": 14
+          },
+          "result": "error",
+          "secondary": {
+            "end": 8,
+            "file": 0,
+            "start": 4
+          },
+          "stage": "source"
+        },
+        "id": "sibling_fold_collision",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0201",
+          "primary": {
+            "end": 12,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 11
+          },
+          "result": "error",
+          "secondary": {
+            "end": 5,
+            "file": 0,
+            "start": 4
+          },
+          "stage": "resolve"
+        },
+        "id": "sibling_exact_collision",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0002",
+          "primary": {
+            "end": 8,
+            "file": 0,
+            "literal_hex": "4a6f6273",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "first_missing_before_collision",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0005",
+          "primary": {
+            "end": 5,
+            "file": 1,
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "intermediate_fold_only",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a",
+            "a/leaf",
+            "b",
+            "b/leaf"
+          ],
+          "result": "ok"
+        },
+        "id": "separate_parent_names",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0003",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "invalid_utf8",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "code": "E0004",
+          "primary": {
+            "end": 5,
+            "file": 0,
+            "literal_hex": "61",
+            "start": 4
+          },
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "oxbc_before_utf8",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok",
+          "usage": {
+            "bytes": 7,
+            "eofs": 2,
+            "nodes": 1,
+            "tokens": 5
+          }
+        },
+        "id": "empty_child",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "local_blocks": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              1,
+              0,
+              0
+            ]
+          ],
+          "local_expressions": [
+            [
+              0,
+              0,
+              "7"
+            ],
+            [
+              1,
+              0,
+              "9"
+            ]
+          ],
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "file_local_expr_blocks",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok"
+        },
+        "id": "utf8_crlf_origins",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "result": "ok",
+          "usage": {
+            "entries": 3,
+            "name_units": 20,
+            "probes": 1
+          }
+        },
+        "id": "unrelated_nonutf8",
+        "unavailable": []
+      },
+      {
+        "expected": {
+          "module_paths": [
+            "",
+            "a"
+          ],
+          "note": "Root and child canonical bytes differ but lossy UTF-8 strings collide",
+          "result": "ok"
+        },
+        "id": "native_path_identity",
+        "unavailable": []
+      }
+    ],
+    "frozen_package_members": [
+      "README.md",
+      "check_resource_inventory.py",
+      "expectation-provenance.json",
+      "expected-fixtures.json",
+      "expected-resources.json",
+      "expected-test-roster.json",
+      "generate_reviewer_tests.py",
+      "materialize_fixtures.py",
+      "materialize_resource_fixtures.py",
+      "origin_oracle.py",
+      "reviewer_additional.rs",
+      "reviewer_v2.rs",
+      "run.py",
+      "run_reviewer.py",
+      "rust_strings.py",
+      "scalar_schedule_heldout.rs"
+    ],
+    "original_names": [
+      "frontend::project::reviewer_unit1::compatibility_schedule::compatibility_scalar_duplicate_signature_interleaving",
+      "frontend::project::reviewer_unit1::heldout_bytes_exact",
+      "frontend::project::reviewer_unit1::heldout_bytes_over",
+      "frontend::project::reviewer_unit1::heldout_checked_counter_overflow_stays_distinct_from_allocation_failure",
+      "frontend::project::reviewer_unit1::heldout_child_count_overflow_beats_all_dimension_caps",
+      "frontend::project::reviewer_unit1::heldout_child_dangling_symlink",
+      "frontend::project::reviewer_unit1::heldout_child_directory_symlink",
+      "frontend::project::reviewer_unit1::heldout_child_final_directory",
+      "frontend::project::reviewer_unit1::heldout_child_final_fifo",
+      "frontend::project::reviewer_unit1::heldout_child_final_symlink",
+      "frontend::project::reviewer_unit1::heldout_child_intermediate_file",
+      "frontend::project::reviewer_unit1::heldout_child_lex_before_sibling",
+      "frontend::project::reviewer_unit1::heldout_child_parse_before_descendants",
+      "frontend::project::reviewer_unit1::heldout_depth_exact",
+      "frontend::project::reviewer_unit1::heldout_depth_over",
+      "frontend::project::reviewer_unit1::heldout_dfs_module_major",
+      "frontend::project::reviewer_unit1::heldout_display_components",
+      "frontend::project::reviewer_unit1::heldout_distinct_hardlinks",
+      "frontend::project::reviewer_unit1::heldout_empty_child",
+      "frontend::project::reviewer_unit1::heldout_entries_exact",
+      "frontend::project::reviewer_unit1::heldout_entries_over",
+      "frontend::project::reviewer_unit1::heldout_entry_hardlink_distinct",
+      "frontend::project::reviewer_unit1::heldout_entry_symlink_directory",
+      "frontend::project::reviewer_unit1::heldout_every_controlled_reserve_failure_has_valid_origin",
+      "frontend::project::reviewer_unit1::heldout_exact_and_fold",
+      "frontend::project::reviewer_unit1::heldout_file_local_expr_blocks",
+      "frontend::project::reviewer_unit1::heldout_first_missing_before_collision",
+      "frontend::project::reviewer_unit1::heldout_fold_only",
+      "frontend::project::reviewer_unit1::heldout_frozen_bytes_survive_disk_replacement_and_removal",
+      "frontend::project::reviewer_unit1::heldout_initial_dimension_precedence_over_root_path_cap",
+      "frontend::project::reviewer_unit1::heldout_inline_mod_rejected",
+      "frontend::project::reviewer_unit1::heldout_intermediate_fold_only",
+      "frontend::project::reviewer_unit1::heldout_invalid_utf8",
+      "frontend::project::reviewer_unit1::heldout_line_index_dense_source_is_separately_preflighted",
+      "frontend::project::reviewer_unit1::heldout_load_before_resolution",
+      "frontend::project::reviewer_unit1::heldout_local_keys_keep_file_and_function_owners",
+      "frontend::project::reviewer_unit1::heldout_measure_source_and_ast_layouts",
+      "frontend::project::reviewer_unit1::heldout_minimal",
+      "frontend::project::reviewer_unit1::heldout_missing_unused",
+      "frontend::project::reviewer_unit1::heldout_modules_exact",
+      "frontend::project::reviewer_unit1::heldout_modules_over",
+      "frontend::project::reviewer_unit1::heldout_name_units_exact",
+      "frontend::project::reviewer_unit1::heldout_name_units_over",
+      "frontend::project::reviewer_unit1::heldout_native_path_identity",
+      "frontend::project::reviewer_unit1::heldout_neither_exact_nor_fold",
+      "frontend::project::reviewer_unit1::heldout_nested_mod_rejected",
+      "frontend::project::reviewer_unit1::heldout_no_mod_ox_fallback",
+      "frontend::project::reviewer_unit1::heldout_no_mod_sources_have_no_new_path_or_depth_policy",
+      "frontend::project::reviewer_unit1::heldout_no_textual_mod_discovery",
+      "frontend::project::reviewer_unit1::heldout_origin_bytes_and_three_file_labels",
+      "frontend::project::reviewer_unit1::heldout_oxbc_before_utf8",
+      "frontend::project::reviewer_unit1::heldout_parent_directory_symlink",
+      "frontend::project::reviewer_unit1::heldout_public_module_header",
+      "frontend::project::reviewer_unit1::heldout_reduced_global_limits_and_preflight_traces",
+      "frontend::project::reviewer_unit1::heldout_repeated_entry_path",
+      "frontend::project::reviewer_unit1::heldout_retained_paths_exact_and_one_below",
+      "frontend::project::reviewer_unit1::heldout_root_parse_before_missing",
+      "frontend::project::reviewer_unit1::heldout_scan_caps_and_checked_arithmetic_precede_iterator_error",
+      "frontend::project::reviewer_unit1::heldout_scan_is_complete_bounded_and_order_independent",
+      "frontend::project::reviewer_unit1::heldout_separate_parent_names",
+      "frontend::project::reviewer_unit1::heldout_sibling_exact_collision",
+      "frontend::project::reviewer_unit1::heldout_sibling_fold_collision",
+      "frontend::project::reviewer_unit1::heldout_source_bytes_precede_artifact_and_encoding",
+      "frontend::project::reviewer_unit1::heldout_tokens_exact",
+      "frontend::project::reviewer_unit1::heldout_tokens_over",
+      "frontend::project::reviewer_unit1::heldout_unrelated_malformed",
+      "frontend::project::reviewer_unit1::heldout_unrelated_nonutf8",
+      "frontend::project::reviewer_unit1::heldout_unrelated_special",
+      "frontend::project::reviewer_unit1::heldout_utf8_crlf_origins"
+    ],
+    "resource_expectations": [
+      {
+        "expected": {
+          "aggregate_source_bytes": 1048576,
+          "code": null,
+          "primary": null,
+          "result": "ok",
+          "stage": null
+        },
+        "id": "bytes_exact"
+      },
+      {
+        "expected": {
+          "aggregate_source_bytes": 1048577,
+          "code": "E0400",
+          "primary": [
+            0,
+            4,
+            5
+          ],
+          "result": "error",
+          "stage": "source"
+        },
+        "id": "bytes_over"
+      },
+      {
+        "expected": {
+          "code": null,
+          "nodes": 1,
+          "primary": null,
+          "result": "ok",
+          "stage": null,
+          "tokens": 100000
+        },
+        "id": "tokens_exact"
+      },
+      {
+        "expected": {
+          "code": "E0400",
+          "nodes": 1,
+          "primary": [
+            1,
+            399980,
+            399984
+          ],
+          "result": "error",
+          "stage": "lex",
+          "tokens": 100001
+        },
+        "id": "tokens_over"
+      },
+      {
+        "expected": {
+          "code": null,
+          "modules": 256,
+          "primary": null,
+          "result": "ok",
+          "stage": null
+        },
+        "id": "modules_exact"
+      },
+      {
+        "expected": {
+          "code": "E0400",
+          "modules": 257,
+          "primary": [
+            0,
+            2554,
+            2558
+          ],
+          "result": "error",
+          "stage": "source-project"
+        },
+        "id": "modules_over"
+      },
+      {
+        "expected": {
+          "code": null,
+          "depth": 32,
+          "primary": null,
+          "result": "ok",
+          "stage": null
+        },
+        "id": "depth_exact"
+      },
+      {
+        "expected": {
+          "code": "E0400",
+          "depth": 33,
+          "primary": [
+            32,
+            4,
+            5
+          ],
+          "result": "error",
+          "stage": "source-project"
+        },
+        "id": "depth_over"
+      },
+      {
+        "expected": {
+          "code": null,
+          "directory_entries": 500,
+          "message": null,
+          "primary": null,
+          "probes": 200,
+          "result": "ok",
+          "scan_entries": 100000,
+          "scan_name_units": 759600,
+          "stage": null
+        },
+        "id": "entries_exact"
+      },
+      {
+        "expected": {
+          "code": "E0400",
+          "directory_entries": 501,
+          "message": "module directory scan budget exceeded",
+          "primary": [
+            0,
+            1994,
+            1998
+          ],
+          "probes": 200,
+          "result": "error",
+          "scan_entries": 100200,
+          "scan_name_units": 761200,
+          "stage": "source-project"
+        },
+        "id": "entries_over"
+      },
+      {
+        "expected": {
+          "code": null,
+          "directory_entries": 780,
+          "directory_name_units": 131072,
+          "message": null,
+          "primary": null,
+          "probes": 128,
+          "result": "ok",
+          "scan_entries": 99840,
+          "scan_name_units": 16777216,
+          "stage": null
+        },
+        "id": "name_units_exact"
+      },
+      {
+        "expected": {
+          "code": "E0400",
+          "directory_entries": 780,
+          "directory_name_units": 131073,
+          "message": "module directory scan budget exceeded",
+          "primary": [
+            0,
+            1274,
+            1278
+          ],
+          "probes": 128,
+          "result": "error",
+          "scan_entries": 99840,
+          "scan_name_units": 16777344,
+          "stage": "source-project"
+        },
+        "id": "name_units_over"
+      }
+    ],
+    "resource_inventories": [
+      {
+        "complete_files": {
+          "bytes": 213,
+          "sha256": "771bb56fa4c2a80e1c87023cd0ecc23daf3f94eeba0afd95b7f469fb9fddc9f5"
+        },
+        "complete_paths": {
+          "bytes": 17,
+          "sha256": "20a5135f8265a61f3f9ac3b7c07a52da96c3eb56436a9c058134f928762bc3ed"
+        },
+        "files": 2,
+        "id": "bytes_exact"
+      },
+      {
+        "complete_files": {
+          "bytes": 213,
+          "sha256": "ec0398fb3d258d32c22cfe756339646d3478da0174a9b27af4939e8112008ee4"
+        },
+        "complete_paths": {
+          "bytes": 17,
+          "sha256": "20a5135f8265a61f3f9ac3b7c07a52da96c3eb56436a9c058134f928762bc3ed"
+        },
+        "files": 2,
+        "id": "bytes_over"
+      },
+      {
+        "complete_files": {
+          "bytes": 212,
+          "sha256": "643edf2ebf51260bee0af9fa2987f433b05b39b27581cdb2e6f98686716a2e79"
+        },
+        "complete_paths": {
+          "bytes": 17,
+          "sha256": "20a5135f8265a61f3f9ac3b7c07a52da96c3eb56436a9c058134f928762bc3ed"
+        },
+        "files": 2,
+        "id": "tokens_exact"
+      },
+      {
+        "complete_files": {
+          "bytes": 212,
+          "sha256": "0cd05febb35cfe8833ec27b94d0d463263bd8d76127beaaabcf8ef062a4311bf"
+        },
+        "complete_paths": {
+          "bytes": 17,
+          "sha256": "20a5135f8265a61f3f9ac3b7c07a52da96c3eb56436a9c058134f928762bc3ed"
+        },
+        "files": 2,
+        "id": "tokens_over"
+      },
+      {
+        "complete_files": {
+          "bytes": 26883,
+          "sha256": "8b706c45b2caa46dd43e00593d275e7a04922444b1a6fa94fee727babb3d07be"
+        },
+        "complete_paths": {
+          "bytes": 2560,
+          "sha256": "aff2ac53dacd7eef33e3b52be58e5f2346732799a360b16d72fbd1b04329d17f"
+        },
+        "files": 256,
+        "id": "modules_exact"
+      },
+      {
+        "complete_files": {
+          "bytes": 26988,
+          "sha256": "b67858a9ab7fddfb48ea7cf7d1570020fbbb14baaf240c3fbc8ba7b5e19374a1"
+        },
+        "complete_paths": {
+          "bytes": 2570,
+          "sha256": "97f0480c57fd7c9c39e522b09a9393494ca320a7a2b35f11a79a44e40c2fd527"
+        },
+        "files": 257,
+        "id": "modules_over"
+      },
+      {
+        "complete_files": {
+          "bytes": 4361,
+          "sha256": "a69102c0ed4d314045b147fde677921c8f4da1622a15eb972a500a3235437557"
+        },
+        "complete_paths": {
+          "bytes": 1226,
+          "sha256": "40efd9579de5665ec5790f5c36077870a1b0322e9e8f747a4c16d103cc182058"
+        },
+        "files": 33,
+        "id": "depth_exact"
+      },
+      {
+        "complete_files": {
+          "bytes": 4527,
+          "sha256": "326822d75cebffe2e01f21bce5d48563250ad933e1b6e443d62b11b381ac1836"
+        },
+        "complete_paths": {
+          "bytes": 1297,
+          "sha256": "80026c25b827984868f0219f88d33c427053f65d308c4d9e9b008c82d927f603"
+        },
+        "files": 34,
+        "id": "depth_over"
+      },
+      {
+        "complete_files": {
+          "bytes": 52802,
+          "sha256": "a23bfe9d207c5874b51a978b6ac9ea820e6a39351e6215b265975926f126d228"
+        },
+        "complete_paths": {
+          "bytes": 5299,
+          "sha256": "6d9227ca788065d5b4f06da8e6d01d83a84ca001cd82f446626d84e045960184"
+        },
+        "files": 500,
+        "id": "entries_exact"
+      },
+      {
+        "complete_files": {
+          "bytes": 52908,
+          "sha256": "46a6e0364ee52903283228226f7215b7b05c3ea624109f22afc79cb60db318ba"
+        },
+        "complete_paths": {
+          "bytes": 5310,
+          "sha256": "5b7c314f902c7e55d30e1a8a83379beb5aac55c3e13eac4692ceeec2fc87baef"
+        },
+        "files": 501,
+        "id": "entries_over"
+      },
+      {
+        "complete_files": {
+          "bytes": 207516,
+          "sha256": "7dc69060e9e0da35513430bea9003b0c4f56d1eddc53b00558934f2ac2fe6b71"
+        },
+        "complete_paths": {
+          "bytes": 133413,
+          "sha256": "7cd4b2dba06cb02ca1fa545a3fa1f3f76e1f71cfd61e81e7dbc0183da2bbe8b6"
+        },
+        "files": 780,
+        "id": "name_units_exact"
+      },
+      {
+        "complete_files": {
+          "bytes": 207517,
+          "sha256": "10db93ab0bce4e69dde0c88fb7d6f34b7a66857908f2fac454683692b6df12d8"
+        },
+        "complete_paths": {
+          "bytes": 133414,
+          "sha256": "95b4e5ab08717b1d92abe101187710c533ed650ff7c128f1b5c8eb4532480e28"
+        },
+        "files": 780,
+        "id": "name_units_over"
+      }
+    ]
+  },
+  "execution_qualified": false,
+  "inputs": {
+    "src/frontend/project.rs": {
+      "bytes": 174215,
+      "sha256": "886590c847516fac273826f0e8f0cf34fe37d66a0c6933d88385e4b288d5df84"
+    },
+    "src/main.rs": {
+      "bytes": 132467,
+      "sha256": "73b79fa86e076a48bf3a0ca7548a1864b9a2928670f9e13512c280a63fec93cb"
+    },
+    "tests/fixtures/package_dependency_source_v1/package-dependency-source-v1.json": {
+      "bytes": 74565,
+      "sha256": "f67d373bf5e2f8e620e17fa3f8fc8234211338738d46d65bbdf5658e0e34eac5"
+    },
+    "tests/fixtures/typed_project_source_binding/authority.json": {
+      "bytes": 9916,
+      "sha256": "73e3f96fa48bf3d478c923681108bb119bce4d5eb8441f763d72c29a596e09ce"
+    },
+    "tests/fixtures/typed_project_source_binding/current-source.json": {
+      "bytes": 74328,
+      "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+    },
+    "tests/fixtures/typed_project_source_binding/package-manifest.json": {
+      "bytes": 15335,
+      "sha256": "5fb5ee78a42609dab51f8e8bb23c325305954f49c52f0d18df6bbe47e57548bc"
+    },
+    "tests/fixtures/typed_project_source_binding/run.py": {
+      "bytes": 2360,
+      "sha256": "164d1e6213e140aca02f8f4a29c716f8af6c4af26e166e18fc0777251c0c2e1e"
+    },
+    "tests/fixtures/typed_project_unit1_independent/README.md": {
+      "bytes": 5101,
+      "sha256": "cb2938d8736cc8e6835240725ab1a4617af47995bc44967b66a01bfa78fb5030"
+    },
+    "tests/fixtures/typed_project_unit1_independent/check_resource_inventory.py": {
+      "bytes": 1604,
+      "sha256": "707dec748db063b23fd7317cac5320800709fd724eea70dc005f4f4104af0b99"
+    },
+    "tests/fixtures/typed_project_unit1_independent/expectation-provenance.json": {
+      "bytes": 2885,
+      "sha256": "c88f045de40b8de19ba1ff9e894f14af9525f84b0afcf83d1a68d477aba9ceb2"
+    },
+    "tests/fixtures/typed_project_unit1_independent/expected-fixtures.json": {
+      "bytes": 30911,
+      "sha256": "33cc6d06bd4487f7ef6b34d626278d6b2a8e6979526b999ef6beffa48ba21965"
+    },
+    "tests/fixtures/typed_project_unit1_independent/expected-resources.json": {
+      "bytes": 758448,
+      "sha256": "5ecc8e2e085c8f576db81450503f5e36d1f26bd8a3fa23e34ae22bd686c1c246"
+    },
+    "tests/fixtures/typed_project_unit1_independent/expected-test-roster.json": {
+      "bytes": 5295,
+      "sha256": "331bf92273fb3f9904aeff24e279ff546387a211239e0ae7ce1ac20c04468f79"
+    },
+    "tests/fixtures/typed_project_unit1_independent/generate_reviewer_tests.py": {
+      "bytes": 5573,
+      "sha256": "6a156c8bb7583a3f7963be5b7c69ae6d685d9df6e4262b8bc3169decbf030b34"
+    },
+    "tests/fixtures/typed_project_unit1_independent/materialize_fixtures.py": {
+      "bytes": 10286,
+      "sha256": "c451d2eb217987ca0fb4eaaf5550d3d28e7e261f323cfaef786b36ae4463e5d4"
+    },
+    "tests/fixtures/typed_project_unit1_independent/materialize_resource_fixtures.py": {
+      "bytes": 4549,
+      "sha256": "ee336761c659b567514fae35ef78822f221b944b37906e400ccc7e65ab0ffc5b"
+    },
+    "tests/fixtures/typed_project_unit1_independent/origin_oracle.py": {
+      "bytes": 2048,
+      "sha256": "0609720e521cf429e5ddaf57eb836896e296bf58d427e43a4f03501e9eec4087"
+    },
+    "tests/fixtures/typed_project_unit1_independent/reviewer_additional.rs": {
+      "bytes": 14752,
+      "sha256": "db72d3efc3ea17abfc5a59f674a0a71b77ee784d2cfb2330e7af103910ecef61"
+    },
+    "tests/fixtures/typed_project_unit1_independent/reviewer_v2.rs": {
+      "bytes": 2790,
+      "sha256": "9fb3755f9bf57d63706b967ebf165465d97764f85e1d13a4896ac92cfcc3075e"
+    },
+    "tests/fixtures/typed_project_unit1_independent/run.py": {
+      "bytes": 10475,
+      "sha256": "dde21d9239b474186a64ddd5b9c31885e3d4435171082da8d1919c78cfad8bff"
+    },
+    "tests/fixtures/typed_project_unit1_independent/run_reviewer.py": {
+      "bytes": 4000,
+      "sha256": "68ce63c59f2c65888462b1e928c16f4d70c2902741d54f10c91c5d551fb74b9d"
+    },
+    "tests/fixtures/typed_project_unit1_independent/rust_strings.py": {
+      "bytes": 400,
+      "sha256": "1a9045893bead9c336c0a66cb4a68b750a8b2295acb009e9f79e4ccd6655edb8"
+    },
+    "tests/fixtures/typed_project_unit1_independent/scalar_schedule_heldout.rs": {
+      "bytes": 1630,
+      "sha256": "48251a31f3cf9217de7482182fcc7a9ac0818b0a9146a151f82dda0993150506"
+    },
+    "tests/qualification/lexer_reservation_current/adapters.py": {
+      "bytes": 10711,
+      "sha256": "0520fbf2c651f9b22897a19937c54749b0153ee234bae424dc4132d48e198e2a"
+    },
+    "tests/qualification/lexer_reservation_current/test_unit1_current.py": {
+      "bytes": 16917,
+      "sha256": "9229032984b3cf1807af59761ad5c99d2ffa83efdd6fcdcdb934c0dd5e4875ca"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_correspondence.json": {
+      "bytes": 11340,
+      "sha256": "acecab2344d54ffac8f8e5581d40a667ad7359fd7baa5852bf4d3d7d9a699e8d"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_current_bindings.json": {
+      "bytes": 1578,
+      "sha256": "9e467aaf5f19850845840c727e3fa95f59393ac88fc2efc46e74e3f6af8e1d32"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_current_support.py": {
+      "bytes": 13587,
+      "sha256": "87a2d19a05366e886b431f92ec3202a56f62e36e13665e77d1b6e11fdc803579"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_derivation.py": {
+      "bytes": 7032,
+      "sha256": "4e363dd5c0f697df4fd96c5a71c820c9a4a4e763d5670dc239ddf426c84c22c5"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_lexer_controls.rs": {
+      "bytes": 2834,
+      "sha256": "2ab00168c56dcbab23ba6b61d983127cc59c4b20ca3fe49e34e0032d8a359c09"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_original_package.json": {
+      "bytes": 4065,
+      "sha256": "d0ccbbd78ff138f15791b55aed88bb33eaf6b68c69022ccb6bf0096f9ae069c3"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_reviewer_additional.current.rs": {
+      "bytes": 16142,
+      "sha256": "90628df4db9b9cd543f80b7b65a484c2317f240258d98940204d6f2707a706ba"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_run_current.py": {
+      "bytes": 11012,
+      "sha256": "7aeeb11b399ae0ffc7fa794cd1bb31b0a85ddd8f2f8b501cc2edd99451f88f37"
+    },
+    "tests/qualification/lexer_reservation_current/unit1_run_reviewer_current.py": {
+      "bytes": 5235,
+      "sha256": "6af2f1a7a5226db7b2ec3ca506b73543183723979970a5c9ce316285aac80c54"
+    }
+  },
+  "members": [
+    "unit1-both"
+  ],
+  "operational_release": null,
+  "owner_registration": null,
+  "proposed_owner_api": {
+    "limitations": "The retained subprocess functions and temporary-tree cleanup are preserved source, not approved process/artifact ownership. No arbitrary callback is accepted. Replacing the hold requires separate original owner implementation and review.",
+    "original_job_context": "_package_dependency_original_job_context is only an explicitly named future owner injection; it is not accepted by the held gate",
+    "policy": "current_policy(original_job_context).unit1_support",
+    "status": "inert design surface only; no facade exists or is issued",
+    "support_calls": [
+      "authenticate()",
+      "original_package()",
+      "rust_string_literal(value)",
+      "admit(original_job_context, repo, source_projection=\"current-all376\")",
+      "capture_prepared_input(original_job_context, admission, source, source_files, role=\"unit1-review\")",
+      "stage(q)",
+      "check_prepared_input(original_job_context, admission, prepared_source, source, source_files, q)",
+      "summary_fields(original_job_context, admission, prepared_source)",
+      "include_control(test)",
+      "seal_prepared_source(original_job_context, admission, prepared_source, source, source_files, compiled_sources, q, test, role=\"unit1-review\")",
+      "profile_guard(original_job_context, repo, admission, prepared_source, source, compiled_sources, q, profile=profile)",
+      "associate_test_artifact(original_job_context, admission, prepared_source, profile, argv, build, binary, binary_sha)",
+      "check_profile_results(results)",
+      "check_terminal(original_job_context, repo, admission, prepared_source, source, compiled_sources, q)"
+    ],
+    "support_data": [
+      "ORIGINAL_NAMES"
+    ]
+  },
+  "recipes": {
+    "unit1-both": {
+      "derived": {
+        "bytes": 12398,
+        "sha256": "d384cb7b8f6db3b48b50b4e4ac745ce860aa3bc2b6cc8000f0a6e17ae53765ed"
+      },
+      "derived_definitions": [
+        {
+          "ast": {
+            "bytes": 784,
+            "sha256": "3da6111f94d447ff8661787550ea7ce61c3dad88a5efd368508964119eff3e2e"
+          },
+          "body": {
+            "bytes": 64,
+            "sha256": "9e28fd965644229dc6c99949612a2426c3ec5eb94cbcc3e1acfff9620ef9f15f"
+          },
+          "kind": "FunctionDef",
+          "name": "digest"
+        },
+        {
+          "ast": {
+            "bytes": 953,
+            "sha256": "0a94c14f79937ca510b91e55457854ee05109dbda93bc3de463e54d9ef69393e"
+          },
+          "body": {
+            "bytes": 69,
+            "sha256": "3cf4cfc8023bc45945f46dc2f12f7f742d923b2352be86947e2c1f6f6d99fdb1"
+          },
+          "kind": "FunctionDef",
+          "name": "save_json"
+        },
+        {
+          "ast": {
+            "bytes": 1070,
+            "sha256": "9c593c4fe809d52f2a435d02322ea6245bfa5a1392e4bccc0a049271650a687a"
+          },
+          "body": {
+            "bytes": 101,
+            "sha256": "1c19744ef6f5d92c50358719f934d6b43c7e681b2f572b3027c13e285225bce5"
+          },
+          "kind": "FunctionDef",
+          "name": "run"
+        },
+        {
+          "ast": {
+            "bytes": 2055,
+            "sha256": "9260a32b2cd18eb38d19dafea1fd3e601c1426146338d1b689770eeb46d25d2f"
+          },
+          "body": {
+            "bytes": 178,
+            "sha256": "74932b2dd3851994e63a6b7c272f3245f7e7b22f564bf0bec36039bd3f381899"
+          },
+          "kind": "FunctionDef",
+          "name": "checked"
+        },
+        {
+          "ast": {
+            "bytes": 68055,
+            "sha256": "25d2cb070b61b9a79802c7c49f2d7c4d68d314424a36c7d33f4f539986738242"
+          },
+          "body": {
+            "bytes": 10942,
+            "sha256": "1ddae45812d3a5ea869ec49d710d79e7f305396cf7a62f42deeb354ef1de8567"
+          },
+          "kind": "FunctionDef",
+          "name": "main"
+        },
+        {
+          "ast": {
+            "bytes": 2613,
+            "sha256": "5452340fc8710f29f23f423ef592d831d2a07a00e12f58f64b460db4c1e4e8ca"
+          },
+          "body": {
+            "bytes": 275,
+            "sha256": "676000c4b7564c78918b52e9f0932e7653fe476998fda43370ae2857486c527c"
+          },
+          "kind": "FunctionDef",
+          "name": "main.ignore"
+        }
+      ],
+      "edits": [
+        {
+          "after": "raise RuntimeError('Inert Unit1 derivation: original source/process/artifact owner release required')\n#!/usr/bin/env python3\n",
+          "before": "#!/usr/bin/env python3\n",
+          "count": 1,
+          "island": "unconditional-inert-first-executable-barrier"
+        },
+        {
+          "after": "from tests.qualification.package_dependency_unit1_current_v1 import unit1 as current_adapter\n# This policy gate is unconditionally held; no ambient module or document is authority.\ncurrent = current_adapter.current_policy(_package_dependency_original_job_context).unit1_support\n",
+          "before": "import unit1_current_support as current\n",
+          "count": 1,
+          "island": "named-held-owner-support-binding"
+        },
+        {
+          "after": "    args=ap.parse_args()\n    if args.profile != 'both':raise RuntimeError('unit1-both requires both debug and release')\n",
+          "before": "    args=ap.parse_args()\n",
+          "count": 1,
+          "island": "unit1-both-fixed-profile"
+        },
+        {
+          "after": "    current_admission=current.admit(_package_dependency_original_job_context,repo,source_projection='current-all376')\n",
+          "before": "    current_admission=current.admit(repo)\n",
+          "count": 1,
+          "island": "current-source-admission-explicit-original-context"
+        },
+        {
+          "after": "        save_json(q/'input-source-manifest.json',{'repo':str(repo),'files':source_files})\n        prepared_source=current.capture_prepared_input(_package_dependency_original_job_context,current_admission,source,source_files,role='unit1-review')\n",
+          "before": "        save_json(q/'input-source-manifest.json',{'repo':str(repo),'files':source_files})\n",
+          "count": 1,
+          "island": "owner-copied-input-association-before-staging"
+        },
+        {
+          "after": "        current.check_prepared_input(_package_dependency_original_job_context,current_admission,prepared_source,source,source_files,q)\n",
+          "before": "        current.check_admission(source,current_admission)\n",
+          "count": 1,
+          "island": "copied-directory-is-not-a-git-context"
+        },
+        {
+          "after": "        summary.update(current.summary_fields(_package_dependency_original_job_context,current_admission,prepared_source))\n",
+          "before": "        summary.update(current.summary_fields(current_admission))\n",
+          "count": 1,
+          "island": "current-summary-association"
+        },
+        {
+          "after": "            save_json(q/'compiled-source-manifest.json',{'files':compiled_sources,'test_include':'Only the isolated project.rs gained the qualification module'})\n            prepared_source=current.seal_prepared_source(_package_dependency_original_job_context,current_admission,prepared_source,source,source_files,compiled_sources,q,test,role='unit1-review')\n",
+          "before": "            save_json(q/'compiled-source-manifest.json',{'files':compiled_sources,'test_include':'Only the isolated project.rs gained the qualification module'})\n",
+          "count": 1,
+          "island": "prepared-image-seal-after-exact-original-include"
+        },
+        {
+          "after": "                current.profile_guard(_package_dependency_original_job_context,repo,current_admission,prepared_source,source,compiled_sources,q,profile=profile)\n",
+          "before": "                current.profile_guard(repo,current_admission,source,compiled_sources,q)\n",
+          "count": 2,
+          "island": "both-profile-source-image-owner-guards"
+        },
+        {
+          "after": "                binary=Path(executables[0]);binary_sha=digest(binary)\n                current.associate_test_artifact(_package_dependency_original_job_context,current_admission,prepared_source,profile,argv,build,binary,binary_sha)\n",
+          "before": "                binary=Path(executables[0]);binary_sha=digest(binary)\n",
+          "count": 1,
+          "island": "actual-owner-test-artifact-association"
+        },
+        {
+          "after": "            current.check_terminal(_package_dependency_original_job_context,repo,current_admission,prepared_source,source,compiled_sources,q)\n",
+          "before": "            current.check_admission(repo,current_admission)\n",
+          "count": 1,
+          "island": "terminal-current-context-and-image-readmission"
+        }
+      ],
+      "retained": {
+        "bytes": 11012,
+        "sha256": "7aeeb11b399ae0ffc7fa794cd1bb31b0a85ddd8f2f8b501cc2edd99451f88f37"
+      },
+      "retained_path": "tests/qualification/lexer_reservation_current/unit1_run_current.py"
+    }
+  },
+  "required_owner_contract": {
+    "admit": "Original live A context must readmit all 376 actual current source bodies, actual clean committed checkout HEAD/tree and complete trusted controller closure. Current manifest/checkpoint/main remain separate from all historical fields.",
+    "capture_prepared_input": "Original source/process owner captures complete copied source inventory, retained generated/tool exclusions and all current members before mutation. A copied directory is checked against that owner inventory and is not treated as an A Git checkout.",
+    "check_profile_results": "Retain exact 69 distinct original names and one lexer control, all 70 discovery names, 25-second named invocations, exit 0 and exactly one 1/0/0/0 result plus named pass.",
+    "historical_authenticate": "Preserve exact historical authenticate and all three inverses. It authenticates historical maps/inputs only; old admit is never current authority.",
+    "process": "No original process recipe, fixture operation, build/test operation, supervisor, machine/tool admission or artifact recipe is added. All remain gates of separately reviewed actual owners.",
+    "profile_guard": "Original context, complete staged source/helper maps, exact source image, roster, binary and full resource inventories checked before and after each debug/release profile.",
+    "registration": "A currently registers bounded only. New canonical immutable Unit1 policy and owner-injected support require separate reviewed A registration/seals. Module/path/hash or a serialized context confers no authority.",
+    "route": "Original ci.yml:L77 remains an unexecuted obligation; no workflow, route map, source package, old support or carrier is modified.",
+    "seal_prepared_source": "Owner-issued unit1-review role permits only exact original Linux/x86_64 project.rs append with correctly encoded generated reviewer Rust path, absent prior include and distinct lexer control include. Retain full pre/post maps and exact append bytes; preserve every other copied source body and original repository.",
+    "stage": "Preserve complete 16-member historical package, sole reviewed lexer-counter adaptation, three staging additions, complete correspondence and generated fixtures. Only canonical_root_file_hex and canonical_child_hex are removed for fixture equality.",
+    "status": "unimplemented; no live authority accepted or issued",
+    "summary_fields": "Current manifest/main/checkpoint, original context, image and terminal links belong in separately named current fields. Historical maps/globals remain unchanged; semantic_pass is false for source admission.",
+    "terminal": "Readmit original source, full prepared/staged closure, both binary/resource joins, actual process/artifact records and terminal context. Preserve failures, original/compiled-source evidence and required executable artifacts through actual owners, despite retained legacy temporary cleanup.",
+    "test_artifact": "Original artifact/process owner must join the exact prepared image, test target, profile, fresh selected actual binary and successful original process completion. CompletedProcess, digest, caller object or old summary is insufficient; no artifact adopted here."
+  },
+  "retained_controls": {
+    "tests/qualification/lexer_reservation_current/test_unit1_current.py": 18
+  },
+  "retained_definitions": {
+    "tests/fixtures/typed_project_source_binding/run.py": [
+      {
+        "ast": {
+          "bytes": 1886,
+          "sha256": "b3cca06b3fb1550b6c3980879242f7408fd6ef0939ef0714f1f0c697b5cc9cbc"
+        },
+        "body": {
+          "bytes": 230,
+          "sha256": "5c3922c4729148bf3d263f69be05e0b49f3d1694fa7f4fa7619caf4f29f1ab2a"
+        },
+        "kind": "FunctionDef",
+        "name": "_read_regular"
+      }
+    ],
+    "tests/fixtures/typed_project_unit1_independent/check_resource_inventory.py": [],
+    "tests/fixtures/typed_project_unit1_independent/generate_reviewer_tests.py": [],
+    "tests/fixtures/typed_project_unit1_independent/materialize_fixtures.py": [
+      {
+        "ast": {
+          "bytes": 10151,
+          "sha256": "7af26c3c3d07a45fbacadec17e9a48b2b5ed108f285f6a0598bc432989a9ec62"
+        },
+        "body": {
+          "bytes": 1477,
+          "sha256": "903d5d5ba0c068bae7187a0282d1a4c9bf9ae09369d00b8607f316111b884b51"
+        },
+        "kind": "FunctionDef",
+        "name": "fixture"
+      }
+    ],
+    "tests/fixtures/typed_project_unit1_independent/materialize_resource_fixtures.py": [
+      {
+        "ast": {
+          "bytes": 1326,
+          "sha256": "d70fa7bc6331f53c73e1e8540188ec9868d4eb22093275493af486c128a161aa"
+        },
+        "body": {
+          "bytes": 92,
+          "sha256": "9d4a76dff5ccf19c855a1bae2366b32b066ade49589ba385a8360e9e62820aa8"
+        },
+        "kind": "FunctionDef",
+        "name": "put"
+      },
+      {
+        "ast": {
+          "bytes": 3351,
+          "sha256": "65cd1871af5b3f26e0e00fa68fefe7b83ad32707dde7c63df2becbd4a8c1c841"
+        },
+        "body": {
+          "bytes": 332,
+          "sha256": "72be7b1baceb65ad8235afa975fff0a1df552c540c4442192cfc375fca1dc64f"
+        },
+        "kind": "FunctionDef",
+        "name": "record"
+      },
+      {
+        "ast": {
+          "bytes": 2045,
+          "sha256": "cdd13cf899fd6f8c8f922039be20587c22a2c64eee13fa66420480183b842044"
+        },
+        "body": {
+          "bytes": 186,
+          "sha256": "9aa9e6950d35287b4acd7a4e00fd9da66500d6238a54e244b7c614aa83cb8233"
+        },
+        "kind": "FunctionDef",
+        "name": "comments"
+      }
+    ],
+    "tests/fixtures/typed_project_unit1_independent/origin_oracle.py": [
+      {
+        "ast": {
+          "bytes": 3033,
+          "sha256": "5e0c48768ff2f749337a122b60153fb9c6352bb7ebd9882a020604eb21dd5cb7"
+        },
+        "body": {
+          "bytes": 259,
+          "sha256": "1e7988067b3413199710030c766634ea3c28842ec56b77ce4efac30df423cde2"
+        },
+        "kind": "FunctionDef",
+        "name": "valid"
+      },
+      {
+        "ast": {
+          "bytes": 1932,
+          "sha256": "b7d091d68ad5a360f480a814e8aac1e11e14a545fd9f58262347f68698f4ba64"
+        },
+        "body": {
+          "bytes": 219,
+          "sha256": "9ecaf3416d5b09c3ec52b9e55a4046910e9bbc444a95aee404b67c71a5450fcd"
+        },
+        "kind": "FunctionDef",
+        "name": "loc"
+      },
+      {
+        "ast": {
+          "bytes": 2595,
+          "sha256": "2d2f7247f5c8f63ffd722d1b9db0b8f5ddcac957ae71de86825b71baea29bb4d"
+        },
+        "body": {
+          "bytes": 234,
+          "sha256": "d766cdf22483310cd6ba8bb8beb39ddbe20537e5a7fc8ab688261d5c1803d60c"
+        },
+        "kind": "FunctionDef",
+        "name": "origin"
+      }
+    ],
+    "tests/fixtures/typed_project_unit1_independent/run.py": [
+      {
+        "ast": {
+          "bytes": 784,
+          "sha256": "3da6111f94d447ff8661787550ea7ce61c3dad88a5efd368508964119eff3e2e"
+        },
+        "body": {
+          "bytes": 64,
+          "sha256": "9e28fd965644229dc6c99949612a2426c3ec5eb94cbcc3e1acfff9620ef9f15f"
+        },
+        "kind": "FunctionDef",
+        "name": "digest"
+      },
+      {
+        "ast": {
+          "bytes": 953,
+          "sha256": "0a94c14f79937ca510b91e55457854ee05109dbda93bc3de463e54d9ef69393e"
+        },
+        "body": {
+          "bytes": 69,
+          "sha256": "3cf4cfc8023bc45945f46dc2f12f7f742d923b2352be86947e2c1f6f6d99fdb1"
+        },
+        "kind": "FunctionDef",
+        "name": "save_json"
+      },
+      {
+        "ast": {
+          "bytes": 1070,
+          "sha256": "9c593c4fe809d52f2a435d02322ea6245bfa5a1392e4bccc0a049271650a687a"
+        },
+        "body": {
+          "bytes": 101,
+          "sha256": "1c19744ef6f5d92c50358719f934d6b43c7e681b2f572b3027c13e285225bce5"
+        },
+        "kind": "FunctionDef",
+        "name": "run"
+      },
+      {
+        "ast": {
+          "bytes": 2055,
+          "sha256": "9260a32b2cd18eb38d19dafea1fd3e601c1426146338d1b689770eeb46d25d2f"
+        },
+        "body": {
+          "bytes": 178,
+          "sha256": "74932b2dd3851994e63a6b7c272f3245f7e7b22f564bf0bec36039bd3f381899"
+        },
+        "kind": "FunctionDef",
+        "name": "checked"
+      },
+      {
+        "ast": {
+          "bytes": 60497,
+          "sha256": "f7fcfa25c3253ab6fa62f1dbaba8909dd2bd0a8526be6b7da448e4728166a9cb"
+        },
+        "body": {
+          "bytes": 9399,
+          "sha256": "f4b2dea45e3e940cd27ccbff09f6524f68ef6e64f6d8e3d48e1f14ae1dcaf541"
+        },
+        "kind": "FunctionDef",
+        "name": "main"
+      },
+      {
+        "ast": {
+          "bytes": 2613,
+          "sha256": "5452340fc8710f29f23f423ef592d831d2a07a00e12f58f64b460db4c1e4e8ca"
+        },
+        "body": {
+          "bytes": 275,
+          "sha256": "676000c4b7564c78918b52e9f0932e7653fe476998fda43370ae2857486c527c"
+        },
+        "kind": "FunctionDef",
+        "name": "main.ignore"
+      }
+    ],
+    "tests/fixtures/typed_project_unit1_independent/run_reviewer.py": [],
+    "tests/fixtures/typed_project_unit1_independent/rust_strings.py": [
+      {
+        "ast": {
+          "bytes": 3065,
+          "sha256": "0fd9d964ee601131b80e45a412866e4e4cd2ad66f382f1955679eb8bc5414606"
+        },
+        "body": {
+          "bytes": 315,
+          "sha256": "64ee6e5fe775779caa0dfd375a9209d498f84172af82c262a43ad5004f143d32"
+        },
+        "kind": "FunctionDef",
+        "name": "rust_string_literal"
+      }
+    ],
+    "tests/qualification/lexer_reservation_current/adapters.py": [
+      {
+        "ast": {
+          "bytes": 175,
+          "sha256": "50f7426fd8ace45cec9c3cae842bc2de3a7a319d8a432aee9e5a798ad31dbce8"
+        },
+        "body": {
+          "bytes": 35,
+          "sha256": "dc5bcd9240431d941d93ee0f8fa2f61c20213bf6f1686a042a0e920a9965c656"
+        },
+        "kind": "ClassDef",
+        "name": "Reject"
+      },
+      {
+        "ast": {
+          "bytes": 717,
+          "sha256": "ca0f7fec4e775e8985e988a574794eec0430393b2a2bd400880e561624ccf251"
+        },
+        "body": {
+          "bytes": 80,
+          "sha256": "e8164d99f02dfb293586556a99053497195c99180b4e6cc21f396a634c6b23e2"
+        },
+        "kind": "FunctionDef",
+        "name": "need"
+      },
+      {
+        "ast": {
+          "bytes": 671,
+          "sha256": "a41f489d96ca143e40a05119dc4e551ac548bc1fdf1e186625b5dc212b9a08d5"
+        },
+        "body": {
+          "bytes": 59,
+          "sha256": "49e110912c5541e4e98fbdcadcb11f15844d80fc4a6963ad61c32a59c1b414a3"
+        },
+        "kind": "FunctionDef",
+        "name": "sha"
+      },
+      {
+        "ast": {
+          "bytes": 916,
+          "sha256": "5b14279d0d5c120ad6479a5658f05d784bb0dcf5615a3d5df470df7629853da7"
+        },
+        "body": {
+          "bytes": 92,
+          "sha256": "1193d0343b6d0d532b8e614b3bccb4c35828491d0cb46910ed73b65e46221db0"
+        },
+        "kind": "FunctionDef",
+        "name": "binding"
+      },
+      {
+        "ast": {
+          "bytes": 1040,
+          "sha256": "167b48b853ca9b69b183cf4acd05c8f4d9d1ccfaa903c0849c8e83289e1e9ddc"
+        },
+        "body": {
+          "bytes": 113,
+          "sha256": "098825e7915268f8b77b12f6e0a8a539f3e8183ddcb94425ec6f11b41d901107"
+        },
+        "kind": "FunctionDef",
+        "name": "verify"
+      },
+      {
+        "ast": {
+          "bytes": 2949,
+          "sha256": "76ddd8b47c920391238274b21dc526190cc4fd49467d43670e39515d524af203"
+        },
+        "body": {
+          "bytes": 500,
+          "sha256": "5dd69f7cbac4c7b5ff8f1892e57842fe1bfb454a656bf93e1da444528334e322"
+        },
+        "kind": "FunctionDef",
+        "name": "replace_exact"
+      },
+      {
+        "ast": {
+          "bytes": 1904,
+          "sha256": "5973886199ba433d0cc577aad125f46daf3036c380c076f49893c8f95cf80f77"
+        },
+        "body": {
+          "bytes": 260,
+          "sha256": "51c404d207fe45e622a982316ac794ee821061d54fc9a01bbbf524ecadfeaed4"
+        },
+        "kind": "FunctionDef",
+        "name": "inverse_exact"
+      },
+      {
+        "ast": {
+          "bytes": 6568,
+          "sha256": "e1e295781833ad766aa64b1e9ec4f133794a388616ffefea91ce247b8b1488eb"
+        },
+        "body": {
+          "bytes": 1325,
+          "sha256": "379d5d4bf251159b868796d453f1b8a4f0919e2a436c5fdf801f00f409ad0727"
+        },
+        "kind": "FunctionDef",
+        "name": "unit1_counter_domain"
+      },
+      {
+        "ast": {
+          "bytes": 4731,
+          "sha256": "4ef92d1db2177a55157f390bf888c044398b689c92df00d62f8cba5263bcade3"
+        },
+        "body": {
+          "bytes": 754,
+          "sha256": "4644da76eee2e7aa30b272d48d7015663d80df39302bdec1fb6e595c28c6e33f"
+        },
+        "kind": "FunctionDef",
+        "name": "lexer_schedule"
+      },
+      {
+        "ast": {
+          "bytes": 6644,
+          "sha256": "32decf1e568bef07d0ab82cb19d20d2c1916e702a1661db39c4d2ed4c0ef49f5"
+        },
+        "body": {
+          "bytes": 1558,
+          "sha256": "6ff305c57ca81a46aca1a9a63f5d7ae898ab12aeebc588615d785469494e3164"
+        },
+        "kind": "FunctionDef",
+        "name": "instrument_lexer"
+      },
+      {
+        "ast": {
+          "bytes": 4441,
+          "sha256": "13ef6a044b4611a4d2b8da946a30f5c5aa0ae04e44e9b14ab0510367f7ca1be1"
+        },
+        "body": {
+          "bytes": 773,
+          "sha256": "f7a5026c0418d85d0e6a2912ad8299c0e02d128dab25ec2802a0b7c965ef1d60"
+        },
+        "kind": "FunctionDef",
+        "name": "unit1_correspondence"
+      },
+      {
+        "ast": {
+          "bytes": 3269,
+          "sha256": "a7dc5c1dcb23c37eb019ad08fb68a657abe6820272a511d55e503e8397bbdfc3"
+        },
+        "body": {
+          "bytes": 974,
+          "sha256": "8df1aac82d61e7b4e3c9ba821774f20b6d3556e51dd8e8d63373ff585e031b1f"
+        },
+        "kind": "FunctionDef",
+        "name": "instrument_budget"
+      }
+    ],
+    "tests/qualification/lexer_reservation_current/test_unit1_current.py": [
+      {
+        "ast": {
+          "bytes": 59179,
+          "sha256": "964bd83a235609cb71a223bb8510244b07891c1354e7fc9abc860270ae6920d8"
+        },
+        "body": {
+          "bytes": 9874,
+          "sha256": "f2b64607bf4bf7431f071cb555149b23c767ed5208a7ce4666bd7ced2a4c1f6b"
+        },
+        "kind": "ClassDef",
+        "name": "AuthenticationControls"
+      },
+      {
+        "ast": {
+          "bytes": 4142,
+          "sha256": "b239b606ae235e1bc93be0266a4d19822d130d463dca7162355ba056c850a849"
+        },
+        "body": {
+          "bytes": 716,
+          "sha256": "99e9fa1788da25c5067339c8a9b5ca9fd5b01ab2ca29c8e2b850d7b64f63cd70"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_original_and_current_checkpoints_have_distinct_roles"
+      },
+      {
+        "ast": {
+          "bytes": 7734,
+          "sha256": "47c43e6fca78daf037955aeea9fa53dcdbbedbeb7f77313a30cf9cddeff4a26c"
+        },
+        "body": {
+          "bytes": 1170,
+          "sha256": "16a65995cea08f2c823a04d6802887d875c70b0fced5b9cfd94c4b477c36a142"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_complete_original_and_current_inverse"
+      },
+      {
+        "ast": {
+          "bytes": 5234,
+          "sha256": "6de59ed242c08a3e22f5b9c72c435dc701e8beba6382be65216080a42b176e4d"
+        },
+        "body": {
+          "bytes": 884,
+          "sha256": "1f0a3cb0f92ce39a44e5c6781b80b792f93260b5b562897df4f757d685e2ac15"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_every_runner_seam_missing_duplicate_or_altered_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 8410,
+          "sha256": "a1433e8a7e61927fbc1a08479a60d9d4e305182e4431f8c951f43f67d2de026a"
+        },
+        "body": {
+          "bytes": 1336,
+          "sha256": "975440a54181a6f28d05eb5a5dade7fca5628ccf378606bf5b58a1d3b392d8f9"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_original_mutation_extra_missing_modes_and_symlinks_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 4970,
+          "sha256": "08e8565daf11bc554e7c97b98c8d748da1159e3effc2489a42b56775c8ede2bf"
+        },
+        "body": {
+          "bytes": 812,
+          "sha256": "44d6a71e288bff4c1fc06dc133f01f3f653aaa8a2a88b96c65b879bf6da8d92e"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_every_current_complete_body_and_map_mutation_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 7533,
+          "sha256": "b1230bc889d8aae7c4a1a5ab8cdc5cc09a321ef3d77f4d14c3afc6196f54e884"
+        },
+        "body": {
+          "bytes": 1292,
+          "sha256": "17b9cd0e4084b2c5fa77b5d24fc1ec4dff2a83896e9102877ce6d27863e9f51b"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_staging_changes_only_one_original_body"
+      },
+      {
+        "ast": {
+          "bytes": 3476,
+          "sha256": "2ff4bad273e5afe1eb0f0d8bc2741ee2f57dc038cebdb239f28d48dce6443bd1"
+        },
+        "body": {
+          "bytes": 593,
+          "sha256": "81c030e7c164a8bd55956fd3b8b93d16d66b8040ed4d7a5428f0c6bb5da8af8b"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_control_is_single_separate_include"
+      },
+      {
+        "ast": {
+          "bytes": 4375,
+          "sha256": "dcc6ea88a374e9401f6c037a22c6fcd92c2e75c1bbed65f8ad6b484f05c21742"
+        },
+        "body": {
+          "bytes": 1061,
+          "sha256": "dff0368ac3b2e13fdd0bc768441f88176d817dd2152d31182854b15711d7fa54"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_admission_and_roster_guards_precede_build"
+      },
+      {
+        "ast": {
+          "bytes": 3745,
+          "sha256": "4007dbf2fb4e4b53ed78dd58f8f33eb31c1bb7e28f37bb7867a287cac0e8eaf9"
+        },
+        "body": {
+          "bytes": 585,
+          "sha256": "ccb25dfaaa652d0b89c6e2a263341ddf5790476d41025d3c38c1c007f5fa0647"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_active_admission_rejects_historical_shape_before_any_operation"
+      },
+      {
+        "ast": {
+          "bytes": 2125,
+          "sha256": "ceabb0d48693eea92bde98e6095c5f10d50c6d816e263c849c943e229e4d6afd"
+        },
+        "body": {
+          "bytes": 324,
+          "sha256": "3a581cb6ae916a21cd4e503792f133fd423031f42ea831c92e8a36f1280d3e90"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_changed_trusted_dispatcher_rejected_before_loading"
+      },
+      {
+        "ast": {
+          "bytes": 2838,
+          "sha256": "ec57415cd265c057c784676a4541efab69664e022126732266b22b4c64471718"
+        },
+        "body": {
+          "bytes": 425,
+          "sha256": "6a267641771c7a710b2233ef0e953e15a4a72458762da3f4e661cb063ffaccda"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_changed_trusted_package_rejected_before_loading"
+      },
+      {
+        "ast": {
+          "bytes": 4342,
+          "sha256": "0b9a25ef85ee4442ba5bb380cecefaefe4b527955113b57ef862a8bb9f27de5a"
+        },
+        "body": {
+          "bytes": 616,
+          "sha256": "f311ff54a7bcfd9b2ed3fd4736068f12669a558aeec1da377da7855d6a15cab6"
+        },
+        "kind": "FunctionDef",
+        "name": "AuthenticationControls.test_changed_source_admission_and_compiled_body_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 30055,
+          "sha256": "d66986d0e9232b7d92dad3ee918df5a73f605816b2f7b751f1d63e5b8e973653"
+        },
+        "body": {
+          "bytes": 4656,
+          "sha256": "807b0ce882871d353bfa24218bbdc7079c621c1b5a4bd2b8523c4f85dc8a974e"
+        },
+        "kind": "ClassDef",
+        "name": "ProtocolControls"
+      },
+      {
+        "ast": {
+          "bytes": 7257,
+          "sha256": "9ac834c05f19aa370b4e07cb2f0c508f7ef3d32e86e9b368e3d0caa348894614"
+        },
+        "body": {
+          "bytes": 1177,
+          "sha256": "16f56b7dff17ea3b6e0b82179649580409081fa77cada4480ac5732e651a4d29"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.run_case"
+      },
+      {
+        "ast": {
+          "bytes": 6629,
+          "sha256": "21d7c7bf8f453e1d5881d65671fc17d24b72a86ac0a0cbd70e34d070726dbb1c"
+        },
+        "body": {
+          "bytes": 886,
+          "sha256": "d4fcdd4e3e88ab08838e9ddd75f29900fc0f6f5e7c33f9abd43589ca355f0355"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.test_success_original69_plus_new1"
+      },
+      {
+        "ast": {
+          "bytes": 3164,
+          "sha256": "80b4dd7457d29487a44dac828e1e9f8a56dfa576649219bc0167445e21e180c5"
+        },
+        "body": {
+          "bytes": 524,
+          "sha256": "7c2bce26e737e0bb9ee55f8b2856c55f1f65e6bc4e5e95b6bdd6854f674b3097"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.test_zero_missing_duplicate_substitute_and_failed_listing_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 3359,
+          "sha256": "0eb9e46364b1d3830fb91c092cb69b9410e434f73f11358a9c219692d58eae7a"
+        },
+        "body": {
+          "bytes": 504,
+          "sha256": "878b0129acb1e7c95fe494ec2dce67caaca7c9ce4bf35982ea6f628689a45ec6"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.test_original_execution_failures_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 3611,
+          "sha256": "e573673fb6bc9b5406b7f130a3d24265ec5dfa80772aef8e11df44eb12a60e3d"
+        },
+        "body": {
+          "bytes": 504,
+          "sha256": "440826944f4713defb1a8315d47c6c505dc22f91e89976f104a1464b811801a6"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.test_control_failure_cannot_be_hidden_by_original69"
+      },
+      {
+        "ast": {
+          "bytes": 2913,
+          "sha256": "e9f4bb2f6bb682e09b847a85d30663173b60360179d04d82ab8ea11d0bc8e193"
+        },
+        "body": {
+          "bytes": 481,
+          "sha256": "859a991aa29efb7c36617e9e36343b78de19c05d6f43ce8e3f91076004e1684f"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.test_roster_or_executable_changed_during_execution_rejected"
+      },
+      {
+        "ast": {
+          "bytes": 2421,
+          "sha256": "a3658f2ccd23e5b0eba67831cc55c7aa0395f84ac0e6a7e7feae6fea00f8d6a3"
+        },
+        "body": {
+          "bytes": 447,
+          "sha256": "db4b62b34bc6892d9af317208d0e85972690c1a616611388ac04a2c61f426a91"
+        },
+        "kind": "FunctionDef",
+        "name": "ProtocolControls.test_production_controllers_reject_optimized_python"
+      }
+    ],
+    "tests/qualification/lexer_reservation_current/unit1_current_support.py": [
+      {
+        "ast": {
+          "bytes": 723,
+          "sha256": "a93ba2c46a216571f1a4c45caab0f31cf86f3a98b171900aefd63f8252ed2c04"
+        },
+        "body": {
+          "bytes": 86,
+          "sha256": "3465e0985f3f62e9dea02f78e02f29cfa7b90ed3f7a940310e4ee3984d1993cd"
+        },
+        "kind": "FunctionDef",
+        "name": "need"
+      },
+      {
+        "ast": {
+          "bytes": 671,
+          "sha256": "a41f489d96ca143e40a05119dc4e551ac548bc1fdf1e186625b5dc212b9a08d5"
+        },
+        "body": {
+          "bytes": 59,
+          "sha256": "49e110912c5541e4e98fbdcadcb11f15844d80fc4a6963ad61c32a59c1b414a3"
+        },
+        "kind": "FunctionDef",
+        "name": "sha"
+      },
+      {
+        "ast": {
+          "bytes": 916,
+          "sha256": "5b14279d0d5c120ad6479a5658f05d784bb0dcf5615a3d5df470df7629853da7"
+        },
+        "body": {
+          "bytes": 92,
+          "sha256": "8ae6a5a55aa940fb1c101687ed157f4d8e4146875e78e0dc0f0debda457bf3c8"
+        },
+        "kind": "FunctionDef",
+        "name": "binding"
+      },
+      {
+        "ast": {
+          "bytes": 481,
+          "sha256": "873fc620a62b47ace80051d1ad172aaad5ef1b5539a7f4254ff74bc3f5b62641"
+        },
+        "body": {
+          "bytes": 91,
+          "sha256": "ff684a9e0181396c2c089325d1ec2067c54ca3c36a4275681e57b24fd41ba287"
+        },
+        "kind": "FunctionDef",
+        "name": "original_package"
+      },
+      {
+        "ast": {
+          "bytes": 2230,
+          "sha256": "2561d21b951c5a9097fb18d50c6ec0a26db4964b48d2027b90d9a7442a4bd553"
+        },
+        "body": {
+          "bytes": 276,
+          "sha256": "ac69993b19ad615dee1f97aa5739d632c5ad5db86af7c34617dfe25cfbca4bc0"
+        },
+        "kind": "FunctionDef",
+        "name": "regular"
+      },
+      {
+        "ast": {
+          "bytes": 2233,
+          "sha256": "911b168c43e6224dee903b192c11d5f6749fbc2c4a773e7aa5fb3a42a5ab9954"
+        },
+        "body": {
+          "bytes": 314,
+          "sha256": "48a2d0b37ca6d5cce559b98659c870f7da5caea0e78f0ed0d47a50f69f21bcc5"
+        },
+        "kind": "FunctionDef",
+        "name": "load_module"
+      },
+      {
+        "ast": {
+          "bytes": 1491,
+          "sha256": "887f96e7b48db0e8ed67f617bca229a5c4fe40b1127ecb8398bfdec03501ffcb"
+        },
+        "body": {
+          "bytes": 336,
+          "sha256": "eb522e4cbe9a87d334b7a3ae12937d0081906858eaa93bbe392cfd3a2292325f"
+        },
+        "kind": "FunctionDef",
+        "name": "check_compiler_checkpoints"
+      },
+      {
+        "ast": {
+          "bytes": 27216,
+          "sha256": "7d9fdd3b41aa79faa84e7539e495496d2aa0e26c4871a249cfa08ff8d4b7ab36"
+        },
+        "body": {
+          "bytes": 4588,
+          "sha256": "041714cf02b2ea978ac1c9b281a63df68cacf0cfefb361e72dd7ada143d60140"
+        },
+        "kind": "FunctionDef",
+        "name": "authenticate"
+      },
+      {
+        "ast": {
+          "bytes": 1871,
+          "sha256": "ad8c64e0ccef911fb7f310f0089f9123e89dd95219a12e7d348121e1e121c0c2"
+        },
+        "body": {
+          "bytes": 283,
+          "sha256": "1c143242515e78d2b073cee7d37e438d0284930b2663825f7777d06e349d2804"
+        },
+        "kind": "FunctionDef",
+        "name": "rust_string_literal"
+      },
+      {
+        "ast": {
+          "bytes": 8182,
+          "sha256": "29997b066cdc5b86271b27c5872a9060878bff6708638e678bfcecfd54df59b9"
+        },
+        "body": {
+          "bytes": 1726,
+          "sha256": "4d7e39a667defccbb5897d1c84b54d765582a6d1712f23129f042938274cd4f3"
+        },
+        "kind": "FunctionDef",
+        "name": "admit"
+      },
+      {
+        "ast": {
+          "bytes": 870,
+          "sha256": "4491819609d6c26212fe779cbfabd1bed6672c86572662eb2c9db53d191190db"
+        },
+        "body": {
+          "bytes": 130,
+          "sha256": "67a1bb53b146b22a40d6e3d1ebd79486b0d519158281aa0c9f5f965921c4f77e"
+        },
+        "kind": "FunctionDef",
+        "name": "check_admission"
+      },
+      {
+        "ast": {
+          "bytes": 4889,
+          "sha256": "b62ba4c7e766ddcb07a71ded70fdee06515643ae3fe8232c78c594c59c1332bd"
+        },
+        "body": {
+          "bytes": 758,
+          "sha256": "aa28275a3258bad7258f34a891aeafba0f93038b7650b4dc1c1e373cf0ab0d16"
+        },
+        "kind": "FunctionDef",
+        "name": "stage"
+      },
+      {
+        "ast": {
+          "bytes": 4143,
+          "sha256": "93a8fec8fb67a48c1faec4ceb3c642046340de4fa7598bceb5943ce39ed469a1"
+        },
+        "body": {
+          "bytes": 644,
+          "sha256": "9c5a68a7ad21d2901446e5d17efd7ad3a86d883ce836dd787c1a7d7ddfe5353d"
+        },
+        "kind": "FunctionDef",
+        "name": "check_stage"
+      },
+      {
+        "ast": {
+          "bytes": 1423,
+          "sha256": "254c5baa8b00cc08c8e6691e1d4b45d0b5136e01477f47f8328822b0c1cceb8f"
+        },
+        "body": {
+          "bytes": 232,
+          "sha256": "fde2f22ca1f35232d05cc133375ce3e754b005b01f95364206a06e2270fa2529"
+        },
+        "kind": "FunctionDef",
+        "name": "include_control"
+      },
+      {
+        "ast": {
+          "bytes": 2263,
+          "sha256": "e7fa7ed384594ea7f3320df2841d1c781f06337f1c1b1871e80cecdf8578be6a"
+        },
+        "body": {
+          "bytes": 359,
+          "sha256": "06f86d42ab22b1f2e8fc49aacb8a5e1ba192cefc82beacfa0d96ebc7497282c6"
+        },
+        "kind": "FunctionDef",
+        "name": "profile_guard"
+      },
+      {
+        "ast": {
+          "bytes": 8320,
+          "sha256": "f9c21c67402d4ee6460e85367fe3fc79fe0f8a1f9cdc3793822bcc9476a40465"
+        },
+        "body": {
+          "bytes": 1282,
+          "sha256": "bd96aad36c8f4af08f7a7dc173d849dfd0325d9f8d9d085c1c874e2334cb68d4"
+        },
+        "kind": "FunctionDef",
+        "name": "check_profile_results"
+      },
+      {
+        "ast": {
+          "bytes": 1582,
+          "sha256": "ff367d56ff1c3acecf8049c54f053c3fcb6a67c9b42eeaddbdae83c617bc4836"
+        },
+        "body": {
+          "bytes": 485,
+          "sha256": "775d6b61feebeb010af15d02731f85056c039157537c355ba5e1962cd8a04282"
+        },
+        "kind": "FunctionDef",
+        "name": "summary_fields"
+      }
+    ],
+    "tests/qualification/lexer_reservation_current/unit1_derivation.py": [
+      {
+        "ast": {
+          "bytes": 2773,
+          "sha256": "64dd70cabd16e98065889b3d1d5aa8e9b4a921ae4b924def88698604b0fa7c95"
+        },
+        "body": {
+          "bytes": 416,
+          "sha256": "24f068c1995b289d664891d97dbba4e25e178ea435d77f962719a97eb6271813"
+        },
+        "kind": "FunctionDef",
+        "name": "transform"
+      },
+      {
+        "ast": {
+          "bytes": 1969,
+          "sha256": "96ad02f685331f113518a95ab3280ee82240ee2f3de3c1d62c9fa13546aa8761"
+        },
+        "body": {
+          "bytes": 286,
+          "sha256": "50ddff6656cfec93bef31312e2f1f9df08f04d516f73bbf1e595e83b5f9698f8"
+        },
+        "kind": "FunctionDef",
+        "name": "inverse"
+      }
+    ],
+    "tests/qualification/lexer_reservation_current/unit1_run_current.py": [
+      {
+        "ast": {
+          "bytes": 784,
+          "sha256": "3da6111f94d447ff8661787550ea7ce61c3dad88a5efd368508964119eff3e2e"
+        },
+        "body": {
+          "bytes": 64,
+          "sha256": "9e28fd965644229dc6c99949612a2426c3ec5eb94cbcc3e1acfff9620ef9f15f"
+        },
+        "kind": "FunctionDef",
+        "name": "digest"
+      },
+      {
+        "ast": {
+          "bytes": 953,
+          "sha256": "0a94c14f79937ca510b91e55457854ee05109dbda93bc3de463e54d9ef69393e"
+        },
+        "body": {
+          "bytes": 69,
+          "sha256": "3cf4cfc8023bc45945f46dc2f12f7f742d923b2352be86947e2c1f6f6d99fdb1"
+        },
+        "kind": "FunctionDef",
+        "name": "save_json"
+      },
+      {
+        "ast": {
+          "bytes": 1070,
+          "sha256": "9c593c4fe809d52f2a435d02322ea6245bfa5a1392e4bccc0a049271650a687a"
+        },
+        "body": {
+          "bytes": 101,
+          "sha256": "1c19744ef6f5d92c50358719f934d6b43c7e681b2f572b3027c13e285225bce5"
+        },
+        "kind": "FunctionDef",
+        "name": "run"
+      },
+      {
+        "ast": {
+          "bytes": 2055,
+          "sha256": "9260a32b2cd18eb38d19dafea1fd3e601c1426146338d1b689770eeb46d25d2f"
+        },
+        "body": {
+          "bytes": 178,
+          "sha256": "74932b2dd3851994e63a6b7c272f3245f7e7b22f564bf0bec36039bd3f381899"
+        },
+        "kind": "FunctionDef",
+        "name": "checked"
+      },
+      {
+        "ast": {
+          "bytes": 64206,
+          "sha256": "f6de49a0bdbde534cac2a8b1f1a56519a50438a5943380eb5d0afdbda95c5e95"
+        },
+        "body": {
+          "bytes": 9896,
+          "sha256": "8faf84e979fd5d94ccae13eb9a83d5bad751028af068de8d2eb9fc622e1b0a74"
+        },
+        "kind": "FunctionDef",
+        "name": "main"
+      },
+      {
+        "ast": {
+          "bytes": 2613,
+          "sha256": "5452340fc8710f29f23f423ef592d831d2a07a00e12f58f64b460db4c1e4e8ca"
+        },
+        "body": {
+          "bytes": 275,
+          "sha256": "676000c4b7564c78918b52e9f0932e7653fe476998fda43370ae2857486c527c"
+        },
+        "kind": "FunctionDef",
+        "name": "main.ignore"
+      }
+    ],
+    "tests/qualification/lexer_reservation_current/unit1_run_reviewer_current.py": []
+  },
+  "retained_predicates_commands_constants": {
+    "tests/fixtures/typed_project_source_binding/run.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "79be4dcddbaf3515f30bc4e13ac09105093f19b0af958f87ae9383898819fd5e",
+        "86f638b676b6ca155f0bb5442cfcc388bcc7e121ec0b957e5eca7bb7995ca7fb",
+        "9d0df0eb3c5a47cb71ca4fc74a5e7a91a0c6d5445cb781b2944e3ca14afd3b44",
+        "fad4592f22f3a1815f6a61d344844a4908cd70c74d2433c0f6958cf72c2dd0f8"
+      ],
+      "predicates": [
+        "34a29003f88733a8f564c3434ef8f9d33223a09f1e84c11d40a54be93a04993b",
+        "34a29003f88733a8f564c3434ef8f9d33223a09f1e84c11d40a54be93a04993b",
+        "5c0403791e1aa5e0ed9bbbe0252e97c113d19c783a181148d70f16dd71bf830d",
+        "5c0403791e1aa5e0ed9bbbe0252e97c113d19c783a181148d70f16dd71bf830d",
+        "b7eb97987f832fdfaddae48db9702954efbb99099ecccf72039b025aebd20d8d",
+        "b7eb97987f832fdfaddae48db9702954efbb99099ecccf72039b025aebd20d8d",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/check_resource_inventory.py": {
+      "commands": [],
+      "constants_and_argv": [],
+      "predicates": [
+        "433a941fe6138fbb46600837263af60feacf3e40d7fe61391721e5e6e9984b7b",
+        "433a941fe6138fbb46600837263af60feacf3e40d7fe61391721e5e6e9984b7b",
+        "45cd0147b20b979734e1dca8f52cb80d9063aa5a908ee0a024d6ea5a6d8037c1",
+        "489f410a47ddf6b27f881be69e0c59116faf12f13866c07f5a9152c50c383556",
+        "489f410a47ddf6b27f881be69e0c59116faf12f13866c07f5a9152c50c383556",
+        "70b4dbd3cda57706942f7e716d248dc3dda76461c716ab92dbf36ba6c768cb32",
+        "70b4dbd3cda57706942f7e716d248dc3dda76461c716ab92dbf36ba6c768cb32",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "7ca42a87f061fdc9a22b7c753c60d3b723ba8b0ec3b128a28a51ba254a27d552",
+        "c0f276d401ae13ec17ba0511acb48fc9a12616181d28af7ad8571bf2d0541bd1",
+        "c0f276d401ae13ec17ba0511acb48fc9a12616181d28af7ad8571bf2d0541bd1",
+        "cd20cb195f26beea8343aa1000437b579d1d533058e040e9976bf338decc2bef",
+        "cd20cb195f26beea8343aa1000437b579d1d533058e040e9976bf338decc2bef",
+        "f1b084efc298c91eef672ec0f5f822e6b632edd97a61e0cb3bd32f5bd1db28c8",
+        "f1b084efc298c91eef672ec0f5f822e6b632edd97a61e0cb3bd32f5bd1db28c8"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/generate_reviewer_tests.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "cd2346c545f5eeea9633ef16065dd7e3f0523e482b8d9ce210c5568b78423ebd"
+      ],
+      "predicates": [
+        "0279e7dbded4580654adf49ccc390f0f60aa989e82f70f0c6692b6616cdaf7b0",
+        "0279e7dbded4580654adf49ccc390f0f60aa989e82f70f0c6692b6616cdaf7b0",
+        "02a661ea796ddf0c8ade96d03bf187fd497fbc86a5518238e652a76905dc003b",
+        "02a661ea796ddf0c8ade96d03bf187fd497fbc86a5518238e652a76905dc003b",
+        "337f7bcd687dd53ffdceacacc001aa9062bb9c53e961d1da6b7f231bd8ddacd5",
+        "337f7bcd687dd53ffdceacacc001aa9062bb9c53e961d1da6b7f231bd8ddacd5",
+        "5304cb6e240f15e8f678e564035c14439f0178281ab2e4d3dfd1cd5295f0cbbb",
+        "5304cb6e240f15e8f678e564035c14439f0178281ab2e4d3dfd1cd5295f0cbbb",
+        "5c3de6ebccffdcae88801a08ad75240b72619bc1af67ff1e2651f5f22c639e43",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "7f2fb409aee9ce2337c042781ce232556ec92beaec7728aeebce677e97fef1a8",
+        "7f2fb409aee9ce2337c042781ce232556ec92beaec7728aeebce677e97fef1a8",
+        "90ed8aac00ea86893fa68687297e347beca5c9a72c2c840be4783d40df739367",
+        "98d328aa867a29d0f2e85f63a9be84342e2ecba7d4ed4706151fb619b33d45a8",
+        "98d328aa867a29d0f2e85f63a9be84342e2ecba7d4ed4706151fb619b33d45a8",
+        "9b138db63f665b43845f12bd796e7834da830e6da8d71882afe7e498bb3f892e",
+        "9b138db63f665b43845f12bd796e7834da830e6da8d71882afe7e498bb3f892e",
+        "9c830088e3e82d922aad3263ab05036cdcf16e11fb1ad1499ef935e57839e856",
+        "b89bf926c3e70f1917e75f59996d01af722b0e23c16201efb94351f4d8ae25c7",
+        "b947e53408eeb1fdb9f180ee79ea45f07a59d328a9e935350ab358dee1e9c226",
+        "b947e53408eeb1fdb9f180ee79ea45f07a59d328a9e935350ab358dee1e9c226",
+        "c9a8f1e63a5679a96a553335458baf8debdb97daf280a2e9604150debc09896f",
+        "c9a8f1e63a5679a96a553335458baf8debdb97daf280a2e9604150debc09896f",
+        "d5c66ee8ab694d4106117f3645b9143858d1621e3a676f4a0b5c231a17901e51",
+        "d5c66ee8ab694d4106117f3645b9143858d1621e3a676f4a0b5c231a17901e51",
+        "f1183c0f1f0bd1a3bd8495776c5ca935411d873db135ef7fa8255e23b189add4",
+        "f1183c0f1f0bd1a3bd8495776c5ca935411d873db135ef7fa8255e23b189add4",
+        "f1c7dc02405dea09b5bc66c7cc232011d14987a1513e883c093bf703b9ea1795",
+        "fbda4ad443000f4bfa2a505bbabc8a76043450e2190fa1fbf7f96a078b47eb00"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/materialize_fixtures.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "6a3d0663293be706bc7e81ba00b60001f1aac6953427ae0e4088d5a8c91adb3f",
+        "cd2346c545f5eeea9633ef16065dd7e3f0523e482b8d9ce210c5568b78423ebd"
+      ],
+      "predicates": [
+        "05a849d6a9be204cabdc961c7320813937c2a4e4cfe2377e9052036bbd5a68c6",
+        "05f28d1021071b7b679c4917ac16a17310c4d209e249267d6991c989eecb9c24",
+        "05f28d1021071b7b679c4917ac16a17310c4d209e249267d6991c989eecb9c24",
+        "06ca699416d46d931341705cdb3023a02c40cf04e15aa768493b602a96a09ef7",
+        "0fad4b5b519701f92b8886dc396117a8ef8279b09565fac0016bf62d51fb9a7c",
+        "0fad4b5b519701f92b8886dc396117a8ef8279b09565fac0016bf62d51fb9a7c",
+        "1b822a3e88ecc4dc91fbc59d166f1224fee3cb0f81974ea0497f984f1766d02e",
+        "1b822a3e88ecc4dc91fbc59d166f1224fee3cb0f81974ea0497f984f1766d02e",
+        "2b5fe0c207374c007d582cbaf36e06c6779daf5d8e6585278761c25fc35040f1",
+        "2b5fe0c207374c007d582cbaf36e06c6779daf5d8e6585278761c25fc35040f1",
+        "516d40705616af701b914261bf7dff07276416efe8e149b85e9e7d7fc0709234",
+        "516d40705616af701b914261bf7dff07276416efe8e149b85e9e7d7fc0709234",
+        "77c7d76702779d2ba62a81e9998bd4eaf3a31abcc384796b087403f70beefc08",
+        "77c7d76702779d2ba62a81e9998bd4eaf3a31abcc384796b087403f70beefc08",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "994c91961b182e131af00c182d85d29654b41f287ff73208df1b33347973bc3d",
+        "9a3b31636e936b360f1015c281c1c373531ef3a871ad100efe26fc3fe5885cfe",
+        "9a3b31636e936b360f1015c281c1c373531ef3a871ad100efe26fc3fe5885cfe",
+        "a41ee7f275f980b38d656f079ebdc9214e4713c3130a9f9bf29f889d105b359d",
+        "a41ee7f275f980b38d656f079ebdc9214e4713c3130a9f9bf29f889d105b359d",
+        "a5af943444d800c72154d66a955b41dc9a2baf18736c5d9c5b2b0ce5e29fefc1",
+        "a5af943444d800c72154d66a955b41dc9a2baf18736c5d9c5b2b0ce5e29fefc1",
+        "a5af943444d800c72154d66a955b41dc9a2baf18736c5d9c5b2b0ce5e29fefc1",
+        "d5048b6ae4b2b816832c173eab87f0f3d7bcb8bc453ea7c102f9aa297383131d",
+        "d5048b6ae4b2b816832c173eab87f0f3d7bcb8bc453ea7c102f9aa297383131d"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/materialize_resource_fixtures.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "3a8f628365d9c278ed85df5f0cf01b0b6779dd7c86943fdcf91d3e3ab45fd121",
+        "cd2346c545f5eeea9633ef16065dd7e3f0523e482b8d9ce210c5568b78423ebd"
+      ],
+      "predicates": [
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "032192b8f1b0d6ca38dc34dea62bcfb4e46b39e33c0af6c56691905c298e68e1",
+        "52966e3c47a46cd90f46fc35753eb0b3f79f64a2b628abc5aa4744d13353e37b",
+        "52966e3c47a46cd90f46fc35753eb0b3f79f64a2b628abc5aa4744d13353e37b",
+        "5d90066dc43ea7b5a1734b8c6d0d174ef2b8c2de0483f214ca6c7ede843312b2",
+        "7227d48732122bc29e2c738fdb9842fe2b9f2c9ca026a9905b440400a975fa4d",
+        "7227d48732122bc29e2c738fdb9842fe2b9f2c9ca026a9905b440400a975fa4d",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7254fb9dd51f106abf103d35a5c2457933722d026d553bf5f46e466af8ad712f",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "7e2c993f6ebd79e43128eb4f4c32e10f9146689393a9162ccb6b8efc1e6fd1d4",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "8d2b5b87d086bbee56f8d70dc1f7a18744a15122e4c47db25e08fd2eed517744",
+        "a9b681e2370b021869e14831706054fad8be712c9b623e335bdda81e6cd40605",
+        "b4f018faa5be87fefdee111ac74748289db4fe812e4ab44d452e4caffa035c36",
+        "b4f018faa5be87fefdee111ac74748289db4fe812e4ab44d452e4caffa035c36",
+        "bafbd19393661c3163de8ed4c26d9e2d2dd0bc5df3fb5a8739350e691e0d7465",
+        "d1a0e9b2b780b73993333333e27c2a1b6654f357b74961c2973a62aacfc891a3",
+        "d1a0e9b2b780b73993333333e27c2a1b6654f357b74961c2973a62aacfc891a3"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/origin_oracle.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "cd2346c545f5eeea9633ef16065dd7e3f0523e482b8d9ce210c5568b78423ebd"
+      ],
+      "predicates": [
+        "0f50bbc520a9d659452b341e1f454ba086d1e747ed57cc263e63c69eedfb4bd5",
+        "0f50bbc520a9d659452b341e1f454ba086d1e747ed57cc263e63c69eedfb4bd5",
+        "102ed641cbcaa512c1aacc64e84ded92570c2978eba3883e1e5eca81e6a82f19",
+        "102ed641cbcaa512c1aacc64e84ded92570c2978eba3883e1e5eca81e6a82f19",
+        "28c29d27ec9fa3c57da428ea9a8cfdea4372022d54a755f0ff2f5f9267a7e5b8",
+        "28c29d27ec9fa3c57da428ea9a8cfdea4372022d54a755f0ff2f5f9267a7e5b8",
+        "2dd4dbb113f138e65c78c08e9ce05feb38ed9a5227856905c32e5d828420a441",
+        "2dd4dbb113f138e65c78c08e9ce05feb38ed9a5227856905c32e5d828420a441",
+        "561d0c228f8a9cd165022e5b112b334cba2716e868caa1587726c4d7fc1c5618",
+        "636b5b936b7a6b74def123cca3311b3c1c957fbc52e1b84c6f9e9c76de7bc6b3",
+        "636b5b936b7a6b74def123cca3311b3c1c957fbc52e1b84c6f9e9c76de7bc6b3",
+        "7768dd4ff0e14b2a20ce29879ac7f9f1caf59411e442d9e9048705d32480cdfa",
+        "7768dd4ff0e14b2a20ce29879ac7f9f1caf59411e442d9e9048705d32480cdfa",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "8b0767adb5ef81515277914588913d68ce3104da0f28ad8f3007ec231809cfbd",
+        "8fdf8a914d443879bff4a3099701a3089e4c9cfacefe6c7216f58746eb1722cf",
+        "9e6249ab69b7fd7eed6bf88a4d42214709bf391d1b45e3de935ccf9531bc8227",
+        "9e6249ab69b7fd7eed6bf88a4d42214709bf391d1b45e3de935ccf9531bc8227",
+        "ac8f278beadbe7595427dea98623545bac7148b62c4f912fed20c19cc08bd3aa",
+        "cad9b4d0c66d63b325f69b7d3c8613fc61987d292726e64a3f23701ecd453078"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/run.py": {
+      "commands": [
+        "00159b00e14f72919e852649c363f74c2dc7ac3a0d9250d841a34f0c48de0c6e",
+        "0b3cf4c81a45f23b65fa14de3c25413e6bd386d13f1a72850af09a5094b73c0a",
+        "6295638d34125d3c364263b12b9fdb5e597509041cce5e98e3946b4e66f155ed",
+        "749db8090e35b08ef3db15f25c117d5449d2d24697a678508b23448230b1687b",
+        "7fbf5e90cb9fd0f9ecf77c9e65ee26ec23df8b448499158c4ee9e64d65307165",
+        "9e384b5a5d0ca2797720d13818b19813ef10b38dbab62da7f2fc64fe895e6e16",
+        "a93a7ba0d6d491520cf520c811674822fe20d6eab8f31e615aa96bdbdb199187",
+        "f0c6f72477aaa1ae6c21bead5990f4b85b91ce581f4e49d58196b1d4ed6c0bf3",
+        "f188d52a9d3b180793309b82a4fc264b19232822a95fe39142c6a25507406ba8"
+      ],
+      "constants_and_argv": [
+        "445b5a6080c06758c8940bd866dde42df5e43aefc5bbb36f34c6dcb235dd120b",
+        "8f480b6cd24dfa085acbe7f54c8bd953fcfa4f1c2e21b708194ff4e257728939"
+      ],
+      "predicates": [
+        "00ac7d43b8073e61ea200c4a2d8ff5fb8b02b34a3a30a5dab7b25bbcd511f1f3",
+        "00ac7d43b8073e61ea200c4a2d8ff5fb8b02b34a3a30a5dab7b25bbcd511f1f3",
+        "0c10483795e2dce437cdc9d4b143aade0164b1f643ba114b9cdbfcdeb846aea8",
+        "11ca495ac12542f86d8af6b3560d735fda1793b3acf390f7decedf889a53e8d8",
+        "11ca495ac12542f86d8af6b3560d735fda1793b3acf390f7decedf889a53e8d8",
+        "13469ad92758a825556546d42a8bdd021124a71a27b40ea064f4c0f2f27467f1",
+        "13469ad92758a825556546d42a8bdd021124a71a27b40ea064f4c0f2f27467f1",
+        "1ce300ec06ce8fabf43729d0c7df16b3970d2bcc252f7f3a0cc4f6854eb6c429",
+        "1ce300ec06ce8fabf43729d0c7df16b3970d2bcc252f7f3a0cc4f6854eb6c429",
+        "31d6eb1563b81c146551a419219f3dff12442d2750506898960e1e760f41cc40",
+        "3224af665bb0ebe31cf4c172be6eb7aa9daf0966d0a502fdd40a4041c60c08d5",
+        "37012b31e250df0d109ce0dc26e8f3159281ae0e05f9109e138405a524172a9d",
+        "3e6b001b2351ad0689a8b971da4c8c1881b0afbda9747a93df5ddbc8ff4ab89c",
+        "437725014f4d4c1023db7cac3ac35561ce9d00754a46d29c1eb8b0daabdc210f",
+        "482204786a114315f2ccf4228e50cc3ad5af4ba09d63f3677ee9761b2699e52d",
+        "4e698796f781fee20cbf583a4a77a60b02842d4af903e23b56d94853a79184bd",
+        "59f3a7d5e9700aec6b76188f9ffb664299d240c1c33392a0c020daad9070906e",
+        "59f3a7d5e9700aec6b76188f9ffb664299d240c1c33392a0c020daad9070906e",
+        "5c6a046d7da7030927b7932635ba76e1d490f7cac8df0d260eda8201f636e99f",
+        "5c6a046d7da7030927b7932635ba76e1d490f7cac8df0d260eda8201f636e99f",
+        "5f94eceb5d055f58601567832540ac26de4efb7d2368a1e2fd24b3d297908080",
+        "5f94eceb5d055f58601567832540ac26de4efb7d2368a1e2fd24b3d297908080",
+        "617fea335f94e9a4a07bd6889ad6e104434ff19700919a4f137c3c2bf5d21b9a",
+        "6a02b75825ce06dca9246fe197533f49eddf518683db987b86b79f256ae31ddb",
+        "759e1e534da7c759cc3a44bcce68d2cc46b85b09462042e275d09b9bb65d3f60",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "7c79fd9d2bcfcce432cbf983e3ebdbb42953577a3c160494aa0f914b237aef7e",
+        "7e2c993f6ebd79e43128eb4f4c32e10f9146689393a9162ccb6b8efc1e6fd1d4",
+        "822b410cf610015e40f6040d75b9dc441fc8ce65f052d7f948e774fa1a73599f",
+        "8677a726dab586d75dad9545b0ab67473f0af22f089aba1a89f60842a1f47f1e",
+        "89011a3fe572caa3a542f7860463af2d1bf3b4e398855484231b9a3544b9d590",
+        "892e983e328d9bf853ecea4369d274e4bf3cf6633e21236c94a01d06c6ed5aa2",
+        "8b1df8bed2fbaba0ca141c2d83aa1ba3f7eefd94528cbda040ca41fcde06ac12",
+        "8b1df8bed2fbaba0ca141c2d83aa1ba3f7eefd94528cbda040ca41fcde06ac12",
+        "8c1bee626cf55782ec1254a69cb0ccc8a015c284261f99728e87af474702281c",
+        "8c1bee626cf55782ec1254a69cb0ccc8a015c284261f99728e87af474702281c",
+        "8cadc657d9bb988152b470d79e3273e7a25420b65d30520ea724a342960a3ded",
+        "8cadc657d9bb988152b470d79e3273e7a25420b65d30520ea724a342960a3ded",
+        "8dd3b010287c1f5a0e1edf97c0a6b59d48906069df5852a480a641ef7950167b",
+        "8dd3b010287c1f5a0e1edf97c0a6b59d48906069df5852a480a641ef7950167b",
+        "8e6d4c139c8b6b9e9f8f6476abd1c002b1b4f741eb42feacbe2735f588a73e1b",
+        "8e6d4c139c8b6b9e9f8f6476abd1c002b1b4f741eb42feacbe2735f588a73e1b",
+        "90ddc408efd7ae457bc9f2a5aeb3e7820cc235726f950702b8d28569190e6675",
+        "90ddc408efd7ae457bc9f2a5aeb3e7820cc235726f950702b8d28569190e6675",
+        "913e024789a35450a3ac619d94afc003256a515b045cab48650c4144f1f00acb",
+        "913e024789a35450a3ac619d94afc003256a515b045cab48650c4144f1f00acb",
+        "91bc50e865e6db8962731dfeb3116def987c26f307ff282d4bd2d924f595943b",
+        "96a3928509f3bdb0a96c1ce6dfdaec38185a95a9ea1bde477a70c4dafbf7b004",
+        "9b178bef85d31dc6140098226ebdc22ede967a838567af34fb01f4667ae14710",
+        "a4b0f010e5eca38e03a674b5564e2a2a2be331192b23799c32112758bd563e3e",
+        "a781f2f6440a498f5a2d5f27d9aa44cf66a7a54ae4b0a8407c6a2aa1aed69f23",
+        "a781f2f6440a498f5a2d5f27d9aa44cf66a7a54ae4b0a8407c6a2aa1aed69f23",
+        "a7d165a2fbc45efd99db501ae18bd1675fd62a35c00ebb943149c4c8a7e425fa",
+        "b8945bba42bd44f0a1741ee3f244e6064af3c92d193ee095898cd2265826e24e",
+        "b8945bba42bd44f0a1741ee3f244e6064af3c92d193ee095898cd2265826e24e",
+        "c2428c1d53cfad3dd6e18e48f54a01c464b17c44cde768b57ed95f7abdc41d18",
+        "c2428c1d53cfad3dd6e18e48f54a01c464b17c44cde768b57ed95f7abdc41d18",
+        "c3c4b5722380d3795d4a40350f3acc52117968b87d98a4c2ec582252a389399b",
+        "c3c4b5722380d3795d4a40350f3acc52117968b87d98a4c2ec582252a389399b",
+        "c829186fea04c6fb5ac6cb6f92881f31ff302e34b0908d27599fc00e411a73c7",
+        "e04c8281e9c8993434294a60fd2637b30a213ea7246847fae912f845f96888c3",
+        "e1a19385caa90575a34f0dba137eb60d0263a81092482ce18bee5c25c8f68ab9",
+        "e3cc7d64e70b0ce2db2c57dab7cd0981d60bbf2b58240dca843041207ceb760d",
+        "f60a0861a8b22b6a66855f0567deb5f72673ebd281f9610924d04b4d8bb90c0e",
+        "f60a0861a8b22b6a66855f0567deb5f72673ebd281f9610924d04b4d8bb90c0e",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "f94b7221abc8436e98803607edc3f321b0ef28d827c29eed22fc83bb83038a55",
+        "ff4eb79393fd49721281cacf35b9ccf3254ac8ba69fd777a215fab9324408b21",
+        "ff4eb79393fd49721281cacf35b9ccf3254ac8ba69fd777a215fab9324408b21"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/run_reviewer.py": {
+      "commands": [
+        "59cbb9329a168ba72ac38f3282da82e55a5a4981ad07f652dab18e2adc30f111",
+        "96209d712da00cdc2aeaf8e752f683e94ffdcd81e3682248dbbf7f3da6e61ab2"
+      ],
+      "constants_and_argv": [],
+      "predicates": [
+        "00c22f3f58b0c961cb228f0d9351e97caaf5719766e5ede1901f70010d700333",
+        "00c22f3f58b0c961cb228f0d9351e97caaf5719766e5ede1901f70010d700333",
+        "014daaf3defa843b6fb32ea9e597caf45748c15728d8dd95fdc001c7c4288998",
+        "1d227ab24da8baa0b4e664aebc5515b33afc0f0291a539d7bfa189d3fc1eefb8",
+        "2f33ffe13c7c477d4e831639c544c53a6e42b572f48f8e1bbfb246527bb0bef3",
+        "40da1c6953e70129c1bb088a0a90468d366972899a74a8f5d1409a9ba3aa3f2c",
+        "4eac72c3cb001b38aa92d5060233047d8cad94801219b13dd3beca8de2f3a510",
+        "5781ec6d2a19010ec823cb574df2a8c4d6bd2800e5e4dc72362f37233968395d",
+        "5acddfb31f495936435558536359f6b700ac3243b1ef5723c33859f517ee7f79",
+        "5c2bfe0e9e56a0f3c8bcf0ce412ff7c56da139785cd5187216d91c603f811b67",
+        "5c74509c8942bd273f83e7b3f113b8ca450e9342b798d1666de6cf54c9ca38e3",
+        "5d06ce2579152e1f7f3f59ae4b316e1d53aa1e1957a289fdf38551747c618613",
+        "7a846acbe8ca9f948ac6045be112061aefe90acca71b9e9f1cf676b8bc1ee594",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "854db0950264a858cc614720bd0413758c0d239f8db4104c333b88e48ae17b60",
+        "8dec226a1d933aded40fce099b7f94ef7553624cfa577f1d211c96f18f221375",
+        "ce2106d69567b95c8197be123655b9c35346340c4b11fe30a361c62e59ec5d6e",
+        "d293cddb135fc8e10f08066fc569f07e2ffa805690c7d6e1ef2f21d92222b179",
+        "d4935e74367c4f3f36107b9e25f932e7d14f154064de7e9342d13f73cdb9e977",
+        "f0f0ad39f1bb8a282b8e57f7326b20afa1a1a3232145a4eb766e6049c824b77e",
+        "f0f0ad39f1bb8a282b8e57f7326b20afa1a1a3232145a4eb766e6049c824b77e",
+        "f3b118ba0964441641fc70b62056d8456e8e79de1128b5a38ee3403d4be99b93",
+        "f4254a86734e4ad6876dd125fbd6e0802f5edccbfa232a33bcdc7182d4a0db9c",
+        "f42885c6503cbed9af37fed24f49fe2c8c0611db57399a258ca5a5d61ef68553",
+        "f42885c6503cbed9af37fed24f49fe2c8c0611db57399a258ca5a5d61ef68553",
+        "f51a83be43d6b206527148bdcef17fbe90efb5fc37ada4dcece0f1a96c5306f0",
+        "f812f82a747303010b151b9f18cbfffc15f3830d1715f992a7e4c79046230824",
+        "f812f82a747303010b151b9f18cbfffc15f3830d1715f992a7e4c79046230824"
+      ]
+    },
+    "tests/fixtures/typed_project_unit1_independent/rust_strings.py": {
+      "commands": [],
+      "constants_and_argv": [],
+      "predicates": [
+        "2aeacdd876720795a00ff15397736435e6282c3332e455a8f20bfb8dff3bc6a6",
+        "a2f4733dec3c810adb16f4226387c4ef329b498d2e54549d223cc71980de260d",
+        "c196c3031713382fec92874672e37bba5b785116fed9ca0048be05aa6892f5a4",
+        "c196c3031713382fec92874672e37bba5b785116fed9ca0048be05aa6892f5a4"
+      ]
+    },
+    "tests/qualification/lexer_reservation_current/adapters.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "087ee36b180b74f5e85301d8159d8ecb370e39ec71b348e60e7fae64828fc80b",
+        "28a4a6635fafe41696a598bfd6bb380a978bcd8868c787ee015c9a62498cb9bf",
+        "3b4c0d9c6418e769ed8cc1ccdc74cb1e3364cae5322e3a18a0151546283efc62",
+        "4af86fde5832a573144d88873fa6223f19e1664a3d98d39fd430d20b6896d14a",
+        "4b5da4f8c21d6b15d11e9da3b14cac29b32a16280ce2716749e4fe7ebb2759c0",
+        "641252586c013c7a0457cd5622cb3cd3a6a104d01b45aac70f82ae5cb396b72f",
+        "6a7dbf06608e7ba606703175d6ba0e8ef3ee944ce0c783e5764cee9a67b43292",
+        "79bf82e9d8d8a1a77386afffd0463d3b48b2c03d57ae5615da35435bab694567",
+        "7f4c7f6d13f6d8d62e44a40ce5b396a3018692a942340e49cec117a5b44e1a92",
+        "86990576f0bd4fc559ef2e14387f71b3cccc81bffe2dc54918ffc0b94a3cb096",
+        "8b8ebb5d6b0a60caa597a8c910ac4ba8c57072a1c4a43fd5c74c4682d1a8cd33",
+        "c37987cc10c97c8e1804f7643edf7c3038ecec56fac6f04fb631a82d16083e09",
+        "d5cc614ae757fb12b3f7c497d4c57728d6d706e4e274dc4fead6068e12dc55e8",
+        "dd81dbbc78026dbab2658a0b404a0d2fb78aabbf879a45c918636c2a8082ffe5",
+        "e5708d537f3fff15fa1c092e1d5b78b0f36a8d226501ed57a494efc9341c6712",
+        "e5d3cae156fe20202d8bf1947d7eabcc683ef62c627c11fb376989e2e5cb6ea8",
+        "e89280669c95f140c6a689cec93cbad3930b02e0d7bc89d7f46f6ff19c504d17",
+        "fba3b8ed29271f68df05394b89aa13774bbb1fc99d40307ea1a4125b47d6676c"
+      ],
+      "predicates": [
+        "19b480decb36ae2dbbad94567d0a729fba260952e25ecfd2da0f79c61307b058",
+        "19b480decb36ae2dbbad94567d0a729fba260952e25ecfd2da0f79c61307b058",
+        "1aa514757b8bce7c6e298652b704e782212f29a25bd1a383dd06e2c437126b76",
+        "1e96be2a75d3c1cf9abe1b81ae9582926df945888365ca20085417c16e286de2",
+        "1e96be2a75d3c1cf9abe1b81ae9582926df945888365ca20085417c16e286de2",
+        "1f4e40d7fd08919abbefe04e79b1b4a81b7918e26fae09848f2093e12968b87e",
+        "1f7c50640f6ab2fdf97bb90f69fb0d5d247268b481dd64738eca0766a2cba0f3",
+        "21b2315bde7a55a585f35cedeaa9a29bf9a98512b3822cc9f65b1c673eb40d35",
+        "29f160519b5fa5750be7cf1160517dc385d49ff09cb8f89f466c3b8c7933905f",
+        "2f6ed37aeb68394f93eafc9625bdc21206e832ed54df3f65fed3705ce37e6fd7",
+        "328c2d46bfe30c182de093f0207844e7620086e7790feff22fce842a0188103a",
+        "3ef5efd5d3f7a04d49a6dbd7295b9f5e0b036a55a268163061790ec94b151937",
+        "3f7a64aa6a246396815fe1454b520e9449c5fbd411217bad01c20cc5de4ba259",
+        "428ca613265fa6c606585e46249c2d64d68d2efc926d99250eb6871b12eba227",
+        "4f9758701277b40711bd2e58e135286b086294ead8496413f68a0ec6109acf57",
+        "60b5ab7075dbfab8c521743ce7eb613c1eb17b9eb20cfb39c7634005f73a1a60",
+        "60b5ab7075dbfab8c521743ce7eb613c1eb17b9eb20cfb39c7634005f73a1a60",
+        "60b5ab7075dbfab8c521743ce7eb613c1eb17b9eb20cfb39c7634005f73a1a60",
+        "60b5ab7075dbfab8c521743ce7eb613c1eb17b9eb20cfb39c7634005f73a1a60",
+        "60b5ab7075dbfab8c521743ce7eb613c1eb17b9eb20cfb39c7634005f73a1a60",
+        "60b5ab7075dbfab8c521743ce7eb613c1eb17b9eb20cfb39c7634005f73a1a60",
+        "7feb945f1f869ea2e8c69cd4395ebb0f096c29ee165f17e196ed2fb2b20c7eb3",
+        "82cb1ab65187df7cc2c271f396421ee472635091f7c59f26961e2b36a9ea2b8a",
+        "8b575837b77b45f56e7906455c590cc78a1341dc734d42e10f40e96ea07a06b2",
+        "9451cef96d36109efa1fe2200a11b75c898d2e67964a301b5a543a824bc08b4f",
+        "a415b893d806f2deeb277e3b1c62850cba9658f377cb1919c0406aca776c207a",
+        "a61c2ca3deaea470f7d56479e0dc772c5dd67dccc7b765dec4ff78a51bc04e20",
+        "a64841b8d4a665acbcb861c1a6ef5a7f2d84cf4a3048faa9f5bf4253071449c6",
+        "a64841b8d4a665acbcb861c1a6ef5a7f2d84cf4a3048faa9f5bf4253071449c6",
+        "aa1ae7f3f1fc362bf21c5a9473b81c042808b1e32d1d0efa5d333f2c936add3b",
+        "aa415d66e56b6fb4b59bfa9a0b92db7766e47a7b6d8e7b8daee2f0f0c4cd1f3d",
+        "ac080474944432fc241cb17f4f3f62af54b3061393d8f980552e731f66301ebe",
+        "acfd77e4877befa6532c3144649eca27ae946267efa0f4c0ba41d3487417cdc1",
+        "ad5170fbd9594a16d6f7a362eba24ca8fd8d9b8ee189f9a5843c662c488d24dd",
+        "b200f9cf334ac686f8fb4516a4561ce5fecdf27fd61f73f32b5f3ea8a810aa72",
+        "c31dbca7a8565b10fb51b5a936d8237da6463b2a46d7ed432af86fbb6a1e3d12",
+        "c55458d7236d43500690842e28d7d2ba59c57dc6879c80ff94d3a934d0697102",
+        "c6dba17d2b7e514af5d50229daeeee198f353a18dcf4593243aa11634b46d2c2",
+        "cceb2ceac85f54449e276cbb009d88df7f1c6783fd59fc93999a6e9020de88f3",
+        "e08c2f8726c11eca23e5b4c632f5ee21cd6a109c3f127425891131c28536b6b1"
+      ]
+    },
+    "tests/qualification/lexer_reservation_current/test_unit1_current.py": {
+      "commands": [
+        "23bbacf7f363a0f7b49f61d8a54d63185e3e39bda9625d9b47cf85c0bf4889db",
+        "ad00c7c0d2f5fbb11b93b59c5598a9c0cefb8436524996afabf85573c57906c3"
+      ],
+      "constants_and_argv": [
+        "4978f2bf9985cc49b51fa3aa860623c3ba4ca55a74ff2e283dbe31d13cdfe142",
+        "8f375aea059762d10b0abe1e2aafbef3c84537f6ff605c3b1d9e1c079eb09842",
+        "cd2346c545f5eeea9633ef16065dd7e3f0523e482b8d9ce210c5568b78423ebd"
+      ],
+      "predicates": [
+        "3f180997d51bbdde54e41b8d1e29d4279992ea7b798ad082fe45bb23e7d9b419",
+        "a9f0bca2592797cf6d13b3ec81a1d230c7bb978f3a906c0eb3a8ca83fc47ad38",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "fc097cfb0bd90bbe856d7e4c41757d80901eabfe4ac9716d583fa39b01361931"
+      ]
+    },
+    "tests/qualification/lexer_reservation_current/unit1_current_support.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "00d72cd58c333c31b887ffac0c960c61da0fcc257c6144fe7f13930c1b578d9e",
+        "3426cf507767531e65ccb184dae3474e0d9f34f3141aa4e33391a052d8aed759",
+        "50a9832e55987c141c53175412537330968c4f09e5a8b2774b782cc8bf595c61",
+        "56debe608c116a712974ada324dcabb8ae6f123569eba0bb80ceec15f03d656e",
+        "7d5724e0de572d83e4157b0bbacdb5e8c6dc4ca36cc695961d886c9a3ce63391",
+        "9548e9fbdd7fda9621b0b13ea6972722cf0bbcffa860779e589833aadb251cec",
+        "96ce162577b645fcf4c1e5b23aea949f3a126105d2a6d4a12686191f5905e8fa",
+        "bf1b789f1dde46a44eab87ed571e02a93bf36871ecaf56d8b80ef8d99d9280d1",
+        "cbeab75d7b66c22cb30e2e841d1039677466b4178517958c7854b4756375196a",
+        "cd173bcfc5c07a3a1f26c3103f8b790b8b7149734a17abd05da732fbf2e5fa9e",
+        "cd2346c545f5eeea9633ef16065dd7e3f0523e482b8d9ce210c5568b78423ebd",
+        "fb840442be913288d06bd33cf86c6fb6563a100d98f4e232e6b5f5a3efcf7848"
+      ],
+      "predicates": [
+        "061ee237e5c33ad80f222a3f47ab86278442700ab4815266be7398d2da8b0374",
+        "10507e0771bb26ea988fe333a2045c91d7fc7e094fa121b89f66cc64db242518",
+        "10e998e6695ebbabe10bfeaa196fa24535e49a01da3d0835868f1c36245fae9e",
+        "169745936eb3198d901b662b3f04a8c8926c6e6b666b434201bd1ce6d08a0614",
+        "1712fe293184e17b86cd17db85c14e2010e129788152fd9bdbfe5be6a7b3c766",
+        "175c20664dd00cc45c359519ecb33759b7e5b981212ef52ea00d42cd110db805",
+        "1a0a1ee21b19a3dd4bb0991d70e8f51a043ac2ff75064359c52467b5032b114d",
+        "261e006a26efdd85d14a0644dff21686f043cd91232d37485ada3c4b526a3a7d",
+        "283fe5eb755669c742160fd9e39feab1e55b9530d602a11e8c253f84cbe7c0bd",
+        "3039e2ad069c16d3e4af3a34e67c08fb384006018ecf4e3e08149299e37f79a8",
+        "3039e2ad069c16d3e4af3a34e67c08fb384006018ecf4e3e08149299e37f79a8",
+        "30821e289b32c6cb7dbf733f2d87a939f17a1f7f4890ce044f3544553b1227d6",
+        "30821e289b32c6cb7dbf733f2d87a939f17a1f7f4890ce044f3544553b1227d6",
+        "3a30509a6e695ea6bd4b7ca06ae91e89237e4e1a5bde256541bfb1b3037aa081",
+        "3a30509a6e695ea6bd4b7ca06ae91e89237e4e1a5bde256541bfb1b3037aa081",
+        "480f13a013213ebd1735eb80ddec64e8169ee3d4e615d6dc3733f4504699370d",
+        "4f7ccab276ad0eff3e8da176ced5ea9975f15e456a43e693c8354553bd177bbe",
+        "5a7d15a9ca4fdfd74145bec9c791ae8625127c47c3f4f8d6c34bd5f6a17d8a1d",
+        "5e27f4c9c90b63978611aadeefae51941f8d9608f8f095a3aa28fc3fc8678383",
+        "5eb695a380a2ecfcfb8123965985e9f92b100a055ee467152451e3da9f3d55ba",
+        "693c3fc5aae9a761cabc0d33e517a264bb52b1dfafdec8ac7b2cf984775f4bc3",
+        "6cea0bfcba768c47ad7cd582e0d48b6b9d80e26f453bf895ed4f8973d517aa06",
+        "6df680bc0eaa7b718cc9f9911e5867c912054c91fa4130cbad4690d0b1d5b1a0",
+        "6fee69efff0ff97781cfe4d1560ff8e379f35d9cc1116467a8ce144904812d7c",
+        "77c955708535a2a7522b8f1993fd80e690223de635bc25471987137b6907c277",
+        "7c6e8798138905d9e74893367abf8ea2afdbae990f8d942742f4d73467c0cb25",
+        "82edc8e67e0bd012551db97b7a6caf7288203f1a108dfd94c4aa450e7a9a93ae",
+        "85c540dbdeb38a3091e1742bca283fea2aa98cb05a6a6cc2417da0c2d16e3a5d",
+        "8751b72e8359444c5c033696f3ecfcee0f739525b138ec8d8ee903470e1e6f55",
+        "878f11e8c21c168ada653051df59fff27184fffeea5e57b33cbec8aa9f441d17",
+        "94914ba7c2d2dc3fb21496772d81fef4f8204bd32107c1ebbed7e833743c2d90",
+        "96eedf21bd822855396f1d3ee72ee3b89898f720f4de5f783ef898a012d7141c",
+        "9872cd18973e71b8143bcbd1001786281d4d6c318454e5ce4db433a8614f477b",
+        "a629902630a7302f31e83ce689c8203cf9f517643dd62a466e14918f6379b5da",
+        "a80970e5404ee982f6f41846e325cb14412482f6a59c0524d773421b401c6ddd",
+        "a8a5f18b03fb989ebfde6c74449e44be428171099ff7fa8d72e4ef533a1a5960",
+        "a9b06ad794260dc6e79798a5276b281eb4499f98fd35cc0a6e5b1194dfed87c4",
+        "ac4db59217ee7442e39363c335c0843ffd932a63fd918741a67082837c64d787",
+        "ad5170fbd9594a16d6f7a362eba24ca8fd8d9b8ee189f9a5843c662c488d24dd",
+        "afab9feb3a771f8b58daf48dc2e083f1533b7c5f82206496fc2dc1197a7cd05d",
+        "afab9feb3a771f8b58daf48dc2e083f1533b7c5f82206496fc2dc1197a7cd05d",
+        "b20dc46a8fb31f786cbbbf62cd397166849ee988e0d33f5354377077bc3fd335",
+        "b4be8189e47f75242cbee6cc15a286a527f155f1bdf02f0f0e1224f9895e3674",
+        "b623ec8e1f7b0ee4a604890f2350e701ac8c6abb4d5b2ae33a50674a56287266",
+        "b6386fa0419e5d0c9642be8697e889dd7c2d9ea59572901dd8b2871ff1035205",
+        "b81b405647036ee3bddd1a1744099b1203b36fa9e4b57348e86327bc97f1f7f1",
+        "b81b405647036ee3bddd1a1744099b1203b36fa9e4b57348e86327bc97f1f7f1",
+        "b87fac6e5726fd06eb2062fba2adac11fce187a0ddbca8ea74ff8a29279ba418",
+        "b9e557e0927b1d57c0597b36f7523ea7cbfb67c0c5e336b218b663ef6f4f94f7",
+        "c0e07e60df61cbeecdc99360334773744e2c6266d3ffb73c377bf524cc619066",
+        "c28e86e4b936c1ce04998b77017435c134ed32cec8b799387f5adfe112650d2a",
+        "c9b5c1946dbb222aa732a1bbd20640a02a2c50bbd3987867b12f6d6cc63af6f8",
+        "ce437618f5b04c562c094b8a5e18e4286fd4173f83a64f7a791a279d4d61c785",
+        "cf7519cce82f75c6261ca88c3845b49f99368822ccba91ffac6a73f0addcf1fb",
+        "d2298034e315d05353109b23b8ad258a62536cca4c23357131cae0f7c4fecda5",
+        "d38708582ac1aa8631c28a0d861c8e391c77bc569ce44092eece22ec32c83e67",
+        "d5944af3d4efa119fb11148517f595cdb6a85883f827a15b8419e79df8f0d3c6",
+        "ddb9acc780024e80fb01ec735a32fc163b7b5af28394d7733e3d59b53ccaeb02",
+        "e0ef3c348caaebaa583e3cfca13fe7d59c4cd2e37fe1295305d6b40e046b6e84",
+        "e0ef3c348caaebaa583e3cfca13fe7d59c4cd2e37fe1295305d6b40e046b6e84",
+        "e69db1ac5db17cc8d9e3caee43509591748d6b6ef89bb3b097d33efa596d4186",
+        "fa7947bfac98ce3a07db102cfd33d50efdefccfce20201a61359b8e6d71c161e",
+        "fdaba00fcc492c5b0d590296cb0ad143679472425b2c3e654547c1c21f6a6b09"
+      ]
+    },
+    "tests/qualification/lexer_reservation_current/unit1_derivation.py": {
+      "commands": [],
+      "constants_and_argv": [
+        "90fe259e76cdc6a1405e8cc60d2e5289fb9063c52dabef86d6fd4b33b6334003",
+        "a8d475343d3838cacd5ed4403f168e5d2adf81dfaaeb3171be75842663c50df8"
+      ],
+      "predicates": [
+        "180a176162cc7135a6cdf251be7e5826724db39716d9b62f3b9f80a3923f8c67",
+        "5fd4832e2e703e3a4d75bdf34b65249e32d25ed17bbe28e12faf2f29c8ee6f94",
+        "73f03d6c2288878da423928f7292376ddb30821b40ff39d363f640a675cd3135",
+        "73f03d6c2288878da423928f7292376ddb30821b40ff39d363f640a675cd3135",
+        "b053d7ad8ee58006e724b9945ddfe84b9ec6ce73ac04d0588ebaf53d436234c9",
+        "b053d7ad8ee58006e724b9945ddfe84b9ec6ce73ac04d0588ebaf53d436234c9",
+        "b8945bba42bd44f0a1741ee3f244e6064af3c92d193ee095898cd2265826e24e",
+        "e00ccce5efc97376873fddb1b45edea3ee04b2828fcd0d121661e5b4420237ee",
+        "e00ccce5efc97376873fddb1b45edea3ee04b2828fcd0d121661e5b4420237ee"
+      ]
+    },
+    "tests/qualification/lexer_reservation_current/unit1_run_current.py": {
+      "commands": [
+        "0b3cf4c81a45f23b65fa14de3c25413e6bd386d13f1a72850af09a5094b73c0a",
+        "6295638d34125d3c364263b12b9fdb5e597509041cce5e98e3946b4e66f155ed",
+        "749db8090e35b08ef3db15f25c117d5449d2d24697a678508b23448230b1687b",
+        "7fbf5e90cb9fd0f9ecf77c9e65ee26ec23df8b448499158c4ee9e64d65307165",
+        "973a8ea6fd20939da3033334fc78ad8e93f443610fc34fcde2749c9541466434",
+        "9e384b5a5d0ca2797720d13818b19813ef10b38dbab62da7f2fc64fe895e6e16",
+        "a93a7ba0d6d491520cf520c811674822fe20d6eab8f31e615aa96bdbdb199187",
+        "f0c6f72477aaa1ae6c21bead5990f4b85b91ce581f4e49d58196b1d4ed6c0bf3",
+        "f188d52a9d3b180793309b82a4fc264b19232822a95fe39142c6a25507406ba8"
+      ],
+      "constants_and_argv": [
+        "445b5a6080c06758c8940bd866dde42df5e43aefc5bbb36f34c6dcb235dd120b",
+        "f67c033769ae4e472188ac25f3cd8bb8808d3f7772361edb29f06a01dc05eae7"
+      ],
+      "predicates": [
+        "00ac7d43b8073e61ea200c4a2d8ff5fb8b02b34a3a30a5dab7b25bbcd511f1f3",
+        "00ac7d43b8073e61ea200c4a2d8ff5fb8b02b34a3a30a5dab7b25bbcd511f1f3",
+        "0c10483795e2dce437cdc9d4b143aade0164b1f643ba114b9cdbfcdeb846aea8",
+        "11ca495ac12542f86d8af6b3560d735fda1793b3acf390f7decedf889a53e8d8",
+        "11ca495ac12542f86d8af6b3560d735fda1793b3acf390f7decedf889a53e8d8",
+        "13469ad92758a825556546d42a8bdd021124a71a27b40ea064f4c0f2f27467f1",
+        "13469ad92758a825556546d42a8bdd021124a71a27b40ea064f4c0f2f27467f1",
+        "1ce300ec06ce8fabf43729d0c7df16b3970d2bcc252f7f3a0cc4f6854eb6c429",
+        "1ce300ec06ce8fabf43729d0c7df16b3970d2bcc252f7f3a0cc4f6854eb6c429",
+        "31d6eb1563b81c146551a419219f3dff12442d2750506898960e1e760f41cc40",
+        "3224af665bb0ebe31cf4c172be6eb7aa9daf0966d0a502fdd40a4041c60c08d5",
+        "37012b31e250df0d109ce0dc26e8f3159281ae0e05f9109e138405a524172a9d",
+        "3e6b001b2351ad0689a8b971da4c8c1881b0afbda9747a93df5ddbc8ff4ab89c",
+        "437725014f4d4c1023db7cac3ac35561ce9d00754a46d29c1eb8b0daabdc210f",
+        "482204786a114315f2ccf4228e50cc3ad5af4ba09d63f3677ee9761b2699e52d",
+        "4e698796f781fee20cbf583a4a77a60b02842d4af903e23b56d94853a79184bd",
+        "59f3a7d5e9700aec6b76188f9ffb664299d240c1c33392a0c020daad9070906e",
+        "59f3a7d5e9700aec6b76188f9ffb664299d240c1c33392a0c020daad9070906e",
+        "5c6a046d7da7030927b7932635ba76e1d490f7cac8df0d260eda8201f636e99f",
+        "5c6a046d7da7030927b7932635ba76e1d490f7cac8df0d260eda8201f636e99f",
+        "5f94eceb5d055f58601567832540ac26de4efb7d2368a1e2fd24b3d297908080",
+        "5f94eceb5d055f58601567832540ac26de4efb7d2368a1e2fd24b3d297908080",
+        "617fea335f94e9a4a07bd6889ad6e104434ff19700919a4f137c3c2bf5d21b9a",
+        "6a02b75825ce06dca9246fe197533f49eddf518683db987b86b79f256ae31ddb",
+        "759e1e534da7c759cc3a44bcce68d2cc46b85b09462042e275d09b9bb65d3f60",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "7c79fd9d2bcfcce432cbf983e3ebdbb42953577a3c160494aa0f914b237aef7e",
+        "7e2c993f6ebd79e43128eb4f4c32e10f9146689393a9162ccb6b8efc1e6fd1d4",
+        "822b410cf610015e40f6040d75b9dc441fc8ce65f052d7f948e774fa1a73599f",
+        "8677a726dab586d75dad9545b0ab67473f0af22f089aba1a89f60842a1f47f1e",
+        "89011a3fe572caa3a542f7860463af2d1bf3b4e398855484231b9a3544b9d590",
+        "892e983e328d9bf853ecea4369d274e4bf3cf6633e21236c94a01d06c6ed5aa2",
+        "8b1df8bed2fbaba0ca141c2d83aa1ba3f7eefd94528cbda040ca41fcde06ac12",
+        "8b1df8bed2fbaba0ca141c2d83aa1ba3f7eefd94528cbda040ca41fcde06ac12",
+        "8c1bee626cf55782ec1254a69cb0ccc8a015c284261f99728e87af474702281c",
+        "8c1bee626cf55782ec1254a69cb0ccc8a015c284261f99728e87af474702281c",
+        "8cadc657d9bb988152b470d79e3273e7a25420b65d30520ea724a342960a3ded",
+        "8cadc657d9bb988152b470d79e3273e7a25420b65d30520ea724a342960a3ded",
+        "8dd3b010287c1f5a0e1edf97c0a6b59d48906069df5852a480a641ef7950167b",
+        "8dd3b010287c1f5a0e1edf97c0a6b59d48906069df5852a480a641ef7950167b",
+        "8e6d4c139c8b6b9e9f8f6476abd1c002b1b4f741eb42feacbe2735f588a73e1b",
+        "8e6d4c139c8b6b9e9f8f6476abd1c002b1b4f741eb42feacbe2735f588a73e1b",
+        "90ddc408efd7ae457bc9f2a5aeb3e7820cc235726f950702b8d28569190e6675",
+        "90ddc408efd7ae457bc9f2a5aeb3e7820cc235726f950702b8d28569190e6675",
+        "913e024789a35450a3ac619d94afc003256a515b045cab48650c4144f1f00acb",
+        "913e024789a35450a3ac619d94afc003256a515b045cab48650c4144f1f00acb",
+        "91bc50e865e6db8962731dfeb3116def987c26f307ff282d4bd2d924f595943b",
+        "96a3928509f3bdb0a96c1ce6dfdaec38185a95a9ea1bde477a70c4dafbf7b004",
+        "9b178bef85d31dc6140098226ebdc22ede967a838567af34fb01f4667ae14710",
+        "a4b0f010e5eca38e03a674b5564e2a2a2be331192b23799c32112758bd563e3e",
+        "a781f2f6440a498f5a2d5f27d9aa44cf66a7a54ae4b0a8407c6a2aa1aed69f23",
+        "a781f2f6440a498f5a2d5f27d9aa44cf66a7a54ae4b0a8407c6a2aa1aed69f23",
+        "a7d165a2fbc45efd99db501ae18bd1675fd62a35c00ebb943149c4c8a7e425fa",
+        "b8945bba42bd44f0a1741ee3f244e6064af3c92d193ee095898cd2265826e24e",
+        "b8945bba42bd44f0a1741ee3f244e6064af3c92d193ee095898cd2265826e24e",
+        "c2428c1d53cfad3dd6e18e48f54a01c464b17c44cde768b57ed95f7abdc41d18",
+        "c2428c1d53cfad3dd6e18e48f54a01c464b17c44cde768b57ed95f7abdc41d18",
+        "c3c4b5722380d3795d4a40350f3acc52117968b87d98a4c2ec582252a389399b",
+        "c3c4b5722380d3795d4a40350f3acc52117968b87d98a4c2ec582252a389399b",
+        "c829186fea04c6fb5ac6cb6f92881f31ff302e34b0908d27599fc00e411a73c7",
+        "e04c8281e9c8993434294a60fd2637b30a213ea7246847fae912f845f96888c3",
+        "e1a19385caa90575a34f0dba137eb60d0263a81092482ce18bee5c25c8f68ab9",
+        "e3cc7d64e70b0ce2db2c57dab7cd0981d60bbf2b58240dca843041207ceb760d",
+        "f60a0861a8b22b6a66855f0567deb5f72673ebd281f9610924d04b4d8bb90c0e",
+        "f60a0861a8b22b6a66855f0567deb5f72673ebd281f9610924d04b4d8bb90c0e",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "f7c2e95d29218aa54f83b1447b37d993dfc2a1939ce77f31255721cd74a995da",
+        "f94b7221abc8436e98803607edc3f321b0ef28d827c29eed22fc83bb83038a55",
+        "ff4eb79393fd49721281cacf35b9ccf3254ac8ba69fd777a215fab9324408b21",
+        "ff4eb79393fd49721281cacf35b9ccf3254ac8ba69fd777a215fab9324408b21"
+      ]
+    },
+    "tests/qualification/lexer_reservation_current/unit1_run_reviewer_current.py": {
+      "commands": [
+        "59cbb9329a168ba72ac38f3282da82e55a5a4981ad07f652dab18e2adc30f111",
+        "96209d712da00cdc2aeaf8e752f683e94ffdcd81e3682248dbbf7f3da6e61ab2"
+      ],
+      "constants_and_argv": [],
+      "predicates": [
+        "00c22f3f58b0c961cb228f0d9351e97caaf5719766e5ede1901f70010d700333",
+        "00c22f3f58b0c961cb228f0d9351e97caaf5719766e5ede1901f70010d700333",
+        "014daaf3defa843b6fb32ea9e597caf45748c15728d8dd95fdc001c7c4288998",
+        "129248dbda4f339c399705e32b3952d1f3d0f1f4451afc27a81205e7449bff4b",
+        "129248dbda4f339c399705e32b3952d1f3d0f1f4451afc27a81205e7449bff4b",
+        "1d227ab24da8baa0b4e664aebc5515b33afc0f0291a539d7bfa189d3fc1eefb8",
+        "28294111d3a54a3c9b30b75ff3e28e40bb2b008ea3ca53b15caccd2ff46b8eab",
+        "2f33ffe13c7c477d4e831639c544c53a6e42b572f48f8e1bbfb246527bb0bef3",
+        "37f712d593023a5300b2b8d4b649a25f21ba4d54d1ea7bc3bc49eb64fee51db9",
+        "3fd376617a43243ed6218e42ff75b37290db7156f406c190a4214ed2830e5bbc",
+        "40da1c6953e70129c1bb088a0a90468d366972899a74a8f5d1409a9ba3aa3f2c",
+        "4eac72c3cb001b38aa92d5060233047d8cad94801219b13dd3beca8de2f3a510",
+        "4ff69147f046b5032bda0bd7161284208674fa99678d44e13b28b1c8025af48f",
+        "4ff69147f046b5032bda0bd7161284208674fa99678d44e13b28b1c8025af48f",
+        "5781ec6d2a19010ec823cb574df2a8c4d6bd2800e5e4dc72362f37233968395d",
+        "5acddfb31f495936435558536359f6b700ac3243b1ef5723c33859f517ee7f79",
+        "5c2bfe0e9e56a0f3c8bcf0ce412ff7c56da139785cd5187216d91c603f811b67",
+        "5c74509c8942bd273f83e7b3f113b8ca450e9342b798d1666de6cf54c9ca38e3",
+        "5d06ce2579152e1f7f3f59ae4b316e1d53aa1e1957a289fdf38551747c618613",
+        "7a846acbe8ca9f948ac6045be112061aefe90acca71b9e9f1cf676b8bc1ee594",
+        "7bb413c9ac1f75b4b5353aa09c34467809625e97c18ba6c508a0b5c52d442ab2",
+        "854db0950264a858cc614720bd0413758c0d239f8db4104c333b88e48ae17b60",
+        "bb0bd7505a609b9032d0fab3047974c1116ea9ac5698b715c569e2ccfa5cbb54",
+        "ce2106d69567b95c8197be123655b9c35346340c4b11fe30a361c62e59ec5d6e",
+        "d293cddb135fc8e10f08066fc569f07e2ffa805690c7d6e1ef2f21d92222b179",
+        "d4935e74367c4f3f36107b9e25f932e7d14f154064de7e9342d13f73cdb9e977",
+        "dc471fb425f24d5cc097399c3f57017109e903770c07d87ff29d65802525e1b7",
+        "f0f0ad39f1bb8a282b8e57f7326b20afa1a1a3232145a4eb766e6049c824b77e",
+        "f0f0ad39f1bb8a282b8e57f7326b20afa1a1a3232145a4eb766e6049c824b77e",
+        "f3b118ba0964441641fc70b62056d8456e8e79de1128b5a38ee3403d4be99b93",
+        "f4254a86734e4ad6876dd125fbd6e0802f5edccbfa232a33bcdc7182d4a0db9c",
+        "f42885c6503cbed9af37fed24f49fe2c8c0611db57399a258ca5a5d61ef68553",
+        "f42885c6503cbed9af37fed24f49fe2c8c0611db57399a258ca5a5d61ef68553",
+        "f812f82a747303010b151b9f18cbfffc15f3830d1715f992a7e4c79046230824",
+        "f812f82a747303010b151b9f18cbfffc15f3830d1715f992a7e4c79046230824"
+      ]
+    }
+  },
+  "schema": "oxid-package-dependency-unit1-inert-recipes-v1",
+  "source_only": true,
+  "source_transition": {
+    "changed_members": [
+      "src/main.rs"
+    ],
+    "compiler_bodies": 291,
+    "current_checkpoint": {
+      "head": "ce522e393646ce6478848cee31f307cb4b6ad5e8",
+      "tree": "8c3f4837e1fc89a6272ebee3552ce617ce584131"
+    },
+    "current_main": {
+      "bytes": 132467,
+      "path": "src/main.rs",
+      "sha256": "73b79fa86e076a48bf3a0ca7548a1864b9a2928670f9e13512c280a63fec93cb"
+    },
+    "current_manifest": {
+      "bytes": 74565,
+      "path": "tests/fixtures/package_dependency_source_v1/package-dependency-source-v1.json",
+      "sha256": "f67d373bf5e2f8e620e17fa3f8fc8234211338738d46d65bbdf5658e0e34eac5"
+    },
+    "historical_checkpoint": {
+      "head": "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489",
+      "tree": "7f5c9aa08c569c4d0b5a27391d8fc68337075d36"
+    },
+    "historical_main": {
+      "bytes": 132262,
+      "path": "src/main.rs",
+      "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+    },
+    "historical_manifest": {
+      "bytes": 74328,
+      "path": "tests/fixtures/typed_project_source_binding/current-source.json",
+      "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+    },
+    "source_members": 376,
+    "unchanged_project": {
+      "bytes": 174215,
+      "path": "src/frontend/project.rs",
+      "sha256": "886590c847516fac273826f0e8f0cf34fe37d66a0c6933d88385e4b288d5df84"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "approved_plan_sha256": "b74dac3925bfaead871d88b4a117223a6e43c237d80ed172135da012db4cb616",
+  "derived_controller_execution": false,
+  "execution_authorized": false,
+  "files": {
+    "owned.py": {
+      "bytes": 15727,
+      "sha256": "9f34135387e73272d1b678ec9ad77c69df7a242f325a14b2f8b6a286da472ec3"
+    },
+    "recipes.json": {
+      "bytes": 278318,
+      "sha256": "97a94fcb1e5fe32b1b51732bbc21478d04d78b010ed1ac0c35ea70e6f906772a"
+    },
+    "test_owned.py": {
+      "bytes": 28532,
+      "sha256": "0b6ea405fab94ecd58f6cfcaa852e3e8c63d1489430ccb5ebb5dfccb6e9a6e7a"
+    }
+  },
+  "repository_file_roster": [
+    "tests/qualification/package_dependency_owned_array_current_v1/owned.py",
+    "tests/qualification/package_dependency_owned_array_current_v1/recipes.json",
+    "tests/qualification/package_dependency_owned_array_current_v1/test_owned.py",
+    "tests/qualification/package_dependency_owned_array_current_v1/package-manifest.json"
+  ],
+  "retained_controller_imports": false,
+  "schema": "oxid-package-dependency-owned-array-package-v1",
+  "seal_direction": "package-manifest -> owned.py, recipes.json, test_owned.py; owned.py -> recipes.json; no self-hash or authority issuance",
+  "status": "inert-unregistered"
+}
