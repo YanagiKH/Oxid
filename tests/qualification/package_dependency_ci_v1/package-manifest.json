@@ -1,0 +1,75 @@
+{
+  "adapters": {
+    "bounded": {
+      "directory": "package_dependency_bounded_current_v1",
+      "manifest": {
+        "bytes": 619,
+        "sha256": "ddd42e7cc19260b91f18fce55750558dfe2d23ce20b0b6fccac71082549b5e29"
+      }
+    }
+  },
+  "files": [
+    {
+      "bytes": 4099,
+      "path": "README.md",
+      "sha256": "6445458ddd5e95af4273d2af2f95e72d7bad14a89ac17030952fd41d39010005"
+    },
+    {
+      "bytes": 26976,
+      "path": "artifacts.py",
+      "sha256": "37d376fa9d19f2ec0bcf42303136fff2c24b75aff09b299dd16dfeed4cbdd8be"
+    },
+    {
+      "bytes": 134987,
+      "path": "inputs.json",
+      "sha256": "7cd747b2fd793187d5dc8bb7cfa592a39d03312429c99fb8a6ab89359ec64260"
+    },
+    {
+      "bytes": 53943,
+      "path": "jobs.py",
+      "sha256": "81b601390911c03ac90e0e55777878baa8e9087131af17baa0ff9a3160270b0f"
+    },
+    {
+      "bytes": 600071,
+      "path": "routes.json",
+      "sha256": "a5ebe4d44326d31a12db587f299fc2a184fb0ecfafed2411f88204a7fa526e53"
+    },
+    {
+      "bytes": 26684,
+      "path": "source.py",
+      "sha256": "a202686c177c128628420c4f208aff67cf33830878af2df6132c739ef9cf081d"
+    },
+    {
+      "bytes": 27701,
+      "path": "test_artifacts.py",
+      "sha256": "6735238079627d7bed9b50f403f8591d22450804d64e6f3f89930fa061b86417"
+    },
+    {
+      "bytes": 47333,
+      "path": "test_jobs.py",
+      "sha256": "5fa8dedd267d4135db0b63ecdc60e3675b76ae45c07c3a1fe8e2f98ed1121801"
+    },
+    {
+      "bytes": 15618,
+      "path": "test_source.py",
+      "sha256": "1be09a9adf1673fd2686cda7a076648fcf57c209fbcf661670a7b13e6ad01a50"
+    }
+  ],
+  "production_owners": {
+    "machine": {
+      "directory": "package_dependency_production_machine_v1",
+      "manifest": {
+        "bytes": 583,
+        "sha256": "a86fa682b2d717a56ae36d26e01ef7c4e6954876e76ab476774a968976b9a28c"
+      }
+    },
+    "process": {
+      "directory": "package_dependency_production_process_v1",
+      "manifest": {
+        "bytes": 593,
+        "sha256": "f47882daeed173a4acec490c3ccfa4d09debc342d25431f331ec2257da67d699"
+      }
+    }
+  },
+  "schema": "oxid-package-dependency-ci-package-v1"
+}

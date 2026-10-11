@@ -1,0 +1,20 @@
+{
+  "baseline": {
+    "bytes": 94821,
+    "path": "tests/qualification/package_dependency_unit4_machine_v1/machine.py",
+    "sha256": "19a6c3bd82e119b501bc1f6910fa96ad8d2b86f50beac4b4bae3b7a8de0a3056"
+  },
+  "files": [
+    {
+      "bytes": 129585,
+      "path": "machine.py",
+      "sha256": "944a358c36514dd47bb8670985d0f157d856b0021f839f761dd8fa7373664022"
+    },
+    {
+      "bytes": 35084,
+      "path": "test_machine.py",
+      "sha256": "ca9e231f1e2b7a47d43e7e75781135be4ec0be953d9aab6774b141eeef14a5bf"
+    }
+  ],
+  "schema": "oxid-package-dependency-production-machine-v1"
+}

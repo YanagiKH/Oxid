@@ -1,0 +1,19 @@
+{
+  "files": {
+    "bounded.py": {
+      "bytes": 21187,
+      "sha256": "94fce4a788171d06f999f5a94bc6df4ba32ca31bfcc422353d12ddeeba58f4af"
+    },
+    "recipes.json": {
+      "bytes": 300462,
+      "sha256": "a7bf8c780508c8d8dbb21fc8e4a9e804dd3ff735f17deeebc2404414d6357cce"
+    },
+    "test_bounded.py": {
+      "bytes": 19700,
+      "sha256": "afce20a3ade0ea31cc7b7ea520c56ae5991894ea163df8bdc7160f5bdef5d0ab"
+    }
+  },
+  "operational_release": null,
+  "schema": "oxid-package-dependency-bounded-current-package-v1",
+  "source_dependency_sha256": "a202686c177c128628420c4f208aff67cf33830878af2df6132c739ef9cf081d"
+}

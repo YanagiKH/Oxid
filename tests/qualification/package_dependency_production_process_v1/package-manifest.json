@@ -1,0 +1,20 @@
+{
+  "baseline": {
+    "bytes": 117696,
+    "path": "tests/qualification/package_dependency_unit4_current/preparation.py",
+    "sha256": "7c475867d93065b123f5c6f4acd12a7c622efb0c8392c0f7748d0637fa11e6e6"
+  },
+  "files": [
+    {
+      "bytes": 144769,
+      "path": "preparation.py",
+      "sha256": "87417ca01f184cc21dce9899e7525ab02493d9976cacf967517aca6e19892f36"
+    },
+    {
+      "bytes": 58865,
+      "path": "test_preparation.py",
+      "sha256": "2945310cc761cdf767e3f5fa1872dadfd30b41a446885c63985b2f75fcd98b4d"
+    }
+  ],
+  "schema": "oxid-package-dependency-production-process-v1"
+}
