@@ -1,0 +1,47 @@
+{
+  "execution_qualified": false,
+  "files": [
+    {
+      "bytes": 11263,
+      "path": "binding.py",
+      "sha256": "3a89631dd6593a116a7dafae6b1fcb823ed131eae01ffa1fbd504a2bba3f6bae"
+    },
+    {
+      "bytes": 32862,
+      "path": "build.py",
+      "sha256": "23d156dfd228ea2aaca9996eb04700589b8659ac3682fa5bb16cabb8c6cb0744"
+    },
+    {
+      "bytes": 53151,
+      "path": "hosted.py",
+      "sha256": "ab81293a41e6b2ef5d2d9e750a5058138c4849d101c18b04e95a8985ce5754ba"
+    },
+    {
+      "bytes": 100763,
+      "path": "runtime.py",
+      "sha256": "9b68acf74f619a0167755a7d940c486bfb876bc4a795c1c70947dc224c586efc"
+    },
+    {
+      "bytes": 3128,
+      "path": "test_binding.py",
+      "sha256": "9086ab475541209dfb981cbd87076fae65e3ce35a7213b37b7254e16f8433a47"
+    },
+    {
+      "bytes": 12199,
+      "path": "test_build.py",
+      "sha256": "7aad79f9c1bfd759d3c84434627a77c6ad722e9b3d166521dee1f335ad45e1f6"
+    },
+    {
+      "bytes": 23857,
+      "path": "test_hosted.py",
+      "sha256": "46dfd9c0edf279f268b0ac2589e650a75c9d4f8b26e21a9ca05c45027cc144e4"
+    },
+    {
+      "bytes": 51185,
+      "path": "test_runtime.py",
+      "sha256": "8db606d95c65ca1cede9ca7bd35fcbb4b52a8208f65a81b7567ef7c81c548cc9"
+    }
+  ],
+  "schema": "oxid-package-dependency-unit4-public-package-v1",
+  "status": "NotReady"
+}
