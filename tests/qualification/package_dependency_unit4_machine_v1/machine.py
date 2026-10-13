@@ -26,7 +26,7 @@ import weakref
 from pathlib import Path, PurePosixPath
 
 sys.dont_write_bytecode = True
-SHARED_MANIFEST_SHA256 = '158851e13a6adffa6909665b9392a5baaa8f4f3e160f1061177400df82aa5bd5'  # Integrator seals the fixed installed package.
+SHARED_MANIFEST_SHA256 = 'fa910b15e2008451da83f1cebc6452ff3617b34e1c5a04be85dfe558be8e93fa'  # Integrator seals the fixed installed package.
 SHARED_FILES = ('context.py', 'preparation.py', 'prepare_worker.py',
                 'test_context.py', 'test_preparation.py')
 SHARED_KEY = '_oxid_package_dependency_unit4_preparation_v1'

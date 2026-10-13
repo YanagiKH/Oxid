@@ -4,12 +4,12 @@
     {
       "bytes": 11263,
       "path": "binding.py",
-      "sha256": "3a89631dd6593a116a7dafae6b1fcb823ed131eae01ffa1fbd504a2bba3f6bae"
+      "sha256": "1cd256d81ec99b297f5b774c387151fc348985c4eecc988f9894511086733292"
     },
     {
       "bytes": 32862,
       "path": "build.py",
-      "sha256": "23d156dfd228ea2aaca9996eb04700589b8659ac3682fa5bb16cabb8c6cb0744"
+      "sha256": "c930d52616dfa55099142ac5df4cdb29ff86ea4998090dab4cc99b95c14b814c"
     },
     {
       "bytes": 53151,
@@ -17,9 +17,9 @@
       "sha256": "ab81293a41e6b2ef5d2d9e750a5058138c4849d101c18b04e95a8985ce5754ba"
     },
     {
-      "bytes": 100763,
+      "bytes": 119722,
       "path": "runtime.py",
-      "sha256": "9b68acf74f619a0167755a7d940c486bfb876bc4a795c1c70947dc224c586efc"
+      "sha256": "e2c4cbc6aa6576ec562898a13b26f8674f307f8242d677af4ec92f56bee94be5"
     },
     {
       "bytes": 3128,
@@ -37,9 +37,9 @@
       "sha256": "46dfd9c0edf279f268b0ac2589e650a75c9d4f8b26e21a9ca05c45027cc144e4"
     },
     {
-      "bytes": 51185,
+      "bytes": 142154,
       "path": "test_runtime.py",
-      "sha256": "8db606d95c65ca1cede9ca7bd35fcbb4b52a8208f65a81b7567ef7c81c548cc9"
+      "sha256": "1f87732e38598cdd470f1456234cb9aea18b0dc5c520546aada79d26001a847e"
     }
   ],
   "schema": "oxid-package-dependency-unit4-public-package-v1",

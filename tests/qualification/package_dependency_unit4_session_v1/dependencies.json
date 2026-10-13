@@ -1,5 +1,5 @@
 {
-  "candidate_manifest_sha256": "d9b4139f6323bef5c6f5a40fd1dfa945d5bd32e49a9a93dca49a6c4621a34b82",
+  "candidate_manifest_sha256": "af5a90fd0f4a7c5470176deef3a7b4426ffed149787a4becec4be84c5bbf5a44",
   "files": [
     {
       "bytes": 28670,
@@ -9,12 +9,12 @@
     {
       "bytes": 930,
       "path": "tests/qualification/package_dependency_unit4_current/package-manifest.json",
-      "sha256": "158851e13a6adffa6909665b9392a5baaa8f4f3e160f1061177400df82aa5bd5"
+      "sha256": "fa910b15e2008451da83f1cebc6452ff3617b34e1c5a04be85dfe558be8e93fa"
     },
     {
-      "bytes": 117696,
+      "bytes": 154690,
       "path": "tests/qualification/package_dependency_unit4_current/preparation.py",
-      "sha256": "7c475867d93065b123f5c6f4acd12a7c622efb0c8392c0f7748d0637fa11e6e6"
+      "sha256": "219f5e21e37f83b7cc277f19fffbd85ad94b482ce732b54977bf8f507980dbb0"
     },
     {
       "bytes": 40719,
@@ -27,19 +27,19 @@
       "sha256": "dbd2406546669552154d89e0674fc6aba56b6e8e609d4d31c733198de83d1993"
     },
     {
-      "bytes": 138912,
+      "bytes": 186681,
       "path": "tests/qualification/package_dependency_unit4_current/test_preparation.py",
-      "sha256": "596e340a2d15a78a069fab0d6b80350423c4930e37c2466f2b79e4a0d306989d"
+      "sha256": "2a349ae9311047fff8e7a35e2bb57d8be3d73920d1000ebd45d2564ed832ff73"
     },
     {
       "bytes": 94821,
       "path": "tests/qualification/package_dependency_unit4_machine_v1/machine.py",
-      "sha256": "19a6c3bd82e119b501bc1f6910fa96ad8d2b86f50beac4b4bae3b7a8de0a3056"
+      "sha256": "118591dadcad2ddb3deb31321ccf921fef9972cb6409f321cf54110f6d0710ef"
     },
     {
       "bytes": 474,
       "path": "tests/qualification/package_dependency_unit4_machine_v1/package-manifest.json",
-      "sha256": "8a885efa2e828373433a8f581f699c00829d02eca994bb8af84718f6f6433c03"
+      "sha256": "1661e0efc94e43410acf74d011f98cb52be76cac5f5904cb658e410e0bbec03a"
     },
     {
       "bytes": 91025,
@@ -54,7 +54,7 @@
     {
       "bytes": 51648,
       "path": "tests/qualification/package_dependency_unit4_parser_v1/portable.py",
-      "sha256": "d43ff7ce146f8eefa9574e77f01e3c69a937617c4e90a479008c8b0ca7818010"
+      "sha256": "a3cc4e56d1392906f45d1e0ce132f6b82c8a78a77cbe09380dbf4a99e42bc0d6"
     },
     {
       "bytes": 48755,
@@ -74,12 +74,12 @@
     {
       "bytes": 11263,
       "path": "tests/qualification/package_dependency_unit4_public_v1/binding.py",
-      "sha256": "3a89631dd6593a116a7dafae6b1fcb823ed131eae01ffa1fbd504a2bba3f6bae"
+      "sha256": "1cd256d81ec99b297f5b774c387151fc348985c4eecc988f9894511086733292"
     },
     {
       "bytes": 32862,
       "path": "tests/qualification/package_dependency_unit4_public_v1/build.py",
-      "sha256": "23d156dfd228ea2aaca9996eb04700589b8659ac3682fa5bb16cabb8c6cb0744"
+      "sha256": "c930d52616dfa55099142ac5df4cdb29ff86ea4998090dab4cc99b95c14b814c"
     },
     {
       "bytes": 53151,
@@ -87,14 +87,14 @@
       "sha256": "ab81293a41e6b2ef5d2d9e750a5058138c4849d101c18b04e95a8985ce5754ba"
     },
     {
-      "bytes": 1321,
+      "bytes": 1322,
       "path": "tests/qualification/package_dependency_unit4_public_v1/package-manifest.json",
-      "sha256": "e2cf8bb241c67d38a1653a2c60e2ebb3341b7e43d3f62d8ba3e28f2e40a2f19c"
+      "sha256": "9d335f5bf5bbf638ab909a16a11227e8043730dcd8f5b94f991cd18e0cad3715"
     },
     {
-      "bytes": 100763,
+      "bytes": 119722,
       "path": "tests/qualification/package_dependency_unit4_public_v1/runtime.py",
-      "sha256": "9b68acf74f619a0167755a7d940c486bfb876bc4a795c1c70947dc224c586efc"
+      "sha256": "e2c4cbc6aa6576ec562898a13b26f8674f307f8242d677af4ec92f56bee94be5"
     },
     {
       "bytes": 3128,
@@ -112,9 +112,9 @@
       "sha256": "46dfd9c0edf279f268b0ac2589e650a75c9d4f8b26e21a9ca05c45027cc144e4"
     },
     {
-      "bytes": 51185,
+      "bytes": 142154,
       "path": "tests/qualification/package_dependency_unit4_public_v1/test_runtime.py",
-      "sha256": "8db606d95c65ca1cede9ca7bd35fcbb4b52a8208f65a81b7567ef7c81c548cc9"
+      "sha256": "1f87732e38598cdd470f1456234cb9aea18b0dc5c520546aada79d26001a847e"
     },
     {
       "bytes": 1737,

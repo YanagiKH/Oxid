@@ -7,6 +7,7 @@ import ast
 import copy
 import hashlib
 import io
+import itertools
 import os
 from pathlib import Path
 import stat
@@ -709,7 +710,7 @@ class PreparationControls(unittest.TestCase):
         self.assertTrue(result['cleanup_complete'])
 
     def test_fake_supervisor_timeout_always_cleans_owned_tree(self):
-        result, _, _ = self.supervise(timeout=1, clock=iter([0, 2, 2]).__next__)
+        result, _, _ = self.supervise(timeout=1, clock=itertools.chain([0], itertools.repeat(2)).__next__)
         self.assertTrue(result['timed_out'])
         self.assertTrue(result['cleanup_complete'])
 
@@ -736,7 +737,7 @@ class PreparationControls(unittest.TestCase):
         class UnfinishedReader(InlineReader):
             def is_alive(self):
                 return True
-        result, _, _ = self.supervise(timeout=1, clock=iter([0, 2, 2, 4]).__next__,
+        result, _, _ = self.supervise(timeout=1, clock=itertools.chain([0, 2, 2], itertools.repeat(4)).__next__,
                                      reader_class=UnfinishedReader)
         self.assertTrue(result['timed_out'])
         self.assertFalse(result['cleanup_complete'])
@@ -783,7 +784,7 @@ class PreparationControls(unittest.TestCase):
             members=[{'pid':i,'rss':0,'state':'S'} for i in range(count)]
             samples=iter([members])
             with patch.object(self.q,'_native_register',return_value=None),patch.object(self.q,'_native_terminal'):
-                result,_,_=self.supervise(operation_kind='public-runtime',native_plan=plan,samples=lambda _:next(samples,[]))
+                result,_,_=self.supervise(operation_kind='public-runtime',native_plan=plan,samples=lambda *args,**kwargs:next(samples,[]))
             self.assertEqual(result['operation_policy']['processes'],5)
             self.assertEqual(result['operation_policy']['rss_bytes'],2*1024**3)
             self.assertEqual(result['failure'] is None,count==5)
@@ -1985,6 +1986,9 @@ class OutputMonitorControls(unittest.TestCase):
         self.run = {'root': self.root, 'deadline': 1000.0, 'failed': False, 'next': 0}
         self.q.need = self.need
         self.q._DEADLINE = None
+        # Explicit finite diagnostic-only replacement in this isolated module.
+        # The isolated smaller ceiling is test-only; production uses its reviewed finite contract.
+        self.q._OUT_EXECUTION_SECONDS = 1.0
         self.q._run_state = lambda inv: ({}, {}, self.run) if inv is self.inv else self.need(False, 'invocation')
         self.q._runtime_permit = lambda permit, inv, kind: self.runtime_permit(permit, inv, kind)
         self.q._runtime_permit_owner = self.q._runtime_permit
@@ -2097,7 +2101,7 @@ class OutputMonitorControls(unittest.TestCase):
         p = self.root / 'public-runtime/collection/public/roster.json'
         actual[str(p)]['stat']['st_ctime_ns'] += 1
         with self.assertRaises(ValueError):
-            self.q._out_compare(m, actual)
+            self.q._out_compare(m, actual, deadline=10.0)
 
     def test_sealed_file_disappearance_rejects(self):
         self.open_section()
@@ -2322,7 +2326,7 @@ class OutputMonitorControls(unittest.TestCase):
         self.assertFalse(result['verified'])
         self.assertTrue(self.run['failed'])
 
-    def test_three_second_due_keeps_five_second_hard_cap(self):
+    def test_three_second_due_keeps_five_second_start_cap(self):
         self.clock = 2.9
         self.q.public_output_tick(self.inv)
         self.assertEqual(self.monitor()['last_audit'], 0.0)
@@ -2385,6 +2389,420 @@ class OutputMonitorControls(unittest.TestCase):
         self.assertFalse(self.run['failed'])
 
 
+class AuditPolicyControls(OutputMonitorControls):
+    """Extra deterministic policy controls; tiny owned files, no real children."""
+    def test_production_budget_is_selected_finite_without_public_override(self):
+        q = isolated_api()
+        self.assertEqual(q._OUT_EXECUTION_SECONDS, 14.0)
+        self.assertEqual(q._out_budget(), 14.0)
+        q._OUT_EXECUTION_SECONDS = None
+        q._run_state = Mock(side_effect=AssertionError('no admission while held'))
+        with self.assertRaisesRegex(q.Rejected, 'not released'):
+            q.public_output_start(object(), object())
+        q._run_state.assert_not_called()
+        for value in (None, float('nan'), float('inf'), -1, 0, True):
+            q._OUT_EXECUTION_SECONDS = value
+            with self.assertRaises(q.Rejected):
+                q._out_budget()
+
+    def test_selected_contract_serializes_due_start_completion_and_revisit(self):
+        q = isolated_api()
+        m = self.monitor()
+        m['execution_seconds'] = q._out_budget()
+        policy = self.q._public_output_report(m)['policy']
+        self.assertEqual(policy['due_seconds'], 3.0)
+        self.assertEqual(policy['max_idle_start_seconds'], 5.0)
+        self.assertEqual(policy['execution_seconds'], 14.0)
+        self.assertEqual(policy['completion_gap_bound'], 19.0)
+        self.assertEqual(policy['persistent_metadata_revisit_bound'], 33.0)
+
+    def test_selected_contract_never_extends_raw_deadlines(self):
+        self.q._OUT_EXECUTION_SECONDS = 14.0
+        m = self.monitor();m['execution_seconds'] = 14.0
+        m['run']['deadline'] = 11.0
+        m['operation'] = {'deadline': 9.0}
+        self.q._DEADLINE = 10.0
+        self.assertEqual(self.q._out_raw_deadline(m, 12.0), 9.0)
+        self.assertEqual(self.q._out_raw_deadline(m, 8.0), 8.0)
+        m['operation'] = None
+        self.assertEqual(self.q._out_raw_deadline(m), 10.0)
+        self.q._DEADLINE = None
+        self.assertEqual(self.q._out_raw_deadline(m), 11.0)
+
+    def test_start_contract_allows_completion_after_previous_plus_five(self):
+        m = self.monitor()
+        original = self.q._out_snapshot
+        def snapshot(*args, **kwargs):
+            rows = original(*args, **kwargs)
+            self.clock += 0.8
+            return rows
+        self.clock = 4.9
+        with patch.object(self.q, '_out_snapshot', side_effect=snapshot):
+            self.q._out_audit(m)
+        self.assertAlmostEqual(m['last_audit'], 5.7)
+        self.assertAlmostEqual(self.q._public_output_report(m)['max_completed_audit_gap'], 5.7)
+
+    def test_no_child_late_boundary_fails_before_body_and_does_not_reset_anchor(self):
+        self.clock = 5.01
+        entered = False
+        with self.assertRaisesRegex(ValueError, 'start cadence'):
+            with self.q.public_output_boundary(self.inv, self.permit, 'section-open', 'public'):
+                entered = True
+        self.assertFalse(entered)
+        self.assertEqual(self.monitor()['last_audit'], 0)
+        self.assertEqual(self.monitor()['first_failed_attempt']['phase'], 'start')
+
+    def test_no_child_due_source_tick_audits_before_late_boundary(self):
+        self.clock = 3
+        self.q._public_output_tick_active()
+        self.clock = 6
+        self.open_section()
+        self.assertEqual(self.monitor()['last_audit'], 6)
+
+    def test_boundary_exit_late_is_detected_with_no_active_operation(self):
+        with self.assertRaisesRegex(ValueError, 'start cadence'):
+            with self.q.public_output_boundary(self.inv, self.permit, 'section-open', 'public'):
+                root = self.root / 'public-runtime/collection/public'
+                root.mkdir()
+                (root / 'roster.json').write_bytes(b'[]')
+                self.clock = 5.01
+        self.assertIsNone(self.monitor()['operation'])
+        self.assertEqual(self.monitor()['last_audit'], 0)
+
+    def test_invalid_audit_clocks_reject(self):
+        for previous in (float('nan'), float('inf'), 1.0):
+            with self.subTest(previous=previous):
+                m = self.monitor()
+                m['run']['failed'] = False
+                m['last_audit'] = previous
+                with self.assertRaises(ValueError):
+                    self.q._out_audit(m)
+
+    def test_snapshot_execution_timeout_retains_real_times_and_first_error(self):
+        m = self.monitor()
+        self.clock = 3
+        original = self.q._out_snapshot
+        def snapshot(*args, **kwargs):
+            rows = original(*args, **kwargs)
+            self.clock = 4
+            return rows
+        with patch.object(self.q, '_out_snapshot', side_effect=snapshot):
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                self.q._out_audit(m)
+        first = copy.deepcopy(m['first_failed_attempt'])
+        self.assertEqual((first['started'], first['deadline'], first['completed']), (3, 4, 4))
+        self.assertGreater(first['counts']['entries'], 0)
+        self.assertEqual(m['last_audit'], 0)
+        self.clock = 20
+        saved = self.q._public_output_failure_audit(m, deadline=21)
+        self.assertTrue(saved['verified'])
+        self.assertEqual(saved['first_failed_attempt'], first)
+        self.assertEqual(m['last_audit'], 0)
+
+    def test_late_healthy_failure_allows_finite_readonly_preservation(self):
+        m = self.monitor()
+        self.clock = 6
+        with self.assertRaisesRegex(ValueError, 'start cadence'):
+            self.q._out_audit(m)
+        first = copy.deepcopy(m['first_failed_attempt'])
+        before = copy.deepcopy(m['sealed'])
+        preserved = self.q._public_output_failure_audit(m, deadline=10)
+        self.assertTrue(preserved['verified'])
+        self.assertEqual(preserved['first_failed_attempt'], first)
+        self.assertEqual(m['last_audit'], 0)
+        self.assertEqual(m['sealed'], before)
+        self.assertTrue(m['run']['failed'])
+
+    def test_diagnostic_failure_cannot_mask_first_error_or_leave_recursion_guard(self):
+        m = self.monitor()
+        original = ValueError('first snapshot failure')
+        with patch.object(self.q, '_out_snapshot', side_effect=original), \
+             patch.object(self.q, '_out_attempt_document', side_effect=RuntimeError('secondary diagnostic failure')):
+            with self.assertRaises(ValueError) as error:
+                self.q._out_audit(m)
+        self.assertIs(error.exception, original)
+        self.assertFalse(m['auditing'])
+        self.assertIsNone(m['current_attempt'])
+        self.assertIn('first snapshot failure', m['first_failed_attempt']['error'])
+        self.assertIn('secondary diagnostic', m['diagnostic_errors'][0])
+        self.assertEqual(m['last_audit'], 0)
+
+    def test_diagnostic_only_failure_does_not_commit_success(self):
+        m = self.monitor()
+        self.clock = 1
+        with patch.object(self.q, '_out_attempt_document', side_effect=RuntimeError('diagnostic failure')):
+            with self.assertRaisesRegex(RuntimeError, 'diagnostic failure'):
+                self.q._out_audit(m)
+        self.assertEqual(m['last_audit'], 0)
+        self.assertFalse(m['auditing'])
+        self.assertTrue(m['run']['failed'])
+
+    def test_comparison_checks_after_each_sealed_predicate(self):
+        m = self.monitor()
+        self.clock = 3
+        original = self.q._out_same
+        def same(*args):
+            result = original(*args)
+            self.clock = 4
+            return result
+        with patch.object(self.q, '_out_same', side_effect=same):
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                self.q._out_audit(m)
+        failed = m['first_failed_attempt']
+        self.assertEqual(failed['phase'], 'sealed')
+        self.assertEqual(failed['counts']['sealed'], 1)
+        self.assertIn('path_sha256', failed)
+
+    def test_membership_loop_is_internally_deadline_checked(self):
+        m = self.monitor()
+        rows, _ = self.q._out_snapshot(m, [self.root], deadline=10)
+        class SlowMembership(dict):
+            def __iter__(inner):
+                for key in super(SlowMembership, inner).__iter__():
+                    self.clock = 4
+                    yield key
+        self.clock = 3
+        with patch.object(self.q, '_out_snapshot', return_value=(SlowMembership(rows), 0)):
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                self.q._out_audit(m)
+        self.assertEqual(m['first_failed_attempt']['phase'], 'membership')
+        self.assertEqual(m['first_failed_attempt']['counts']['membership'], 0)
+
+    def test_raw_operation_deadline_wins_over_execution_budget(self):
+        m = self.monitor()
+        self.clock = 3
+        with self.assertRaisesRegex(ValueError, 'deadline'):
+            self.q._out_audit(m, deadline=2.9)
+        self.assertEqual(m['last_audit'], 0)
+        self.assertEqual(m['first_failed_attempt']['phase'], 'start')
+
+    def test_failure_preservation_never_advances_healthy_success(self):
+        m = self.monitor()
+        self.clock = 2
+        result = self.q._public_output_failure_audit(m, deadline=10)
+        self.assertTrue(result['verified'])
+        self.assertEqual(m['last_audit'], 0)
+        self.assertEqual(self.q._public_output_report(m)['full_audit_count'], 1)
+        self.assertEqual(result['preservation_attempt']['started'], 2)
+
+    def test_compact_reports_do_not_serialize_recent_history(self):
+        m = self.monitor()
+        for index in range(64):
+            self.clock = index / 100
+            self.q._out_audit(m)
+        report = self.q._public_output_report(m)
+        self.assertEqual(len(m['audits']), 16)
+        self.assertEqual(report['full_audit_count'], 65)
+        self.assertNotIn('audits', report)
+        self.assertLess(len(self.q.canonical(report)), 2048)
+        # A full long path/error is clipped and hashed, once on terminal failure.
+        attempt = dict(m['last_attempt'], path=str(self.root / ('x' * 20000)),
+                       phase_started=self.clock, error='x' * 2048)
+        document = self.q._out_attempt_document(m, attempt, self.clock)
+        self.assertEqual(len(document['path']), 256)
+        self.assertEqual(len(document['path_sha256']), 64)
+        m['first_failed_attempt'] = document
+        self.assertLess(len(self.q.canonical(self.q._public_output_report(m))), 6144)
+
+    def test_foreign_service_and_recursive_fast_calls_reject_without_callback(self):
+        m = self.monitor()
+        callback = Mock(side_effect=AssertionError('foreign callback must not execute'))
+        m['owned_service'] = {'service': callback}
+        with self.assertRaisesRegex(ValueError, 'foreign'):
+            self.q._out_service_fast(m, 10)
+        callback.assert_not_called()
+        m['owned_service'] = None
+
+    def fake_owned_service(self, exercise=None, chunks=None, samples=None, timeout=10, limit=64):
+        q, m, tree = self.q, self.monitor(), FakeTree()
+        root = self.root / 'operations/0000'
+        root.mkdir()
+        m['operation'] = {'root': root, 'seen': False, 'registration': None}
+        q.time.time_ns = lambda: int(self.clock * 10 ** 9)
+        data = chunks or {101: [b'out', b''], 102: [b'err', b'']}
+        data = {key: list(values) for key, values in data.items()}
+        original = q.public_output_tick
+        def tick(invocation, **kwargs):
+            if exercise is not None and m.get('owned_service') is not None:
+                exercise(m['owned_service'])
+            return original(invocation, **kwargs)
+        with ExitStack() as guard:
+            guard.enter_context(patch.object(q.threading, 'Thread', InlineReader))
+            guard.enter_context(patch.object(q.os, 'read', side_effect=lambda fd, size: data[fd].pop(0)))
+            guard.enter_context(patch.object(q.signal, 'signal', return_value='old'))
+            guard.enter_context(patch.object(q, '_sample_linux', side_effect=samples or (lambda *a, **k: [])))
+            guard.enter_context(patch.object(q, 'public_output_tick', side_effect=tick))
+            result, streams = q._supervise(tree.factory, ['/never-executed'], str(self.root), {},
+                                           timeout, limit, output_monitor=m)
+        self.assertIsNone(m['owned_service'])
+        self.assertNotIn(id(m), q._OWNED_OUTPUT_SERVICES)
+        tree.close.assert_called_once()
+        return result, streams, tree
+
+    def test_actual_supervisor_issues_and_detaches_private_service(self):
+        owners = []
+        def exercise(owner):
+            owners.append(owner)
+            self.assertIs(owner['monitor'], self.monitor())
+            self.assertIs(owner['operation'], self.monitor()['operation'])
+            self.assertEqual(owner['pid'], 424242)
+        result, streams, _ = self.fake_owned_service(exercise)
+        self.assertIsNone(result['failure'])
+        self.assertEqual(streams, {'stdout': b'out', 'stderr': b'err'})
+        self.assertEqual(len(owners), 1)
+        self.assertFalse(owners[0]['active'])
+        self.assertGreater(result['public_output_ledger']['timing']['fast_count'], 0)
+
+    def test_fast_service_continues_during_live_scan_without_recursing(self):
+        m = self.monitor()
+        original = self.q._out_snapshot
+        saw_live_fast = []
+        def snapshot(*args, **kwargs):
+            if m.get('sampling_live') and m.get('owned_service'):
+                self.clock += .06
+                self.q._out_checkpoint(m, kwargs['deadline'], phase='snapshot', path=self.root / 'tmp')
+                saw_live_fast.append(m['audit_stats']['fast_count'])
+            return original(*args, **kwargs)
+        with patch.object(self.q, '_out_snapshot', side_effect=snapshot):
+            result, _, _ = self.fake_owned_service()
+        self.assertIsNone(result['failure'])
+        self.assertTrue(saw_live_fast)
+        self.assertFalse(m['sampling_live'])
+        self.assertFalse(m['servicing_fast'])
+
+    def test_service_rejects_foreign_operation_and_restores_owner_cleanup(self):
+        def exercise(owner):
+            owner['operation'] = object()
+            self.q._out_service_fast(self.monitor(), 10, force=True)
+        result, _, _ = self.fake_owned_service(exercise)
+        self.assertIn('foreign', result['failure'])
+        self.assertTrue(result['cleanup_complete'])
+
+    def test_service_reentrant_attempt_rejects_and_keeps_first_failure(self):
+        calls = []
+        def sample(*args, **kwargs):
+            if self.monitor().get('owned_service') is not None:
+                calls.append(1)
+                self.q._out_service_fast(self.monitor(), 10, force=True)
+            return []
+        result, _, _ = self.fake_owned_service(samples=sample)
+        self.assertIn('recursive owned', result['failure'])
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(result['cleanup_complete'])
+
+    def test_owned_stream_overflow_keeps_flag_and_truncation(self):
+        result, streams, _ = self.fake_owned_service(chunks={101: [b'x' * 65, b''], 102: [b'',]}, limit=64)
+        self.assertTrue(result['stream_limit_exceeded'])
+        self.assertEqual(streams['stdout'], b'x' * 64)
+        self.assertIn('stream byte bound', result['failure'])
+
+    def test_owned_wall_expiry_during_full_audit_keeps_timeout_flag(self):
+        def exercise(owner):
+            self.clock = 3
+            original = self.q._out_snapshot
+            def snapshot(*args, **kwargs):
+                self.clock = 4
+                return original(*args, **kwargs)
+            with patch.object(self.q, '_out_snapshot', side_effect=snapshot):
+                self.q._out_audit(self.monitor())
+        result, _, _ = self.fake_owned_service(exercise, timeout=4)
+        self.assertTrue(result['timed_out'])
+        self.assertIn('deadline', result['failure'])
+        self.assertTrue(result['cleanup_complete'])
+
+
+    def test_audit_execution_expiry_before_fast_service_is_not_operation_timeout(self):
+        def exercise(owner):
+            self.clock = 3
+            original = self.q._out_snapshot
+            def snapshot(*args, **kwargs):
+                self.clock = 4
+                return original(*args, **kwargs)
+            with patch.object(self.q, '_out_snapshot', side_effect=snapshot):
+                self.q._out_audit(self.monitor())
+        result, _, _ = self.fake_owned_service(exercise, timeout=10)
+        self.assertFalse(result['timed_out'])
+        self.assertIn('deadline', result['failure'])
+        self.assertTrue(result['cleanup_complete'])
+        self.assertEqual(self.monitor()['first_failed_attempt']['deadline'], 4)
+
+    def test_nested_live_failure_retains_outer_and_nested_phase_path_count(self):
+        def exercise(owner):
+            self.clock = 3
+            m = self.monitor()
+            original = self.q._out_snapshot
+            def snapshot(*args, **kwargs):
+                if m.get('sampling_live'):
+                    self.q._out_stage(m, 'snapshot', self.root / 'tmp/nested-invalid')
+                    self.q._out_count(m, 'entries')
+                    raise ValueError('nested live failure')
+                return original(*args, **kwargs)
+            with patch.object(self.q, '_out_snapshot', side_effect=snapshot):
+                self.q._out_audit(m)
+        result, _, _ = self.fake_owned_service(exercise)
+        failed = self.monitor()['first_failed_attempt']
+        self.assertEqual(failed['phase'], 'roots')
+        self.assertEqual(failed['nested_phase'], 'live-snapshot')
+        self.assertEqual(failed['nested_path'], 'tmp/nested-invalid')
+        self.assertEqual(failed['nested_counts']['entries'], 1)
+        self.assertIn('nested live failure', result['failure'])
+
+    def test_fast_rss_failure_records_actual_service_subphase(self):
+        active = [False]
+        def samples(*args, **kwargs):
+            if active[0]:
+                return [{'pid': 424242, 'rss': 2 * 1024 ** 3 + 1, 'state': 'S'}]
+            return []
+        def exercise(owner):
+            self.clock = 3
+            active[0] = True
+            self.q._out_audit(self.monitor())
+        result, _, _ = self.fake_owned_service(exercise, samples=samples)
+        failed = self.monitor()['first_failed_attempt']
+        self.assertTrue(failed['fast_service_active'])
+        self.assertEqual(failed['fast_phase'], 'process-rss')
+        self.assertIn('process/RSS bound', result['failure'])
+
+
+    def test_fast_diagnostic_finally_keeps_original_and_clears_guard(self):
+        original_stats = self.q._out_stats
+        first = ValueError('original process sample failure')
+        def samples(*args, **kwargs):
+            if self.monitor().get('owned_service') is not None:
+                raise first
+            return []
+        def stats(m):
+            if m.get('servicing_fast'):
+                raise RuntimeError('secondary fast diagnostic failure')
+            return original_stats(m)
+        with patch.object(self.q, '_out_stats', side_effect=stats):
+            result, _, _ = self.fake_owned_service(samples=samples)
+        self.assertIn('original process sample failure', result['failure'])
+        self.assertFalse(self.monitor()['servicing_fast'])
+        self.assertIn('secondary fast diagnostic failure', self.monitor()['diagnostic_errors'][0])
+        self.assertTrue(result['cleanup_complete'])
+
+    def test_directory_close_error_does_not_mask_first_traversal_error(self):
+        m = self.monitor()
+        real_close = self.q.os.close
+        count = self.q._out_count
+        calls = [0]
+        def observe(m, kind):
+            count(m, kind);calls[0] += 1
+            if calls[0] == 2:
+                raise ValueError('first traversal failure')
+        def close(fd):
+            real_close(fd)
+            raise RuntimeError('secondary fd close failure')
+        with patch.object(self.q, '_out_count', side_effect=observe), \
+             patch.object(self.q.os, 'close', side_effect=close):
+            with self.assertRaisesRegex(ValueError, 'first traversal failure'):
+                self.q._out_audit(m)
+        self.assertIn('secondary fd close failure', m['first_failed_attempt']['close_error'])
+        self.assertFalse(m['auditing'])
+
+
+
 
 class IntegratedOutputHookControls(unittest.TestCase):
     def test_fresh_total_deadline_contract_is_fixed_without_changing_child_caps(self):
@@ -2405,6 +2823,433 @@ class IntegratedOutputHookControls(unittest.TestCase):
         self.assertIn("output_monitor['operation']['deadline']=deadline",supervise)
         self.assertIn("'output_bytes':None if output_monitor is not None else 0",supervise)
         self.assertIn("'public_output_ledger':_public_output_report(output_monitor)",supervise)
+
+class CollectionCloseBoundaryControls(unittest.TestCase):
+    """Actual tiny five-section boundaries; no child, fixture or mocked scanner."""
+    setUp = OutputMonitorControls.setUp
+    need = staticmethod(OutputMonitorControls.need)
+    runtime_permit = OutputMonitorControls.runtime_permit
+    public_case = OutputMonitorControls.public_case
+    disappearance = OutputMonitorControls.disappearance
+    verify_link = OutputMonitorControls.verify_link
+    monitor = OutputMonitorControls.monitor
+
+    def finish_sections(self):
+        for section in self.q._OUT_SECTIONS:
+            self.q._PUBLIC_CONTRACTS[self.permit]['rosters'][section] = []
+            with self.q.public_output_boundary(self.inv,self.permit,'section-open',section):
+                root=self.root/'public-runtime/collection'/section;root.mkdir()
+                (root/'roster.json').write_bytes(b'[]')
+            with self.q.public_output_boundary(self.inv,self.permit,'section-close',section):
+                for name in ('observations.jsonl.gz','comparison.json')+ (('historical-comparison.json',) if section=='predecessors' else ()):
+                    (root/name).write_bytes(b'{}')
+        self.assertEqual(self.monitor()['finished_sections'],list(self.q._OUT_SECTIONS))
+        return self.root/'public-runtime',self.root/'public-runtime/collection.json'
+
+    def test_all_five_sections_then_collection_close_reseals_exact_parent(self):
+        parent,final=self.finish_sections();m=self.monitor();before=dict(m['sealed'][str(parent)])
+        self.assertNotIn(str(parent),self.q._out_structure(m))
+        with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+            final.write_bytes(b'{"diagnostic":true}')
+        self.assertTrue(m['closed']);self.assertIsNone(m['transition'])
+        self.assertEqual(m['sealed'][str(parent)]['stat'],self.q._out_stat(parent.lstat()))
+        self.assertEqual(m['sealed'][str(parent)]['kind'],'directory')
+        self.assertEqual(m['sealed_bytes'],sum(p.stat().st_size for p in self.root.rglob('*') if p.is_file()))
+        self.assertIn('sha256',m['sealed'][str(final)])
+        self.assertNotEqual(before['stat'],m['sealed'][str(parent)]['stat'])
+        self.q._out_audit(m,reason='post-collection-strict-closure')
+        self.assertNotIn(str(parent),self.q._out_structure(m))
+
+    def test_wrong_parent_and_extra_sibling_reject(self):
+        for mode in ('wrong-parent','extra-sibling'):
+            with self.subTest(mode=mode):
+                if mode!='wrong-parent':self.temp.cleanup();self.setUp()
+                parent,final=self.finish_sections();before=dict(self.monitor()['sealed'][str(parent)])
+                with self.assertRaises(ValueError):
+                    with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+                        final.write_bytes(b'{}')
+                        ((self.root/'home') if mode=='wrong-parent' else parent).joinpath('extra.json').write_bytes(b'bad')
+                self.assertEqual(self.monitor()['sealed'][str(parent)],before)
+                self.assertTrue(self.run['failed']);self.assertNotIn(str(final),self.monitor()['sealed'])
+
+    def test_parent_inode_replacement_rejects(self):
+        parent,final=self.finish_sections()
+        with self.assertRaisesRegex(ValueError,'parent identity'):
+            with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+                parent.rename(self.root/'replaced-public-runtime');parent.mkdir();final.write_bytes(b'{}')
+        self.assertTrue(self.run['failed'])
+
+    def test_parent_mode_change_rejects(self):
+        parent,final=self.finish_sections();mode=parent.stat().st_mode & 0o777
+        with self.assertRaisesRegex(ValueError,'parent identity'):
+            with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+                final.write_bytes(b'{}');parent.chmod(mode ^ 0o020)
+        self.assertTrue(self.run['failed'])
+
+    def test_parent_uid_gid_change_rejects_without_chown(self):
+        for field in ('st_uid','st_gid'):
+            with self.subTest(field=field):
+                if field!='st_uid':self.temp.cleanup();self.setUp()
+                parent,final=self.finish_sections();original=Path.lstat
+                def owner_change(path,*args,**kwargs):
+                    st=original(path,*args,**kwargs)
+                    if path!=parent:return st
+                    values={name:getattr(st,name) for name in set(self.q._OUT_STAT)|{'st_uid','st_gid'}}
+                    values[field]+=1;return types.SimpleNamespace(**values)
+                with self.assertRaisesRegex(ValueError,'parent identity'):
+                    with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+                        final.write_bytes(b'{}')
+                        with patch.object(Path,'lstat',owner_change):
+                            self.q._out_audit(self.monitor(),additions=self.monitor()['transition']['additions'],reason='owner-negative')
+                self.assertTrue(self.run['failed'])
+
+    def test_preexisting_collection_file_and_sealed_file_replacement_reject(self):
+        for mode in ('preexisting-final','replaced-sealed'):
+            with self.subTest(mode=mode):
+                if mode!='preexisting-final':self.temp.cleanup();self.setUp()
+                parent,final=self.finish_sections();m=self.monitor();before=dict(m['sealed'][str(parent)])
+                if mode=='preexisting-final':final.write_bytes(b'{}')
+                with self.assertRaises(ValueError):
+                    with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+                        self.assertNotEqual(mode,'preexisting-final','preexisting final was admitted')
+                        final.write_bytes(b'{}');target=parent/'collection/guards/roster.json'
+                        replacement=self.root/'tmp/replacement';replacement.write_bytes(target.read_bytes());replacement.replace(target)
+                self.assertEqual(m['sealed'][str(parent)],before);self.assertTrue(self.run['failed'])
+
+    def test_post_transition_parent_and_file_mutations_are_strict(self):
+        for mode in ('parent','file'):
+            with self.subTest(mode=mode):
+                if mode!='parent':self.temp.cleanup();self.setUp()
+                parent,final=self.finish_sections()
+                with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):final.write_bytes(b'{}')
+                if mode=='parent':
+                    st=parent.stat();os.utime(parent,ns=(st.st_atime_ns,st.st_mtime_ns+1000000000))
+                else:final.write_bytes(b'changed')
+                with self.assertRaisesRegex(ValueError,'sealed public output'):self.q._out_audit(self.monitor(),reason='post-transition-negative')
+                self.assertIsNone(self.monitor()['transition'])
+
+    def test_parent_allowance_cannot_authorize_different_addition_or_reseal_after_hash_failure(self):
+        for mode in ('wrong-addition','hash-failure'):
+            with self.subTest(mode=mode):
+                if mode!='wrong-addition':self.temp.cleanup();self.setUp()
+                parent,final=self.finish_sections();m=self.monitor();before=dict(m['sealed'][str(parent)])
+                with self.assertRaises(ValueError):
+                    with self.q.public_output_boundary(self.inv,self.permit,'collection-close'):
+                        final.write_bytes(b'{}')
+                        if mode=='wrong-addition':
+                            m['transition']['additions']={parent/'other.json':'file'}
+                        else:
+                            self.q._out_hash=Mock(side_effect=ValueError('bounded hash failure'))
+                self.assertEqual(m['sealed'][str(parent)],before);self.assertNotIn(str(final),m['sealed'])
+
+
+
+def diagnostic_output_fixture(test):
+    """Synthetic original-owner facades; no capture, build, child or permit issuance claim."""
+    f = OutputMonitorControls()
+    f.setUp()
+    test.addCleanup(f.doCleanups)
+    q = f.q
+    q._OUTPUT_MONITORS.clear()
+    (f.root / 'public-runtime/collection').rmdir()
+    f.inv_doc = {'nonce': 'a' * 32, 'started_ns': 1, 'run_root': str(f.root)}
+    f.permit_doc = {'root': str(f.root), 'kind': 'public', 'invocation_nonce': f.inv_doc['nonce'], 'body_pins': []}
+    q._RUNS[f.inv] = f.run
+    q._run_state = lambda inv: (f.inv_doc, {'scope': 'combined'}, f.run) if inv is f.inv else q.need(False, 'foreign inv')
+    q.full_verify_invocation = lambda inv: (f.inv_doc, {'scope': 'combined'}) if inv is f.inv else q.need(False, 'foreign inv')
+    def permit(permit, inv, kind):
+        q.need(permit is f.permit and inv is f.inv and kind == 'public', 'foreign permit')
+        return f.permit_doc
+    q._runtime_permit = q._runtime_permit_owner = q._runtime_permit_full = permit
+    q._PUBLIC_TOOLS[f.permit] = {}
+    helper = f.root / 'home/contract-helper'
+    helper.write_bytes(b'inert synthetic source closure')
+    q._PUBLIC_CONTRACTS[f.permit].update(helper=q.identity(helper), pins=[])
+    policy = q.issue_public_diagnostic(f.inv, f.permit)
+    (f.root / 'public-runtime/collection').mkdir()
+    return f, policy
+
+
+def diagnostic_document(f):
+    return {'schema': 'package-unit4-public-diagnostic-v1', 'execution_context': {'invocation': f.inv_doc},
+            'selected_sections': ['lifecycle', 'guards'], 'reports': {'lifecycle': {}, 'guards': {}},
+            'selected_sections_complete': True, 'status': 'COMPLETE_SELECTED_OBSERVATIONS',
+            'collection_complete': False, 'local_complete': False,
+            'execution_qualified': False, 'global_host_qualification': False}
+
+
+def complete_synthetic_diagnostic(f, policy):
+    f.q.public_diagnostic_start(f.inv, f.permit, policy)
+    for section in ('lifecycle', 'guards'):
+        root = f.open_section(section)
+        with f.q.public_case_scope(f.inv, f.permit, section, 0):
+            f.create_case(section)
+        with f.q.public_output_boundary(f.inv, f.permit, 'section-close', section):
+            (root / 'observations.jsonl.gz').write_bytes(b'inert mocked observation')
+            (root / 'comparison.json').write_bytes(b'inert mocked report')
+
+
+class DiagnosticOutputControls(unittest.TestCase):
+    def test_fixed_selection_and_original_owner_terminal(self):
+        f, policy = diagnostic_output_fixture(self)
+        self.assertEqual(f.q._OUT_SECTIONS, ('public', 'original', 'predecessors', 'lifecycle', 'guards'))
+        complete_synthetic_diagnostic(f, policy)
+        terminal = f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+        binding = f.q.verify_public_diagnostic_terminal(f.inv, f.permit, policy, terminal)
+        self.assertEqual(binding['path'], str(f.root / 'public-runtime/diagnostic-collection.json'))
+        self.assertTrue(f.monitor()['closed'])
+        self.assertEqual(f.monitor()['finished_sections'], ['lifecycle', 'guards'])
+        self.assertFalse((f.root / 'public-runtime/collection.json').exists())
+        self.assertFalse((f.root / 'public-runtime/collection/public').exists())
+        # Parser writes are outside the closed public monitor, not a root-equality waiver.
+        (f.root / 'parser').mkdir()
+        (f.root / 'parser/new-observation.json').write_bytes(b'inert parser evidence')
+        self.assertIsNone(f.q.public_output_tick(f.inv))
+        self.assertEqual(f.q.verify_public_diagnostic_terminal(f.inv, f.permit, policy, terminal), binding)
+
+    def test_policy_and_terminal_constructors_and_foreign_instances(self):
+        f, policy = diagnostic_output_fixture(self)
+        for cls in (f.q.PublicDiagnosticPolicy, f.q.PublicDiagnosticTerminal):
+            with self.assertRaises(TypeError): cls()
+        for bad in (object(), object.__new__(f.q.PublicDiagnosticPolicy)):
+            with self.assertRaises(ValueError): f.q.public_diagnostic_start(f.inv, f.permit, bad)
+        foreign = isolated_api()
+        with self.assertRaises(ValueError):
+            f.q.public_diagnostic_start(f.inv, f.permit, object.__new__(foreign.PublicDiagnosticPolicy))
+        with self.assertRaises(ValueError): f.q.public_diagnostic_start(object(), f.permit, policy)
+        with self.assertRaises(ValueError): f.q.public_diagnostic_start(f.inv, object(), policy)
+
+    def test_full_diagnostic_crossover_and_reissue_reject(self):
+        f, policy = diagnostic_output_fixture(self)
+        with self.assertRaises(ValueError): f.q.issue_public_diagnostic(f.inv, f.permit)
+        for start in (f.q.public_output_start, f.q._public_output_start):
+            with self.assertRaises(ValueError): start(f.inv, f.permit)
+        with self.assertRaises(ValueError): f.q._public_output_start(f.inv, f.permit, object())
+        f.q.public_diagnostic_start(f.inv, f.permit, policy)
+        with self.assertRaises(ValueError): f.q.public_diagnostic_start(f.inv, f.permit, policy)
+        with self.assertRaises(ValueError):
+            with f.q.public_output_boundary(f.inv, f.permit, 'collection-close'): pass
+
+    def test_issue_after_full_start_rejects(self):
+        f = OutputMonitorControls()
+        f.setUp()
+        self.addCleanup(f.doCleanups)
+        f.q.full_verify_invocation = lambda inv: ({'nonce': 'x'}, {'scope': 'combined'})
+        f.q._run_state = lambda inv: ({'nonce': 'x'}, {'scope': 'combined'}, f.run)
+        f.q._runtime_permit_full = lambda *args: {'root': str(f.root), 'invocation_nonce': 'x'}
+        with self.assertRaisesRegex(ValueError, 'already started'):
+            f.q.issue_public_diagnostic(f.inv, f.permit)
+
+    def test_policy_nonce_thread_process_and_contract_drift_reject(self):
+        for mutation in ('nonce', 'thread', 'pid', 'roster', 'source'):
+            with self.subTest(mutation=mutation):
+                f, policy = diagnostic_output_fixture(self)
+                if mutation == 'nonce': f.inv_doc['nonce'] = 'b' * 32
+                elif mutation == 'thread': f.q.threading = types.SimpleNamespace(get_ident=lambda: -1)
+                elif mutation == 'pid':
+                    real_os = f.q.os
+                    f.q.os = types.SimpleNamespace(getpid=lambda: -1)
+                elif mutation == 'roster': f.q._PUBLIC_CONTRACTS[f.permit]['rosters']['lifecycle'].append({'scope': 'execute'})
+                else: (f.root / 'home/contract-helper').write_bytes(b'changed source')
+                with self.assertRaises(ValueError): f.q.public_diagnostic_start(f.inv, f.permit, policy)
+
+    def test_wrong_order_omission_reordering_duplicate_and_early_terminal_reject(self):
+        for mode in ('wrong-section', 'wrong-index', 'omitted-case', 'early-terminal', 'duplicate-case', 'duplicate-section'):
+            with self.subTest(mode=mode):
+                f, policy = diagnostic_output_fixture(self)
+                f.q.public_diagnostic_start(f.inv, f.permit, policy)
+                with self.assertRaises(ValueError):
+                    if mode == 'wrong-section': f.open_section('guards')
+                    elif mode == 'early-terminal':
+                        f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+                    else:
+                        f.open_section('lifecycle')
+                        if mode == 'wrong-index':
+                            with f.q.public_case_scope(f.inv, f.permit, 'lifecycle', 1): pass
+                        elif mode == 'omitted-case':
+                            with f.q.public_output_boundary(f.inv, f.permit, 'section-close', 'lifecycle'): pass
+                        else:
+                            with f.q.public_case_scope(f.inv, f.permit, 'lifecycle', 0): f.create_case('lifecycle')
+                            if mode == 'duplicate-case':
+                                with f.q.public_case_scope(f.inv, f.permit, 'lifecycle', 0): pass
+                            else: f.open_section('lifecycle')
+
+    def test_terminal_active_case_child_transition_and_leases_reject(self):
+        for mode in ('case', 'operation', 'transition', 'service', 'read', 'launch', 'replay', 'inputs'):
+            with self.subTest(mode=mode):
+                f, policy = diagnostic_output_fixture(self)
+                complete_synthetic_diagnostic(f, policy)
+                if mode in ('case', 'operation', 'transition'): f.monitor()[mode] = {'synthetic': True}
+                elif mode == 'service': f.monitor()['owned_service'] = object()
+                elif mode == 'read': f.q._CHECKED.append(object())
+                elif mode == 'launch': f.q._LAUNCH = object()
+                elif mode == 'replay': f.q._PUBLIC_REPLAY = object()
+                else: f.q._PUBLIC_INPUTS.append(object())
+                with self.assertRaises(ValueError):
+                    f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+                self.assertFalse(f.monitor()['closed'])
+                self.assertIsNone(f.q._PUBLIC_DIAGNOSTICS[policy]['terminal'])
+
+    def test_terminal_refuses_qualification_and_foreign_nonce(self):
+        for key, value in (('collection_complete', True), ('local_complete', True),
+                           ('execution_qualified', True), ('global_host_qualification', True),
+                           ('selected_sections', ['guards', 'lifecycle']), ('execution_context', {})):
+            with self.subTest(key=key):
+                f, policy = diagnostic_output_fixture(self)
+                complete_synthetic_diagnostic(f, policy)
+                doc = diagnostic_document(f)
+                doc[key] = value
+                with self.assertRaises(ValueError): f.q.public_diagnostic_terminal(f.inv, f.permit, policy, doc)
+                self.assertFalse(f.monitor()['closed'])
+
+    def test_terminal_stale_foreign_replayed_or_mutated_carrier_rejects(self):
+        for mode in ('duplicate-close', 'forged', 'foreign', 'changed', 'missing'):
+            with self.subTest(mode=mode):
+                f, policy = diagnostic_output_fixture(self)
+                complete_synthetic_diagnostic(f, policy)
+                terminal = f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+                if mode == 'duplicate-close':
+                    with self.assertRaises(ValueError): f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+                    continue
+                carrier = f.root / 'public-runtime/diagnostic-collection.json'
+                if mode == 'forged': terminal = object.__new__(f.q.PublicDiagnosticTerminal)
+                elif mode == 'foreign': terminal = object.__new__(isolated_api().PublicDiagnosticTerminal)
+                elif mode == 'changed': carrier.write_bytes(b'{}')
+                else: carrier.unlink()
+                with self.assertRaises((ValueError, OSError)):
+                    f.q.verify_public_diagnostic_terminal(f.inv, f.permit, policy, terminal)
+
+    def test_exact_parent_reseal_no_extra_sibling_or_changed_ledger(self):
+        for mode in ('extra-sibling', 'changed-source', 'missing-directory', 'preexisting-carrier', 'parent-mode'):
+            with self.subTest(mode=mode):
+                f, policy = diagnostic_output_fixture(self)
+                complete_synthetic_diagnostic(f, policy)
+                parent = f.root / 'public-runtime'
+                if mode == 'extra-sibling': (parent / 'extra.json').write_bytes(b'{}')
+                elif mode == 'changed-source':
+                    (parent / 'collection/lifecycle/00000/ordinary/fixture/main.ox').write_bytes(b'drift')
+                elif mode == 'missing-directory': (f.root / 'home').rename(f.root / 'other-home')
+                elif mode == 'preexisting-carrier': (parent / 'diagnostic-collection.json').write_bytes(b'{}')
+                else: parent.chmod(0o700 if parent.stat().st_mode & 0o777 != 0o700 else 0o755)
+                with self.assertRaises((ValueError, OSError)):
+                    f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+                self.assertFalse(f.monitor()['closed'])
+
+    def test_terminal_serialization_or_audit_failure_never_issues_success(self):
+        for mode in ('serialization', 'hash', 'final-audit'):
+            with self.subTest(mode=mode):
+                f, policy = diagnostic_output_fixture(self)
+                complete_synthetic_diagnostic(f, policy)
+                doc = diagnostic_document(f)
+                if mode == 'serialization': doc['unsupported'] = object()
+                elif mode == 'hash': f.q._out_hash = Mock(side_effect=ValueError('original hash failure'))
+                else:
+                    audit = f.q._out_audit
+                    def fail_final(*args, **kwargs):
+                        if kwargs.get('reason') == 'diagnostic-terminal-sealed': raise ValueError('original final audit failure')
+                        return audit(*args, **kwargs)
+                    f.q._out_audit = fail_final
+                with self.assertRaises((ValueError, TypeError)):
+                    f.q.public_diagnostic_terminal(f.inv, f.permit, policy, doc)
+                self.assertFalse(f.monitor()['closed'])
+                self.assertTrue(f.run['failed'])
+                self.assertEqual(f.q._PUBLIC_DIAGNOSTIC_TERMINALS, {})
+                self.assertIsNone(f.q._PUBLIC_DIAGNOSTICS[policy]['terminal'])
+
+    def test_terminal_refuses_unsealed_temporary_output(self):
+        f, policy = diagnostic_output_fixture(self)
+        complete_synthetic_diagnostic(f, policy)
+        (f.root / 'tmp/unsealed-residue').write_bytes(b'inert leftover')
+        with self.assertRaisesRegex(ValueError, 'unsealed output'):
+            f.q.public_diagnostic_terminal(f.inv, f.permit, policy, diagnostic_document(f))
+        self.assertFalse(f.monitor()['closed'])
+        self.assertIsNone(f.q._PUBLIC_DIAGNOSTICS[policy]['terminal'])
+
+
+
+class GuardRegistrationOrderingSourceControls(unittest.TestCase):
+    """Pure seam controls. Actual filesystem/audit proof is separately released."""
+    def test_consumer_never_materializes_guard_link(self):
+        path=HERE.parent/'package_dependency_unit4_public_v1/runtime.py'
+        tree=ast.parse(path.read_bytes())
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_run_guards')
+        self.assertFalse(any(isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr in ('symlink_to','symlink') for n in ast.walk(fn)))
+        self.assertEqual(sum(isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='register_public_guard' for n in ast.walk(fn)),1)
+
+    def test_prospect_is_private_and_immutable(self):
+        q=isolated_api()
+        with self.assertRaisesRegex(q.Rejected,'private guard prospect'):
+            q._GuardProspect(object(),object(),{}, {})
+        case={'section':'guards','index':16,'root':Path('/pure/case')}
+        p=q._GuardProspect(object(),object(),{'case':case},{},q._TOKEN)
+        with self.assertRaises(TypeError):p.active=False
+        self.assertEqual(p.case_key,('guards',16,Path('/pure/case')))
+
+    def fixture(self,stage=None):
+        q=isolated_api();inv,permit=object(),object();root=Path('/pure/case')
+        active={'section':'guards','index':16,'root':root}
+        run={'failed':False};q._RUNS[inv]=run
+        m={'case':active,'section':'guards','operation':None,'transition':None}
+        row={'group':'occupied','case':{'output_kind':'symlink'}}
+        item={'path':str(root/'preserved-target'),'bytes':33,'sha256':'25cacc2126d969b15aa66e631f92d55200cdb06cc5f129fe899eb8a8db685f8c'}
+        events=[];stack=ExitStack();self.addCleanup(stack.close)
+        def call(name,result=None):
+            def inner(*args,**kwargs):
+                events.append(name)
+                if stage==name:raise q.Rejected('injected '+name)
+                return result
+            return inner
+        for name,result in (('verify_invocation',({},{})),('_out_auth',m),('_runtime_permit_full',{}),('_public_case_verified',({},row,[],root/'fixtures',root/'ordinary')),('body',b'Oxid Unit3 no-clobber sentinel\x00\xff\n'),('identity',item),('_target_stat',{}),('_verify_link',None),('public_output_tick',None)):
+            stack.enter_context(patch.object(q,name,side_effect=call(name,result)))
+        stack.enter_context(patch.object(q.os.path,'lexists',return_value=False))
+        def create(text,path):
+            events.append('symlink')
+            self.assertEqual((text,path),('preserved-target',str(root/'occupied-output')))
+            self.assertIn(inv,q._GUARD_PROSPECTS)
+            self.assertNotIn(path,q._GUARD_LINKS[inv])
+            if stage=='symlink':raise OSError('injected create failure')
+            object.__setattr__(q._GUARD_PROSPECTS[inv],'seen_stat',{})
+        stack.enter_context(patch.object(q.os,'symlink',side_effect=create))
+        stack.enter_context(patch.object(q,'_guard_prospect_row',side_effect=lambda p,m:q.decode(p.raw)))
+        return q,inv,permit,run,events,{'section':'guards','index':16,'variant':'ordinary'}
+
+    def test_all_ticking_validation_precedes_owned_creation(self):
+        q,inv,permit,run,events,case=self.fixture()
+        result=q.register_public_guard(inv,permit,case)
+        self.assertEqual(events,['verify_invocation','_out_auth','_runtime_permit_full','_public_case_verified','body','_target_stat','identity','_target_stat','_out_auth','symlink','_verify_link','public_output_tick'])
+        self.assertEqual(q._GUARD_LINKS[inv][result['path']],result)
+        self.assertFalse(run['failed']);self.assertEqual(q._GUARD_PROSPECTS,{})
+        with self.assertRaises(q.Rejected):q.register_public_guard(inv,permit,case)
+        self.assertTrue(run['failed'])
+
+    def test_create_failure_revokes_prospect_and_poisons(self):
+        q,inv,permit,run,events,case=self.fixture('symlink')
+        with self.assertRaises(OSError):q.register_public_guard(inv,permit,case)
+        self.assertTrue(run['failed']);self.assertEqual(q._GUARD_PROSPECTS,{})
+        self.assertFalse(q._GUARD_LINKS[inv]);self.assertNotIn('_verify_link',events)
+
+    def test_postverify_failure_keeps_evidence_and_poisons(self):
+        q,inv,permit,run,events,case=self.fixture('_verify_link')
+        with self.assertRaises(q.Rejected):q.register_public_guard(inv,permit,case)
+        self.assertTrue(run['failed']);self.assertEqual(q._GUARD_PROSPECTS,{})
+        self.assertEqual(len(q._GUARD_LINKS[inv]),1);self.assertNotIn('public_output_tick',events)
+
+    def test_wrong_case_never_reaches_reads_or_creation(self):
+        q,inv,permit,run,events,case=self.fixture()
+        with self.assertRaises(q.Rejected):q.register_public_guard(inv,permit,dict(case,index=20))
+        self.assertTrue(run['failed']);self.assertNotIn('_runtime_permit_full',events)
+        self.assertNotIn('symlink',events)
+
+    def test_no_snapshot_audit_or_deadline_relaxation(self):
+        tree=ast.parse((HERE/'preparation.py').read_bytes())
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='register_public_guard')
+        text=ast.unparse(fn)
+        for name in ('_runtime_permit_full','_public_case_verified','_verify_link','public_output_tick'):
+            self.assertIn(name+'(',text)
+        self.assertNotIn('_PUBLIC_REPLAY =',text)
+        self.assertNotIn("['auditing'] =",text)
+        self.assertNotIn('_OUT_DUE =',text)
+
 
 if __name__ == '__main__':
     unittest.main()

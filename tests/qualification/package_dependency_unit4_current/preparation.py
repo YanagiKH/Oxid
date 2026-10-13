@@ -3,7 +3,7 @@
 Records are live invocation capabilities, not portable attestations. All runtime
 and CI qualification remains separate. No subprocess is launched during import.
 """
-import hashlib,json,os,queue,re,shutil,signal,stat,sys,threading,time,types
+import hashlib,json,math,os,queue,re,shutil,signal,stat,sys,threading,time,types
 from pathlib import Path
 from contextlib import contextmanager
 SELF='tests/qualification/package_dependency_unit4_current'
@@ -156,15 +156,20 @@ def check_deadline(invocation):
  if invocation not in _RUNS:_run_state(invocation)
  state=_RUNS[invocation];need(not state['failed'] and time.monotonic()<state['deadline'],'invocation failed or deadline expired');tick();return True
 
-def _sample_linux(group):
+def _sample_linux(group, *, deadline=None):
  found=[]
+ def check():
+  if deadline is not None:need(time.monotonic()<deadline,'operation process sample deadline')
+ check()
  if not sys.platform.startswith('linux'):return found
  for p in Path('/proc').iterdir():
+  check()
   if not p.name.isdigit():continue
   try:
-   raw=(p/'stat').read_text();f=raw[raw.rfind(')')+2:].split();pgid=int(f[2]);rss=int(f[21])*os.sysconf('SC_PAGE_SIZE')
+   raw=(p/'stat').read_text();check();f=raw[raw.rfind(')')+2:].split();pgid=int(f[2]);rss=int(f[21])*os.sysconf('SC_PAGE_SIZE')
   except (FileNotFoundError,ProcessLookupError,PermissionError):continue
   if pgid==group:found.append({'pid':int(p.name),'rss':rss,'state':f[0]})
+ check()
  return found
 
 NATIVE_SOURCE_SHA='2303197eeff30da4a4c552f1131de64cd871f1fe0ff6ea3afe60010db68645b4'
@@ -265,7 +270,7 @@ def _supervise(tree_class,argv,cwd,environment,timeout,limit,*,preparation=False
  """Owned tree, bounded streams and cleanup; cancellation always enters finally."""
  started=time.time_ns();deadline=time.monotonic()+timeout;tree=None;readers=[];streams={'stdout':bytearray(),'stderr':bytearray()};events=queue.Queue(maxsize=8);closed=set();exceeded=False;timed_out=False;cleanup=None;status=None;pid=None;failure=None
  if output_monitor is not None:output_monitor['operation']['deadline']=deadline
- native_registration=None;old_handlers={};peaks={'processes':0,'rss_bytes':0,'output_bytes':None if output_monitor is not None else 0}
+ native_registration=None;owned_service=None;old_handlers={};peaks={'processes':0,'rss_bytes':0,'output_bytes':None if output_monitor is not None else 0}
  compile_operation=operation_kind in ('public-build','parser-build','parser-helper','runtime-trap-build')
  policy={'processes':_operation_process_cap(operation_kind,preparation,native_plan),'rss_bytes':(2 if preparation or not compile_operation else 8)*1024**3,'output_bytes':128*1024**2 if preparation else 6*1024**3,'file_bytes':64*1024**2 if preparation else 2*1024**3,'process_memory_enforced_on':'linux','all_hosts':['wall','stream','output_file','output_total','owned_tree_cleanup'],'transient_roots':[str(p) for p in transient_roots]}
  if output_monitor is not None:policy['output_measurement']='sampled ledger; see public_output_ledger, no continuous output peak'
@@ -277,16 +282,67 @@ def _supervise(tree_class,argv,cwd,environment,timeout,limit,*,preparation=False
     if not chunk:break
   except OSError as e:events.put(('error',repr(e)));events.put((name,b''))
   finally:pipe.close()
+ def accept_event(name,data):
+  nonlocal exceeded
+  need(name!='error','stream reader failed: '+str(data))
+  need(name in streams,'unexpected stream event')
+  if not data:closed.add(name);return
+  room=limit-len(streams[name]);streams[name].extend(data[:room])
+  if len(data)>room:exceeded=True;need(False,'operation stream byte bound')
+ def service_fast(effective_deadline):
+  # Owner-created nonrecursive closure, never supplied by a public caller.
+  nonlocal timed_out
+  def stage(name):
+   attempt=None if output_monitor is None else output_monitor.get('current_attempt')
+   if attempt is not None:attempt['fast_phase']=name
+  stage('wall')
+  now=time.monotonic()
+  if now>=deadline:timed_out=True;need(False,'operation wall deadline')
+  need(now<effective_deadline,'output service audit deadline')
+  if sys.platform.startswith('linux'):
+   stage('process-rss')
+   try:members=_sample_linux(pid,deadline=min(deadline,effective_deadline))
+   except BaseException:
+    if time.monotonic()>=deadline:timed_out=True
+    raise
+   rss=sum(r['rss'] for r in members);peaks['processes']=max(peaks['processes'],len(members));peaks['rss_bytes']=max(peaks['rss_bytes'],rss)
+   need(len(members)<=policy['processes'] and rss<=policy['rss_bytes'],'operation process/RSS bound')
+  stage('streams')
+  if output_monitor is not None:
+   stats=_out_stats(output_monitor);stats['queue_peak_events']=max(stats['queue_peak_events'],events.qsize())
+  for _ in range(8):
+   try:name,data=events.get_nowait()
+   except queue.Empty:break
+   accept_event(name,data)
+  if output_monitor is not None:
+   stats['stream_peak_bytes']=max(stats['stream_peak_bytes'],sum(map(len,streams.values())))
+  stage('poll')
+  tree.child.poll()
+  stage('final-wall')
+  now=time.monotonic()
+  if now>=deadline:timed_out=True;need(False,'operation wall deadline')
+  need(now<effective_deadline,'output service audit deadline')
  try:
   if threading.current_thread() is threading.main_thread():
    for sig in (signal.SIGINT,signal.SIGTERM):old_handlers[sig]=signal.signal(sig,cancel)
   tree=tree_class(argv,cwd,environment,new_session=True);pid=tree.child.pid;native_registration=_native_register(native_plan,pid);_public_output_operation_registration(output_monitor,native_registration)
   for name in streams:
    thread=threading.Thread(target=reader,args=(getattr(tree.child,name),name),daemon=True);thread.start();readers.append(thread)
+  if output_monitor is not None:
+   need(_OUTPUT_MONITORS.get(output_monitor['invocation']) is output_monitor and
+        output_monitor['operation'] is not None and output_monitor['thread']==threading.get_ident() and
+        output_monitor.get('owned_service') is None and id(output_monitor) not in _OWNED_OUTPUT_SERVICES,
+        'overlapping or foreign owned output service')
+   owned_service={'monitor':output_monitor,'operation':output_monitor['operation'],
+                  'invocation':output_monitor['invocation'],'thread':threading.get_ident(),
+                  'pid':pid,'deadline':deadline,'active':True,'service':service_fast}
+   _OWNED_OUTPUT_SERVICES[id(output_monitor)]=owned_service
+   output_monitor['owned_service']=owned_service
+   output_monitor['last_fast']=output_monitor['last_live']=time.monotonic()
   while len(closed)!=2 or tree.child.poll() is None:
    if time.monotonic()>=deadline:timed_out=True;break
-   if sys.platform.startswith('linux'):
-    members=_sample_linux(pid);rss=sum(r['rss'] for r in members);peaks['processes']=max(peaks['processes'],len(members));peaks['rss_bytes']=max(peaks['rss_bytes'],rss);need(len(members)<=policy['processes'] and rss<=policy['rss_bytes'],'operation process/RSS bound')
+   if output_monitor is not None:_out_service_fast(output_monitor,deadline,force=True)
+   else:service_fast(deadline)
    if output_monitor is not None:public_output_tick(output_monitor['invocation'],deadline=deadline)
    elif output_root is not None:
     total=0
@@ -306,32 +362,46 @@ def _supervise(tree_class,argv,cwd,environment,timeout,limit,*,preparation=False
       need(s.st_size<=file_limit,'output file bound');total+=s.st_size
     peaks['output_bytes']=max(peaks['output_bytes'],total);need(total<=policy['output_bytes'],'operation output byte bound')
     if timed_out:break
+   if len(closed)==2 and tree.child.poll() is not None:break
    try:name,data=events.get(timeout=.05)
    except queue.Empty:continue
-   need(name!='error','stream reader failed: '+str(data))
-   if not data:closed.add(name);continue
-   room=limit-len(streams[name]);streams[name].extend(data[:room])
-   if len(data)>room:exceeded=True;break
+   accept_event(name,data)
   if not timed_out and not exceeded:status=tree.child.wait(timeout=max(.01,deadline-time.monotonic()))
- except BaseException as error:failure=error
+ except BaseException as error:
+  failure=error
+  if time.monotonic()>=deadline:timed_out=True
  finally:
+  # Detach before any close/wait/drain/terminal preservation work.
+  if owned_service is not None:
+   owned_service['active']=False
+   if output_monitor.get('owned_service') is owned_service:output_monitor['owned_service']=None
+   else:failure=failure or Rejected('owned output service detach identity drift')
+   if _OWNED_OUTPUT_SERVICES.get(id(output_monitor)) is owned_service:del _OWNED_OUTPUT_SERVICES[id(output_monitor)]
+   else:failure=failure or Rejected('owned output service registry drift')
   if tree is not None:
+   try:tree.close()
+   except BaseException as error:cleanup=cleanup or repr(error)
    try:
-    tree.close()
     try:status=tree.child.wait(timeout=5)
     except Exception:tree.child.kill();status=tree.child.wait(timeout=2)
-   except BaseException as error:cleanup=repr(error)
-  for sig,handler in old_handlers.items():signal.signal(sig,handler)
-  # Drain queued bytes without waiting on inherited pipes beyond cleanup grace.
+   except BaseException as error:cleanup=cleanup or repr(error)
+  for sig,handler in old_handlers.items():
+   try:signal.signal(sig,handler)
+   except BaseException as error:cleanup=cleanup or repr(error)
+  # Drain queued bytes and reader errors/EOF without exceeding cleanup grace.
   until=time.monotonic()+.5
-  while any(t.is_alive() for t in readers) and time.monotonic()<until:
+  while (any(t.is_alive() for t in readers) or not events.empty()) and time.monotonic()<until:
    try:name,data=events.get(timeout=.02)
    except queue.Empty:continue
-   if name in streams and data:
-    room=limit-len(streams[name]);streams[name].extend(data[:room]);exceeded|=len(data)>room
-  for t in readers:t.join(timeout=.01)
+   try:accept_event(name,data)
+   except BaseException as error:failure=failure or error
+  for t in readers:
+   try:t.join(timeout=.01)
+   except BaseException as error:cleanup=cleanup or repr(error)
   if any(t.is_alive() for t in readers):cleanup=cleanup or 'reader cleanup incomplete'
-  if sys.platform.startswith('linux') and pid is not None and any(r['state']!='Z' for r in _sample_linux(pid)):cleanup=cleanup or 'owned process group remains'
+  try:
+   if sys.platform.startswith('linux') and pid is not None and any(r['state']!='Z' for r in _sample_linux(pid)):cleanup=cleanup or 'owned process group remains'
+  except BaseException as error:cleanup=cleanup or repr(error)
  try:
   _native_terminal(native_registration)
   if failure is None and cleanup is None and not timed_out and not exceeded:_public_output_operation_terminal(output_monitor,deadline=deadline)
@@ -482,14 +552,67 @@ def _public_case_verified(d,permit,runtime_case):
   evidence=root/section/('%05d'%index)/variant;fixture=evidence/'fixture';args=row['argv_template'][1:]
  return d,row,[binary]+args,fixture,evidence
 
+_GUARD_PROSPECTS={}
+class _GuardProspect:
+ __slots__=('invocation','permit','monitor','case','case_key','thread','pid','raw','active','seen_stat')
+ def __init__(self,invocation,permit,monitor,item,token=None):
+  need(token is _TOKEN,'private guard prospect required')
+  for name,value in {'invocation':invocation,'permit':permit,'monitor':monitor,'case':monitor['case'],'case_key':(monitor['case']['section'],monitor['case']['index'],monitor['case']['root']),'thread':threading.get_ident(),'pid':os.getpid(),'raw':canonical(item),'active':True,'seen_stat':None}.items():object.__setattr__(self,name,value)
+ def __setattr__(self,*_):raise TypeError('immutable guard prospect')
+
+def _guard_prospect_row(prospect,m):
+ # No body reads or ticks: this exact one-shot owner is consulted by snapshots.
+ need(type(prospect) is _GuardProspect and prospect.active and _GUARD_PROSPECTS.get(prospect.invocation) is prospect,'expired guard prospect')
+ need(prospect.monitor is m and _OUTPUT_MONITORS.get(prospect.invocation) is m and m['invocation'] is prospect.invocation and m['permit'] is prospect.permit and _RUNS.get(prospect.invocation) is m['run'],'original guard prospect owner')
+ need(prospect.thread==threading.get_ident()==m['thread'] and prospect.pid==os.getpid(),'guard prospect process/thread drift')
+ need(not m['closed'] and not m['run']['failed'] and m['case'] is prospect.case and m['section']=='guards' and m['case']['section']=='guards' and m['operation'] is None and m['transition'] is None,'inactive guard prospect case')
+ need((m['case']['section'],m['case']['index'],m['case']['root'])==prospect.case_key,'original guard prospect tuple')
+ _runtime_permit_owner(prospect.permit,prospect.invocation,'public');item=decode(prospect.raw)
+ need(item['path']==str(m['case']['root']/'occupied-output') and item['target']==str(m['case']['root']/'preserved-target') and item['link_text']=='preserved-target','exact guard prospect path')
+ try:s=Path(item['path']).lstat()
+ except FileNotFoundError:need(prospect.seen_stat is None,'materialized prospective guard disappeared')
+ else:
+  need(stat.S_ISLNK(s.st_mode),'prospective guard is not a symlink');now=_out_stat(s)
+  need(prospect.seen_stat is None or prospect.seen_stat==now,'materialized prospective guard changed')
+  object.__setattr__(prospect,'seen_stat',now)
+ return item
+
 def register_public_guard(invocation,runtime_permit,runtime_case):
- d,row,argv,fixture,evidence=_public_case(runtime_permit,invocation,runtime_case)
- need(runtime_case['section']=='guards' and row['group']=='occupied' and row['case']['output_kind']=='symlink','exact occupied symlink tuple')
- base=evidence.parent;link=base/'occupied-output';target=base/'preserved-target'
- need(body(target)==b'Oxid Unit3 no-clobber sentinel\x00\xff\n','exact guard sentinel')
- item={'path':str(link),'target':str(target),'link_text':'preserved-target','target_identity':identity(target),'target_stat':_target_stat(target)};_verify_link(item)
- links=_GUARD_LINKS.setdefault(invocation,{})
- need(str(link) not in links or links[str(link)]==item,'guard link registration changed');links[str(link)]=item;return _copy(item)
+ """Authenticate absent output, then exclusively create one exact owned link."""
+ prospect=None
+ try:
+  verify_invocation(invocation);m=_out_auth(invocation,runtime_permit);active=m['case']
+  need(active is not None and m['section']=='guards' and active['section']=='guards' and m['operation'] is None and m['transition'] is None,'active exclusive guards case required')
+  need(runtime_case=={'section':'guards','index':active['index'],'variant':'ordinary'} and type(runtime_case.get('index')) is int,'original ordinary guards case required')
+  need(invocation not in _GUARD_PROSPECTS and _PUBLIC_REPLAY is None,'guard admission cannot overlap or replay')
+  d,row,argv,fixture,evidence=_public_case_verified(_runtime_permit_full(runtime_permit,invocation,'public'),runtime_permit,runtime_case)
+  need(row['group']=='occupied' and row['case']['output_kind']=='symlink' and evidence.parent==active['root'],'exact occupied symlink tuple')
+  base=evidence.parent;link=base/'occupied-output';target=base/'preserved-target'
+  links=_GUARD_LINKS.setdefault(invocation,{})
+  need(str(link) not in links and not os.path.lexists(link),'guard output already present or admitted')
+  sentinel=b'Oxid Unit3 no-clobber sentinel\x00\xff\n'
+  need(body(target)==sentinel,'exact guard sentinel')
+  before=_target_stat(target);target_identity=identity(target)
+  need(target_identity=={'path':str(target),'bytes':33,'sha256':'25cacc2126d969b15aa66e631f92d55200cdb06cc5f129fe899eb8a8db685f8c'} and _target_stat(target)==before,'guard target changed before admission')
+  item={'path':str(link),'target':str(target),'link_text':'preserved-target','target_identity':target_identity,'target_stat':before}
+  need(_out_auth(invocation,runtime_permit) is m and m['case'] is active and not os.path.lexists(link),'guard owner/output changed before admission')
+  prospect=_GuardProspect(invocation,runtime_permit,m,item,_TOKEN);_GUARD_PROSPECTS[invocation]=prospect
+  _guard_prospect_row(prospect,m)
+  # No ticking read separates exact prospective admission from exclusive create.
+  os.symlink(item['link_text'],item['path'])
+  _guard_prospect_row(prospect,m);need(prospect.seen_stat is not None,'guard symlink creation absent')
+  links[str(link)]=item
+  del _GUARD_PROSPECTS[invocation]
+  object.__setattr__(prospect,'active',False)
+  _verify_link(item)
+  public_output_tick(invocation)
+  return _copy(item)
+ except BaseException:
+  _poison(invocation);raise
+ finally:
+  if prospect is not None:
+   if _GUARD_PROSPECTS.get(invocation) is prospect:del _GUARD_PROSPECTS[invocation]
+   object.__setattr__(prospect,'active',False)
 
 def register_public_native(invocation,compile_probe,*,runtime_permit):
  d=_runtime_permit(runtime_permit,invocation,'public');need(compile_probe in _PROBES,'actual compile probe required');owner=_PROBES[compile_probe]
@@ -1063,18 +1186,142 @@ _OUTPUT_MONITORS = {}
 _OUT_SECTIONS = ('public', 'original', 'predecessors', 'lifecycle', 'guards')
 _OUT_TOTAL = 6 * 1024 ** 3
 _OUT_FILE = 2 * 1024 ** 3
-_OUT_DUE = 3.0  # Measured early start; the hard completed-audit gap remains 5s.
+_OUT_DUE = 3.0
+_OUT_START_LIMIT = 5.0  # New idle/start contract, NOT a completed-detection limit.
+_OUT_EXECUTION_SECONDS = 14.0  # Explicit reviewed production contract; raw operation/run deadlines always take precedence.
+_OUT_SERVICE_DUE = 0.05  # Scheduling target, not a proven hard service latency.
+_OWNED_OUTPUT_SERVICES = {}  # Issued only by the actual _supervise lifetime.
 _OUT_STAT = ('st_dev', 'st_ino', 'st_mode', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
 _OUT_STABLE_DIR = ('st_dev', 'st_ino', 'st_mode')
 
 
+def _out_budget():
+    value = _OUT_EXECUTION_SECONDS
+    need(type(value) in (int, float) and math.isfinite(value) and value > 0,
+         'public output audit execution policy not released')
+    return float(value)
+
+
+def _out_stats(m):
+    # Constant-size aggregates; successful operation receipts never copy history.
+    return m.setdefault('audit_stats', {'attempts': 0, 'failures': 0, 'successes': 0,
+        'max_duration': 0.0, 'max_start_lag': 0.0, 'max_completed_gap': 0.0,
+        'fast_count': 0, 'fast_seconds': 0.0, 'fast_max_duration': 0.0, 'fast_max_gap': 0.0, 'fast_max_start_gap': 0.0,
+        'live_count': 0, 'live_seconds': 0.0, 'live_max_duration': 0.0, 'live_max_gap': 0.0, 'live_max_start_gap': 0.0,
+        'live_max_entries': 0, 'live_max_bytes': 0, 'queue_peak_events': 0, 'stream_peak_bytes': 0})
+
+
+def _out_stage(m, phase, path=None):
+    attempt = m.get('current_attempt')
+    if attempt is None:
+        return
+    if m.get('sampling_live'):
+        attempt['nested_phase'] = 'live-' + phase
+        if path is not None:
+            attempt['nested_path'] = os.fspath(path)
+        return
+    now = time.monotonic()
+    if phase != attempt['phase']:
+        old = attempt['phase']
+        attempt['phase_seconds'][old] = attempt['phase_seconds'].get(old, 0.0) + now - attempt['phase_started']
+        attempt['phase'], attempt['phase_started'] = phase, now
+    if path is not None:
+        attempt['path'] = os.fspath(path)
+
+
+def _out_count(m, kind):
+    attempt = m.get('current_attempt')
+    if attempt is not None:
+        if m.get('sampling_live'):
+            attempt.setdefault('nested_counts', {'entries': 0, 'sealed': 0, 'membership': 0})[kind] += 1
+        else:
+            attempt['counts'][kind] += 1
+
+
+def _out_attempt_document(m, attempt, ended):
+    row = {key: value for key, value in attempt.items() if key not in ('path', 'nested_path', 'phase_started')}
+    row['phase_seconds'] = dict(attempt['phase_seconds'])
+    row['phase_seconds'][attempt['phase']] = row['phase_seconds'].get(attempt['phase'], 0.0) + ended - attempt['phase_started']
+    row['counts'] = dict(attempt['counts'])
+    row['service'] = dict(attempt['service'])
+    row['completed'], row['duration'] = ended, ended - attempt['started']
+    for name in ('path', 'nested_path'):
+        path = attempt.get(name)
+        if path is not None:
+            relative = os.path.relpath(path, m['root'])
+            row[name] = relative[:256]
+            row[name + '_sha256'] = hashlib.sha256(os.fsencode(relative)).hexdigest()
+    return row
+
+
+def _out_service_fast(m, deadline, *, force=False):
+    owner = m.get('owned_service')
+    if owner is None:
+        return
+    need(_OWNED_OUTPUT_SERVICES.get(id(m)) is owner and owner['monitor'] is m and
+         owner['operation'] is m['operation'] and owner['invocation'] is m['invocation'] and
+         owner['thread'] == threading.get_ident() == m['thread'] and owner['active'],
+         'foreign or expired owned output service')
+    need(not m.get('servicing_fast'), 'recursive owned output service')
+    now = time.monotonic()
+    previous = m.get('last_fast')
+    if not force and previous is not None and now < previous + _OUT_SERVICE_DUE:
+        return
+    m['servicing_fast'] = True
+    try:
+        attempt = m.get('current_attempt')
+        if attempt is not None:
+            attempt['fast_service_active'] = True
+        owner['service'](min(deadline, owner['deadline']))
+        if attempt is not None:
+            attempt.pop('fast_service_active', None)
+            attempt.pop('fast_phase', None)
+    finally:
+        primary = sys.exc_info()[1]
+        try:
+            ended = time.monotonic()
+            stats = _out_stats(m)
+            stats['fast_count'] += 1
+            stats['fast_seconds'] += ended - now
+            attempt = m.get('current_attempt')
+            if attempt is not None:
+                attempt['service']['fast_count'] += 1
+                attempt['service']['fast_seconds'] += ended - now
+            stats['fast_max_duration'] = max(stats['fast_max_duration'], ended - now)
+            if previous is not None:
+                stats['fast_max_gap'] = max(stats['fast_max_gap'], ended - previous)
+                stats['fast_max_start_gap'] = max(stats['fast_max_start_gap'], now - previous)
+            m['last_fast'] = ended
+        except BaseException as error:
+            m.setdefault('diagnostic_errors', []).append(repr(error)[:512])
+            del m['diagnostic_errors'][:-4]
+            if primary is None:
+                raise
+        finally:
+            m['servicing_fast'] = False
+
+
+def _out_checkpoint(m, deadline, *, phase, path=None):
+    _out_stage(m, phase, path)
+    deadline = _out_raw_deadline(m, deadline)
+    _out_service_fast(m, deadline)
+    if m.get('owned_service') is not None and not m.get('sampling_live'):
+        previous = m.get('last_live')
+        if previous is None or time.monotonic() >= previous + _OUT_SERVICE_DUE:
+            _out_sample_live(m, deadline=deadline)
+    _out_raw_deadline(m, deadline)
+    return deadline
+
+
 def _out_raw_deadline(m, extra=None):
     deadline = m['run']['deadline']
+    need(type(deadline) in (int, float) and math.isfinite(deadline), 'finite output run deadline')
     if m.get('operation') is not None and m['operation'].get('deadline') is not None:
         deadline = min(deadline, m['operation']['deadline'])
     if globals().get('_DEADLINE') is not None:
         deadline = min(deadline, _DEADLINE)
     if extra is not None:
+        need(type(extra) in (int, float) and math.isfinite(extra), 'finite output extra deadline')
         deadline = min(deadline, extra)
     need((not m['run']['failed'] or m.get('failure_read', False)) and time.monotonic() < deadline,
          'public output monitor deadline or poisoned invocation')
@@ -1086,6 +1333,8 @@ def _out_get(invocation):
     m = _OUTPUT_MONITORS[invocation]
     need(m['thread'] == threading.get_ident() and m['invocation'] is invocation,
          'cross-thread or cross-invocation output monitor')
+    if m.get('diagnostic') is not None:
+        _diagnostic_association(invocation, m['permit'], m['diagnostic'])
     _out_raw_deadline(m)
     return m
 
@@ -1130,7 +1379,16 @@ def _out_structure(m):
 
 def _out_allowed_links(m):
     links = dict(_VIEWS.get(m['invocation'], {}))
-    links.update(_GUARD_LINKS.get(m['invocation'], {}))
+    guards = _GUARD_LINKS.get(m['invocation'], {})
+    for path in guards:
+        need(os.path.lexists(path), 'registered guard link disappeared')
+    links.update(guards)
+    prospect = _GUARD_PROSPECTS.get(m['invocation'])
+    if prospect is not None:
+        item = _guard_prospect_row(prospect, m)
+        need(item['path'] not in links or links[item['path']] == item,
+             'prospective guard registration changed')
+        links[item['path']] = item
     return links
 
 
@@ -1149,6 +1407,7 @@ def _out_existing_roots(m):
     roots = []
     tmp = m['root'] / 'tmp'
     need(os.path.lexists(tmp), 'fixed output tmp root disappeared')
+    need(stat.S_ISDIR(tmp.lstat().st_mode), 'fixed output tmp root type drift')
     roots.append(tmp)
     for key in ('case', 'operation'):
         active = m[key]
@@ -1157,6 +1416,7 @@ def _out_existing_roots(m):
         exists = os.path.lexists(active['root'])
         need(exists or not active['seen'], 'active stable output root disappeared')
         if exists:
+            need(stat.S_ISDIR(active['root'].lstat().st_mode), 'active stable output root type drift')
             active['seen'] = True
             _out_check_ancestors(m, active['root'])
             roots.append(active['root'])
@@ -1176,7 +1436,7 @@ def _out_hash(path, before, m, deadline):
             # this due-only callback cannot recurse back into body sealing.
             if not m['auditing'] and m['last_audit'] is not None and time.monotonic() >= m['last_audit'] + _OUT_DUE:
                 additions = () if m['transition'] is None else m['transition']['additions']
-                _out_audit(m, additions=additions, deadline=min(deadline, m['last_audit'] + 5))
+                _out_audit(m, additions=additions, deadline=deadline, reason='body-seal-due')
             chunk = stream.read(1024 * 1024)
             if not chunk:
                 break
@@ -1198,7 +1458,9 @@ def _out_snapshot(m, roots, *, deadline, hash_bodies=False, registration=None):
 
     def observe(path, s):
         nonlocal total
-        _out_raw_deadline(m, deadline)
+        _out_checkpoint(m, deadline, phase='snapshot')
+        _out_stage(m, 'snapshot', path)
+        _out_count(m, 'entries')
         # Equivalent canonical component-prefix prefilter; native helper's
         # Path.parents grammar is evaluated only inside its exact possible scope.
         if registration is not None:
@@ -1228,18 +1490,21 @@ def _out_snapshot(m, roots, *, deadline, hash_bodies=False, registration=None):
             rows[path] = row
         else:
             need(False, 'special public output member')
+        _out_checkpoint(m, deadline, phase='snapshot', path=path)
 
     for path in roots:
-        _out_raw_deadline(m, deadline)
         path = os.fspath(path)
+        _out_checkpoint(m, deadline, phase='snapshot', path=path)
         try:
             observe(path, os.lstat(path))
         except FileNotFoundError:
             _scan_disappearance(path, m['root'], registration, ())
     while pending:
-        _out_raw_deadline(m, deadline)
+        _out_checkpoint(m, deadline, phase='snapshot')
         directory, expected = pending.pop()
         fd = None
+        first_error = None
+        _out_stage(m, 'snapshot', directory)
         try:
             if os.name == 'posix':
                 fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -1254,8 +1519,9 @@ def _out_snapshot(m, roots, *, deadline, hash_bodies=False, registration=None):
                 source = directory
             with os.scandir(source) as entries:
                 for entry in entries:
-                    _out_raw_deadline(m, deadline)
+                    _out_checkpoint(m, deadline, phase='snapshot')
                     path = directory + os.sep + entry.name
+                    _out_stage(m, 'snapshot', path)
                     try:
                         s = entry.stat(follow_symlinks=False)
                     except FileNotFoundError:
@@ -1265,9 +1531,20 @@ def _out_snapshot(m, roots, *, deadline, hash_bodies=False, registration=None):
         except FileNotFoundError:
             _scan_disappearance(directory, m['root'], registration, ())
             rows.pop(directory, None)
+        except BaseException as error:
+            first_error = error
+            raise
         finally:
             if fd is not None:
-                os.close(fd)
+                active_error = sys.exc_info()[1]
+                try:
+                    os.close(fd)
+                except BaseException as error:
+                    if first_error is None and active_error is None:
+                        raise
+                    attempt = m.get('current_attempt')
+                    if attempt is not None:
+                        attempt.setdefault('close_error', repr(error)[:512])
     return rows, total
 
 
@@ -1283,50 +1560,173 @@ def _out_same(path, old, new, structural):
     return old['kind'] != 'link' or all(old[key] == new[key] for key in ('link_text', 'target', 'target_stat'))
 
 
-def _out_compare(m, actual, *, additions=()):
+def _out_collection_parent(m, actual, additions):
+    """One authenticated collection-close parent, never a general ancestor waiver."""
+    transition = m['transition']
+    if transition is None or transition['phase'] != 'collection-close':
+        return None
+    parent = m['collection'].parent
+    expected = {parent / 'collection.json': 'file'}
+    need(transition['additions'] == expected and set(additions) == {str(p) for p in expected},
+         'exact collection-close addition authority')
+    authority = transition['collection_parent']
+    path = str(parent)
+    need(authority['path'] == path and m['sealed'].get(path) == authority['before'],
+         'original collection-close parent authority')
+    now = parent.lstat()
+    need(stat.S_ISDIR(now.st_mode) and
+         all(getattr(now, key) == value for key, value in authority['identity'].items()),
+         'collection-close parent identity/type/mode/owner drift')
+    need(path in actual and actual[path]['kind'] == 'directory' and
+         actual[path]['stat'] == _out_stat(now), 'collection-close parent changed after snapshot')
+    return path
+
+
+def _out_compare(m, actual, *, additions=(), deadline):
     live, structural = [str(path) for path in _out_live_roots(m)], _out_structure(m)
     additions = {str(path) for path in additions}
+    parent = _out_collection_parent(m, actual, additions)
+    diagnostic_parent = _out_diagnostic_parent(m, actual, additions)
+    need(parent is None or diagnostic_parent is None, 'mixed output terminal authorities')
+    parent = parent if parent is not None else diagnostic_parent
+    if parent is not None:
+        structural.add(parent)
     for path, old in m['sealed'].items():
+        _out_checkpoint(m, deadline, phase='sealed', path=path)
+        _out_count(m, 'sealed')
         need(path in actual and _out_same(path, old, actual[path], structural),
              'sealed public output metadata or membership drift')
+        _out_checkpoint(m, deadline, phase='sealed', path=path)
     for path in actual:
+        _out_checkpoint(m, deadline, phase='membership', path=path)
+        _out_count(m, 'membership')
         need(path in m['sealed'] or path in additions or
              any(_out_under(path, root) for root in live),
              'unregistered output outside current public case/operation')
+        _out_checkpoint(m, deadline, phase='membership', path=path)
 
 
 def _out_bytes(rows):
     return sum(row['stat']['st_size'] for row in rows.values() if row['kind'] == 'file')
 
 
-def _out_audit(m, *, additions=(), deadline=None):
+def _out_audit(m, *, additions=(), deadline=None, reason='boundary', initial=False):
     need(not m['auditing'], 'overlapping output audit')
     m['auditing'] = True
     started = time.monotonic()
+    stats = _out_stats(m)
+    stats['attempts'] += 1
+    attempt = {'number': stats['attempts'], 'reason': reason, 'started': started,
+               'deadline': None, 'previous_completed': m['last_audit'],
+               'phase': 'start', 'phase_started': started, 'phase_seconds': {},
+               'counts': {'entries': 0, 'sealed': 0, 'membership': 0},
+               'service': {'fast_count': 0, 'fast_seconds': 0.0, 'live_count': 0, 'live_seconds': 0.0},
+               'success': False}
+    m['current_attempt'] = attempt
+    first_error = None
     try:
-        deadline = _out_raw_deadline(m, deadline)
-        _out_existing_roots(m)
+        budget = m['execution_seconds']
+        need(type(budget) in (int, float) and math.isfinite(budget) and budget > 0,
+             'finite released output audit execution policy required')
+        need(math.isfinite(started), 'invalid output audit start clock')
+        attempt['execution_deadline'] = started + budget
+        raw_deadline = _out_raw_deadline(m, deadline)
+        attempt['raw_deadline'] = raw_deadline
+        deadline = _out_raw_deadline(m, min(started + budget, raw_deadline))
+        attempt['deadline'] = deadline
+        previous = m['last_audit']
+        if previous is not None:
+            need(math.isfinite(previous) and math.isfinite(started) and previous <= started,
+                 'invalid output audit clock')
+            lag = started - previous
+            attempt['start_lag'] = lag
+            stats['max_start_lag'] = max(stats['max_start_lag'], lag)
+            if not m.get('failure_read'):
+                need(lag <= _OUT_START_LIMIT, 'public full-output audit start cadence missed')
+        _out_checkpoint(m, deadline, phase='roots')
+        if not initial:
+            _out_existing_roots(m)
+        else:
+            need(previous is None and not m['sealed'], 'initial output audit replay')
+        _out_checkpoint(m, deadline, phase='roots')
         registration = None if m['operation'] is None else m['operation']['registration']
         rows, total = _out_snapshot(m, [m['root']], deadline=deadline, registration=registration)
-        _out_compare(m, rows, additions=additions)
+        if initial:
+            tmp = str(m['root'] / 'tmp')
+            need(tmp in rows and rows[tmp]['kind'] == 'directory', 'fixed output tmp root')
+        else:
+            _out_compare(m, rows, additions=additions, deadline=deadline)
+        _out_checkpoint(m, deadline, phase='final')
         completed = time.monotonic()
         need(completed < deadline, 'output audit completed after deadline')
-        previous = m['last_audit']
-        if previous is not None and (m['case'] is not None or m['operation'] is not None):
-            need(completed - previous <= 5, 'public full-output audit cadence missed')
-        m['last_audit'] = completed
-        m['full_peak'] = max(m['full_peak'], total)
-        m['audits'].append({'started': started, 'completed': completed, 'bytes': total})
+        attempt['success'], attempt['bytes'] = True, total
         return rows
-    except BaseException:
+    except BaseException as error:
+        first_error = error
+        stats['failures'] += 1
+        attempt['error'] = repr(error)[:2048]
         m['run']['failed'] = True
         raise
     finally:
-        m['auditing'] = False
+        try:
+            ended = time.monotonic()
+            document = _out_attempt_document(m, attempt, ended)
+            final = time.monotonic()
+            document['phase_seconds'][attempt['phase']] += final - ended
+            document['completed'], document['duration'] = final, final - started
+            if attempt['success']:
+                need(final < deadline, 'output audit diagnostics completed after deadline')
+            stats['max_duration'] = max(stats['max_duration'], final - started)
+            if not attempt['success'] and 'first_failed_attempt' not in m:
+                m['first_failed_attempt'] = document
+            m['last_attempt'] = document
+            m['audits'].append(document)
+            del m['audits'][:-16]
+            # Commit only after successful bounded diagnostics. Preservation can
+            # inspect a stale healthy cadence, but can never repair its anchor.
+            if attempt['success'] and not m.get('failure_read'):
+                m['last_audit'] = final
+                m['full_peak'] = max(m['full_peak'], total)
+                stats['successes'] += 1
+                if previous is not None:
+                    stats['max_completed_gap'] = max(stats['max_completed_gap'], final - previous)
+                m['last_success'] = {'started': started, 'completed': final, 'bytes': total,
+                                     'entries': attempt['counts']['entries'], 'duration': final - started}
+        except BaseException as diagnostic_error:
+            m['run']['failed'] = True
+            diagnostic = repr(diagnostic_error)[:512]
+            m.setdefault('diagnostic_errors', []).append(diagnostic)
+            del m['diagnostic_errors'][:-4]
+            if first_error is None:
+                stats['failures'] += 1
+            fallback = {'number': attempt['number'], 'started': started,
+                        'deadline': attempt['deadline'], 'phase': attempt['phase'],
+                        'counts': dict(attempt['counts']), 'success': False,
+                        'error': attempt.get('error', diagnostic), 'diagnostic_error': diagnostic}
+            m.setdefault('first_failed_attempt', fallback)
+            m['last_attempt'] = fallback
+            if first_error is None:
+                raise
+        finally:
+            m['current_attempt'] = None
+            m['auditing'] = False
 
 
 def public_output_start(invocation, runtime_permit):
+    need(invocation not in _PUBLIC_DIAGNOSTIC_INVOCATIONS, 'diagnostic invocation cannot start full collection')
+    return _public_output_start(invocation, runtime_permit)
+
+
+def _public_output_start(invocation, runtime_permit, diagnostic=None):
     """After generator/setup, before the first section or case is created."""
+    if diagnostic is None:
+        need(invocation not in _PUBLIC_DIAGNOSTIC_INVOCATIONS,
+             'diagnostic invocation cannot use shared full start')
+    else:
+        owner = _diagnostic_owner(invocation, runtime_permit, diagnostic)
+        need(owner['started'] and owner['terminal'] is None,
+             'issued started diagnostic policy required')
+    budget = _out_budget()
     inv, captured, run = _run_state(invocation)
     need(invocation not in _OUTPUT_MONITORS, 'public monitor already started')
     need(not any(not old['closed'] and not old['run']['failed'] and
@@ -1341,20 +1741,76 @@ def public_output_start(invocation, runtime_permit):
          'transition': None, 'section': None, 'finished_sections': [], 'finished_cases': set(),
          'case_order': (), 'case_next': 0,
          'sealed': {}, 'sealed_bytes': 0, 'last_audit': None, 'auditing': False,
-         'audits': [], 'full_peak': 0, 'accounted_peak': 0, 'closed': False}
+         'audits': [], 'full_peak': 0, 'accounted_peak': 0, 'closed': False,
+         'execution_seconds': budget, 'sampling_live': False, 'servicing_fast': False,
+         'owned_service': None, 'diagnostic': diagnostic}
     _OUTPUT_MONITORS[invocation] = m
     try:
-        rows, total = _out_snapshot(m, [m['root']], deadline=_out_raw_deadline(m))
+        rows = _out_audit(m, reason='initial', initial=True)
         tmp = str(m['root'] / 'tmp')
-        need(tmp in rows and rows[tmp]['kind'] == 'directory', 'fixed output tmp root')
         m['sealed'] = {path: row for path, row in rows.items() if path == tmp or not _out_under(path, tmp)}
         m['sealed_bytes'] = _out_bytes(m['sealed'])
-        m['last_audit'] = time.monotonic()
-        m['full_peak'] = total
-        m['audits'].append({'started': m['last_audit'], 'completed': m['last_audit'], 'bytes': total})
     except BaseException:
         run['failed'] = True
         raise
+
+
+def _out_sample_live(m, *, deadline):
+    need(not m.get('sampling_live'), 'recursive current-root output sample')
+    m['sampling_live'] = True
+    started, previous = time.monotonic(), m.get('last_live')
+    try:
+        deadline = _out_raw_deadline(m, min(deadline, started + m['execution_seconds']))
+        additions = {} if m['transition'] is None else m['transition']['additions']
+        roots = _out_existing_roots(m)
+        roots += [path for path in additions if os.path.lexists(path) and
+                  not any(parent in additions for parent in path.parents)]
+        registration = None if m['operation'] is None else m['operation']['registration']
+        observed, active = _out_snapshot(m, roots, deadline=deadline, registration=registration)
+        live = _out_live_roots(m)
+        string_additions = {str(path): kind for path, kind in additions.items()}
+        for path in observed:
+            _out_checkpoint(m, deadline, phase='live', path=path)
+            need(path in string_additions or any(_out_under(path, root) for root in live),
+                 'unexpected transition output member')
+        for path, kind in string_additions.items():
+            _out_checkpoint(m, deadline, phase='live', path=path)
+            need(path not in observed or observed[path]['kind'] == kind, 'wrong transition output type')
+        total = m['sealed_bytes'] + active
+        need(total <= _OUT_TOTAL, 'public active-accounted output aggregate bound')
+        m['accounted_peak'] = max(m['accounted_peak'], total)
+        stats = _out_stats(m)
+        stats['live_max_entries'] = max(stats['live_max_entries'], len(observed))
+        stats['live_max_bytes'] = max(stats['live_max_bytes'], active)
+        attempt = m.get('current_attempt')
+        if attempt is not None:
+            attempt.pop('nested_phase', None)
+            attempt.pop('nested_path', None)
+        return {'active_accounted_bytes': total, 'sealed_bytes': m['sealed_bytes'],
+                'full_observed_peak_bytes': m['full_peak'], 'last_full_audit': m['last_audit']}
+    finally:
+        primary = sys.exc_info()[1]
+        try:
+            ended = time.monotonic()
+            stats = _out_stats(m)
+            stats['live_count'] += 1
+            stats['live_seconds'] += ended - started
+            attempt = m.get('current_attempt')
+            if attempt is not None:
+                attempt['service']['live_count'] += 1
+                attempt['service']['live_seconds'] += ended - started
+            stats['live_max_duration'] = max(stats['live_max_duration'], ended - started)
+            if previous is not None:
+                stats['live_max_gap'] = max(stats['live_max_gap'], ended - previous)
+                stats['live_max_start_gap'] = max(stats['live_max_start_gap'], started - previous)
+            m['last_live'] = ended
+        except BaseException as error:
+            m.setdefault('diagnostic_errors', []).append(repr(error)[:512])
+            del m['diagnostic_errors'][:-4]
+            if primary is None:
+                raise
+        finally:
+            m['sampling_live'] = False
 
 
 def public_output_tick(invocation, *, deadline=None):
@@ -1364,28 +1820,13 @@ def public_output_tick(invocation, *, deadline=None):
     m = _out_get(invocation)
     if m['closed']:
         return None
-    need(not m['auditing'], 'recursive public output checkpoint')
+    need(not m['auditing'] and not m.get('sampling_live'), 'recursive public output checkpoint')
     deadline = _out_raw_deadline(m, deadline)
     try:
         additions = {} if m['transition'] is None else m['transition']['additions']
         if time.monotonic() >= m['last_audit'] + _OUT_DUE:
-            _out_audit(m, additions=additions, deadline=min(deadline, m['last_audit'] + 5))
-        roots = _out_existing_roots(m)
-        roots += [path for path in additions if os.path.lexists(path) and
-                  not any(parent in additions for parent in path.parents)]
-        registration = None if m['operation'] is None else m['operation']['registration']
-        observed, active = _out_snapshot(m, roots, deadline=deadline, registration=registration)
-        live = _out_live_roots(m)
-        string_additions = {str(path): kind for path, kind in additions.items()}
-        need(all(path in string_additions or any(_out_under(path, root) for root in live)
-                 for path in observed), 'unexpected transition output member')
-        need(all(path not in observed or observed[path]['kind'] == kind
-                 for path, kind in string_additions.items()), 'wrong transition output type')
-        total = m['sealed_bytes'] + active
-        need(total <= _OUT_TOTAL, 'public active-accounted output aggregate bound')
-        m['accounted_peak'] = max(m['accounted_peak'], total)
-        return {'active_accounted_bytes': total, 'sealed_bytes': m['sealed_bytes'],
-                'full_observed_peak_bytes': m['full_peak'], 'last_full_audit': m['last_audit']}
+            _out_audit(m, additions=additions, deadline=deadline, reason='scheduled')
+        return _out_sample_live(m, deadline=deadline)
     except BaseException:
         m['run']['failed'] = True
         raise
@@ -1403,7 +1844,7 @@ def _public_output_tick_active():
     if active:
         m = active[0]
         _out_raw_deadline(m)
-        if not m['auditing'] and time.monotonic() >= m['last_audit'] + _OUT_DUE:
+        if not m['auditing'] and not m.get('sampling_live') and time.monotonic() >= m['last_audit'] + _OUT_DUE:
             public_output_tick(m['invocation'])
 
 
@@ -1459,10 +1900,11 @@ def public_output_boundary(invocation, runtime_permit, phase, section=None):
     try:
         need(m['case'] is None and m['operation'] is None and m['transition'] is None,
              'output transition while case/child/transition active')
-        _out_audit(m)
+        _out_audit(m, reason=phase + '-enter')
         if phase == 'section-open':
-            need(m['section'] is None and len(m['finished_sections']) < len(_OUT_SECTIONS) and
-                 section == _OUT_SECTIONS[len(m['finished_sections'])], 'out-of-order section open')
+            sections = _out_sections(m)
+            need(m['section'] is None and len(m['finished_sections']) < len(sections) and
+                 section == sections[len(m['finished_sections'])], 'out-of-order section open')
             parent = m['collection'] / section
             additions = {parent: 'directory', parent / 'roster.json': 'file'}
         elif phase == 'section-close':
@@ -1476,6 +1918,7 @@ def public_output_boundary(invocation, runtime_permit, phase, section=None):
                 names.append('historical-comparison.json')
             additions = {m['collection'] / section / name: 'file' for name in names}
         elif phase == 'collection-close':
+            need(m.get('diagnostic') is None, 'diagnostic policy cannot close full collection')
             need(section is None and m['section'] is None and
                  m['finished_sections'] == list(_OUT_SECTIONS), 'incomplete collection close')
             additions = {m['collection'].parent / 'collection.json': 'file'}
@@ -1483,8 +1926,19 @@ def public_output_boundary(invocation, runtime_permit, phase, section=None):
             need(False, 'unknown finite public output transition')
         need(not any(os.path.lexists(path) for path in additions), 'pre-existing output transition member')
         m['transition'] = {'phase': phase, 'additions': additions}
+        if phase == 'collection-close':
+            parent = m['collection'].parent
+            before = m['sealed'].get(str(parent))
+            now = parent.lstat()
+            need(before is not None and before['kind'] == 'directory' and
+                 stat.S_ISDIR(now.st_mode) and before['stat'] == _out_stat(now),
+                 'unchanged collection-close parent at entry')
+            m['transition']['collection_parent'] = {
+                'path': str(parent), 'before': dict(before),
+                'identity': {key: getattr(now, key) for key in
+                             ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid')}}
         yield
-        actual = _out_audit(m, additions=additions)
+        actual = _out_audit(m, additions=additions, reason=phase + '-exit')
         need(all(str(path) in actual and actual[str(path)]['kind'] == kind for path, kind in additions.items()),
              'missing or wrong output transition member')
         sealed = {}
@@ -1493,7 +1947,12 @@ def public_output_boundary(invocation, runtime_permit, phase, section=None):
             if kind == 'file':
                 row = dict(row, sha256=_out_hash(path, row['stat'], m, _out_raw_deadline(m)))
             sealed[str(path)] = row
+        parent = _out_collection_parent(m, actual, {str(path) for path in additions})
         _out_promote(m, sealed)
+        if parent is not None:
+            # Only this already-verified zero-byte directory is explicitly resealed.
+            # Files and all other directories retain the no-reseal policy.
+            m['sealed'][parent] = dict(actual[parent])
         m['transition'] = None
         if phase == 'section-open':
             m['section'] = section
@@ -1590,15 +2049,17 @@ def _public_output_failure_audit(m, *, deadline):
     need(not m.get('failure_read', False), 'nested failure output audit')
     m['failure_read'] = True
     try:
-        _out_audit(m, deadline=deadline)
+        _out_audit(m, deadline=deadline, reason='failure-preservation')
         result = {'verified': True, 'last_full_audit': m['last_audit']}
     except BaseException as error:
         result = {'verified': False, 'error': repr(error)[:2048]}
     finally:
         m['failure_read'] = False
         m['run']['failed'] = True
+    result['first_failed_attempt'] = m.get('first_failed_attempt')
+    result['preservation_attempt'] = m.get('last_attempt')
     m['failure_audit'] = result
-    return dict(result)
+    return _copy(result)
 
 
 def public_output_failure(invocation, runtime_permit):
@@ -1611,18 +2072,244 @@ def public_output_failure(invocation, runtime_permit):
     _runtime_permit_owner(runtime_permit, invocation, 'public')
     if 'failure_audit' not in m:
         _public_output_failure_audit(m, deadline=m['run']['deadline'])
-    return dict(m['failure_audit'])
+    return _copy(m['failure_audit'])
 
 
 def _public_output_report(m):
     if m is None:
         return None
-    audits = m['audits']
-    gaps = [right['completed'] - left['completed'] for left, right in zip(audits, audits[1:])]
-    return {'schema': 'public-output-sampled-ledger-v1',
+    stats = _out_stats(m)
+    return {'schema': 'public-output-sampled-ledger-v2',
             'full_observed_peak_bytes': m['full_peak'],
             'active_accounted_peak_bytes': m['accounted_peak'],
-            'sealed_bytes': m['sealed_bytes'], 'full_audit_count': len(audits),
-            'last_full_audit': m['last_audit'], 'max_completed_audit_gap': max(gaps, default=0),
+            'sealed_bytes': m['sealed_bytes'], 'full_audit_count': stats['successes'],
+            'last_full_audit': m['last_audit'], 'max_completed_audit_gap': stats['max_completed_gap'],
+            'policy': {'due_seconds': _OUT_DUE, 'max_idle_start_seconds': _OUT_START_LIMIT,
+                       'execution_seconds': m['execution_seconds'],
+                       'service_due_seconds': _OUT_SERVICE_DUE,
+                       'service_latency_is_hard_bound': False,
+                       'completion_gap_bound': _OUT_START_LIMIT + m['execution_seconds'],
+                       'persistent_metadata_revisit_bound': _OUT_START_LIMIT + 2 * m['execution_seconds']},
+            'timing': dict(stats), 'last_success': m.get('last_success'),
+            'first_failed_attempt': m.get('first_failed_attempt'),
+            'diagnostic_errors': list(m.get('diagnostic_errors', ())),
+            'phase_seconds_include_service': True, 'live_seconds_include_fast_service': True,
             'continuous_peak_claim': False, 'body_cache_authority': False,
             'invocation_poisoned': m['run']['failed']}
+
+
+# A diagnostic selection never changes the production five-section constants.
+_PUBLIC_DIAGNOSTIC_SECTIONS = ('lifecycle', 'guards')
+_PUBLIC_DIAGNOSTICS = {}
+_PUBLIC_DIAGNOSTIC_INVOCATIONS = {}
+_PUBLIC_DIAGNOSTIC_TERMINALS = {}
+
+
+class PublicDiagnosticPolicy:
+    __slots__ = ()
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError('diagnostic policy requires the original unused live permit')
+
+
+class PublicDiagnosticTerminal:
+    __slots__ = ()
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError('diagnostic terminal requires authenticated selected closure')
+
+
+def _diagnostic_quiescent():
+    need(not _CHECKED and _LAUNCH is None and _PUBLIC_REPLAY is None and not _PUBLIC_INPUTS,
+         'diagnostic transition while a read/launch lease is active')
+
+
+def issue_public_diagnostic(invocation, runtime_permit):
+    """Lock the original unused invocation to the one fixed partial policy."""
+    _diagnostic_quiescent()
+    inv, captured, run = _run_state(invocation)
+    full_verify_invocation(invocation)
+    d = _runtime_permit_full(runtime_permit, invocation, 'public')
+    need(captured['scope'] == 'combined' and d['invocation_nonce'] == inv['nonce'] and
+         Path(d['root']) == run['root'], 'original combined diagnostic invocation required')
+    need(invocation not in _OUTPUT_MONITORS and invocation not in _PUBLIC_DIAGNOSTIC_INVOCATIONS and
+         not os.path.lexists(run['root'] / 'public-runtime/collection'),
+         'full or diagnostic public collection already started')
+    need(runtime_permit in _PUBLIC_CONTRACTS and runtime_permit in _PUBLIC_TOOLS,
+         'original contracts and runtime tools required')
+    need(not any(owner['invocation'] is invocation and
+                 probe.document()['operation_kind'] in ('generator', 'public-runtime', 'public-native')
+                 for probe, owner in _PROBES.items()), 'public work already started')
+    contracts = _PUBLIC_CONTRACTS[runtime_permit]
+    policy = object.__new__(PublicDiagnosticPolicy)
+    owned = {'invocation': invocation, 'permit': runtime_permit, 'invocation_raw': canonical(inv),
+             'permit_raw': canonical(d), 'contracts': contracts,
+             'rosters_raw': canonical(contracts['rosters']), 'thread': threading.get_ident(),
+             'pid': os.getpid(), 'started': False, 'terminal': None}
+    _PUBLIC_DIAGNOSTICS[policy] = owned
+    _PUBLIC_DIAGNOSTIC_INVOCATIONS[invocation] = policy
+    return policy
+
+
+def _diagnostic_association(invocation, runtime_permit, policy):
+    need(type(policy) is PublicDiagnosticPolicy and policy in _PUBLIC_DIAGNOSTICS,
+         'original live diagnostic policy required')
+    owned = _PUBLIC_DIAGNOSTICS[policy]
+    need(owned['invocation'] is invocation and owned['permit'] is runtime_permit and
+         _PUBLIC_DIAGNOSTIC_INVOCATIONS.get(invocation) is policy and
+         owned['thread'] == threading.get_ident() and owned['pid'] == os.getpid(),
+         'foreign or cross-thread/process diagnostic policy')
+    return owned
+
+
+def _diagnostic_owner(invocation, runtime_permit, policy):
+    owned = _diagnostic_association(invocation, runtime_permit, policy)
+    inv, captured = full_verify_invocation(invocation)
+    d = _runtime_permit_full(runtime_permit, invocation, 'public')
+    need(captured['scope'] == 'combined' and canonical(inv) == owned['invocation_raw'] and
+         d['invocation_nonce'] == inv['nonce'] and canonical(d) == owned['permit_raw'],
+         'diagnostic invocation/nonce/permit drift')
+    contracts = _PUBLIC_CONTRACTS.get(runtime_permit)
+    need(contracts is owned['contracts'] and canonical(contracts['rosters']) == owned['rosters_raw'],
+         'diagnostic authenticated contract roster drift')
+    for row in [contracts['helper'], *contracts['pins']]:
+        check_deadline(invocation)
+        need(identity(row['path']) == row, 'diagnostic contract source closure drift')
+    return owned
+
+
+def _out_sections(m):
+    policy = m.get('diagnostic')
+    if policy is None:
+        return _OUT_SECTIONS
+    _diagnostic_owner(m['invocation'], m['permit'], policy)
+    return _PUBLIC_DIAGNOSTIC_SECTIONS
+
+
+def public_diagnostic_start(invocation, runtime_permit, policy):
+    _diagnostic_quiescent()
+    owned = _diagnostic_owner(invocation, runtime_permit, policy)
+    need(not owned['started'] and owned['terminal'] is None, 'diagnostic policy is single-use')
+    owned['started'] = True
+    try:
+        return _public_output_start(invocation, runtime_permit, policy)
+    except BaseException:
+        _poison(invocation)
+        raise
+
+
+def _out_diagnostic_parent(m, actual, additions):
+    """One fixed diagnostic carrier sibling; no production ancestor exception."""
+    transition = m['transition']
+    if transition is None or transition['phase'] != 'diagnostic-close':
+        return None
+    policy = m.get('diagnostic')
+    need(type(policy) is PublicDiagnosticPolicy and policy in _PUBLIC_DIAGNOSTICS and
+         _PUBLIC_DIAGNOSTICS[policy]['invocation'] is m['invocation'] and
+         _PUBLIC_DIAGNOSTICS[policy]['permit'] is m['permit'] and
+         _PUBLIC_DIAGNOSTICS[policy]['thread'] == threading.get_ident() and
+         _PUBLIC_DIAGNOSTICS[policy]['pid'] == os.getpid(), 'original diagnostic close owner')
+    parent = m['collection'].parent
+    expected = {parent / 'diagnostic-collection.json': 'file'}
+    need(transition['additions'] == expected and set(additions) == {str(p) for p in expected},
+         'exact diagnostic-close addition authority')
+    authority = transition['diagnostic_parent']
+    path = str(parent)
+    need(authority['path'] == path and m['sealed'].get(path) == authority['before'],
+         'original diagnostic-close parent authority')
+    now = parent.lstat()
+    need(stat.S_ISDIR(now.st_mode) and
+         all(getattr(now, key) == value for key, value in authority['identity'].items()),
+         'diagnostic-close parent identity/type/mode/owner drift')
+    need(path in actual and actual[path]['kind'] == 'directory' and
+         actual[path]['stat'] == _out_stat(now), 'diagnostic-close parent changed after snapshot')
+    return path
+
+
+def public_diagnostic_terminal(invocation, runtime_permit, policy, document):
+    """Close only the selected-public monitor and publish a nonqualifying carrier."""
+    _diagnostic_quiescent()
+    owned = _diagnostic_owner(invocation, runtime_permit, policy)
+    m = _out_auth(invocation, runtime_permit)
+    try:
+        need(owned['started'] and owned['terminal'] is None and m.get('diagnostic') is policy,
+             'unused diagnostic terminal policy required')
+        need(m['case'] is None and m['operation'] is None and m['transition'] is None and
+             m['section'] is None and m.get('owned_service') is None and
+             not m['auditing'] and not m.get('sampling_live') and not m.get('servicing_fast'),
+             'diagnostic terminal while case/child/transition/service active')
+        need(m['finished_sections'] == list(_PUBLIC_DIAGNOSTIC_SECTIONS),
+             'complete ordered diagnostic sections required')
+        expected = {(section, index) for section in _PUBLIC_DIAGNOSTIC_SECTIONS
+                    for index, row in enumerate(owned['contracts']['rosters'][section])
+                    if row['scope'] == 'execute'}
+        need(m['finished_cases'] == expected and m['case_next'] == len(m['case_order']),
+             'complete original diagnostic local case closure required')
+        need(type(document) is dict and document.get('schema') == 'package-unit4-public-diagnostic-v1' and
+             document.get('selected_sections') == list(_PUBLIC_DIAGNOSTIC_SECTIONS) and
+             set(document.get('reports', {})) == set(_PUBLIC_DIAGNOSTIC_SECTIONS) and
+             document.get('collection_complete') is False and document.get('local_complete') is False and
+             document.get('execution_qualified') is False and document.get('global_host_qualification') is False,
+             'diagnostic terminal cannot grant full collection/session authority')
+        need(document.get('execution_context', {}).get('invocation') == decode(owned['invocation_raw']),
+             'diagnostic document original invocation binding')
+        entered = _out_audit(m, reason='diagnostic-close-enter')
+        need(set(entered) == set(m['sealed']), 'unsealed output at diagnostic terminal')
+        parent = m['collection'].parent
+        carrier = parent / 'diagnostic-collection.json'
+        need(not os.path.lexists(carrier), 'pre-existing diagnostic terminal carrier')
+        before, now = m['sealed'].get(str(parent)), parent.lstat()
+        need(before is not None and before['kind'] == 'directory' and
+             stat.S_ISDIR(now.st_mode) and before['stat'] == _out_stat(now),
+             'unchanged diagnostic-close parent at entry')
+        additions = {carrier: 'file'}
+        m['transition'] = {'phase': 'diagnostic-close', 'additions': additions,
+                           'diagnostic_parent': {'path': str(parent), 'before': dict(before),
+                           'identity': {key: getattr(now, key) for key in
+                                        ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid')}}}
+        raw = canonical(document)
+        need(len(raw) <= 8 * 1024 ** 2, 'bounded diagnostic terminal carrier')
+        with carrier.open('xb') as sink:
+            sink.write(raw)
+        actual = _out_audit(m, additions=additions, reason='diagnostic-close-exit')
+        need(set(actual) == set(m['sealed']) | {str(carrier)},
+             'unsealed output during diagnostic terminal')
+        need(str(carrier) in actual and actual[str(carrier)]['kind'] == 'file',
+             'missing diagnostic terminal carrier')
+        row = dict(actual[str(carrier)])
+        row['sha256'] = _out_hash(carrier, row['stat'], m, _out_raw_deadline(m))
+        need(row['sha256'] == sha(raw), 'diagnostic terminal bytes changed during close')
+        verified_parent = _out_diagnostic_parent(m, actual, {str(carrier)})
+        _out_promote(m, {str(carrier): row})
+        m['sealed'][verified_parent] = dict(actual[verified_parent])
+        m['transition'] = None
+        _out_audit(m, reason='diagnostic-terminal-sealed')
+        terminal = object.__new__(PublicDiagnosticTerminal)
+        _PUBLIC_DIAGNOSTIC_TERMINALS[terminal] = {
+            'policy': policy, 'raw': raw,
+            'carrier': {'path': str(carrier), 'bytes': len(raw), 'sha256': row['sha256']}}
+        owned['terminal'] = terminal
+        m['closed'] = True
+        return terminal
+    except BaseException:
+        _poison(invocation)
+        raise
+
+
+def verify_public_diagnostic_terminal(invocation, runtime_permit, policy, terminal):
+    """After parser writes, reverify only the original terminal authority/carrier."""
+    _diagnostic_quiescent()
+    owned = _diagnostic_owner(invocation, runtime_permit, policy)
+    need(type(terminal) is PublicDiagnosticTerminal and terminal in _PUBLIC_DIAGNOSTIC_TERMINALS and
+         owned['terminal'] is terminal, 'original live diagnostic terminal required')
+    result = _PUBLIC_DIAGNOSTIC_TERMINALS[terminal]
+    m = _out_get(invocation)
+    need(result['policy'] is policy and m['closed'] and m.get('diagnostic') is policy and
+         m['finished_sections'] == list(_PUBLIC_DIAGNOSTIC_SECTIONS) and
+         m['case'] is None and m['operation'] is None and m['transition'] is None and
+         m['section'] is None and m.get('owned_service') is None,
+         'closed original diagnostic monitor required')
+    carrier = m['collection'].parent / 'diagnostic-collection.json'
+    need(result['carrier']['path'] == str(carrier) and identity(carrier) == result['carrier'] and
+         body(carrier, 8 * 1024 ** 2) == result['raw'], 'diagnostic terminal carrier drift')
+    return _copy(result['carrier'])

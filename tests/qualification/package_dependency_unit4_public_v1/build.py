@@ -18,7 +18,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 # Resolve our sibling physically, never through sys.path or a caller module.
 _binding_path = Path(__file__).absolute().with_name('binding.py')
-_BINDING_SHA256 = '3a89631dd6593a116a7dafae6b1fcb823ed131eae01ffa1fbd504a2bba3f6bae'
+_BINDING_SHA256 = '1cd256d81ec99b297f5b774c387151fc348985c4eecc988f9894511086733292'
 _binding_body = _binding_path.read_bytes()
 if hashlib.sha256(_binding_body).hexdigest() != _BINDING_SHA256:
     raise ValueError('public source binding helper changed')

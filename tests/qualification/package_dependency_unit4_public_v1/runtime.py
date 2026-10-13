@@ -17,10 +17,11 @@ import sys
 import time
 import types
 import weakref
+import traceback
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-BINDING_SHA256 = '3a89631dd6593a116a7dafae6b1fcb823ed131eae01ffa1fbd504a2bba3f6bae'
+BINDING_SHA256 = '1cd256d81ec99b297f5b774c387151fc348985c4eecc988f9894511086733292'
 INPUTS_SHA256 = 'e65fbe5018b90bb9cbc3abe1941c391e3678b19d0b2bbe8f00b38e70b4099445'
 PUBLIC = 'tests/qualification/unit4_public_v3'
 HOSTED = 'tests/qualification/unit4_hosted_capability'
@@ -32,12 +33,62 @@ SEMANTIC_FILES = ('current-source.json', 'enum-source.json', 'enum_enabled_quali
 _ISSUED_HELPERS = {}
 _ADMISSIONS = weakref.WeakKeyDictionary()
 _COLLECTIONS = weakref.WeakKeyDictionary()
+_DIAGNOSTIC_SELECTIONS = weakref.WeakKeyDictionary()
+_DIAGNOSTIC_RESULTS = weakref.WeakKeyDictionary()
+_DIAGNOSTIC_SECTIONS = ('lifecycle', 'guards')
 _READ_BOUNDARIES = weakref.WeakKeyDictionary()
 _READ_LOCAL = threading.local()
 
 
 class Rejected(ValueError):
     pass
+
+
+class InfrastructureFailure(RuntimeError):
+    """A readback service failure can never satisfy a semantic control."""
+    def __init__(self, phase, error):
+        self.phase = phase
+        self.original = error
+        super().__init__(phase + ': ' + _safe_error_text(error))
+
+
+def _infrastructure(phase, function, *args, **kwargs):
+    try:
+        return function(*args, **kwargs)
+    except InfrastructureFailure:
+        raise
+    except Exception as error:
+        raise InfrastructureFailure(phase, error) from error
+
+
+def _safe_error_text(error, limit=2048):
+    try:
+        return str(error)[:limit]
+    except BaseException:
+        return '<exception text unavailable>'
+
+
+def _is_semantic_error(error):
+    retained = globals().get('Reject')
+    return isinstance(error, Rejected) or (isinstance(retained, type) and isinstance(error, retained))
+
+
+def _failure_details(error):
+    """Bounded runtime-side traceback only; diagnostics never replace failure."""
+    try:
+        original = error.original if isinstance(error, InfrastructureFailure) else error
+        semantic = getattr(error, 'preceding_semantic', None)
+        return {'phase': getattr(error, 'phase', None), 'type': type(original).__name__,
+                'error': _safe_error_text(original),
+                'preceding_semantic': None if semantic is None else
+                    {'type': type(semantic).__name__, 'error': _safe_error_text(semantic, 500)},
+                'stack': [{'file': frame.filename[:1024], 'function': frame.name[:128], 'line': frame.lineno}
+                          for frame in traceback.StackSummary.extract(
+                              traceback.walk_tb(original.__traceback__ or error.__traceback__),
+                              limit=32, lookup_lines=False)]}
+    except BaseException:
+        return {'phase': None, 'type': type(error).__name__, 'error': '<failure diagnostics unavailable>',
+                'stack': [], 'diagnostic_error': 'runtime failure diagnostic capture failed'}
 
 
 def need(value, message):
@@ -93,8 +144,8 @@ def _active_boundary():
 
 
 def _binding():
-    active = _active_boundary()
-    return active['binding'] if active is not None else _binding_uncached()
+    active = _infrastructure('read-owner', _active_boundary)
+    return active['binding'] if active is not None else _infrastructure('read-owner', _binding_uncached)
 
 
 def _build():
@@ -113,15 +164,16 @@ def _machine():
 
 
 def _tick(invocation):
-    active = _active_boundary()
+    active = _infrastructure('read-owner', _active_boundary)
     if active is not None:
-        need(invocation is None or invocation is active['invocation'], 'mixed read-boundary invocation')
-        active['preparation'].check_deadline(active['invocation'])
-        active['preparation'].public_output_tick(active['invocation'])
+        if invocation is not None and invocation is not active['invocation']:
+            raise InfrastructureFailure('read-owner', RuntimeError('mixed read-boundary invocation'))
+        _infrastructure('checkpoint', active['preparation'].check_deadline, active['invocation'])
+        _infrastructure('output-audit', active['preparation'].public_output_tick, active['invocation'])
     else:
-        api = _preparation()
-        api.check_deadline(invocation)
-        api.public_output_tick(invocation)
+        api = _infrastructure('read-owner', _preparation)
+        _infrastructure('checkpoint', api.check_deadline, invocation)
+        _infrastructure('output-audit', api.public_output_tick, invocation)
 
 
 def _authenticate_read_owners(state, expected=None):
@@ -168,9 +220,13 @@ def _read_boundary(state):
                     _authenticate_read_owners(state, owners)
                     owners['preparation'].check_deadline(invocation)
                 except BaseException as preservation:
-                    if original_error is None:
-                        raise
-                    original_error.add_note('public read-boundary preservation failed: ' + str(preservation)[:1000])
+                    if original_error is None or _is_semantic_error(original_error):
+                        failure = InfrastructureFailure('read-boundary-preservation', preservation)
+                        if original_error is not None:
+                            failure.preceding_semantic = original_error
+                            failure.add_note('preceding semantic rejection: ' + _safe_error_text(original_error, 500))
+                        raise failure from preservation
+                    original_error.add_note('public read-boundary preservation failed: ' + _safe_error_text(preservation, 1000))
                 finally:
                     del _READ_LOCAL.boundary
                     del _READ_BOUNDARIES[boundary]
@@ -211,17 +267,17 @@ def _scoped_read_file(path, invocation=None, *, header_only=False, maximum=1024 
 
 
 def _identity(path, invocation=None):
-    if _active_boundary() is not None:
-        row, _ = _scoped_read_file(Path(path), invocation, header_only=True)
+    if _infrastructure('read-owner', _active_boundary) is not None:
+        row, _ = _infrastructure('evidence-identity', _scoped_read_file, Path(path), invocation, header_only=True)
         del row['stat']
         return row
-    return _build()._identity(Path(path), invocation=invocation)
+    return _infrastructure('evidence-identity', _infrastructure('read-owner', _build)._identity, Path(path), invocation=invocation)
 
 
 def _read(path, invocation=None):
-    if _active_boundary() is not None:
-        return _scoped_read_file(Path(path), invocation, maximum=128 * 1024 ** 2)[1]
-    return _build()._read_file(Path(path), invocation, maximum=128 * 1024 ** 2)[1]
+    if _infrastructure('read-owner', _active_boundary) is not None:
+        return _infrastructure('evidence-read', _scoped_read_file, Path(path), invocation, maximum=128 * 1024 ** 2)[1]
+    return _infrastructure('evidence-read', _infrastructure('read-owner', _build)._read_file, Path(path), invocation, maximum=128 * 1024 ** 2)[1]
 
 
 def _write(path, value, invocation=None):
@@ -541,23 +597,31 @@ def _owned_process(owner, argv, cwd, env, *, native=False):
 def _verify_process(owner, process, expected_case=None):
     if owner.get('worker') is not None:
         # The outer parent independently validates the whole worker process table.
-        _binding().hosted_api().verify_worker(owner['worker'])
+        _infrastructure('worker-owner', lambda: _binding().hosted_api().verify_worker(owner['worker']))
         return
     key = process['pid'], process['started_ns']
-    need(key in owner['probes'], 'unissued public runtime process')
-    if expected_case is not None:
-        need(owner['process_cases'][key] == expected_case, 'process belongs to another frozen tuple/variant')
-    record = owner['probes'][key]
-    doc = _preparation().verify_probe(
-        record, owner['invocation'], argv=process['argv'], cwd=process['cwd'],
-        environment=process['environment'], timeout_seconds=120, stream_limit_bytes=8 * 1024 ** 2,
-        operation_kind=record.document()['operation_kind'], runtime_permit=owner['runtime_permit'],
-        runtime_case=owner['process_cases'][key],
-        native_permit=owner['native_permits'].get(process['argv'][0]))
-    expected = dict(doc)
-    for stream in ('stdout', 'stderr'):
-        raw = getattr(record, stream)()
-        expected[stream], expected[stream + '_sha256'] = raw.decode('utf-8'), sha(raw)
+    def readmit_original():
+        need(key in owner['probes'], 'unissued public runtime process')
+        if expected_case is not None:
+            need(owner['process_cases'][key] == expected_case, 'process belongs to another frozen tuple/variant')
+        record = owner['probes'][key]
+        original = record.document()
+        if not original['cleanup_complete'] or original['cleanup_error'] is not None:
+            raise InfrastructureFailure('producer-cleanup', RuntimeError('producer cleanup incomplete'))
+        # Only original issued arguments enter the producer. Candidate mutations
+        # are compared after owner, evidence, completion and cleanup readmission.
+        doc = _preparation().verify_probe(
+            record, owner['invocation'], argv=original['argv'], cwd=original['cwd'],
+            environment=original['environment'], timeout_seconds=120, stream_limit_bytes=8 * 1024 ** 2,
+            operation_kind=original['operation_kind'], runtime_permit=owner['runtime_permit'],
+            runtime_case=owner['process_cases'][key],
+            native_permit=owner['native_permits'].get(original['argv'][0]))
+        expected = dict(doc)
+        for stream in ('stdout', 'stderr'):
+            raw = getattr(record, stream)()
+            expected[stream], expected[stream + '_sha256'] = raw.decode('utf-8'), sha(raw)
+        return expected
+    expected = _infrastructure('producer-readmission', readmit_original)
     need(process == expected, 'runtime raw process changed')
 
 
@@ -713,12 +777,12 @@ def check_predecessor_amendment(row, got, predecessors):
              json.dumps(expected, sort_keys=True, allow_nan=False), 'altered predecessor semantic comparison')
     return expected
 
-def predecessor_history(rows, receipts, predecessors, policy, observations):
+def predecessor_history(rows, receipts, predecessors, policy, observations, *, checkpoint=None):
     """Replay the frozen comparator separately; an amended pass is not a historical pass."""
     need(len(rows) == len(receipts), 'historical predecessor receipt count')
     mismatches, comparisons = [], []
     executed = 0
-    for row, got in zip(rows, receipts):
+    for row, got in zip(_CheckpointedRows(rows, checkpoint), _CheckpointedRows(receipts, checkpoint)):
         need(got['key'] == row['key'], 'historical predecessor tuple order')
         if not got['executed']:
             continue
@@ -774,29 +838,69 @@ def lifecycle_compare(row, ordinary, observed, cfg, observer_cfg, contracts, sou
     observed['logical_lifecycle'] = compare.lifecycle(observed['trace'], case, table['counter_order'], table['file_counter_order'])
     need(ordinary['trace'] == [], 'ordinary binary emitted observer events')
 
-def aggregate(rows, receipts):
+class _CheckpointedRows:
+    """Re-iterable bool/len/iteration adapter for the unchanged retained checker."""
+    def __init__(self, rows, checkpoint):
+        self.rows, self.checkpoint = rows, checkpoint
+
+    def __bool__(self):
+        return bool(self.rows)
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __iter__(self):
+        for row in self.rows:
+            _work_checkpoint(self.checkpoint)
+            yield row
+            _work_checkpoint(self.checkpoint)
+
+
+def _work_checkpoint(checkpoint):
+    if checkpoint is not None:
+        _infrastructure('readback-checkpoint', checkpoint)
+
+
+def _copy_receipts(receipts, checkpoint):
+    copied = []
+    memo = {id(receipts): copied}
+    for got in _CheckpointedRows(receipts, checkpoint):
+        copied.append(copy.deepcopy(got, memo))
+    return copied
+
+
+def _replay_receipts(rows, receipts, checker, checkpoint, *, executed_only=False):
+    for row, got in zip(_CheckpointedRows(rows, checkpoint), _CheckpointedRows(receipts, checkpoint)):
+        if not executed_only or got['executed']:
+            checker(row, got)
+    _work_checkpoint(checkpoint)
+
+
+def aggregate(rows, receipts, *, checkpoint=None):
+    rows, receipts = _CheckpointedRows(rows, checkpoint), _CheckpointedRows(receipts, checkpoint)
     counts = check_inventory(rows, receipts)
     failures = [{'key': r['key'], 'failure': r.get('failure', 'predicate failure')} for r in receipts if r['status'] == 'fail']
     need(not failures, json.dumps(failures[:25]))
     return {**counts, 'status': ('NOT_APPLICABLE_THIS_HOST' if counts['required_local'] == 0 else ('INCOMPLETE_LOCAL_CAPABILITY' if counts['unsupported_capability'] else 'QUALIFIED_LOCAL')),
             'global_host_qualification': counts['unavailable_host'] == 0 and counts['unsupported_capability'] == 0}
 
-def negative_controls(rows, receipts, checker):
-    aggregate(rows, receipts)
-    index = next((i for i, r in enumerate(receipts) if r['executed']), None)
+def negative_controls(rows, receipts, checker, *, checkpoint=None):
+    aggregate(rows, receipts, checkpoint=checkpoint)
+    index = next((i for i, r in enumerate(_CheckpointedRows(receipts, checkpoint)) if r['executed']), None)
     controls = []
     def run(name, change):
-        mutated = copy.deepcopy(receipts)
+        mutated = _copy_receipts(receipts, checkpoint)
         change(mutated)
         try:
-            aggregate(rows, mutated)
-            for row, got in zip(rows, mutated):
-                if got['executed']:
-                    checker(row, got)
-        except (Rejected, Reject, KeyError, TypeError, ValueError, AssertionError) as error:
-            controls.append({'control': name, 'status': 'REJECTED', 'reason': str(error)[:500]})
+            aggregate(rows, mutated, checkpoint=checkpoint)
+            _replay_receipts(rows, mutated, checker, checkpoint, executed_only=True)
+        except (Rejected, Reject) as error:
+            rejected = {'control': name, 'status': 'REJECTED', 'reason': str(error)[:500]}
         else:
             raise Rejected('negative control accepted: ' + name)
+        # A poisoned producer or failed service is not an expected semantic result.
+        _work_checkpoint(checkpoint)
+        controls.append(rejected)
     if index is None:
         need(not any(row['scope'] == 'execute' for row in rows), 'unexecuted required local domain')
         index = 0
@@ -815,19 +919,19 @@ def negative_controls(rows, receipts, checker):
     run('wrong-argv', lambda x: x[index]['process']['argv'].append('--invented'))
     run('changed-source', lambda x: x[index]['source_files'][0].__setitem__('sha256', '0' * 64))
     run('wrong-stream', lambda x: x[index]['process'].__setitem__('stdout', 'wrong'))
-    native_index = next((i for i, r in enumerate(receipts) if r.get('native_execution')), None)
+    native_index = next((i for i, r in enumerate(_CheckpointedRows(receipts, checkpoint)) if r.get('native_execution')), None)
     if native_index is not None:
         run('missing-native', lambda x: x[native_index].pop('native_execution'))
         run('sources-available', lambda x: x[native_index]['native_execution'].__setitem__('sources_unavailable', []))
         run('changed-ELF', lambda x: x[native_index]['native_execution']['copied_elf'].__setitem__('sha256', '0' * 64))
         run('missing-tools', lambda x: x[native_index].__setitem__('tool_invocations', []))
-    traced = next((i for i, r in enumerate(receipts) if r.get('trace')), None)
+    traced = next((i for i, r in enumerate(_CheckpointedRows(receipts, checkpoint)) if r.get('trace')), None)
     if traced is not None:
         run('missing-passivity-binding', lambda x: x[traced].pop('ordinary_receipt'))
         run('missing-trace', lambda x: x[traced].__setitem__('trace', []))
         run('duplicate-checker', lambda x: x[traced]['trace'].append({'event': 'checker_attempts', 'subject': 'project'}))
         run('source-reopen', lambda x: x[traced]['trace'].append({'event': 'source_open_attempt', 'subject': 'main.ox'}))
-    race_index = next((i for i, r in enumerate(receipts) if r['group'] == 'race' and r['executed']), None)
+    race_index = next((i for i, r in enumerate(_CheckpointedRows(receipts, checkpoint)) if r['group'] == 'race' and r['executed']), None)
     if race_index is not None:
         run('changed-competitor', lambda x: x[race_index]['output_after'].__setitem__('sha256', '0' * 64))
         run('missing-race-barrier', lambda x: next(c for c in x[race_index]['tool_invocations'] if 'race' in c).pop('race'))
@@ -953,7 +1057,6 @@ def _run_guards(rows, output_root, cfg, observer_cfg, contracts, env, tools, own
             if target:
                 target.write_bytes(b'Oxid Unit3 no-clobber sentinel\x00\xff\n')
                 if case['output_kind'] == 'symlink':
-                    output.symlink_to(target.name)
                     _preparation().register_public_guard(owner['invocation'], owner['runtime_permit'], owner['active_case'])
                 else:
                     output.write_bytes(b'Oxid Unit3 occupied output sentinel\x00\xfe\n')
@@ -1001,9 +1104,10 @@ def _verify_guard_complete(row, got, observer_cfg, contracts, sources, tools, or
     if not got['executed']:
         return
     check_guard(row, got, observer_cfg, contracts, sources, tools)
+    need('ordinary_receipt' in got, 'missing ordinary passivity binding')
     bound = got['ordinary_receipt']
-    verify(bound['path'], bound)
-    ordinary = load(bound['path'])
+    _infrastructure('ordinary-evidence', verify, bound['path'], bound)
+    ordinary = _infrastructure('ordinary-evidence', load, bound['path'])
     check_guard(row, ordinary, ordinary_cfg, contracts, sources, tools)
     need(all(got['process'][field] == ordinary['process'][field] for field in ('status', 'stdout', 'stderr')), 'saved guard passivity envelope')
     need(got['directory_after'] == ordinary['directory_after'], 'saved guard passivity directory')
@@ -1145,8 +1249,8 @@ def _verify_row_files(got, resolver=None):
     for stream in ('stdout', 'stderr'):
         need(_read(resolve(str(evidence / stream))) == got['process'][stream].encode(), 'saved process stream differs')
     need(_binding().decode(_read(resolve(str(evidence / 'process.json')))) == got['process'], 'saved process document differs')
-    need(rt.read_events(Path(resolve(str(evidence / 'tools.jsonl')))) == got['tool_invocations'] and
-         rt.read_events(Path(resolve(str(evidence / 'lifecycle.jsonl')))) == got['trace'], 'saved tool/lifecycle events differ')
+    need(_infrastructure('tool-evidence', rt.read_events, Path(resolve(str(evidence / 'tools.jsonl')))) == got['tool_invocations'] and
+         _infrastructure('lifecycle-evidence', rt.read_events, Path(resolve(str(evidence / 'lifecycle.jsonl')))) == got['trace'], 'saved tool/lifecycle events differ')
     if got.get('emitted_llvm'):
         need(_identity(resolve(got['emitted_llvm']['path']))['sha256'] == got['emitted_llvm']['sha256'], 'emitted LLVM differs')
     if got.get('native_execution'):
@@ -1217,13 +1321,14 @@ def _row_sources(state, section, row):
 
 
 def _check_receipt(state, section, row, got):
-    cfgs, contracts, tools = state['cfgs'], state['contracts'], state['runtime_tools'].tools()
+    cfgs, contracts = state['cfgs'], state['contracts']
+    tools = _infrastructure('runtime-tools', state['runtime_tools'].tools)
     if row['scope'] != 'execute':
         need(got == _skipped(row, cfgs['ordinary']), 'changed remote/excluded receipt')
         return
     cfg = cfgs['lifecycle'] if section in ('guards', 'lifecycle') else cfgs['ordinary']
     _check_outer(row, got, cfg)
-    sources = _row_sources(state, section, row)
+    sources = _infrastructure('row-sources', _row_sources, state, section, row)
     case = {'section': section, 'index': state['row_indices'][section][row['key']],
             'variant': 'observer' if section in ('guards', 'lifecycle') else 'ordinary'}
     ordinary_case = dict(case, variant='ordinary')
@@ -1233,6 +1338,7 @@ def _check_receipt(state, section, row, got):
         if 'native_execution' in got:
             _verify_process(state, got['native_execution']['process'], case)
     if section == 'lifecycle':
+        need('ordinary_receipt' in got, 'missing ordinary passivity binding')
         bound = got['ordinary_receipt']
         need(_identity(bound['path'], state['invocation']) == bound, 'ordinary saved receipt changed')
         ordinary = _binding().decode(_read(bound['path'], state['invocation']))
@@ -1244,7 +1350,7 @@ def _check_receipt(state, section, row, got):
         _replay_lifecycle(row, ordinary, got, cfgs['ordinary'], cfgs['lifecycle'], contracts, sources, tools)
     elif section == 'guards':
         _verify_guard_complete(row, got, cfgs['lifecycle'], contracts, sources, tools, cfgs['ordinary'])
-        ordinary = load(got['ordinary_receipt']['path'])
+        ordinary = _infrastructure('ordinary-evidence', load, got['ordinary_receipt']['path'])
         _verify_process(state, ordinary['process'], ordinary_case)
         _verify_row_files(ordinary)
     else:
@@ -1272,9 +1378,89 @@ def _tree_snapshot(root, invocation):
     return rows
 
 
+def _collect_section(state, section, out, cfgs, contracts, env, tools):
+    _checkpoint(state, full=True)
+    rows = state['rosters'][section]
+    section_out = out / section
+    with _preparation().public_output_boundary(state['invocation'], state['runtime_permit'], 'section-open', section=section):
+        section_out.mkdir()
+        _write(section_out / 'roster.json', [receipt_identity(row) for row in rows], state['invocation'])
+    if section == 'guards':
+        receipts = _run_guards(rows, section_out, cfgs['ordinary'], cfgs['lifecycle'], contracts, env, tools, state)
+    else:
+        receipts = []
+        for index, row in enumerate(rows):
+            _tick(state['invocation'])
+            if row['scope'] != 'execute':
+                receipts.append(_skipped(row, cfgs['ordinary']))
+                continue
+            with _preparation().public_case_scope(state['invocation'], state['runtime_permit'], section, index):
+                row = copy.deepcopy(row)
+                sources = _row_sources(state, section, row)
+                if section == 'lifecycle' and row['group'] == 'public':
+                    row['_filesystem_setup'] = contracts.cases[row['case_id']].get('filesystem_setup')
+                evidence = section_out / ('%05d' % index)
+                state['active_case'] = {'section': section, 'index': index, 'variant': 'ordinary'}
+                got = _collect_one(row, cfgs['ordinary'], evidence / 'ordinary', sources, env, state)
+                if section == 'lifecycle':
+                    ordinary = got
+                    state['active_case'] = {'section': section, 'index': index, 'variant': 'observer'}
+                    got = _collect_one(row, cfgs['lifecycle'], evidence / 'observer', sources, env, state)
+                    lifecycle_compare(row, ordinary, got, cfgs['ordinary'], cfgs['lifecycle'], contracts, sources, tools)
+                    if ordinary['executed']:
+                        ordinary['status'] = got['status'] = 'pass'
+                    _write(evidence / 'ordinary' / 'receipt.json', ordinary, state['invocation'])
+                    got['ordinary_receipt'] = binding(evidence / 'ordinary' / 'receipt.json')
+                    _write(evidence / 'observer' / 'receipt.json', got, state['invocation'])
+                else:
+                    if section == 'predecessors' and got['executed']:
+                        amendment = state['predecessors'].qualified_paths_comparison(row, got['process'])
+                        if amendment is not None:
+                            got['qualified_paths_comparison'] = amendment
+                    core_compare(section, row, got, cfgs['ordinary'], contracts, sources, tools, state['predecessors'])
+                    if got['executed']:
+                        got['status'] = 'pass'
+                    _write(evidence / 'ordinary' / 'receipt.json', got, state['invocation'])
+                _write(evidence / 'receipt.json', got, state['invocation'])
+                receipts.append(got)
+                with _read_boundary(state):
+                    _validate_case_evidence(state, section, index, got)
+    _checkpoint(state, full=True)
+    with _read_boundary(state), _preparation().public_replay(state['invocation'], state['runtime_permit']):
+        checkpoint = lambda: _tick(state['invocation'])
+        checker = lambda row, got: _check_receipt(state, section, row, got)
+        _replay_receipts(rows, receipts, checker, checkpoint)
+        report = aggregate(rows, receipts, checkpoint=checkpoint)
+        report['negative_controls'] = negative_controls(rows, receipts, checker, checkpoint=checkpoint)
+    with _preparation().public_output_boundary(state['invocation'], state['runtime_permit'], 'section-close', section=section):
+        observation_path = section_out / 'observations.jsonl.gz'
+        with gzip.open(observation_path, 'wb') as sink:
+            for got in receipts:
+                _tick(state['invocation'])
+                sink.write(canonical(got) + b'\n')
+        if section == 'predecessors':
+            history = predecessor_history(rows, receipts, state['predecessors'],
+                contracts.tables['public']['new_policy_diagnostic_bounds'], binding(observation_path),
+                checkpoint=lambda: _tick(state['invocation']))
+            _write(section_out / 'historical-comparison.json', history, state['invocation'])
+            report.update(predecessor_report_fields(state['predecessors'], history,
+                binding(out / 'qualified-paths-amendment.json'), binding(section_out / 'historical-comparison.json')))
+            report['executed_projection_kind_counts'] = {kind: sum(got.get('projection_kind') == kind and got['executed'] for got in receipts) for kind in sorted({got['projection_kind'] for got in receipts if got['executed'] and 'projection_kind' in got})}
+            report['projection_boundary'] = 'Complete public check/run projections only where declared. First-error, frontend-prefix and schema/source-only rows remain partial. No private legacy-scalar/raw/event/fuel claim.'
+            report['frozen_case_kind_counts'] = contracts.tables[section]['kind_counts']
+        if contracts.effective_identity:
+            report.update(contracts.effective_identity)
+        report.update(contract_identity=contracts.tables[section]['identity'], historical_qualification_claim=False,
+                      private_raw_event_fuel_claim=False, execution_context=state['execution_context'])
+        _write(section_out / 'comparison.json', report, state['invocation'])
+    _checkpoint(state, full=True)
+    return receipts, report
+
+
 def collect(admission):
     """Collect the complete frozen roster, with explicit unavailable host rows."""
     state = _state(admission)
+    need(not state.get('diagnostic_selection'), 'diagnostic admission cannot collect full collection')
     need(not state.get('collection_started'), 'runtime admission is single-use')
     _checkpoint(state, full=True)
     state['collection_started'] = True
@@ -1292,81 +1478,8 @@ def collect(admission):
         generator = _generator_check(state)
         _preparation().public_output_start(state['invocation'], state['runtime_permit'])
         for section in SECTIONS:
-            _checkpoint(state, full=True)
-            rows = state['rosters'][section]
-            section_out = out / section
-            with _preparation().public_output_boundary(state['invocation'], state['runtime_permit'], 'section-open', section=section):
-                section_out.mkdir()
-                _write(section_out / 'roster.json', [receipt_identity(row) for row in rows], state['invocation'])
-            if section == 'guards':
-                receipts = _run_guards(rows, section_out, cfgs['ordinary'], cfgs['lifecycle'], contracts, env, tools, state)
-            else:
-                receipts = []
-                for index, row in enumerate(rows):
-                    _tick(state['invocation'])
-                    if row['scope'] != 'execute':
-                        receipts.append(_skipped(row, cfgs['ordinary']))
-                        continue
-                    with _preparation().public_case_scope(state['invocation'], state['runtime_permit'], section, index):
-                        row = copy.deepcopy(row)
-                        sources = _row_sources(state, section, row)
-                        if section == 'lifecycle' and row['group'] == 'public':
-                            row['_filesystem_setup'] = contracts.cases[row['case_id']].get('filesystem_setup')
-                        evidence = section_out / ('%05d' % index)
-                        state['active_case'] = {'section': section, 'index': index, 'variant': 'ordinary'}
-                        got = _collect_one(row, cfgs['ordinary'], evidence / 'ordinary', sources, env, state)
-                        if section == 'lifecycle':
-                            ordinary = got
-                            state['active_case'] = {'section': section, 'index': index, 'variant': 'observer'}
-                            got = _collect_one(row, cfgs['lifecycle'], evidence / 'observer', sources, env, state)
-                            lifecycle_compare(row, ordinary, got, cfgs['ordinary'], cfgs['lifecycle'], contracts, sources, tools)
-                            if ordinary['executed']:
-                                ordinary['status'] = got['status'] = 'pass'
-                            _write(evidence / 'ordinary' / 'receipt.json', ordinary, state['invocation'])
-                            got['ordinary_receipt'] = binding(evidence / 'ordinary' / 'receipt.json')
-                            _write(evidence / 'observer' / 'receipt.json', got, state['invocation'])
-                        else:
-                            if section == 'predecessors' and got['executed']:
-                                amendment = state['predecessors'].qualified_paths_comparison(row, got['process'])
-                                if amendment is not None:
-                                    got['qualified_paths_comparison'] = amendment
-                            core_compare(section, row, got, cfgs['ordinary'], contracts, sources, tools, state['predecessors'])
-                            if got['executed']:
-                                got['status'] = 'pass'
-                            _write(evidence / 'ordinary' / 'receipt.json', got, state['invocation'])
-                        _write(evidence / 'receipt.json', got, state['invocation'])
-                        receipts.append(got)
-                        with _read_boundary(state):
-                            _validate_case_evidence(state, section, index, got)
-            _checkpoint(state, full=True)
-            with _read_boundary(state), _preparation().public_replay(state['invocation'], state['runtime_permit']):
-                for row, got in zip(rows, receipts):
-                    _check_receipt(state, section, row, got)
-                report = aggregate(rows, receipts)
-                report['negative_controls'] = negative_controls(rows, receipts,
-                    lambda row, got: _check_receipt(state, section, row, got))
-            with _preparation().public_output_boundary(state['invocation'], state['runtime_permit'], 'section-close', section=section):
-                observation_path = section_out / 'observations.jsonl.gz'
-                with gzip.open(observation_path, 'wb') as sink:
-                    for got in receipts:
-                        _tick(state['invocation'])
-                        sink.write(canonical(got) + b'\n')
-                if section == 'predecessors':
-                    history = predecessor_history(rows, receipts, state['predecessors'],
-                        contracts.tables['public']['new_policy_diagnostic_bounds'], binding(observation_path))
-                    _write(section_out / 'historical-comparison.json', history, state['invocation'])
-                    report.update(predecessor_report_fields(state['predecessors'], history,
-                        binding(out / 'qualified-paths-amendment.json'), binding(section_out / 'historical-comparison.json')))
-                    report['executed_projection_kind_counts'] = {kind: sum(got.get('projection_kind') == kind and got['executed'] for got in receipts) for kind in sorted({got['projection_kind'] for got in receipts if got['executed'] and 'projection_kind' in got})}
-                    report['projection_boundary'] = 'Complete public check/run projections only where declared. First-error, frontend-prefix and schema/source-only rows remain partial. No private legacy-scalar/raw/event/fuel claim.'
-                    report['frozen_case_kind_counts'] = contracts.tables[section]['kind_counts']
-                if contracts.effective_identity:
-                    report.update(contracts.effective_identity)
-                report.update(contract_identity=contracts.tables[section]['identity'], historical_qualification_claim=False,
-                              private_raw_event_fuel_claim=False, execution_context=state['execution_context'])
-                _write(section_out / 'comparison.json', report, state['invocation'])
-                receipts_by_section[section], reports[section] = receipts, report
-            _checkpoint(state, full=True)
+            receipts_by_section[section], reports[section] = _collect_section(
+                state, section, out, cfgs, contracts, env, tools)
         _checkpoint(state, full=True)
         incomplete = any(r['status'] == 'INCOMPLETE_LOCAL_CAPABILITY' for r in reports.values())
         document = {'schema': 'package-unit4-public-collection-v1', 'execution_context': state['execution_context'],
@@ -1383,21 +1496,22 @@ def collect(admission):
         verify_collection(result)
         return result
     except BaseException as error:
-        failure = {'status': 'FAILED', 'error_type': type(error).__name__, 'error': str(error)[:2048],
+        failure = {'status': 'FAILED', 'error_type': type(error).__name__, 'error': _safe_error_text(error),
                    'owned_operations': [r.document() for r in state['probes'].values()],
-                   'preservation': 'not-attempted', 'execution_qualified': False}
+                   'preservation': 'not-attempted', 'execution_qualified': False,
+                   'original_failure': _failure_details(error)}
         try:
             failure['public_output_preservation'] = state['_read_owner_seed'].public_output_failure(
                 state['invocation'], state['runtime_permit'])
         except BaseException as output_preservation:
             failure['public_output_preservation'] = {'status': 'unavailable'}
-            failure['public_output_preservation_error'] = str(output_preservation)[:2048]
+            failure['public_output_preservation_error'] = _safe_error_text(output_preservation)
         try:
             _checkpoint(state, full=True)
             failure['preservation'] = 'verified'
         except BaseException as preservation:
             failure['preservation'] = 'failed'
-            failure['preservation_error'] = str(preservation)[:2048]
+            failure['preservation_error'] = _safe_error_text(preservation)
         # One bounded emergency attempt; never erase the original process failure.
         try:
             raw = canonical(failure)
@@ -1432,7 +1546,7 @@ def verify_collection(result):
         _checkpoint(state, full=True)
         with _read_boundary(state), _preparation().public_replay(state['invocation'], state['runtime_permit']):
             rows, receipts = state['rosters'][section], owned['receipts'][section]
-            aggregate(rows, receipts)
+            aggregate(rows, receipts, checkpoint=lambda: _tick(state['invocation']))
             for row, got in zip(rows, receipts):
                 _tick(state['invocation'])
                 _check_receipt(state, section, row, got)
@@ -1459,11 +1573,15 @@ def _replay_lifecycle(row, ordinary, observed, cfg, observer_cfg, contracts, sou
 
 
 def _case_evidence_roster(state, section, index, row, got):
+    need(row is state['rosters'][section][index] and row['scope'] == 'execute',
+         'only indexed local cases create evidence')
     root = state['collection_root']
-    required, optional, links = set(), set(), set()
+    required, optional, links, required_dirs = set(), set(), set(), set()
     def role_files(prefix, got, sources, *, fixture_prefix=None):
         required.add(prefix + '/receipt.json')
         fixture_prefix = fixture_prefix or prefix + '/fixture'
+        if not sources:
+            required_dirs.add(fixture_prefix)
         required.update(fixture_prefix + '/' + name for name in sources)
         if not got['executed']:
             return
@@ -1497,10 +1615,10 @@ def _case_evidence_roster(state, section, index, row, got):
                     required.add(prefix + '/occupied-output')
     else:
         role_files(prefix + '/ordinary', got, sources)
-    return required, optional, links
+    return required, optional, links, required_dirs
 
 
-def _validate_evidence_members(root, required, optional, links, invocation):
+def _validate_evidence_members(root, required, optional, links, invocation, *, required_dirs=()):
     observed_files, observed_dirs, observed_links = set(), set(), set()
     for path in root.rglob('*'):
         _tick(invocation)
@@ -1516,7 +1634,9 @@ def _validate_evidence_members(root, required, optional, links, invocation):
             raise Rejected('special runtime evidence entry')
     need(required <= observed_files <= required | optional and observed_links == links,
          'missing or unlisted runtime evidence file')
-    wanted_dirs = {str(parent) for name in observed_files | links for parent in Path(name).parents if str(parent) != '.'}
+    required_dirs = set(required_dirs)
+    wanted_dirs = required_dirs | {str(parent) for name in observed_files | links | required_dirs
+                                   for parent in Path(name).parents if str(parent) != '.'}
     need(observed_dirs == wanted_dirs, 'unlisted or missing runtime evidence directory')
     return True
 
@@ -1527,9 +1647,10 @@ def _validate_case_evidence(state, section, index, got):
     need(row['scope'] == 'execute', 'only local cases create evidence')
     prefix = section + '/' + (('%03d' if section == 'guards' else '%05d') % index)
     root = state['collection_root'] / prefix
-    required, optional, links = _case_evidence_roster(state, section, index, row, got)
-    projected = [{name[len(prefix) + 1:] for name in names} for names in (required, optional, links)]
-    _validate_evidence_members(root, *projected, state['invocation'])
+    required, optional, links, required_dirs = _case_evidence_roster(state, section, index, row, got)
+    projected = [{name[len(prefix) + 1:] for name in names}
+                 for names in (required, optional, links, required_dirs)]
+    _validate_evidence_members(root, *projected[:3], state['invocation'], required_dirs=projected[3])
     sources = _row_sources(state, section, row)
     fixtures = ([root / 'fixtures' / row['case']['source_case_id']] if section == 'guards' else
                 [root / role / 'fixture' for role in (('ordinary', 'observer') if section == 'lifecycle' else ('ordinary',))])
@@ -1543,9 +1664,14 @@ def _validate_case_evidence(state, section, index, got):
 
 
 def _validate_evidence_roster(state, receipts_by_section):
+    need(set(receipts_by_section) == set(SECTIONS), 'complete five-section evidence required')
+    return _validate_evidence_sections(state, receipts_by_section, SECTIONS)
+
+
+def _validate_evidence_sections(state, receipts_by_section, sections):
     required = {'input-integrity.json', 'tools.json', 'qualified-paths-amendment.json'}
-    optional, links = set(), set()
-    for section in SECTIONS:
+    optional, links, required_dirs = set(), set(), set()
+    for section in sections:
         required.update(section + '/' + name for name in ('roster.json', 'observations.jsonl.gz', 'comparison.json'))
         if section == 'predecessors':
             required.add(section + '/historical-comparison.json')
@@ -1556,9 +1682,10 @@ def _validate_evidence_roster(state, receipts_by_section):
             if row['scope'] != 'execute':
                 continue
             current = _case_evidence_roster(state, section, index, row, got)
-            for target, members in zip((required, optional, links), current):
+            for target, members in zip((required, optional, links, required_dirs), current):
                 target.update(members)
-    return _validate_evidence_members(state['collection_root'], required, optional, links, state['invocation'])
+    return _validate_evidence_members(state['collection_root'], required, optional, links, state['invocation'],
+                                      required_dirs=required_dirs)
 
 
 def _verify_generator(state, receipt):
@@ -1623,7 +1750,7 @@ def join_hosted(collection, hosted):
     rosters = capability_rows(state['contracts'])
     replacements, reports = {}, {}
     for section in SECTIONS:
-        receipts = copy.deepcopy(primary['receipts'][section])
+        receipts = _copy_receipts(primary['receipts'][section], lambda: _tick(state['invocation']))
         missing = {got['key'] for got in receipts if got['status'] == 'unsupported-capability'}
         wanted = {row['key'] for row in rosters.get(section, [])}
         need(missing == wanted, 'hosted replacement must cover exactly the twelve primary capability skips')
@@ -1633,7 +1760,7 @@ def join_hosted(collection, hosted):
         for index, got in enumerate(receipts):
             if got['key'] in shard:
                 receipts[index] = copy.deepcopy(shard[got['key']])
-        report = aggregate(state['rosters'][section], receipts)
+        report = aggregate(state['rosters'][section], receipts, checkpoint=lambda: _tick(state['invocation']))
         need(report['status'] != 'INCOMPLETE_LOCAL_CAPABILITY', 'mandatory hosted coverage remains incomplete')
         reports[section] = report
     document = {'schema': 'package-unit4-public-hosted-join-v1', 'status': 'COMPLETE_LOCAL_OBSERVATIONS',
@@ -1669,6 +1796,221 @@ def verify_join(result):
         missing = {got['key'] for got in receipts if got['status'] == 'unsupported-capability'}
         need(missing == set(shard) == set(document['replaced_capability_keys'][section]), 'joined missing/extra coverage')
         merged = [shard.get(got['key'], got) for got in receipts]
-        need(aggregate(rows, merged) == document['reports'][section], 'joined coverage report changed')
+        need(aggregate(rows, merged, checkpoint=lambda: _tick(state['invocation'])) == document['reports'][section], 'joined coverage report changed')
     _checkpoint(state, full=True)
     return True
+
+
+class DiagnosticSelection:
+    __slots__ = ('__weakref__',)
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError('diagnostic selection requires an unused live runtime admission')
+
+
+class DiagnosticResult:
+    __slots__ = ('__weakref__',)
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError('diagnostic result requires complete selected public closure')
+
+    def document(self):
+        need(type(self) is DiagnosticResult and self in _DIAGNOSTIC_RESULTS,
+             'live diagnostic result required')
+        return json.loads(_DIAGNOSTIC_RESULTS[self]['raw'])
+
+
+def issue_downstream_diagnostic(admission):
+    """Irreversibly reserve one original admission for lifecycle and guards."""
+    state = _state(admission)
+    need(not state.get('collection_started') and not state.get('diagnostic_selection'),
+         'full or diagnostic admission already consumed')
+    _checkpoint(state, full=True)
+    need(_active_boundary() is None, 'diagnostic issue outside read lease required')
+    policy = _preparation().issue_public_diagnostic(state['invocation'], state['runtime_permit'])
+    selection = object.__new__(DiagnosticSelection)
+    _DIAGNOSTIC_SELECTIONS[selection] = {'admission': admission, 'policy': policy,
+                                        'thread': threading.get_ident(), 'pid': os.getpid()}
+    state['diagnostic_selection'] = selection
+    return selection
+
+
+def _diagnostic_state(selection):
+    need(type(selection) is DiagnosticSelection and selection in _DIAGNOSTIC_SELECTIONS,
+         'original live downstream selection required')
+    owned = _DIAGNOSTIC_SELECTIONS[selection]
+    state = _state(owned['admission'])
+    need(state.get('diagnostic_selection') is selection and
+         owned['thread'] == threading.get_ident() and owned['pid'] == os.getpid(),
+         'foreign or cross-thread/process downstream selection')
+    return state, owned
+
+
+def _verify_diagnostic_payload(state, receipts_by_section, reports, generator, snapshot=None):
+    """Replay selected evidence through original owners; no whole-root post-parser claim."""
+    need(tuple(receipts_by_section) == _DIAGNOSTIC_SECTIONS and tuple(reports) == _DIAGNOSTIC_SECTIONS,
+         'complete ordered diagnostic evidence required')
+    _checkpoint(state, full=True)
+    with _read_boundary(state):
+        _validate_evidence_sections(state, receipts_by_section, _DIAGNOSTIC_SECTIONS)
+        _verify_generator(state, generator)
+        out = state['collection_root']
+        headers = {'input-integrity.json': {'execution_context': state['execution_context'],
+                   'verified': state['contracts'].verified,
+                   'effective_authority': state['contracts'].effective_identity},
+                   'tools.json': state['runtime_tools'].document(),
+                   'qualified-paths-amendment.json': state['predecessors'].qualified_paths_amendment}
+        for name, expected in headers.items():
+            need(_binding().decode(_read(out / name, state['invocation'])) == expected,
+                 'diagnostic original collection header drift')
+        if snapshot is not None:
+            need(_tree_snapshot(out, state['invocation']) == snapshot, 'selected public evidence changed')
+    processes = []
+    for section in _DIAGNOSTIC_SECTIONS:
+        _checkpoint(state, full=True)
+        with _read_boundary(state), _preparation().public_replay(state['invocation'], state['runtime_permit']):
+            rows, receipts = state['rosters'][section], receipts_by_section[section]
+            checkpoint = lambda: _tick(state['invocation'])
+            checker = lambda row, got: _check_receipt(state, section, row, got)
+            _replay_receipts(rows, receipts, checker, checkpoint)
+            report = aggregate(rows, receipts, checkpoint=checkpoint)
+            report['negative_controls'] = negative_controls(rows, receipts, checker, checkpoint=checkpoint)
+            if state['contracts'].effective_identity:
+                report.update(state['contracts'].effective_identity)
+            report.update(contract_identity=state['contracts'].tables[section]['identity'],
+                          historical_qualification_claim=False, private_raw_event_fuel_claim=False,
+                          execution_context=state['execution_context'])
+            section_out = state['collection_root'] / section
+            need(report == reports[section] and
+                 _binding().decode(_read(section_out / 'comparison.json', state['invocation'])) == report,
+                 'diagnostic section report changed')
+            need(_binding().decode(_read(section_out / 'roster.json', state['invocation'])) ==
+                 [receipt_identity(row) for row in rows], 'diagnostic original roster changed')
+            # Bounded by the authenticated row count and each original encoded receipt.
+            with gzip.open(section_out / 'observations.jsonl.gz', 'rb') as stream:
+                for got in receipts:
+                    _tick(state['invocation'])
+                    encoded = canonical(got) + b'\n'
+                    need(stream.readline(len(encoded) + 1) == encoded, 'diagnostic observation stream changed')
+                need(stream.read(1) == b'', 'extra diagnostic observation row')
+            for got in receipts:
+                _tick(state['invocation'])
+                observations = [got]
+                if got.get('ordinary_receipt'):
+                    observations.append(load(got['ordinary_receipt']['path']))
+                for observation in observations:
+                    if observation['executed']:
+                        processes.append((observation['process']['pid'], observation['process']['started_ns']))
+                        if observation.get('native_execution'):
+                            process = observation['native_execution']['process']
+                            processes.append((process['pid'], process['started_ns']))
+        _checkpoint(state, full=True)
+    need(len(processes) == len(set(processes)) and set(processes) == set(state['probes']),
+         'exact unique selected compiler/native process coverage')
+    _checkpoint(state, full=True)
+    return True
+
+
+def _diagnostic_failure(state, error):
+    """Best effort preservation never replaces the original diagnostic failure."""
+    failure = {'status': 'FAILED', 'error_type': type(error).__name__, 'error': _safe_error_text(error),
+               'original_failure': _failure_details(error), 'collection_complete': False,
+               'local_complete': False, 'execution_qualified': False}
+    try:
+        state['_read_owner_seed'].cancel_invocation(state['invocation'])
+    except BaseException as poison_error:
+        failure['poison_error'] = _safe_error_text(poison_error)
+    try:
+        failure['public_output_preservation'] = state['_read_owner_seed'].public_output_failure(
+            state['invocation'], state['runtime_permit'])
+    except BaseException as preservation:
+        failure['public_output_preservation_error'] = _safe_error_text(preservation)
+    failure['owned_operation_count'] = len(state['probes'])
+    failure['owned_operation_evidence_root'] = str(state['root'].parent / 'operations')
+    try:
+        raw = canonical(failure)
+        need(len(raw) <= 8 * 1024 ** 2, 'bounded diagnostic failure carrier')
+        with (state['root'] / 'diagnostic-failed.json').open('xb') as stream:
+            stream.write(raw)
+    except BaseException:
+        pass
+    state['invalidated'] = True
+
+
+def collect_downstream_diagnostic(selection):
+    """Complete only the fixed original lifecycle/guards route, without qualification."""
+    state, selected = _diagnostic_state(selection)
+    need(not state.get('collection_started'), 'diagnostic admission is single-use')
+    state['collection_started'] = True
+    try:
+        _checkpoint(state, full=True)
+        out = state['root'] / 'collection'
+        out.mkdir()
+        state['collection_root'] = out
+        cfgs, contracts = state['cfgs'], state['contracts']
+        env, tools = state['runtime_tools'].environment(), state['runtime_tools'].tools()
+        receipts_by_section, reports = {}, {}
+        _write(out / 'input-integrity.json', {'execution_context': state['execution_context'],
+               'verified': contracts.verified, 'effective_authority': contracts.effective_identity}, state['invocation'])
+        _write(out / 'tools.json', state['runtime_tools'].document(), state['invocation'])
+        _write(out / 'qualified-paths-amendment.json', state['predecessors'].qualified_paths_amendment, state['invocation'])
+        generator = _generator_check(state)
+        _preparation().public_diagnostic_start(state['invocation'], state['runtime_permit'], selected['policy'])
+        for section in _DIAGNOSTIC_SECTIONS:
+            receipts_by_section[section], reports[section] = _collect_section(
+                state, section, out, cfgs, contracts, env, tools)
+        state.pop('active_case', None)
+        _verify_diagnostic_payload(state, receipts_by_section, reports, generator)
+        incomplete = any(report['status'] == 'INCOMPLETE_LOCAL_CAPABILITY' for report in reports.values())
+        document = {'schema': 'package-unit4-public-diagnostic-v1', 'execution_context': state['execution_context'],
+                    'status': 'INCOMPLETE_LOCAL_CAPABILITY' if incomplete else 'COMPLETE_SELECTED_OBSERVATIONS',
+                    'selected_sections': list(_DIAGNOSTIC_SECTIONS), 'selected_sections_complete': not incomplete,
+                    'collection_complete': False, 'local_complete': False, 'execution_qualified': False,
+                    'global_host_qualification': False, 'reports': reports, 'generator': generator}
+        need(_active_boundary() is None, 'diagnostic terminal outside read lease required')
+        snapshot = _tree_snapshot(out, state['invocation'])
+        terminal = _preparation().public_diagnostic_terminal(
+            state['invocation'], state['runtime_permit'], selected['policy'], document)
+        binding = _preparation().verify_public_diagnostic_terminal(
+            state['invocation'], state['runtime_permit'], selected['policy'], terminal)
+        result = object.__new__(DiagnosticResult)
+        _DIAGNOSTIC_RESULTS[result] = {'selection': selection, 'terminal': terminal, 'binding': binding,
+                                      'raw': canonical(document), 'receipts': receipts_by_section,
+                                      'reports': reports, 'generator': generator, 'snapshot': snapshot}
+        verify_downstream_diagnostic(result)
+        return result
+    except BaseException as error:
+        try:
+            _diagnostic_failure(state, error)
+        except BaseException:
+            state['invalidated'] = True
+        raise
+
+
+def verify_downstream_diagnostic(result):
+    need(type(result) is DiagnosticResult and result in _DIAGNOSTIC_RESULTS,
+         'original live downstream diagnostic result required')
+    owned = _DIAGNOSTIC_RESULTS[result]
+    state, selected = _diagnostic_state(owned['selection'])
+    try:
+        _checkpoint(state, full=True)
+        carrier = _preparation().verify_public_diagnostic_terminal(
+            state['invocation'], state['runtime_permit'], selected['policy'], owned['terminal'])
+        need(carrier == owned['binding'] and
+             _read(carrier['path'], state['invocation']) == owned['raw'], 'diagnostic result carrier changed')
+        document = json.loads(owned['raw'])
+        need(document['reports'] == owned['reports'] and document['generator'] == owned['generator'] and
+             document['selected_sections'] == list(_DIAGNOSTIC_SECTIONS) and
+             document['collection_complete'] is False and document['local_complete'] is False and
+             document['execution_qualified'] is False, 'diagnostic result authority drift')
+        _verify_diagnostic_payload(state, owned['receipts'], owned['reports'], owned['generator'], owned['snapshot'])
+        _preparation().verify_public_diagnostic_terminal(
+            state['invocation'], state['runtime_permit'], selected['policy'], owned['terminal'])
+        return True
+    except BaseException:
+        state['invalidated'] = True
+        try:
+            state['_read_owner_seed'].cancel_invocation(state['invocation'])
+        except BaseException:
+            pass
+        raise

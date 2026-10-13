@@ -25,8 +25,8 @@ import threading
 HERE = Path(__file__).resolve().parent
 REPOSITORY = HERE.parents[2]
 AUTHORITY_SHA = 'e52b9c0f41aef4565a0ce2381e0750837222edd3a6a14d829c70a7577e334911'
-MACHINE_MANIFEST_SHA256 = '8a885efa2e828373433a8f581f699c00829d02eca994bb8af84718f6f6433c03'
-SHARED_MANIFEST_SHA256 = '158851e13a6adffa6909665b9392a5baaa8f4f3e160f1061177400df82aa5bd5'
+MACHINE_MANIFEST_SHA256 = '1661e0efc94e43410acf74d011f98cb52be76cac5f5904cb658e410e0bbec03a'
+SHARED_MANIFEST_SHA256 = 'fa910b15e2008451da83f1cebc6452ff3617b34e1c5a04be85dfe558be8e93fa'
 OLD_PATH = 'tests/qualification/unit4_parser_current/portable.py'
 SOURCE_DIR = 'tests/qualification/package_dependency_unit4_source_v1/'
 CONTEXT_PATH = 'tests/qualification/package_dependency_unit4_current/context.py'
