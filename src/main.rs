@@ -1540,8 +1540,28 @@ fn remove_project_dependency(root: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
+// Directory formatting does not follow child symlinks. This is a traversal
+// policy for ordinary project trees, not protection against concurrent replacement.
+fn collect_format_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(read_dir) = fs::read_dir(root) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if matches!(path.file_name().and_then(|s| s.to_str()), Some(".git" | "target" | ".oxid")) { continue; }
+            let Ok(kind) = entry.file_type() else { continue; };
+            if kind.is_symlink() { continue; }
+            if kind.is_dir() {
+                files.extend(collect_format_files(&path));
+            } else if kind.is_file() && path.extension().and_then(|s| s.to_str()) == Some("ox") {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
 fn format_project(root: &Path) -> Result<(), String> {
-    let files = collect_oxid_files(root).into_iter().filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ox")).collect::<Vec<_>>();
+    let files = collect_format_files(root);
     if files.is_empty() { return Err(format!("no Oxid source files found under {}", root.display())); }
     for file in files {
         let source = fs::read_to_string(&file).map_err(|e| format!("cannot read file: {} ({})", file.display(), e))?;

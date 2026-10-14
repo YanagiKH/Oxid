@@ -43,10 +43,24 @@ impl Project {
         if explicit_legacy {
             command.arg("--edition=legacy-0.9");
         }
-        command
+        let mut child = command
             .args(["fmt", target])
-            .output()
-            .expect("launch legacy formatter directly")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("launch legacy formatter directly");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if child.try_wait().expect("poll formatter").is_some() {
+                return child.wait_with_output().expect("collect formatter output");
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().expect("stop timed-out formatter");
+                let output = child.wait_with_output().expect("reap formatter");
+                panic!("legacy formatter exceeded ten seconds: {output:?}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }
 
@@ -158,5 +172,117 @@ fn invalid_utf8_file_is_preserved_and_formatting_recovers_after_repair() {
         project.write("input.ox", ORIGINAL);
         assert_success(&project.format("input.ox", explicit_legacy));
         assert_eq!(project.read("input.ox"), FORMATTED);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_formatting_skips_external_file_symlinks() {
+    for explicit_legacy in [false, true] {
+        let project = Project::new();
+        let outside = Project::new();
+        outside.write("external.ox", ORIGINAL);
+        project.write("nested/real.ox", ORIGINAL);
+        let link = project.0.join("nested/linked.ox");
+        let target = outside.0.join("external.ox");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert_success(&project.format(".", explicit_legacy));
+        assert_eq!(outside.read("external.ox"), ORIGINAL);
+        assert_eq!(project.read("nested/real.ox"), FORMATTED);
+        assert_eq!(fs::read_link(link).unwrap(), target);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_formatting_skips_external_directory_symlinks() {
+    for explicit_legacy in [false, true] {
+        let project = Project::new();
+        let outside = Project::new();
+        outside.write("deep/external.ox", ORIGINAL);
+        project.write("nested/real.ox", ORIGINAL);
+        let link = project.0.join("external");
+        std::os::unix::fs::symlink(&outside.0, &link).unwrap();
+        assert_success(&project.format(".", explicit_legacy));
+        assert_eq!(outside.read("deep/external.ox"), ORIGINAL);
+        assert_eq!(project.read("nested/real.ox"), FORMATTED);
+        assert_eq!(fs::read_link(link).unwrap(), outside.0);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_formatting_skips_ancestor_cycles_and_dangling_symlinks() {
+    for explicit_legacy in [false, true] {
+        let project = Project::new();
+        project.write("nested/real.ox", ORIGINAL);
+        let cycle = project.0.join("nested/back");
+        let dangling = project.0.join("missing.ox");
+        std::os::unix::fs::symlink("..", &cycle).unwrap();
+        std::os::unix::fs::symlink("absent.ox", &dangling).unwrap();
+        assert_success(&project.format(".", explicit_legacy));
+        assert_eq!(project.read("nested/real.ox"), FORMATTED);
+        assert_eq!(fs::read_link(cycle).unwrap(), PathBuf::from(".."));
+        assert_eq!(fs::read_link(dangling).unwrap(), PathBuf::from("absent.ox"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_file_symlink_formats_its_target_and_preserves_the_link() {
+    for explicit_legacy in [false, true] {
+        let project = Project::new();
+        let outside = Project::new();
+        outside.write("external.ox", ORIGINAL);
+        let target = outside.0.join("external.ox");
+        let link = project.0.join("linked.ox");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert_success(&project.format("linked.ox", explicit_legacy));
+        assert_eq!(outside.read("external.ox"), FORMATTED);
+        assert_eq!(fs::read_link(link).unwrap(), target);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_directory_symlink_formats_real_children_but_skips_child_symlinks() {
+    for explicit_legacy in [false, true] {
+        let project = Project::new();
+        let outside = Project::new();
+        let other = Project::new();
+        outside.write("nested/real.ox", ORIGINAL);
+        other.write("external.ox", ORIGINAL);
+        let child_target = other.0.join("external.ox");
+        let child_link = outside.0.join("nested/linked.ox");
+        std::os::unix::fs::symlink(&child_target, &child_link).unwrap();
+        let link = project.0.join("linked");
+        std::os::unix::fs::symlink(&outside.0, &link).unwrap();
+        assert_success(&project.format("linked", explicit_legacy));
+        assert_eq!(outside.read("nested/real.ox"), FORMATTED);
+        assert_eq!(other.read("external.ox"), ORIGINAL);
+        assert_eq!(fs::read_link(link).unwrap(), outside.0);
+        assert_eq!(fs::read_link(child_link).unwrap(), child_target);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_with_only_symlinks_reports_no_sources_and_preserves_targets() {
+    for explicit_legacy in [false, true] {
+        let project = Project::new();
+        let outside = Project::new();
+        outside.write("external.ox", ORIGINAL);
+        let target = outside.0.join("external.ox");
+        let file_link = project.0.join("linked.ox");
+        let dir_link = project.0.join("linked-dir");
+        std::os::unix::fs::symlink(&target, &file_link).unwrap();
+        std::os::unix::fs::symlink(&outside.0, &dir_link).unwrap();
+        assert_failure(
+            &project.format(".", explicit_legacy),
+            "no Oxid source files found under .",
+        );
+        assert_eq!(outside.read("external.ox"), ORIGINAL);
+        assert_eq!(fs::read_link(file_link).unwrap(), target);
+        assert_eq!(fs::read_link(dir_link).unwrap(), outside.0);
     }
 }
