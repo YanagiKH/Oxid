@@ -1,7 +1,7 @@
 # RFC 0011: initialized mutable scalar locals
 
 Status: accepted for restricted experimental implementation on 2026-10-01.
-The user approved initialized `let mut`, fixed scalar types, statement assignment,
+The accepted contract includes initialized `let mut`, fixed scalar types, statement assignment,
 immutable ordinary lets/parameters, RHS-before-write and mutation in existing if
 branches. This extends [RFC 0010](0010-boolean-logical-operators.md) without loops,
 borrows, a new value category, ownership certification or a completed milestone.
