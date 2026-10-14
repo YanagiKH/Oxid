@@ -1527,7 +1527,7 @@ class RequiredFixtureDirectoryTests(unittest.TestCase):
         with authenticated_contract_fixture(self) as (repo, module, contracts), tempfile.TemporaryDirectory() as temp:
             ns, state = structural_membership_fixture(self, repo, contracts, Path(temp))
             got = emit_structural_case(self, ns, state, 'lifecycle', 1216)
-            old_path = repo / 'tests/qualification/package_dependency_unit4_public_v1/runtime.py'
+            old_path = repo / 'tests/fixtures/package_dependency_runtime_v9/runtime.py'
             self.assertEqual(runtime.sha(old_path.read_bytes()),
                              '2cb2547e77308ccf4d809cf0204d4434edabea2e2de4ca843d772a59fea5f0b6')
             old = dict(ns)
@@ -1988,10 +1988,12 @@ class GuardRegistrationActualFunctionControls(unittest.TestCase):
             helper=parent/'contracts.py';helper.write_bytes((repo/runtime.PUBLIC/'contracts.py').read_bytes())
             base=ROOT.parent
             if baseline:
-                base=ROOT.parents[4]/'package-unit4-consumers-v11/candidate/tests/qualification'
+                base=repo/'tests/fixtures/package_dependency_guard_v11'
             source=base/'package_dependency_unit4_current/preparation.py'
             q=types.ModuleType('_oxid_package_dependency_unit4_preparation_v1')
             q.__file__=str(source);raw=source.read_bytes();q.__source_sha256__=runtime.sha(raw)
+            if baseline:
+                self.assertEqual(q.__source_sha256__,'a564b78056465923bc4653d439dc0f023d028d5ff696053230ec39855b059416')
             exec(compile(raw,str(source),'exec'),q.__dict__)
             h=types.SimpleNamespace(q=q,root=root,index=index,clock=0.0,forced=[],reads=[],launches=0,baseline=baseline)
             q.time=types.SimpleNamespace(monotonic=lambda:h.clock)
@@ -2022,8 +2024,10 @@ class GuardRegistrationActualFunctionControls(unittest.TestCase):
             # is injected; actual case admission, registration, audit and sealing run.
             m['section']='guards';m['case_order']=(index,)
             rpath=base/'package_dependency_unit4_public_v1/runtime.py'
-            r=types.ModuleType('guard_actual_consumer');r.__file__=str(rpath)
-            exec(compile(rpath.read_bytes(),str(rpath),'exec'),r.__dict__);h.r=r
+            r=types.ModuleType('guard_actual_consumer');r.__file__=str(rpath);rraw=rpath.read_bytes()
+            if baseline:
+                self.assertEqual(runtime.sha(rraw),'dfb6e168c290a1740eaf3442ce4e8945c524c8cd4493e049d6772a384c4e2337')
+            exec(compile(rraw,str(rpath),'exec'),r.__dict__);h.r=r
             retained=repo/runtime.PUBLIC/'runtime.py'
             self.assertEqual(runtime.sha(retained.read_bytes()),'866f839279f65ff4d8e57a49190202785aa2b4139097156a00aa1e952b3b9db8')
             ns={'Path':Path,'os':os,'sha':q.sha,'need':q.need}

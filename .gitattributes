@@ -47,3 +47,9 @@ tests/qualification/bounded_u8_current/source-data-manifest.json -text
 
 # RFC0031 immutable byte corpus, registry and predecessor archive retain exact bytes.
 tests/qualification/byte_storage_current/** -text
+
+# Frozen V9 runtime regression control retains its published bytes on every host.
+tests/fixtures/package_dependency_runtime_v9/runtime.py -text
+# Frozen V11 guard-registration regression controls retain their published bytes.
+tests/fixtures/package_dependency_guard_v11/package_dependency_unit4_current/preparation.py -text
+tests/fixtures/package_dependency_guard_v11/package_dependency_unit4_public_v1/runtime.py -text

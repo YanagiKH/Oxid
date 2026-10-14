@@ -8,7 +8,7 @@ import argparse,hashlib,json,os,re,signal,stat,sys,time,types
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
 REPOSITORY=HERE.parents[2]
-DEPENDENCIES_SHA256='fa292e9e3107f374fbe7b9079f071c6c3c06775c8dbdac14972f04823b8143b5'
+DEPENDENCIES_SHA256='c9413a7bbdae334d017a4b7eacd790461dee142addae0f4f0b6778399fcb0a3c'
 _OWNERS={}
 class Rejected(ValueError):pass
 class Cancelled(BaseException):pass
