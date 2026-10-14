@@ -1,7 +1,7 @@
 # RFC 0010: bool logic and short-circuit value joins
 
 Status: accepted for restricted experimental implementation on 2026-10-01.
-The user approved bool-only `!`, `&&`, `||`, conventional precedence and runtime
+The accepted contract includes bool-only `!`, `&&`, `||`, conventional precedence and runtime
 short-circuiting with full RHS type checking. This extends [RFC 0009](0009-scalar-comparisons.md)
 and the acyclic CFG of [RFC 0003](0003-boolean-branch-cfg.md); it is not a stable
 edition, completed roadmap milestone, ownership policy or production certificate.

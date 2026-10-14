@@ -1,7 +1,7 @@
 # RFC 0031: bounded standalone byte storage
 
-Status: **parent-approved bounded implementation contract; resource admission and final qualification remain open**.
-Date: 2026-10-09. Owner: bounded-byte implementation task. Reviewer: parent and independently assigned semantic/resource reviewers.
+Status: **accepted bounded implementation contract; resource admission and final qualification remain open**.
+Date: 2026-10-09. Review: independent semantic and resource review.
 
 Exact dependency: merged main `b5455ad07081590aeffdec54a927c9095e870fb0`, tree `cb53acc04ac88538a74410bc0a3c037da369c02e` (PR56). Its PR-head CI and separately running postmerge CI are predecessor evidence, not evidence for this increment.
 
@@ -9,7 +9,7 @@ Authority: independently reviewed planning proposal SHA-256 `7efc3b0c93444893af9
 
 This is a bounded M2/M3 increment, not completion of M2, I/O migration, tensors, self-hosting, memory-safety certification or v1. There is no artifact/ABI/protocol version change and no implicit legacy migration. Only the explicit stable-Rust typed-preview accepted source domain expands. RFC0030 byte aggregate exclusions are superseded only in the standalone positions defined here.
 
-Parent review must approve this contract and `docs/architecture/bounded-byte-storage-plan.md` before implementation. Resource review remains a separate veto gate after measurement; approval of semantics cannot waive admission. Publication and merge are owned by the parent.
+This contract and `docs/architecture/bounded-byte-storage-plan.md` require review and acceptance before implementation. Resource review remains a separate veto gate after measurement; semantic acceptance cannot waive admission.
 
 ## 1. Reviewed scope decision and stop line
 
@@ -22,9 +22,9 @@ Extend the existing fixed scalar array and call-only scalar-slice contracts with
 
 No arithmetic on u8, new literals, contextual integer coercions, direct scalar u8 record fields, record-contained byte arrays at any nesting depth, enum payloads (including byte-array payloads), heap buffers, nested arrays, subslices, ranges, element references, borrowed locals/results, aggregate field extraction/replacement, general conversion receivers, ABI promise, I/O signature changes or provider expansion.
 
-The parent decision after independent review is this smaller standalone-array slice. Existing record composition and projected slices for bool/i32/unit remain unchanged. Reusing FixedArrayTy is not permission to admit byte-array record fields: dedicated source and raw declaration fences are required, including unused declarations and transitive nesting. No byte-record projection is a pass fixture in this increment. If the standalone slice cannot be honestly admitted under existing ceilings, stop for a revised design rather than raise limits.
+The independently reviewed scope is this smaller standalone-array slice. Existing record composition and projected slices for bool/i32/unit remain unchanged. Reusing FixedArrayTy is not permission to admit byte-array record fields: dedicated source and raw declaration fences are required, including unused declarations and transitive nesting. No byte-record projection is a pass fixture in this increment. If the standalone slice cannot be honestly admitted under existing ceilings, stop for a revised design rather than raise limits.
 
-Implementation only follows parent approval of this frozen contract. PR56 dependency resolution is complete at the exact merged identity above. Completion means reviewed public source/reference/native vertical slice, required repository checks and all applicable CI green on the exact eventual PR head, followed by the separately authorized publication/merge process.
+Implementation follows review and acceptance of this frozen contract. PR56 dependency resolution is complete at the exact merged identity above. Completion means reviewed public source/reference/native vertical slice, required repository checks and all applicable CI green on the exact eventual PR head.
 
 ## 2. Language contract
 
@@ -127,17 +127,17 @@ Pilot (new fixture, no I/O migration): explicitly declare the ordinary `byte` he
 2. Semantics/reference: raw shape/CFG/source binding, encode/decode, move/index/whole-array slice integrity and forbidden byte-record projection rejection. Independent reviewer supplies malformed descriptors and effect/fuel oracle before seeing implementation expectations.
 3. Native: byte memory/scalar-arena transport, zero extension, stride/sentinel, transfers, slice call ABI and emission inventory. Independent native reviewer checks emitted IR plus source-free executed artifacts and exact plan/resource boundaries.
 4. Resource admission: separate reviewer measures all enclosing carriers/capacities/work, allocation-before-denial, no-byte endpoints and any named successor. This review may veto activation regardless of ordinary test results.
-5. Public qualification/integration: frozen independent corpus, public provider compatibility only, full affected repository checks, artifact/source/toolchain identity, independent final review and exact-head CI. Do not modify PR56 workers' source/evidence or reuse their pending CI as successor evidence.
+5. Public qualification/integration: frozen independent corpus, public provider compatibility only, full affected repository checks, artifact/source/toolchain identity, independent final review and exact-head CI. Preserve PR56 source/evidence; its pending CI is not successor evidence.
 
-Freeze corpus expectations before implementation and preserve failed controls. Parallelize isolated work only after the dependency/contract gate. Any change to grammar scope, the explicit record exclusion, error precedence, limits, representation authority or provider domain returns to review. This draft authorizes no implementation or publication by itself. Parent contract approval must be recorded below.
+Freeze corpus expectations before implementation and preserve failed controls. Parallelize isolated work only after the dependency/contract gate. Any change to grammar scope, the explicit record exclusion, error precedence, limits, representation authority or provider domain returns to review. Contract acceptance is recorded below; it does not establish implementation or qualification completion.
 
 ## 10. Acceptance decision
 
-Parent approved the scoped semantic/interface contract at 191eb94 on 2026-10-09, against exact base b5455ad07081590aeffdec54a927c9095e870fb0 / tree cb53acc04ac88538a74410bc0a3c037da369c02e. Resource admission, independent oracle review, repository verification and exact-head hosted CI remain independent veto gates. Changes to record/enum exclusions, provider domain, diagnostic precedence or caps require renewed review. Predecessor diagnostics/origins must come from the immutable baseline; unresolved expectations stay explicitly unresolved, never learned from successor output.
+The scoped semantic/interface contract was accepted following review at 191eb94 on 2026-10-09, against exact base b5455ad07081590aeffdec54a927c9095e870fb0 / tree cb53acc04ac88538a74410bc0a3c037da369c02e. Resource admission, independent oracle review, repository verification and exact-head hosted CI remain independent veto gates. Changes to record/enum exclusions, provider domain, diagnostic precedence or caps require renewed review. Predecessor diagnostics/origins must come from the immutable baseline; unresolved expectations stay explicitly unresolved, never learned from successor output.
 
 ### Accepted source-authority interface amendment (2026-10-09)
 
-Parent reviewed the production caller graph and approved one bounded tightening:
+Review of the production caller graph established one bounded interface tightening:
 `association::lower_and_associate(typed)` accepts only the checked typed owner,
 performs the existing trusted lowering and association sequence, and returns the
 same consuming `AssociatedOwned`. The raw-taking helper is module-private;
@@ -151,12 +151,13 @@ No new vector, detachable token, caller boolean, re-lowering, provenance search,
 work cap or raw-to-SourceProgram path is allowed. Diagnostic mapping/order must
 remain byte-identical. Relocated caller/result/error carriers require measured
 accounting; compile-time privacy and forged-raw inability require independent
-controls. Full semantic comparator or further API growth is not approved.
+controls. A full semantic comparator and further API growth remain outside this
+amendment.
 
 ### Approved B11 lexer-allocation scope clarification (2026-10-09)
 
-Parent explicitly reviewed and approved this bounded clarification after the
-independent allocation audit. The exact predecessor already lexed the same byte
+This bounded clarification follows the independent allocation audit. The exact
+predecessor already lexed the same byte
 spellings through the identical identifier/token-tape implementation before
 later grammar rejection. RFC0031 changes no lexer path, token carrier, capacity
 policy, allocation site or ceiling.
@@ -179,8 +180,8 @@ follow-up is recorded in the implementation plan; it is not completed here.
 
 ### Approved inherited-native allocation limitation (2026-10-09)
 
-Parent separately reviewed and approved carrying these precisely enumerated,
-unchanged predecessor mechanisms; the lexer clarification did not cover them:
+Separate review identified these precisely enumerated, unchanged predecessor
+mechanisms; the lexer clarification did not cover them:
 
 1. Caller-table outer vector and its empty adjacency headers.
 2. Remaining-call counts.

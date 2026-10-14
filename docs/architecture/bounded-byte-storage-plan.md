@@ -1,6 +1,6 @@
 # Bounded standalone byte storage: frozen implementation plan
 
-Status: parent-approved interface/semantic contract; admission remains open, 2026-10-09. Normative contract:
+Status: accepted interface/semantic contract; admission remains open, 2026-10-09. Normative contract:
 [RFC0031](../../rfcs/0031-bounded-standalone-byte-storage.md).
 Base b5455ad07081590aeffdec54a927c9095e870fb0; tree
 cb53acc04ac88538a74410bc0a3c037da369c02e. Proposal SHA-256
@@ -8,18 +8,18 @@ cb53acc04ac88538a74410bc0a3c037da369c02e. Proposal SHA-256
 
 ## Gate and sequence
 
-1. Parent approves this interface contract and RFC. Independent oracle owns
-   expected outcomes before implementation. No semantic edit precedes this gate.
+1. Review and accept this interface contract and RFC, and independently freeze expected
+   outcomes before implementation. No semantic edit precedes this gate.
 2. Measure exact base carriers/callers/results/errors/format backing and retained
    capacities. Inventory resource branches and authority consumers before changes.
-3. Parallel isolated syntax/types, reference/trust and native workers implement
-   only their assigned paths. Each receives the same fixed interface below.
-4. Integrate on one coordinator worktree; measure successor actual layouts and
+3. Implement syntax/types, reference/trust and native changes within the
+   subsystem boundaries and fixed interfaces below.
+4. Integrate at one immutable checkpoint; measure successor actual layouts and
    admission endpoints. Independently derive explicit current successors wherever
    endpoints change. Keep predecessor fixtures byte-for-byte unchanged.
 5. Independent semantic/resource reviews and full local applicable verification.
-   Resource review can stop admission even if semantics pass. Exact hosted CI,
-   publication and merge belong to parent; no worker pushes.
+   Resource review can stop admission even if semantics pass. All applicable hosted
+   CI must pass on the exact eventual PR head.
 
 ## Interface agreement (fixed before parallel work)
 
@@ -53,37 +53,35 @@ cb53acc04ac88538a74410bc0a3c037da369c02e. Proposal SHA-256
 - No new public API, protocol, builtin, I/O signature, cap or raw execution path.
   `byte(x)` in fixtures is an explicitly declared ordinary helper.
 
-## Worker boundaries
+## Implementation boundaries
 
-A. Syntax and type/declaration worker owns ast.rs, parser/arrays.rs and related
+A. Syntax and type/declaration changes cover ast.rs, parser/arrays.rs and related
 array parser tests, declaration_index.rs array/slice queries, format array syntax
 observations, owned_types.rs plus its new byte-array tests, owned/source/resolve.rs
-record fence, owned/source/typeck.rs literal allowlist. It must preserve direct
-U8 field/enum rejection and source whole-project owned routing. Coordinate tests
-that still assert historical U8 array exclusion rather than silently deleting.
+record fence, owned/source/typeck.rs literal allowlist. These changes must preserve direct
+U8 field/enum rejection and source whole-project owned routing. Review tests
+that still assert historical U8 array exclusion rather than silently deleting them.
 
-B. Reference and trust worker owns owned/execute.rs and new reference/raw/source
-byte-array test modules. It audits shape/verify/plan/source association and only
-changes production files there if a byte-specific integrity gap is demonstrated.
-It preserves evaluation order, costs, exact file-aware spans, generation/view/root
+B. Reference and trust changes cover owned/execute.rs and new reference/raw/source
+byte-array test modules. Audit shape/verify/plan/source association and only
+change production files there if a byte-specific integrity gap is demonstrated.
+Preserve evaluation order, costs, exact file-aware spans, generation/view/root
 identity and byte-record projection refusal. No declarations/native edits.
 
-C. Native worker owns owned/native.rs and new native byte-storage tests. It audits
+C. Native changes cover owned/native.rs and new native byte-storage tests. Audit
 native storage-plan bindings, i8 transport, guarded/acyclic paths, sentinels,
 copy/transfer size, exact count/render inventory and fail-before-output admission.
-No declarations/reference edits; report required shared changes to coordinator.
+Changes to shared declarations/reference interfaces require integration review.
 
-D. Coordinator owns documentation, resource measurement integration, CI/source
-boundary closure audit and archived/current evidence routing. Parent assigns
-independent oracles/review. Existing authority fixtures cannot be modified by
-any worker. Adding current successor wrappers requires separately reviewed exact
+D. Integration covers documentation, resource measurement, CI/source boundary
+closure audit and archived/current evidence routing, with independent oracles
+and review. Existing authority fixtures remain unchanged. Adding current successor
+wrappers requires separately reviewed exact
 inverse/membership proof, not copying current output as expected authority.
 
-Workers use isolated worktrees from the approved contract checkpoint and return
-commits without push. Use one coordinated target directory, serial build leases,
-bytecode-disabled Python, Rust1.99/LLVM19.1.7 toolchain environment. No duplicate
-large targets; do not remove source/evidence/executables. Integrate all changes
-before final full checks.
+Use the accepted contract checkpoint and the Rust1.99/LLVM19.1.7 toolchain
+environment, with bytecode-disabled Python. Preserve source, evidence and
+executables. Integrate all changes before final full checks.
 
 ## Resource measurement and admission inventory
 
@@ -134,23 +132,23 @@ applicable exact-head CI jobs remain mandatory, never simulated by a local shim.
 
 ## Decision record
 
-Parent approved the contract at 191eb94 on 2026-10-09 against the exact dependency above. Resource admission and final qualification remain independent veto gates. Semantic implementation may now proceed within these interfaces.
+The contract was accepted following review at 191eb94 on 2026-10-09 against the exact dependency above. Resource admission and final qualification remain independent veto gates. Semantic implementation is limited to these interfaces.
 
 ### Reviewed authority amendment
 
-Parent subsequently approved the narrowly scoped production
-`association::lower_and_associate(typed)` seam described in RFC0031. Lane B owns
-the relocation from `program::check_typed`, keeps raw-taking helper private and
-all mutation entry points cfg(test), preserves diagnostics/conversion checks,
-and measures existing relocated caller/result/error roles. There is no duplicate
+The accepted production interface amendment introduces the narrowly scoped
+`association::lower_and_associate(typed)` seam described in RFC0031. The reference
+and trust changes relocate it from `program::check_typed`, keep the raw-taking
+helper private and all mutation entry points cfg(test), preserve diagnostics/conversion checks,
+and measure existing relocated caller/result/error roles. There is no duplicate
 lowering or new provenance table. Compile-time privacy tests must prove callers
 cannot provide arbitrary raw + typed as a production source witness. This does
 not expand the accepted language/provider domain or waive raw verifier controls.
 
 ## Separate follow-up: fallible ordinary lexer token allocation
 
-Status: deferred hardening, not implemented or qualified by RFC0031. Parent
-explicitly approved carrying the unchanged lexer limitation on 2026-10-09.
+Status: deferred hardening, not implemented or qualified by RFC0031. The
+unchanged lexer limitation was recorded on 2026-10-09.
 Ordinary token-tape `Vec::push` remains infallible and uninjected; its allocator
 failure recovery is UNPROVED. The independent stronger corpus obligations stay
 unchanged and cannot be reported as whole-row empirical passes.
@@ -161,12 +159,12 @@ without changing existing source/token error precedence unintentionally; price
 all requested payload and retained capacity under reviewed caps; and execute
 independently derived exact/one-short plus every-site allocator-failure controls.
 It must cover ordinary and provider routes separately and replay lexer/parser,
-formatter, module loader and public diagnostics. No implementation or altered
-error semantics is authorized by this follow-up entry.
+formatter, module loader and public diagnostics. Implementation and altered
+error semantics remain outside this follow-up entry.
 
 ## Separate follow-up: native graph and call-scratch fallible preflight
 
-Status: deferred hardening, not implemented by RFC0031. The separately approved
+Status: deferred hardening, not implemented by RFC0031. The separately reviewed
 native limitation covers only the seven graph-vector families and call-emitter
 Vec/String/format/join temporaries enumerated in the RFC. Their recovery and
 per-site injected-failure guarantees remain UNPROVED.
@@ -177,6 +175,6 @@ adjacency growth presently bounded by raw 300,000 blocks before the native
 capacities rather than treating post-allocation metrics or logical byte bounds
 as prepayment. Review error precedence, caller/temporary/error roles and caps;
 add exact/one-short and each-site controls, plus guarded and acyclic call-graph
-regression coverage. This entry does not authorize that production redesign or
-claim it is complete. Keep independently derived guarded text demand distinct
+regression coverage. That production redesign remains outside this increment and
+is not complete. Keep independently derived guarded text demand distinct
 from the existing template-invariance and actual count/render evidence.
