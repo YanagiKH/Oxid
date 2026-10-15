@@ -62,6 +62,33 @@ class PublishedViewIdentityControls(unittest.TestCase):
                     opened.st_ctime_ns += 1
                     self.assertFalse(self.view._opened_identity_matches(before, opened))
 
+    def test_binary_payload_preserves_crlf_and_ctrl_z(self):
+        payload = b'first\r\nsecond\x1atail\r\n'
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            (root / 'member').write_bytes(payload)
+            self.assertEqual(self.view._read_regular(root, 'member'), payload)
+
+    def test_binary_flag_is_explicit_when_available(self):
+        view = self.view
+        original_os = view.os
+        binary = getattr(original_os, 'O_BINARY', 0x8000)
+        calls = []
+        def opened(path, flags):
+            calls.append(flags)
+            self.assertEqual(flags & binary, binary)
+            native_flags = flags if hasattr(original_os, 'O_BINARY') else flags & ~binary
+            return original_os.open(path, native_flags)
+        fake = SimpleNamespace(**{name: getattr(original_os, name) for name in
+            ('read', 'close', 'fstat', 'O_RDONLY', 'name')}, open=opened, O_BINARY=binary)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            payload = b'first\r\nsecond\x1atail\r\n'
+            (root / 'member').write_bytes(payload)
+            with patch.object(view, 'os', fake):
+                self.assertEqual(view._read_regular(root, 'member'), payload)
+        self.assertEqual(len(calls), 1)
+
     def test_real_regular_file_and_replaced_open_target(self):
         view = self.view
         with tempfile.TemporaryDirectory() as temp:
@@ -201,6 +228,87 @@ class PublishedLifecycleIdentityControls(PublishedViewIdentityControls):
                 return namespace['_stamp'](value)
         cls.view, cls.reject = Reader(), ValueError
         cls.schema_check = staticmethod(namespace['_valid_package_schema'])
+
+    def roster_checks(self, root, files):
+        import os
+        import stat
+        bodies = {name: (root / name).read_bytes() for name in files}
+        directories = sorted({str(parent) for name in files
+                              for parent in Path(name).parents if str(parent) != '.'})
+        def need(condition, message):
+            if not condition:
+                raise ValueError(message)
+        namespaces = []
+        for relative, function, helpers in (
+            ('tests/qualification/published_formatter_current/published_view.py',
+             '_verify_view', set()),
+            ('tests/qualification/unit4_public_v3/published_lifecycle.py',
+             '_closed_roster', {'_safe_ancestors'})):
+            path = REPO / relative
+            tree = ast.parse(path.read_bytes())
+            functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                         and node.name in helpers | {function}]
+            self.assertEqual({node.name for node in functions}, helpers | {function})
+            namespace = {'os': os, 'stat': stat, 'Path': Path,
+                         'PurePosixPath': __import__('pathlib').PurePosixPath,
+                         'need': need, '_need': need, 'MAX_VIEW_FILES': 681,
+                         '_read_regular': lambda base, name: (base / name).read_bytes(),
+                         '_body_descriptor': lambda row: row,
+                         'verify': lambda *args: None}
+            exec(compile(ast.Module(body=functions, type_ignores=[]), str(path), 'exec'), namespace)
+            namespaces.append((function, namespace))
+        value = {'directories': directories, 'files': [{'path': name} for name in files]}
+        return [(name, (lambda n=name, ns=namespace:
+                 ns[n](root, value, bodies) if n == '_verify_view' else ns[n](root, files)))
+                for name, namespace in namespaces]
+
+    def test_closed_rosters_use_authoritative_path_metadata(self):
+        import os
+        from contextlib import contextmanager
+        original_scan = os.scandir
+        @contextmanager
+        def uncached(path):
+            with original_scan(path) as entries:
+                values = [SimpleNamespace(name=entry.name,
+                    stat=lambda **kwargs: (_ for _ in ()).throw(
+                        AssertionError('cached DirEntry metadata used'))) for entry in entries]
+            yield iter(values)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            (root / 'nested').mkdir()
+            (root / 'nested/member').write_bytes(b'good')
+            for name, check in self.roster_checks(root, {'nested/member'}):
+                with self.subTest(roster=name), patch.object(os, 'scandir', uncached):
+                    check()
+
+    def test_closed_rosters_reject_reparse_members_and_hardlinks(self):
+        import os
+        original_lstat = Path.lstat
+        fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size',
+                  'st_mtime_ns', 'st_ctime_ns')
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp).resolve()
+            root = parent / 'root'
+            (root / 'nested').mkdir(parents=True)
+            member = root / 'nested/member'
+            member.write_bytes(b'good')
+            checks = self.roster_checks(root, {'nested/member'})
+            for unsafe in (root, member, root / 'nested'):
+                def marked(path):
+                    result = original_lstat(path)
+                    if path == unsafe:
+                        return SimpleNamespace(**{name: getattr(result, name)
+                            for name in fields}, st_file_attributes=0x400)
+                    return result
+                for name, check in checks:
+                    with self.subTest(roster=name, path=unsafe), patch.object(Path, 'lstat', marked):
+                        with self.assertRaisesRegex(ValueError, 'unsafe|aliased'):
+                            check()
+            os.link(member, parent / 'outside-link')
+            for name, check in checks:
+                with self.subTest(roster=name, hardlink=True):
+                    with self.assertRaisesRegex(ValueError, 'unsafe|aliased'):
+                        check()
 
     def test_package_schema_matches_genuine_integer_version(self):
         manifest = json.loads((REPO /

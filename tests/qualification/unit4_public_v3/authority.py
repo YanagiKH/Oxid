@@ -31,5 +31,5 @@ LEXER_LIFECYCLE_AUTHORITY_SHA = 'f8e6e92eda7c0d07dea9a73301be9318f32c4a0eddb7126
 LEXER_LIFECYCLE_HELPER_SHA = '155471428cc243fbb7845ec2dcd21fb982f51e7e8264ccf804f1df07338c91ec'
 
 # Separate published-source descriptors; historical LEXER_* pins stay exact.
-PUBLISHED_LIFECYCLE_HELPER = {'path': 'published_lifecycle.py', 'bytes': 46386, 'sha256': '749036f45b639a842a483884aa50266b9dbe0f23e4524d583cd69eb265bb9ec1'}
-PUBLISHED_LIFECYCLE_PROOF = {'path': 'published-lifecycle-v1.json', 'bytes': 149158, 'sha256': '4173ec44a5e11b54023620438580875000c721e11bdf7be31c002c5313c0c368'}
+PUBLISHED_LIFECYCLE_HELPER = {'path': 'published_lifecycle.py', 'bytes': 46537, 'sha256': 'afa277d0586fdea4ff9d76fe83d7025b3b399390d44d356857dfb27b2612fe29'}
+PUBLISHED_LIFECYCLE_PROOF = {'path': 'published-lifecycle-v1.json', 'bytes': 149158, 'sha256': '46b8bdf4d5d1559cd681ef00026220111d0c1244533da2b8e470d38e19bf69c2'}

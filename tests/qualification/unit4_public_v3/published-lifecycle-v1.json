@@ -3893,9 +3893,9 @@
     "tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c"
   },
   "source_dispatcher": {
-    "bytes": 6673,
+    "bytes": 6721,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "b8947531e589528e88073f774022d851ffa3e266d5245d69bcdfb1736d37caf5"
+    "sha256": "2850ee1b67698494d5f8aa5c13dc457c7b927eb5f680abffff917be2496439ce"
   },
   "source_helpers": [
     {
@@ -3940,9 +3940,9 @@
     },
     {
       "body": {
-        "bytes": 12607,
+        "bytes": 12882,
         "path": "tests/qualification/published_formatter_current/published_view.py",
-        "sha256": "629ca03dd3633df969f6ca50c6d3d675ce5f5acd70caa00a372ae6a9cb2a5aca"
+        "sha256": "11a381be0f642138663d46c928b48b434332cb8152cf5006dd452fd178076e9b"
       },
       "module": "published_view"
     },
@@ -3964,7 +3964,7 @@
   "source_package_manifest": {
     "bytes": 16025,
     "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-    "sha256": "a1d8344e28734fcee31a7be19ad528bb1430895f22f83d34421335dfc53a4e5d"
+    "sha256": "0981e12abf0c8b171cfe8058a6cc43a97e62eda19a4d0d9a522c7c03de271355"
   },
   "source_seal": {
     "authority": {
@@ -3995,9 +3995,9 @@
     }
   },
   "transport_helper": {
-    "bytes": 46386,
+    "bytes": 46537,
     "path": "tests/qualification/unit4_public_v3/published_lifecycle.py",
-    "sha256": "749036f45b639a842a483884aa50266b9dbe0f23e4524d583cd69eb265bb9ec1"
+    "sha256": "afa277d0586fdea4ff9d76fe83d7025b3b399390d44d356857dfb27b2612fe29"
   },
   "transport_paths": [
     "src/main.rs"

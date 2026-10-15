@@ -31,8 +31,8 @@ SAVED = 'tests/fixtures/typed_project_source_binding_byte_storage_v1'
 PROOF_NAME = 'published-lifecycle-v1.json'
 HELPER_NAME = 'published_lifecycle.py'
 MAIN = 'src/main.rs'
-DISPATCHER_PIN = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6673, 'sha256': 'b8947531e589528e88073f774022d851ffa3e266d5245d69bcdfb1736d37caf5'}
-PACKAGE_PIN = {'path': 'tests/fixtures/typed_project_source_binding/package-manifest.json', 'bytes': 16025, 'sha256': 'a1d8344e28734fcee31a7be19ad528bb1430895f22f83d34421335dfc53a4e5d'}
+DISPATCHER_PIN = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6721, 'sha256': '2850ee1b67698494d5f8aa5c13dc457c7b927eb5f680abffff917be2496439ce'}
+PACKAGE_PIN = {'path': 'tests/fixtures/typed_project_source_binding/package-manifest.json', 'bytes': 16025, 'sha256': '0981e12abf0c8b171cfe8058a6cc43a97e62eda19a4d0d9a522c7c03de271355'}
 OLD_HELPER_PIN = {'path': PUBLIC + '/lexer_reservation_lifecycle.py', 'bytes': 9393,
     'sha256': '155471428cc243fbb7845ec2dcd21fb982f51e7e8264ccf804f1df07338c91ec'}
 OLD_PROOF_PIN = {'path': PUBLIC + '/lexer-reservation-lifecycle-v2.json', 'bytes': 282549,
@@ -421,7 +421,8 @@ def _read_regular(path, limit=MAX_BODY):
     # available flags plus mandatory path/handle, final-path and ancestor
     # identity checks on every host. Windows reparse points are rejected above.
     flags = (os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
-             | getattr(os, 'O_NOATIME', 0) | getattr(os, 'O_NONBLOCK', 0))
+             | getattr(os, 'O_NOATIME', 0) | getattr(os, 'O_NONBLOCK', 0)
+             | getattr(os, 'O_BINARY', 0))
     fd = os.open(path, flags)
     try:
         opened = os.fstat(fd)
@@ -516,7 +517,9 @@ def _closed_roster(root, files):
             for entry in entries:
                 name = parent + '/' + entry.name if parent else entry.name
                 _need(name in files or name in directories, 'unknown file or empty directory: ' + name)
-                info = entry.stat(follow_symlinks=False)
+                info = (root / name).lstat()
+                _need(not getattr(info, 'st_file_attributes', 0) & 0x400,
+                      'aliased source member')
                 if name in directories:
                     _need(stat.S_ISDIR(info.st_mode) and name not in seen_dirs,
                           'aliased or special source directory')

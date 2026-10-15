@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '3e5f11a6ed3c86d87c5ef4702e7cb8f09dd3ac9e7998b080087eaafc03757e13'
+INPUTS_SHA = 'fcc91c1f8263c7b5a3e3ad54bb7d7f17084edf9c29167ec494f7e54abda8ebb6'
 CURRENT_COMPILER_BODIES = 291
 CURRENT_SOURCE_MEMBERS = 376
 CURRENT_SHA = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'

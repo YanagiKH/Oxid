@@ -65,7 +65,8 @@ def _read_regular(root, name, limit=MAX_FILE_BYTES):
          and 0 <= before.st_size <= limit,
          "unsafe or oversized predecessor source member")
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-             | getattr(os, "O_NOATIME", 0) | getattr(os, "O_NONBLOCK", 0))
+             | getattr(os, "O_NOATIME", 0) | getattr(os, "O_NONBLOCK", 0)
+             | getattr(os, "O_BINARY", 0))
     fd = os.open(target, flags)
     try:
         opened = os.fstat(fd)
@@ -205,7 +206,10 @@ def _capture(repo, admitted, seal):
 
 def _verify_view(root, value, bodies):
     expected_files, expected_dirs = set(bodies), set(value["directories"])
-    need(stat.S_ISDIR(root.lstat().st_mode), "unsafe materialized predecessor root")
+    root_info = root.lstat()
+    need(stat.S_ISDIR(root_info.st_mode)
+         and not getattr(root_info, "st_file_attributes", 0) & 0x400,
+         "unsafe materialized predecessor root")
     files, directories, pending = set(), set(), [""]
     while pending:
         parent = pending.pop()
@@ -217,7 +221,9 @@ def _verify_view(root, value, bodies):
                 # Reject an unknown subtree before traversing any part of it.
                 need(relative in expected_files or relative in expected_dirs,
                      "unexpected materialized predecessor member")
-                info = entry.stat(follow_symlinks=False)
+                info = (root / relative).lstat()
+                need(not getattr(info, "st_file_attributes", 0) & 0x400,
+                     "aliased materialized predecessor member")
                 if relative in expected_dirs:
                     need(stat.S_ISDIR(info.st_mode) and relative not in directories,
                          "unsafe materialized predecessor directory")
