@@ -2,13 +2,13 @@
   "authority": {
     "bytes": 526829,
     "path": "tests/qualification/unit4_parser_current/authority.json",
-    "sha256": "dde260716e39e2d997e21454be8ee2727f84edb4db0f8c089f4baf62aa1f7b09"
+    "sha256": "9f8d29aa46866424b02fe17e552ac522bea90970019448ac408a5bd0b721005f"
   },
   "schema": "oxid-unit4-published-main-parser-seal-v1",
   "source_dispatcher": {
-    "bytes": 5824,
+    "bytes": 6673,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "695ea921fa6c263fd22bb8bd11a8ac01046002ab2feb8943c3831e289ac78b98"
+    "sha256": "b8947531e589528e88073f774022d851ffa3e266d5245d69bcdfb1736d37caf5"
   },
   "source_manifest": {
     "bytes": 74567,
@@ -63,9 +63,9 @@
     },
     {
       "artifact": {
-        "bytes": 11861,
+        "bytes": 12607,
         "path": "tests/qualification/published_formatter_current/published_view.py",
-        "sha256": "2009903d72ea6e55fbfb10aaa00848397ec45281b5c47b2b9cd1677a6697609f"
+        "sha256": "629ca03dd3633df969f6ca50c6d3d675ce5f5acd70caa00a372ae6a9cb2a5aca"
       },
       "module": "published_view"
     }
@@ -104,8 +104,8 @@
     "sha256": "415cb1b9391cd330388dd4f80c62f4057209d75ec710348d726c572bc795b424"
   },
   "view": {
-    "bytes": 11861,
+    "bytes": 12607,
     "path": "tests/qualification/published_formatter_current/published_view.py",
-    "sha256": "2009903d72ea6e55fbfb10aaa00848397ec45281b5c47b2b9cd1677a6697609f"
+    "sha256": "629ca03dd3633df969f6ca50c6d3d675ce5f5acd70caa00a372ae6a9cb2a5aca"
   }
 }

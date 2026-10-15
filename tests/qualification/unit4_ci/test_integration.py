@@ -92,7 +92,7 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/qualification/unit2_u8_current',
             'scripts/predecessors/lexer_reservation_source_v1',
             'tests/qualification/published_formatter_current'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (975, 16))
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (977, 16))
         self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
         self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
         self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
@@ -543,7 +543,7 @@ class ObserverPreparationControls(unittest.TestCase):
         current = (REPO / q.OBSERVER_PATCH).read_bytes()
         original = (REPO / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
         self.assertEqual(self.builder.verify_lifecycle_successor(current), original)
-        with self.assertRaisesRegex(self.c.Reject, 'unapproved exact lexer lifecycle patch'):
+        with self.assertRaisesRegex(self.c.Reject, r'^changed pinned body: observer-lexer-reservation-v2\.patch$'):
             self.builder.verify_lifecycle_successor(current + b'\n')
         # Every current mutation must alter an exact present seam. The new
         # minimal patch no longer carries the historical Array/Enum context.
@@ -555,7 +555,7 @@ class ObserverPreparationControls(unittest.TestCase):
             self.assertEqual(current.count(anchor), 1)
             changed = current.replace(anchor, replacement, 1)
             self.assertNotEqual(changed, current)
-            with self.subTest(current_anchor=anchor), self.assertRaisesRegex(self.c.Reject, 'unapproved exact lexer lifecycle patch'):
+            with self.subTest(current_anchor=anchor), self.assertRaisesRegex(self.c.Reject, r'^changed pinned body: observer-lexer-reservation-v2\.patch$'):
                 self.builder.verify_lifecycle_successor(changed)
         # Preserve both original Array/Enum rejection domains at the unchanged
         # byte-storage stage whose complete patch still contains those seams.
@@ -673,12 +673,19 @@ class ObserverPreparationControls(unittest.TestCase):
                      'lexer_reservation_lifecycle.py', 'lexer-reservation-lifecycle-v1.json',
                      'observer-lexer-reservation-v1.patch', 'test_lexer_reservation.py',
                      'generate_lexer_reservation_v2.py', 'lexer-reservation-lifecycle-v2.json',
-                     'observer-lexer-reservation-v2.patch'}
+                     'observer-lexer-reservation-v2.patch', 'derive_public_observer_v1.py',
+                     'published-lifecycle-v1.json', 'published-observer-derivation-v1.json',
+                     'published_lifecycle.py'}
         self.assertEqual(len(original_names), 22)
         self.assertFalse(original_names & additions)
         self.assertEqual(run.PACKAGE_FILES, original_names | additions)
-        self.assertEqual(len(expected), 31)
+        self.assertEqual(len(expected), 35)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
+        for members in (list((REPO / q.PUBLIC).iterdir())[:-1],
+                        [*list((REPO / q.PUBLIC).iterdir()), SimpleNamespace(name='unapproved.py')]):
+            with patch.object(run, 'ADAPTER_ROOT', SimpleNamespace(iterdir=lambda: iter(members))):
+                with self.assertRaisesRegex(self.c.Reject, '^adapter package exact membership$'):
+                    run.adapter_identity()
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
 
@@ -2437,6 +2444,10 @@ class FinalFailureControls(unittest.TestCase):
             args = SimpleNamespace(output=root)
             with self.assertRaises(q.Reject): join.join(args)
             self.assertEqual(prior.read_bytes(), b'preserve existing evidence')
+
+
+from test_source_identity import (PublishedViewIdentityControls,
+    PublishedDispatcherIdentityControls, PublishedLifecycleIdentityControls)
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

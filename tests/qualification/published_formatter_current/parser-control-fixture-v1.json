@@ -1,5 +1,5 @@
 {
-  "allocated_bytes": 43008000,
+  "allocated_bytes": 43012096,
   "directories": [
     "compiler",
     "fixtures",
@@ -122,7 +122,7 @@
     "tests/qualification/unit4_parser_current"
   ],
   "file_count": 700,
-  "file_rounded_bytes": 42516480,
+  "file_rounded_bytes": 42520576,
   "files": [
     {
       "bytes": 3026,
@@ -2352,7 +2352,7 @@
     {
       "bytes": 16025,
       "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
-      "sha256": "9a36d668a53e763bc06cb8e38b32d9808152537bafe14c2dcd0fd4d9a9b64ec0"
+      "sha256": "a1d8344e28734fcee31a7be19ad528bb1430895f22f83d34421335dfc53a4e5d"
     },
     {
       "bytes": 5445,
@@ -2420,9 +2420,9 @@
       "sha256": "854ab1a1f5ad1075b836d7ea7387e7692b0adae59cd709921e6a8eae17770819"
     },
     {
-      "bytes": 5824,
+      "bytes": 6673,
       "path": "tests/fixtures/typed_project_source_binding/run.py",
-      "sha256": "695ea921fa6c263fd22bb8bd11a8ac01046002ab2feb8943c3831e289ac78b98"
+      "sha256": "b8947531e589528e88073f774022d851ffa3e266d5245d69bcdfb1736d37caf5"
     },
     {
       "bytes": 55961,
@@ -3490,9 +3490,9 @@
       "sha256": "069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45"
     },
     {
-      "bytes": 11861,
+      "bytes": 12607,
       "path": "tests/qualification/published_formatter_current/published_view.py",
-      "sha256": "2009903d72ea6e55fbfb10aaa00848397ec45281b5c47b2b9cd1677a6697609f"
+      "sha256": "629ca03dd3633df969f6ca50c6d3d675ce5f5acd70caa00a372ae6a9cb2a5aca"
     },
     {
       "bytes": 568665,
@@ -3512,7 +3512,7 @@
     {
       "bytes": 526829,
       "path": "tests/qualification/unit4_parser_current/authority.json",
-      "sha256": "dde260716e39e2d997e21454be8ee2727f84edb4db0f8c089f4baf62aa1f7b09"
+      "sha256": "9f8d29aa46866424b02fe17e552ac522bea90970019448ac408a5bd0b721005f"
     },
     {
       "bytes": 518280,
@@ -3572,7 +3572,7 @@
     {
       "bytes": 237794,
       "path": "tests/qualification/unit4_parser_current/portable.py",
-      "sha256": "5298276c74feceb59f331d4932c56fcc30c44bab732fb8428599aa882baa9566"
+      "sha256": "4b1318023eb0b1f3d69966daf3cb899867f941d984daf3f33e222fb39df88ca8"
     },
     {
       "bytes": 477258,
@@ -3625,8 +3625,8 @@
       "sha256": "347a35be3794ef927789a3d036e99ccb45bcb1b52c49272a8647b1924b5c8db8"
     }
   ],
-  "logical_bytes": 40914779,
-  "maximum_lifetime_bytes": 104878080,
+  "logical_bytes": 40916374,
+  "maximum_lifetime_bytes": 104882176,
   "other_live_allocated_bytes": 61870080,
   "predecessor_view_sha256": "e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8",
   "schema": "oxid-published-parser-control-fixture-v1"

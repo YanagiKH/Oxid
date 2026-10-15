@@ -1,4 +1,4 @@
-"""Expose the exact current outer-source controls to ordinary script discovery."""
+"""Expose retained lexer controls through the authenticated formatter predecessor."""
 import importlib.util
 from pathlib import Path
 import sys
@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 def load_tests(loader, tests, pattern):
     spec = importlib.util.spec_from_file_location('lexer_reservation_current_source_controls', ROOT / 'test_current_source.py')
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return loader.loadTestsFromModule(module)
 

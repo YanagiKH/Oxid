@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source-only outer admission controls; compiler execution is never evidence here."""
+"""Retained lexer-stage controls on the authenticated formatter predecessor view."""
 import sys
 sys.dont_write_bytecode = True
 import copy
@@ -23,6 +23,38 @@ from seal import SEAL
 ROOT = Path(__file__).resolve().parents[3]
 PACKAGE = ROOT / 'tests/fixtures/typed_project_source_binding'
 EXPECTED_TRANSITION_PATHS = ('src/frontend/format.rs', 'src/frontend/lexer.rs', 'src/frontend/lexical_provider.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/oir/owned/enum_formatter_allocation_tests.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/reviewer_allocator.rs', 'src/frontend/oir/owned/source/array_pipeline.rs', 'src/frontend/oir/owned/source/array_pipeline_tests.rs', 'src/frontend/oir/owned/source/reviewer_source.rs', 'src/frontend/project.rs', 'src/frontend/project/budget.rs', 'src/frontend/project/budget_real_null_observer.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/project/tests.rs')
+
+
+def setUpModule():
+    """Run retained lexer controls only on the authenticated published inverse.
+
+    The checkout now belongs to the formatter successor. Its public dispatcher
+    authenticates that stage before the old controls receive a closed M view.
+    No source body or historical predicate is replaced to fit current bytes.
+    """
+    global ROOT, PACKAGE, _predecessor_scope, _live_root, _live_package
+    _live_root, _live_package = ROOT, PACKAGE
+    spec = importlib.util.spec_from_file_location('lexer_controls_published_dispatcher', PACKAGE / 'run.py')
+    facade = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(facade)
+    modules = facade._modules
+    # Pure transition admission also supports the existing optimized negative
+    # controls; execution-bearing production preflight still refuses -O.
+    _, package_bytes = modules['published_current']._current_package(ROOT, PACKAGE, facade._SOURCE_SEAL)
+    _, _, api = modules['current'].capture_retained(PACKAGE)
+    admitted = modules['published_transition'].admit(ROOT, package_bytes, facade._SOURCE_SEAL, api)
+    _predecessor_scope = modules['published_view'].predecessor_view(
+        ROOT, admitted=admitted, seal=facade._SOURCE_SEAL['predecessor_view'])
+    ROOT = _predecessor_scope.__enter__()
+    PACKAGE = ROOT / 'tests/fixtures/typed_project_source_binding'
+
+
+def tearDownModule():
+    global ROOT, PACKAGE
+    try:
+        _predecessor_scope.__exit__(None, None, None)
+    finally:
+        ROOT, PACKAGE = _live_root, _live_package
 
 
 class CurrentSource(unittest.TestCase):

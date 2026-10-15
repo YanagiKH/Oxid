@@ -69,7 +69,7 @@ def _read_regular(root, name, limit=MAX_FILE_BYTES):
     fd = os.open(target, flags)
     try:
         opened = os.fstat(fd)
-        need(_stat_identity(opened) == _stat_identity(before),
+        need(_opened_identity_matches(before, opened),
              "predecessor source changed before read")
         chunks, count = [], 0
         while True:
@@ -93,6 +93,20 @@ def _read_regular(root, name, limit=MAX_FILE_BYTES):
 def _stat_identity(value):
     return (value.st_dev, value.st_ino, value.st_mode, value.st_nlink, value.st_size,
             value.st_mtime_ns, value.st_ctime_ns)
+
+
+def _opened_identity_matches(before, opened):
+    # CPython 3.12+ on Windows gives lstat's ctime the legacy creation-time
+    # meaning, while fstat can report metadata change time (CPython #157671).
+    # Compare explicit birth times only across these APIs. Never normalize the
+    # fstat/fstat or lstat/lstat checks: they must still detect ctime changes.
+    # Older runtimes without birthtime retain the strict original comparison.
+    left, right = _stat_identity(before), _stat_identity(opened)
+    if (os.name == "nt" and hasattr(before, "st_birthtime_ns")
+            and hasattr(opened, "st_birthtime_ns")):
+        return (left[:-1] == right[:-1]
+                and before.st_birthtime_ns == opened.st_birthtime_ns)
+    return left == right
 
 
 def _directories(names):

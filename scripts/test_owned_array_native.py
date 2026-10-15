@@ -809,6 +809,22 @@ class PackageTests(unittest.TestCase):
         admission.write_json(binding_root / "current-source.json", {"files": [], "reviewed_source_head": "3" * 40, "source_only_tree": "4" * 40})
         admission.write_json(binding_root / "authority.json", {"repository_inputs": []})
         admission.write_json(binding_root / "package-manifest.json", {"synthetic": True})
+        # Keep the production fixed-view descriptor and dependency closure real.
+        # Bodies are inert synthetic members: these tests authenticate receipt
+        # transport, never claim a compiler/predecessor qualification run.
+        source_repo = Path(admission.__file__).resolve().parents[1]
+        view_name = 'tests/qualification/published_formatter_current/predecessor-view-v1.json'
+        view_raw = (source_repo / view_name).read_bytes()
+        view_path = repo / view_name
+        view_path.parent.mkdir(parents=True, exist_ok=True)
+        view_path.write_bytes(view_raw)
+        for row in json.loads(view_raw)['files']:
+            name = row['read_from']
+            if name is not None:
+                path = repo / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    path.write_text('synthetic predecessor dependency, not executed\n')
         environment = {"PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"], "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
         for arguments in (["init", "-q"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Synthetic fixture"]):
             subprocess.run(["/usr/bin/git", "-C", str(repo), *arguments], env=environment, check=True, capture_output=True)

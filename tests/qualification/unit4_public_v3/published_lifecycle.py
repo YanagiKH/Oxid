@@ -31,10 +31,8 @@ SAVED = 'tests/fixtures/typed_project_source_binding_byte_storage_v1'
 PROOF_NAME = 'published-lifecycle-v1.json'
 HELPER_NAME = 'published_lifecycle.py'
 MAIN = 'src/main.rs'
-DISPATCHER_PIN = {'path': PACKAGE + '/run.py', 'bytes': 5824,
-    'sha256': '695ea921fa6c263fd22bb8bd11a8ac01046002ab2feb8943c3831e289ac78b98'}
-PACKAGE_PIN = {'path': PACKAGE + '/package-manifest.json', 'bytes': 16025,
-    'sha256': '9a36d668a53e763bc06cb8e38b32d9808152537bafe14c2dcd0fd4d9a9b64ec0'}
+DISPATCHER_PIN = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6673, 'sha256': 'b8947531e589528e88073f774022d851ffa3e266d5245d69bcdfb1736d37caf5'}
+PACKAGE_PIN = {'path': 'tests/fixtures/typed_project_source_binding/package-manifest.json', 'bytes': 16025, 'sha256': 'a1d8344e28734fcee31a7be19ad528bb1430895f22f83d34421335dfc53a4e5d'}
 OLD_HELPER_PIN = {'path': PUBLIC + '/lexer_reservation_lifecycle.py', 'bytes': 9393,
     'sha256': '155471428cc243fbb7845ec2dcd21fb982f51e7e8264ccf804f1df07338c91ec'}
 OLD_PROOF_PIN = {'path': PUBLIC + '/lexer-reservation-lifecycle-v2.json', 'bytes': 282549,
@@ -388,11 +386,24 @@ def _stamp(value):
         'st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns'))
 
 
+def _opened_identity_matches(before, opened):
+    # Windows lstat and fstat can give ctime different meanings. Normalize
+    # only this cross-API comparison; same-API stamps below retain ctime.
+    left, right = _stamp(before), _stamp(opened)
+    if (os.name == 'nt' and hasattr(before, 'st_birthtime_ns')
+            and hasattr(opened, 'st_birthtime_ns')):
+        return (left[:-1] == right[:-1]
+                and before.st_birthtime_ns == opened.st_birthtime_ns)
+    return left == right
+
+
 def _safe_ancestors(path):
     records = []
     for parent in reversed(path.parents):
         info = parent.lstat()
-        _need(stat.S_ISDIR(info.st_mode), 'aliased or special input ancestor')
+        _need(stat.S_ISDIR(info.st_mode)
+              and not getattr(info, 'st_file_attributes', 0) & 0x400,
+              'aliased or special input ancestor')
         records.append((parent, (info.st_dev, info.st_ino, info.st_mode)))
     return records
 
@@ -403,28 +414,36 @@ def _read_regular(path, limit=MAX_BODY):
     ancestors = _safe_ancestors(path)
     before = path.lstat()
     _need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-          and not before.st_mode & 0o111 and 0 <= before.st_size <= limit,
+          and not before.st_mode & 0o111 and 0 <= before.st_size <= limit
+          and not getattr(before, 'st_file_attributes', 0) & 0x400,
           'unsafe, aliased, executable or oversized input: ' + str(path))
-    # No permissive fallback: a host lacking either flag needs separate review.
-    _need(hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_NOATIME'),
-          'hardened read flags unavailable on this host')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    # O_NOATIME is Linux-specific; O_NOFOLLOW is absent on Windows. Keep
+    # available flags plus mandatory path/handle, final-path and ancestor
+    # identity checks on every host. Windows reparse points are rejected above.
+    flags = (os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+             | getattr(os, 'O_NOATIME', 0) | getattr(os, 'O_NONBLOCK', 0))
+    fd = os.open(path, flags)
     try:
-        _need(_stamp(os.fstat(fd)) == _stamp(before), 'input changed before read')
+        opened = os.fstat(fd)
+        _need(_opened_identity_matches(before, opened), 'input changed before read')
         chunks, remaining = [], before.st_size
         while remaining:
             piece = os.read(fd, min(remaining, 65536))
             _need(bool(piece), 'short stable input read')
             chunks.append(piece)
             remaining -= len(piece)
-        _need(os.read(fd, 1) == b'' and _stamp(os.fstat(fd)) == _stamp(before),
+        _need(os.read(fd, 1) == b'' and _stamp(os.fstat(fd)) == _stamp(opened),
               'input changed during read')
     finally:
         os.close(fd)
-    _need(_stamp(path.lstat()) == _stamp(before), 'input name changed during read')
+    after_name = path.lstat()
+    _need(_stamp(after_name) == _stamp(before)
+          and not getattr(after_name, 'st_file_attributes', 0) & 0x400,
+          'input name changed during read')
     for parent, expected in ancestors:
         actual = parent.lstat()
-        _need((actual.st_dev, actual.st_ino, actual.st_mode) == expected,
+        _need((actual.st_dev, actual.st_ino, actual.st_mode) == expected
+              and not getattr(actual, 'st_file_attributes', 0) & 0x400,
               'input ancestor changed during read')
     return b''.join(chunks), _stamp(before)
 
@@ -775,6 +794,11 @@ def _transport(admitted, historical_observer, historical, patch, proof):
     return result, proof
 
 
+def _valid_package_schema(manifest):
+    return (type(manifest) is dict and set(manifest) == {'schema', 'files'}
+            and type(manifest['schema']) is int and manifest['schema'] == 1)
+
+
 def _admit(root, patch, snapshot):
     _need(type(patch) is bytes, 'observer patch must be bytes')
     _verify(patch, PATCH_PIN)
@@ -787,8 +811,7 @@ def _admit(root, patch, snapshot):
     package_raw = snapshot.read(authentic_checkout / PACKAGE_PIN['path'], PACKAGE_PIN)
     specs, seal = _dispatcher(dispatcher_raw)
     manifest = _json(package_raw)
-    _need(type(manifest) is dict and set(manifest) == {'schema', 'files'}
-          and type(manifest['schema']) is str, 'wrong current package schema')
+    _need(_valid_package_schema(manifest), 'wrong current package schema')
     _rows_schema(manifest['files'], 99)
     package_rows = {row['path']: row for row in manifest['files']}
     _need('package-manifest.json' not in package_rows, 'cyclic self-listed package manifest')

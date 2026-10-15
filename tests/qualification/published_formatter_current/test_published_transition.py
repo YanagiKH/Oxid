@@ -24,11 +24,7 @@ import unittest
 from unittest import mock
 
 
-HELPER_PINS = {
-    "published_transition.py": "069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45",
-    "published_current.py": "11f96d500198406d29e1a1e0880ade13dd8e2afd799315a08d5febcf5e889393",
-    "published_view.py": "2009903d72ea6e55fbfb10aaa00848397ec45281b5c47b2b9cd1677a6697609f",
-}
+HELPER_PINS = {'published_transition.py': '069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45', 'published_current.py': '11f96d500198406d29e1a1e0880ade13dd8e2afd799315a08d5febcf5e889393', 'published_view.py': '629ca03dd3633df969f6ca50c6d3d675ce5f5acd70caa00a372ae6a9cb2a5aca'}
 
 UNIT_CONTROLS = (
     "test_source_positive_prefix_stops_before_source_read",

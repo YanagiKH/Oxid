@@ -10,10 +10,23 @@ import types as _types
 _sys.dont_write_bytecode = True
 _PACKAGE = _Path(__file__).absolute().parent
 _REPOSITORY = _PACKAGE.parents[2]
-_HELPER_SPECS = [["adapters",{"path":"tests/qualification/lexer_reservation_current/adapters.py","bytes":10711,"sha256":"0520fbf2c651f9b22897a19937c54749b0153ee234bae424dc4132d48e198e2a"}],["source_transition",{"path":"tests/qualification/lexer_reservation_current/source_transition.py","bytes":12008,"sha256":"e642061c863ac1b836eeaeea72c8fdc1152097be4dc285ee2d071ea3372da9a0"}],["seal",{"path":"tests/qualification/lexer_reservation_current/seal.py","bytes":783,"sha256":"fa8c298cc5cc65dee984034190ab2e1fe945812e7a873004e14b3d3e242cf878"}],["current",{"path":"tests/qualification/lexer_reservation_current/current.py","bytes":16325,"sha256":"f15abe15b48cf6a5b7a196ec77c45d8c34c8e0fca6d98dfbf2bb35fcabbcf850"}],["published_transition",{"path":"tests/qualification/published_formatter_current/published_transition.py","bytes":12447,"sha256":"069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45"}],["published_view",{"path":"tests/qualification/published_formatter_current/published_view.py","bytes":11861,"sha256":"2009903d72ea6e55fbfb10aaa00848397ec45281b5c47b2b9cd1677a6697609f"}],["published_current",{"path":"tests/qualification/published_formatter_current/published_current.py","bytes":32290,"sha256":"11f96d500198406d29e1a1e0880ade13dd8e2afd799315a08d5febcf5e889393"}]]
+_HELPER_SPECS = [['adapters', {'path': 'tests/qualification/lexer_reservation_current/adapters.py', 'bytes': 10711, 'sha256': '0520fbf2c651f9b22897a19937c54749b0153ee234bae424dc4132d48e198e2a'}], ['source_transition', {'path': 'tests/qualification/lexer_reservation_current/source_transition.py', 'bytes': 12008, 'sha256': 'e642061c863ac1b836eeaeea72c8fdc1152097be4dc285ee2d071ea3372da9a0'}], ['seal', {'path': 'tests/qualification/lexer_reservation_current/seal.py', 'bytes': 783, 'sha256': 'fa8c298cc5cc65dee984034190ab2e1fe945812e7a873004e14b3d3e242cf878'}], ['current', {'path': 'tests/qualification/lexer_reservation_current/current.py', 'bytes': 16325, 'sha256': 'f15abe15b48cf6a5b7a196ec77c45d8c34c8e0fca6d98dfbf2bb35fcabbcf850'}], ['published_transition', {'path': 'tests/qualification/published_formatter_current/published_transition.py', 'bytes': 12447, 'sha256': '069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45'}], ['published_view', {'path': 'tests/qualification/published_formatter_current/published_view.py', 'bytes': 12607, 'sha256': '629ca03dd3633df969f6ca50c6d3d675ce5f5acd70caa00a372ae6a9cb2a5aca'}], ['published_current', {'path': 'tests/qualification/published_formatter_current/published_current.py', 'bytes': 32290, 'sha256': '11f96d500198406d29e1a1e0880ade13dd8e2afd799315a08d5febcf5e889393'}]]
 _SOURCE_SEAL = {"schema":"oxid-published-main-source-seal-v1","source_manifest":{"path":"published-formatter-source-v1.json","bytes":74567,"sha256":"d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"},"authority":{"path":"published-formatter-authority-v1.json","bytes":265133,"sha256":"dac2e66cf02e2d6d5c14531b30de8cda88696676747509419a8478e6ed871c43"},"patch":{"path":"published-formatter-transition-v1.patch","bytes":1522,"sha256":"c6163a923cf56bde945d753628bc6f2c7c4ad717affd35e8bafe7a0c195bccd6"},"source_proof":{"path":"published-main-source-proof-v1.json","bytes":219557,"sha256":"854ab1a1f5ad1075b836d7ea7387e7692b0adae59cd709921e6a8eae17770819"},"predecessor_view":{"path":"tests/qualification/published_formatter_current/predecessor-view-v1.json","bytes":241022,"sha256":"e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8"}}
 _RETAINED_PATH = 'tests/fixtures/typed_project_source_binding_byte_storage_v1/run.py'
 _RETAINED_PIN = {'bytes': 216279, 'sha256': '584e8ee937cb2d3ef62d59d3eb69a79bfb6afce23df86de3df305f81afae7c76'}
+
+
+def _opened_identity_matches(before, opened, fields):
+    # CPython on Windows can use creation time for lstat's ctime but change
+    # time for fstat's ctime. Only this cross-API comparison uses birthtime;
+    # same-API checks below retain the complete original metadata stamp.
+    left = tuple(getattr(before, name) for name in fields)
+    right = tuple(getattr(opened, name) for name in fields)
+    if (_os.name == 'nt' and hasattr(before, 'st_birthtime_ns')
+            and hasattr(opened, 'st_birthtime_ns')):
+        return (left[:-1] == right[:-1]
+                and before.st_birthtime_ns == opened.st_birthtime_ns)
+    return left == right
 
 
 def _read_regular(path):
@@ -30,8 +43,10 @@ def _read_regular(path):
     fd = _os.open(path, _os.O_RDONLY | getattr(_os, 'O_NOFOLLOW', 0)
                   | getattr(_os, 'O_NOATIME', 0) | getattr(_os, 'O_NONBLOCK', 0))
     try:
-        if tuple(getattr(_os.fstat(fd), name) for name in fields) != stamp:
+        opened = _os.fstat(fd)
+        if not _opened_identity_matches(before, opened, fields):
             raise ValueError('published dependency changed before read')
+        opened_stamp = tuple(getattr(opened, name) for name in fields)
         chunks, remaining = [], before.st_size
         while remaining:
             piece = _os.read(fd, min(remaining, 65536))
@@ -41,11 +56,13 @@ def _read_regular(path):
             remaining -= len(piece)
         if _os.read(fd, 1) != b'':
             raise ValueError('published dependency grew')
-        if tuple(getattr(_os.fstat(fd), name) for name in fields) != stamp:
+        after = _os.fstat(fd)
+        if tuple(getattr(after, name) for name in fields) != opened_stamp:
             raise ValueError('published dependency changed during read')
     finally:
         _os.close(fd)
-    if tuple(getattr(path.lstat(), name) for name in fields) != stamp:
+    after_name = path.lstat()
+    if tuple(getattr(after_name, name) for name in fields) != stamp:
         raise ValueError('published dependency name changed during read')
     return b''.join(chunks)
 
