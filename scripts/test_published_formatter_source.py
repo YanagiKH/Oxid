@@ -6,7 +6,7 @@ import stat
 import sys
 import types
 sys.dont_write_bytecode = True
-BODY = {'path': 'tests/qualification/package_json_current_v1/hosted_controls.py', 'bytes': 184125, 'sha256': 'dccff90fcda49952687d9a46538ea1204070959411956e50da566f03c1557d28'}
+BODY = {'path': 'tests/qualification/package_json_current_v1/hosted_controls.py', 'bytes': 184125, 'sha256': '50b9dbe7ea427964607fcb6450bb9033989e45e6a81f490c4b3099934ad05486'}
 
 
 def load_tests(loader, tests, pattern):

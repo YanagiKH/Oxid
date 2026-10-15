@@ -9,7 +9,7 @@ public='tests/qualification/unit4_public_v3/'
 # All mutable accepted facades are saved before finalizing the view seal.
 paths=set(d.SIMPLE)|{d.SUPPORT,d.BINDINGS,public+'authority.py',public+'build.py',public+'test_lexer_reservation.py',
  'scripts/test_lexer_current_ci.py','tests/qualification/unit4_ci/common.py','tests/qualification/unit4_ci/test_integration.py',
- 'tests/qualification/unit4_ci/inputs.json'}
+ 'tests/qualification/unit4_ci/inputs.json', 'rfcs/0029-package-sha256-integrity.md'}
 for name in sorted(paths):
  target=root/'predecessor-v1'/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(subprocess.check_output(['git','show',g.MAIN['head']+':'+name],cwd=repo))
 subprocess.run([sys.executable,str(pathlib.Path(__file__).with_name('activate_parser.py'))],check=True)

@@ -94,7 +94,7 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/qualification/unit2_u8_current',
             'scripts/predecessors/lexer_reservation_source_v1',
             'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1040, 17))
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1047, 17))
         self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
         self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
         self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
@@ -681,7 +681,7 @@ class ObserverPreparationControls(unittest.TestCase):
         self.assertEqual(len(original_names), 22)
         self.assertFalse(original_names & additions)
         self.assertEqual(run.PACKAGE_FILES, original_names | additions)
-        self.assertEqual(len(expected), 35)
+        self.assertEqual(len(expected), 37)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for members in (list((REPO / q.PUBLIC).iterdir())[:-1],
                         [*list((REPO / q.PUBLIC).iterdir()), SimpleNamespace(name='unapproved.py')]):
@@ -1655,8 +1655,12 @@ class ComparisonSealControls(unittest.TestCase):
     """Serial-only reuse of one synthetic seal seed in a class-private root.
 
     The seed is test data only.  Each case and each rebuilding subTest receives an independent
-    deep copy, and still runs its own authority, phase_context and verify_parser_seal admission.
-    Cases share one fixed root sequentially; this is not a guarantee for concurrent execution.
+    deep copy, and still runs its own complete verify_parser_seal admission, which loads its own
+    adapter, authority and phase helper.  A single test may obtain the phase wire serializer once
+    and reuse it only to serialize that test's own mutated fixtures; it is never cached on the
+    class or globally and never stands in for verification, so every mutation is still
+    independently verified.  Cases share one fixed root sequentially; this is not a guarantee for
+    concurrent execution.
     """
     @classmethod
     def setUpClass(cls):
@@ -2224,16 +2228,108 @@ class ComparisonSealControls(unittest.TestCase):
             verify_parser_seal(self.seal, self.resolve)
 
     def test_phase_rehashed_wrong_association_rejects(self):
+        # Serializer reuse within this test only; keep ONLY the function, not the context tuple.
+        adapter, authority, _, _ = self.phase_context()
+        canonical_bytes = adapter.phase_module(authority).canonical_bytes
+        del adapter, authority
+
+        path = 'lexer-phase/collection-debug.json'
+        absolute = str(self.root / 'parser' / path)
+        original = self.data[absolute]
+        envelope = q.loads(original)
+        # Byte-identity: hoisted wire matches stock fixture and a fresh phase_context path
+        # (key order, ASCII JSON escapes, trailing LF); NaN and non-ASCII are rejected.
+        self.assertEqual(canonical_bytes(envelope), original)
+        self.assertTrue(original.endswith(b'\n') and original.count(b'\n') == 1)
+        original.decode('ascii')
+        self.assertEqual(canonical_bytes({'a': 'x"y\\z'}), b'{"a":"x\\"y\\\\z"}\n')
+        reordered = dict(reversed(list(envelope.items())))
+        self.assertNotEqual(canonical_bytes(reordered), original)
+        adapter, authority, _, _ = self.phase_context()
+        via_wire = adapter.phase_module(authority).canonical_bytes(envelope)
+        del adapter, authority
+        self.assertEqual(via_wire, original)
+        with self.assertRaisesRegex(ValueError, 'noncanonical JSON value'):
+            canonical_bytes({'bad': float('nan')})
+        with self.assertRaisesRegex(ValueError, 'noncanonical JSON value'):
+            canonical_bytes({'a': 'é'})
+
+        # Authority re-verification control for this generation: package_json authority()
+        # loads authority.json through generation.regular (os.open/os.read/os.close), so a
+        # Path.read_bytes surrogate cannot observe it. Locally wrap only those three calls;
+        # flip exactly one byte on the first non-empty chunk of a tracked target fd so
+        # identity/length/race checks still run and the sealed digest gate rejects.
+        # Seal/data stay unchanged; disk pins are never rewritten.
+        with self.subTest(control='authority'):
+            self.seal, self.data = self.fresh()
+            target = (REPO / q.PARSER / 'authority.json').resolve()
+            original_open, original_read, original_close = os.open, os.read, os.close
+            tracked, hits = {}, []
+
+            def open_wrap(path, flags, *args, **kwargs):
+                fd = original_open(path, flags, *args, **kwargs)
+                try:
+                    if Path(path).resolve() == target:
+                        tracked[fd] = False
+                except (OSError, ValueError):
+                    pass
+                return fd
+
+            def read_wrap(fd, n):
+                chunk = original_read(fd, n)
+                if fd in tracked and chunk and not tracked[fd]:
+                    mutated = bytearray(chunk)
+                    mutated[0] ^= 0x01
+                    tracked[fd] = True
+                    hits.append(fd)
+                    return bytes(mutated)
+                return chunk
+
+            def close_wrap(fd):
+                tracked.pop(fd, None)
+                return original_close(fd)
+
+            with patch.object(os, 'open', open_wrap), \
+                    patch.object(os, 'read', read_wrap), \
+                    patch.object(os, 'close', close_wrap):
+                with self.assertRaisesRegex(ValueError, r'sealed parser authority'):
+                    verify_parser_seal(self.seal, self.resolve)
+            self.assertTrue(hits)
+            self.assertEqual(canonical_bytes(envelope), original)
+
+        # Phase-helper still authenticates via Path.read_bytes / verify_map on this tree.
+        with self.subTest(control='phase-helper'):
+            self.seal, self.data = self.fresh()
+            target = (REPO / q.PARSER / 'lexer_phase.py').resolve()
+            original_read_bytes = Path.read_bytes
+            raw = original_read_bytes(target)
+            reads = []
+
+            def read_bytes(path):
+                resolved = Path(path).resolve()
+                if resolved == target:
+                    reads.append(resolved)
+                    return raw + b'\n'
+                return original_read_bytes(path)
+
+            with patch.object(Path, 'read_bytes', read_bytes):
+                with self.assertRaisesRegex(
+                        q.Reject,
+                        r'parser lexical phase evidence: file bytes differ: '
+                        r'tests/qualification/unit4_parser_current/lexer_phase\.py'):
+                    verify_parser_seal(self.seal, self.resolve)
+            self.assertTrue(reads)
+            self.assertEqual(canonical_bytes(envelope), original)
+
         for field, value in (('case_id', 'different'), ('nonce', 'f' * 32), ('role', 'not_observed'),
                              ('process_index', 1), ('binary_sha256', '0' * 64), ('source_sha256', '0' * 64),
                              ('raw_sha256', '0' * 64), ('stdout_sha256', '0' * 64),
                              ('stderr_sha256', '0' * 64), ('process_receipt_sha256', '0' * 64)):
             with self.subTest(field=field):
                 self.seal, self.data = self.fresh()
-                path = 'lexer-phase/collection-debug.json'
                 envelope = q.loads(self.data[str(self.root / 'parser' / path)])
                 envelope['records'][0][field] = value
-                self.replace_phase_fixture_member(path, envelope, wire=True)
+                self.replace_phase_fixture_member(path, canonical_bytes(envelope))
                 with self.assertRaisesRegex(q.Reject, 'parser lexical phase evidence'):
                     verify_parser_seal(self.seal, self.resolve)
 

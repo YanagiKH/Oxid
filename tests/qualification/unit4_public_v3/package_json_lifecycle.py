@@ -17,7 +17,7 @@ REPOSITORY = HERE.parents[2]
 _ADMISSION = threading.Lock()
 _POISONED = False
 # Fixed by the pure consumer derivation after the dispatcher is finalized.
-DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': 'e997650320db003028ec60205ea991df002dd5299c7e947baa95632ff11cf3b3'}
+DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': 'a2fbd5c06b82ad5d3ffc74d15a49ecf58efe2a24a6e98cacf328e5ecd45fc184'}
 
 
 def sha(raw):
@@ -74,7 +74,7 @@ def make_proof(old, current, dispatcher, seal):
 def admit(root, patch):
     global _POISONED
     need(type(patch) is bytes and len(patch) == 7337 and sha(patch) ==
-         "826468198bfd2575d0d01713bb803f19f31b732d482dbf336b7e37567f890824", "fixed observer patch")
+         "826468198bfd2575d0d01713bb803f19f31b732d482dbf336b7e37567f890824", "changed pinned body: observer-lexer-reservation-v2.patch")
     need(not _POISONED and _ADMISSION.acquire(blocking=False), 'overlapping or poisoned lifecycle admission')
     source = None
     try:

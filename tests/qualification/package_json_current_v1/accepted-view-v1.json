@@ -2493,7 +2493,7 @@
       "git_blob": "7c13c92dde92954d65369a096770c8e2242dfe47",
       "mode": "100644",
       "path": "rfcs/0029-package-sha256-integrity.md",
-      "read_from": "rfcs/0029-package-sha256-integrity.md",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/rfcs/0029-package-sha256-integrity.md",
       "sha256": "e9b9c3fbc985f716348c991f77c3ab431ed2c515857825d0772eb3c82ba183af"
     },
     {
@@ -3389,7 +3389,7 @@
       "git_blob": "4dc35eb03ebfd698f347259e10154a1136c3d22d",
       "mode": "100644",
       "path": "scripts/test_lexer_reservation_adapters_current.py",
-      "read_from": "scripts/test_lexer_reservation_adapters_current.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_lexer_reservation_adapters_current.py",
       "sha256": "b69022f03f0228a3512a365d6521a39e54e8958e9f8df68245608a880a86ab35"
     },
     {
@@ -3413,7 +3413,7 @@
       "git_blob": "ad274b05a7145e86b8a541fff757515674c64fa9",
       "mode": "100644",
       "path": "scripts/test_owned_array_native.py",
-      "read_from": "scripts/test_owned_array_native.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_owned_array_native.py",
       "sha256": "8e2917490150fc60ca45e0cb8fdf5d84a1623ae6aa71898c636b5b63cf2fa86a"
     },
     {
@@ -19749,7 +19749,7 @@
       "git_blob": "7b643e5f6c05957d13e307e1b8e0f613674d444e",
       "mode": "100644",
       "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
-      "read_from": "tests/qualification/lexer_reservation_current/test_current_source.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/lexer_reservation_current/test_current_source.py",
       "sha256": "0c09d4776284d614a1b4423010358b9464b4c2e07b729ea685739b36a0d1085a"
     },
     {
@@ -21085,7 +21085,7 @@
       "git_blob": "c571553b96ce4c98848ddf9b700cf866c2bc0039",
       "mode": "100644",
       "path": "tests/qualification/unit4_parser_current/test_current.py",
-      "read_from": "tests/qualification/unit4_parser_current/test_current.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_parser_current/test_current.py",
       "sha256": "8e2d468d7238455220e7be8a831dc01fa707d22d2e31492597e339232712584e"
     },
     {
@@ -21101,7 +21101,7 @@
       "git_blob": "29d8b70ee7fda35cc1c9dfb7b3cc8c4a0090cd07",
       "mode": "100644",
       "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
-      "read_from": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_parser_current/test_lexer_reservation.py",
       "sha256": "be3fd67d05da22cda57745e29b9416b3c1fdb7eb3dc2480a4dd0cdd155fa9c4d"
     },
     {
@@ -21373,7 +21373,7 @@
       "git_blob": "031c688c9b04d3f093eb1dac848929ff0d62b1c9",
       "mode": "100644",
       "path": "tests/qualification/unit4_public_v3/run.py",
-      "read_from": "tests/qualification/unit4_public_v3/run.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_public_v3/run.py",
       "sha256": "c05785e7ccb061122d78bcdd1a3565ab15b371f315049a23972518e4c6d986fb"
     },
     {

@@ -30,6 +30,30 @@
     },
     {
       "after": {
+        "bytes": 1736,
+        "path": "scripts/test_lexer_reservation_adapters_current.py",
+        "sha256": "aa06030158d030e1c996f677363f9e29a95d6cfd048ae9967d6248366fc49a98"
+      },
+      "before": {
+        "bytes": 1703,
+        "path": "scripts/test_lexer_reservation_adapters_current.py",
+        "sha256": "b69022f03f0228a3512a365d6521a39e54e8958e9f8df68245608a880a86ab35"
+      }
+    },
+    {
+      "after": {
+        "bytes": 149396,
+        "path": "scripts/test_owned_array_native.py",
+        "sha256": "8084114db22898b6003a9cb1c286e42ee449f8bd8cdf7a5bfbd17c97d37ad073"
+      },
+      "before": {
+        "bytes": 147064,
+        "path": "scripts/test_owned_array_native.py",
+        "sha256": "8e2917490150fc60ca45e0cb8fdf5d84a1623ae6aa71898c636b5b63cf2fa86a"
+      }
+    },
+    {
+      "after": {
         "bytes": 37410,
         "path": "scripts/verify_bounded_byte_storage.py",
         "sha256": "3fc7ed6d9264e5446485b52a74106216fe236235b517190835a6b70e5bbb1f5d"
@@ -80,12 +104,24 @@
       "after": {
         "bytes": 153138,
         "path": "scripts/verify_owned_array_native.py",
-        "sha256": "c51d01c89b8454e4798ba4ffaff12cd68446d4d486c273ac3d10dcdf90e8ed63"
+        "sha256": "80802cd3bc720d6222ac23042884fc78b699636366a67923a1d218503aedee79"
       },
       "before": {
         "bytes": 152509,
         "path": "scripts/verify_owned_array_native.py",
         "sha256": "9eb335e6e02674eddd1630e759d52eed35ac396fd42c8bf1484358d7597b179f"
+      }
+    },
+    {
+      "after": {
+        "bytes": 3493,
+        "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
+        "sha256": "f3bb9f9edee1cbe803e803cebd4baf1fe33969dae7e20ffa290bb7e5316ec987"
+      },
+      "before": {
+        "bytes": 26772,
+        "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
+        "sha256": "0c09d4776284d614a1b4423010358b9464b4c2e07b729ea685739b36a0d1085a"
       }
     },
     {
@@ -104,7 +140,7 @@
       "after": {
         "bytes": 13746,
         "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
-        "sha256": "cf56d628c8cb2ac45ea7afd2dcb6dd4e31d44a64668032afd53454c5e6f3f490"
+        "sha256": "d2e2f779241fc01d5712df9f14c3cd77a3f72094b023273fa9ce6f73769bac32"
       },
       "before": {
         "bytes": 13805,
@@ -122,6 +158,42 @@
         "bytes": 9180,
         "path": "tests/qualification/unit2_u8_current/test_current.py",
         "sha256": "2766f0fb1cf336b34f3d166f4370e26e572b49ddfdea19cc2e9265af394d822d"
+      }
+    },
+    {
+      "after": {
+        "bytes": 3482,
+        "path": "tests/qualification/unit4_parser_current/test_current.py",
+        "sha256": "c92d744e5a999029c5e4f89329286f857c96aed3d361d73a6fb135ff61ecbbd8"
+      },
+      "before": {
+        "bytes": 225583,
+        "path": "tests/qualification/unit4_parser_current/test_current.py",
+        "sha256": "8e2d468d7238455220e7be8a831dc01fa707d22d2e31492597e339232712584e"
+      }
+    },
+    {
+      "after": {
+        "bytes": 3491,
+        "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
+        "sha256": "2c596250432117a52a62c347418669f4cd89c020645ddd742d2e0b412bf6091c"
+      },
+      "before": {
+        "bytes": 25503,
+        "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
+        "sha256": "be3fd67d05da22cda57745e29b9416b3c1fdb7eb3dc2480a4dd0cdd155fa9c4d"
+      }
+    },
+    {
+      "after": {
+        "bytes": 31071,
+        "path": "tests/qualification/unit4_public_v3/run.py",
+        "sha256": "4c677809d53cdae8aa7b31086f0e5e1fcc63bdf0c356c9fa27cbc2b3d2d7a3c9"
+      },
+      "before": {
+        "bytes": 31003,
+        "path": "tests/qualification/unit4_public_v3/run.py",
+        "sha256": "c05785e7ccb061122d78bcdd1a3565ab15b371f315049a23972518e4c6d986fb"
       }
     }
   ],

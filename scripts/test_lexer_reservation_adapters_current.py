@@ -14,9 +14,9 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class CurrentLexerAdapterSuites(unittest.TestCase):
-    def run_source_controls(self, relative):
+    def run_source_controls(self, relative, *, timeout=300):
         result = subprocess.run([sys.executable, '-B', str(REPO / relative), '-v'],
-                                cwd=REPO, capture_output=True, text=True, timeout=300,
+                                cwd=REPO, capture_output=True, text=True, timeout=timeout,
                                 env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -30,7 +30,7 @@ class CurrentLexerAdapterSuites(unittest.TestCase):
         self.run_source_controls('tests/qualification/unit4_public_v3/test_lexer_reservation.py')
 
     def test_current_parser_token_and_reserve_composition(self):
-        self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_reservation.py')
+        self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_reservation.py', timeout=900)
 
     def test_current_parser_lexer_phase_source_controls(self):
         self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_phase.py')

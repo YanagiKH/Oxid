@@ -47,5 +47,6 @@ s=s.replace("['tests/qualification/published_formatter_current'])", "['tests/qua
 s=s.replace("'tests/qualification/published_formatter_current'])", "'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])")
 s=s.replace('(980, 16)',repr((len(value['files']),len(value['closed_roots']))))
 s=s.replace("'published_lifecycle.py'}", "'published_lifecycle.py', 'package_json_lifecycle.py', 'package-json-lifecycle-v1.json'}")
+s=d.exact(s, 'self.assertEqual(len(expected), 35)', 'self.assertEqual(len(expected), 37)', 1)
 (repo/p).write_text(s)
 print('CI input roster',len(value['files']),'closed roots',len(value['closed_roots']))

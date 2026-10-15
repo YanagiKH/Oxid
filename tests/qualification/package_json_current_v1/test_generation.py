@@ -3,6 +3,7 @@ import copy
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import stat
+import subprocess
 import sys
 import tempfile
 import types
@@ -16,6 +17,69 @@ sys.path.insert(0, str(HERE))
 import generation as g
 import parser as transport
 import predecessor
+import derive_consumers as consumers
+
+
+class AdapterTimeoutControls(unittest.TestCase):
+    CASES = {
+        'test_original_preparation_and_exact_transformations':
+            ('tests/qualification/lexer_reservation_current/test_preparation.py', 300),
+        'test_current_unit1_runner_and_correspondence':
+            ('tests/qualification/lexer_reservation_current/test_unit1_current.py', 300),
+        'test_current_public_lifecycle_composition':
+            ('tests/qualification/unit4_public_v3/test_lexer_reservation.py', 300),
+        'test_current_parser_token_and_reserve_composition':
+            ('tests/qualification/unit4_parser_current/test_lexer_reservation.py', 900),
+        'test_current_parser_lexer_phase_source_controls':
+            ('tests/qualification/unit4_parser_current/test_lexer_phase.py', 300),
+    }
+
+    def setUp(self):
+        self.module = types.ModuleType('timeout_dispatch_controls')
+        path = REPO / consumers.ADAPTER_TEST
+        self.module.__file__ = str(path)
+        exec(compile(path.read_bytes(), str(path), 'exec'), self.module.__dict__)
+        self.case = self.module.CurrentLexerAdapterSuites(
+            'test_current_parser_token_and_reserve_composition')
+
+    def test_exact_five_dispatches_preserve_argv_and_only_one_extended_timeout(self):
+        cls = self.module.CurrentLexerAdapterSuites
+        self.assertEqual(set(unittest.defaultTestLoader.getTestCaseNames(cls)), set(self.CASES))
+        for name, (relative, timeout) in self.CASES.items():
+            with self.subTest(method=name), patch.object(self.module.subprocess, 'run',
+                    return_value=types.SimpleNamespace(returncode=0, stdout='', stderr='')) as run:
+                getattr(cls(name), name)()
+                run.assert_called_once()
+                args, kwargs = run.call_args
+                self.assertEqual(args, ([sys.executable, '-B', str(REPO / relative), '-v'],))
+                self.assertEqual(kwargs, {'cwd': REPO, 'capture_output': True, 'text': True,
+                    'timeout': timeout, 'env': {**self.module.os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}})
+
+    def test_nonzero_exit_keeps_both_streams_and_fails(self):
+        with patch.object(self.module.subprocess, 'run', return_value=types.SimpleNamespace(
+                returncode=7, stdout='retained stdout', stderr='retained stderr')) as run:
+            with self.assertRaisesRegex(AssertionError, 'retained stdoutretained stderr'):
+                self.case.test_current_parser_token_and_reserve_composition()
+            self.assertEqual(run.call_args.kwargs['timeout'], 900)
+
+    def test_timeout_exception_and_partial_streams_propagate_unchanged(self):
+        failure = subprocess.TimeoutExpired(['parser-control'], 900,
+            output='partial stdout', stderr='partial stderr')
+        with patch.object(self.module.subprocess, 'run', side_effect=failure) as run:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                self.case.test_current_parser_token_and_reserve_composition()
+            self.assertIs(caught.exception, failure)
+            self.assertEqual((failure.output, failure.stderr), ('partial stdout', 'partial stderr'))
+            self.assertEqual(run.call_args.kwargs['timeout'], 900)
+
+    def test_finite_derivation_matches_live_and_rejects_anchor_drift(self):
+        old = (HERE / 'predecessor-v1' / consumers.ADAPTER_TEST).read_bytes()
+        self.assertEqual(consumers.adapter_timeout_test(old), (REPO / consumers.ADAPTER_TEST).read_bytes())
+        for before in (b'def run_source_controls(self, relative):', b'text=True, timeout=300,',
+                b"self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_reservation.py')"):
+            for changed in (old.replace(before, b'changed anchor'), old + before):
+                with self.subTest(anchor=before, duplicate=changed.endswith(before)), self.assertRaises(ValueError):
+                    consumers.adapter_timeout_test(changed)
 
 
 class AcceptedViewControls(unittest.TestCase):

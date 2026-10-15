@@ -52,8 +52,8 @@ recomputed byte-for-byte by the source controls.
 
 - `python -B scripts/test_package_json_source.py -v`: 14 new source/parser
   controls, 3 accepted-view controls, 3 real runtime controls,
-  37 unchanged v1 unit/refusal controls, and 5 hosted-bridge
-  mechanical/refusal controls (62 total).
+  37 unchanged v1 unit/refusal controls, 4 bounded-dispatch controls,
+  and 5 hosted-bridge mechanical/refusal controls (66 total).
   Unit2 uses prepare-only and executes zero compilers.
 - `python -B -m unittest discover -s tests/qualification/unit4_public_v3 -p test_lexer_reservation.py -v`
 - Unit4 `LexerInputClosureControls` and `scripts/test_lexer_current_ci.py`.
