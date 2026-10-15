@@ -32,6 +32,96 @@ ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar", ".7z")
 # newline handling turns "\n" into os.linesep ("\r\n" on Windows).
 PLATFORM_NEWLINE = os.linesep
 
+# Runs package_release.main() in a child interpreter after installing one
+# injected fault. Faults raise OSError from inside the standard library calls
+# the script makes; nothing fills a disk or changes permissions.
+FAULT_HARNESS = r"""
+import errno, importlib.util, os, pathlib, sys, tarfile, zipfile
+
+script, fault, *argv = sys.argv[1:]
+dist = pathlib.Path.cwd().resolve() / "dist"
+asset_name = argv[1]
+
+
+def in_dist(path):
+    try:
+        pathlib.Path(path).resolve().relative_to(dist)
+    except ValueError:
+        return False
+    return True
+
+
+def fail_on_call(owner, attribute, call_number):
+    original = getattr(owner, attribute)
+    calls = [0]
+
+    def wrapper(*args, **kwargs):
+        calls[0] += 1
+        if calls[0] == call_number:
+            raise OSError(errno.ENOSPC, "injected: no space left on device")
+        return original(*args, **kwargs)
+
+    setattr(owner, attribute, wrapper)
+
+
+if fault in ("compress", "compress-first"):
+    # Fail while adding a member: the third one, after the archive already
+    # holds data, or the first one.
+    nth = 3 if fault == "compress" else 1
+    fail_on_call(zipfile.ZipFile, "write", nth)
+    fail_on_call(tarfile.TarFile, "add", nth)
+elif fault == "digest-read":
+    original_read_bytes = pathlib.Path.read_bytes
+
+    def read_bytes(self):
+        if in_dist(self):
+            raise OSError(errno.EIO, "injected: archive read failed")
+        return original_read_bytes(self)
+
+    pathlib.Path.read_bytes = read_bytes
+elif fault == "checksum-write":
+    original_write_text = pathlib.Path.write_text
+
+    def write_text(self, data, *args, **kwargs):
+        if self.name.endswith(".sha256"):
+            with open(self, "w", encoding="utf-8") as handle:
+                handle.write(data[: len(data) // 2])
+            raise OSError(errno.ENOSPC, "injected: checksum write failed")
+        return original_write_text(self, data, *args, **kwargs)
+
+    pathlib.Path.write_text = write_text
+elif fault.startswith("publish-"):
+    # publish-<archive|checksum>[-always]: fail os.replace onto that final
+    # path, either once or on every attempt (which also breaks rollback).
+    kind = fault.split("-")[1]
+    always = fault.endswith("-always")
+    target = dist / (asset_name if kind == "archive" else asset_name + ".sha256")
+    original_replace = os.replace
+    failed = [False]
+
+    def replace(src, dst, *args, **kwargs):
+        if pathlib.Path(dst).resolve() == target and (always or not failed[0]):
+            failed[0] = True
+            raise OSError(errno.EIO, "injected: publish failed")
+        return original_replace(src, dst, *args, **kwargs)
+
+    os.replace = replace
+else:
+    raise SystemExit(f"unknown fault: {fault}")
+
+spec = importlib.util.spec_from_file_location("package_release_under_test", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sys.argv = [script, *argv]
+raise SystemExit(module.main())
+"""
+
+FORMATS = (
+    ("oxid-build", "oxid-linux-x86_64.tar.gz"),
+    ("oxid-build.exe", "oxid-windows-x86_64.zip"),
+)
+PREPARE_FAULTS = ("compress", "compress-first", "digest-read", "checksum-write")
+
 
 def expected_checksum_bytes(digest, asset_name, newline=PLATFORM_NEWLINE):
     return f"{digest}  {asset_name}{newline}".encode("utf-8")
@@ -221,6 +311,170 @@ class PackageReleaseTests(unittest.TestCase):
             with self.subTest(argc=len(args)):
                 result = self.run_script(*args)
                 self.assert_failure(result, "usage: package_release.py <binary> <asset-name>")
+
+    def run_with_fault(self, fault, *args):
+        temp_root = self.base / "tmp"
+        temp_root.mkdir(exist_ok=True)
+        env = dict(os.environ, TMPDIR=str(temp_root), TEMP=str(temp_root), TMP=str(temp_root))
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", FAULT_HARNESS, str(SCRIPT), fault, *map(str, args)],
+            cwd=self.root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(sorted(temp_root.iterdir()), [], "failed run left temp files")
+        return result
+
+    def dist_snapshot(self):
+        dist = self.root / "dist"
+        return {
+            path.relative_to(dist).as_posix(): path.read_bytes() if path.is_file() else None
+            for path in sorted(dist.rglob("*"))
+        }
+
+    def publish_previous_release(self, binary_name, asset_name):
+        binary = self.fake_binary(binary_name)
+        result = self.run_script(binary, asset_name)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        snapshot = self.dist_snapshot()
+        self.assertEqual(sorted(snapshot), sorted([asset_name, f"{asset_name}.sha256"]))
+        # The next build produces different bytes, so an overwrite would show.
+        binary.write_bytes(BINARY_BYTES + b"-next-build")
+        return binary, snapshot
+
+    def assert_fault_failure(self, result, *diagnostic_parts):
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("packaged", result.stdout)
+        self.assertNotIn("packaged", result.stderr)
+        for part in diagnostic_parts:
+            self.assertIn(part, result.stderr)
+
+    def test_prepare_failure_leaves_no_new_release_files(self):
+        for fault in PREPARE_FAULTS:
+            for binary_name, asset_name in FORMATS:
+                with self.subTest(fault=fault, asset=asset_name):
+                    self.make_workspace()
+                    binary = self.fake_binary(binary_name)
+                    result = self.run_with_fault(fault, binary, asset_name)
+                    self.assert_fault_failure(result, "injected")
+                    self.assert_no_release_pair()
+
+    def test_prepare_failure_keeps_existing_release_bytes(self):
+        for fault in PREPARE_FAULTS:
+            for binary_name, asset_name in FORMATS:
+                with self.subTest(fault=fault, asset=asset_name):
+                    self.make_workspace()
+                    binary, before = self.publish_previous_release(binary_name, asset_name)
+                    result = self.run_with_fault(fault, binary, asset_name)
+                    self.assert_fault_failure(result, "injected")
+                    self.assertEqual(self.dist_snapshot(), before)
+
+    def test_publish_failure_is_reported_and_rolled_back(self):
+        for kind in ("archive", "checksum"):
+            for binary_name, asset_name in FORMATS:
+                with self.subTest(fail=kind, asset=asset_name, previous=False):
+                    self.make_workspace()
+                    binary = self.fake_binary(binary_name)
+                    result = self.run_with_fault(f"publish-{kind}", binary, asset_name)
+                    self.assert_fault_failure(result, "failed to publish", "injected")
+                    self.assert_no_release_pair()
+                with self.subTest(fail=kind, asset=asset_name, previous=True):
+                    self.make_workspace()
+                    binary, before = self.publish_previous_release(binary_name, asset_name)
+                    result = self.run_with_fault(f"publish-{kind}", binary, asset_name)
+                    self.assert_fault_failure(result, "failed to publish", "injected")
+                    self.assertEqual(self.dist_snapshot(), before)
+
+    def test_publish_rollback_failure_keeps_backup_and_says_where(self):
+        binary_name, asset_name = FORMATS[0]
+        binary, before = self.publish_previous_release(binary_name, asset_name)
+        result = self.run_with_fault("publish-checksum-always", binary, asset_name)
+        self.assert_fault_failure(result, "failed to publish", "rollback failed", "injected")
+        dist = self.root / "dist"
+        # The archive was restored; the old checksum could not be put back and
+        # must survive in the named work directory instead of being deleted.
+        self.assertEqual((dist / asset_name).read_bytes(), before[asset_name])
+        self.assertFalse((dist / f"{asset_name}.sha256").exists())
+        kept = [
+            path for path in dist.rglob("*")
+            if path.is_file() and path.read_bytes() == before[f"{asset_name}.sha256"]
+        ]
+        self.assertEqual(len(kept), 1, sorted(self.dist_snapshot()))
+        self.assertIn(str(kept[0].parent.name), result.stderr)
+
+    def test_success_leaves_no_work_directory(self):
+        for binary_name, asset_name in FORMATS:
+            with self.subTest(asset=asset_name):
+                self.make_workspace()
+                self.publish_previous_release(binary_name, asset_name)
+                binary = self.bin_dir / binary_name
+                result = self.run_script(binary, asset_name)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                after = self.dist_snapshot()
+                self.assertEqual(sorted(after), sorted([asset_name, f"{asset_name}.sha256"]))
+                digest = hashlib.sha256(after[asset_name]).hexdigest()
+                self.assertEqual(
+                    after[f"{asset_name}.sha256"], expected_checksum_bytes(digest, asset_name)
+                )
+
+    def test_rejects_existing_directory_output_target(self):
+        # Non-empty directory at archive or checksum must be refused, not moved
+        # into the temp work dir (where success would rmtree its contents).
+        for which in ("archive", "checksum"):
+            with self.subTest(target=which):
+                self.make_workspace()
+                binary = self.fake_binary("oxid-build")
+                asset_name = "oxid-linux-x86_64.tar.gz"
+                dist = self.root / "dist"
+                dist.mkdir()
+                target = dist / (asset_name if which == "archive" else f"{asset_name}.sha256")
+                target.mkdir()
+                marker = target / "keep-me.txt"
+                marker.write_bytes(b"preserve-directory-contents")
+                result = self.run_script(binary, asset_name)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn("packaged", result.stdout)
+                self.assertNotIn("packaged", result.stderr)
+                self.assertIn("non-regular-file output target", result.stderr)
+                self.assertIn(target.relative_to(self.root).as_posix(), result.stderr)
+                self.assertTrue(target.is_dir() and not target.is_symlink())
+                self.assertEqual(marker.read_bytes(), b"preserve-directory-contents")
+                # No publish work directory should remain after the early reject.
+                work_dirs = [
+                    path for path in dist.iterdir()
+                    if path.is_dir() and path.name != target.name
+                ]
+                self.assertEqual(work_dirs, [])
+
+    def test_rejects_dangling_symlink_output_target(self):
+        # Dangling symlink is invisible to Path.exists(); publish must not skip
+        # backup then claim restore after a later failure. Reject up front.
+        for which in ("archive", "checksum"):
+            with self.subTest(target=which):
+                self.make_workspace()
+                binary = self.fake_binary("oxid-build")
+                asset_name = "oxid-linux-x86_64.tar.gz"
+                dist = self.root / "dist"
+                dist.mkdir()
+                target = dist / (asset_name if which == "archive" else f"{asset_name}.sha256")
+                target.symlink_to("does-not-exist-anywhere")
+                result = self.run_script(binary, asset_name)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn("packaged", result.stdout)
+                self.assertNotIn("packaged", result.stderr)
+                self.assertIn("non-regular-file output target", result.stderr)
+                self.assertIn(target.relative_to(self.root).as_posix(), result.stderr)
+                # Must not claim the previous object was restored after a publish fault.
+                self.assertNotIn("put back", result.stderr)
+                self.assertNotIn("rollback", result.stderr)
+                self.assertTrue(target.is_symlink())
+                self.assertEqual(os.readlink(target), "does-not-exist-anywhere")
+                work_dirs = [path for path in dist.iterdir() if path.is_dir()]
+                self.assertEqual(work_dirs, [])
+
 
 
 if __name__ == "__main__":
