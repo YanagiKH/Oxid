@@ -1901,9 +1901,9 @@
       "sha256": "60cf624a39a0cd4d351cfff6fa84f4c00fc960f5ce90c84127732009f0bc0004"
     },
     {
-      "bytes": 132262,
+      "bytes": 133034,
       "path": "src/main.rs",
-      "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+      "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
     },
     {
       "bytes": 40814,
@@ -2791,7 +2791,7 @@
       "sha256": "58d655fb6d135981e352df3bcd7a1907ea99fd2cbad7beb37141274654f4f917"
     }
   ],
-  "current_candidate_source_manifest_sha256": "b1c24186f6c329b1a875b18148fd1b2eb236fbc3e2321206de973962ec8ae2f7",
+  "current_candidate_source_manifest_sha256": "32b8a6bcd1c4c4357938c6a01cd7715eaa8fece9ab8c508f7791073b66a88027",
   "current_control_derived_files": [
     {
       "bytes": 55,
@@ -2889,9 +2889,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 95354,
+      "bytes": 97327,
       "path": "candidate-source-manifest.json",
-      "sha256": "b1c24186f6c329b1a875b18148fd1b2eb236fbc3e2321206de973962ec8ae2f7"
+      "sha256": "32b8a6bcd1c4c4357938c6a01cd7715eaa8fece9ab8c508f7791073b66a88027"
     },
     {
       "bytes": 1583,
@@ -4614,9 +4614,9 @@
       "sha256": "60cf624a39a0cd4d351cfff6fa84f4c00fc960f5ce90c84127732009f0bc0004"
     },
     {
-      "bytes": 132262,
+      "bytes": 133034,
       "path": "src/main.rs",
-      "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+      "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
     },
     {
       "bytes": 40814,
@@ -7598,9 +7598,9 @@
       "sha256": "dccc386117e49482bc82619429c4fe7dbbf91d011a323d822fbf8ef44848eda9"
     },
     {
-      "bytes": 95354,
+      "bytes": 97327,
       "path": "candidate-source-manifest.json",
-      "sha256": "b1c24186f6c329b1a875b18148fd1b2eb236fbc3e2321206de973962ec8ae2f7"
+      "sha256": "32b8a6bcd1c4c4357938c6a01cd7715eaa8fece9ab8c508f7791073b66a88027"
     },
     {
       "bytes": 1583,
@@ -9323,9 +9323,9 @@
       "sha256": "60cf624a39a0cd4d351cfff6fa84f4c00fc960f5ce90c84127732009f0bc0004"
     },
     {
-      "bytes": 132262,
+      "bytes": 133034,
       "path": "src/main.rs",
-      "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+      "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
     },
     {
       "bytes": 40814,
@@ -10214,9 +10214,9 @@
     }
   ],
   "current_source_manifest": {
-    "bytes": 74328,
+    "bytes": 74567,
     "path": "tests/fixtures/typed_project_source_binding/current-source.json",
-    "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+    "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
   },
   "division_source_manifest": {
     "bytes": 35161,
@@ -10682,8 +10682,65 @@
     "path": "tests/fixtures/typed_project_source_binding/projected-transition.patch",
     "sha256": "55d60b92bc3cb828a4cb1ddb610ef74bc10afa65e95a7668476048b1fb2ecf73"
   },
-  "reviewed_source_head": "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489",
-  "schema": "oxid-unit4-current-parser-authority-v1",
+  "published_main_parser": {
+    "predecessor_authority_sha256": "d8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c",
+    "source_provenance": {
+      "current_source_manifest": {
+        "bytes": 74567,
+        "path": "tests/fixtures/typed_project_source_binding/current-source.json",
+        "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
+      },
+      "execution_qualified": false,
+      "main_delta": [
+        {
+          "after": {
+            "bytes": 133034,
+            "path": "src/main.rs",
+            "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
+          },
+          "before": {
+            "bytes": 132262,
+            "path": "src/main.rs",
+            "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+          },
+          "path": "src/main.rs"
+        }
+      ],
+      "predecessor_source_manifest": {
+        "bytes": 74328,
+        "path": "tests/fixtures/typed_project_source_binding/current-source.json",
+        "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+      },
+      "published_main": {
+        "head": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+        "tree": "f66d5ae31272268c29f520ec523ee1fa31c15ee9"
+      },
+      "retained_historical_source": {
+        "head": "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489",
+        "tree": "7f5c9aa08c569c4d0b5a27391d8fc68337075d36"
+      },
+      "source_checkpoint": {
+        "head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
+        "parent": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+        "tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c"
+      },
+      "source_only": true,
+      "source_proof": {
+        "bytes": 219557,
+        "path": "tests/fixtures/typed_project_source_binding/published-main-source-proof-v1.json",
+        "sha256": "854ab1a1f5ad1075b836d7ea7387e7692b0adae59cd709921e6a8eae17770819"
+      },
+      "source_transition_authority": {
+        "bytes": 265133,
+        "path": "tests/fixtures/typed_project_source_binding/published-formatter-authority-v1.json",
+        "sha256": "dac2e66cf02e2d6d5c14531b30de8cda88696676747509419a8478e6ed871c43"
+      }
+    },
+    "stage": "phase",
+    "version": "oxid-unit4-published-main-parser-layer-v1"
+  },
+  "reviewed_source_head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
+  "schema": "oxid-unit4-published-main-parser-authority-v1",
   "slices_source_manifest": {
     "bytes": 35876,
     "path": "tests/fixtures/typed_project_source_binding/slices-source.json",
@@ -10695,9 +10752,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 2360,
+    "bytes": 5824,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "164d1e6213e140aca02f8f4a29c716f8af6c4af26e166e18fc0777251c0c2e1e"
+    "sha256": "695ea921fa6c263fd22bb8bd11a8ac01046002ab2feb8943c3831e289ac78b98"
   },
   "source_delta": [
     {
@@ -13410,9 +13467,9 @@
     },
     {
       "after": {
-        "bytes": 132262,
+        "bytes": 133034,
         "path": "src/main.rs",
-        "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+        "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
       },
       "before": {
         "bytes": 125030,
@@ -14110,7 +14167,7 @@
       "path": "tests/typed_record_composition.rs"
     }
   ],
-  "source_only_tree": "7f5c9aa08c569c4d0b5a27391d8fc68337075d36",
+  "source_only_tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c",
   "stdin_authority": {
     "bytes": 150228,
     "path": "tests/fixtures/typed_project_source_binding/stdin-authority.json",

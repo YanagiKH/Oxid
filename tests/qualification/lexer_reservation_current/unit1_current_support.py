@@ -16,13 +16,13 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[2]
 ORIGINAL_CHECKPOINT = 'c8e9a72afd9866f32b96f98ae24f61390039f421'
-CHECKPOINT = 'b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489'
-CURRENT_SOURCE_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
-CURRENT_SOURCE_BYTES = 74328
-DISPATCHER_SHA = '164d1e6213e140aca02f8f4a29c716f8af6c4af26e166e18fc0777251c0c2e1e'  # HOLD: bind independently admitted final bytes after A2.
-SOURCE_PACKAGE_SHA = '5fb5ee78a42609dab51f8e8bb23c325305954f49c52f0d18df6bbe47e57548bc'  # HOLD: bind independently admitted final bytes after A2.
+CHECKPOINT = 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d'
+CURRENT_SOURCE_SHA = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
+CURRENT_SOURCE_BYTES = 74567
+DISPATCHER_SHA = '695ea921fa6c263fd22bb8bd11a8ac01046002ab2feb8943c3831e289ac78b98'  # HOLD: bind independently admitted final bytes after A2.
+SOURCE_PACKAGE_SHA = '9a36d668a53e763bc06cb8e38b32d9808152537bafe14c2dcd0fd4d9a9b64ec0'  # HOLD: bind independently admitted final bytes after A2.
 ORIGINAL_MAP_SHA = 'd0ccbbd78ff138f15791b55aed88bb33eaf6b68c69022ccb6bf0096f9ae069c3'
-CURRENT_MAP_SHA = '9e467aaf5f19850845840c727e3fa95f59393ac88fc2efc46e74e3f6af8e1d32'  # HOLD: bind independently admitted final bytes after A2.
+CURRENT_MAP_SHA = '7235549a9184d356bf0a008f21c2494238b3266f6eb594b67b293c8fd6924eff'  # HOLD: bind independently admitted final bytes after A2.
 CONTROL = 'frontend::project::reviewer_unit1::current_lexer_storage_failure_full_span_and_eof'
 ORIGINAL_NAMES = (
     'README.md', 'check_resource_inventory.py', 'expectation-provenance.json',
@@ -156,6 +156,13 @@ def rust_string_literal(value):
     return namespace['rust_string_literal'](value)
 
 
+def verify_source_entrypoint(dispatcher_raw, manifest_raw) -> None:
+    """Authenticate genuine source entrypoint buffers before target execution."""
+    need(sha(dispatcher_raw) == DISPATCHER_SHA, 'Changed trusted current source dispatcher')
+    need(sha(manifest_raw) == SOURCE_PACKAGE_SHA,
+         'Changed trusted current source-binding package manifest')
+
+
 def admit(repo):
     """Use the approved active public dispatcher; never restore old executable inputs."""
     repo = Path(repo).resolve()
@@ -163,8 +170,8 @@ def admit(repo):
     package = REPO / 'tests/fixtures/typed_project_source_binding'
     dispatcher_raw = regular(package / 'run.py')
     need(sha(dispatcher_raw) == DISPATCHER_SHA, 'Changed trusted current source dispatcher')
-    need(sha(regular(package / 'package-manifest.json')) == SOURCE_PACKAGE_SHA,
-         'Changed trusted current source-binding package manifest')
+    manifest_raw = regular(package / 'package-manifest.json')
+    verify_source_entrypoint(dispatcher_raw, manifest_raw)
     dispatcher = load_module('_unit1_current_source_binding', package / 'run.py', dispatcher_raw)
     captured = dispatcher.preflight(repo, package=package)
     need('lexer_reservation_authority' in captured and 'lexer_reservation_touched' in captured,

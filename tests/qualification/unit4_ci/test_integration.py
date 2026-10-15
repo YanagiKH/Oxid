@@ -67,8 +67,20 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
         raw = (q.HERE / 'inputs.json').read_bytes()
         self.assertEqual(q.sha(raw), q.INPUTS_SHA)
-        self.assertEqual(raw, (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes())
+        self.assertEqual(raw, (q.HERE / 'inputs-published-formatter-v1.json').read_bytes())
         current = q.loads(raw)
+        predecessor_raw = (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes()
+        self.assertEqual((len(predecessor_raw), q.sha(predecessor_raw)),
+                         (119529, 'e65fbe5018b90bb9cbc3abe1941c391e3678b19d0b2bbe8f00b38e70b4099445'))
+        predecessor = q.loads(predecessor_raw)
+        self.assertEqual((len(predecessor['files']), len(predecessor['closed_roots'])), (556, 15))
+        self.assertEqual(current['published_formatter_predecessor_inputs'], {
+            'path': 'tests/qualification/unit4_ci/inputs-lexer-reservation-v1.json',
+            'bytes': 119529, 'sha256': 'e65fbe5018b90bb9cbc3abe1941c391e3678b19d0b2bbe8f00b38e70b4099445'})
+        self.assertTrue({row['path'] for row in predecessor['files']} <=
+                        {row['path'] for row in current['files']})
+        self.assertEqual(current['closed_roots'], predecessor['closed_roots'] +
+                         ['tests/qualification/published_formatter_current'])
         self.assertEqual(current['lexer_reservation_predecessor_inputs_sha256'], q.sha(old_raw))
         self.assertTrue({row['path'] for row in old['files']} <= {row['path'] for row in current['files']})
         self.assertEqual(current['closed_roots'], old['closed_roots'] + [
@@ -78,8 +90,13 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/fixtures/typed_project_unit1_independent',
             'tests/fixtures/typed_project_unit2_independent',
             'tests/qualification/unit2_u8_current',
-            'scripts/predecessors/lexer_reservation_source_v1'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (556, 15))
+            'scripts/predecessors/lexer_reservation_source_v1',
+            'tests/qualification/published_formatter_current'])
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (975, 16))
+        self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
+        self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
+        self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
+        self.assertTrue(set(('tests/qualification/published_formatter_current/published_transition.py', 'tests/qualification/published_formatter_current/published_current.py', 'tests/qualification/published_formatter_current/published_view.py', 'tests/qualification/published_formatter_current/published_ci_inventory.py', 'tests/qualification/published_formatter_current/test_published_transition.py', 'tests/qualification/published_formatter_current/test_published_view.py', 'tests/qualification/published_formatter_current/test_published_ci_inventory.py', 'tests/qualification/published_formatter_current/predecessor-view-v1.json', 'tests/qualification/published_formatter_current/published-direct-consumer-dispositions-v1.json', 'tests/qualification/published_formatter_current/source-proof/published-main-ci.yml', 'scripts/test_published_formatter_source.py', 'tests/qualification/lexer_reservation_current/unit1_current_support.py', 'tests/qualification/lexer_reservation_current/unit1_current_bindings.json')) <= {row['path'] for row in current['files']})
         self.assertEqual(current['lexer_reservation_source_v1_preservation'], {
             'path': 'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
             'bytes': 24543, 'sha256': '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'})
@@ -108,7 +125,17 @@ class LexerInputClosureControls(unittest.TestCase):
                      'tests/qualification/unit4_parser_current/lexer_phase_controls.py',
                      'tests/qualification/unit4_parser_current/test_lexer_phase.py',
                      'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
-                     'scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/common.py'):
+                     'scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/common.py',
+                     'tests/qualification/published_formatter_current/published_transition.py',
+                     'tests/qualification/published_formatter_current/published_current.py',
+                     'tests/qualification/published_formatter_current/published_view.py',
+                     'tests/qualification/published_formatter_current/published_ci_inventory.py',
+                     'tests/qualification/published_formatter_current/test_published_transition.py',
+                     'tests/qualification/published_formatter_current/test_published_view.py',
+                     'tests/qualification/published_formatter_current/test_published_ci_inventory.py',
+                     'tests/qualification/published_formatter_current/predecessor-view-v1.json',
+                     'tests/qualification/published_formatter_current/published-direct-consumer-dispositions-v1.json',
+                     'tests/qualification/published_formatter_current/source-proof/published-main-ci.yml'):
             changed = copy.deepcopy(manifest)
             self.assertEqual(sum(row['path'] == name for row in changed['files']), 1)
             changed['files'] = [row for row in changed['files'] if row['path'] != name]

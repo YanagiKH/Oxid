@@ -1,0 +1,93 @@
+{
+  "actual_commit_objects": {
+    "published_main": {
+      "body_sha256": "a1b378bbb6bd6c876b591b259b48d6b40ee34e3aee2f78a9963881fb73518b6b",
+      "bytes": 1228,
+      "exact_current_commit_object_verified": true,
+      "historical_missing_objects_recovered": false,
+      "object_sha1": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+      "type": "commit"
+    },
+    "source_checkpoint": {
+      "body_sha256": "8866b0b455366b307b5646a65d509143a1f1d135ab3a55a0da232c7631c853d6",
+      "bytes": 305,
+      "exact_current_commit_object_verified": true,
+      "historical_missing_objects_recovered": false,
+      "object_sha1": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
+      "type": "commit"
+    }
+  },
+  "compiler_members": 288,
+  "complete_forward_inverse_equal": true,
+  "complete_pr_changed_files": [
+    "spec/legacy-0.9.md",
+    "src/main.rs",
+    "tests/legacy_formatter.rs"
+  ],
+  "complete_tree_nodes": {
+    "published_main": 684,
+    "source_checkpoint": 684
+  },
+  "current_source_manifest": {
+    "bytes": 74567,
+    "path": "published-formatter-source-v1.json",
+    "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
+  },
+  "execution_qualified": false,
+  "filesystem_membership_checked_here": false,
+  "fixture_members": 78,
+  "historical_git_recovery_claimed": false,
+  "historical_measurement_reproduction_claimed": false,
+  "include_expressions": 136,
+  "predecessor_source_manifest": {
+    "bytes": 74328,
+    "path": "lexer-reservation-source-v2.json",
+    "sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261"
+  },
+  "producer": {
+    "bytes": 15944,
+    "path": "tests/qualification/published_formatter_current/generate_published_source_v1.py",
+    "sha256": "61468f6005360e32939764bf2f255cb3911bf864042a74935afaf2e0e561734f"
+  },
+  "published_main": {
+    "head": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+    "tree": "f66d5ae31272268c29f520ec523ee1fa31c15ee9"
+  },
+  "readbacks": {
+    "pr60-source-git-readback-v1.json": {
+      "bytes": 568665,
+      "path": "tests/qualification/published_formatter_current/source-proof/pr60-source-git-readback-v1.json",
+      "sha256": "dfea14e0092143c9d348a073c95b264f52ae0e67c1e08179fe8edae64c755da7"
+    },
+    "published-main-git-readback-v1.json": {
+      "bytes": 570203,
+      "path": "tests/qualification/published_formatter_current/source-proof/published-main-git-readback-v1.json",
+      "sha256": "8234cd0e4125740960258011d49d40a7068383aed3d72752777cdd66eadd0788"
+    }
+  },
+  "recipe": "python-difflib-exact-unified-three-context-v1",
+  "retained_historical_source": {
+    "head": "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489",
+    "tree": "7f5c9aa08c569c4d0b5a27391d8fc68337075d36"
+  },
+  "schema": "oxid-published-main-source-generation-v1",
+  "selected_bytes": {
+    "published_main": 7705716,
+    "source_checkpoint": 7706488
+  },
+  "selected_members": 376,
+  "selected_source_changes": [
+    "src/main.rs"
+  ],
+  "source_checkpoint": {
+    "head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
+    "parent": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+    "tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c"
+  },
+  "source_only": true,
+  "transition_patch": {
+    "bytes": 1522,
+    "path": "published-formatter-transition-v1.patch",
+    "sha256": "c6163a923cf56bde945d753628bc6f2c7c4ad717affd35e8bafe7a0c195bccd6"
+  }
+}
