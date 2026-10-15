@@ -1033,7 +1033,7 @@ def build_integration_suite(transition, current, view, *, fixture,
             capture = c.preflight(repo, package, seal)
             cases = [
                 ("u8_index_resource_authority", ("source_dependencies", 0, "bytes"),
-                 "changed retained accounting authority"),
+                 "changed genuine lexer or byte-storage accounting binding"),
                 ("byte_storage_source", ("files", 0, "bytes"),
                  "wrong retained accounting source identity"),
                 ("lexer_reservation_seal", ("source_manifest", "bytes"),

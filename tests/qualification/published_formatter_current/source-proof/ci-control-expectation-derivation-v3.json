@@ -1,0 +1,45 @@
+{
+  "changed_controls": [
+    {
+      "after": {
+        "bytes": 63498,
+        "path": "tests/qualification/published_formatter_current/test_published_transition.py",
+        "sha256": "028070d47034ec426366336f1252bd01b26a04dcab384cafacb7112bbe3f0609"
+      },
+      "before": {
+        "bytes": 63479,
+        "path": "tests/qualification/published_formatter_current/test_published_transition.py",
+        "sha256": "d35a274f32d13cf98d3b45228636612251913ed5d4d123d078db73ad5310f683"
+      }
+    },
+    {
+      "after": {
+        "bytes": 1703,
+        "path": "scripts/test_lexer_reservation_adapters_current.py",
+        "sha256": "b69022f03f0228a3512a365d6521a39e54e8958e9f8df68245608a880a86ab35"
+      },
+      "before": {
+        "bytes": 1703,
+        "path": "scripts/test_lexer_reservation_adapters_current.py",
+        "sha256": "03898b8f9635fbcf4a5519519a02b5001d52f023a0354f575c5b132b054dd995"
+      }
+    }
+  ],
+  "compiler_executions": 0,
+  "downstream": "Rebind current source-control input roster and current CI manifests; preserve closed-root policies and all previous input names.",
+  "exact_changes": [
+    "One u8 paired-capture case expects the existing earlier accounting-binding rejection, with anchored regex and the mutation unchanged.",
+    "The discovery subprocess outer timeout changes from 180 to 300 seconds; five suites, assertions, child commands, inner limits and semantic resources are unchanged."
+  ],
+  "execution_qualified": false,
+  "historical_derivations_modified": false,
+  "predecessor_git_head": "9d00850fadcc98102d5533bdc30f6df0841d239c",
+  "predecessor_inputs": {
+    "bytes": 199988,
+    "path": "tests/qualification/unit4_ci/inputs.json",
+    "sha256": "fcc91c1f8263c7b5a3e3ad54bb7d7f17084edf9c29167ec494f7e54abda8ebb6"
+  },
+  "schema": "oxid-current-ci-controls-successor-v3",
+  "source_only": true,
+  "tests_executed": 0
+}

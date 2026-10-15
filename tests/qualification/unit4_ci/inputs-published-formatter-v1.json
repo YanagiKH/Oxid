@@ -451,7 +451,7 @@
     {
       "bytes": 1703,
       "path": "scripts/test_lexer_reservation_adapters_current.py",
-      "sha256": "03898b8f9635fbcf4a5519519a02b5001d52f023a0354f575c5b132b054dd995"
+      "sha256": "b69022f03f0228a3512a365d6521a39e54e8958e9f8df68245608a880a86ab35"
     },
     {
       "bytes": 703,
@@ -469,9 +469,9 @@
       "sha256": "5e6d0c9d979371ad4f5f2c2460c5e8ebd1936f066d45c48e0ceb29e35ffb4499"
     },
     {
-      "bytes": 180109,
+      "bytes": 180318,
       "path": "scripts/test_published_formatter_source.py",
-      "sha256": "19fc4e252ea836c657aafb5efa97c0580d29dd09c6b52cb34163b8772081ffc2"
+      "sha256": "312e99afb23cddf1af59f3f101b98ef21223308a36dccbfd39dc52de79145d39"
     },
     {
       "bytes": 248055,
@@ -4464,6 +4464,11 @@
       "sha256": "11a381be0f642138663d46c928b48b434332cb8152cf5006dd452fd178076e9b"
     },
     {
+      "bytes": 1874,
+      "path": "tests/qualification/published_formatter_current/source-proof/ci-control-expectation-derivation-v3.json",
+      "sha256": "77a8e7e5634a921c8b3108e2039db3fa60718cb7e32c8850770026af64e03a4b"
+    },
+    {
       "bytes": 44084,
       "path": "tests/qualification/published_formatter_current/source-proof/current-consumer-derivation-v1.json",
       "sha256": "6dc010fdd6a007597077466661262f973adcb263649cbcb1a9653eada90073f7"
@@ -4529,9 +4534,9 @@
       "sha256": "e530fc638ebe4e60f1e4911431b9dfba36aba6db5ac8f24e5b21ab1ae63de370"
     },
     {
-      "bytes": 63479,
+      "bytes": 63498,
       "path": "tests/qualification/published_formatter_current/test_published_transition.py",
-      "sha256": "d35a274f32d13cf98d3b45228636612251913ed5d4d123d078db73ad5310f683"
+      "sha256": "028070d47034ec426366336f1252bd01b26a04dcab384cafacb7112bbe3f0609"
     },
     {
       "bytes": 11345,
