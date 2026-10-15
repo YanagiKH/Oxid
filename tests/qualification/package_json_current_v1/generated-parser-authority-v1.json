@@ -10810,7 +10810,7 @@
   "source_binding_runner": {
     "bytes": 6774,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "12239dfc904f4705bf431c6aa5036d8217fc53d74a3d28e7190e914aa6f9cdf6"
+    "sha256": "e997650320db003028ec60205ea991df002dd5299c7e947baa95632ff11cf3b3"
   },
   "source_delta": [
     {

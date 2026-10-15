@@ -25,6 +25,6 @@
   "successor": {
     "bytes": 184125,
     "path": "tests/qualification/package_json_current_v1/hosted_controls.py",
-    "sha256": "53721de7210c76e09e873bedf3f03ef2923e6e74f73a1e8441a3efc0bcbe5538"
+    "sha256": "dccff90fcda49952687d9a46538ea1204070959411956e50da566f03c1557d28"
   }
 }

@@ -903,6 +903,7 @@
     "tests/qualification/package_json_current_v1/predecessor-v1/tests/fixtures/typed_project_source_binding/run.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/lexer_reservation_current/unit1_current_bindings.json",
     "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/lexer_reservation_current/unit1_current_support.py",
+    "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit2_u8_current/test_current.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_ci/common.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_ci/inputs.json",
     "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_ci/test_integration.py",

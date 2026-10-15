@@ -80,7 +80,7 @@
       "after": {
         "bytes": 153138,
         "path": "scripts/verify_owned_array_native.py",
-        "sha256": "ca3c723cdf6aca617f077dc59245a36258e544c5aaed7d6551e4c0acf5e0be22"
+        "sha256": "c51d01c89b8454e4798ba4ffaff12cd68446d4d486c273ac3d10dcdf90e8ed63"
       },
       "before": {
         "bytes": 152509,
@@ -104,12 +104,24 @@
       "after": {
         "bytes": 13746,
         "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
-        "sha256": "2a516b46233ae1474f514540abcaf517110c7e091a77169cf7c11099f4691d5a"
+        "sha256": "cf56d628c8cb2ac45ea7afd2dcb6dd4e31d44a64668032afd53454c5e6f3f490"
       },
       "before": {
         "bytes": 13805,
         "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
         "sha256": "b30bd1b8a6f6f3650d0d55d750d7a78b93da3aa31a8cbc31ac3d4d5cded1eab5"
+      }
+    },
+    {
+      "after": {
+        "bytes": 10505,
+        "path": "tests/qualification/unit2_u8_current/test_current.py",
+        "sha256": "2986cd0277ad9756df7477b02f6fa3cd210071d4e1d60817e191b192603fb8bc"
+      },
+      "before": {
+        "bytes": 9180,
+        "path": "tests/qualification/unit2_u8_current/test_current.py",
+        "sha256": "2766f0fb1cf336b34f3d166f4370e26e572b49ddfdea19cc2e9265af394d822d"
       }
     }
   ],

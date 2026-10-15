@@ -1,5 +1,6 @@
 """Focused current-source and immutable v1 refusal controls; no compiler run."""
 import importlib.util
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -67,6 +68,28 @@ class RuntimeControls(unittest.TestCase):
             assembly_path.write_bytes(g.encoded(assembly))
             with self.assertRaisesRegex(ValueError,'wrong materialized current source: src/runtime/data.rs'):
                 self.runtime.verify_unit2_result(output,self.captured,seam,True)
+
+    def test_current_accounting_provenance_tamper_rejected_before_materialization(self):
+        key = 'package_json_unit2_accounting_source_binding'
+        previous = 'published_source_unit2_accounting_source_binding'
+        original = self.captured[key]
+        mutations = {'missing': None, 'historical-layer': self.captured[previous]}
+        for field in ('current_source', 'reviewed_source_head', 'source_only_tree',
+                      'predecessor_accounting_source_binding', 'package_json_provenance'):
+            changed = copy.deepcopy(original)
+            changed[field] = {} if isinstance(changed[field], dict) else '0' * 40
+            mutations[field] = changed
+        for label, changed in mutations.items():
+            captured = dict(self.captured)
+            if changed is None:
+                del captured[key]
+            else:
+                captured[key] = changed
+            with self.subTest(mutation=label), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                with self.assertRaisesRegex(ValueError, 'complete successor capture fields|new accounting binding changed'):
+                    self.runtime.prepare_unit2(output, captured)
+                self.assertEqual(list(output.iterdir()), [])
 
 
 def load_tests(loader, tests, pattern):

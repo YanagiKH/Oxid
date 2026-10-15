@@ -55,7 +55,7 @@ def capture(repo, restored, descriptor):
 
 
 def check(root, bodies):
-    expected_dirs = {str(p) for name in bodies for p in Path(name).parents if str(p) != '.'}
+    expected_dirs = {p.as_posix() for name in bodies for p in Path(name).parents if str(p) != '.'}
     found, dirs, pending = set(), set(), ['']
     root_info = root.lstat()
     g.need(stat.S_ISDIR(root_info.st_mode) and not root.is_symlink()

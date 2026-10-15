@@ -1,11 +1,13 @@
 """Focused source-only controls. No Rust build or execution qualification."""
 import copy
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import stat
 import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch, MagicMock
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).absolute().parent
@@ -13,6 +15,66 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(HERE))
 import generation as g
 import parser as transport
+import predecessor
+
+
+class AcceptedViewControls(unittest.TestCase):
+    def test_portable_exact_membership(self):
+        bodies = {'nested/deeper/file.txt': b'content'}
+        for flavor in (PurePosixPath, PureWindowsPath):
+            with self.subTest(flavor=flavor.__name__), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = root / 'nested/deeper/file.txt'
+                target.parent.mkdir(parents=True)
+                target.write_bytes(bodies['nested/deeper/file.txt'])
+                with patch.object(predecessor, 'Path', flavor):
+                    predecessor.check(root, bodies)
+                    for kind in ('file', 'directory', 'missing', 'changed'):
+                        extra = root / 'nested/unexpected'
+                        if kind == 'file': extra.write_bytes(b'extra')
+                        elif kind == 'directory': extra.mkdir()
+                        elif kind == 'missing': target.unlink()
+                        else: target.write_bytes(b'changed')
+                        with self.subTest(mutation=kind), self.assertRaises(ValueError):
+                            predecessor.check(root, bodies)
+                        if kind == 'file': extra.unlink()
+                        elif kind == 'directory': extra.rmdir()
+                        else: target.write_bytes(bodies['nested/deeper/file.txt'])
+                    predecessor.check(root, bodies)
+
+    def test_directory_and_file_symlinks_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = root / 'outside'
+            outside.mkdir()
+            (outside / 'file.txt').write_bytes(b'content')
+            view = root / 'view'
+            view.mkdir()
+            for directory_link in (False, True):
+                link = view / ('nested' if directory_link else 'file.txt')
+                target = outside if directory_link else outside / 'file.txt'
+                try:
+                    link.symlink_to(target, target_is_directory=directory_link)
+                except OSError as error:
+                    self.skipTest('symlink creation unavailable: ' + str(error))
+                bodies = {'nested/file.txt' if directory_link else 'file.txt': b'content'}
+                try:
+                    with self.assertRaises(ValueError): predecessor.check(view, bodies)
+                finally:
+                    link.unlink()
+
+    def test_windows_reparse_entry_rejected_without_following(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in (stat.S_IFDIR, stat.S_IFREG):
+                entry = MagicMock()
+                entry.name = 'nested'
+                entry.stat.return_value = types.SimpleNamespace(st_mode=mode, st_file_attributes=0x400)
+                entries = MagicMock()
+                entries.__enter__.return_value = iter([entry])
+                with patch.object(predecessor.os, 'scandir', return_value=entries):
+                    with self.assertRaisesRegex(ValueError, 'accepted view reparse point'):
+                        predecessor.check(Path(directory), {'nested/file.txt': b'content'})
+                entry.stat.assert_called_once_with(follow_symlinks=False)
 
 
 class SourceControls(unittest.TestCase):

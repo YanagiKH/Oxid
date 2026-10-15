@@ -976,7 +976,7 @@ class SourceControls(unittest.TestSuite):
 def load_tests(loader, tests, pattern):
     return SourceControls()
 
-_SUCCESSOR = {'dispatcher': {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': '12239dfc904f4705bf431c6aa5036d8217fc53d74a3d28e7190e914aa6f9cdf6'}, 'source_seal': {'predecessor_view': {'bytes': 1023315, 'path': 'tests/qualification/package_json_current_v1/accepted-view-v1.json', 'sha256': 'e1118fe1f35eb0700d2beec5bebc20f90d4bea4465d2eceeb0b9bffb48dfbeb6'}, 'source_manifest': {'bytes': 76328, 'path': 'package-json-source-v1.json', 'sha256': 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'}}}
+_SUCCESSOR = {'dispatcher': {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': 'e997650320db003028ec60205ea991df002dd5299c7e947baa95632ff11cf3b3'}, 'source_seal': {'predecessor_view': {'bytes': 1023374, 'path': 'tests/qualification/package_json_current_v1/accepted-view-v1.json', 'sha256': '9a7d944fa3dcaf4d4764d73f290571ccd8658166e2a19c9c7f6a65d07d73fc47'}, 'source_manifest': {'bytes': 76328, 'path': 'package-json-source-v1.json', 'sha256': 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'}}}
 
 # This configuration is independent of the retained v1 test-fixture roster.
 ACTUAL_REPOSITORY = Path(__file__).absolute().parents[3]

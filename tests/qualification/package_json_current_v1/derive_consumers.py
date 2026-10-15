@@ -9,8 +9,9 @@ NATIVE = ('scripts/verify_bounded_byte_storage.py', 'scripts/verify_bounded_enum
           'scripts/verify_bounded_stdin_native.py', 'scripts/verify_bounded_stdout_native.py')
 SUPPORT = 'tests/qualification/lexer_reservation_current/unit1_current_support.py'
 BINDINGS = 'tests/qualification/lexer_reservation_current/unit1_current_bindings.json'
+UNIT2_TEST = 'tests/qualification/unit2_u8_current/test_current.py'
 SIMPLE = (*NATIVE, 'scripts/test_bounded_enum_native.py', 'scripts/verify_owned_array_native.py',
-          '.github/workflows/ci.yml')
+          '.github/workflows/ci.yml', UNIT2_TEST)
 
 
 def exact(raw, before, after, count):
@@ -27,6 +28,46 @@ def assignment(raw, name, value):
     return ''.join(lines).encode()
 
 
+def unit2_test(raw):
+    """Retain the published-layer checks and add the distinct current layer."""
+    name = 'test_current_materialization_consumes_separately_named_successor'
+    methods = [node for node in ast.walk(ast.parse(raw))
+               if isinstance(node, ast.FunctionDef) and node.name == name]
+    g.need(len(methods) == 1, 'exact Unit2 materialization control')
+    node = methods[0]
+    original = b''.join(raw.splitlines(True)[node.lineno-1:node.end_lineno])
+    body = original.replace(b'transfer', b'published')
+    body = exact(body, b"        published = captured['published_source_unit2_accounting_source_binding']\n",
+                 b"        published = captured['published_source_unit2_accounting_source_binding']\n"
+                 b"        published_source = (PACKAGE / 'published-formatter-source-v1.json').read_bytes()\n", 1)
+    body = exact(body, b'self.current_source', b'published_source', 3)
+    body = exact(body,
+                 b'        # The lexer association remains historical; only the separately named\n'
+                 b'        # published published binds the current execution source.\n',
+                 b'        # Both lexer and published associations retain their historical sources.\n', 1)
+    anchor = b'        with tempfile.TemporaryDirectory() as root:\n'
+    checks = b'''        transfer = captured['package_json_unit2_accounting_source_binding']
+        self.assertEqual(transfer['version'], 'unit2-package-json-identical-accounting-source-v1')
+        self.assertEqual(transfer['predecessor_accounting_source_binding'], published)
+        self.assertEqual(published, captured['package_json_predecessor']['published_source_unit2_accounting_source_binding'])
+        self.assertNotEqual(transfer['current_source'], published['current_source'])
+        self.assertEqual(transfer['current_source'], binding.entry('current-source.json', self.current_source))
+        current = json.loads(self.current_source)
+        self.assertEqual(transfer['reviewed_source_head'], current['reviewed_source_head'])
+        self.assertEqual(transfer['source_only_tree'], current['source_only_tree'])
+        self.assertEqual(transfer['package_json_provenance'], current['package_json_source'])
+        for key in ('retained_accounting_source', 'retained_reviewed_source_head',
+                    'retained_source_only_tree', 'retained_authority', 'retained_helper',
+                    'derived_resource', 'source_dependencies'):
+            self.assertEqual(transfer[key], published[key])
+'''
+    body = exact(body, anchor, checks + anchor, 1)
+    anchor = b"            self.assertEqual(seam['published_source_unit2_accounting_source_binding'], published)\n"
+    body = exact(body, anchor, anchor +
+                 b"            self.assertEqual(seam['package_json_unit2_accounting_source_binding'], transfer)\n", 1)
+    return exact(raw, original, body, 1)
+
+
 def derive(originals, accepted_tree, source_raw, dispatcher_raw, package_raw, predecessor_view_raw):
     g.need(set(originals) == set(SIMPLE) | {SUPPORT, BINDINGS}, 'fixed consumer input roster')
     for name, raw in originals.items():
@@ -37,6 +78,9 @@ def derive(originals, accepted_tree, source_raw, dispatcher_raw, package_raw, pr
     result = {}
     for name in SIMPLE:
         body = originals[name]
+        if name == UNIT2_TEST:
+            result[name] = unit2_test(body)
+            continue
         if name == 'scripts/verify_owned_array_native.py':
             # This consumer obtains current identity through the sealed native
             # gate; its historical 227-member authority must remain unchanged.

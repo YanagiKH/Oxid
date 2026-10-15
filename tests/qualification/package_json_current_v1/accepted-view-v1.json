@@ -20773,7 +20773,7 @@
       "git_blob": "17ab59b23c7073fa09efa989d26988ba80c5f7be",
       "mode": "100644",
       "path": "tests/qualification/unit2_u8_current/test_current.py",
-      "read_from": "tests/qualification/unit2_u8_current/test_current.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit2_u8_current/test_current.py",
       "sha256": "2766f0fb1cf336b34f3d166f4370e26e572b49ddfdea19cc2e9265af394d822d"
     },
     {
