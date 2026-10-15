@@ -680,10 +680,17 @@ def source_members(repo, tracked):
                     and all(part not in ("", ".", "..") for part in dependency.split("/")),
                     "unsafe published-main predecessor dependency")
             names.add(dependency)
+    successor_view = "tests/qualification/package_json_current_v1/accepted-view-v1.json"
+    successor_raw, _ = stable_bytes(no_symlink_path(repo / successor_view))
+    require(len(successor_raw) == 1023315 and sha256(successor_raw) == 'e1118fe1f35eb0700d2beec5bebc20f90d4bea4465d2eceeb0b9bffb48dfbeb6', "changed fixed alias/Unicode predecessor view")
+    successor = strict_json(successor_raw)
+    require(len(successor["files"]) == 2724, "accepted view membership")
+    names.update(row["read_from"] for row in successor["files"] if row["read_from"] is not None)
     prefixes = ("src/", "native/", "compiler/", "stdlib/", "rfcs/", ".cargo/", BINDING + "/",
                 "tests/fixtures/fixed_array_unit2d_independent/",
                 "tests/qualification/lexer_reservation_current/",
                 "tests/qualification/published_formatter_current/",
+                "tests/qualification/package_json_current_v1/",
                 "tests/fixtures/typed_project_source_binding_byte_storage_v1/",
                 "tests/qualification/unit2_u8_current/",
                 "tests/fixtures/typed_project_unit2_independent/",

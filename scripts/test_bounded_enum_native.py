@@ -361,8 +361,8 @@ class BoundedEnumNativeControls(unittest.TestCase):
         predecessor = json.loads(predecessor_raw)
         self.assertEqual(manifest["lexer_reservation_predecessor_sha256"], byte.SOURCE_SHA)
         transition = json.loads(original.with_name("lexer-reservation-authority-v2.json").read_bytes())
-        self.assertEqual(manifest["reviewed_source_head"], "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d")
-        self.assertEqual(manifest["source_only_tree"], "89e90c3ec83d0712d0037a0407fc6571883c5e9c")
+        self.assertEqual(manifest["reviewed_source_head"], "858c70d862587b6a8b5d59a70afe4b8334b1f150")
+        self.assertEqual(manifest["source_only_tree"], "c44b7dfb2938dc510016ff4939104a2236ba2e9c")
         current_map = {row["path"]: row for row in manifest["files"]}
         predecessor_map = {row["path"]: row for row in predecessor["files"]}
         self.assertEqual(set(current_map), set(predecessor_map))
@@ -383,7 +383,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
         self.assertEqual(len(published_map), 376)
         self.assertEqual(set(current_map), set(published_map))
         self.assertEqual(sorted(name for name in current_map if current_map[name] != published_map[name]),
-                         ['src/main.rs'])
+                         ['src/main.rs', 'src/runtime/data.rs'])
         changed = sorted(name for name in published_map if published_map[name] != predecessor_map[name])
         self.assertEqual(changed, transition["transition_paths"])
         self.assertEqual(len(changed), 15)
@@ -424,7 +424,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
+        expected = 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

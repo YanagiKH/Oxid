@@ -24,7 +24,7 @@ spec = importlib.util.spec_from_file_location("bounded_stdin_controls", HELPERS 
 controls = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(controls)
 require = controls.require
-REVIEWED_SOURCE_SHA256 = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
+REVIEWED_SOURCE_SHA256 = 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'
 REVIEWED_SOURCE_MEMBERS = 376
 REVIEWED_COMPILER_BODIES = 291
 MANIFEST_PATH = "tests/fixtures/typed_project_source_binding/current-source.json"

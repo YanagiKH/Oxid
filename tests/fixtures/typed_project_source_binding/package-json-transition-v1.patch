@@ -1,0 +1,219 @@
+diff --git a/src/main.rs b/src/main.rs
+index 476fe16..05f1575 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1363,7 +1363,12 @@ fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
+                 manifest.features.insert(key, enabled);
+             }
+             ("scripts", _) => { manifest.scripts.insert(key, value); }
+-            ("dependencies", _) => { manifest.dependencies.insert(key, value); }
++            ("dependencies", _) => {
++                if manifest.dependencies.contains_key(&key) {
++                    return Err(format!("duplicate dependency `{}` in {}", key, path.display()));
++                }
++                manifest.dependencies.insert(key, value);
++            }
+             _ => {}
+         }
+     }
+diff --git a/src/runtime/data.rs b/src/runtime/data.rs
+index ac04561..7b172a4 100644
+--- a/src/runtime/data.rs
++++ b/src/runtime/data.rs
+@@ -148,6 +148,16 @@ pub(super) fn record(args: Vec<Value>) -> Result<Value, RuntimeError> {
+     Ok(Value::Record(Rc::new(RefCell::new(values))))
+ }
+ 
++fn utf8_char_width(first: u8) -> Option<usize> {
++    match first {
++        0x00..=0x7f => Some(1),
++        0xc2..=0xdf => Some(2),
++        0xe0..=0xef => Some(3),
++        0xf0..=0xf4 => Some(4),
++        _ => None,
++    }
++}
++
+ struct JsonParser<'a> {
+     source: &'a [u8],
+     index: usize,
+@@ -303,19 +313,41 @@ impl<'a> JsonParser<'a> {
+                     self.index += 1;
+                 }
+                 _ => {
+-                    let tail = std::str::from_utf8(&self.source[self.index..])
+-                        .map_err(|_| self.error("invalid UTF-8 in JSON string"))?;
+-                    let character = tail
+-                        .chars()
+-                        .next()
+-                        .ok_or_else(|| self.error("unterminated JSON string"))?;
+-                    output.push(character);
+-                    self.index += character.len_utf8();
++                    // Validate and consume only the next UTF-8 scalar. The previous
++                    // approach re-validated the entire remaining input on every
++                    // non-ASCII character, which scanned the same bytes repeatedly.
++                    output.push(self.consume_utf8_char()?);
+                 }
+             }
+         }
+     }
+ 
++    /// Decode one UTF-8 character starting at `self.index` without scanning the
++    /// rest of the input. Acceptance rules match `str::from_utf8` on that span.
++    fn consume_utf8_char(&mut self) -> Result<char, String> {
++        let bytes = &self.source[self.index..];
++        let first = *bytes
++            .first()
++            .ok_or_else(|| self.error("unterminated JSON string"))?;
++        let width =
++            utf8_char_width(first).ok_or_else(|| self.error("invalid UTF-8 in JSON string"))?;
++        let Some(candidate) = bytes.get(..width) else {
++            return Err(self.error("invalid UTF-8 in JSON string"));
++        };
++        let character = match std::str::from_utf8(candidate) {
++            Ok(text) => {
++                let mut chars = text.chars();
++                match (chars.next(), chars.next()) {
++                    (Some(character), None) if character.len_utf8() == width => character,
++                    _ => return Err(self.error("invalid UTF-8 in JSON string")),
++                }
++            }
++            Err(_) => return Err(self.error("invalid UTF-8 in JSON string")),
++        };
++        self.index += width;
++        Ok(character)
++    }
++
+     fn parse_unicode_escape(&mut self) -> Result<char, String> {
+         let first = self.parse_hex_quad()?;
+         let scalar = if (0xd800..=0xdbff).contains(&first) {
+@@ -685,4 +717,129 @@ mod tests {
+             Ok(Value::Number(2.0))
+         ));
+     }
++
++    fn parse_ok(source: &str) -> Value {
++        json_parse(vec![Value::String(source.to_string())]).expect("expected JSON to parse")
++    }
++
++    fn parse_err(source: &str) -> String {
++        match json_parse(vec![Value::String(source.to_string())]) {
++            Err(RuntimeError::Message(message)) => message,
++            Err(other) => panic!("unexpected error variant: {other:?}"),
++            Ok(_) => panic!("expected JSON to fail"),
++        }
++    }
++
++    fn expect_string(value: Value) -> String {
++        match value {
++            Value::String(text) => text,
++            _ => panic!("expected string value"),
++        }
++    }
++
++    #[test]
++    fn parses_mixed_ascii_and_multibyte_unicode_with_escapes() {
++        // 2-byte (é), 3-byte (你), 4-byte (𝄞 / 🚀) mixed with ASCII and escapes.
++        let source = "\"Aé你\\uD834\\uDD1E🚀\\\\n\\tB\"";
++        let value = expect_string(parse_ok(source));
++        assert_eq!(value, "Aé你𝄞🚀\\n\tB");
++
++        // Literal UTF-8 scalar for U+1F680 alongside the escaped form (UTF-16 surrogate pair).
++        let literal = parse_ok("\"🚀\"");
++        let escaped = parse_ok(r#""\uD83D\uDE80""#);
++        assert_eq!(expect_string(literal), expect_string(escaped));
++    }
++
++    #[test]
++    fn unicode_keys_and_escape_equivalent_keys_detect_duplicates() {
++        let ok = parse_ok(r#"{"你好":1,"世界":2}"#);
++        let Value::Record(record) = ok else {
++            panic!("expected record");
++        };
++        let record = record.borrow();
++        assert!(matches!(
++            record.get("你好"),
++            Some(Value::Number(value)) if *value == 1.0
++        ));
++        assert!(matches!(
++            record.get("世界"),
++            Some(Value::Number(value)) if *value == 2.0
++        ));
++
++        // Literal UTF-8 key and \u-escaped equivalent must collide.
++        let err = parse_err(r#"{"é":1,"\u00e9":2}"#);
++        assert!(
++            err.contains("duplicate JSON object key"),
++            "missing duplicate detection: {err}"
++        );
++
++        let err = parse_err(r#"{"🚀":1,"\uD83D\uDE80":2}"#);
++        assert!(
++            err.contains("duplicate JSON object key"),
++            "missing surrogate-key duplicate detection: {err}"
++        );
++    }
++
++    #[test]
++    fn unicode_error_positions_unterminated_strings_and_illegal_escapes() {
++        // "é" is bytes: 22 C3 A9 22. Trailing junk starts after the closing quote.
++        let err = parse_err("\"é\"x");
++        assert!(
++            err.contains("unexpected trailing JSON data at byte 4"),
++            "wrong trailing error position: {err}"
++        );
++
++        // Unterminated string after a 3-byte character: opening quote + 你 (E4 BD A0).
++        let err = parse_err("\"你");
++        assert!(
++            err.contains("unterminated JSON string at byte 4"),
++            "wrong unterminated position: {err}"
++        );
++
++        assert!(parse_err(r#""\x""#).contains("invalid JSON string escape"));
++        assert!(
++            parse_err(r#""\uD800""#).contains("high surrogate must be followed by a low surrogate")
++        );
++        assert!(parse_err(r#""\uDC00""#).contains("unexpected low surrogate"));
++        assert!(parse_err("\"\u{0001}\"").contains("unescaped control character"));
++    }
++
++    #[test]
++    fn large_unicode_strings_and_near_input_limit_still_parse() {
++        // ~48 KiB of 3-byte characters inside quotes keeps reproduction under ~64 KiB.
++        let chunk = "こんにちは"; // 5 chars * 3 bytes = 15 bytes
++        let repeats = (48 * 1024) / chunk.len();
++        let body = chunk.repeat(repeats);
++        let source = format!("\"{body}\"");
++        assert!(
++            source.len() < 64 * 1024,
++            "perf/repro input must stay under 64 KiB"
++        );
++        let parsed = expect_string(parse_ok(&source));
++        assert_eq!(parsed, body);
++
++        // Near the existing input-size limit: whitespace padding + a small Unicode string.
++        let prefix = " ".repeat(MAX_JSON_INPUT_BYTES - 8);
++        let near_limit = format!("{prefix}\"你好\"");
++        assert_eq!(near_limit.len(), MAX_JSON_INPUT_BYTES);
++        let parsed = expect_string(parse_ok(&near_limit));
++        assert_eq!(parsed, "你好");
++
++        // Near the input-size limit with string content that is entirely multi-byte
++        // Unicode (no whitespace padding), so the string scanner walks ~4 MiB of
++        // non-ASCII bytes. The two quotes count toward the limit.
++        let chunk = "é你好🚀"; // 2 + 3 + 3 + 4 = 12 bytes
++        let budget = MAX_JSON_INPUT_BYTES - 2;
++        let mut body = chunk.repeat(budget / chunk.len());
++        // Fill the leftover bytes with 2-byte "é" so the input lands on the limit.
++        body.push_str(&"é".repeat((budget % chunk.len()) / 2));
++        assert!(body.chars().all(|c| !c.is_ascii()));
++        let source = format!("\"{body}\"");
++        assert!(source.len() <= MAX_JSON_INPUT_BYTES);
++        assert_eq!(source.len(), MAX_JSON_INPUT_BYTES);
++        let parsed = expect_string(parse_ok(&source));
++        assert_eq!(parsed, body);
++
++        assert!(parse_err(&" ".repeat(MAX_JSON_INPUT_BYTES + 1)).contains("JSON input exceeds the"));
++    }
+ }

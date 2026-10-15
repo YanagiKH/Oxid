@@ -662,7 +662,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '900f9e7cfb32027b4406e2860c5bc39abb0d831c89931efaf166911905c35ca4'  # SOURCE-ONLY: independent phase authority pin review is pending.
+AUTHORITY_SHA = 'f0e8f3d04235b1aa37576f16e7ead8098bc0276b2496d3281d331c06e168a099'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -835,12 +835,8 @@ def lexer_predecessor_body(a, name, raw):
 
 
 def compose_current_lexer(a, raw):
-    support, admitted, api, source_rejected = _published_parser_context()
-    try:
-        return support.compose(api, a, 'src/frontend/lexer.rs', raw,
-                               False, 'lexer', _PUBLISHED_PARSER_SEAL, admitted)
-    except (support.Rejected, source_rejected) as error:
-        raise Rejected(str(error)) from error
+    support, admitted, seal, dispatcher, p = _package_json_context()
+    return support.compose(p, a, raw, 'src/frontend/lexer.rs', False, 'lexer', admitted, seal, dispatcher)
 
 
 BYTE_STORAGE_PARSER_PREDECESSOR_SHA = '29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9'
@@ -1785,30 +1781,18 @@ def _prephase_authority():
 
 
 def compose_source_read(a, raw):
-    support, admitted, api, source_rejected = _published_parser_context()
-    try:
-        return support.compose(api, a, 'src/frontend/source.rs', raw,
-                               False, 'source', _PUBLISHED_PARSER_SEAL, admitted)
-    except (support.Rejected, source_rejected) as error:
-        raise Rejected(str(error)) from error
+    support, admitted, seal, dispatcher, p = _package_json_context()
+    return support.compose(p, a, raw, 'src/frontend/source.rs', False, 'source', admitted, seal, dispatcher)
 
 
 def compose_namespace_resource(a, raw):
-    support, admitted, api, source_rejected = _published_parser_context()
-    try:
-        return support.compose(api, a, 'src/frontend/declaration_index/resource.rs',
-                               raw, False, 'namespace', _PUBLISHED_PARSER_SEAL, admitted)
-    except (support.Rejected, source_rejected) as error:
-        raise Rejected(str(error)) from error
+    support, admitted, seal, dispatcher, p = _package_json_context()
+    return support.compose(p, a, raw, 'src/frontend/declaration_index/resource.rs', False, 'namespace', admitted, seal, dispatcher)
 
 
 def compose_array_instrumentation(a, name, raw, control=False):
-    support, admitted, api, source_rejected = _published_parser_context()
-    try:
-        return support.compose(api, a, name, raw, control, 'array',
-                               _PUBLISHED_PARSER_SEAL, admitted)
-    except (support.Rejected, source_rejected) as error:
-        raise Rejected(str(error)) from error
+    support, admitted, seal, dispatcher, p = _package_json_context()
+    return support.compose(p, a, raw, name, control, 'array', admitted, seal, dispatcher)
 
 
 def compose_enum_parser_helper(a):
@@ -2226,11 +2210,8 @@ def compose_observer_initializer(a):
 
 
 def current_candidate(a):
-    support, _ = _published_parser_modules()
-    try:
-        return support.current_candidate(a)
-    except support.Rejected as error:
-        raise Rejected(str(error)) from error
+    support, source = _package_json_modules()
+    return support.candidate(a)
 
 def fresh(path):
     path = Path(path).absolute()
@@ -3135,11 +3116,8 @@ PHASE_ROLES = ('observed', 'not_observed')
 
 
 def phase_previous(a):
-    support, admitted, api, source_rejected = _published_parser_context()
-    try:
-        return support.phase_previous(api, a, _PUBLISHED_PARSER_SEAL, admitted)
-    except (support.Rejected, source_rejected) as error:
-        raise Rejected(str(error)) from error
+    support, admitted, seal, dispatcher, p = _package_json_context()
+    return support.phase_previous(p, a, admitted, seal, dispatcher)
 
 
 def phase_module(a, controls=False):
@@ -3208,11 +3186,8 @@ def phase_composed_body(a, name, before, control=False):
 
 
 def authority():
-    support, admitted, api, source_rejected = _published_parser_context()
-    try:
-        return support.authority(api, _PUBLISHED_PARSER_SEAL, admitted)
-    except (support.Rejected, source_rejected) as error:
-        raise Rejected(str(error)) from error
+    support, admitted, seal, dispatcher, p = _package_json_context()
+    return support.authority(p, admitted, seal, dispatcher)
 
 
 def phase_native_identity(row, *, root=None):
@@ -3580,6 +3555,38 @@ def _published_parser_context():
     return support, admitted, api, source_rejected
 
 
+
+_PACKAGE_JSON_PARSER_SEAL = {'dispatcher': {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': '12239dfc904f4705bf431c6aa5036d8217fc53d74a3d28e7190e914aa6f9cdf6'}, 'support': {'path': 'tests/qualification/package_json_current_v1/parser.py', 'bytes': 8616, 'sha256': '05795c702f3e2db2cdc4b08b4a59c13650070db7131789e9c4588f96f6d73bb5'}}
+
+# New named source transport. Every executable dependency is pinned before load.
+def _package_json_modules():
+    seal = _PACKAGE_JSON_PARSER_SEAL
+    bodies = {}
+    for key in ('dispatcher', 'support'):
+        row = seal[key]
+        verify_map(REPOSITORY, [row])
+        raw = (REPOSITORY / row['path']).read_bytes()
+        same({'path': row['path'], 'bytes': len(raw), 'sha256': sha(raw)}, row, 'package JSON module identity')
+        bodies[key] = raw
+    source = types.ModuleType('package_json_parser_source')
+    source.__file__ = str(REPOSITORY / seal['dispatcher']['path'])
+    exec(compile(bodies['dispatcher'], source.__file__, 'exec'), source.__dict__)
+    support = types.ModuleType('package_json_parser_support')
+    support.__file__ = str(REPOSITORY / seal['support']['path'])
+    exec(compile(bodies['support'], support.__file__, 'exec'), support.__dict__)
+    return support, source
+
+
+def _package_json_context():
+    support, source = _package_json_modules()
+    captured = source.preflight(REPOSITORY)
+    admitted = {'current': captured['current'], 'inputs': captured['inputs'],
+                'predecessor_inputs': captured['package_json_predecessor']['inputs'],
+                'artifacts': {n: captured['package_bytes'][n] for n in
+                             ('package-json-source-v1.json', 'package-json-authority-v1.json',
+                              'package-json-source-proof-v1.json', 'package-json-transition-v1.patch')}}
+    p = types.SimpleNamespace(REPOSITORY=REPOSITORY, AUTHORITY_SHA=AUTHORITY_SHA)
+    return support, admitted, source._SOURCE_SEAL, _PACKAGE_JSON_PARSER_SEAL['dispatcher'], p
 
 if __name__ == "__main__":
     try:

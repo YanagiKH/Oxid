@@ -5,14 +5,14 @@ sys.dont_write_bytecode = True
 import json
 from pathlib import Path
 import unittest
-import published_lifecycle as m
+import package_json_lifecycle as m
 
 
 class CurrentLifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.patch = (m.HERE / 'observer-lexer-reservation-v2.patch').read_bytes()
-        cls.proof = json.loads((m.HERE / 'published-lifecycle-v1.json').read_bytes())
+        cls.proof = json.loads((m.HERE / 'package-json-lifecycle-v1.json').read_bytes())
         cls.inputs = {r['path']: (m.REPOSITORY / r['path']).read_bytes() for r in cls.proof['base_files']}
         cls.derived, _ = m.admit(m.REPOSITORY, cls.patch)
 
