@@ -1,0 +1,111 @@
+{
+  "authority": {
+    "bytes": 526829,
+    "path": "tests/qualification/unit4_parser_current/authority.json",
+    "sha256": "900f9e7cfb32027b4406e2860c5bc39abb0d831c89931efaf166911905c35ca4"
+  },
+  "schema": "oxid-unit4-published-main-parser-seal-v1",
+  "source_dispatcher": {
+    "bytes": 6721,
+    "path": "tests/fixtures/typed_project_source_binding/run.py",
+    "sha256": "2850ee1b67698494d5f8aa5c13dc457c7b927eb5f680abffff917be2496439ce"
+  },
+  "source_manifest": {
+    "bytes": 74567,
+    "path": "tests/fixtures/typed_project_source_binding/current-source.json",
+    "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
+  },
+  "source_runtime": {
+    "bytes": 32290,
+    "path": "tests/qualification/published_formatter_current/published_current.py",
+    "sha256": "11f96d500198406d29e1a1e0880ade13dd8e2afd799315a08d5febcf5e889393"
+  },
+  "source_runtime_dependencies": [
+    {
+      "artifact": {
+        "bytes": 10711,
+        "path": "tests/qualification/lexer_reservation_current/adapters.py",
+        "sha256": "0520fbf2c651f9b22897a19937c54749b0153ee234bae424dc4132d48e198e2a"
+      },
+      "module": "adapters"
+    },
+    {
+      "artifact": {
+        "bytes": 12008,
+        "path": "tests/qualification/lexer_reservation_current/source_transition.py",
+        "sha256": "e642061c863ac1b836eeaeea72c8fdc1152097be4dc285ee2d071ea3372da9a0"
+      },
+      "module": "source_transition"
+    },
+    {
+      "artifact": {
+        "bytes": 783,
+        "path": "tests/qualification/lexer_reservation_current/seal.py",
+        "sha256": "fa8c298cc5cc65dee984034190ab2e1fe945812e7a873004e14b3d3e242cf878"
+      },
+      "module": "seal"
+    },
+    {
+      "artifact": {
+        "bytes": 16325,
+        "path": "tests/qualification/lexer_reservation_current/current.py",
+        "sha256": "f15abe15b48cf6a5b7a196ec77c45d8c34c8e0fca6d98dfbf2bb35fcabbcf850"
+      },
+      "module": "current"
+    },
+    {
+      "artifact": {
+        "bytes": 12447,
+        "path": "tests/qualification/published_formatter_current/published_transition.py",
+        "sha256": "069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45"
+      },
+      "module": "published_transition"
+    },
+    {
+      "artifact": {
+        "bytes": 12882,
+        "path": "tests/qualification/published_formatter_current/published_view.py",
+        "sha256": "11a381be0f642138663d46c928b48b434332cb8152cf5006dd452fd178076e9b"
+      },
+      "module": "published_view"
+    }
+  ],
+  "source_seal": {
+    "authority": {
+      "bytes": 265133,
+      "path": "published-formatter-authority-v1.json",
+      "sha256": "dac2e66cf02e2d6d5c14531b30de8cda88696676747509419a8478e6ed871c43"
+    },
+    "patch": {
+      "bytes": 1522,
+      "path": "published-formatter-transition-v1.patch",
+      "sha256": "c6163a923cf56bde945d753628bc6f2c7c4ad717affd35e8bafe7a0c195bccd6"
+    },
+    "predecessor_view": {
+      "bytes": 241022,
+      "path": "tests/qualification/published_formatter_current/predecessor-view-v1.json",
+      "sha256": "e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8"
+    },
+    "schema": "oxid-published-main-source-seal-v1",
+    "source_manifest": {
+      "bytes": 74567,
+      "path": "published-formatter-source-v1.json",
+      "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
+    },
+    "source_proof": {
+      "bytes": 219557,
+      "path": "published-main-source-proof-v1.json",
+      "sha256": "854ab1a1f5ad1075b836d7ea7387e7692b0adae59cd709921e6a8eae17770819"
+    }
+  },
+  "support": {
+    "bytes": 22884,
+    "path": "tests/qualification/published_formatter_current/published_parser.py",
+    "sha256": "415cb1b9391cd330388dd4f80c62f4057209d75ec710348d726c572bc795b424"
+  },
+  "view": {
+    "bytes": 12882,
+    "path": "tests/qualification/published_formatter_current/published_view.py",
+    "sha256": "11a381be0f642138663d46c928b48b434332cb8152cf5006dd452fd178076e9b"
+  }
+}

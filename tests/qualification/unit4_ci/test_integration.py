@@ -6,9 +6,11 @@ import ast
 import copy
 import io
 import json
+import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
+import stat
 import tarfile
 import tempfile
 import subprocess
@@ -67,8 +69,20 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
         raw = (q.HERE / 'inputs.json').read_bytes()
         self.assertEqual(q.sha(raw), q.INPUTS_SHA)
-        self.assertEqual(raw, (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes())
+        self.assertEqual(raw, (q.HERE / 'inputs-published-formatter-v1.json').read_bytes())
         current = q.loads(raw)
+        predecessor_raw = (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes()
+        self.assertEqual((len(predecessor_raw), q.sha(predecessor_raw)),
+                         (119529, 'e65fbe5018b90bb9cbc3abe1941c391e3678b19d0b2bbe8f00b38e70b4099445'))
+        predecessor = q.loads(predecessor_raw)
+        self.assertEqual((len(predecessor['files']), len(predecessor['closed_roots'])), (556, 15))
+        self.assertEqual(current['published_formatter_predecessor_inputs'], {
+            'path': 'tests/qualification/unit4_ci/inputs-lexer-reservation-v1.json',
+            'bytes': 119529, 'sha256': 'e65fbe5018b90bb9cbc3abe1941c391e3678b19d0b2bbe8f00b38e70b4099445'})
+        self.assertTrue({row['path'] for row in predecessor['files']} <=
+                        {row['path'] for row in current['files']})
+        self.assertEqual(current['closed_roots'], predecessor['closed_roots'] +
+                         ['tests/qualification/published_formatter_current'])
         self.assertEqual(current['lexer_reservation_predecessor_inputs_sha256'], q.sha(old_raw))
         self.assertTrue({row['path'] for row in old['files']} <= {row['path'] for row in current['files']})
         self.assertEqual(current['closed_roots'], old['closed_roots'] + [
@@ -78,8 +92,13 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/fixtures/typed_project_unit1_independent',
             'tests/fixtures/typed_project_unit2_independent',
             'tests/qualification/unit2_u8_current',
-            'scripts/predecessors/lexer_reservation_source_v1'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (556, 15))
+            'scripts/predecessors/lexer_reservation_source_v1',
+            'tests/qualification/published_formatter_current'])
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (980, 16))
+        self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
+        self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
+        self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
+        self.assertTrue(set(('tests/qualification/published_formatter_current/published_transition.py', 'tests/qualification/published_formatter_current/published_current.py', 'tests/qualification/published_formatter_current/published_view.py', 'tests/qualification/published_formatter_current/published_ci_inventory.py', 'tests/qualification/published_formatter_current/test_published_transition.py', 'tests/qualification/published_formatter_current/test_published_view.py', 'tests/qualification/published_formatter_current/test_published_ci_inventory.py', 'tests/qualification/published_formatter_current/predecessor-view-v1.json', 'tests/qualification/published_formatter_current/published-direct-consumer-dispositions-v1.json', 'tests/qualification/published_formatter_current/source-proof/published-main-ci.yml', 'scripts/test_published_formatter_source.py', 'tests/qualification/lexer_reservation_current/unit1_current_support.py', 'tests/qualification/lexer_reservation_current/unit1_current_bindings.json')) <= {row['path'] for row in current['files']})
         self.assertEqual(current['lexer_reservation_source_v1_preservation'], {
             'path': 'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
             'bytes': 24543, 'sha256': '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'})
@@ -108,7 +127,17 @@ class LexerInputClosureControls(unittest.TestCase):
                      'tests/qualification/unit4_parser_current/lexer_phase_controls.py',
                      'tests/qualification/unit4_parser_current/test_lexer_phase.py',
                      'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
-                     'scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/common.py'):
+                     'scripts/predecessors/lexer_reservation_source_v1/tests/qualification/unit4_ci/common.py',
+                     'tests/qualification/published_formatter_current/published_transition.py',
+                     'tests/qualification/published_formatter_current/published_current.py',
+                     'tests/qualification/published_formatter_current/published_view.py',
+                     'tests/qualification/published_formatter_current/published_ci_inventory.py',
+                     'tests/qualification/published_formatter_current/test_published_transition.py',
+                     'tests/qualification/published_formatter_current/test_published_view.py',
+                     'tests/qualification/published_formatter_current/test_published_ci_inventory.py',
+                     'tests/qualification/published_formatter_current/predecessor-view-v1.json',
+                     'tests/qualification/published_formatter_current/published-direct-consumer-dispositions-v1.json',
+                     'tests/qualification/published_formatter_current/source-proof/published-main-ci.yml'):
             changed = copy.deepcopy(manifest)
             self.assertEqual(sum(row['path'] == name for row in changed['files']), 1)
             changed['files'] = [row for row in changed['files'] if row['path'] != name]
@@ -516,7 +545,7 @@ class ObserverPreparationControls(unittest.TestCase):
         current = (REPO / q.OBSERVER_PATCH).read_bytes()
         original = (REPO / 'tests/fixtures/typed_project_unit4_independent/components/lifecycle/observer-additive-v1.patch').read_bytes()
         self.assertEqual(self.builder.verify_lifecycle_successor(current), original)
-        with self.assertRaisesRegex(self.c.Reject, 'unapproved exact lexer lifecycle patch'):
+        with self.assertRaisesRegex(self.c.Reject, r'^changed pinned body: observer-lexer-reservation-v2\.patch$'):
             self.builder.verify_lifecycle_successor(current + b'\n')
         # Every current mutation must alter an exact present seam. The new
         # minimal patch no longer carries the historical Array/Enum context.
@@ -528,7 +557,7 @@ class ObserverPreparationControls(unittest.TestCase):
             self.assertEqual(current.count(anchor), 1)
             changed = current.replace(anchor, replacement, 1)
             self.assertNotEqual(changed, current)
-            with self.subTest(current_anchor=anchor), self.assertRaisesRegex(self.c.Reject, 'unapproved exact lexer lifecycle patch'):
+            with self.subTest(current_anchor=anchor), self.assertRaisesRegex(self.c.Reject, r'^changed pinned body: observer-lexer-reservation-v2\.patch$'):
                 self.builder.verify_lifecycle_successor(changed)
         # Preserve both original Array/Enum rejection domains at the unchanged
         # byte-storage stage whose complete patch still contains those seams.
@@ -646,12 +675,19 @@ class ObserverPreparationControls(unittest.TestCase):
                      'lexer_reservation_lifecycle.py', 'lexer-reservation-lifecycle-v1.json',
                      'observer-lexer-reservation-v1.patch', 'test_lexer_reservation.py',
                      'generate_lexer_reservation_v2.py', 'lexer-reservation-lifecycle-v2.json',
-                     'observer-lexer-reservation-v2.patch'}
+                     'observer-lexer-reservation-v2.patch', 'derive_public_observer_v1.py',
+                     'published-lifecycle-v1.json', 'published-observer-derivation-v1.json',
+                     'published_lifecycle.py'}
         self.assertEqual(len(original_names), 22)
         self.assertFalse(original_names & additions)
         self.assertEqual(run.PACKAGE_FILES, original_names | additions)
-        self.assertEqual(len(expected), 31)
+        self.assertEqual(len(expected), 35)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
+        for members in (list((REPO / q.PUBLIC).iterdir())[:-1],
+                        [*list((REPO / q.PUBLIC).iterdir()), SimpleNamespace(name='unapproved.py')]):
+            with patch.object(run, 'ADAPTER_ROOT', SimpleNamespace(iterdir=lambda: iter(members))):
+                with self.assertRaisesRegex(self.c.Reject, '^adapter package exact membership$'):
+                    run.adapter_identity()
         for changed in (expected[:-1], expected + expected[:1], list(reversed(expected))):
             self.assertNotEqual(changed, expected)  # Preserve the strict cross-host list contract.
 
@@ -1585,13 +1621,257 @@ class PhaseNativeIdentityControls(unittest.TestCase):
                                                root=self.root)
 
 
-class ComparisonSealControls(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name).resolve()
-        self.seal, self.data = synthetic_seal_fixture(self.root)
+def object_alias_shape(value):
+    """Alias topology of a dict/list graph: every container visit takes the next traversal step,
+    and each re-reference records (step where it is reached again, step where it was first seen).
 
-    def tearDown(self): self.temp.cleanup()
+    Recording only the first-seen index would let equal-valued aliases be rewired unnoticed:
+    with a = {} and b = {}, [a, a, b, b] and [a, b, a, b] would both give [1, 2].
+    """
+    seen, shape, step = {}, [], 0
+    def walk(item):
+        nonlocal step
+        if isinstance(item, (dict, list)):
+            here = step; step += 1
+            if id(item) in seen:
+                shape.append((here, seen[id(item)])); return
+            seen[id(item)] = here
+            for child in (item.values() if isinstance(item, dict) else item): walk(child)
+    walk(value)
+    return tuple(shape)
+
+
+def object_container_ids(value):
+    found = set()
+    def walk(item):
+        if isinstance(item, (dict, list)) and id(item) not in found:
+            found.add(id(item))
+            for child in (item.values() if isinstance(item, dict) else item): walk(child)
+    walk(value)
+    return found
+
+
+class ComparisonSealControls(unittest.TestCase):
+    """Serial-only reuse of one synthetic seal seed in a class-private root.
+
+    The seed is test data only.  Each case and each rebuilding subTest receives an independent
+    deep copy, and still runs its own authority, phase_context and verify_parser_seal admission.
+    Cases share one fixed root sequentially; this is not a guarantee for concurrent execution.
+    """
+    @classmethod
+    def setUpClass(cls):
+        temporary = tempfile.TemporaryDirectory(prefix='oxid-comparison-seal-')
+        cls.addClassCleanup(temporary.cleanup)
+        cls.root = Path(temporary.name).resolve()
+        # No-follow identity of the directory itself; a renamed-away root replaced by a new
+        # directory at the same path keeps every path-string check but not this identity.
+        cls.root_identity = cls.directory_identity(cls.root)
+        cls.seed_seal, cls.seed_data = synthetic_seal_fixture(cls.root)
+        cls.seed_identity = cls.seed_digest(cls.seed_seal, cls.seed_data)
+        # The seed must stay purely in memory; on-disk seed state could not be isolated per case.
+        if any(cls.root.iterdir()): raise AssertionError('synthetic seal seed wrote into the class root')
+
+    @staticmethod
+    def directory_identity(path):
+        info = os.lstat(path)
+        if not stat.S_ISDIR(info.st_mode): raise AssertionError('class root is not a plain directory')
+        return info.st_dev, info.st_ino
+
+    @staticmethod
+    def seed_digest(seal, data):
+        return (q.sha(q.canonical(seal)), q.sha(q.canonical({path: q.sha(raw) for path, raw in data.items()})),
+                object_alias_shape(seal))
+
+    def assert_seed_intact(self):
+        if self.seed_digest(self.seed_seal, self.seed_data) != self.seed_identity:
+            raise AssertionError('shared synthetic seal seed was modified')
+
+    def fresh(self):
+        """An independent seal/data copy for one case or one rebuilding subTest."""
+        seal = copy.deepcopy(self.seed_seal)
+        # Values are immutable bytes, so an independent mapping is a complete data copy.
+        data = dict(self.seed_data)
+        self.assertEqual(object_alias_shape(seal), self.seed_identity[2])
+        return seal, data
+
+    def assert_root_empty(self):
+        leftover = sorted(path.name for path in self.root.iterdir())
+        if leftover: raise AssertionError('class root holds residue from an earlier case: ' + repr(leftover))
+
+    def clear_root(self):
+        """Remove case files from the class root without following links or leaving the root."""
+        root = type(self).root
+        # Refuse before touching anything: a replacement directory at the same path is not ours.
+        try: identity = self.directory_identity(root)
+        except (OSError, AssertionError): identity = None
+        if identity != type(self).root_identity:
+            raise AssertionError('class root changed identity')
+        if root.is_symlink() or not root.is_dir() or root.resolve() != root:
+            raise AssertionError('class root changed identity')
+        isjunction = getattr(os.path, 'isjunction', lambda path: False)
+        for entry in os.scandir(root):
+            path = Path(entry.path)
+            if path.parent != root: raise AssertionError('cleanup left the class root: ' + str(path))
+            if entry.is_symlink() or isjunction(path):
+                try: path.unlink()
+                except (IsADirectoryError, PermissionError): os.rmdir(path)
+            elif entry.is_dir(follow_symlinks=False):
+                # rmtree removes nested links themselves and never descends into their targets.
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        self.assert_root_empty()
+
+    def setUp(self):
+        self.assert_root_empty()
+        self.assert_seed_intact()
+        self.addCleanup(self.assert_seed_intact)
+        self.addCleanup(self.clear_root)
+        self.seal, self.data = self.fresh()
+
+    def test_seed_copies_are_independent_and_preserve_aliases(self):
+        other_seal, other_data = self.fresh()
+        seed_ids = object_container_ids(self.seed_seal)
+        self.assertFalse(object_container_ids(self.seal) & seed_ids)
+        self.assertFalse(object_container_ids(other_seal) & seed_ids)
+        self.assertFalse(object_container_ids(self.seal) & object_container_ids(other_seal))
+        # full_archive_only rows are the same objects as their before rows; copies keep that aliasing.
+        for seal in (self.seed_seal, self.seal, other_seal):
+            before = {id(row) for row in seal['before']}
+            self.assertTrue(seal['full_archive_only'])
+            self.assertTrue(all(id(row) in before for row in seal['full_archive_only']))
+        self.assertEqual(object_alias_shape(self.seal), object_alias_shape(self.seed_seal))
+        omitted = self.seal['full_archive_only'][0]
+        aliased = next(row for row in self.seal['before'] if row is omitted)
+        aliased['sha256'] = '0' * 64
+        self.assertEqual(omitted['sha256'], '0' * 64)
+        name = next(iter(self.data)); self.data[name] = b'case-local mutation'
+        self.assertEqual(q.canonical(other_seal), q.canonical(self.seed_seal))
+        self.assertEqual(other_data, self.seed_data)
+        self.assertNotEqual(q.canonical(self.seal), q.canonical(self.seed_seal))
+        self.assert_seed_intact()
+
+    def test_seed_pollution_is_detected(self):
+        row = self.seed_seal['full_archive_only'][0]
+        original = row['sha256']
+        try:
+            row['sha256'] = '0' * 64
+            with self.assertRaisesRegex(AssertionError, 'seed was modified'): self.assert_seed_intact()
+        finally:
+            row['sha256'] = original
+        name = next(iter(self.seed_data)); raw = self.seed_data[name]
+        try:
+            self.seed_data[name] = raw + b'\n'
+            with self.assertRaisesRegex(AssertionError, 'seed was modified'): self.assert_seed_intact()
+        finally:
+            self.seed_data[name] = raw
+        rows = self.seed_seal['full_archive_only']
+        self.assertTrue(any(item is row for item in self.seed_seal['before']))
+        try:
+            # An equal but de-aliased row keeps canonical bytes and must still be detected.
+            rows[0] = copy.deepcopy(row)
+            self.assertEqual(q.canonical(self.seed_seal), q.canonical(self.seal))
+            with self.assertRaisesRegex(AssertionError, 'seed was modified'): self.assert_seed_intact()
+        finally:
+            rows[0] = row
+        self.assert_seed_intact()
+
+    def test_case_residue_cleanup_stays_inside_class_root(self):
+        with tempfile.TemporaryDirectory() as outside_name:
+            outside = Path(outside_name).resolve()
+            (outside / 'keep').mkdir(); (outside / 'keep' / 'sentinel').write_bytes(b'outside')
+            listing = sorted(str(path.relative_to(outside)) for path in outside.rglob('*'))
+            for name in ('parser/nested/deep', 'capsule'):
+                (self.root / name).mkdir(parents=True)
+            (self.root / 'parser/nested/deep/file').write_bytes(b'case')
+            (self.root / 'native-parent.json').write_bytes(b'{}')
+            links = 0
+            try:
+                (self.root / 'link-dir').symlink_to(outside / 'keep', target_is_directory=True)
+                (self.root / 'parser/nested/link-dir').symlink_to(outside / 'keep', target_is_directory=True)
+                (self.root / 'link-file').symlink_to(outside / 'keep' / 'sentinel')
+                links = 3
+            except (OSError, NotImplementedError):
+                pass
+            self.clear_root()
+            self.assertEqual(list(self.root.iterdir()), [])
+            self.assertEqual(sorted(str(path.relative_to(outside)) for path in outside.rglob('*')), listing)
+            self.assertEqual((outside / 'keep' / 'sentinel').read_bytes(), b'outside')
+            if not links: self.skipTest('symlinks unavailable; plain residue cleanup checked')
+
+    def test_replaced_class_root_is_not_cleared(self):
+        root = type(self).root
+        aside = root.with_name(root.name + '-moved-aside')
+        self.assertFalse(os.path.lexists(aside))
+        (root / 'real-residue').write_bytes(b'case')
+        os.rename(root, aside)
+        try:
+            root.mkdir()
+            (root / 'sentinel').write_bytes(b'replacement')
+            (root / 'nested').mkdir(); (root / 'nested' / 'file').write_bytes(b'replacement')
+            # Every path-string check still passes for the replacement directory.
+            self.assertTrue(root.is_dir() and not root.is_symlink() and root.resolve() == root)
+            with self.assertRaisesRegex(AssertionError, 'class root changed identity'): self.clear_root()
+            self.assertEqual((root / 'sentinel').read_bytes(), b'replacement')
+            self.assertEqual((root / 'nested' / 'file').read_bytes(), b'replacement')
+            self.assertEqual((aside / 'real-residue').read_bytes(), b'case')
+        finally:
+            # Remove only the directory this test created, then put the real class root back.
+            if os.path.lexists(root) and self.directory_identity(root) != type(self).root_identity:
+                shutil.rmtree(root)
+            if os.path.lexists(aside) and not os.path.lexists(root):
+                os.rename(aside, root)
+        self.assertEqual(self.directory_identity(root), type(self).root_identity)
+        self.assertFalse(os.path.lexists(aside))
+        # The genuine root is cleaned normally again.
+        self.clear_root()
+        self.assertEqual(list(root.iterdir()), [])
+
+    def test_equal_value_alias_rewiring_is_detected(self):
+        def first_seen_only(value):
+            # The earlier shape, kept here only to show this control exercises its blind spot.
+            seen, shape = {}, []
+            def walk(item):
+                if isinstance(item, (dict, list)):
+                    if id(item) in seen:
+                        shape.append(seen[id(item)]); return
+                    seen[id(item)] = len(seen)
+                    for child in (item.values() if isinstance(item, dict) else item): walk(child)
+            walk(value)
+            return shape
+        a, b = {}, {}
+        paired, interleaved = [a, a, b, b], [a, b, a, b]
+        self.assertEqual(q.canonical(paired), q.canonical(interleaved))
+        self.assertEqual(first_seen_only(paired), first_seen_only(interleaved))
+        self.assertNotEqual(object_alias_shape(paired), object_alias_shape(interleaved))
+        self.assertEqual(object_alias_shape(paired), object_alias_shape(copy.deepcopy(paired)))
+        # The same rewiring on the shared seed: full_archive_only[0] aliases a before row whose
+        # equal but distinct twin sits in after.  Moving the alias onto the after slot and the twin
+        # into full_archive_only keeps canonical bytes and the first-seen sequence unchanged.
+        seal = self.seed_seal
+        omitted = seal['full_archive_only'][0]
+        self.assertTrue(any(row is omitted for row in seal['before']))
+        index, twin = next((index, row) for index, row in enumerate(seal['after'])
+                           if row is not omitted and row == omitted)
+        canonical, legacy = q.canonical(seal), first_seen_only(seal)
+        try:
+            seal['after'][index], seal['full_archive_only'][0] = omitted, twin
+            self.assertEqual(q.canonical(seal), canonical)
+            self.assertEqual(first_seen_only(seal), legacy)
+            self.assertNotEqual(object_alias_shape(seal), self.seed_identity[2])
+            with self.assertRaisesRegex(AssertionError, 'seed was modified'): self.assert_seed_intact()
+        finally:
+            seal['after'][index], seal['full_archive_only'][0] = twin, omitted
+        self.assert_seed_intact()
+
+    def test_seed_equals_one_full_rebuild(self):
+        rebuilt_seal, rebuilt_data = synthetic_seal_fixture(self.root)
+        self.assert_root_empty()
+        self.assertEqual(q.canonical(rebuilt_seal), q.canonical(self.seed_seal))
+        self.assertEqual(rebuilt_data, self.seed_data)
+        self.assertEqual(object_alias_shape(rebuilt_seal), self.seed_identity[2])
+        self.assertEqual(q.canonical(self.seal), q.canonical(rebuilt_seal))
+        self.assertEqual(self.data, rebuilt_data)
 
     def resolve(self, bound):
         raw = self.data[bound['path']]
@@ -1672,7 +1952,7 @@ class ComparisonSealControls(unittest.TestCase):
     def test_coherently_rehashed_current_candidate_is_rejected(self):
         for control in (False, True):
             with self.subTest(control=control):
-                self.seal, self.data = synthetic_seal_fixture(self.root)
+                self.seal, self.data = self.fresh()
                 record = self.candidate_record(control)
                 value = q.loads(self.data[record['path']]); value['files'] = value['files'][:-1]
                 self.data[record['path']] = q.canonical(value)
@@ -1758,7 +2038,7 @@ class ComparisonSealControls(unittest.TestCase):
                        'prepare-control/historical-candidate-source-manifest.json', 'prepare-control/historical-overlay-manifest.json',
                        'source/candidate-source-manifest.json', 'control-source/candidate-source-manifest.json'):
             with self.subTest(member=suffix):
-                self.seal, self.data = synthetic_seal_fixture(self.root)
+                self.seal, self.data = self.fresh()
                 row = next(row for row in self.seal['before'] if row['path'].replace('\\', '/').endswith('/' + suffix))
                 self.seal['full_archive_only'].append(copy.deepcopy(row))
                 with self.assertRaisesRegex(q.Reject, 'raw parser input mislabeled'):
@@ -1767,7 +2047,7 @@ class ComparisonSealControls(unittest.TestCase):
     def test_coherently_rehashed_transition_metadata_is_rejected(self):
         for key in ('transition_authority', 'historical_authority', 'current_source_manifest', 'historical_candidate', 'historical_overlay'):
             with self.subTest(key=key):
-                self.seal, self.data = synthetic_seal_fixture(self.root)
+                self.seal, self.data = self.fresh()
                 comparison = q.loads(self.data[self.seal['comparison']['path']])
                 session_binding = comparison['session']
                 session = q.loads(self.data[session_binding['path']])
@@ -1882,7 +2162,7 @@ class ComparisonSealControls(unittest.TestCase):
         for scope, base, outer_name in (('collection', 'collect-debug', 'portable-collection.json'),
                                         ('passivity', 'passivity-debug', 'portable-passivity.json')):
             with self.subTest(scope=scope):
-                self.seal, self.data = synthetic_seal_fixture(self.root)
+                self.seal, self.data = self.fresh()
                 path = base + '/invocation.json'
                 invocation = q.loads(self.data[str(self.root / 'parser' / path)])
                 invocation['exit_code'] = 7
@@ -1926,7 +2206,7 @@ class ComparisonSealControls(unittest.TestCase):
         for relative in names:
             for change in ('missing', 'omitted'):
                 with self.subTest(relative=relative, change=change):
-                    self.seal, self.data = synthetic_seal_fixture(self.root)
+                    self.seal, self.data = self.fresh()
                     name = str(self.root / 'parser' / relative)
                     row = next(row for row in self.seal['before'] if row['path'] == name)
                     if change == 'missing':
@@ -1935,7 +2215,7 @@ class ComparisonSealControls(unittest.TestCase):
                     else:
                         self.seal['full_archive_only'].append(copy.deepcopy(row))
                     with self.assertRaises(q.Reject): verify_parser_seal(self.seal, self.resolve)
-        self.seal, self.data = synthetic_seal_fixture(self.root)
+        self.seal, self.data = self.fresh()
         extra = {'path': str(self.root / 'parser/lexer-phase-controls/extra'), 'bytes': 0, 'sha256': q.sha(b'')}
         self.data[extra['path']] = b''
         for inventory in ('before', 'after'):
@@ -1949,7 +2229,7 @@ class ComparisonSealControls(unittest.TestCase):
                              ('raw_sha256', '0' * 64), ('stdout_sha256', '0' * 64),
                              ('stderr_sha256', '0' * 64), ('process_receipt_sha256', '0' * 64)):
             with self.subTest(field=field):
-                self.seal, self.data = synthetic_seal_fixture(self.root)
+                self.seal, self.data = self.fresh()
                 path = 'lexer-phase/collection-debug.json'
                 envelope = q.loads(self.data[str(self.root / 'parser' / path)])
                 envelope['records'][0][field] = value
@@ -1970,7 +2250,7 @@ class ComparisonSealControls(unittest.TestCase):
         for field, value in (('argv_sha256', '0' * 64), ('started_ns', 0),
                              ('layout', None), ('exit_code', 101)):
             with self.subTest(field=field):
-                self.seal, self.data = synthetic_seal_fixture(self.root)
+                self.seal, self.data = self.fresh()
                 path = directory + '/receipt.json'
                 receipt = q.loads(self.data[str(self.root / 'parser' / path)])
                 receipt[field] = value
@@ -2410,6 +2690,10 @@ class FinalFailureControls(unittest.TestCase):
             args = SimpleNamespace(output=root)
             with self.assertRaises(q.Reject): join.join(args)
             self.assertEqual(prior.read_bytes(), b'preserve existing evidence')
+
+
+from test_source_identity import (PublishedViewIdentityControls,
+    PublishedDispatcherIdentityControls, PublishedLifecycleIdentityControls)
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

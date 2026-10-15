@@ -15,13 +15,23 @@ PRESERVED = REPO / 'scripts/predecessors/byte_storage_ci_v1'
 SOURCE = REPO / 'tests/fixtures/typed_project_source_binding'
 LEXER_PRESERVED = REPO / 'scripts/predecessors/lexer_reservation_source_v1'
 LEXER_PRESERVATION_SHA = '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'
-CURRENT_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
+CURRENT_SHA = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
 PREDECESSOR_SHA = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
-COMPILER_HEAD = 'b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489'
-COMPILER_TREE = '7f5c9aa08c569c4d0b5a27391d8fc68337075d36'
+COMPILER_HEAD = 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d'
+COMPILER_TREE = '89e90c3ec83d0712d0037a0407fc6571883c5e9c'
 PRESERVATION_SHA = '38e329c1897f5c902dbfb73c6d3fbfecae2a97cb2f1a85e916b56c2a126698fc'
 sys.path.insert(0, str(HELPER))
 import ci_inventory
+
+PUBLISHED = REPO / 'tests/qualification/published_formatter_current'
+PUBLISHED_MAIN_SOURCE_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
+PUBLISHED_MAIN_WORKFLOW_SHA = '81dfdfe82d9e477c4b6535a10967fc8d6861bcbcea5f90d341c694797ced3269'
+PUBLISHED_VIEW_SHA = 'e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8'
+CURRENT_SOURCE_DESCRIPTOR = {'path': 'published-formatter-source-v1.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'}
+CURRENT_WORKFLOW_DESCRIPTOR = {'path': '.github/workflows/ci.yml', 'bytes': 67408, 'sha256': '8af4c6810e332afcaebb692087238b598800db70f7198890b50a7f99f531fb96'}
+CURRENT_DISPOSITIONS_DESCRIPTOR = {'path': 'published-direct-consumer-dispositions-v1.json', 'bytes': 191975, 'sha256': 'ebdae13dee1a8bcfc5a62fba03e8088e9662cea0c676c44428975433b94707d1'}
+sys.path.insert(0, str(PUBLISHED))
+import published_ci_inventory
 
 
 def sha(raw):
@@ -106,7 +116,18 @@ class CurrentCIActivationControls(unittest.TestCase):
         original = ci_inventory.inventory(
             (REPO / 'docs/architecture/fallible-lexer-source-consumer-audit.md').read_bytes(),
             (PRESERVED / '.github/workflows/ci.yml').read_bytes())
-        plan = read(HELPER / 'direct-consumer-dispositions.json')
+        current_raw = (PUBLISHED / 'published-direct-consumer-dispositions-v1.json').read_bytes()
+        plan = json.loads(current_raw)
+        complete = published_ci_inventory.validate(
+            (REPO / 'docs/architecture/fallible-lexer-source-consumer-audit.md').read_bytes(),
+            (PRESERVED / '.github/workflows/ci.yml').read_bytes(),
+            (PUBLISHED / 'source-proof/published-main-ci.yml').read_bytes(),
+            (REPO / '.github/workflows/ci.yml').read_bytes(),
+            (HELPER / 'direct-consumer-dispositions.json').read_bytes(), current_raw,
+            CURRENT_SOURCE_DESCRIPTOR, CURRENT_WORKFLOW_DESCRIPTOR, CURRENT_DISPOSITIONS_DESCRIPTOR)
+        self.assertEqual(complete, {'entry_count': 173,
+            'changed_commands': ['ci.yml:L751', 'ci.yml:L764'],
+            'argument_lines': [755, 768], 'source_only': True, 'execution_qualified': False})
         self.assertTrue(ci_inventory.validate_plan(original, plan['entries']))
         self.assertEqual(plan['entry_count'], 173)
         self.assertEqual(plan['current_source_manifest_sha256'], CURRENT_SHA)
@@ -140,8 +161,20 @@ class CurrentCIActivationControls(unittest.TestCase):
         old = b'tests/fixtures/typed_project_unit1_independent/run.py --repo . --profile both'
         new = b'tests/qualification/lexer_reservation_current/unit1_run_current.py --repo . --profile both'
         self.assertEqual(raw.count(old), 1)
-        expected = raw.replace(PREDECESSOR_SHA.encode(), CURRENT_SHA.encode()).replace(old, new)
-        self.assertEqual((REPO / '.github/workflows/ci.yml').read_bytes(), expected)
+        middle = (PUBLISHED / 'source-proof/published-main-ci.yml').read_bytes()
+        self.assertEqual(sha(middle), PUBLISHED_MAIN_WORKFLOW_SHA)
+        expected_middle = raw.replace(PREDECESSOR_SHA.encode(), PUBLISHED_MAIN_SOURCE_SHA.encode()).replace(old, new)
+        self.assertEqual(middle, expected_middle)
+        old_argument = b'--source-manifest-sha256 ' + PUBLISHED_MAIN_SOURCE_SHA.encode()
+        new_argument = b'--source-manifest-sha256 ' + CURRENT_SHA.encode()
+        self.assertEqual(middle.count(old_argument), 2)
+        self.assertEqual(middle.count(PUBLISHED_MAIN_SOURCE_SHA.encode()), 2)
+        expected = middle.replace(old_argument, new_argument)
+        current = (REPO / '.github/workflows/ci.yml').read_bytes()
+        self.assertEqual(current, expected)
+        self.assertEqual(current.count(new_argument), 2)
+        self.assertEqual(current.replace(new_argument, old_argument), middle)
+        self.assertEqual(published_ci_inventory.workflow_successor(raw, middle, CURRENT_SHA), current)
 
     def test_preserved_consumer_bodies_are_unchanged(self):
         self.assertEqual(sha((PRESERVED / 'preservation.json').read_bytes()), PRESERVATION_SHA)
@@ -209,6 +242,7 @@ class CurrentCIActivationControls(unittest.TestCase):
                  'tests/fixtures/typed_project_source_binding',
                  'tests/fixtures/fixed_array_unit2d_independent',
                  'tests/qualification/lexer_reservation_current',
+                 'tests/qualification/published_formatter_current',
                  'tests/fixtures/typed_project_source_binding_byte_storage_v1',
                  'tests/qualification/unit2_u8_current',
                  'tests/fixtures/typed_project_unit2_independent',
@@ -216,7 +250,15 @@ class CurrentCIActivationControls(unittest.TestCase):
         # Source-only membership fixture, not a committed native-build receipt.
         tracked = {path.relative_to(REPO).as_posix(): {} for name in roots
                    for path in (REPO / name).rglob('*') if path.is_file()}
+        view_raw = (PUBLISHED / 'predecessor-view-v1.json').read_bytes()
+        self.assertEqual((len(view_raw), sha(view_raw)), (241022, PUBLISHED_VIEW_SHA))
+        view = json.loads(view_raw)
+        self.assertEqual(len(view['files']), 681)
+        dependencies = {row['read_from'] for row in view['files'] if row['read_from'] is not None}
+        tracked.update({name: {} for name in dependencies})
         manifest, names = producer.source_members(REPO, tracked)
+        self.assertTrue(dependencies <= set(names))
+        self.assertTrue({p.relative_to(REPO).as_posix() for p in PUBLISHED.rglob('*') if p.is_file()} <= set(names))
         self.assertEqual(sha((SOURCE / 'current-source.json').read_bytes()), CURRENT_SHA)
         self.assertTrue({row['path'] for row in manifest['files']} <= set(names))
         for root in roots[-5:]:

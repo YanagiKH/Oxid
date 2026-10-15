@@ -176,8 +176,8 @@ class AuthenticationControls(unittest.TestCase):
         fake.preflight.return_value = {'inputs': {}}
         with mock.patch.object(support, 'load_module', return_value=fake), \
              mock.patch.object(support, 'regular', side_effect=[b'dispatcher', b'package']), \
-             mock.patch.object(support, 'sha', side_effect=[support.DISPATCHER_SHA, support.SOURCE_PACKAGE_SHA]), \
-             self.assertRaises(ValueError):
+             mock.patch.object(support, 'sha', side_effect=[support.DISPATCHER_SHA, support.DISPATCHER_SHA, support.SOURCE_PACKAGE_SHA]), \
+             self.assertRaisesRegex(ValueError, 'Current Unit1 requires the active fallible-lexer outer admission'):
             support.admit(PACKAGE.parents[2])
         fake.preflight.assert_called_once()
 
@@ -189,7 +189,7 @@ class AuthenticationControls(unittest.TestCase):
 
     def test_changed_trusted_package_rejected_before_loading(self):
         with mock.patch.object(support, 'regular', side_effect=[b'dispatcher', b'package']), \
-             mock.patch.object(support, 'sha', side_effect=[support.DISPATCHER_SHA, 'wrong']), \
+             mock.patch.object(support, 'sha', side_effect=[support.DISPATCHER_SHA, support.DISPATCHER_SHA, 'wrong']), \
              mock.patch.object(support, 'load_module') as load, self.assertRaises(ValueError):
             support.admit(Path('.'))
         load.assert_not_called()

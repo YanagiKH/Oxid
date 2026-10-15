@@ -664,9 +664,26 @@ def source_members(repo, tracked):
     authority = read_json(repo / BINDING / "authority.json")
     names = {row["path"] for row in current["files"]}
     names.update(row["path"] for row in authority["repository_inputs"])
+    view_path = "tests/qualification/published_formatter_current/predecessor-view-v1.json"
+    view_raw, _ = stable_bytes(no_symlink_path(repo / view_path))
+    require(len(view_raw) == 241022 and sha256(view_raw) ==
+            "e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8",
+            "changed fixed published-main predecessor view")
+    predecessor_view = strict_json(view_raw)
+    require(len(predecessor_view["files"]) == 681,
+            "changed published-main predecessor dependency count")
+    for row in predecessor_view["files"]:
+        dependency = row["read_from"]
+        if dependency is not None:
+            require(type(dependency) is str and dependency and "\\" not in dependency
+                    and not dependency.startswith("/")
+                    and all(part not in ("", ".", "..") for part in dependency.split("/")),
+                    "unsafe published-main predecessor dependency")
+            names.add(dependency)
     prefixes = ("src/", "native/", "compiler/", "stdlib/", "rfcs/", ".cargo/", BINDING + "/",
                 "tests/fixtures/fixed_array_unit2d_independent/",
                 "tests/qualification/lexer_reservation_current/",
+                "tests/qualification/published_formatter_current/",
                 "tests/fixtures/typed_project_source_binding_byte_storage_v1/",
                 "tests/qualification/unit2_u8_current/",
                 "tests/fixtures/typed_project_unit2_independent/",

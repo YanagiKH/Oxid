@@ -1,0 +1,159 @@
+{
+  "base_members": 376,
+  "build_import_replacements": 2,
+  "changed_current_authority_constants": [
+    "CURRENT_SOURCE_SHA",
+    "CURRENT_FILES_SHA",
+    "OBSERVER_FILES_SHA"
+  ],
+  "compiler_invocations": 0,
+  "consumer_inventory_modified": false,
+  "exact_head_ci_activation": false,
+  "execution_qualified": false,
+  "external_review_required": [
+    "exact helper and generator bytes",
+    "all five generated output bytes",
+    "unchanged public runtime and gate closure",
+    "unchanged 173-consumer inventory and complete final CI input closure",
+    "actual caller exclusion, effects and C/M/package/compiled-global overlap",
+    "fresh materialization and control-batch gates"
+  ],
+  "generated_pin_dag": {
+    "authority": [
+      "proof",
+      "helper"
+    ],
+    "build": [
+      "authority",
+      "helper"
+    ],
+    "generator": [
+      "helper"
+    ],
+    "helper": [],
+    "proof": [
+      "helper"
+    ],
+    "receipt": [
+      "proof",
+      "authority",
+      "build",
+      "tests"
+    ],
+    "tests": [
+      "proof",
+      "helper"
+    ]
+  },
+  "historical_authority_constants_unchanged": [
+    "LEXER_LIFECYCLE_HELPER_SHA",
+    "LEXER_LIFECYCLE_AUTHORITY_SHA",
+    "LIFECYCLE_PATCH_SHA"
+  ],
+  "inputs": [
+    {
+      "bytes": 45254,
+      "path": "published_lifecycle.py",
+      "sha256": "8958281fad4bd60e581f8642f6098dde76dcf2a354d8493d02d62bc837bff599"
+    },
+    {
+      "bytes": 5824,
+      "path": "source_dispatcher.py",
+      "sha256": "695ea921fa6c263fd22bb8bd11a8ac01046002ab2feb8943c3831e289ac78b98"
+    },
+    {
+      "bytes": 16025,
+      "path": "source-package-manifest.json",
+      "sha256": "9a36d668a53e763bc06cb8e38b32d9808152537bafe14c2dcd0fd4d9a9b64ec0"
+    },
+    {
+      "bytes": 74567,
+      "path": "published-formatter-source-v1.json",
+      "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
+    },
+    {
+      "bytes": 282549,
+      "path": "lexer-reservation-lifecycle-v2.json",
+      "sha256": "f8e6e92eda7c0d07dea9a73301be9318f32c4a0eddb7126a581ad17e88d10e86"
+    },
+    {
+      "bytes": 1600,
+      "path": "authority.py",
+      "sha256": "346485ecb8afed13bd784190f57f8e86a4d6d065437c2220e99928ade425aac7"
+    },
+    {
+      "bytes": 14651,
+      "path": "build.py",
+      "sha256": "df3d748ee033761a15b3142a4d77f6a5f34dcd6cf10463a87d9757020e21baa7"
+    },
+    {
+      "bytes": 4442,
+      "path": "test_lexer_reservation.py",
+      "sha256": "5afea775ea089e577487c3de71ed5a803707d50d176a3d8e52a99aa4a7e1e132"
+    }
+  ],
+  "materializations": 0,
+  "new_named_descriptors": [
+    "PUBLISHED_LIFECYCLE_HELPER",
+    "PUBLISHED_LIFECYCLE_PROOF"
+  ],
+  "observer_members": 377,
+  "original_lifecycle_admissions": 0,
+  "outputs": [
+    {
+      "bytes": 1999,
+      "path": "authority.py",
+      "sha256": "88c4c9b8a728f0ffccd73cda0df4829a84aec3a79bc9edee096e807b67ef3635"
+    },
+    {
+      "bytes": 14635,
+      "path": "build.py",
+      "sha256": "c4b19037171c61c52288b67b3e1a9c2b9cc55ca3c3aebc3adf056ed904f84d2e"
+    },
+    {
+      "bytes": 149158,
+      "path": "published-lifecycle-v1.json",
+      "sha256": "3c6df4cab7809bb25922b38c41f448f896f910c71b2d1a0362f184a9fb45e727"
+    },
+    {
+      "bytes": 4426,
+      "path": "test_lexer_reservation.py",
+      "sha256": "3178d84744642553d1a7505095391525c03e0631a351a542bd7411f438dcab5e"
+    }
+  ],
+  "recipe": "authenticated-pure-declarations-and-exact-consumer-seams-v1",
+  "runtime_or_host_results_relabelled": false,
+  "schema": "oxid-published-public-observer-derivation-v1",
+  "six_original_assertion_bodies": [
+    {
+      "name": "test_complete_maps_and_exact_inverse",
+      "unchanged_ast_sha256": "d91e74ab1a4cb98d0168d7cf6c59f697250ea2e47ec9ca9d6403f28bb2192811"
+    },
+    {
+      "name": "test_nonlexer_insertions_unchanged",
+      "unchanged_ast_sha256": "1a9fbfc8a7ec84d1f5f6baa746de414b577cb1d4a8f4e3a6050793ce8bd9e9c7"
+    },
+    {
+      "name": "test_each_exact_hunk_context_is_checked",
+      "unchanged_ast_sha256": "eedd0eac8f85c9b614a5ebdcabae6363e1c8a593b27971aee740294c239bd54c"
+    },
+    {
+      "name": "test_reordered_and_duplicate_patch_sections_rejected",
+      "unchanged_ast_sha256": "7ac13b1a239b7b857031e94f2183848094ec39e128f41c32c5d09d8fb39fb16c"
+    },
+    {
+      "name": "test_missing_duplicate_and_wrapper_hooks_reject",
+      "unchanged_ast_sha256": "2698b13438317b5c3299d476ae453e4af998ed8b13e519b13c38dd00785af42f"
+    },
+    {
+      "name": "test_stale_predecessor_and_tampered_patch_reject",
+      "unchanged_ast_sha256": "ef52e911ea3150f99a5f6a1cab3ea7a1e7dc4574d857dc058ee5d83b98164b41"
+    }
+  ],
+  "source_only": true,
+  "test_import_replacements": 1,
+  "test_proof_name_replacements": 1,
+  "transport_paths": [
+    "src/main.rs"
+  ]
+}

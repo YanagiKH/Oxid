@@ -43,7 +43,7 @@ ELF_ENV = {"PATH": "/no-tools"}
 # Reviewed cache-location admission successor executes the unchanged enum roster. The exact
 # 237-member enum predecessor remains in enum-source.json; current execution
 # uses the complete reviewed current authority, never a caller-supplied subset.
-REVIEWED_SOURCE_SHA256 = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
+REVIEWED_SOURCE_SHA256 = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
 
 
 def require(condition, message):

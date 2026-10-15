@@ -361,12 +361,30 @@ class BoundedEnumNativeControls(unittest.TestCase):
         predecessor = json.loads(predecessor_raw)
         self.assertEqual(manifest["lexer_reservation_predecessor_sha256"], byte.SOURCE_SHA)
         transition = json.loads(original.with_name("lexer-reservation-authority-v2.json").read_bytes())
-        self.assertEqual(manifest["reviewed_source_head"], "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489")
-        self.assertEqual(manifest["source_only_tree"], "7f5c9aa08c569c4d0b5a27391d8fc68337075d36")
+        self.assertEqual(manifest["reviewed_source_head"], "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d")
+        self.assertEqual(manifest["source_only_tree"], "89e90c3ec83d0712d0037a0407fc6571883c5e9c")
         current_map = {row["path"]: row for row in manifest["files"]}
         predecessor_map = {row["path"]: row for row in predecessor["files"]}
         self.assertEqual(set(current_map), set(predecessor_map))
-        changed = sorted(name for name in current_map if current_map[name] != predecessor_map[name])
+        published_raw = (repo / 'tests/qualification/published_formatter_current/predecessor-v1/tests/fixtures/typed_project_source_binding/current-source.json').read_bytes()
+        self.assertEqual((len(published_raw), hashlib.sha256(published_raw).hexdigest()),
+                         (74328, '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'))
+        published = json.loads(published_raw)
+        self.assertIs(type(published), dict)
+        self.assertIs(type(published['files']), list)
+        for row in published['files']:
+            self.assertIs(type(row), dict)
+            self.assertIs(type(row['path']), str)
+            self.assertIs(type(row['bytes']), int)
+            self.assertIs(type(row['sha256']), str)
+        self.assertEqual((len(published['files']), published['reviewed_source_head'], published['source_only_tree']),
+                         (376, 'b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489', '7f5c9aa08c569c4d0b5a27391d8fc68337075d36'))
+        published_map = {row['path']: row for row in published['files']}
+        self.assertEqual(len(published_map), 376)
+        self.assertEqual(set(current_map), set(published_map))
+        self.assertEqual(sorted(name for name in current_map if current_map[name] != published_map[name]),
+                         ['src/main.rs'])
+        changed = sorted(name for name in published_map if published_map[name] != predecessor_map[name])
         self.assertEqual(changed, transition["transition_paths"])
         self.assertEqual(len(changed), 15)
         reduced = dict(manifest, files=[row for row in manifest["files"]
@@ -406,7 +424,7 @@ class BoundedEnumNativeControls(unittest.TestCase):
     def test_native_entrypoints_and_workflow_share_the_exact_current_source_pin(self):
         import verify_bounded_stdin_native as stdin_gate
         import verify_bounded_stdout_native as stdout_gate
-        expected = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
+        expected = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]

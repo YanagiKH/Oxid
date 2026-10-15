@@ -1483,9 +1483,9 @@
       "sha256": "60cf624a39a0cd4d351cfff6fa84f4c00fc960f5ce90c84127732009f0bc0004"
     },
     {
-      "bytes": 132262,
+      "bytes": 133034,
       "path": "src/main.rs",
-      "sha256": "b4a7ed5fa23a299a47862b16373c2cc0bd5b654ae9ca62d49d725212c83d6d24"
+      "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
     },
     {
       "bytes": 40814,
@@ -1927,12 +1927,15 @@
   "producer_diagnostic_source_sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29",
   "projected_base_head": "56f7dec0ce499512b45b2bae2c67e834f900c530",
   "projected_source_sha256": "850555bcc78b355029ed2ff0a4a094762f0ea4c0c5bcf5f728d30bbbcc213304",
-  "purpose": "Exact fallible lexer reservation source successor; all predecessor authorities and observations remain immutable.",
-  "reviewed_source_head": "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489",
+  "published_main_head": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+  "published_main_tree": "f66d5ae31272268c29f520ec523ee1fa31c15ee9",
+  "published_source_predecessor_sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261",
+  "purpose": "Exact published-main formatter source successor; historical authorities retain their original identities.",
+  "reviewed_source_head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "7f5c9aa08c569c4d0b5a27391d8fc68337075d36",
+  "source_only_tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

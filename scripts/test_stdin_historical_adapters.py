@@ -56,7 +56,7 @@ class StdinParserResourceTests(unittest.TestCase):
         self.assertIs(active_owner, vars(binding._runtime))
         self.assertIsNot(active_owner, vars(binding))
         self.assertIsNot(active_owner, historical_owner)
-        self.assertEqual(active_owner["__name__"], "lexer_reservation_retained_execution")
+        self.assertEqual(active_owner["__name__"], "published_formatter_retained_execution")
         self.assertEqual(binding.adapt_stdin_parser_resource.__code__,
                          historical.adapt_stdin_parser_resource.__code__)
         self.assertEqual(binding.STDIN_RESOURCE_ADAPTER, historical.STDIN_RESOURCE_ADAPTER)

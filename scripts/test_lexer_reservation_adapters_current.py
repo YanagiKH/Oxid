@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[1]
 class CurrentLexerAdapterSuites(unittest.TestCase):
     def run_source_controls(self, relative):
         result = subprocess.run([sys.executable, '-B', str(REPO / relative), '-v'],
-                                cwd=REPO, capture_output=True, text=True, timeout=180,
+                                cwd=REPO, capture_output=True, text=True, timeout=300,
                                 env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

@@ -78,3 +78,23 @@ They include division/remainder by zero, invalid and out-of-bounds array indexes
 and constant binding reassignment. This is not a stable diagnostic schema or
 compile-time rejection guarantee: the legacy artifact compiler accepts these
 syntactically valid programs and errors occur when they are run.
+
+## Directory formatting
+
+Default and explicit `legacy-0.9` `oxid fmt <directory>` recursively format
+regular `.ox` files, ignoring `.git`, `target` and `.oxid` directories. Child
+symbolic links are skipped, whether they name files, directories, ancestors or
+missing targets. Real nested source files are still formatted. A tree containing
+only skipped entries retains the existing no-source error.
+
+This policy applies to children discovered during directory traversal. An
+explicitly named file or directory symlink retains its existing target-following
+behavior. Directory order and cross-file atomicity remain unspecified; the
+metadata check and subsequent reads/writes do not provide a security boundary
+against concurrent filesystem replacement. Typed-preview formatting is unchanged.
+
+The Unix symlink cases and existing legacy behavior checks are in
+[tests/legacy_formatter.rs](../tests/legacy_formatter.rs). Run
+`cargo test --locked --test legacy_formatter --test typed_formatter` for the
+focused formatter regression. Unix test coverage does not establish Windows
+symlink behavior.

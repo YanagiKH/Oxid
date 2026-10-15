@@ -662,7 +662,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = 'd8a02a6e970417b2108fcb8ff5e9eb2b32b068d562a7042d73eabaf504dae35c'  # SOURCE-ONLY: independent phase authority pin review is pending.
+AUTHORITY_SHA = '900f9e7cfb32027b4406e2860c5bc39abb0d831c89931efaf166911905c35ca4'  # SOURCE-ONLY: independent phase authority pin review is pending.
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -835,9 +835,12 @@ def lexer_predecessor_body(a, name, raw):
 
 
 def compose_current_lexer(a, raw):
-    if 'lexer_reservation' not in a['current']:
-        return compose_division_lexer(a, raw)
-    return lexer_module(a['current']).compose(lexer_api(), a, 'src/frontend/lexer.rs', raw)
+    support, admitted, api, source_rejected = _published_parser_context()
+    try:
+        return support.compose(api, a, 'src/frontend/lexer.rs', raw,
+                               False, 'lexer', _PUBLISHED_PARSER_SEAL, admitted)
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
 
 
 BYTE_STORAGE_PARSER_PREDECESSOR_SHA = '29ab8e953b865fe723719e1ee7b6054b0d90288658fdc3b12f8c83a873dc42a9'
@@ -1782,132 +1785,30 @@ def _prephase_authority():
 
 
 def compose_source_read(a, raw):
-    """Compose the two historical source-read hooks onto exact current source."""
-    name = "src/frontend/source.rs"
-    current = next(row for row in a["current"]["source_delta"] if row["path"] == name)
-    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current source identity")
-    patch = a["current"]["formatter_transition_patch"]
-    verify_map(REPOSITORY, [patch])
-    parts = (REPOSITORY / patch["path"]).read_bytes().split(b"diff --git a/src/frontend/source.rs b/src/frontend/source.rs\n")
-    same(len(parts), 2, "exact source-read formatter patch section")
-    section = parts[1].split(b"\ndiff --git ", 1)[0]
-    require(not any(line.startswith(b"-") and not line.startswith(b"---") for line in section.splitlines()),
-            "source-read formatter patch must be insertion only")
-    addition = b"".join(line[1:] for line in section.splitlines(keepends=True)
-                       if line.startswith(b"+") and not line.startswith(b"+++"))
-    same(len(addition.splitlines()), 7, "exact seven-line formatter accessor")
-    same(raw.count(addition), 1, "exact formatter accessor occurrence")
-    previous, previous_raw = u8_predecessor_body(a, name, raw)
-    projected = restore_enum_source(previous, name, previous_raw)
-    original = projected.replace(addition, b"", 1)
-    historical = next(row for row in a["original_files"] if row["path"] == name)
-    same(current["before"], historical, "composition historical source identity")
-    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
-         "formatter accessor must leave exact historical source")
-    observer = b"crate::frontend::parser::unit4_observer"
-    def transform(body):
-        for before, after in (
-            (b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        if span.file",
-             b"    pub(super) fn try_text(&self, span: Span) -> Option<&str> {\n        " + observer + b"::source_read(span.end.saturating_sub(span.start));\n        if span.file"),
-            (b"    pub fn text(&self) -> &str {\n        &self.text",
-             b"    pub fn text(&self) -> &str {\n        " + observer + b"::source_read(self.text.len());\n        &self.text"),
-        ):
-            same(body.count(before), 1, "exact historical source-read hook location")
-            body = body.replace(before, after, 1)
-        return body
-    historical_instrumented = next(row for row in a["derived_files"] if row["path"] == name)
-    original_instrumented = transform(original)
-    same({"path": name, "bytes": len(original_instrumented), "sha256": sha(original_instrumented)},
-         historical_instrumented, "composition must preserve exact historical instrumentation")
-    return transform(raw)
+    support, admitted, api, source_rejected = _published_parser_context()
+    try:
+        return support.compose(api, a, 'src/frontend/source.rs', raw,
+                               False, 'source', _PUBLISHED_PARSER_SEAL, admitted)
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
 
 
 def compose_namespace_resource(a, raw):
-    """Preserve the two frozen namespace-debit hooks on current resource code."""
-    name = "src/frontend/declaration_index/resource.rs"
-    previous, previous_raw = u8_predecessor_body(a, name, raw)
-    original = restore_enum_source(previous, name, previous_raw)
-    historical = next(row for row in a["original_files"] if row["path"] == name)
-    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
-         "enum namespace resource must recover exact historical source")
-    observer = b"crate::frontend::parser::unit4_observer"
-    def transform(body):
-        for before, after in (
-            (b"    pub(super) fn preflight(&self, origin: Span) -> Result<(), Box<Diagnostic>> {",
-             b"    pub(super) fn preflight(&self, origin: Span) -> Result<(), Box<Diagnostic>> {\n        " + observer + b"::namespace_debit(1);"),
-            (b"        operation: &'static str,\n    ) -> Result<(), Box<Diagnostic>> {",
-             b"        operation: &'static str,\n    ) -> Result<(), Box<Diagnostic>> {\n        " + observer + b"::namespace_debit(units);"),
-        ):
-            same(body.count(before), 1, "exact historical namespace-debit hook location")
-            body = body.replace(before, after, 1)
-        return body
-    historical_instrumented = next(row for row in a["derived_files"] if row["path"] == name)
-    composed = transform(original)
-    same({"path": name, "bytes": len(composed), "sha256": sha(composed)}, historical_instrumented,
-         "enum namespace resource must preserve exact historical instrumentation")
-    return transform(raw)
+    support, admitted, api, source_rejected = _published_parser_context()
+    try:
+        return support.compose(api, a, 'src/frontend/declaration_index/resource.rs',
+                               raw, False, 'namespace', _PUBLISHED_PARSER_SEAL, admitted)
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
 
 
 def compose_array_instrumentation(a, name, raw, control=False):
-    """Apply the frozen hooks only at three explicitly bound array-overlap paths."""
-    require(name in ARRAY_INSTRUMENTATION_PATHS, "unapproved array instrumentation path")
-    require(not control or name != "src/frontend/project/budget.rs", "unapproved control composition")
-    if 'lexer_reservation' in a['current'] and name == 'src/frontend/project/budget.rs':
-        return lexer_module(a['current']).compose(lexer_api(), a, name, raw)
-    active = a["current"]
-    current = next(row for row in active["source_delta"] if row["path"] == name)
-    same({"path": name, "bytes": len(raw), "sha256": sha(raw)}, current["after"], "composition current array identity")
-    runner = active["source_binding_runner"]
-    transition = active["combined_transition_patch"]
-    same(runner["path"], "tests/fixtures/typed_project_source_binding/run.py", "source binding runner path")
-    same(transition["path"], "tests/fixtures/typed_project_source_binding/combined-transition.patch", "combined transition path")
-    verify_map(REPOSITORY, [runner, transition])
-    module = types.ModuleType("unit4_current_source_binding")
-    module.__file__ = str(REPOSITORY / runner["path"])
-    exec(compile((REPOSITORY / runner["path"]).read_bytes(), module.__file__, "exec"), module.__dict__)
-    sections = (REPOSITORY / transition["path"]).read_bytes().split(b"diff --git ")
-    prefix = ("a/" + name + " b/" + name + "\n").encode()
-    selected = [b"diff --git " + part for part in sections[1:] if part.startswith(prefix)]
-    same(len(selected), 1, "exact combined instrumentation source section")
-    patch = selected[0]
-    previous, previous_raw = u8_predecessor_body(a, name, raw)
-    combined_raw = (restore_division_source(previous, name, previous_raw) if name in DIVISION_INSTRUMENTATION_PATHS
-                    else restore_enum_source(previous, name, previous_raw))
-    restored, touched = module.apply_inverse_patch({name: combined_raw}, patch, sha(patch), len(patch), (name,))
-    same(touched, [name], "exact instrumentation inverse scope")
-    historical = next(row for row in a["original_files"] if row["path"] == name)
-    same(current["before"], historical, "composition historical array source identity")
-    original = restored[name]
-    same({"path": name, "bytes": len(original), "sha256": sha(original)}, historical,
-         "array transition must recover exact historical source")
-    helper_path = FROZEN / "frozen/helpers/prepare.py"
-    verify_map(helper_path.parent, [next(row for row in a["helper_files"] if row["path"] == "prepare.py")])
-    helper = types.ModuleType("unit4_frozen_instrumentation")
-    helper.__file__ = str(helper_path)
-    exec(compile(helper_path.read_bytes(), str(helper_path), "exec"), helper.__dict__)
-    def transform(body, current=False):
-        text = body.decode()
-        if name == "src/frontend/ast.rs":
-            text = helper.replace(text, 'impl Program {', 'impl Program {\n    #[cfg(test)]\n    pub(super) fn unit4_source_handle(&self) -> (u64,usize,usize) { crate::frontend::parser::unit4_observer::provenance_handle(&self.source) }')
-        elif name == "src/frontend/parser.rs":
-            if control:
-                text += '\n#[cfg(test)]\npub(super) mod unit4_observer;\n'
-            elif current:
-                current_helper = compose_enum_parser_helper(a)
-                text = current_helper.parser_overlay(text)
-                same(text.count(ENUM_NODE_ANCHOR), 1, 'exact closed observer enum node bridge')
-                text = text.replace(ENUM_NODE_ANCHOR, ENUM_NODE_BRIDGE + ENUM_NODE_ANCHOR, 1)
-            else:
-                text = helper.parser_overlay(text)
-        else:
-            text = helper.replace(text, '        #[cfg(test)]\n        self.trace.push(ReserveEvent {', '        #[cfg(test)]\n        ' + helper.J + '::reserve(kind, length, element_bytes, success);\n        #[cfg(test)]\n        self.trace.push(ReserveEvent {')
-        return text.encode()
-    historical_composed = transform(original)
-    expected = next(row for row in a["control_derived_files" if control else "derived_files"] if row["path"] == name)
-    same({"path": name, "bytes": len(historical_composed), "sha256": sha(historical_composed)}, expected,
-         "array composition must preserve exact historical instrumentation")
-    composed = transform(raw, current=True)
-    return compose_u8_closed_policy(a, name, composed) if name == "src/frontend/parser.rs" else composed
+    support, admitted, api, source_rejected = _published_parser_context()
+    try:
+        return support.compose(api, a, name, raw, control, 'array',
+                               _PUBLISHED_PARSER_SEAL, admitted)
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
 
 
 def compose_enum_parser_helper(a):
@@ -2325,10 +2226,11 @@ def compose_observer_initializer(a):
 
 
 def current_candidate(a):
-    active = a["current"]
-    return {"schema": "oxid-unit4-current-candidate-source-manifest-v1", "historical_commit": a["base_commit"],
-            "reviewed_source_head": active["reviewed_source_head"], "source_only_tree": active["source_only_tree"],
-            "current_source_manifest_sha256": active["current_source_manifest"]["sha256"], "files": active["current_base_files"]}
+    support, _ = _published_parser_modules()
+    try:
+        return support.current_candidate(a)
+    except support.Rejected as error:
+        raise Rejected(str(error)) from error
 
 def fresh(path):
     path = Path(path).absolute()
@@ -3233,23 +3135,11 @@ PHASE_ROLES = ('observed', 'not_observed')
 
 
 def phase_previous(a):
-    """Remove only the reviewed outer delta and recover every predecessor field."""
-    active = a['current']
-    binding = active['lexer_phase']
-    same(binding['predecessor']['path'], PHASE_DIRECTORY + 'lexer-reservation-authority-v2.json',
-         'exact immutable pre-phase C2 authority path')
-    require(isinstance(PRE_PHASE_AUTHORITY_SHA, str) and
-            re.fullmatch('[0-9a-f]{64}', PRE_PHASE_AUTHORITY_SHA), 'pre-phase authority pin awaits review')
-    same(binding['predecessor']['sha256'], PRE_PHASE_AUTHORITY_SHA, 'immutable pre-phase C2 authority pin')
-    verify_map(REPOSITORY, [binding['predecessor']])
-    before = read(REPOSITORY / binding['predecessor']['path'])
-    require('lexer_phase' not in before, 'phase predecessor must be exact pre-phase object')
-    restored = dict(active)
-    del restored['lexer_phase']
-    for name in ('current_derived_files', 'current_control_derived_files', 'u8_policy_controls'):
-        restored[name] = before[name]
-    same(restored, before, 'phase layer changes unrelated complete authority fields')
-    return dict(a, current=before)
+    support, admitted, api, source_rejected = _published_parser_context()
+    try:
+        return support.phase_previous(api, a, _PUBLISHED_PARSER_SEAL, admitted)
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
 
 
 def phase_module(a, controls=False):
@@ -3318,62 +3208,11 @@ def phase_composed_body(a, name, before, control=False):
 
 
 def authority():
-    require(isinstance(AUTHORITY_SHA, str) and re.fullmatch('[0-9a-f]{64}', AUTHORITY_SHA),
-            'phase authority activation awaits independent review')
-    raw = (HERE / 'authority.json').read_bytes()
-    same(sha(raw), AUTHORITY_SHA, 'reviewed outer phase authority pin')
-    same((HERE / 'lexer-phase-authority-v1.json').read_bytes(), raw,
-         'active authority must equal exact immutable phase authority')
-    active = load(raw)
-    binding = active['lexer_phase']
-    same(set(binding), {'version', 'predecessor', 'helper', 'source_controls', 'correspondence', 'controls'},
-         'closed phase authority section')
-    same(binding['version'], 'oxid-unit4-lexer-phase-layer-v1', 'phase authority version')
-    for key, filename in (('predecessor', 'lexer-reservation-authority-v2.json'),
-                          ('helper', 'lexer_phase.py'), ('source_controls', 'test_lexer_phase.py'),
-                          ('correspondence', 'lexer-phase-composition-v1.json')):
-        same(binding[key]['path'], PHASE_DIRECTORY + filename, 'exact phase authority member path')
-        verify_map(REPOSITORY, [binding[key]])
-    # Run the retained complete source-v2 admission against the immutable
-    # pre-phase object. No omit relaxation or mutable current-map substitution.
-    previous = _prephase_authority()
-    result = dict(previous, current=active)
-    same(phase_previous(result), previous, 'outer authority inverse/delegation')
-    module = phase_module(result)
-    phase_control_binding(result)
-    verify_map(REPOSITORY, [active['u8_policy_controls']])
-    roles = []
-    operations = (('src/frontend/project/budget.rs', 'reserve_dispatch_v1'),
-                  ('src/frontend/lexer.rs', 'token_forward_v1'),
-                  ('src/frontend/parser/unit4_observer.rs', 'observer_phase_v1'))
-    for control in (False, True):
-        field = 'current_control_derived_files' if control else 'current_derived_files'
-        prior = previous['current'][field]
-        derived = {row['path']: row for row in prior}
-        members = []
-        for name, operation in (operations[-1:] if control else operations):
-            if name == 'src/frontend/project/budget.rs':
-                before = compose_array_instrumentation(previous, name, (REPOSITORY / name).read_bytes())
-            elif name == 'src/frontend/lexer.rs':
-                before = compose_current_lexer(previous, (REPOSITORY / name).read_bytes())
-            else:
-                before = compose_observer_initializer(previous)
-            after = phase_composed_body(result, name, before, control)
-            before_identity = {'path': name, 'bytes': len(before), 'sha256': sha(before)}
-            after_identity = {'path': name, 'bytes': len(after), 'sha256': sha(after)}
-            derived[name] = after_identity
-            members.append({'path': name, 'before': before_identity, 'after': after_identity, 'operation': operation})
-        ordered = [derived[name] for name in sorted(derived, key=lambda name: PurePosixPath(name).parts)]
-        same(len(ordered), 542, 'independently derived complete phase role map count')
-        same(ordered, active[field], 'complete phase map may change only reviewed bodies')
-        roles.append({'role': 'not_observed' if control else 'observed',
-                      'predecessor_map_sha256': sha(module.process_projection(prior)),
-                      'derived_map_sha256': sha(module.process_projection(ordered)), 'members': members})
-    correspondence = {'schema': 'oxid-unit4-lexer-phase-composition-v1',
-                      'predecessor_authority': binding['predecessor'], 'adapter': binding['helper'], 'roles': roles}
-    same(read(REPOSITORY / binding['correspondence']['path']), correspondence,
-         'exact reviewed complete phase correspondence')
-    return result
+    support, admitted, api, source_rejected = _published_parser_context()
+    try:
+        return support.authority(api, _PUBLISHED_PARSER_SEAL, admitted)
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
 
 
 def phase_native_identity(row, *, root=None):
@@ -3687,6 +3526,59 @@ def main():
                   "current_derived_files": len(a["current"]["current_derived_files"]), "candidate_executions": 0}
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0 if result.get("status", "pass") == "pass" else 1
+
+
+_PUBLISHED_PARSER_SEAL = {'authority': {'bytes': 526829, 'path': 'tests/qualification/unit4_parser_current/authority.json', 'sha256': '900f9e7cfb32027b4406e2860c5bc39abb0d831c89931efaf166911905c35ca4'}, 'schema': 'oxid-unit4-published-main-parser-seal-v1', 'source_dispatcher': {'bytes': 6721, 'path': 'tests/fixtures/typed_project_source_binding/run.py', 'sha256': '2850ee1b67698494d5f8aa5c13dc457c7b927eb5f680abffff917be2496439ce'}, 'source_manifest': {'bytes': 74567, 'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'}, 'source_runtime': {'bytes': 32290, 'path': 'tests/qualification/published_formatter_current/published_current.py', 'sha256': '11f96d500198406d29e1a1e0880ade13dd8e2afd799315a08d5febcf5e889393'}, 'source_runtime_dependencies': [{'artifact': {'bytes': 10711, 'path': 'tests/qualification/lexer_reservation_current/adapters.py', 'sha256': '0520fbf2c651f9b22897a19937c54749b0153ee234bae424dc4132d48e198e2a'}, 'module': 'adapters'}, {'artifact': {'bytes': 12008, 'path': 'tests/qualification/lexer_reservation_current/source_transition.py', 'sha256': 'e642061c863ac1b836eeaeea72c8fdc1152097be4dc285ee2d071ea3372da9a0'}, 'module': 'source_transition'}, {'artifact': {'bytes': 783, 'path': 'tests/qualification/lexer_reservation_current/seal.py', 'sha256': 'fa8c298cc5cc65dee984034190ab2e1fe945812e7a873004e14b3d3e242cf878'}, 'module': 'seal'}, {'artifact': {'bytes': 16325, 'path': 'tests/qualification/lexer_reservation_current/current.py', 'sha256': 'f15abe15b48cf6a5b7a196ec77c45d8c34c8e0fca6d98dfbf2bb35fcabbcf850'}, 'module': 'current'}, {'artifact': {'bytes': 12447, 'path': 'tests/qualification/published_formatter_current/published_transition.py', 'sha256': '069f7610fe2ffd3e51c47b1d2ed8f6db61f774dccb1dabf6977b24472e973a45'}, 'module': 'published_transition'}, {'artifact': {'bytes': 12882, 'path': 'tests/qualification/published_formatter_current/published_view.py', 'sha256': '11a381be0f642138663d46c928b48b434332cb8152cf5006dd452fd178076e9b'}, 'module': 'published_view'}], 'source_seal': {'authority': {'bytes': 265133, 'path': 'published-formatter-authority-v1.json', 'sha256': 'dac2e66cf02e2d6d5c14531b30de8cda88696676747509419a8478e6ed871c43'}, 'patch': {'bytes': 1522, 'path': 'published-formatter-transition-v1.patch', 'sha256': 'c6163a923cf56bde945d753628bc6f2c7c4ad717affd35e8bafe7a0c195bccd6'}, 'predecessor_view': {'bytes': 241022, 'path': 'tests/qualification/published_formatter_current/predecessor-view-v1.json', 'sha256': 'e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8'}, 'schema': 'oxid-published-main-source-seal-v1', 'source_manifest': {'bytes': 74567, 'path': 'published-formatter-source-v1.json', 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'}, 'source_proof': {'bytes': 219557, 'path': 'published-main-source-proof-v1.json', 'sha256': '854ab1a1f5ad1075b836d7ea7387e7692b0adae59cd709921e6a8eae17770819'}}, 'support': {'bytes': 22884, 'path': 'tests/qualification/published_formatter_current/published_parser.py', 'sha256': '415cb1b9391cd330388dd4f80c62f4057209d75ec710348d726c572bc795b424'}, 'view': {'bytes': 12882, 'path': 'tests/qualification/published_formatter_current/published_view.py', 'sha256': '11a381be0f642138663d46c928b48b434332cb8152cf5006dd452fd178076e9b'}}
+
+# Explicit source-derived published-main transport. No activation data fallback.
+def _published_parser_modules():
+    seal = _PUBLISHED_PARSER_SEAL
+    rows = seal['source_runtime_dependencies']
+    same([row['module'] for row in rows],
+         ['adapters', 'source_transition', 'seal', 'current',
+          'published_transition', 'published_view'],
+         'closed published source import roster/order')
+    same(seal['view'], rows[-1]['artifact'], 'one authenticated view implementation')
+    named = [(row['module'], row['artifact']) for row in rows]
+    named += [('oxid_published_current', seal['source_runtime']),
+              ('oxid_published_parser_support', seal['support'])]
+    bodies = []
+    for name, row in named:
+        verify_map(REPOSITORY, [row])
+        path = REPOSITORY / row['path']
+        raw = path.read_bytes()
+        same({'path': row['path'], 'bytes': len(raw), 'sha256': sha(raw)}, row,
+             'exact publication import body')
+        bodies.append((name, path, raw))
+    # Every dependency is authenticated before executing the first one.
+    modules = {}
+    for name, path, raw in bodies:
+        module = types.ModuleType(name)
+        module.__file__ = str(path)
+        sys.modules[name] = module
+        exec(compile(raw, str(path), 'exec'), module.__dict__)
+        modules[name] = module
+    return modules['oxid_published_parser_support'], modules['oxid_published_current']
+
+
+def _published_parser_context():
+    support, current = _published_parser_modules()
+    # Existing CI loaders do not necessarily register this module in sys.modules.
+    # Expose only the six current-module members consumed by parser support.
+    api = types.SimpleNamespace(REPOSITORY=REPOSITORY, AUTHORITY_SHA=AUTHORITY_SHA,
+                                verify_map=verify_map, regular=regular,
+                                read=read, load=load)
+    source_rejected = current.adapters.Reject
+    try:
+        # Preserve the current authority pin-before-preflight/materialization gate.
+        support._seal(api, _PUBLISHED_PARSER_SEAL)
+        admitted = current.preflight(
+            REPOSITORY, REPOSITORY / 'tests/fixtures/typed_project_source_binding',
+            _PUBLISHED_PARSER_SEAL['source_seal'])
+    except (support.Rejected, source_rejected) as error:
+        raise Rejected(str(error)) from error
+    return support, admitted, api, source_rejected
+
 
 
 if __name__ == "__main__":

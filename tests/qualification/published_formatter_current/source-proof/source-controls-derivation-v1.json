@@ -1,0 +1,102 @@
+{
+  "additional_public_controls_pending": 36,
+  "children_launched": 0,
+  "control_counts": {
+    "ci": 20,
+    "public_original": 6,
+    "source_integration": 15,
+    "source_unit": 37,
+    "view": 14
+  },
+  "depends_on_final_ci_inputs_or_common": false,
+  "entrypoint": {
+    "bytes": 179333,
+    "path": "scripts/test_published_formatter_source.py",
+    "sha256": "6ae7556f37e60953ac73af58db1649f17c40f64b7a1903a2c8a51795bcb63d77"
+  },
+  "execution_qualified": false,
+  "historical_source_head": "b3abc9f0dda99d6d8fe65d9c3a9ed31dedcbd489",
+  "input_count": 712,
+  "original_public_consumer_closure": [
+    {
+      "bytes": 1999,
+      "path": "tests/qualification/unit4_public_v3/authority.py",
+      "sha256": "88c4c9b8a728f0ffccd73cda0df4829a84aec3a79bc9edee096e807b67ef3635"
+    },
+    {
+      "bytes": 14635,
+      "path": "tests/qualification/unit4_public_v3/build.py",
+      "sha256": "c4b19037171c61c52288b67b3e1a9c2b9cc55ca3c3aebc3adf056ed904f84d2e"
+    },
+    {
+      "bytes": 1404,
+      "path": "tests/qualification/unit4_public_v3/byte_storage_source_authority.py",
+      "sha256": "14629fd20362700e69c3aca0ce079748bf829533f1d2e5098f43b26ba3df0ba5"
+    },
+    {
+      "bytes": 282549,
+      "path": "tests/qualification/unit4_public_v3/lexer-reservation-lifecycle-v2.json",
+      "sha256": "f8e6e92eda7c0d07dea9a73301be9318f32c4a0eddb7126a581ad17e88d10e86"
+    },
+    {
+      "bytes": 9393,
+      "path": "tests/qualification/unit4_public_v3/lexer_reservation_lifecycle.py",
+      "sha256": "155471428cc243fbb7845ec2dcd21fb982f51e7e8264ccf804f1df07338c91ec"
+    },
+    {
+      "bytes": 7337,
+      "path": "tests/qualification/unit4_public_v3/observer-lexer-reservation-v2.patch",
+      "sha256": "826468198bfd2575d0d01713bb803f19f31b732d482dbf336b7e37567f890824"
+    },
+    {
+      "bytes": 7541,
+      "path": "tests/qualification/unit4_public_v3/observer-u8-v1.patch",
+      "sha256": "c64b43cd0b630fcae46ac4cf73812ad0eb614696474e3af5d75d79b32f5047cf"
+    },
+    {
+      "bytes": 149158,
+      "path": "tests/qualification/unit4_public_v3/published-lifecycle-v1.json",
+      "sha256": "3c6df4cab7809bb25922b38c41f448f896f910c71b2d1a0362f184a9fb45e727"
+    },
+    {
+      "bytes": 45254,
+      "path": "tests/qualification/unit4_public_v3/published_lifecycle.py",
+      "sha256": "8958281fad4bd60e581f8642f6098dde76dcf2a354d8493d02d62bc837bff599"
+    },
+    {
+      "bytes": 4426,
+      "path": "tests/qualification/unit4_public_v3/test_lexer_reservation.py",
+      "sha256": "3178d84744642553d1a7505095391525c03e0631a351a542bd7411f438dcab5e"
+    }
+  ],
+  "published_main_head": "15eac633e167c261ba0246ced49cfdc1c6cef434",
+  "real_consumer": {
+    "bytes": 13923,
+    "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
+    "sha256": "6914cdc093804a32f4c8ef186f4db8667f4b40eadf12aa6a623613157713210f"
+  },
+  "schema": "oxid-published-source-ci-derivation-v1",
+  "self_pinned_entrypoint": false,
+  "source_checkpoint_head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
+  "source_only": true,
+  "template": {
+    "bytes": 51813,
+    "path": "draft/test_published_formatter_source.py",
+    "sha256": "da075b731bdb6054862abff5f7864f3dd9d3c1700bc47edf7c4025e3c5c083ad"
+  },
+  "tests_executed": 0,
+  "transition_test_change": "one factory docstring only; exact inverse and executable AST preserved",
+  "transition_test_predecessor": {
+    "bytes": 63339,
+    "path": "tests/qualification/published_formatter_current/test_published_transition.py",
+    "sha256": "98c7b9ce73173f822971dd7e63e5dbd6db8b1dc2660e4949d7b9e29e3e61f158"
+  },
+  "transition_test_successor": {
+    "bytes": 63494,
+    "path": "tests/qualification/published_formatter_current/test_published_transition.py",
+    "sha256": "4ad6cc50a3f9592d8b12cc50c4ec8a3c7cb251f666c9a9056e6554d7de001e96"
+  },
+  "views_materialized": 0,
+  "workflow_commands_added": 0,
+  "workflow_jobs_added": 0
+}
