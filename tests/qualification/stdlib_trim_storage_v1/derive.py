@@ -16,7 +16,7 @@ ORIGINAL = (6089, '5de6efa9af91ae2aec153a5496454de0ca6d0fa785c657ba3d12f999564b8
 CONSTANTS = '''
 # Fixed storage relocation, independent of any caller-supplied seal or mapping.
 _STRINGS = 'stdlib/strings.ox'
-_ARCHIVE = 'tests/qualification/stdlib_trim_storage_v1/archive/stdlib/strings.ox'
+_ARCHIVE = 'tests/qualification/stdlib_trim_storage_v1/archive/stdlib/strings.ox.data'
 _VIEW_PIN = (1023905, 'ddcf5e3c09cda020aca4f1b639d2a66d7357f843f130054800d20228606ad76a')
 _STRINGS_ROW = {
     'path': 'stdlib/strings.ox', 'read_from': 'stdlib/strings.ox',

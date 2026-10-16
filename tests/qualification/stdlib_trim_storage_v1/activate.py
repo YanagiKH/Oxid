@@ -176,7 +176,7 @@ if __name__ == '__main__':
     put(n,replace(n, "                 'tests/qualification/package_json_current_v1',", 
         "                 'tests/qualification/package_json_current_v1',\n                 'tests/qualification/stdlib_trim_storage_v1',"))
     # Inventory is the last output; explicit source/input roster closes the new root.
-    static=('README.md','derive.py','retained.py','review_inputs.py','activate.py','test_storage.py','test_retained.py','test_active.py','mechanical-inputs-v1.json','archive/stdlib/strings.ox')
+    static=('README.md','derive.py','retained.py','review_inputs.py','activate.py','test_storage.py','test_retained.py','test_active.py','mechanical-inputs-v1.json','archive/stdlib/strings.ox.data')
     newnames={ROOT+n for n in static}|{n for n in out if n.startswith(ROOT)}
     newnames|={row['storage'] for row in list(f.rows.values())+list(f.git_rows.values()) if row['storage'].startswith(ROOT)}
     physical={p.relative_to(repo).as_posix() for p in (repo/ROOT).rglob('*') if p.is_file()}

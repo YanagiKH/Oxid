@@ -10,7 +10,9 @@ primitives avoid repeated string indexing and concatenation: O(n) time/storage.
 The fixed whitespace constant uses existing JSON decoding; no new runtime syntax
 or builtin is introduced. Fufu's tests exercise actual source/OXBC module loading.
 
-`archive/stdlib/strings.ox` retains the original 2345-byte stub, SHA-256
+The `.ox.data` archive is opaque fixture data, outside language discovery.
+The live `stdlib/strings.ox` remains a checked language input.
+`archive/stdlib/strings.ox.data` retains the original 2345-byte stub, SHA-256
 `6ecb6b4c96acd0e788bf49db9a480c930d4235e317af8ffc596bbe8868fb65fd`, Git blob
 `9f81e678fa63bd44b3387db2e1f06e2279b2d72f`.
 `derive.py` derives a named predecessor helper from the pinned original, changing

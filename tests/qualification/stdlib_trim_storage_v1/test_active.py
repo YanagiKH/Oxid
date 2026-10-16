@@ -37,7 +37,7 @@ class ActiveControls(unittest.TestCase):
         helper=runtime._modules['predecessor']
         bodies=helper.capture(REPO,capture['package_json_predecessor']['inputs'],runtime._SOURCE_SEAL['predecessor_view'])
         self.assertEqual(len(bodies),2724)
-        self.assertEqual(bodies['stdlib/strings.ox'],(HERE/'archive/stdlib/strings.ox').read_bytes())
+        self.assertEqual(bodies['stdlib/strings.ox'],(HERE/'archive/stdlib/strings.ox.data').read_bytes())
         hosted=load('trim_active_hosted',HERE/'hosted_controls.py')
         _,fresh=hosted.bootstrap_successor(REPO)
         self.assertEqual(fresh['inputs'],capture['inputs'])
@@ -57,10 +57,27 @@ class ActiveControls(unittest.TestCase):
         q=load('trim_inventory',REPO/r.U/'common.py')
         manifest=q.read(q.HERE/'inputs.json');q.verify_package(REPO,manifest)
         names={x['path'] for x in manifest['files']}
-        for name in ('stdlib/strings.ox','tests/stdlib_strings.rs',r.ROOT+'predecessor.py',r.ROOT+'archive/stdlib/strings.ox',r.ROOT+'retained.py'):
+        for name in ('stdlib/strings.ox','tests/stdlib_strings.rs',r.ROOT+'predecessor.py',r.ROOT+'archive/stdlib/strings.ox.data',r.ROOT+'retained.py'):
             self.assertIn(name,names)
         with self.assertRaises(q.Reject):
             q.verify_package(REPO,{**manifest,'files':[x for x in manifest['files'] if x['path']!=r.ROOT+'retained.py']})
+        # Archives are data; live and unregistered neighboring .ox inputs must
+        # still reach the unchanged verifier's language plan.
+        sys.path.insert(0,str(REPO/'scripts'))
+        verifier=load('trim_current_repo_verifier',REPO/'scripts/verify_repo.py')
+        archive=HERE/'archive/stdlib/strings.ox.data'
+        live=REPO/'stdlib/strings.ox'
+        sources=sorted(path for path in REPO.rglob('*.ox')
+                       if '.oxid' not in path.parts and 'target' not in path.parts)
+        self.assertNotIn(archive,sources)
+        self.assertIn(live,sources)
+        neighbor=HERE/'archive/stdlib/unregistered.ox'
+        self.assertFalse(neighbor.exists())
+        checks,_,_=verifier.source_plan(sources+[neighbor],REPO)
+        self.assertIn((live,False),checks)
+        self.assertIn((neighbor,False),checks)
+        self.assertFalse(any(path==archive for path,_ in checks))
+        self.assertNotIn(archive,verifier.runnable_sources(REPO))
         f=r.Fixture(REPO)
         historical=json.loads(f.read(r.U+'inputs.json'))
         with self.assertRaises(q.Reject):q.verify_package(REPO,historical)

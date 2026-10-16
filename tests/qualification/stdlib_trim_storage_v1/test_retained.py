@@ -1,6 +1,7 @@
 """Retained mechanical algebra and closed read/import/association refusals."""
 import copy
 import io
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode=True
 HERE=Path(__file__).absolute().parent
@@ -19,14 +21,26 @@ import retained as r
 class RetainedControls(unittest.TestCase):
     def test_complete_retained_algebra_and_hosted_controls(self):
         f=r.Fixture(REPO);f.authenticate_all()
-        sys.path.insert(0,str(REPO/r.U))
-        import common
+        # Global unittest discovery may already have loaded another common.
+        # Load the actual current admission module privately, without replacing it.
         calls=[]
         def verify_current():
             calls.append(True)
             common.verify_package(REPO,common.read(common.HERE/'inputs.json'))
-        suite=unittest.TestSuite([f.scheduling_suite(verify_current),f.hosted_suite()])
-        result=unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+        poison=types.ModuleType('common')
+        def rejected_ambient(*args,**kwargs):
+            raise AssertionError('ambient common admission was called')
+        poison.verify_package=rejected_ambient
+        with patch.dict(sys.modules,{'common':poison}):
+            spec=importlib.util.spec_from_file_location('trim_current_admission',REPO/r.U/'common.py')
+            common=importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(common)
+            suite=unittest.TestSuite([f.scheduling_suite(verify_current),f.hosted_suite()])
+            result=unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+            self.assertIs(sys.modules['common'],poison)
+            manifest=common.read(common.HERE/'inputs.json')
+            bad={**manifest,'files':[row for row in manifest['files'] if row['path']!=r.ROOT+'retained.py']}
+            with self.assertRaises(common.Reject):common.verify_package(REPO,bad)
         self.assertTrue(result.wasSuccessful(),result.errors or result.failures)
         self.assertEqual(result.testsRun,7)
         self.assertEqual(calls,[True])

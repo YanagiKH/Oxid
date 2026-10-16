@@ -24,7 +24,7 @@ _LEASE = threading.Lock()
 
 # Fixed storage relocation, independent of any caller-supplied seal or mapping.
 _STRINGS = 'stdlib/strings.ox'
-_ARCHIVE = 'tests/qualification/stdlib_trim_storage_v1/archive/stdlib/strings.ox'
+_ARCHIVE = 'tests/qualification/stdlib_trim_storage_v1/archive/stdlib/strings.ox.data'
 _VIEW_PIN = (1023905, 'ddcf5e3c09cda020aca4f1b639d2a66d7357f843f130054800d20228606ad76a')
 _STRINGS_ROW = {
     'path': 'stdlib/strings.ox', 'read_from': 'stdlib/strings.ox',
