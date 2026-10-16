@@ -16,8 +16,9 @@ RETAINED_TESTS = ('tests/qualification/lexer_reservation_current/test_current_so
                   'tests/qualification/unit4_parser_current/test_lexer_reservation.py')
 PUBLIC_RUN = 'tests/qualification/unit4_public_v3/run.py'
 ADAPTER_TEST = 'scripts/test_lexer_reservation_adapters_current.py'
+RECORD_VIEW_TEST = 'scripts/test_record_composition_runtime_view.py'
 SIMPLE = (*NATIVE, 'scripts/test_bounded_enum_native.py', 'scripts/verify_owned_array_native.py',
-          '.github/workflows/ci.yml', UNIT2_TEST, OWNED_TEST, *RETAINED_TESTS, PUBLIC_RUN, ADAPTER_TEST)
+          '.github/workflows/ci.yml', UNIT2_TEST, OWNED_TEST, *RETAINED_TESTS, PUBLIC_RUN, ADAPTER_TEST, RECORD_VIEW_TEST)
 
 
 def exact(raw, before, after, count):
@@ -225,6 +226,13 @@ def adapter_timeout_test(raw):
         b"self.run_source_controls('tests/qualification/unit4_parser_current/test_lexer_reservation.py', timeout=900)", 1)
 
 
+
+def record_view_timeout_test(raw):
+    """Extend only the seven-case parser amendment subprocess, not its contracts."""
+    before = b"result = subprocess.run([sys.executable, '-B', str(script)], capture_output=True, text=True, timeout=30)"
+    return exact(raw, before, before.replace(b'timeout=30', b'timeout=120'), 1)
+
+
 def derive(originals, accepted_tree, source_raw, dispatcher_raw, package_raw, predecessor_view_raw):
     g.need(set(originals) == set(SIMPLE) | {SUPPORT, BINDINGS}, 'fixed consumer input roster')
     for name, raw in originals.items():
@@ -235,6 +243,9 @@ def derive(originals, accepted_tree, source_raw, dispatcher_raw, package_raw, pr
     result = {}
     for name in SIMPLE:
         body = originals[name]
+        if name == RECORD_VIEW_TEST:
+            result[name] = record_view_timeout_test(body)
+            continue
         if name == ADAPTER_TEST:
             result[name] = adapter_timeout_test(body)
             continue

@@ -3589,7 +3589,7 @@
       "git_blob": "066e44804e354897cb242a1b68f91522817126d6",
       "mode": "100644",
       "path": "scripts/test_record_composition_runtime_view.py",
-      "read_from": "scripts/test_record_composition_runtime_view.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_record_composition_runtime_view.py",
       "sha256": "7a4cd8127d0c15f9702eada0c0e9594c064806b8fc7d86b838c09b355862bd0e"
     },
     {

@@ -94,7 +94,7 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/qualification/unit2_u8_current',
             'scripts/predecessors/lexer_reservation_source_v1',
             'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1047, 17))
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1048, 17))
         self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
         self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
         self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')

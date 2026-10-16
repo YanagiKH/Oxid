@@ -896,6 +896,7 @@
     "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_lexer_reservation_adapters_current.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_owned_array_native.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_published_formatter_source.py",
+    "tests/qualification/package_json_current_v1/predecessor-v1/scripts/test_record_composition_runtime_view.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/scripts/verify_bounded_byte_storage.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/scripts/verify_bounded_enum_native.py",
     "tests/qualification/package_json_current_v1/predecessor-v1/scripts/verify_bounded_stdin_native.py",

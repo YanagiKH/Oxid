@@ -17,7 +17,7 @@ REPOSITORY = HERE.parents[2]
 _ADMISSION = threading.Lock()
 _POISONED = False
 # Fixed by the pure consumer derivation after the dispatcher is finalized.
-DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': 'a2fbd5c06b82ad5d3ffc74d15a49ecf58efe2a24a6e98cacf328e5ecd45fc184'}
+DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': 'd7f81190dde89901808ffcd9cb769a8fd4728ad6ff7f1b26d694340da9e17a4e'}
 
 
 def sha(raw):

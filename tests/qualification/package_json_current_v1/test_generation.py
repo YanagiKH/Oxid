@@ -1,5 +1,6 @@
 """Focused source-only controls. No Rust build or execution qualification."""
 import copy
+from contextlib import nullcontext
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import stat
@@ -80,6 +81,65 @@ class AdapterTimeoutControls(unittest.TestCase):
             for changed in (old.replace(before, b'changed anchor'), old + before):
                 with self.subTest(anchor=before, duplicate=changed.endswith(before)), self.assertRaises(ValueError):
                     consumers.adapter_timeout_test(changed)
+
+
+class RecordViewTimeoutControls(unittest.TestCase):
+    def setUp(self):
+        self.module = types.ModuleType('record_view_timeout_controls')
+        path = REPO / consumers.RECORD_VIEW_TEST
+        self.module.__file__ = str(path)
+        exec(compile(path.read_bytes(), str(path), 'exec'), self.module.__dict__)
+        self.case = self.module.RuntimeViewPackageControls(
+            'test_exact_seven_case_parser_amendment_controls')
+
+    def test_only_seven_case_dispatch_gets_120_seconds(self):
+        module = self.module
+        with patch.object(module.subprocess, 'run', return_value=types.SimpleNamespace(
+                returncode=0, stdout='', stderr='Ran 7 tests')) as run:
+            self.case.test_exact_seven_case_parser_amendment_controls()
+            run.assert_called_once_with([sys.executable, '-B', str(REPO /
+                'tests/qualification/unit4_parser_current/test_record_composition_amendment.py')],
+                capture_output=True, text=True, timeout=120)
+        with patch.object(module.observer_controls, 'admitted_composition_view',
+                return_value=nullcontext((REPO, {}))), \
+             patch.object(module.subprocess, 'run', side_effect=[
+                 types.SimpleNamespace(returncode=0, stdout='', stderr='Ran ' + str(count) + ' tests')
+                 for count in (15, 15, 4, 4)]) as run:
+            self.case.test_runtime_view_and_transfer_hook_under_normal_and_optimized_python()
+            self.assertEqual(run.call_count, 4)
+            for call, (script, optimized) in zip(run.call_args_list,
+                    [(script, optimized) for script in ('test_runtime_view.py', 'test_transfer_hook.py')
+                     for optimized in (False, True)]):
+                self.assertEqual(call.args, (module.observer_controls.frozen_controls_argv(
+                    module.PACKAGE / script, REPO, optimized),))
+                self.assertEqual(call.kwargs, {'capture_output': True, 'text': True, 'timeout': 30})
+
+    def test_nonzero_exit_and_wrong_case_count_still_fail(self):
+        for code, stderr, expected in ((9, 'child stderr', 'child stdoutchild stderr'),
+                                       (0, 'Ran 6 tests', 'Ran 7 tests')):
+            with self.subTest(code=code), patch.object(self.module.subprocess, 'run',
+                    return_value=types.SimpleNamespace(returncode=code, stdout='child stdout', stderr=stderr)):
+                with self.assertRaisesRegex(AssertionError, expected):
+                    self.case.test_exact_seven_case_parser_amendment_controls()
+
+    def test_timeout_and_partial_output_propagate_unchanged(self):
+        failure = subprocess.TimeoutExpired(['amendment-controls'], 120,
+            output=b'partial stdout', stderr=b'partial stderr')
+        with patch.object(self.module.subprocess, 'run', side_effect=failure) as run:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                self.case.test_exact_seven_case_parser_amendment_controls()
+            self.assertIs(caught.exception, failure)
+            self.assertEqual((failure.output, failure.stderr), (b'partial stdout', b'partial stderr'))
+            self.assertEqual(run.call_args.kwargs['timeout'], 120)
+
+    def test_finite_derivation_preserves_other_controls_and_rejects_drift(self):
+        old = (HERE / 'predecessor-v1' / consumers.RECORD_VIEW_TEST).read_bytes()
+        live = (REPO / consumers.RECORD_VIEW_TEST).read_bytes()
+        self.assertEqual(consumers.record_view_timeout_test(old), live)
+        self.assertEqual(live.replace(b'timeout=120', b'timeout=30'), old)
+        for changed in (old.replace(b'timeout=30', b'timeout=31'), old + old):
+            with self.assertRaises(ValueError):
+                consumers.record_view_timeout_test(changed)
 
 
 class AcceptedViewControls(unittest.TestCase):

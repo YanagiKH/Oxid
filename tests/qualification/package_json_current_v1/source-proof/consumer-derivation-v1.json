@@ -54,6 +54,18 @@
     },
     {
       "after": {
+        "bytes": 2629,
+        "path": "scripts/test_record_composition_runtime_view.py",
+        "sha256": "4462a91036c8bb080be53d31a5111d6fde4025da93c1da39f8060af1838a6f2e"
+      },
+      "before": {
+        "bytes": 2628,
+        "path": "scripts/test_record_composition_runtime_view.py",
+        "sha256": "7a4cd8127d0c15f9702eada0c0e9594c064806b8fc7d86b838c09b355862bd0e"
+      }
+    },
+    {
+      "after": {
         "bytes": 37410,
         "path": "scripts/verify_bounded_byte_storage.py",
         "sha256": "3fc7ed6d9264e5446485b52a74106216fe236235b517190835a6b70e5bbb1f5d"
@@ -104,7 +116,7 @@
       "after": {
         "bytes": 153138,
         "path": "scripts/verify_owned_array_native.py",
-        "sha256": "80802cd3bc720d6222ac23042884fc78b699636366a67923a1d218503aedee79"
+        "sha256": "c749381f65a366e7dac356be7b316e771397036a9550f69a1b2671a82d281753"
       },
       "before": {
         "bytes": 152509,
@@ -116,7 +128,7 @@
       "after": {
         "bytes": 3493,
         "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
-        "sha256": "f3bb9f9edee1cbe803e803cebd4baf1fe33969dae7e20ffa290bb7e5316ec987"
+        "sha256": "bf1cd17e3f6a5f864ce70e21c3d99dd7c0c94936c1e4dccac0b9f80a03007f05"
       },
       "before": {
         "bytes": 26772,
@@ -140,7 +152,7 @@
       "after": {
         "bytes": 13746,
         "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
-        "sha256": "d2e2f779241fc01d5712df9f14c3cd77a3f72094b023273fa9ce6f73769bac32"
+        "sha256": "62729d359f7da44b119707f416cc90a1a2867f955fd40f9a4784c9146fb743e4"
       },
       "before": {
         "bytes": 13805,
@@ -164,7 +176,7 @@
       "after": {
         "bytes": 3482,
         "path": "tests/qualification/unit4_parser_current/test_current.py",
-        "sha256": "c92d744e5a999029c5e4f89329286f857c96aed3d361d73a6fb135ff61ecbbd8"
+        "sha256": "4a2a32813e1992d213fc3e505175b1ac4d7bdd797ec02ba17c6434ece8d772d8"
       },
       "before": {
         "bytes": 225583,
@@ -176,7 +188,7 @@
       "after": {
         "bytes": 3491,
         "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
-        "sha256": "2c596250432117a52a62c347418669f4cd89c020645ddd742d2e0b412bf6091c"
+        "sha256": "8dfc4dbf41dac6c54b8eebf6d47e25d4c403e0d94546b286eb9e7398b79ed730"
       },
       "before": {
         "bytes": 25503,
