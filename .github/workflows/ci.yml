@@ -54,12 +54,15 @@ jobs:
       - name: Test feature status metadata validation
         run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 
+      - name: Fetch and verify fixed scheduling predecessor
+        run: python3 -B tests/qualification/unit4_ci/derive_scheduling.py --fetch-base
+
       - name: Test current parser authority and prescribed CI mutation controls
         run: |
           python3 -B tests/qualification/unit4_parser_current/test_current.py
           python3 -B tests/qualification/unit4_parser_current/test_stdin_initializer.py
           python3 -B tests/qualification/unit4_parser_current/test_record_composition_amendment.py
-          python3 -B tests/qualification/unit4_ci/test_integration.py
+          python3 -B tests/qualification/unit4_ci/test_scheduling.py
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -945,7 +948,82 @@ jobs:
             ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-evidence.tar.gz
             ${{ steps.unit2e_preservation.outputs.upload-root }}/fixed-array-unit2e-evidence.tar.gz.sha256
 
+  unit4-integration:
+    name: Unit4 controls (${{ matrix.host.name }} / ${{ matrix.shard.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - {name: Linux x86_64, os: ubuntu-latest, artifact: linux-x86_64}
+          - {name: Windows x86_64, os: windows-latest, artifact: windows-x86_64}
+          - {name: macOS x86_64, os: macos-15-intel, artifact: macos-x86_64}
+          - {name: macOS arm64, os: macos-14, artifact: macos-arm64}
+        shard: [{"name": "comparison-seal", "minutes": 150}, {"name": "remaining-controls", "minutes": 100}]
+    runs-on: ${{ matrix.host.os }}
+    timeout-minutes: ${{ matrix.shard.minutes }}
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_HOST: ${{ matrix.host.name }}
+      UNIT4_SHARD: ${{ matrix.shard.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore committed checkout bytes
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/common.py --restore-checkout --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unit4-controls-checkout" --expected-head "$UNIT4_EXPECTED_HEAD"
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - run: cargo fetch --locked
+      - name: Run complete classes serially
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/scheduling.py run --repo "$GITHUB_WORKSPACE" --head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" --host "$UNIT4_HOST" --shard "$UNIT4_SHARD" --output "$RUNNER_TEMP/unit4-controls"
+      - name: Preserve all test failures and receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit4-controls-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.host.artifact }}-${{ matrix.shard.name }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-controls
+
+  unit4-integration-join:
+    needs: unit4-integration
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UNIT4_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      UNIT4_EVENT_SHA: ${{ github.sha }}
+      UNIT4_JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unit4-controls-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/unit4-controls-artifacts
+      - name: Join complete four-host controls
+        if: always()
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/scheduling.py join --repo "$GITHUB_WORKSPACE" --head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" --artifacts "$RUNNER_TEMP/unit4-controls-artifacts" --job-results "$UNIT4_JOB_RESULTS" --output "$RUNNER_TEMP/unit4-controls-join"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit4-integration-join-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/unit4-controls-join
+
   unit4-linux:
+    needs: unit4-integration-join
     name: Unit4 current typed-project qualification (Linux x86_64)
     runs-on: ubuntu-latest
     timeout-minutes: 210
@@ -984,8 +1062,14 @@ jobs:
           git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" fetch --no-tags origin d9e6b9bf172abd5e15da7212c9e6224e29ccc768
           git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" cat-file -e 'd9e6b9bf172abd5e15da7212c9e6224e29ccc768^{commit}'
           git -c safe.directory="$GITHUB_WORKSPACE/unit4-current" worktree add --detach "$RUNNER_TEMP/unit4-parser-authority" d9e6b9bf172abd5e15da7212c9e6224e29ccc768
-      - name: Verify Unit4 integration failure controls
-        run: python3 -B tests/qualification/unit4_ci/test_integration.py
+      - name: Download this-attempt integration approval
+        uses: actions/download-artifact@v4
+        with:
+          name: unit4-integration-join-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/unit4-approved-controls
+      - name: Require successful controls from this exact run and attempt
+        shell: bash
+        run: python3 -B tests/qualification/unit4_ci/scheduling.py verify --repo . --head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" --artifacts "$RUNNER_TEMP/unit4-approved-controls"
       - name: Execute complete current-source public, hosted-root and parser gates
         id: qualification
         timeout-minutes: 165
@@ -994,7 +1078,7 @@ jobs:
           set -euo pipefail
           unit4_rustc="$(rustup which rustc)"
           unit4_toolchain="$(dirname "$(dirname "$unit4_rustc")")"
-          python3 -B tests/qualification/unit4_ci/gate.py host \
+          python3 -B tests/qualification/unit4_ci/gate_scheduling.py host \
             --repo "$GITHUB_WORKSPACE/unit4-current" --output "$RUNNER_TEMP/unit4-linux" \
             --expected-head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" \
             --host 'Linux x86_64' --historical-repo "$RUNNER_TEMP/unit4-parser-authority" \
@@ -1026,6 +1110,7 @@ jobs:
           path: ${{ runner.temp }}/unit4-linux-archives/full-evidence.tar.gz
 
   unit4-portable-hosts:
+    needs: unit4-integration-join
     name: Unit4 current typed-project qualification (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -1067,8 +1152,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Fetch locked build dependencies
         run: cargo fetch --locked
-      - name: Verify actual-host integration controls
-        run: python -B tests/qualification/unit4_ci/test_integration.py
+      - name: Download this-attempt integration approval
+        uses: actions/download-artifact@v4
+        with:
+          name: unit4-integration-join-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/unit4-approved-controls
+      - name: Require successful controls from this exact run and attempt
+        shell: bash
+        run: python -B tests/qualification/unit4_ci/scheduling.py verify --repo . --head "$UNIT4_EXPECTED_HEAD" --event-sha "$UNIT4_EVENT_SHA" --artifacts "$RUNNER_TEMP/unit4-approved-controls"
       - name: Execute ordinary, lifecycle and actual no-native trap gates
         if: runner.os != 'Windows'
         id: qualification

@@ -69,7 +69,7 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
         raw = (q.HERE / 'inputs.json').read_bytes()
         self.assertEqual(q.sha(raw), q.INPUTS_SHA)
-        self.assertEqual(raw, (q.HERE / 'inputs-package-json-v1.json').read_bytes())
+        self.assertEqual(raw, (q.HERE / 'inputs-scheduling-v1.json').read_bytes())
         current = q.loads(raw)
         predecessor_raw = (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes()
         self.assertEqual((len(predecessor_raw), q.sha(predecessor_raw)),
@@ -94,7 +94,7 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/qualification/unit2_u8_current',
             'scripts/predecessors/lexer_reservation_source_v1',
             'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1048, 17))
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1049, 17))
         self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
         self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
         self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
@@ -2365,10 +2365,106 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         args = SimpleNamespace(historical_repo='/explicit/historical-parser')
         driver = SimpleNamespace(stage=lambda *values: calls.append(values))
         with patch.object(q, 'git', return_value=q.HISTORICAL_HEAD):
-            gate.prepare_parser(args, REPO, Path('/fresh/qualification'), driver)
+            import gate_scheduling
+            gate_scheduling.prepare_parser(args, REPO, Path('/fresh/qualification'), driver)
         self.assertEqual(calls, [('08-parser-prepare', [REPO / q.PARSER / 'portable.py', 'prepare',
                          '--repo', Path(args.historical_repo).resolve(), '--checkout', REPO,
-                         '--output', Path('/fresh/qualification/parser')], 300)])
+                         '--output', Path('/fresh/qualification/parser')], 600)])
+
+    def test_parser_timeout_kills_child_and_preserves_failure_evidence(self):
+        from contextlib import redirect_stderr
+        runtime = q.public_modules(REPO)[1]
+        import process_tree
+        killed = []
+        original_kill = process_tree.ProcessTree.kill
+        original_init = process_tree.ProcessTree.__init__
+        def record_kill(tree):
+            killed.append(tree)
+            return original_kill(tree)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            script = root / 'blocked.py'
+            ready = root / 'ready'
+            script.write_text("import sys, time\nfrom pathlib import Path\nprint('partial stdout', flush=True)\n"
+                              "print('partial stderr', file=sys.stderr, flush=True)\n"
+                              + 'Path(' + repr(str(ready)) + ').write_text("ready")\n'
+                              + 'time.sleep(60)\n')
+            def ready_init(tree, *args, **kwargs):
+                import time
+                original_init(tree, *args, **kwargs)
+                try:
+                    deadline = time.monotonic() + 30
+                    while not ready.exists() and tree.child.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(ready.exists(), 'child failed bounded readiness handshake')
+                except BaseException:
+                    tree.close()
+                    raise
+            provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+            driver = gate.Driver(REPO, root, provenance, runtime)
+            # Wait for flushed streams before runtime creates its watchdog deadline;
+            # slow child startup cannot consume the test-only two-second budget.
+            # Exercise the actual watchdog/process-tree implementation quickly;
+            # the exact production 600-second dispatch is asserted separately.
+            with patch.object(q, 'admit', return_value=provenance), \
+                 patch.object(process_tree.ProcessTree, '__init__', ready_init), \
+                 patch.object(process_tree.ProcessTree, 'kill', record_kill), \
+                 redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(q.Reject, '08-parser-prepare failed'):
+                    driver.stage('08-parser-prepare', [script], 2)
+            self.assertTrue(killed)
+            self.assertTrue(all(tree is killed[0] for tree in killed))
+            self.assertIsNotNone(killed[0].child.poll())
+            receipt_path = root / 'commands/08-parser-prepare/receipt.json'
+            receipt = q.read(receipt_path)
+            self.assertIs(receipt['timed_out'], True)
+            self.assertEqual(receipt['accepted_exit_codes'], [0])
+            self.assertNotEqual(receipt['status'], 0)
+            for stream in ('stdout', 'stderr'):
+                raw = (receipt_path.parent / stream).read_bytes()
+                self.assertEqual(raw, ('partial ' + stream + '\n').encode())
+                self.assertEqual(receipt[stream + '_sha256'], q.sha(raw))
+                self.assertEqual(receipt['streams'][stream], q.identity(receipt_path.parent / stream))
+            self.assertEqual(q.read(root / 'driver.json')['stages'], [q.identity(receipt_path)])
+
+    def test_parser_timeout_cannot_pass_with_zero_status(self):
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+            process = {'status': 0, 'timed_out': True, 'stream_limit_exceeded': False,
+                       'stdout': 'partial output', 'stderr': 'partial error'}
+            runtime = SimpleNamespace(process=lambda *args, **kwargs: process)
+            driver = gate.Driver(REPO, root, provenance, runtime)
+            with patch.object(q, 'admit', return_value=provenance), redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(q.Reject, '08-parser-prepare failed'):
+                    driver.stage('08-parser-prepare', ['controlled.py'], 600)
+            receipt = q.read(root / 'commands/08-parser-prepare/receipt.json')
+            self.assertIs(receipt['timed_out'], True)
+            self.assertEqual(receipt['status'], 0)
+            self.assertEqual((root / 'commands/08-parser-prepare/stderr').read_text(), 'partial error')
+
+    def test_parser_budget_retains_combined_deadline_minimum(self):
+        provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+        for elapsed, expected in ((0, 600), (8950, 50), (8999.5, 1), (9000, None)):
+            with self.subTest(elapsed=elapsed), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                calls = []
+                def process(argv, cwd, env, timeout):
+                    calls.append(timeout)
+                    return {'status': 0, 'timed_out': False, 'stream_limit_exceeded': False,
+                            'stdout': '', 'stderr': ''}
+                driver = gate.Driver(REPO, root, provenance, SimpleNamespace(process=process))
+                with patch.object(q, 'admit', return_value=provenance), \
+                     patch.object(gate.time, 'monotonic', return_value=driver.start + elapsed):
+                    if expected is None:
+                        with self.assertRaisesRegex(q.Reject, 'combined qualification deadline exceeded'):
+                            driver.stage('08-parser-prepare', ['controlled.py'], 600)
+                    else:
+                        self.assertEqual(driver.stage('08-parser-prepare', ['controlled.py'], 600), 0)
+                self.assertEqual(calls, [] if expected is None else [expected])
+                self.assertEqual(driver.state['limits'], {'total_seconds': 9000,
+                    'minimum_free_bytes': 2 * 1024**3, 'stream_bytes': 8 * 1024**2})
 
     def test_missing_historical_checkout_cannot_prepare(self):
         with self.assertRaisesRegex(q.Reject, 'explicit historical checkout'):

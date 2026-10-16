@@ -295,6 +295,9 @@ def derive(originals, accepted_tree, source_raw, dispatcher_raw, package_raw, pr
             continue
         count = 2 if name == '.github/workflows/ci.yml' else 1
         body = exact(body, g.PREDECESSOR_SHA.encode(), g.sha(source_raw).encode(), count)
+        if name == '.github/workflows/ci.yml':
+            import ci
+            body = ci.scheduling().workflow(body)
         if name == 'scripts/test_bounded_enum_native.py':
             body = exact(body, g.FORMATTTER_HEAD.encode(), g.CHECKPOINT['head'].encode(), 1)
             body = exact(body, b'89e90c3ec83d0712d0037a0407fc6571883c5e9c',

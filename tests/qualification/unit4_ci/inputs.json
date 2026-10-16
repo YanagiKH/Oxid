@@ -445,9 +445,9 @@
       "sha256": "5ff5310059240f482aa5a3d81a2105aa29c8aa65b0d469f7e9863e73944b21cd"
     },
     {
-      "bytes": 19323,
+      "bytes": 19646,
       "path": "scripts/test_lexer_current_ci.py",
-      "sha256": "df30cd03bb852ebebeeb4364dae3e9136ee67efd7b9d4b9cec3759bd010f6c3e"
+      "sha256": "d8a31b80812699113813bb4d2465e19a0166ee25a05c2316c1750732c2db2090"
     },
     {
       "bytes": 1736,
@@ -4385,14 +4385,14 @@
       "sha256": "bdaf84866568205c978062beea8c7cd70a9e8b40e24568de15d5127b407d1976"
     },
     {
-      "bytes": 2809,
+      "bytes": 3216,
       "path": "tests/qualification/package_json_current_v1/ci.py",
-      "sha256": "7b82c8b183d7c3d0e004894bd377084a972e6ca475c9b77a3af033f5e047b712"
+      "sha256": "1461a7745d62c523380400a0abcc7c8cfdb3ef594037b7fa8504b1271e288c6f"
     },
     {
-      "bytes": 18492,
+      "bytes": 18611,
       "path": "tests/qualification/package_json_current_v1/derive_consumers.py",
-      "sha256": "5a9d6e1ec7f9a991a329cc4a5cf810ca4276b24afb18c081f3495853c00cf6d9"
+      "sha256": "44daf422772c49a68e0702fe75b58c13f1390439842d9899f755797c5206a5d9"
     },
     {
       "bytes": 10740,
@@ -4443,6 +4443,11 @@
       "bytes": 193996,
       "path": "tests/qualification/package_json_current_v1/package-json-direct-consumer-dispositions-v1.json",
       "sha256": "0718f6da37a907f48cfedba5ae7412cccc98da3d6512d2214e9163fcc5679c3d"
+    },
+    {
+      "bytes": 195245,
+      "path": "tests/qualification/package_json_current_v1/package-json-scheduling-dispositions-v1.json",
+      "sha256": "aeb5c6b0d0cd487c16d97b4562250f975d7da2a3588b324c9053459252270003"
     },
     {
       "bytes": 17965,
@@ -5342,5 +5347,10 @@
     "head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
     "tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c"
   },
-  "schema": "oxid-unit4-ci-package-json-inputs-v1"
+  "scheduling_predecessor": {
+    "bytes": 217434,
+    "path": "tests/qualification/unit4_ci/inputs-package-json-v1.json",
+    "sha256": "5941f20ac3b89d4164490579842d70c41aa757a7959ec433327d34b048811498"
+  },
+  "schema": "oxid-unit4-ci-class-scheduling-inputs-v1"
 }
