@@ -224,53 +224,20 @@ class SchedulingControls(unittest.TestCase):
             with self.assertRaises(q.Reject): s.checked_groups()
 
     def test_named_derivation_outputs_and_immutable_history(self):
-        for name, raw in activation.generate().items():
-            self.assertEqual((activation.REPO/name).read_bytes(), raw, name)
-        preserved = ['tests/qualification/unit4_ci/inputs-package-json-v1.json',
-                     'tests/qualification/package_json_current_v1/package-json-direct-consumer-dispositions-v1.json',
-                     'tests/qualification/package_json_current_v1/source-proof/consumer-derivation-v1.json',
-                     'tests/qualification/package_json_current_v1/input-roster-v1.json',
-                     'tests/qualification/unit4_ci/gate.py', 'tests/qualification/unit4_ci/join.py',
-                     'tests/qualification/unit4_ci/evidence.py',
-                     'tests/fixtures/typed_project_source_binding/current-source.json']
-        for name in preserved:
-            self.assertEqual((activation.REPO/name).read_bytes(), activation.base(name), name)
-        member = 'tests/qualification/unit4_ci/test_source_identity.py'
-        saved = activation.PACKAGE + 'predecessor-v1/' + member
-        self.assertEqual((activation.REPO/saved).read_bytes(), activation.base(member))
-        name = activation.PACKAGE + 'accepted-view-v1.json'
-        expected = json.loads(activation.base(name))
-        rows = [row for row in expected['files'] if row['path'] == member]
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['read_from'], member)
-        rows[0]['read_from'] = saved
-        self.assertEqual(q.read(activation.REPO/name), expected)
-        key = next(iter(d.IDENTITY_FIXTURE_RELOCATION))
-        changed = copy.deepcopy(d.IDENTITY_FIXTURE_RELOCATION)
-        changed[key]['after']['sha256'] = '0' * 64
-        with patch.object(d, 'IDENTITY_FIXTURE_RELOCATION', changed):
-            with self.assertRaisesRegex(ValueError, 'changed fixture relocation output'):
-                activation.generate()
-        q.verify_package(activation.REPO, q.read(q.HERE/'inputs.json'))
+        sys.path.insert(0, str(activation.REPO / 'tests/qualification/stdlib_trim_storage_v1'))
+        from retained import Fixture
+        fixture = Fixture(activation.REPO)
+        suite = fixture.scheduling_suite(lambda: q.verify_package(activation.REPO, q.read(q.HERE/'inputs.json')))
+        case = next(case for case in suite if case._testMethodName == 'test_named_derivation_outputs_and_immutable_history')
+        case.debug()
 
     def test_original_consumer_generator_emits_named_workflow(self):
-        g, consumers = activation.g, activation.consumers
-        package = activation.REPO/activation.PACKAGE
-        originals = {name: (package/'predecessor-v1'/name).read_bytes()
-                     for name in set(consumers.SIMPLE) | {consumers.SUPPORT, consumers.BINDINGS}}
-        readbacks = {name: (package/'source-proof'/(name+'.json')).read_bytes() for name in g.READBACKS}
-        tree, _ = g.readbacks(readbacks)
-        source = activation.REPO/g.PACKAGE
-        outputs, receipt = consumers.derive(originals, tree, (source/'current-source.json').read_bytes(),
-            (source/'run.py').read_bytes(), (source/'package-manifest.json').read_bytes(),
-            (package/'accepted-view-v1.json').read_bytes())
-        self.assertEqual(outputs['.github/workflows/ci.yml'], (activation.REPO/'.github/workflows/ci.yml').read_bytes())
-        self.assertEqual(outputs['scripts/test_owned_array_native.py'],
-                         (activation.REPO/'scripts/test_owned_array_native.py').read_bytes())
-        old = activation.base('scripts/test_owned_array_native.py')
-        with self.assertRaisesRegex(ValueError, 'unreviewed owned upload fixture'):
-            activation.d.owned_upload_test(old + b'\n')
-        self.assertEqual(len(receipt['consumers']), len(outputs))
+        sys.path.insert(0, str(activation.REPO / 'tests/qualification/stdlib_trim_storage_v1'))
+        from retained import Fixture
+        fixture = Fixture(activation.REPO)
+        suite = fixture.scheduling_suite(lambda: q.verify_package(activation.REPO, q.read(q.HERE/'inputs.json')))
+        case = next(case for case in suite if case._testMethodName == 'test_original_consumer_generator_emits_named_workflow')
+        case.debug()
 
     def test_budget_entrypoint_preserves_gate_and_refuses_other_dispatches(self):
         import gate_scheduling as budget
@@ -377,8 +344,9 @@ class CheckoutSchedulingControls(unittest.TestCase):
         self.assertEqual(q.git(repo, 'rev-parse', '--is-shallow-repository'), 'true')
         self.assertEqual(q.git(repo, 'rev-list', '--count', '--all'), '1')
         checked = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "
-            "import derive_scheduling as a; "
-            "assert all((a.REPO/n).read_bytes()==b for n,b in a.generate().items())")
+            "from pathlib import Path; sys.path.insert(0, 'tests/qualification/stdlib_trim_storage_v1'); "
+            "from retained import Fixture; Fixture(Path.cwd()).assert_scheduling_outputs(); "
+            "import activate; assert all((activate.REPO/n).read_bytes()==b for n,b in activate.generate().items())")
         self.assertEqual(checked.returncode, 0, checked.stderr)
         # A wrong expected tree must fail even if fetch itself succeeds.
         refused = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "

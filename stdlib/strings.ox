@@ -1,4 +1,28 @@
-fn trim(text) { return text; }
+// String contract: remove only boundary U+0009..U+000D and U+0020.
+// Preserve interior whitespace and all non-ASCII characters (including whitespace).
+// Empty/all-whitespace inputs yield "". Legacy source and OXBC use this contract.
+fn trim(text) {
+    // Decode a fixed constant: the legacy lexer has no \v, \f or \u escapes.
+    let whitespace = json_parse("\"\\u0009\\u000a\\u000b\\u000c\\u000d\\u0020\"");
+    // Split once and join once: O(n) time and storage, without repeated string indexing.
+    let chars = split(text, "");
+    let start = 0;
+    let end = len(chars);
+    while (start < end) {
+        if (index_of(whitespace, chars[start]) < 0) { break; }
+        start = start + 1;
+    }
+    while (end > start) {
+        if (index_of(whitespace, chars[end - 1]) < 0) { break; }
+        end = end - 1;
+    }
+    let out = [];
+    while (start < end) {
+        push(out, chars[start]);
+        start = start + 1;
+    }
+    return join_text(out, "");
+}
 
 fn starts_with(text, prefix) {
     if (len(prefix) > len(text)) { return false; }

@@ -1,0 +1,30 @@
+{
+  "accepted_fixture_view": {
+    "closes_before_terminal_export": true,
+    "files": 2724,
+    "logical_bytes": 78507317
+  },
+  "execution_qualified": false,
+  "fresh_preparations": 3,
+  "full_execution_receipt_required_for_hosted_route": true,
+  "new_export_namespace": "source-controls-package-json-v1-",
+  "predecessor": {
+    "bytes": 180318,
+    "path": "scripts/test_published_formatter_source.py",
+    "sha256": "312e99afb23cddf1af59f3f101b98ef21223308a36dccbfd39dc52de79145d39"
+  },
+  "preserved_test_roster": {
+    "ci": 20,
+    "integration": 15,
+    "public": 6,
+    "unit": 37,
+    "view": 14
+  },
+  "schema": "oxid-package-json-hosted-control-derivation-v1",
+  "source_only": true,
+  "successor": {
+    "bytes": 184125,
+    "path": "tests/qualification/stdlib_trim_storage_v1/hosted_controls.py",
+    "sha256": "c5a229d8c78e5fb8b076cc543b15d11d165ab8eab09d2d82b94dc12e2ff13fd8"
+  }
+}

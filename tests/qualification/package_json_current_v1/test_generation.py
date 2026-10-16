@@ -216,7 +216,10 @@ class SourceControls(unittest.TestCase):
         cls.old['current'] = json.loads(g.regular(REPO, g.ROOT+'predecessor-v1/tests/qualification/unit4_parser_current/authority.json'))
         cls.old['current_source'] = json.loads(cls.previous)
         cls.inserted = json.loads(g.regular(REPO, 'tests/qualification/unit4_public_v3/published-lifecycle-v1.json'))['inserted_roster']
-        cls.dispatcher = g.identity(g.PACKAGE+'run.py', g.regular(REPO, g.PACKAGE+'run.py'))
+        from pathlib import Path as _Path
+        sys.path.insert(0, str(REPO / 'tests/qualification/stdlib_trim_storage_v1'))
+        from retained import Fixture
+        cls.dispatcher = g.identity(g.PACKAGE+'run.py', Fixture(REPO).read(g.PACKAGE+'run.py'))
 
     @classmethod
     def generate(cls, **changes):
@@ -315,7 +318,7 @@ class SourceControls(unittest.TestCase):
         self.assertEqual([len(active[k]) for k in ('source_delta','current_base_files','current_derived_files','current_control_derived_files')],[342,539,542,542])
         self.assertEqual(active['published_main_parser'],self.old['current']['published_main_parser'])
         self.assertEqual([r['path'] for r in active[transport.KEY]['source_provenance']['source_deltas']],list(g.PATHS))
-        self.assertEqual(g.encoded(active),g.regular(REPO,'tests/qualification/unit4_parser_current/authority.json'))
+        self.assertEqual(g.encoded(active),g.regular(REPO,'tests/qualification/package_json_current_v1/generated-parser-authority-v1.json'))
 
     def test_data_absent_from_instrumentation_control_observer_accounting(self):
         for field in ('instrumentation','control_instrumentation'):
