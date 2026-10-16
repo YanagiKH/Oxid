@@ -2385,8 +2385,8 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
             root = Path(temporary).resolve()
             script = root / 'blocked.py'
             ready = root / 'ready'
-            script.write_text("import sys, time\nfrom pathlib import Path\nprint('partial stdout', flush=True)\n"
-                              "print('partial stderr', file=sys.stderr, flush=True)\n"
+            script.write_text("import sys, time\nfrom pathlib import Path\nsys.stdout.buffer.write(b'partial stdout\\n'); sys.stdout.buffer.flush()\n"
+                              "sys.stderr.buffer.write(b'partial stderr\\n'); sys.stderr.buffer.flush()\n"
                               + 'Path(' + repr(str(ready)) + ').write_text("ready")\n'
                               + 'time.sleep(60)\n')
             def ready_init(tree, *args, **kwargs):
