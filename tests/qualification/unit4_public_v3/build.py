@@ -152,9 +152,29 @@ def verify_byte_storage_lifecycle_successor(raw):
     return original
 
 
+
+# Explicit trim successor; historical package_json_lifecycle.py remains intact.
+_TRIM_LIFECYCLE = None
+
+def _trim_lifecycle():
+    global _TRIM_LIFECYCLE
+    from authority import PACKAGE_JSON_LIFECYCLE_HELPER
+    import types
+    from published_lifecycle import _read_regular
+    row = PACKAGE_JSON_LIFECYCLE_HELPER
+    root = Path(__file__).absolute().parents[3]
+    raw, _ = _read_regular(root / row['path'])
+    need(len(raw) == row['bytes'] and sha(raw) == row['sha256'], 'fixed trim lifecycle helper')
+    if _TRIM_LIFECYCLE is None:
+        module = types.ModuleType('trim_current_lifecycle')
+        module.__file__ = str(root / row['path'])
+        exec(compile(raw, module.__file__, 'exec'), module.__dict__)
+        _TRIM_LIFECYCLE = module
+    return _TRIM_LIFECYCLE
+
 def verify_lifecycle_successor(raw, source=None):
     """Exact new core hooks plus the unchanged complete historical patch chain."""
-    import package_json_lifecycle as current
+    current = _trim_lifecycle()
     try:
         current.admit(Path(source) if source is not None else current.REPOSITORY, raw)
     except current.Rejected as error:
@@ -171,7 +191,7 @@ def prepare(args):
     patch = Path(args.observer_patch).resolve()
     need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
     verify_lifecycle_successor(patch.read_bytes(), source)
-    import package_json_lifecycle as current
+    current = _trim_lifecycle()
     derived, _ = current.admit(source, patch.read_bytes())
     output = Path(args.out).resolve()
     output.mkdir(parents=True, exist_ok=False)

@@ -69,7 +69,7 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
         raw = (q.HERE / 'inputs.json').read_bytes()
         self.assertEqual(q.sha(raw), q.INPUTS_SHA)
-        self.assertEqual(raw, (q.HERE / 'inputs-scheduling-v1.json').read_bytes())
+        self.assertEqual(raw, (q.HERE / 'inputs-stdlib-trim-v1.json').read_bytes())
         current = q.loads(raw)
         predecessor_raw = (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes()
         self.assertEqual((len(predecessor_raw), q.sha(predecessor_raw)),
@@ -82,7 +82,7 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertTrue({row['path'] for row in predecessor['files']} <=
                         {row['path'] for row in current['files']})
         self.assertEqual(current['closed_roots'], predecessor['closed_roots'] +
-                         ['tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
+                         ['tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1', 'tests/qualification/stdlib_trim_storage_v1'])
         self.assertEqual(current['lexer_reservation_predecessor_inputs_sha256'], q.sha(old_raw))
         self.assertTrue({row['path'] for row in old['files']} <= {row['path'] for row in current['files']})
         self.assertEqual(current['closed_roots'], old['closed_roots'] + [
@@ -93,8 +93,8 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/fixtures/typed_project_unit2_independent',
             'tests/qualification/unit2_u8_current',
             'scripts/predecessors/lexer_reservation_source_v1',
-            'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1050, 17))
+            'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1', 'tests/qualification/stdlib_trim_storage_v1'])
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1092, 18))
         self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
         self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
         self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
