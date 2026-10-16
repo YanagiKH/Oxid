@@ -371,8 +371,26 @@ class AdmissionTests(unittest.TestCase):
         # Observed on runner 2.337.0, runs 37169581641 and 37169578747.
         # ContainerInfo.TranslateToContainerPath translates one leading prefix
         # per whole INPUT_PATH value, not each line of that value.
+        def indented_block(text, marker, indentation):
+            self.assertEqual(text.count(marker), 1)
+            lines = []
+            for line in text.split(marker, 1)[1].splitlines(True):
+                if line.strip() and (len(line) - len(line.lstrip(' '))) <= indentation:
+                    break
+                lines.append(line)
+            return ''.join(lines)
+        # A following step or arbitrarily named job cannot become upload paths.
+        marker = '          path: |\n'
+        body = marker + '            first\n            second\n'
+        for adjacent in ('      - name: next step\n        run: poison\n',
+                         '  arbitrary-next-job:\n    steps:\n      - run: poison\n',
+                         '          retention-days: 7\n'):
+            self.assertEqual(indented_block(body + adjacent, marker, 10),
+                             '            first\n            second\n')
+        self.assertIn('            unexpected\n',
+                      indented_block(body + '            unexpected\n', marker, 10))
         workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
-        package = workflow.split('      - name: Index and preserve combined Unit2E evidence on every terminal state\n', 1)[1].split('      - name:', 1)[0]
+        package = indented_block(workflow, '      - name: Index and preserve combined Unit2E evidence on every terminal state\n', 6)
         self.assertIn('        id: unit2e_preservation\n', package)
         self.assertIn('        if: always()\n', package)
         shell = '\n'.join(line[10:] for line in package.split('        run: |\n', 1)[1].splitlines())
@@ -392,9 +410,9 @@ class AdmissionTests(unittest.TestCase):
                    ('Retain complete or explicitly incomplete combined Unit2E evidence',
                     [admission.ARCHIVE_NAME, admission.ARCHIVE_NAME + '.sha256'])]
         for title, names in uploads:
-            block = workflow.split('      - name: ' + title + '\n', 1)[1].split('\n      - name:', 1)[0].split('\n  unit4-linux:', 1)[0]
+            block = indented_block(workflow, '      - name: ' + title + '\n', 6)
             self.assertIn('        if: always()\n', block)
-            paths = [line.strip() for line in block.split('          path: |\n', 1)[1].splitlines() if line.strip()]
+            paths = [line.strip() for line in indented_block(block, '          path: |\n', 10).splitlines() if line.strip()]
             self.assertEqual(paths, ['${{ steps.unit2e_preservation.outputs.upload-root }}/' + name for name in names])
             actual = translate('\n'.join(paths).replace('${{ steps.unit2e_preservation.outputs.upload-root }}',
                                                     '/__w/_temp/fixed-array-unit2e-upload')).splitlines()

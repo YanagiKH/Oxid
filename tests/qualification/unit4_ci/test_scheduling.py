@@ -235,6 +235,22 @@ class SchedulingControls(unittest.TestCase):
                      'tests/fixtures/typed_project_source_binding/current-source.json']
         for name in preserved:
             self.assertEqual((activation.REPO/name).read_bytes(), activation.base(name), name)
+        member = 'tests/qualification/unit4_ci/test_source_identity.py'
+        saved = activation.PACKAGE + 'predecessor-v1/' + member
+        self.assertEqual((activation.REPO/saved).read_bytes(), activation.base(member))
+        name = activation.PACKAGE + 'accepted-view-v1.json'
+        expected = json.loads(activation.base(name))
+        rows = [row for row in expected['files'] if row['path'] == member]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['read_from'], member)
+        rows[0]['read_from'] = saved
+        self.assertEqual(q.read(activation.REPO/name), expected)
+        key = next(iter(d.IDENTITY_FIXTURE_RELOCATION))
+        changed = copy.deepcopy(d.IDENTITY_FIXTURE_RELOCATION)
+        changed[key]['after']['sha256'] = '0' * 64
+        with patch.object(d, 'IDENTITY_FIXTURE_RELOCATION', changed):
+            with self.assertRaisesRegex(ValueError, 'changed fixture relocation output'):
+                activation.generate()
         q.verify_package(activation.REPO, q.read(q.HERE/'inputs.json'))
 
     def test_original_consumer_generator_emits_named_workflow(self):
@@ -249,6 +265,11 @@ class SchedulingControls(unittest.TestCase):
             (source/'run.py').read_bytes(), (source/'package-manifest.json').read_bytes(),
             (package/'accepted-view-v1.json').read_bytes())
         self.assertEqual(outputs['.github/workflows/ci.yml'], (activation.REPO/'.github/workflows/ci.yml').read_bytes())
+        self.assertEqual(outputs['scripts/test_owned_array_native.py'],
+                         (activation.REPO/'scripts/test_owned_array_native.py').read_bytes())
+        old = activation.base('scripts/test_owned_array_native.py')
+        with self.assertRaisesRegex(ValueError, 'unreviewed owned upload fixture'):
+            activation.d.owned_upload_test(old + b'\n')
         self.assertEqual(len(receipt['consumers']), len(outputs))
 
     def test_budget_entrypoint_preserves_gate_and_refuses_other_dispatches(self):

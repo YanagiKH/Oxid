@@ -1,6 +1,6 @@
 NAME = 'tests/qualification/unit4_parser_current/test_current.py'
 COUNT = 160
-DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': 'd7f81190dde89901808ffcd9cb769a8fd4728ad6ff7f1b26d694340da9e17a4e'}
+DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6774, 'sha256': '581c9b8949b9725cffc4931504ae59c7c4e98312e629234d16ea6c0018e6ee9d'}
 """Retained controls run only after successor admission, at their genuine paths."""
 import hashlib
 import importlib.util

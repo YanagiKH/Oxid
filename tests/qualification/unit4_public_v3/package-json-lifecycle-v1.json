@@ -3841,7 +3841,7 @@
   "source_dispatcher": {
     "bytes": 6774,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "d7f81190dde89901808ffcd9cb769a8fd4728ad6ff7f1b26d694340da9e17a4e"
+    "sha256": "581c9b8949b9725cffc4931504ae59c7c4e98312e629234d16ea6c0018e6ee9d"
   },
   "source_only": true,
   "source_provenance": {
@@ -3897,9 +3897,9 @@
   },
   "source_seal": {
     "predecessor_view": {
-      "bytes": 1023846,
+      "bytes": 1023905,
       "path": "tests/qualification/package_json_current_v1/accepted-view-v1.json",
-      "sha256": "bdaf84866568205c978062beea8c7cd70a9e8b40e24568de15d5127b407d1976"
+      "sha256": "ddcf5e3c09cda020aca4f1b639d2a66d7357f843f130054800d20228606ad76a"
     },
     "source_manifest": {
       "bytes": 76328,

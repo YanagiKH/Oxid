@@ -326,9 +326,20 @@ class PublishedLifecycleIdentityControls(PublishedViewIdentityControls):
             ('open', 'read', 'close', 'fstat', 'O_RDONLY')}, name='posix')
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
-            (root / 'member').write_bytes(b'good')
-            with patch.object(view, 'os', portable):
+            member = root / 'member'
+            member.write_bytes(b'good')
+            # This control models POSIX without optional open flags. Do not mix
+            # Windows lstat/fstat timestamp semantics into that modeled branch.
+            original_lstat = Path.lstat
+            stable = self.info()
+            def info(path):
+                return stable if path == member else original_lstat(path)
+            portable.fstat = lambda fd: stable
+            with patch.object(Path, 'lstat', info), patch.object(view, 'os', portable), \
+                 patch.object(portable, 'open', wraps=portable.open) as opened:
                 self.assertEqual(view._read_regular(root, 'member'), b'good')
+            self.assertEqual(opened.call_count, 1)
+            self.assertEqual(opened.call_args.args[1], portable.O_RDONLY)
 
     def test_windows_reparse_member_and_ancestor_are_rejected(self):
         original = Path.lstat

@@ -30,6 +30,7 @@ def base(path):
 
 def generate():
     outputs = {HERE + 'integration-roster-v1.json': (REPO/HERE/'integration-roster-v1.json').read_bytes()}
+    outputs['scripts/test_owned_array_native.py'] = d.owned_upload_test(base('scripts/test_owned_array_native.py'))
     workflow = d.workflow(base('.github/workflows/ci.yml'))
     outputs['.github/workflows/ci.yml'] = workflow
     plan = ci.derive((REPO/'tests/qualification/published_formatter_current/published-direct-consumer-dispositions-v1.json').read_bytes(),
@@ -67,7 +68,13 @@ def generate():
     manifest['scheduling_predecessor'] = g.identity(HERE + 'inputs-package-json-v1.json', old_raw)
     names = {row['path'] for row in manifest['files']} | {PACKAGE + ci.NAME}
     previous = {row['path']: row for row in manifest['files']}
-    changed = {PACKAGE + 'ci.py', PACKAGE + 'derive_consumers.py', 'scripts/test_lexer_current_ci.py'}
+    relocation = d.IDENTITY_FIXTURE_RELOCATION
+    for name, row in relocation.items():
+        g.need(previous.get(name) == row['before'], 'unreviewed fixture relocation predecessor: ' + name)
+        g.need(g.identity(name, (REPO/name).read_bytes()) == row['after'], 'changed fixture relocation output: ' + name)
+    names.update(relocation)
+    changed = {PACKAGE + 'ci.py', PACKAGE + 'derive_consumers.py', 'scripts/test_lexer_current_ci.py', 'scripts/test_owned_array_native.py'}
+    changed.update(relocation)
     rows = []
     for name in sorted(names):
         raw = outputs[name] if name in outputs else (REPO/name).read_bytes()

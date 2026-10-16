@@ -1,8 +1,8 @@
 {
   "predecessor_view": {
-    "bytes": 1023846,
+    "bytes": 1023905,
     "path": "tests/qualification/package_json_current_v1/accepted-view-v1.json",
-    "sha256": "bdaf84866568205c978062beea8c7cd70a9e8b40e24568de15d5127b407d1976"
+    "sha256": "ddcf5e3c09cda020aca4f1b639d2a66d7357f843f130054800d20228606ad76a"
   },
   "source_manifest": {
     "bytes": 76328,

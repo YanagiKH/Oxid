@@ -682,7 +682,7 @@ def source_members(repo, tracked):
             names.add(dependency)
     successor_view = "tests/qualification/package_json_current_v1/accepted-view-v1.json"
     successor_raw, _ = stable_bytes(no_symlink_path(repo / successor_view))
-    require(len(successor_raw) == 1023846 and sha256(successor_raw) == 'bdaf84866568205c978062beea8c7cd70a9e8b40e24568de15d5127b407d1976', "changed fixed alias/Unicode predecessor view")
+    require(len(successor_raw) == 1023905 and sha256(successor_raw) == 'ddcf5e3c09cda020aca4f1b639d2a66d7357f843f130054800d20228606ad76a', "changed fixed alias/Unicode predecessor view")
     successor = strict_json(successor_raw)
     require(len(successor["files"]) == 2724, "accepted view membership")
     names.update(row["read_from"] for row in successor["files"] if row["read_from"] is not None)

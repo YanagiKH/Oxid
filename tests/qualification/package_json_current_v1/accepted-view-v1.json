@@ -20861,7 +20861,7 @@
       "git_blob": "28a2b80ea8a0466ba7054998a4b2d1b7974448b3",
       "mode": "100644",
       "path": "tests/qualification/unit4_ci/test_source_identity.py",
-      "read_from": "tests/qualification/unit4_ci/test_source_identity.py",
+      "read_from": "tests/qualification/package_json_current_v1/predecessor-v1/tests/qualification/unit4_ci/test_source_identity.py",
       "sha256": "52b324aafe927d1fb9d552e726a022ba919e53b73a644f3313ff188d7b150436"
     },
     {

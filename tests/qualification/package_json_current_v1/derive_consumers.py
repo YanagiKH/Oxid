@@ -270,7 +270,8 @@ def derive(originals, accepted_tree, source_raw, dispatcher_raw, package_raw, pr
             result[name] = unit2_test(body)
             continue
         if name == OWNED_TEST:
-            result[name] = owned_array_test(body)
+            import ci
+            result[name] = ci.scheduling().owned_upload_test(owned_array_test(body))
             continue
         if name == 'scripts/verify_owned_array_native.py':
             # This consumer obtains current identity through the sealed native
