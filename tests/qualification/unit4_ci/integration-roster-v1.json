@@ -1,0 +1,222 @@
+{
+  "test_integration.CapsuleControls": [
+    "test_integration.CapsuleControls.test_altered_member",
+    "test_integration.CapsuleControls.test_archive_traversal_duplicate_and_link",
+    "test_integration.CapsuleControls.test_head_tree_event_and_source_are_distinct",
+    "test_integration.CapsuleControls.test_local_only_capsule_is_unconditionally_ineligible",
+    "test_integration.CapsuleControls.test_rehashed_member_cannot_satisfy_old_receipt",
+    "test_integration.CapsuleControls.test_summary_only",
+    "test_integration.CapsuleControls.test_symlink_output_ancestry_requires_resolved_test_root",
+    "test_integration.CapsuleControls.test_unchanged_transport"
+  ],
+  "test_integration.CheckoutControls": [
+    "test_integration.CheckoutControls.test_fresh_prefix_restores_a_stable_crlf_index_without_normalizing_blobs",
+    "test_integration.CheckoutControls.test_linux_uses_fresh_owned_checkout_and_exact_scoped_trust",
+    "test_integration.CheckoutControls.test_scoped_checkout_preserves_committed_lf_crlf_and_binary",
+    "test_integration.CheckoutControls.test_scoped_trust_and_clean_git_owned_worktree",
+    "test_integration.CheckoutControls.test_windows_qualification_uses_native_shell_and_propagates_exit"
+  ],
+  "test_integration.CheckoutRestorationControls": [
+    "test_integration.CheckoutRestorationControls.test_bad_materialized_members_or_bytes_reject_before_writes",
+    "test_integration.CheckoutRestorationControls.test_changed_index_rejects_before_checkout_writes",
+    "test_integration.CheckoutRestorationControls.test_copy_error_propagates_and_preserves_failure_receipt",
+    "test_integration.CheckoutRestorationControls.test_spaced_paths_and_receipt_preserve_all_blob_identities",
+    "test_integration.CheckoutRestorationControls.test_unsafe_target_and_inside_output_reject_without_checkout_writes",
+    "test_integration.CheckoutRestorationControls.test_unsupported_git_mode_rejects_before_checkout_writes"
+  ],
+  "test_integration.CompactUploadControls": [
+    "test_integration.CompactUploadControls.test_changed_missing_or_wrong_path_compact_is_rejected",
+    "test_integration.CompactUploadControls.test_failed_export_preserves_only_failure_receipt",
+    "test_integration.CompactUploadControls.test_linux_upload_has_one_directory_and_join_stays_strict",
+    "test_integration.CompactUploadControls.test_occupied_directory_is_preserved",
+    "test_integration.CompactUploadControls.test_success_stages_only_exact_verified_members"
+  ],
+  "test_integration.ComparisonSealControls": [
+    "test_integration.ComparisonSealControls.test_actual_compact_reader_retains_all_generated_metadata",
+    "test_integration.ComparisonSealControls.test_arbitrary_one_member_seal_rejected",
+    "test_integration.ComparisonSealControls.test_binary_must_be_in_complete_seal",
+    "test_integration.ComparisonSealControls.test_case_residue_cleanup_stays_inside_class_root",
+    "test_integration.ComparisonSealControls.test_changed_during_comparison",
+    "test_integration.ComparisonSealControls.test_coherently_rehashed_current_candidate_is_rejected",
+    "test_integration.ComparisonSealControls.test_coherently_rehashed_transition_metadata_is_rejected",
+    "test_integration.ComparisonSealControls.test_comparison_ordering",
+    "test_integration.ComparisonSealControls.test_current_candidate_missing_from_actual_compact_reader",
+    "test_integration.ComparisonSealControls.test_current_candidate_substitution_in_actual_compact_reader",
+    "test_integration.ComparisonSealControls.test_equal_value_alias_rewiring_is_detected",
+    "test_integration.ComparisonSealControls.test_exact_complete_comparison_seal",
+    "test_integration.ComparisonSealControls.test_failed_comparison_command",
+    "test_integration.ComparisonSealControls.test_generated_helper_manifest_cannot_be_omitted",
+    "test_integration.ComparisonSealControls.test_omitted_identity_must_equal_seal",
+    "test_integration.ComparisonSealControls.test_phase_compact_transport_consumes_exact_524_6_217",
+    "test_integration.ComparisonSealControls.test_phase_helper_failure_precedes_frame_extraction",
+    "test_integration.ComparisonSealControls.test_phase_missing_extra_or_omitted_members_reject",
+    "test_integration.ComparisonSealControls.test_phase_native_writer_parent_projection_preserves_canonical_envelopes",
+    "test_integration.ComparisonSealControls.test_phase_probe_rehashed_input_layout_and_freshness_reject",
+    "test_integration.ComparisonSealControls.test_phase_process_failure_cannot_be_overridden_by_valid_frame",
+    "test_integration.ComparisonSealControls.test_phase_rehashed_wrong_association_rejects",
+    "test_integration.ComparisonSealControls.test_phase_sidecar_must_equal_exact_stdout_payload",
+    "test_integration.ComparisonSealControls.test_phase_sorted_seal_metadata_roundtrip_preserves_complete_transport",
+    "test_integration.ComparisonSealControls.test_post_comparison_raw_mutation",
+    "test_integration.ComparisonSealControls.test_raw_cannot_be_omitted_even_after_rehash",
+    "test_integration.ComparisonSealControls.test_replaced_class_root_is_not_cleared",
+    "test_integration.ComparisonSealControls.test_retained_transition_metadata_cannot_be_omitted",
+    "test_integration.ComparisonSealControls.test_seed_copies_are_independent_and_preserve_aliases",
+    "test_integration.ComparisonSealControls.test_seed_equals_one_full_rebuild",
+    "test_integration.ComparisonSealControls.test_seed_pollution_is_detected",
+    "test_integration.ComparisonSealControls.test_stale_comparison_result"
+  ],
+  "test_integration.EnumProjectionTransportControls": [
+    "test_integration.EnumProjectionTransportControls.test_changed_reordered_missing_or_extra_projection_receipt_rejects",
+    "test_integration.EnumProjectionTransportControls.test_exact_projection_is_rederived_from_raw_normalized_rows",
+    "test_integration.EnumProjectionTransportControls.test_projection_refuses_nonhistorical_ast_in_transport"
+  ],
+  "test_integration.EnumSemanticReceiptTransportControls": [
+    "test_integration.EnumSemanticReceiptTransportControls.test_authority_and_report_metadata_reject_even_with_forged_matching_summary",
+    "test_integration.EnumSemanticReceiptTransportControls.test_collector_replay_keeps_frozen_expectation_and_source_identities",
+    "test_integration.EnumSemanticReceiptTransportControls.test_compact_reader_retains_named_authority_and_historical_report",
+    "test_integration.EnumSemanticReceiptTransportControls.test_eight_amended_tuples_replay_both_semantics_without_raw_changes",
+    "test_integration.EnumSemanticReceiptTransportControls.test_historical_report_and_rehashed_raw_observation_changes_reject",
+    "test_integration.EnumSemanticReceiptTransportControls.test_host_exclusions_cannot_gain_amendment_metadata",
+    "test_integration.EnumSemanticReceiptTransportControls.test_missing_extra_and_forged_per_tuple_comparisons_reject",
+    "test_integration.EnumSemanticReceiptTransportControls.test_public_semantic_join_preserves_transported_host_exclusions",
+    "test_integration.EnumSemanticReceiptTransportControls.test_public_semantic_join_rejects_mutated_original_receipts_after_transport",
+    "test_integration.EnumSemanticReceiptTransportControls.test_public_semantic_join_replays_actual_capsule_receipt_shapes",
+    "test_integration.EnumSemanticReceiptTransportControls.test_public_semantic_join_revalidates_transported_member_bytes"
+  ],
+  "test_integration.FinalFailureControls": [
+    "test_integration.FinalFailureControls.test_failed_upstream_has_structured_nonpassing_result",
+    "test_integration.FinalFailureControls.test_occupied_join_output_is_preserved"
+  ],
+  "test_integration.FrozenRosterControls": [
+    "test_integration.FrozenRosterControls.test_complete_frozen_scope_derives_counts",
+    "test_integration.FrozenRosterControls.test_duplicate_tuple",
+    "test_integration.FrozenRosterControls.test_exact_exit_propagation_preserves_streams",
+    "test_integration.FrozenRosterControls.test_exclusions_cannot_be_fabricated_execution",
+    "test_integration.FrozenRosterControls.test_missing_and_zero_domain_and_profile",
+    "test_integration.FrozenRosterControls.test_missing_host",
+    "test_integration.FrozenRosterControls.test_stale_contract_receipt",
+    "test_integration.FrozenRosterControls.test_wrong_host_substitution"
+  ],
+  "test_integration.FullArchiveControls": [
+    "test_integration.FullArchiveControls.test_earlier_successful_binary_survives_a_later_failed_build",
+    "test_integration.FullArchiveControls.test_failed_parser_export_preserves_raw_evidence_without_qualifying",
+    "test_integration.FullArchiveControls.test_successful_binaries_are_retained_for_every_profile_and_role",
+    "test_integration.FullArchiveControls.test_successful_receipt_requires_unchanged_binary_identity",
+    "test_integration.FullArchiveControls.test_zero_exit_failed_receipt_does_not_require_or_invent_binary"
+  ],
+  "test_integration.GitDiffBatchControls": [
+    "test_integration.GitDiffBatchControls.test_empty_paths_do_not_diff_the_whole_checkout",
+    "test_integration.GitDiffBatchControls.test_later_batch_failure_propagates_and_stops",
+    "test_integration.GitDiffBatchControls.test_real_git_preserves_selected_dirty_and_staged_checks",
+    "test_integration.GitDiffBatchControls.test_single_oversized_path_fails_closed",
+    "test_integration.GitDiffBatchControls.test_windows_length_unicode_quoting_order_and_duplicates"
+  ],
+  "test_integration.HostPreparationControls": [
+    "test_integration.HostPreparationControls.test_actual_host_preparation_uses_current_overlay_and_stage_defaults"
+  ],
+  "test_integration.LexerInputClosureControls": [
+    "test_integration.LexerInputClosureControls.test_complete_inventory_cannot_omit_new_or_saved_adapters",
+    "test_integration.LexerInputClosureControls.test_current_complete_inventory_and_named_predecessor",
+    "test_integration.LexerInputClosureControls.test_current_native_and_ci_sources_share_one_manifest"
+  ],
+  "test_integration.ObserverPreparationControls": [
+    "test_integration.ObserverPreparationControls.test_changed_payload_and_missing_member_reject_before_compiler",
+    "test_integration.ObserverPreparationControls.test_coherently_rehashed_groundwork_observer_rejects_before_compiler",
+    "test_integration.ObserverPreparationControls.test_current_identity_rejects_before_observer_materialization",
+    "test_integration.ObserverPreparationControls.test_exact_adapter_identity_is_identical_across_path_flavors",
+    "test_integration.ObserverPreparationControls.test_exact_approved_bodies_under_crlf_git_configuration",
+    "test_integration.ObserverPreparationControls.test_final_join_accepts_actual_current_ordinary_and_observer_maps",
+    "test_integration.ObserverPreparationControls.test_final_join_rejects_changed_or_incomplete_current_observer_map",
+    "test_integration.ObserverPreparationControls.test_lifecycle_successor_preserves_exact_enum_and_array_lineage",
+    "test_integration.ObserverPreparationControls.test_native_path_flavors_emit_identical_frozen_component_order",
+    "test_integration.ObserverPreparationControls.test_order_preserves_case_and_duplicate_members",
+    "test_integration.ObserverPreparationControls.test_synthetic_build_capsule_preserves_both_path_flavors"
+  ],
+  "test_integration.PackageControls": [
+    "test_integration.PackageControls.test_approved_package",
+    "test_integration.PackageControls.test_changed_member",
+    "test_integration.PackageControls.test_coherently_bound_python_cache_is_rejected",
+    "test_integration.PackageControls.test_duplicate_manifest_identity",
+    "test_integration.PackageControls.test_extra_member_and_directory",
+    "test_integration.PackageControls.test_omitted_member",
+    "test_integration.PackageControls.test_stale_manifest_identity",
+    "test_integration.PackageControls.test_symlink_member"
+  ],
+  "test_integration.ParserPreparationBoundaryControls": [
+    "test_integration.ParserPreparationBoundaryControls.test_current_compiler_map_and_checkpoint_mutations_reject",
+    "test_integration.ParserPreparationBoundaryControls.test_exact_current_compiler_map_reaches_comparator_authority_check",
+    "test_integration.ParserPreparationBoundaryControls.test_failed_parser_tail_is_bounded_escaped_and_preserves_full_receipt",
+    "test_integration.ParserPreparationBoundaryControls.test_historical_parser_session_cannot_enter_current_join",
+    "test_integration.ParserPreparationBoundaryControls.test_missing_historical_checkout_cannot_prepare",
+    "test_integration.ParserPreparationBoundaryControls.test_parser_budget_retains_combined_deadline_minimum",
+    "test_integration.ParserPreparationBoundaryControls.test_parser_timeout_cannot_pass_with_zero_status",
+    "test_integration.ParserPreparationBoundaryControls.test_parser_timeout_kills_child_and_preserves_failure_evidence",
+    "test_integration.ParserPreparationBoundaryControls.test_shared_preparation_calls_actual_current_parser"
+  ],
+  "test_integration.PhaseNativeIdentityControls": [
+    "test_integration.PhaseNativeIdentityControls.test_all_native_identity_orders_preserve_exact_values",
+    "test_integration.PhaseNativeIdentityControls.test_malformed_native_identity_is_rejected_before_projection"
+  ],
+  "test_integration.ProvenanceOrderingControls": [
+    "test_integration.ProvenanceOrderingControls.test_exact_posix_strings_order_both_path_flavors_identically",
+    "test_integration.ProvenanceOrderingControls.test_phase_sidecar_basename_is_exact_for_both_host_path_flavors",
+    "test_integration.ProvenanceOrderingControls.test_producer_order_preserves_exact_case_and_duplicate_members",
+    "test_integration.ProvenanceOrderingControls.test_strict_reader_still_rejects_order_and_member_identity_changes"
+  ],
+  "test_integration.WindowsToolchainControls": [
+    "test_integration.WindowsToolchainControls.test_clean_environment_retains_only_named_discovery_keys",
+    "test_integration.WindowsToolchainControls.test_configured_tools_and_linker_receipt",
+    "test_integration.WindowsToolchainControls.test_exit_1100_never_qualifies_an_actual_build_stage",
+    "test_integration.WindowsToolchainControls.test_exit_1100_nonhelp_wrong_provenance_and_error_are_rejected",
+    "test_integration.WindowsToolchainControls.test_gnu_diagnostic_or_nonzero_help_exit_is_rejected",
+    "test_integration.WindowsToolchainControls.test_observed_help_exit_is_preserved_and_accepted_only_for_help",
+    "test_integration.WindowsToolchainControls.test_unconfigured_or_wrong_architecture_is_rejected",
+    "test_integration.WindowsToolchainControls.test_wrong_path_tool_is_rejected_before_execution"
+  ],
+  "test_integration.WorkflowEnvironmentControls": [
+    "test_integration.WorkflowEnvironmentControls.test_yaml_global_environment_has_unique_keys"
+  ],
+  "test_source_identity.PublishedDispatcherIdentityControls": [
+    "test_source_identity.PublishedDispatcherIdentityControls.test_binary_flag_is_explicit_when_available",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_binary_payload_preserves_crlf_and_ctrl_z",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_cross_api_preserves_identity",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_descriptor_ctime_race",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_missing_birthtime_fails_closed",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_path_ctime_race",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_posix_cross_api_retains_ctime_even_with_birthtime",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_real_hardlinked_file_is_rejected",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_real_regular_file_and_replaced_open_target",
+    "test_source_identity.PublishedDispatcherIdentityControls.test_stable_cross_api_ctime"
+  ],
+  "test_source_identity.PublishedLifecycleIdentityControls": [
+    "test_source_identity.PublishedLifecycleIdentityControls.test_ancestor_identity_change_is_rejected",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_binary_flag_is_explicit_when_available",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_binary_payload_preserves_crlf_and_ctrl_z",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_closed_rosters_reject_reparse_members_and_hardlinks",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_closed_rosters_use_authoritative_path_metadata",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_cross_api_preserves_identity",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_descriptor_ctime_race",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_final_reparse_member_and_ancestor_are_rejected",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_missing_birthtime_fails_closed",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_package_schema_matches_genuine_integer_version",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_path_ctime_race",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_posix_cross_api_retains_ctime_even_with_birthtime",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_posix_without_linux_atime_flag",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_real_hardlinked_file_is_rejected",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_real_regular_file_and_replaced_open_target",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_stable_cross_api_ctime",
+    "test_source_identity.PublishedLifecycleIdentityControls.test_windows_reparse_member_and_ancestor_are_rejected"
+  ],
+  "test_source_identity.PublishedViewIdentityControls": [
+    "test_source_identity.PublishedViewIdentityControls.test_binary_flag_is_explicit_when_available",
+    "test_source_identity.PublishedViewIdentityControls.test_binary_payload_preserves_crlf_and_ctrl_z",
+    "test_source_identity.PublishedViewIdentityControls.test_cross_api_preserves_identity",
+    "test_source_identity.PublishedViewIdentityControls.test_descriptor_ctime_race",
+    "test_source_identity.PublishedViewIdentityControls.test_missing_birthtime_fails_closed",
+    "test_source_identity.PublishedViewIdentityControls.test_path_ctime_race",
+    "test_source_identity.PublishedViewIdentityControls.test_posix_cross_api_retains_ctime_even_with_birthtime",
+    "test_source_identity.PublishedViewIdentityControls.test_real_hardlinked_file_is_rejected",
+    "test_source_identity.PublishedViewIdentityControls.test_real_regular_file_and_replaced_open_target",
+    "test_source_identity.PublishedViewIdentityControls.test_stable_cross_api_ctime"
+  ]
+}

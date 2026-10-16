@@ -371,8 +371,26 @@ class AdmissionTests(unittest.TestCase):
         # Observed on runner 2.337.0, runs 37169581641 and 37169578747.
         # ContainerInfo.TranslateToContainerPath translates one leading prefix
         # per whole INPUT_PATH value, not each line of that value.
+        def indented_block(text, marker, indentation):
+            self.assertEqual(text.count(marker), 1)
+            lines = []
+            for line in text.split(marker, 1)[1].splitlines(True):
+                if line.strip() and (len(line) - len(line.lstrip(' '))) <= indentation:
+                    break
+                lines.append(line)
+            return ''.join(lines)
+        # A following step or arbitrarily named job cannot become upload paths.
+        marker = '          path: |\n'
+        body = marker + '            first\n            second\n'
+        for adjacent in ('      - name: next step\n        run: poison\n',
+                         '  arbitrary-next-job:\n    steps:\n      - run: poison\n',
+                         '          retention-days: 7\n'):
+            self.assertEqual(indented_block(body + adjacent, marker, 10),
+                             '            first\n            second\n')
+        self.assertIn('            unexpected\n',
+                      indented_block(body + '            unexpected\n', marker, 10))
         workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
-        package = workflow.split('      - name: Index and preserve combined Unit2E evidence on every terminal state\n', 1)[1].split('      - name:', 1)[0]
+        package = indented_block(workflow, '      - name: Index and preserve combined Unit2E evidence on every terminal state\n', 6)
         self.assertIn('        id: unit2e_preservation\n', package)
         self.assertIn('        if: always()\n', package)
         shell = '\n'.join(line[10:] for line in package.split('        run: |\n', 1)[1].splitlines())
@@ -392,9 +410,9 @@ class AdmissionTests(unittest.TestCase):
                    ('Retain complete or explicitly incomplete combined Unit2E evidence',
                     [admission.ARCHIVE_NAME, admission.ARCHIVE_NAME + '.sha256'])]
         for title, names in uploads:
-            block = workflow.split('      - name: ' + title + '\n', 1)[1].split('\n      - name:', 1)[0].split('\n  unit4-linux:', 1)[0]
+            block = indented_block(workflow, '      - name: ' + title + '\n', 6)
             self.assertIn('        if: always()\n', block)
-            paths = [line.strip() for line in block.split('          path: |\n', 1)[1].splitlines() if line.strip()]
+            paths = [line.strip() for line in indented_block(block, '          path: |\n', 10).splitlines() if line.strip()]
             self.assertEqual(paths, ['${{ steps.unit2e_preservation.outputs.upload-root }}/' + name for name in names])
             actual = translate('\n'.join(paths).replace('${{ steps.unit2e_preservation.outputs.upload-root }}',
                                                     '/__w/_temp/fixed-array-unit2e-upload')).splitlines()
@@ -813,18 +831,20 @@ class PackageTests(unittest.TestCase):
         # Bodies are inert synthetic members: these tests authenticate receipt
         # transport, never claim a compiler/predecessor qualification run.
         source_repo = Path(admission.__file__).resolve().parents[1]
-        view_name = 'tests/qualification/published_formatter_current/predecessor-view-v1.json'
-        view_raw = (source_repo / view_name).read_bytes()
-        view_path = repo / view_name
-        view_path.parent.mkdir(parents=True, exist_ok=True)
-        view_path.write_bytes(view_raw)
-        for row in json.loads(view_raw)['files']:
-            name = row['read_from']
-            if name is not None:
-                path = repo / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                if not path.exists():
-                    path.write_text('synthetic predecessor dependency, not executed\n')
+        for view_name in (
+                'tests/qualification/published_formatter_current/predecessor-view-v1.json',
+                'tests/qualification/package_json_current_v1/accepted-view-v1.json'):
+            view_raw = (source_repo / view_name).read_bytes()
+            view_path = repo / view_name
+            view_path.parent.mkdir(parents=True, exist_ok=True)
+            view_path.write_bytes(view_raw)
+            for row in json.loads(view_raw)['files']:
+                name = row['read_from']
+                if name is not None:
+                    path = repo / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    if not path.exists():
+                        path.write_text('synthetic predecessor dependency, not executed\n')
         environment = {"PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"], "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
         for arguments in (["init", "-q"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Synthetic fixture"]):
             subprocess.run(["/usr/bin/git", "-C", str(repo), *arguments], env=environment, check=True, capture_output=True)
@@ -1120,6 +1140,40 @@ class PackageTests(unittest.TestCase):
                 admission.verify_producer(self.root, self.ci, outcome)
         path.unlink()
         self.assertEqual(admission.package_evidence(self.root, self.base / "missing-release", self.ci, "success"), 1)
+
+    def test_successor_fixture_closure_rejects_missing_extra_tamper_and_symlink(self):
+        self.fixture()
+        repo = self.base / 'repo'
+        identity = admission.read_json(self.root / 'source/identity.json')
+        _, tracked = admission.source_identity(repo, identity['head'])
+        expected = admission.capture_sources(repo, tracked)
+        descriptor = repo / 'tests/qualification/package_json_current_v1/accepted-view-v1.json'
+        view = json.loads(descriptor.read_bytes())
+        dependencies = {row['read_from'] for row in view['files'] if row['read_from'] is not None}
+        self.assertTrue(dependencies <= set(expected['files']))
+        dependency = repo / next(row['read_from'] for row in view['files']
+                                 if row['path'] == 'scripts/test_owned_array_native.py')
+        extra = descriptor.parent / 'unexpected.py'
+        external = self.base / 'descriptor-copy.json'
+        external.write_bytes(descriptor.read_bytes())
+        for mutation in ('missing-descriptor', 'tampered-descriptor', 'symlink-descriptor',
+                         'missing-dependency', 'tampered-dependency', 'extra-member'):
+            target = extra if mutation == 'extra-member' else (
+                dependency if mutation.endswith('dependency') else descriptor)
+            original = None if mutation == 'extra-member' else target.read_bytes()
+            try:
+                if mutation.startswith('missing'): target.unlink()
+                elif mutation == 'symlink-descriptor':
+                    target.unlink()
+                    target.symlink_to(external)
+                else: target.write_bytes((original or b'') + b'changed')
+                error = FileNotFoundError if mutation == 'missing-descriptor' else admission.AdmissionError
+                with self.subTest(mutation=mutation), self.assertRaises(error):
+                    admission.capture_sources(repo, tracked)
+            finally:
+                if target.exists() or target.is_symlink(): target.unlink()
+                if original is not None: target.write_bytes(original)
+        self.assertEqual(admission.capture_sources(repo, tracked), expected)
 
     def test_untracked_compiler_input_cannot_borrow_committed_source_identity(self):
         self.fixture()

@@ -1483,9 +1483,9 @@
       "sha256": "60cf624a39a0cd4d351cfff6fa84f4c00fc960f5ce90c84127732009f0bc0004"
     },
     {
-      "bytes": 133034,
+      "bytes": 133239,
       "path": "src/main.rs",
-      "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
+      "sha256": "f81424adaa682fd07c32f555a7946c6c95c1c7f7f5218b1eaff51234285861e9"
     },
     {
       "bytes": 40814,
@@ -1498,9 +1498,9 @@
       "sha256": "5a88a610964ac16ae0eea700e20258c76d177d2ad10e96cc1e8ae7cf0577bcee"
     },
     {
-      "bytes": 24185,
+      "bytes": 30601,
       "path": "src/runtime/data.rs",
-      "sha256": "055db751a03b4c04977d14ff0bd346a1b5d6589c5cddd8a4ad6b4a48a2e63d07"
+      "sha256": "f91ebae985d049297d9df55fbe32713d1100a14b055ba86c7e637a6dcfeee7f7"
     },
     {
       "bytes": 43322,
@@ -1922,6 +1922,57 @@
   "package_integrity_base_head": "b50ecd3c1a8de7513f44311e85491c2ee3b2e0b0",
   "package_integrity_base_tree": "4a9ba347757c7f7e44cb3a4a8fac23300b5c586f",
   "package_integrity_source_sha256": "4d114bbb9b375de743bc18508ebcb48301604f5b417ca0b44d788bf22189c99f",
+  "package_json_source": {
+    "accepted_main": {
+      "head": "40e5aae618d7ce1f5efe7096ee634f19ab61063c",
+      "tree": "164484b7167650279350bcbba37cdf7bcca2f2b7"
+    },
+    "execution_qualified": false,
+    "predecessor": {
+      "bytes": 74567,
+      "path": "published-formatter-source-v1.json",
+      "sha256": "d83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9"
+    },
+    "schema": "oxid-package-json-source-generation-v1",
+    "source_checkpoint": {
+      "head": "858c70d862587b6a8b5d59a70afe4b8334b1f150",
+      "parent": "40e5aae618d7ce1f5efe7096ee634f19ab61063c",
+      "tree": "c44b7dfb2938dc510016ff4939104a2236ba2e9c"
+    },
+    "source_deltas": [
+      {
+        "after": {
+          "bytes": 133239,
+          "path": "src/main.rs",
+          "sha256": "f81424adaa682fd07c32f555a7946c6c95c1c7f7f5218b1eaff51234285861e9"
+        },
+        "after_git_blob": "05f15750502ad48c204bdaff05aa34c6bfad1a96",
+        "before": {
+          "bytes": 133034,
+          "path": "src/main.rs",
+          "sha256": "78b13c07197b184a9d086578cb64baf47f788472d0f69e8333728a6d7c81ebea"
+        },
+        "before_git_blob": "476fe16b8506299475c5acbacf1b6976cc08324b",
+        "path": "src/main.rs"
+      },
+      {
+        "after": {
+          "bytes": 30601,
+          "path": "src/runtime/data.rs",
+          "sha256": "f91ebae985d049297d9df55fbe32713d1100a14b055ba86c7e637a6dcfeee7f7"
+        },
+        "after_git_blob": "7b172a481b22484de0bfd063dc258da4e1d2f86b",
+        "before": {
+          "bytes": 24185,
+          "path": "src/runtime/data.rs",
+          "sha256": "055db751a03b4c04977d14ff0bd346a1b5d6589c5cddd8a4ad6b4a48a2e63d07"
+        },
+        "before_git_blob": "ac04561087bf689b5ae89d6d97a657852ea2bd24",
+        "path": "src/runtime/data.rs"
+      }
+    ],
+    "source_only": true
+  },
   "predecessor_source_sha256": "7c3de8673eca2bf2267251a9b3235a123bcefb1538785f3400a1fa0d073c5bb8",
   "producer_diagnostic_base_tree": "534dbf42fafabc0a889b91ad351d5a11dd9ef8f4",
   "producer_diagnostic_source_sha256": "35e7e43cb1ef5de8be0c1a78d9e5ac70b1a2caf2efe1e37ba05b7445916c2e29",
@@ -1930,12 +1981,12 @@
   "published_main_head": "15eac633e167c261ba0246ced49cfdc1c6cef434",
   "published_main_tree": "f66d5ae31272268c29f520ec523ee1fa31c15ee9",
   "published_source_predecessor_sha256": "9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261",
-  "purpose": "Exact published-main formatter source successor; historical authorities retain their original identities.",
-  "reviewed_source_head": "fbff527c895e6cd4ec9350bd8b5d460bc20bb80d",
+  "purpose": "Alias and Unicode JSON source-only successor",
+  "reviewed_source_head": "858c70d862587b6a8b5d59a70afe4b8334b1f150",
   "schema": 1,
   "slices_base_head": "c5798a232ebdacaf720d580007ee8d760957a081",
   "slices_source_sha256": "f3fcde4169957c850dfe14491b0ddc4fcc6e75ac0ba81fccb4b3ebe9041c6660",
-  "source_only_tree": "89e90c3ec83d0712d0037a0407fc6571883c5e9c",
+  "source_only_tree": "c44b7dfb2938dc510016ff4939104a2236ba2e9c",
   "stdin_base_head": "78651228b8233ec2cc8a4e28c2fd1e23fdcb40cd",
   "stdin_source_sha256": "bad88720c3002658bbc85de8cc50f63d88186df2871ee5a03ea8a7da0722d13f",
   "stdout_base_head": "c1d73740268d64d4e908ad86ed9dabaa48dd1c23",

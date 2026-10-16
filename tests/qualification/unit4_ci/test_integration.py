@@ -69,7 +69,7 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
         raw = (q.HERE / 'inputs.json').read_bytes()
         self.assertEqual(q.sha(raw), q.INPUTS_SHA)
-        self.assertEqual(raw, (q.HERE / 'inputs-published-formatter-v1.json').read_bytes())
+        self.assertEqual(raw, (q.HERE / 'inputs-scheduling-v1.json').read_bytes())
         current = q.loads(raw)
         predecessor_raw = (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes()
         self.assertEqual((len(predecessor_raw), q.sha(predecessor_raw)),
@@ -82,7 +82,7 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertTrue({row['path'] for row in predecessor['files']} <=
                         {row['path'] for row in current['files']})
         self.assertEqual(current['closed_roots'], predecessor['closed_roots'] +
-                         ['tests/qualification/published_formatter_current'])
+                         ['tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
         self.assertEqual(current['lexer_reservation_predecessor_inputs_sha256'], q.sha(old_raw))
         self.assertTrue({row['path'] for row in old['files']} <= {row['path'] for row in current['files']})
         self.assertEqual(current['closed_roots'], old['closed_roots'] + [
@@ -93,8 +93,8 @@ class LexerInputClosureControls(unittest.TestCase):
             'tests/fixtures/typed_project_unit2_independent',
             'tests/qualification/unit2_u8_current',
             'scripts/predecessors/lexer_reservation_source_v1',
-            'tests/qualification/published_formatter_current'])
-        self.assertEqual((len(current['files']), len(current['closed_roots'])), (980, 16))
+            'tests/qualification/published_formatter_current', 'tests/qualification/package_json_current_v1'])
+        self.assertEqual((len(current['files']), len(current['closed_roots'])), (1050, 17))
         self.assertEqual(current['published_formatter_current_source'], {'path': 'tests/fixtures/typed_project_source_binding/current-source.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'})
         self.assertEqual(current['published_formatter_source_checkpoint'], {'head': 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d', 'tree': '89e90c3ec83d0712d0037a0407fc6571883c5e9c'})
         self.assertEqual(current['published_formatter_published_main_head'], '15eac633e167c261ba0246ced49cfdc1c6cef434')
@@ -677,11 +677,11 @@ class ObserverPreparationControls(unittest.TestCase):
                      'generate_lexer_reservation_v2.py', 'lexer-reservation-lifecycle-v2.json',
                      'observer-lexer-reservation-v2.patch', 'derive_public_observer_v1.py',
                      'published-lifecycle-v1.json', 'published-observer-derivation-v1.json',
-                     'published_lifecycle.py'}
+                     'published_lifecycle.py', 'package_json_lifecycle.py', 'package-json-lifecycle-v1.json'}
         self.assertEqual(len(original_names), 22)
         self.assertFalse(original_names & additions)
         self.assertEqual(run.PACKAGE_FILES, original_names | additions)
-        self.assertEqual(len(expected), 35)
+        self.assertEqual(len(expected), 37)
         self.assertEqual([row['path'] for row in expected], sorted(run.PACKAGE_FILES))
         for members in (list((REPO / q.PUBLIC).iterdir())[:-1],
                         [*list((REPO / q.PUBLIC).iterdir()), SimpleNamespace(name='unapproved.py')]):
@@ -1655,8 +1655,12 @@ class ComparisonSealControls(unittest.TestCase):
     """Serial-only reuse of one synthetic seal seed in a class-private root.
 
     The seed is test data only.  Each case and each rebuilding subTest receives an independent
-    deep copy, and still runs its own authority, phase_context and verify_parser_seal admission.
-    Cases share one fixed root sequentially; this is not a guarantee for concurrent execution.
+    deep copy, and still runs its own complete verify_parser_seal admission, which loads its own
+    adapter, authority and phase helper.  A single test may obtain the phase wire serializer once
+    and reuse it only to serialize that test's own mutated fixtures; it is never cached on the
+    class or globally and never stands in for verification, so every mutation is still
+    independently verified.  Cases share one fixed root sequentially; this is not a guarantee for
+    concurrent execution.
     """
     @classmethod
     def setUpClass(cls):
@@ -2224,16 +2228,108 @@ class ComparisonSealControls(unittest.TestCase):
             verify_parser_seal(self.seal, self.resolve)
 
     def test_phase_rehashed_wrong_association_rejects(self):
+        # Serializer reuse within this test only; keep ONLY the function, not the context tuple.
+        adapter, authority, _, _ = self.phase_context()
+        canonical_bytes = adapter.phase_module(authority).canonical_bytes
+        del adapter, authority
+
+        path = 'lexer-phase/collection-debug.json'
+        absolute = str(self.root / 'parser' / path)
+        original = self.data[absolute]
+        envelope = q.loads(original)
+        # Byte-identity: hoisted wire matches stock fixture and a fresh phase_context path
+        # (key order, ASCII JSON escapes, trailing LF); NaN and non-ASCII are rejected.
+        self.assertEqual(canonical_bytes(envelope), original)
+        self.assertTrue(original.endswith(b'\n') and original.count(b'\n') == 1)
+        original.decode('ascii')
+        self.assertEqual(canonical_bytes({'a': 'x"y\\z'}), b'{"a":"x\\"y\\\\z"}\n')
+        reordered = dict(reversed(list(envelope.items())))
+        self.assertNotEqual(canonical_bytes(reordered), original)
+        adapter, authority, _, _ = self.phase_context()
+        via_wire = adapter.phase_module(authority).canonical_bytes(envelope)
+        del adapter, authority
+        self.assertEqual(via_wire, original)
+        with self.assertRaisesRegex(ValueError, 'noncanonical JSON value'):
+            canonical_bytes({'bad': float('nan')})
+        with self.assertRaisesRegex(ValueError, 'noncanonical JSON value'):
+            canonical_bytes({'a': 'é'})
+
+        # Authority re-verification control for this generation: package_json authority()
+        # loads authority.json through generation.regular (os.open/os.read/os.close), so a
+        # Path.read_bytes surrogate cannot observe it. Locally wrap only those three calls;
+        # flip exactly one byte on the first non-empty chunk of a tracked target fd so
+        # identity/length/race checks still run and the sealed digest gate rejects.
+        # Seal/data stay unchanged; disk pins are never rewritten.
+        with self.subTest(control='authority'):
+            self.seal, self.data = self.fresh()
+            target = (REPO / q.PARSER / 'authority.json').resolve()
+            original_open, original_read, original_close = os.open, os.read, os.close
+            tracked, hits = {}, []
+
+            def open_wrap(path, flags, *args, **kwargs):
+                fd = original_open(path, flags, *args, **kwargs)
+                try:
+                    if Path(path).resolve() == target:
+                        tracked[fd] = False
+                except (OSError, ValueError):
+                    pass
+                return fd
+
+            def read_wrap(fd, n):
+                chunk = original_read(fd, n)
+                if fd in tracked and chunk and not tracked[fd]:
+                    mutated = bytearray(chunk)
+                    mutated[0] ^= 0x01
+                    tracked[fd] = True
+                    hits.append(fd)
+                    return bytes(mutated)
+                return chunk
+
+            def close_wrap(fd):
+                tracked.pop(fd, None)
+                return original_close(fd)
+
+            with patch.object(os, 'open', open_wrap), \
+                    patch.object(os, 'read', read_wrap), \
+                    patch.object(os, 'close', close_wrap):
+                with self.assertRaisesRegex(ValueError, r'sealed parser authority'):
+                    verify_parser_seal(self.seal, self.resolve)
+            self.assertTrue(hits)
+            self.assertEqual(canonical_bytes(envelope), original)
+
+        # Phase-helper still authenticates via Path.read_bytes / verify_map on this tree.
+        with self.subTest(control='phase-helper'):
+            self.seal, self.data = self.fresh()
+            target = (REPO / q.PARSER / 'lexer_phase.py').resolve()
+            original_read_bytes = Path.read_bytes
+            raw = original_read_bytes(target)
+            reads = []
+
+            def read_bytes(path):
+                resolved = Path(path).resolve()
+                if resolved == target:
+                    reads.append(resolved)
+                    return raw + b'\n'
+                return original_read_bytes(path)
+
+            with patch.object(Path, 'read_bytes', read_bytes):
+                with self.assertRaisesRegex(
+                        q.Reject,
+                        r'parser lexical phase evidence: file bytes differ: '
+                        r'tests/qualification/unit4_parser_current/lexer_phase\.py'):
+                    verify_parser_seal(self.seal, self.resolve)
+            self.assertTrue(reads)
+            self.assertEqual(canonical_bytes(envelope), original)
+
         for field, value in (('case_id', 'different'), ('nonce', 'f' * 32), ('role', 'not_observed'),
                              ('process_index', 1), ('binary_sha256', '0' * 64), ('source_sha256', '0' * 64),
                              ('raw_sha256', '0' * 64), ('stdout_sha256', '0' * 64),
                              ('stderr_sha256', '0' * 64), ('process_receipt_sha256', '0' * 64)):
             with self.subTest(field=field):
                 self.seal, self.data = self.fresh()
-                path = 'lexer-phase/collection-debug.json'
                 envelope = q.loads(self.data[str(self.root / 'parser' / path)])
                 envelope['records'][0][field] = value
-                self.replace_phase_fixture_member(path, envelope, wire=True)
+                self.replace_phase_fixture_member(path, canonical_bytes(envelope))
                 with self.assertRaisesRegex(q.Reject, 'parser lexical phase evidence'):
                     verify_parser_seal(self.seal, self.resolve)
 
@@ -2269,10 +2365,106 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
         args = SimpleNamespace(historical_repo='/explicit/historical-parser')
         driver = SimpleNamespace(stage=lambda *values: calls.append(values))
         with patch.object(q, 'git', return_value=q.HISTORICAL_HEAD):
-            gate.prepare_parser(args, REPO, Path('/fresh/qualification'), driver)
+            import gate_scheduling
+            gate_scheduling.prepare_parser(args, REPO, Path('/fresh/qualification'), driver)
         self.assertEqual(calls, [('08-parser-prepare', [REPO / q.PARSER / 'portable.py', 'prepare',
                          '--repo', Path(args.historical_repo).resolve(), '--checkout', REPO,
-                         '--output', Path('/fresh/qualification/parser')], 300)])
+                         '--output', Path('/fresh/qualification/parser')], 600)])
+
+    def test_parser_timeout_kills_child_and_preserves_failure_evidence(self):
+        from contextlib import redirect_stderr
+        runtime = q.public_modules(REPO)[1]
+        import process_tree
+        killed = []
+        original_kill = process_tree.ProcessTree.kill
+        original_init = process_tree.ProcessTree.__init__
+        def record_kill(tree):
+            killed.append(tree)
+            return original_kill(tree)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            script = root / 'blocked.py'
+            ready = root / 'ready'
+            script.write_text("import sys, time\nfrom pathlib import Path\nsys.stdout.buffer.write(b'partial stdout\\n'); sys.stdout.buffer.flush()\n"
+                              "sys.stderr.buffer.write(b'partial stderr\\n'); sys.stderr.buffer.flush()\n"
+                              + 'Path(' + repr(str(ready)) + ').write_text("ready")\n'
+                              + 'time.sleep(60)\n')
+            def ready_init(tree, *args, **kwargs):
+                import time
+                original_init(tree, *args, **kwargs)
+                try:
+                    deadline = time.monotonic() + 30
+                    while not ready.exists() and tree.child.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(ready.exists(), 'child failed bounded readiness handshake')
+                except BaseException:
+                    tree.close()
+                    raise
+            provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+            driver = gate.Driver(REPO, root, provenance, runtime)
+            # Wait for flushed streams before runtime creates its watchdog deadline;
+            # slow child startup cannot consume the test-only two-second budget.
+            # Exercise the actual watchdog/process-tree implementation quickly;
+            # the exact production 600-second dispatch is asserted separately.
+            with patch.object(q, 'admit', return_value=provenance), \
+                 patch.object(process_tree.ProcessTree, '__init__', ready_init), \
+                 patch.object(process_tree.ProcessTree, 'kill', record_kill), \
+                 redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(q.Reject, '08-parser-prepare failed'):
+                    driver.stage('08-parser-prepare', [script], 2)
+            self.assertTrue(killed)
+            self.assertTrue(all(tree is killed[0] for tree in killed))
+            self.assertIsNotNone(killed[0].child.poll())
+            receipt_path = root / 'commands/08-parser-prepare/receipt.json'
+            receipt = q.read(receipt_path)
+            self.assertIs(receipt['timed_out'], True)
+            self.assertEqual(receipt['accepted_exit_codes'], [0])
+            self.assertNotEqual(receipt['status'], 0)
+            for stream in ('stdout', 'stderr'):
+                raw = (receipt_path.parent / stream).read_bytes()
+                self.assertEqual(raw, ('partial ' + stream + '\n').encode())
+                self.assertEqual(receipt[stream + '_sha256'], q.sha(raw))
+                self.assertEqual(receipt['streams'][stream], q.identity(receipt_path.parent / stream))
+            self.assertEqual(q.read(root / 'driver.json')['stages'], [q.identity(receipt_path)])
+
+    def test_parser_timeout_cannot_pass_with_zero_status(self):
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+            process = {'status': 0, 'timed_out': True, 'stream_limit_exceeded': False,
+                       'stdout': 'partial output', 'stderr': 'partial error'}
+            runtime = SimpleNamespace(process=lambda *args, **kwargs: process)
+            driver = gate.Driver(REPO, root, provenance, runtime)
+            with patch.object(q, 'admit', return_value=provenance), redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(q.Reject, '08-parser-prepare failed'):
+                    driver.stage('08-parser-prepare', ['controlled.py'], 600)
+            receipt = q.read(root / 'commands/08-parser-prepare/receipt.json')
+            self.assertIs(receipt['timed_out'], True)
+            self.assertEqual(receipt['status'], 0)
+            self.assertEqual((root / 'commands/08-parser-prepare/stderr').read_text(), 'partial error')
+
+    def test_parser_budget_retains_combined_deadline_minimum(self):
+        provenance = {'checkout_head': 'a' * 40, 'event_sha': 'b' * 40}
+        for elapsed, expected in ((0, 600), (8950, 50), (8999.5, 1), (9000, None)):
+            with self.subTest(elapsed=elapsed), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                calls = []
+                def process(argv, cwd, env, timeout):
+                    calls.append(timeout)
+                    return {'status': 0, 'timed_out': False, 'stream_limit_exceeded': False,
+                            'stdout': '', 'stderr': ''}
+                driver = gate.Driver(REPO, root, provenance, SimpleNamespace(process=process))
+                with patch.object(q, 'admit', return_value=provenance), \
+                     patch.object(gate.time, 'monotonic', return_value=driver.start + elapsed):
+                    if expected is None:
+                        with self.assertRaisesRegex(q.Reject, 'combined qualification deadline exceeded'):
+                            driver.stage('08-parser-prepare', ['controlled.py'], 600)
+                    else:
+                        self.assertEqual(driver.stage('08-parser-prepare', ['controlled.py'], 600), 0)
+                self.assertEqual(calls, [] if expected is None else [expected])
+                self.assertEqual(driver.state['limits'], {'total_seconds': 9000,
+                    'minimum_free_bytes': 2 * 1024**3, 'stream_bytes': 8 * 1024**2})
 
     def test_missing_historical_checkout_cannot_prepare(self):
         with self.assertRaisesRegex(q.Reject, 'explicit historical checkout'):

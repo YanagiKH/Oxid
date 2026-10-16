@@ -154,7 +154,7 @@ def verify_byte_storage_lifecycle_successor(raw):
 
 def verify_lifecycle_successor(raw, source=None):
     """Exact new core hooks plus the unchanged complete historical patch chain."""
-    import published_lifecycle as current
+    import package_json_lifecycle as current
     try:
         current.admit(Path(source) if source is not None else current.REPOSITORY, raw)
     except current.Rejected as error:
@@ -171,7 +171,7 @@ def prepare(args):
     patch = Path(args.observer_patch).resolve()
     need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
     verify_lifecycle_successor(patch.read_bytes(), source)
-    import published_lifecycle as current
+    import package_json_lifecycle as current
     derived, _ = current.admit(source, patch.read_bytes())
     output = Path(args.out).resolve()
     output.mkdir(parents=True, exist_ok=False)

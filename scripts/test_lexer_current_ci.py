@@ -15,10 +15,10 @@ PRESERVED = REPO / 'scripts/predecessors/byte_storage_ci_v1'
 SOURCE = REPO / 'tests/fixtures/typed_project_source_binding'
 LEXER_PRESERVED = REPO / 'scripts/predecessors/lexer_reservation_source_v1'
 LEXER_PRESERVATION_SHA = '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'
-CURRENT_SHA = 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'
+CURRENT_SHA = 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'
 PREDECESSOR_SHA = '402db5018af489c30b2a57ed3ef558c055013af2b727a3ad0eb39ffc42125efa'
-COMPILER_HEAD = 'fbff527c895e6cd4ec9350bd8b5d460bc20bb80d'
-COMPILER_TREE = '89e90c3ec83d0712d0037a0407fc6571883c5e9c'
+COMPILER_HEAD = '858c70d862587b6a8b5d59a70afe4b8334b1f150'
+COMPILER_TREE = 'c44b7dfb2938dc510016ff4939104a2236ba2e9c'
 PRESERVATION_SHA = '38e329c1897f5c902dbfb73c6d3fbfecae2a97cb2f1a85e916b56c2a126698fc'
 sys.path.insert(0, str(HELPER))
 import ci_inventory
@@ -27,9 +27,9 @@ PUBLISHED = REPO / 'tests/qualification/published_formatter_current'
 PUBLISHED_MAIN_SOURCE_SHA = '9432c61fc4f63b760e5f55599aedb24067a206e40e8b44b0911392c00cda7261'
 PUBLISHED_MAIN_WORKFLOW_SHA = '81dfdfe82d9e477c4b6535a10967fc8d6861bcbcea5f90d341c694797ced3269'
 PUBLISHED_VIEW_SHA = 'e262dd17ebae52f7d662a1408420b795607e3ef6ae4612b1fe0a1a33b15081c8'
-CURRENT_SOURCE_DESCRIPTOR = {'path': 'published-formatter-source-v1.json', 'bytes': 74567, 'sha256': 'd83edc200b9b900668ccc7ee9679a7972e1d497d10acf5f82ccd602680dd04e9'}
-CURRENT_WORKFLOW_DESCRIPTOR = {'path': '.github/workflows/ci.yml', 'bytes': 67408, 'sha256': '8af4c6810e332afcaebb692087238b598800db70f7198890b50a7f99f531fb96'}
-CURRENT_DISPOSITIONS_DESCRIPTOR = {'path': 'published-direct-consumer-dispositions-v1.json', 'bytes': 191975, 'sha256': 'ebdae13dee1a8bcfc5a62fba03e8088e9662cea0c676c44428975433b94707d1'}
+CURRENT_SOURCE_DESCRIPTOR = {'path': 'package-json-source-v1.json', 'bytes': 76328, 'sha256': 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'}
+CURRENT_WORKFLOW_DESCRIPTOR = {'path': '.github/workflows/ci.yml', 'bytes': 71965, 'sha256': '9c6e7b902f18e24d4b4f81af77e915463171bdddb2d7cd8fa504c0be9135ec51'}
+CURRENT_DISPOSITIONS_DESCRIPTOR = {'path': 'package-json-scheduling-dispositions-v1.json', 'bytes': 195245, 'sha256': 'aeb5c6b0d0cd487c16d97b4562250f975d7da2a3588b324c9053459252270003'}
 sys.path.insert(0, str(PUBLISHED))
 import published_ci_inventory
 
@@ -111,20 +111,26 @@ def lexer_preservation_view():
         raise ValueError('unsafe lexer preservation manifest')
     return bodies['preservation.json'][0], bodies, directories, unsafe
 
+def scheduled_workflow(raw):
+    sys.path.insert(0, str(REPO / "tests/qualification/package_json_current_v1"))
+    import ci
+    return ci.scheduling().workflow(raw)
+
+
 class CurrentCIActivationControls(unittest.TestCase):
     def test_all_173_direct_entries_have_exact_individual_dispositions(self):
         original = ci_inventory.inventory(
             (REPO / 'docs/architecture/fallible-lexer-source-consumer-audit.md').read_bytes(),
             (PRESERVED / '.github/workflows/ci.yml').read_bytes())
-        current_raw = (PUBLISHED / 'published-direct-consumer-dispositions-v1.json').read_bytes()
+        current_raw = (REPO / 'tests/qualification/package_json_current_v1/package-json-scheduling-dispositions-v1.json').read_bytes()
         plan = json.loads(current_raw)
-        complete = published_ci_inventory.validate(
-            (REPO / 'docs/architecture/fallible-lexer-source-consumer-audit.md').read_bytes(),
-            (PRESERVED / '.github/workflows/ci.yml').read_bytes(),
-            (PUBLISHED / 'source-proof/published-main-ci.yml').read_bytes(),
+        sys.path.insert(0, str(REPO / 'tests/qualification/package_json_current_v1'))
+        import ci as successor_ci
+        complete = successor_ci.validate(
+            (PUBLISHED / 'published-direct-consumer-dispositions-v1.json').read_bytes(),
+            (REPO / 'tests/qualification/package_json_current_v1/predecessor-v1/.github/workflows/ci.yml').read_bytes(),
             (REPO / '.github/workflows/ci.yml').read_bytes(),
-            (HELPER / 'direct-consumer-dispositions.json').read_bytes(), current_raw,
-            CURRENT_SOURCE_DESCRIPTOR, CURRENT_WORKFLOW_DESCRIPTOR, CURRENT_DISPOSITIONS_DESCRIPTOR)
+            (SOURCE / 'current-source.json').read_bytes(), current_raw)
         self.assertEqual(complete, {'entry_count': 173,
             'changed_commands': ['ci.yml:L751', 'ci.yml:L764'],
             'argument_lines': [755, 768], 'source_only': True, 'execution_qualified': False})
@@ -171,10 +177,12 @@ class CurrentCIActivationControls(unittest.TestCase):
         self.assertEqual(middle.count(PUBLISHED_MAIN_SOURCE_SHA.encode()), 2)
         expected = middle.replace(old_argument, new_argument)
         current = (REPO / '.github/workflows/ci.yml').read_bytes()
-        self.assertEqual(current, expected)
+        sys.path.insert(0, str(REPO / "tests/qualification/unit4_ci"))
+        import scheduling_derivation as scheduling
+        self.assertEqual(current, scheduling.workflow(expected))
         self.assertEqual(current.count(new_argument), 2)
-        self.assertEqual(current.replace(new_argument, old_argument), middle)
-        self.assertEqual(published_ci_inventory.workflow_successor(raw, middle, CURRENT_SHA), current)
+        self.assertEqual(expected.replace(new_argument, old_argument), middle)
+        self.assertEqual(published_ci_inventory.workflow_successor(raw, middle, CURRENT_SHA), expected)
 
     def test_preserved_consumer_bodies_are_unchanged(self):
         self.assertEqual(sha((PRESERVED / 'preservation.json').read_bytes()), PRESERVATION_SHA)
@@ -243,6 +251,7 @@ class CurrentCIActivationControls(unittest.TestCase):
                  'tests/fixtures/fixed_array_unit2d_independent',
                  'tests/qualification/lexer_reservation_current',
                  'tests/qualification/published_formatter_current',
+                 'tests/qualification/package_json_current_v1',
                  'tests/fixtures/typed_project_source_binding_byte_storage_v1',
                  'tests/qualification/unit2_u8_current',
                  'tests/fixtures/typed_project_unit2_independent',
@@ -255,6 +264,8 @@ class CurrentCIActivationControls(unittest.TestCase):
         view = json.loads(view_raw)
         self.assertEqual(len(view['files']), 681)
         dependencies = {row['read_from'] for row in view['files'] if row['read_from'] is not None}
+        successor = read(REPO / 'tests/qualification/package_json_current_v1/accepted-view-v1.json')
+        dependencies.update(row['read_from'] for row in successor['files'] if row['read_from'] is not None)
         tracked.update({name: {} for name in dependencies})
         manifest, names = producer.source_members(REPO, tracked)
         self.assertTrue(dependencies <= set(names))
@@ -273,7 +284,7 @@ class CurrentCIActivationControls(unittest.TestCase):
         old_sha = b'aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633'
         self.assertEqual(old_workflow.count(old_sha), 2)
         self.assertEqual((REPO / '.github/workflows/ci.yml').read_bytes(),
-                         old_workflow.replace(old_sha, CURRENT_SHA.encode()))
+                         scheduled_workflow(old_workflow.replace(old_sha, CURRENT_SHA.encode())))
 
     def test_lexer_facade_manifest_body_mode_membership_and_symlink_reject(self):
         raw, bodies, directories, unsafe = lexer_preservation_view()

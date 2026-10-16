@@ -93,19 +93,19 @@ class CurrentResource(unittest.TestCase):
         self.assertEqual(captured['index_resource'], self.old)
         self.assertEqual(captured['u8_index_resource'], result)
         self.assertEqual(captured['u8_index_resource_authority'], authority)
-        transfer = captured['published_source_unit2_accounting_source_binding']
+        published = captured['published_source_unit2_accounting_source_binding']
+        published_source = (PACKAGE / 'published-formatter-source-v1.json').read_bytes()
         lexer = captured['lexer_reservation_unit2_accounting_source_binding']
         retained = captured['u8_accounting_source_binding']
-        self.assertEqual(transfer['predecessor_accounting_source_binding'], lexer)
+        self.assertEqual(published['predecessor_accounting_source_binding'], lexer)
         self.assertEqual(lexer['predecessor_accounting_source_binding'], retained)
-        self.assertEqual(transfer['version'], 'unit2-published-main-identical-accounting-source-v1')
-        # The lexer association remains historical; only the separately named
-        # published transfer binds the current execution source.
+        self.assertEqual(published['version'], 'unit2-published-main-identical-accounting-source-v1')
+        # Both lexer and published associations retain their historical sources.
         lexer_source = (PACKAGE / 'lexer-reservation-source-v2.json').read_bytes()
         self.assertEqual(lexer['current_source'], binding.entry('current-source.json', lexer_source))
         self.assertEqual(lexer['reviewed_source_head'], json.loads(lexer_source)['reviewed_source_head'])
         self.assertEqual(lexer['source_only_tree'], json.loads(lexer_source)['source_only_tree'])
-        self.assertNotEqual(transfer['current_source'], lexer['current_source'])
+        self.assertNotEqual(published['current_source'], lexer['current_source'])
         self.assertEqual(retained['version'], 'unit2-byte-storage-identical-accounting-source-v1')
         predecessor = (PACKAGE / 'byte-storage-source-v1.json').read_bytes()
         self.assertEqual(retained['current_source'], binding.entry('current-source.json', predecessor))
@@ -114,20 +114,35 @@ class CurrentResource(unittest.TestCase):
         for key in ('retained_accounting_source', 'retained_reviewed_source_head',
                     'retained_source_only_tree', 'retained_authority', 'retained_helper',
                     'derived_resource', 'source_dependencies'):
-            self.assertEqual(transfer[key], retained[key])
+            self.assertEqual(published[key], retained[key])
             self.assertEqual(lexer[key], retained[key])
+        self.assertEqual(published['current_source'], binding.entry('current-source.json', published_source))
+        self.assertEqual(published['retained_accounting_source'], binding.entry('u8-source.json', self.source))
+        self.assertEqual(published['reviewed_source_head'], json.loads(published_source)['reviewed_source_head'])
+        self.assertEqual(published['source_only_tree'], json.loads(published_source)['source_only_tree'])
+        self.assertEqual(published['retained_reviewed_source_head'], json.loads(self.source)['reviewed_source_head'])
+        self.assertEqual(published['source_dependencies'], authority['source_dependencies'])
+        transfer = captured['package_json_unit2_accounting_source_binding']
+        self.assertEqual(transfer['version'], 'unit2-package-json-identical-accounting-source-v1')
+        self.assertEqual(transfer['predecessor_accounting_source_binding'], published)
+        self.assertEqual(published, captured['package_json_predecessor']['published_source_unit2_accounting_source_binding'])
+        self.assertNotEqual(transfer['current_source'], published['current_source'])
         self.assertEqual(transfer['current_source'], binding.entry('current-source.json', self.current_source))
-        self.assertEqual(transfer['retained_accounting_source'], binding.entry('u8-source.json', self.source))
-        self.assertEqual(transfer['reviewed_source_head'], json.loads(self.current_source)['reviewed_source_head'])
-        self.assertEqual(transfer['source_only_tree'], json.loads(self.current_source)['source_only_tree'])
-        self.assertEqual(transfer['retained_reviewed_source_head'], json.loads(self.source)['reviewed_source_head'])
-        self.assertEqual(transfer['source_dependencies'], authority['source_dependencies'])
+        current = json.loads(self.current_source)
+        self.assertEqual(transfer['reviewed_source_head'], current['reviewed_source_head'])
+        self.assertEqual(transfer['source_only_tree'], current['source_only_tree'])
+        self.assertEqual(transfer['package_json_provenance'], current['package_json_source'])
+        for key in ('retained_accounting_source', 'retained_reviewed_source_head',
+                    'retained_source_only_tree', 'retained_authority', 'retained_helper',
+                    'derived_resource', 'source_dependencies'):
+            self.assertEqual(transfer[key], published[key])
         with tempfile.TemporaryDirectory() as root:
             seam = binding.prepare_unit2(Path(root), captured)
             self.assertEqual((Path(seam['resource_package_root']) / binding.INDEX_RESOURCE).read_bytes(), result)
             self.assertEqual(seam['index_resource_adapter'], captured['index_resource_authority'])
             self.assertEqual(seam['u8_index_resource_adapter'], authority)
-            self.assertEqual(seam['published_source_unit2_accounting_source_binding'], transfer)
+            self.assertEqual(seam['published_source_unit2_accounting_source_binding'], published)
+            self.assertEqual(seam['package_json_unit2_accounting_source_binding'], transfer)
             self.assertEqual(seam['lexer_reservation_unit2_accounting_source_binding'], lexer)
             self.assertEqual(seam['u8_accounting_source_binding'], retained)
 
