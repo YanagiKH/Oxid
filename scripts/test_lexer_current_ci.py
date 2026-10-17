@@ -10,6 +10,13 @@ import unittest
 
 sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
+
+# Named CI-only successor; historical workflow assertions use its pinned view.
+import types as _wide_types
+_wide_path = REPO / 'tests/qualification/wide_span_parser_ci_v1/successor.py'
+_wide_ci = _wide_types.ModuleType('wide_ci_controls'); _wide_ci.__file__ = str(_wide_path)
+exec(compile(_wide_path.read_bytes(), str(_wide_path), 'exec'), _wide_ci.__dict__)
+
 HELPER = REPO / 'tests/qualification/lexer_reservation_current'
 PRESERVED = REPO / 'scripts/predecessors/byte_storage_ci_v1'
 SOURCE = REPO / 'tests/fixtures/typed_project_source_binding'
@@ -129,7 +136,7 @@ class CurrentCIActivationControls(unittest.TestCase):
         complete = successor_ci.validate(
             (PUBLISHED / 'published-direct-consumer-dispositions-v1.json').read_bytes(),
             (REPO / 'tests/qualification/package_json_current_v1/predecessor-v1/.github/workflows/ci.yml').read_bytes(),
-            (REPO / '.github/workflows/ci.yml').read_bytes(),
+            _wide_ci.verify_workflow(REPO),
             (SOURCE / 'current-source.json').read_bytes(), current_raw)
         self.assertEqual(complete, {'entry_count': 173,
             'changed_commands': ['ci.yml:L751', 'ci.yml:L764'],
@@ -176,7 +183,7 @@ class CurrentCIActivationControls(unittest.TestCase):
         self.assertEqual(middle.count(old_argument), 2)
         self.assertEqual(middle.count(PUBLISHED_MAIN_SOURCE_SHA.encode()), 2)
         expected = middle.replace(old_argument, new_argument)
-        current = (REPO / '.github/workflows/ci.yml').read_bytes()
+        current = _wide_ci.verify_workflow(REPO)
         sys.path.insert(0, str(REPO / "tests/qualification/unit4_ci"))
         import scheduling_derivation as scheduling
         self.assertEqual(current, scheduling.workflow(expected))
@@ -254,6 +261,8 @@ class CurrentCIActivationControls(unittest.TestCase):
                  'tests/qualification/package_json_current_v1',
                  'tests/qualification/stdlib_trim_storage_v1',
                  'tests/qualification/stdlib_text_case_v1',
+                 'tests/qualification/wide_span_fixture_storage_v1',
+                 'tests/qualification/wide_span_parser_ci_v1',
                  'tests/fixtures/typed_project_source_binding_byte_storage_v1',
                  'tests/qualification/unit2_u8_current',
                  'tests/fixtures/typed_project_unit2_independent',
@@ -285,7 +294,7 @@ class CurrentCIActivationControls(unittest.TestCase):
         old_workflow = bodies['.github/workflows/ci.yml'][0]
         old_sha = b'aa021e6046786300d13b12c22e5cff3f2565b1ae8f739e0698bdad93fd33a633'
         self.assertEqual(old_workflow.count(old_sha), 2)
-        self.assertEqual((REPO / '.github/workflows/ci.yml').read_bytes(),
+        self.assertEqual(_wide_ci.verify_workflow(REPO),
                          scheduled_workflow(old_workflow.replace(old_sha, CURRENT_SHA.encode())))
 
     def test_lexer_facade_manifest_body_mode_membership_and_symlink_reject(self):
@@ -324,6 +333,14 @@ class CurrentCIActivationControls(unittest.TestCase):
                 manifest.read_bytes.assert_not_called()
                 root.rglob.assert_not_called()
 
+
+
+def load_tests(loader, tests, pattern):
+    module=_wide_ci.load(REPO / 'tests/qualification/wide_span_parser_ci_v1/test_successor.py')
+    tests.addTests(loader.loadTestsFromModule(module))
+    storage_module=_wide_ci.load(REPO / 'tests/qualification/wide_span_fixture_storage_v1/test_storage.py')
+    tests.addTests(loader.loadTestsFromModule(storage_module))
+    return tests
 
 if __name__ == '__main__':
     unittest.main()

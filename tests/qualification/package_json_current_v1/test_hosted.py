@@ -5,7 +5,7 @@ import unittest
 REPO=Path(__file__).absolute().parents[3]
 
 def load_tests(loader, tests, pattern):
-    path=REPO/'tests/qualification/stdlib_text_case_v1/adapters.py'
+    path=REPO/'tests/qualification/wide_span_parser_ci_v1/adapters.py'
     module=types.ModuleType('text_test_adapters');module.__file__=str(path)
     exec(compile(path.read_bytes(),str(path),'exec'),module.__dict__)
     return module.suite(REPO,loader)

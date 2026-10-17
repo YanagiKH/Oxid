@@ -16,6 +16,12 @@ import build_hir_producers_v2
 import verify_fixture_data
 import verify_repo
 
+WIDE_FILES = tuple("fixtures/typed-parser-wide-span/" + name + ".ox" for name in (
+    "parser_main", "parser_state", "parser_signature", "parser_atom", "parser_call",
+    "parser_expression", "parser_statement", "parser_control", "parser_driver", "parser_output",
+    "control_main"))
+WIDE_ROOTS = ("parser_main", "control_main")
+
 STREAMING_ROOT = "fixtures/typed-streaming-lexer/main.ox"
 STREAMING_FILES = tuple("fixtures/typed-streaming-lexer/" + name + ".ox"
                         for name in ("main", "data", "frame", "keywords", "scanner"))
@@ -183,6 +189,18 @@ class PublishedRegistrationTests(unittest.TestCase):
         run_inventory = [row for row in run_inventory if row[0] != BYTE_PILOT]
         typed_members -= 1
         typed_entries = [path for path in typed_entries if path != root / BYTE_PILOT]
+        # The wide parser contributes exactly eleven visible language members.
+        # They enter only the separately materialized typed route, never legacy.
+        import build_wide_span_parser as wide
+        self.assertEqual(wide.OVERLAY_FILES, WIDE_FILES)
+        self.assertEqual(len(WIDE_FILES), 11)
+        self.assertEqual([name for name in language if name in WIDE_FILES], sorted(WIDE_FILES))
+        self.assertFalse(any(name in WIDE_FILES for name, _ in check_inventory + run_inventory))
+        wide_sources = verify_repo.wide_overlay_sources(root)
+        self.assertTrue({root / name for name in WIDE_FILES} <= {path for path, _ in wide_sources.values()})
+        self.assertEqual((len(language), len(check_inventory), len(run_inventory), typed_members, len(typed_entries)),
+                         (209 + 11, 143, 75, 79, 8))
+        language = [name for name in language if name not in WIDE_FILES]
         # The genuine streaming lexer is five new language files and one
         # check-only root. Subtract only this exact successor before replaying
         # every historical inventory and fingerprint below.
@@ -366,6 +384,22 @@ class PublishedRegistrationTests(unittest.TestCase):
                        (STREAMING_ROOT, STDIN_ENTRY, STACK_MAIN_ENTRY, STACK_STDIN_ENTRY, ARTIFACT_MAIN_ENTRY,
                         ARTIFACT_LOAD_ENTRY, LEXER_MAIN_ENTRY, LEXER_ADMISSION_ENTRY,
                         PARSER_ADMISSION_ENTRY, PARSER_MAIN_ENTRY) + STATIC_ROOTS}
+        wide_commands = [command for command in commands if len(command) > 2
+                         and Path(command[2]).parent.name == "typed-parser-wide-span"]
+        self.assertEqual(len(wide_commands), 2)
+        self.assertEqual([Path(command[2]).stem for command in wide_commands], list(WIDE_ROOTS))
+        for command in wide_commands:
+            self.assertEqual(command[:2], [str(Path(sys.executable).resolve()), "check"])
+            self.assertEqual(command[3:], ["--edition=typed-preview"])
+            self.assertFalse(Path(command[2]).is_relative_to(verify_repo.ROOT))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in command
+                             for name in WIDE_FILES for command in commands))
+        before_wide = [command for command in commands
+                       if command not in overlay_commands and not added_roots.intersection(command)]
+        self.assertEqual(len(before_wide), 205 + 2)
+        # Remove only the two validated typed entry commands, then retain every
+        # historical command/count/fingerprint assertion below.
+        commands = [command for command in commands if command not in wide_commands]
         predecessor_commands = [command for command in commands
                                 if command not in overlay_commands and not added_roots.intersection(command)]
         self.assertEqual(len(predecessor_commands), 205)  # 128 checks, 74 runs, test/build/doctor.
@@ -389,12 +423,13 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
-        self.assertIn(f"{146 + 1 + len(additional_members) + len(V2_OVERLAY_FILES)} language sources, "
-                      f"{131 + 1 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS)} checks, "
+        self.assertIn(f"{146 + 1 + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
+                      f"{131 + 1 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
                       "76 runnable programs", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
                       f"{25 + 1 + len(additional_members)} typed source members / "
                       "9 typed entry runs", output.getvalue())
+        self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
                       output.getvalue())
 

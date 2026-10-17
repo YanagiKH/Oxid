@@ -16,6 +16,14 @@ import common as q
 import scheduling as s
 import scheduling_derivation as d
 import derive_scheduling as activation
+REPO = activation.REPO
+
+# Named CI-only successor; historical workflow assertions use its pinned view.
+import types as _wide_types
+_wide_path = REPO / 'tests/qualification/wide_span_parser_ci_v1/successor.py'
+_wide_ci = _wide_types.ModuleType('wide_ci_controls'); _wide_ci.__file__ = str(_wide_path)
+exec(compile(_wide_path.read_bytes(), str(_wide_path), 'exec'), _wide_ci.__dict__)
+
 
 
 class SchedulingControls(unittest.TestCase):
@@ -226,7 +234,7 @@ class SchedulingControls(unittest.TestCase):
     def test_named_derivation_outputs_and_immutable_history(self):
         sys.path.insert(0, str(activation.REPO / 'tests/qualification/stdlib_trim_storage_v1'))
         from retained import Fixture
-        fixture = Fixture(activation.REPO)
+        fixture = _wide_ci.fixture(activation.REPO)
         suite = fixture.scheduling_suite(lambda: q.verify_package(activation.REPO, q.read(q.HERE/'inputs.json')))
         case = next(case for case in suite if case._testMethodName == 'test_named_derivation_outputs_and_immutable_history')
         case.debug()
@@ -234,7 +242,7 @@ class SchedulingControls(unittest.TestCase):
     def test_original_consumer_generator_emits_named_workflow(self):
         sys.path.insert(0, str(activation.REPO / 'tests/qualification/stdlib_trim_storage_v1'))
         from retained import Fixture
-        fixture = Fixture(activation.REPO)
+        fixture = _wide_ci.fixture(activation.REPO)
         suite = fixture.scheduling_suite(lambda: q.verify_package(activation.REPO, q.read(q.HERE/'inputs.json')))
         case = next(case for case in suite if case._testMethodName == 'test_original_consumer_generator_emits_named_workflow')
         case.debug()
@@ -295,7 +303,7 @@ class SchedulingControls(unittest.TestCase):
             with self.assertRaises(ValueError): d.disposition(bad)
         args = [(activation.REPO/'tests/qualification/published_formatter_current/published-direct-consumer-dispositions-v1.json').read_bytes(),
                 (package/'predecessor-v1/.github/workflows/ci.yml').read_bytes(),
-                (activation.REPO/'.github/workflows/ci.yml').read_bytes(),
+                _wide_ci.verify_workflow(activation.REPO),
                 (activation.REPO/'tests/fixtures/typed_project_source_binding/current-source.json').read_bytes()]
         activation.ci.validate(*args, (package/activation.ci.NAME).read_bytes())
         for index in range(4):
@@ -345,8 +353,8 @@ class CheckoutSchedulingControls(unittest.TestCase):
         self.assertEqual(q.git(repo, 'rev-list', '--count', '--all'), '1')
         checked = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "
             "from pathlib import Path; sys.path.insert(0, 'tests/qualification/stdlib_trim_storage_v1'); "
-            "from retained import Fixture; Fixture(Path.cwd()).assert_scheduling_outputs(); "
-            "import types; p=Path('tests/qualification/stdlib_text_case_v1/activate.py').absolute(); m=types.ModuleType('text_checkout_activation'); m.__file__=str(p); exec(compile(p.read_bytes(),str(p),'exec'),m.__dict__); m.base.Baseline(Path.cwd()).assert_outputs(); assert all((m.REPO/n).read_bytes()==body for n,body in m.generate().items())")
+            ""
+            "import types; p=Path('tests/qualification/wide_span_parser_ci_v1/successor.py').absolute(); m=types.ModuleType('wide_checkout_activation'); m.__file__=str(p); exec(compile(p.read_bytes(),str(p),'exec'),m.__dict__); m.fixture(Path.cwd()).assert_scheduling_outputs(); m.check_predecessor_outputs(Path.cwd()); m.verify_workflow(Path.cwd()); m.verify_inventory(Path.cwd())")
         self.assertEqual(checked.returncode, 0, checked.stderr)
         # A wrong expected tree must fail even if fetch itself succeeds.
         refused = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "

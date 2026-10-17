@@ -60,6 +60,13 @@ def literal_source_pin(source, name, kind):
     return value.value
 
 
+
+# Named CI-only successor; historical workflow assertions use its pinned view.
+import types as _wide_types
+_wide_path = REPO / 'tests/qualification/wide_span_parser_ci_v1/successor.py'
+_wide_ci = _wide_types.ModuleType('wide_ci_controls'); _wide_ci.__file__ = str(_wide_path)
+exec(compile(_wide_path.read_bytes(), str(_wide_path), 'exec'), _wide_ci.__dict__)
+
 class LexerInputClosureControls(unittest.TestCase):
     def test_current_complete_inventory_and_named_predecessor(self):
         original = REPO / 'scripts/predecessors/byte_storage_ci_v1/tests/qualification/unit4_ci/inputs.json'
@@ -67,8 +74,8 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual(q.sha(old_raw), '97ed4d950d10ead6ba78d2d762add219231a38be7a74248ce4964daa133fbe6a')
         old = q.loads(old_raw)
         self.assertEqual((len(old['files']), len(old['closed_roots'])), (271, 8))
-        raw = (q.HERE / 'inputs.json').read_bytes()
-        self.assertEqual(q.sha(raw), q.INPUTS_SHA)
+        raw = _wide_ci.predecessor('tests/qualification/unit4_ci/inputs.json', REPO)
+        self.assertEqual(q.sha(raw), '3f43f3077a0b2924d5b9a7c84671441fd3d3da7f0728f2ba493cfc345f6b76a2')
         self.assertEqual(raw, (q.HERE / 'inputs-stdlib-text-v1.json').read_bytes())
         current = q.loads(raw)
         predecessor_raw = (q.HERE / 'inputs-lexer-reservation-v1.json').read_bytes()
@@ -102,7 +109,7 @@ class LexerInputClosureControls(unittest.TestCase):
         self.assertEqual(current['lexer_reservation_source_v1_preservation'], {
             'path': 'scripts/predecessors/lexer_reservation_source_v1/preservation.json',
             'bytes': 24543, 'sha256': '8d1ef7d92988d3f28de359231b291f34d069c00010dddedf58bf1116b765a8be'})
-        q.verify_package(REPO, current)
+        _wide_ci.verify_inventory(REPO)
 
     def test_complete_inventory_cannot_omit_new_or_saved_adapters(self):
         manifest = q.read(q.HERE / 'inputs.json')

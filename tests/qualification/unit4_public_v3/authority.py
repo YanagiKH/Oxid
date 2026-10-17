@@ -33,5 +33,5 @@ LEXER_LIFECYCLE_HELPER_SHA = '155471428cc243fbb7845ec2dcd21fb982f51e7e8264ccf804
 # Separate published-source descriptors; historical LEXER_* pins stay exact.
 PUBLISHED_LIFECYCLE_HELPER = {'path': 'published_lifecycle.py', 'bytes': 46537, 'sha256': 'afa277d0586fdea4ff9d76fe83d7025b3b399390d44d356857dfb27b2612fe29'}
 PUBLISHED_LIFECYCLE_PROOF = {'path': 'published-lifecycle-v1.json', 'bytes': 149158, 'sha256': '46b8bdf4d5d1559cd681ef00026220111d0c1244533da2b8e470d38e19bf69c2'}
-PACKAGE_JSON_LIFECYCLE_HELPER = {'path': 'tests/qualification/stdlib_text_case_v1/lifecycle.py', 'bytes': 5722, 'sha256': '927001dd0e3fb55d92f9f0e21c059780b26b0916f1220b5df73516e7e8a329ff'}
-PACKAGE_JSON_LIFECYCLE_PROOF = {'path': 'tests/qualification/stdlib_text_case_v1/lifecycle-proof.json', 'bytes': 145624, 'sha256': '2ca32eea13f0019415e40fcdc052829a6792818b3afd72c6d8113c7a419eb5be'}
+PACKAGE_JSON_LIFECYCLE_HELPER = {'path': 'tests/qualification/wide_span_fixture_storage_v1/lifecycle.py', 'bytes': 5731, 'sha256': 'd2301f31fde1f1d569f916913c77f305569d173c6e138cff2e4fcd654420f65b'}
+PACKAGE_JSON_LIFECYCLE_PROOF = {'path': 'tests/qualification/wide_span_fixture_storage_v1/lifecycle-proof.json', 'bytes': 145624, 'sha256': '3f9b2b60665dcef4bde1a011331c28416638650440e3e089628e6908ffbfb3df'}

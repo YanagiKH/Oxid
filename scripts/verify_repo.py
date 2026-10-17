@@ -790,6 +790,19 @@ def check_typed_overlays(executable: Path, sources: dict[str, tuple[Path, bytes]
         run([str(executable), "check", str(output / (name + ".ox")), "--edition=typed-preview"])
 
 
+def wide_overlay_sources(root: Path):
+    import build_wide_span_parser as wide
+    return wide.sources(root)
+
+
+def check_wide_overlays(executable: Path, sources, output: Path) -> None:
+    output.mkdir()
+    for name, (_, body) in sources.items():
+        (output / (name + '.ox')).write_bytes(body)
+    for name in ('parser_main', 'control_main'):
+        run([str(executable), 'check', str(output / (name + '.ox')), '--edition=typed-preview'])
+
+
 def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path, bool]], list[Path], int]:
     # Admission is mandatory even for direct callers. Only exact frozen paths
     # are data; an unlisted .ox in the same directories remains a legacy check.
@@ -846,8 +859,20 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
             raise RuntimeError("typed overlay inventory overlaps or escapes existing typed projects")
     else:
         overlay_members = set()
+    # A separate experimental overlay is checked only after complete admission.
+    # No directory exclusion: only the eleven explicitly selected source paths.
+    import build_wide_span_parser as wide
+    wide_members = {root / name for name in wide.OVERLAY_FILES}
+    if (root / wide.OVERLAY_PATH).exists() or wide_members & available:
+        wide_closure = {path for path, _ in wide_overlay_sources(root).values()}
+        if not wide_closure <= available:
+            raise RuntimeError('wide parser overlay missing from discovery')
+        if wide_members & (typed_members | fixture_data | overlay_members):
+            raise RuntimeError('wide parser overlay overlaps another source category')
+    else:
+        wide_members = set()
     legacy = [(source, False) for source in sources
-              if source not in typed_members | fixture_data | overlay_members]
+              if source not in typed_members | fixture_data | overlay_members | wide_members]
     return legacy + [(source, True) for source in typed_entries + typed_check_only], typed_entries, len(typed_members)
 
 
@@ -884,8 +909,11 @@ def main() -> int:
     checks, typed_entries, typed_member_count = source_plan(sources, ROOT)
     verify_test_fixture_registration(ROOT)
     overlay_sources = typed_overlay_sources(ROOT)
+    wide_sources = wide_overlay_sources(ROOT)
+    import build_wide_span_parser as wide
+    wide_count = len(wide.OVERLAY_FILES)
     overlay_member_count = len(TYPED_OVERLAY_FILES)
-    language_source_count = sum(not typed for _, typed in checks) + typed_member_count + overlay_member_count
+    language_source_count = sum(not typed for _, typed in checks) + typed_member_count + overlay_member_count + wide_count
     print(
         f"fixture-data validation passed: {len(sources) - language_source_count} source-only files "
         "(frozen manifest/body identities only; no compiler checks, executions or feature claim)"
@@ -904,6 +932,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="oxid-verify-") as temp_dir:
         temp = Path(temp_dir)
         check_typed_overlays(executable, overlay_sources, temp / "typed-frontend-v2")
+        check_wide_overlays(executable, wide_sources, temp / "typed-parser-wide-span")
         for source in runnable:
             run([str(executable), "run", str(source)], cwd=temp)
         for source in typed_entries:
@@ -914,12 +943,13 @@ def main() -> int:
     run([str(executable), "doctor"])
     print(
         f"repository verification passed: {language_source_count} language sources, "
-        f"{len(checks) + len(TYPED_OVERLAY_ROOTS)} checks, "
+        f"{len(checks) + len(TYPED_OVERLAY_ROOTS) + 2} checks, "
         f"{len(runnable) + len(typed_entries)} runnable programs "
-        f"({language_source_count - typed_member_count - overlay_member_count} legacy sources, "
+        f"({language_source_count - typed_member_count - overlay_member_count - wide_count} legacy sources, "
         f"{len(runnable)} legacy runnable programs, {typed_member_count} typed source members / "
         f"{len(typed_entries)} typed entry runs; {overlay_member_count} v2 overlay source members / "
-        f"{len(TYPED_OVERLAY_ROOTS)} materialized typed checks in a {len(overlay_sources)}-module closure)"
+        f"{len(TYPED_OVERLAY_ROOTS)} materialized typed checks in a {len(overlay_sources)}-module closure; "
+        f"{wide_count} wide parser overlay members / 2 materialized typed checks)"
     )
     return 0
 

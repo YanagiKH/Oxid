@@ -1,0 +1,28 @@
+{
+  "inserted_step": "      - name: Verify wide-span parser runtime in both qualified ordinary profiles\n        run: |\n          python3 -B scripts/run_wide_span_parser_ci.py \\\n            --receipt \"$RUNNER_TEMP/local-hir-producers/receipt.json\" \\\n            --llvm-bin \"$OXID_LLVM_BIN\" \\\n            --output \"$RUNNER_TEMP/local-hir-producers/wide-span\"\n",
+  "insertion_anchor": "      - name: Retain producer builds, observations and failure evidence\n",
+  "old_dispositions": {
+    "bytes": 195245,
+    "path": "tests/qualification/package_json_current_v1/package-json-scheduling-dispositions-v1.json",
+    "sha256": "aeb5c6b0d0cd487c16d97b4562250f975d7da2a3588b324c9053459252270003"
+  },
+  "predecessor": {
+    "bytes": 71965,
+    "path": ".github/workflows/ci.yml",
+    "sha256": "9c6e7b902f18e24d4b4f81af77e915463171bdddb2d7cd8fa504c0be9135ec51"
+  },
+  "schema": "oxid-wide-span-parser-ci-derivation-v1",
+  "scope": {
+    "added_jobs": 0,
+    "execution_qualified": false,
+    "job": "local-hir-producers",
+    "job_timeout_minutes": 40,
+    "retained_direct_obligations": 173,
+    "source_only": true
+  },
+  "successor": {
+    "bytes": 72300,
+    "path": ".github/workflows/ci.yml",
+    "sha256": "f97c508b3e620cf2144c3b8c3b9488ff8bc442c7e99b4d41887475a8a062fdbc"
+  }
+}
