@@ -346,7 +346,7 @@ class CheckoutSchedulingControls(unittest.TestCase):
         checked = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "
             "from pathlib import Path; sys.path.insert(0, 'tests/qualification/stdlib_trim_storage_v1'); "
             "from retained import Fixture; Fixture(Path.cwd()).assert_scheduling_outputs(); "
-            "import activate; assert all((activate.REPO/n).read_bytes()==b for n,b in activate.generate().items())")
+            "import types; p=Path('tests/qualification/stdlib_text_case_v1/activate.py').absolute(); m=types.ModuleType('text_checkout_activation'); m.__file__=str(p); exec(compile(p.read_bytes(),str(p),'exec'),m.__dict__); m.base.Baseline(Path.cwd()).assert_outputs(); assert all((m.REPO/n).read_bytes()==body for n,body in m.generate().items())")
         self.assertEqual(checked.returncode, 0, checked.stderr)
         # A wrong expected tree must fail even if fetch itself succeeds.
         refused = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "
