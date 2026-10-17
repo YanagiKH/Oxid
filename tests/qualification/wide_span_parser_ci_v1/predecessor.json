@@ -1,0 +1,48 @@
+{
+  "baseline_tree": "ebdd96e45c67f472f252f1c7ca918f757891cb52",
+  "files": [
+    {
+      "bytes": 71965,
+      "path": ".github/workflows/ci.yml",
+      "sha256": "9c6e7b902f18e24d4b4f81af77e915463171bdddb2d7cd8fa504c0be9135ec51",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/.github/workflows/ci.yml"
+    },
+    {
+      "bytes": 19769,
+      "path": "scripts/test_lexer_current_ci.py",
+      "sha256": "29abc3c9774836c7919278fd845f390057b617c2955344d3e6404046bc7b3804",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/scripts/test_lexer_current_ci.py"
+    },
+    {
+      "bytes": 490,
+      "path": "tests/qualification/package_json_current_v1/test_hosted.py",
+      "sha256": "81cb559106a0748ded59f1be8e5a242985ee182deca27e57fb1a1f3d2f8d8a48",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/tests/qualification/package_json_current_v1/test_hosted.py"
+    },
+    {
+      "bytes": 25704,
+      "path": "tests/qualification/unit4_ci/test_scheduling.py",
+      "sha256": "e0bf1f66cf7cd2ec20198b0a340fe8c367c6255ea721a0d662097932a4a8fd0e",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/tests/qualification/unit4_ci/test_scheduling.py"
+    },
+    {
+      "bytes": 17821,
+      "path": "tests/qualification/unit4_ci/common.py",
+      "sha256": "5a82158028534660afe5fce44c0d0dee5efa354e422abde3fb8f12a4a2dd18b9",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/tests/qualification/unit4_ci/common.py"
+    },
+    {
+      "bytes": 189279,
+      "path": "tests/qualification/unit4_ci/test_integration.py",
+      "sha256": "9fd38ddc53588d580945a00dfb7ef71ac74bf5a6f92ddbc1d4bf4925fdbf0d4b",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/tests/qualification/unit4_ci/test_integration.py"
+    },
+    {
+      "bytes": 235653,
+      "path": "tests/qualification/unit4_ci/inputs.json",
+      "sha256": "3f43f3077a0b2924d5b9a7c84671441fd3d3da7f0728f2ba493cfc345f6b76a2",
+      "storage": "tests/qualification/wide_span_parser_ci_v1/predecessor/tests/qualification/unit4_ci/inputs.json"
+    }
+  ],
+  "schema": "oxid-wide-span-ci-predecessor-v1"
+}

@@ -153,28 +153,28 @@ def verify_byte_storage_lifecycle_successor(raw):
 
 
 
-# Explicit text successor; historical package_json_lifecycle.py remains intact.
-_TEXT_LIFECYCLE = None
+# Explicit fixture-storage successor; historical package_json_lifecycle.py remains intact.
+_FIXTURE_LIFECYCLE = None
 
-def _text_lifecycle():
-    global _TEXT_LIFECYCLE
+def _fixture_lifecycle():
+    global _FIXTURE_LIFECYCLE
     from authority import PACKAGE_JSON_LIFECYCLE_HELPER
     import types
     from published_lifecycle import _read_regular
     row = PACKAGE_JSON_LIFECYCLE_HELPER
     root = Path(__file__).absolute().parents[3]
     raw, _ = _read_regular(root / row['path'])
-    need(len(raw) == row['bytes'] and sha(raw) == row['sha256'], 'fixed text lifecycle helper')
-    if _TEXT_LIFECYCLE is None:
-        module = types.ModuleType('text_current_lifecycle')
+    need(len(raw) == row['bytes'] and sha(raw) == row['sha256'], 'fixed fixture lifecycle helper')
+    if _FIXTURE_LIFECYCLE is None:
+        module = types.ModuleType('fixture_current_lifecycle')
         module.__file__ = str(root / row['path'])
         exec(compile(raw, module.__file__, 'exec'), module.__dict__)
-        _TEXT_LIFECYCLE = module
-    return _TEXT_LIFECYCLE
+        _FIXTURE_LIFECYCLE = module
+    return _FIXTURE_LIFECYCLE
 
 def verify_lifecycle_successor(raw, source=None):
     """Exact new core hooks plus the unchanged complete historical patch chain."""
-    current = _text_lifecycle()
+    current = _fixture_lifecycle()
     try:
         current.admit(Path(source) if source is not None else current.REPOSITORY, raw)
     except current.Rejected as error:
@@ -191,7 +191,7 @@ def prepare(args):
     patch = Path(args.observer_patch).resolve()
     need(sha(patch.read_bytes()) == args.observer_patch_sha256 == LIFECYCLE_PATCH_SHA, 'observer approved patch binding')
     verify_lifecycle_successor(patch.read_bytes(), source)
-    current = _text_lifecycle()
+    current = _fixture_lifecycle()
     derived, _ = current.admit(source, patch.read_bytes())
     output = Path(args.out).resolve()
     output.mkdir(parents=True, exist_ok=False)

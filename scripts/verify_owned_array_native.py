@@ -693,6 +693,8 @@ def source_members(repo, tracked):
                 "tests/qualification/package_json_current_v1/",
                 "tests/qualification/stdlib_trim_storage_v1/",
                 "tests/qualification/stdlib_text_case_v1/",
+                "tests/qualification/wide_span_fixture_storage_v1/",
+                "tests/qualification/wide_span_parser_ci_v1/",
                 "tests/fixtures/typed_project_source_binding_byte_storage_v1/",
                 "tests/qualification/unit2_u8_current/",
                 "tests/fixtures/typed_project_unit2_independent/",

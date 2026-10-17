@@ -1,0 +1,90 @@
+{
+  "baseline_tree": "ebdd96e45c67f472f252f1c7ca918f757891cb52",
+  "files": [
+    {
+      "bytes": 2173,
+      "path": "scripts/test_published_formatter_source.py",
+      "sha256": "d4807e6c32ad319f602a0eb9ca5dd4a1a11085d309f06cbb53917215961d8ecf",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/scripts/test_published_formatter_source.py.data"
+    },
+    {
+      "bytes": 56742,
+      "path": "scripts/test_verify_repo_fixture_data.py",
+      "sha256": "623a6ac490d97c3e45132630f5a0f334d81e13493f8384d27bedf2956b3872c6",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/scripts/test_verify_repo_fixture_data.py.data"
+    },
+    {
+      "bytes": 153261,
+      "path": "scripts/verify_owned_array_native.py",
+      "sha256": "3de89a56df94a86e2e607e0e0d0bbd5e9707a37a12feb363e85e63b0d92c19a8",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/scripts/verify_owned_array_native.py.data"
+    },
+    {
+      "bytes": 16690,
+      "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
+      "sha256": "a948c61833f6f3def57fc37c0595eab151636894af2027d0df6b1f420f363d4a",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/fixtures/typed_project_source_binding/package-manifest.json.data"
+    },
+    {
+      "bytes": 6770,
+      "path": "tests/fixtures/typed_project_source_binding/run.py",
+      "sha256": "c72811badcabd33b9faae127f5d26cf716bdf60802236cdbc4590238f0c4db2b",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/fixtures/typed_project_source_binding/run.py.data"
+    },
+    {
+      "bytes": 3493,
+      "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
+      "sha256": "b63e3e810261ce7b78d80f0caf7d46bb7b12da26c67d80be7ca6bb8fdd7aa5e9",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/lexer_reservation_current/test_current_source.py.data"
+    },
+    {
+      "bytes": 13746,
+      "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
+      "sha256": "f9677e8740b64f708f0d81c70730a939a9cd5b50b7ac1bd0f183a4b8b83a16c6",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/lexer_reservation_current/unit1_current_support.py.data"
+    },
+    {
+      "bytes": 529359,
+      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "1ba3b13cfa0ca2fd75d7b13aa2f5a31188aeb50c232d0438d3299ddaab79e721",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_parser_current/authority.json.data"
+    },
+    {
+      "bytes": 238733,
+      "path": "tests/qualification/unit4_parser_current/portable.py",
+      "sha256": "34143df1247df20a8574355255c4cd4283ea6675cb8c14fd4941d486df26843a",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_parser_current/portable.py.data"
+    },
+    {
+      "bytes": 3482,
+      "path": "tests/qualification/unit4_parser_current/test_current.py",
+      "sha256": "c6870bfa5e4740b2cbfebfa821d130c8987076284e620556587574533bac82fa",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_parser_current/test_current.py.data"
+    },
+    {
+      "bytes": 3491,
+      "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
+      "sha256": "103fbdfa95db5f7e30b2df2870768ac15b3160a612175cb26ff07511e39a185f",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_parser_current/test_lexer_reservation.py.data"
+    },
+    {
+      "bytes": 2388,
+      "path": "tests/qualification/unit4_public_v3/authority.py",
+      "sha256": "755f882dd3a54e534cd61c4666263ca0831841b49700737925abb5327af21c4d",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_public_v3/authority.py.data"
+    },
+    {
+      "bytes": 15396,
+      "path": "tests/qualification/unit4_public_v3/build.py",
+      "sha256": "1446132d88c88aeab72e3ed65b8f156a8332e0afc10c1e5f4358ad35c1f91a98",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_public_v3/build.py.data"
+    },
+    {
+      "bytes": 4489,
+      "path": "tests/qualification/unit4_public_v3/test_lexer_reservation.py",
+      "sha256": "f9e7d6121964c2a38192e0c7c3601d1c2c603bf836c740f411f40aa1a55124cd",
+      "storage": "tests/qualification/wide_span_fixture_storage_v1/archive/tests/qualification/unit4_public_v3/test_lexer_reservation.py.data"
+    }
+  ],
+  "schema": "oxid-wide-span-fixture-storage-originals-v1"
+}

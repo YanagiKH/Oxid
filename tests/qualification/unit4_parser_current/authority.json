@@ -10808,9 +10808,9 @@
     "sha256": "7e41c881086ab6816d302177aad5ea580547a7577ff1e0c0055843f59ba4de20"
   },
   "source_binding_runner": {
-    "bytes": 6770,
+    "bytes": 6779,
     "path": "tests/fixtures/typed_project_source_binding/run.py",
-    "sha256": "c72811badcabd33b9faae127f5d26cf716bdf60802236cdbc4590238f0c4db2b"
+    "sha256": "fdab130862dceb5d53e0885db72e60710bb827d5612621c4a5d4f9d513919169"
   },
   "source_delta": [
     {

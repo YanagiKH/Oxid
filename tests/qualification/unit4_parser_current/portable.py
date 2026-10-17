@@ -662,7 +662,7 @@ NATIVE_INVENTORY_SOURCE_SHA = "52eeeb97c2b13d04315bcc0eac68995c0587ade263078ca7a
 HIR_IMPORT_SOURCE_SHA = "8911a4d5964408ee94c9bb1a108b157e9143405d93118cfcec4ca9e63fd12746"
 HIR_PRODUCER_PATHS = ('Cargo.lock', 'Cargo.toml', 'src/frontend/driver.rs', 'src/frontend/hir_producer.rs', 'src/frontend/hir_producer/bundle.rs', 'src/frontend/hir_producer/supervisor.rs', 'src/frontend/mod.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/source.rs', 'src/frontend/oir/source/hir_import.rs', 'src/frontend/oir/source/hir_import/public_facade.rs', 'src/frontend/options.rs')
 HIR_IMPORT_INSTRUMENTATION_PATHS = ("src/frontend/project/budget.rs",)
-AUTHORITY_SHA = '1ba3b13cfa0ca2fd75d7b13aa2f5a31188aeb50c232d0438d3299ddaab79e721'
+AUTHORITY_SHA = 'c28eee5af3e24f0169750cd54232846cbe7be311af85f28277fdfe064a887026'
 COMPARATOR_SHA = "7c40e4782bee8082dc41534227348c26f952f3b870904cda9e71862b0be42a6b"
 PREFIX_START = "    manifest = read_json(path)\n"
 PREFIX_END = "    cases = {c[\"id\"]: c for c in contract[\"cases\"]}\n"
@@ -3556,7 +3556,7 @@ def _published_parser_context():
 
 
 
-_PACKAGE_JSON_PARSER_SEAL = {'dispatcher': {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6770, 'sha256': 'c72811badcabd33b9faae127f5d26cf716bdf60802236cdbc4590238f0c4db2b'}, 'support': {'path': 'tests/qualification/package_json_current_v1/parser.py', 'bytes': 8616, 'sha256': '05795c702f3e2db2cdc4b08b4a59c13650070db7131789e9c4588f96f6d73bb5'}}
+_PACKAGE_JSON_PARSER_SEAL = {'dispatcher': {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6779, 'sha256': 'fdab130862dceb5d53e0885db72e60710bb827d5612621c4a5d4f9d513919169'}, 'support': {'path': 'tests/qualification/package_json_current_v1/parser.py', 'bytes': 8616, 'sha256': '05795c702f3e2db2cdc4b08b4a59c13650070db7131789e9c4588f96f6d73bb5'}}
 
 # New named source transport. Every executable dependency is pinned before load.
 def _package_json_modules():
