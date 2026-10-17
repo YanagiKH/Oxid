@@ -1,6 +1,6 @@
 NAME = 'tests/qualification/unit4_parser_current/test_lexer_reservation.py'
 COUNT = 10
-DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6773, 'sha256': 'cc9e96beafd1ff45ed2708b4bf439e924d2118211c5056b6f04502b84f9c220f'}
+DISPATCHER = {'path': 'tests/fixtures/typed_project_source_binding/run.py', 'bytes': 6770, 'sha256': 'c72811badcabd33b9faae127f5d26cf716bdf60802236cdbc4590238f0c4db2b'}
 """Retained controls run only after successor admission, at their genuine paths."""
 import hashlib
 import importlib.util

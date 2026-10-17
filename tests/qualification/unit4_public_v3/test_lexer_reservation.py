@@ -5,15 +5,15 @@ sys.dont_write_bytecode = True
 import json
 from pathlib import Path
 import unittest
-from build import _trim_lifecycle
-m = _trim_lifecycle()
+from build import _text_lifecycle
+m = _text_lifecycle()
 
 
 class CurrentLifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.patch = (m.HERE / 'observer-lexer-reservation-v2.patch').read_bytes()
-        cls.proof = json.loads((m.REPOSITORY / 'tests/qualification/stdlib_trim_storage_v1/lifecycle-proof.json').read_bytes())
+        cls.proof = json.loads((m.REPOSITORY / 'tests/qualification/stdlib_text_case_v1/lifecycle-proof.json').read_bytes())
         cls.inputs = {r['path']: (m.REPOSITORY / r['path']).read_bytes() for r in cls.proof['base_files']}
         cls.derived, _ = m.admit(m.REPOSITORY, cls.patch)
 
