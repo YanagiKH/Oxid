@@ -4,7 +4,7 @@ use crate::frontend::{
     options::Operation,
 };
 
-const CASES: [(&str, &[u8], usize); 4] = [
+const CASES: [(&str, &[u8], usize); 7] = [
     (
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -48,6 +48,39 @@ const CASES: [(&str, &[u8], usize); 4] = [
             "/tests/fixtures/producer_diagnostic/end255.bin"
         )),
         1,
+    ),
+    (
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/duplicate.ox"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/duplicate.bin"
+        )),
+        1,
+    ),
+    (
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/unknown.ox"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/unknown.bin"
+        )),
+        1,
+    ),
+    (
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/multiple.ox"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/multiple.bin"
+        )),
+        2,
     ),
 ];
 
@@ -221,7 +254,8 @@ fn producer_diagnostic_exact_and_minus_one_prepaid_and_canonical_work() {
 fn producer_diagnostic_payload_framing_and_source_mutations_fail_closed() {
     for &(text, bytes, _) in &CASES {
         let project = project(text);
-        for length in [0, 3, 1559, 1574] {
+        let protocol = Protocol::from_opa(bytes).unwrap();
+        for length in [0, 3, protocol.opa_bytes(), bytes.len() - 1] {
             assert!(!matches!(
                 validate(&project, &bytes[..length], IndexLimits::default()),
                 Err(Rejected::Confirmed(_))
@@ -235,10 +269,18 @@ fn producer_diagnostic_payload_framing_and_source_mutations_fail_closed() {
         ));
         // Each header/payload field and OPA structural columns are independent
         // negative controls; none is reserialized from canonical diagnostics.
-        for offset in [
-            0, 3, 4, 8, 9, 10, 11, 527, 1043, 1559, 1562, 1563, 1564, 1565, 1566, 1567, 1568, 1569,
-            1570, 1571, 1572, 1573, 1574,
-        ] {
+        let offsets: &[usize] = if protocol == Protocol::V3 {
+            &[
+                0, 3, 4, 10, 11, 12, 14, 272, 530, 788, 1046, 1304, 1307, 1308, 1309, 1310, 1311,
+                1312, 1313, 1314, 1315, 1316, 1317, 1318, 1319, 1320, 1321, 1322, 1323,
+            ]
+        } else {
+            &[
+                0, 3, 4, 8, 9, 10, 11, 527, 1043, 1559, 1562, 1563, 1564, 1565, 1566, 1567, 1568,
+                1569, 1570, 1571, 1572, 1573, 1574,
+            ]
+        };
+        for &offset in offsets {
             let mut bad = bytes.to_vec();
             bad[offset] ^= 1;
             assert!(
@@ -250,7 +292,11 @@ fn producer_diagnostic_payload_framing_and_source_mutations_fail_closed() {
             );
         }
         let mut bad = bytes.to_vec();
-        bad[11 + 128] = 1; // inactive OPA cell
+        bad[if protocol == Protocol::V3 {
+            14 + 128
+        } else {
+            11 + 128
+        }] = 1; // inactive OPA cell
         assert!(!matches!(
             validate(&project, &bad, IndexLimits::default()),
             Err(Rejected::Confirmed(_))

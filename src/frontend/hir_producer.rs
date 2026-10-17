@@ -16,9 +16,9 @@ mod supervisor;
 const PRODUCER_PIPELINE_ADMITTED: bool = true;
 const OPA_BYTES: usize = 1559;
 const OBSERVATION_BYTES: usize = 2607;
-const DIAGNOSTIC_BYTES: usize = OPA_BYTES + 16;
 const SOURCE_MAX: usize = 255;
 const AST1_MAX: usize = 5 + SOURCE_MAX + OPA_BYTES;
+const AST3_MAX: usize = 6 + 511 + 1304;
 
 #[derive(Clone, Copy)]
 pub(super) struct Record {
@@ -123,23 +123,46 @@ pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
             return result.reject("experimental HIR producer source owner is unavailable");
         };
         let input = source.text().as_bytes();
-        if input.len() > SOURCE_MAX || !input.is_ascii() {
+        // Preserve legacy source-error priority before any bundle access.
+        // Only bounded ASCII256..511 inputs may ask the existing immutable
+        // loader to establish explicit V3 admission; no manifest peek or
+        // alternative execution path is introduced.
+        if input.len() > 511 || !input.is_ascii() {
             return result
                 .reject("experimental HIR producers require at most 255 ASCII source bytes");
         }
         let selected = match bundle::Bundle::load(directory) {
             Ok(bundle) => bundle,
+            Err(_) if input.len() > SOURCE_MAX => {
+                return result
+                    .reject("experimental HIR producers require at most 255 ASCII source bytes")
+            }
             Err(message) => return result.reject(message),
         };
         let protocol = selected.protocol();
+        // A fully loaded V1/V2 bundle cannot grant the additional source capacity.
+        if protocol != super::hir_protocol::Protocol::V3 && input.len() > SOURCE_MAX {
+            return result
+                .reject("experimental HIR producers require at most 255 ASCII source bytes");
+        }
         if input.len() > protocol.source_max() {
-            return result.reject("v1 HIR producers require at most 128 ASCII source bytes");
+            return result.reject(match protocol {
+                super::hir_protocol::Protocol::V1 => {
+                    "v1 HIR producers require at most 128 ASCII source bytes"
+                }
+                super::hir_protocol::Protocol::V2 => {
+                    "experimental HIR producers require at most 255 ASCII source bytes"
+                }
+                super::hir_protocol::Protocol::V3 => {
+                    "v3 HIR producers require at most 511 ASCII source bytes"
+                }
+            });
         }
         let parser = supervisor::run_versioned(
             selected.parser(),
             selected.directory(),
             input,
-            OPA_BYTES,
+            protocol.opa_bytes(),
             supervisor::DEADLINE,
             protocol,
         );
@@ -147,48 +170,90 @@ pub(super) fn produce(project: &ProjectSources, directory: &Path) -> Outcome {
         if !completed(&parser, input.len()) {
             return result.reject("parser producer failed its bounded process/transport contract");
         }
-        if parser.stdout_len != OPA_BYTES
+        let opa_bytes = protocol.opa_bytes();
+        let source_length_matches = match protocol {
+            super::hir_protocol::Protocol::V3 => {
+                usize::from(u16::from_le_bytes([parser.stdout[12], parser.stdout[13]]))
+                    == input.len()
+            }
+            _ => usize::from(parser.stdout[10]) == input.len(),
+        };
+        if parser.stdout_len != opa_bytes
             || &parser.stdout[..3] != b"OPA"
             || parser.stdout[3] != protocol.digit()
-            || parser.stdout[4..8] != [0; 4]
-            || usize::from(parser.stdout[10]) != input.len()
+            || !parser.stdout[4..if protocol == super::hir_protocol::Protocol::V3 {
+                10
+            } else {
+                8
+            }]
+                .iter()
+                .all(|byte| *byte == 0)
+            || !source_length_matches
         {
             return result.reject(
                 "parser producer did not return one complete successful version-matched OPA frame",
             );
         }
-        // Transport exact original bytes and unchanged OPA1. No host-derived
-        // name/type/flow data, repaired row or substituted source is introduced.
-        let mut ast1 = [0u8; AST1_MAX];
-        ast1[..3].copy_from_slice(b"AST");
-        ast1[3] = protocol.digit();
-        ast1[4] = input.len() as u8;
-        ast1[5..5 + input.len()].copy_from_slice(input);
-        ast1[5 + input.len()..5 + input.len() + OPA_BYTES]
-            .copy_from_slice(&parser.stdout[..OPA_BYTES]);
-        let framed = &ast1[..5 + input.len() + OPA_BYTES];
-        let typed = supervisor::run_versioned(
-            selected.static_consumer(),
-            selected.directory(),
-            framed,
-            OBSERVATION_BYTES,
-            supervisor::DEADLINE,
-            protocol,
-        );
-        result.records[1] = Some(record("static", selected.static_hash(), framed, &typed));
-        if !completed(&typed, framed.len()) {
+        // Each protocol family has its own actual backing array. The legacy
+        // frame never pays for the V3 two-byte source length or larger capacity.
+        let typed = if protocol == super::hir_protocol::Protocol::V3 {
+            let mut ast3 = [0u8; AST3_MAX];
+            ast3[..4].copy_from_slice(b"AST3");
+            ast3[4..6].copy_from_slice(&(input.len() as u16).to_le_bytes());
+            ast3[6..6 + input.len()].copy_from_slice(input);
+            ast3[6 + input.len()..6 + input.len() + opa_bytes]
+                .copy_from_slice(&parser.stdout[..opa_bytes]);
+            let framed = &ast3[..6 + input.len() + opa_bytes];
+            let typed = supervisor::run_versioned(
+                selected.static_consumer(),
+                selected.directory(),
+                framed,
+                protocol.success_bytes(),
+                supervisor::DEADLINE,
+                protocol,
+            );
+            result.records[1] = Some(record("static", selected.static_hash(), framed, &typed));
+            typed
+        } else {
+            let mut ast1 = [0u8; AST1_MAX];
+            ast1[..3].copy_from_slice(b"AST");
+            ast1[3] = protocol.digit();
+            ast1[4] = input.len() as u8;
+            ast1[5..5 + input.len()].copy_from_slice(input);
+            ast1[5 + input.len()..5 + input.len() + OPA_BYTES]
+                .copy_from_slice(&parser.stdout[..OPA_BYTES]);
+            let framed = &ast1[..5 + input.len() + OPA_BYTES];
+            let typed = supervisor::run_versioned(
+                selected.static_consumer(),
+                selected.directory(),
+                framed,
+                OBSERVATION_BYTES,
+                supervisor::DEADLINE,
+                protocol,
+            );
+            result.records[1] = Some(record("static", selected.static_hash(), framed, &typed));
+            typed
+        };
+        let framed_len = input.len()
+            + opa_bytes
+            + if protocol == super::hir_protocol::Protocol::V3 {
+                6
+            } else {
+                5
+            };
+        if !completed(&typed, framed_len) {
             return result.reject("static producer failed its bounded process/transport contract");
         }
-        let tag = typed.stdout[OPA_BYTES + 4];
+        let tag = typed.stdout[opa_bytes + 4];
         let exact = match tag {
-            0 => typed.stdout_len == OBSERVATION_BYTES,
-            1 => typed.stdout_len == DIAGNOSTIC_BYTES,
+            0 => typed.stdout_len == protocol.success_bytes(),
+            1 => typed.stdout_len == protocol.diagnostic_bytes(),
             _ => false,
         };
         if !exact
-            || typed.stdout[..OPA_BYTES] != parser.stdout[..OPA_BYTES]
-            || &typed.stdout[OPA_BYTES..OPA_BYTES + 3] != b"STF"
-            || typed.stdout[OPA_BYTES + 3] != protocol.digit()
+            || typed.stdout[..opa_bytes] != parser.stdout[..opa_bytes]
+            || &typed.stdout[opa_bytes..opa_bytes + 3] != b"STF"
+            || typed.stdout[opa_bytes + 3] != protocol.digit()
         {
             return result.reject("static producer did not return one complete unchanged version-matched OPA/STF success or diagnostic observation");
         }
@@ -257,5 +322,144 @@ pub(super) fn named_bytes() -> usize {
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     {
         carriers
+    }
+}
+
+/// V3 substitutes three actual AST backing roles; all enclosing transport
+/// carriers remain unchanged. Scalar temporaries fit the existing role arrays.
+pub(super) fn named_bytes_for(protocol: super::hir_protocol::Protocol) -> usize {
+    named_bytes()
+        + match protocol {
+            super::hir_protocol::Protocol::V3 => 3 * (AST3_MAX - AST1_MAX),
+            _ => 0,
+        }
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
+    use crate::frontend::hir_protocol::Protocol;
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn v3_source_preflight_preserves_legacy_error_priority_without_spawn() {
+        use crate::frontend::project::ProjectLimits;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "oxid-v3-source-order-{}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let absent = root.join("absent");
+        let malformed = root.join("malformed");
+        std::fs::create_dir(&malformed).unwrap();
+        std::fs::write(
+            malformed.join("manifest.txt"),
+            b"OXID-HIR-PRODUCERS-3\ninvalid\n",
+        )
+        .unwrap();
+        let symlink = root.join("symlink");
+        std::os::unix::fs::symlink(&malformed, &symlink).unwrap();
+        let mut directories = vec![absent.clone(), malformed.clone(), symlink];
+        // These header-shaped files are loader/hash fixtures only. No test
+        // grants them execution authority or expects the OS to execute them.
+        let mut elf = [0u8; 64];
+        elf[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+        elf[16] = 2;
+        elf[18] = 62;
+        elf[20] = 1;
+        elf[52] = 64;
+        for version in [1, 2, 3] {
+            let directory = root.join(format!("hash-bad-v{version}"));
+            std::fs::create_dir(&directory).unwrap();
+            for role in ["parser", "static"] {
+                std::fs::write(directory.join(role), elf).unwrap();
+            }
+            std::fs::write(
+                directory.join("manifest.txt"),
+                format!(
+                    "OXID-HIR-PRODUCERS-{version}\nparser {}\nstatic {}\n",
+                    "0".repeat(64),
+                    "0".repeat(64)
+                ),
+            )
+            .unwrap();
+            assert_eq!(
+                bundle::Bundle::load(&directory).unwrap_err(),
+                "producer executable digest does not match the bundle manifest"
+            );
+            directories.push(directory);
+        }
+        for version in [1, 2] {
+            let directory = root.join(format!("valid-legacy-v{version}"));
+            std::fs::create_dir(&directory).unwrap();
+            for role in ["parser", "static"] {
+                std::fs::write(directory.join(role), elf).unwrap();
+            }
+            let hash = format!("{:x}", Sha256::digest(elf));
+            std::fs::write(
+                directory.join("manifest.txt"),
+                format!("OXID-HIR-PRODUCERS-{version}\nparser {hash}\nstatic {hash}\n"),
+            )
+            .unwrap();
+            assert_eq!(
+                bundle::Bundle::load(&directory).unwrap().protocol().digit(),
+                b'0' + version
+            );
+            directories.push(directory);
+        }
+        let base = "fn main()->i32{return 0;}";
+        for text in [
+            format!("{}{}", " ".repeat(256 - base.len()), base),
+            format!("{}{}", " ".repeat(257 - base.len()), base),
+            format!("{}{}", " ".repeat(511 - base.len()), base),
+            format!("{}{}", " ".repeat(512 - base.len()), base),
+            format!("//é\n{base}"),
+        ] {
+            let file = root.join("main.ox");
+            std::fs::write(&file, &text).unwrap();
+            let project =
+                ProjectSources::load_typed(file.to_str().unwrap(), ProjectLimits::default())
+                    .unwrap();
+            for directory in &directories {
+                let outcome = produce(&project, directory);
+                assert_eq!(
+                    outcome.error,
+                    Some("experimental HIR producers require at most 255 ASCII source bytes")
+                );
+                assert!(outcome.observation.is_none());
+                assert!(outcome.records.iter().all(Option::is_none));
+            }
+        }
+        let file = root.join("main.ox");
+        std::fs::write(&file, base).unwrap();
+        let project =
+            ProjectSources::load_typed(file.to_str().unwrap(), ProjectLimits::default()).unwrap();
+        let outcome = produce(&project, &absent);
+        assert_eq!(
+            outcome.error,
+            Some("producer bundle root must be an accessible nonsymlink directory")
+        );
+        assert!(outcome.records.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn v3_ast_roles_are_disjoint_and_legacy_charge_is_unchanged() {
+        assert_eq!(AST1_MAX, 1819);
+        assert_eq!(AST3_MAX, 1821);
+        assert_eq!(named_bytes_for(Protocol::V1), named_bytes());
+        assert_eq!(named_bytes_for(Protocol::V2), named_bytes());
+        assert_eq!(named_bytes_for(Protocol::V3), named_bytes() + 6);
+        assert_eq!(std::mem::size_of::<[u8; OBSERVATION_BYTES]>(), 2607);
     }
 }

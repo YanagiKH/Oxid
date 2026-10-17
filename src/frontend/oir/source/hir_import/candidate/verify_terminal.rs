@@ -2,6 +2,7 @@
 //! The public/default source path remains disconnected. Fixed facts or owned
 //! LLVM text escape after candidate, typed and verified owners are dropped.
 use super::super::{Counts, MAX_ROWS};
+use super::Endpoint;
 use super::{ast, hir, typed_compare, ComparedSyntax, ComparisonFacts, Failure, Request};
 use crate::frontend::{
     declaration_index::{IndexLimits, WorkMeter},
@@ -213,6 +214,15 @@ impl WorkPlan {
         protocol: Protocol,
     ) -> Result<Self, Failure> {
         let mut plan = Self::calculate(counts, rows)?;
+        if protocol == Protocol::V3 {
+            let wide = typed_compare::work_bound_for(rows, protocol)?;
+            plan.total = plan
+                .total
+                .checked_sub(plan.typed_work)
+                .and_then(|n| n.checked_add(wide))
+                .ok_or(Failure::Overflow)?;
+            plan.typed_work = wide;
+        }
         if matches!(request, Request::Run | Request::Emit) {
             // Complete source/OPA admission bounds functions by MAX_ROWS and
             // source bytes by the wire's closed protocol. Each function's
@@ -281,9 +291,9 @@ fn root_entry_protocol(
 /// original shared WorkMeter. Emit separately pays its scan/formula/native work.
 /// No callback or compiler-owner return channel is accepted.
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-pub(super) fn run(
+pub(super) fn run<E: Endpoint>(
     context: Context<'_>,
-    syntax: &ComparedSyntax<'_, '_, '_>,
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     candidate: hir::Program,
     comparison: ComparisonFacts,
     plan: WorkPlan,
@@ -361,14 +371,14 @@ pub(super) fn run(
 
 /// Emit-only consumers and their full input/return/owner carriers. The source
 /// plan adds this before Session admission; Verify/Run do not pay this bank.
-pub(super) fn emit_named_bytes() -> Result<usize, Failure> {
-    emit_terminal::named_bytes()
+pub(super) fn emit_named_bytes<E: Endpoint>() -> Result<usize, Failure> {
+    emit_terminal::named_bytes::<E>()
 }
 
 /// New importer-owned fixed carriers only. Inherited checker/lower/verifier
 /// payload and internal scratch retain their ordinary behavior and limits;
 /// they require separate phase observations before success can be enabled.
-pub(super) fn named_bytes() -> Result<usize, Failure> {
+pub(super) fn named_bytes<E: Endpoint>() -> Result<usize, Failure> {
     let copies = |bytes: usize, count: usize| bytes.checked_mul(count).ok_or(Failure::Overflow);
     let roles = [
         size_of::<Context<'_>>(),
@@ -407,7 +417,7 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         copies(
             size_of::<(
                 Context<'_>,
-                &ComparedSyntax<'_, '_, '_>,
+                &ComparedSyntax<'_, '_, '_, E>,
                 hir::Program,
                 ComparisonFacts,
                 WorkPlan,
@@ -489,7 +499,7 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         .try_fold(bank, |sum, value| {
             sum.checked_add(value).ok_or(Failure::Overflow)
         })?
-        .checked_add(typed_compare::named_bytes()?)
+        .checked_add(typed_compare::named_bytes::<E>()?)
         .ok_or(Failure::Overflow)
 }
 
@@ -572,7 +582,7 @@ mod tests {
         assert!(WorkPlan::calculate(Counts::default(), MAX_ROWS + 1).is_err());
         println!(
             "HIR_IMPORT_VERIFY_TERMINAL named={} context={} plan={} facts={} rejected={} result={} typed={} raw={} verified={} request={} entry={} entry_result={} scalar={} run_failure={} runtime={} optional_runtime={} source_lookup_call={} source_text_call={} outcome={} emit_artifact={}",
-            named_bytes().unwrap(), size_of::<Context<'_>>(), size_of::<WorkPlan>(),
+            named_bytes::<u8>().unwrap(), size_of::<Context<'_>>(), size_of::<WorkPlan>(),
             size_of::<Facts>(), size_of::<Rejected>(), size_of::<Result<Outcome, Rejected>>(),
             size_of::<typeck::TypedProgram>(), size_of::<oir::Program>(), size_of::<oir::VerifiedProgram>(),
             size_of::<Request>(), size_of::<Option<hir::DefId>>(), size_of::<Result<Option<hir::DefId>, Failure>>(),

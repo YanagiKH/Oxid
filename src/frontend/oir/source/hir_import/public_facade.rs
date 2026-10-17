@@ -79,8 +79,8 @@ fn diagnostic(error: leaf::VerifyRejected, project: &ProjectSources) -> Vec<Diag
         Rejected::Terminal(Terminal::Association(error))
         | Rejected::Terminal(Terminal::Native(private_emit::Failure::Diagnostic(error))) => vec![*error],
         Rejected::Terminal(Terminal::Oir(error)) => vec![*error.diagnostic(project.sources())],
-        Rejected::Source(Source::Boundary(Boundary::Domain)) => refusal("experimental HIR import requires one root-only scalar ASCII source within its wire version capacity (v1: 128, v2: 255 bytes)"),
-        Rejected::Source(Source::Boundary(Boundary::Frame)) => refusal("experimental HIR import requires an exact successful version-matched OPA1/STF1 or OPA2/STF2 observation"),
+        Rejected::Source(Source::Boundary(Boundary::Domain)) => refusal("experimental HIR import requires one root-only scalar ASCII source within its wire version capacity (v1: 128, v2: 255, v3: 511 bytes)"),
+        Rejected::Source(Source::Boundary(Boundary::Frame)) => refusal("experimental HIR import requires an exact successful version-matched OPA1/STF1, OPA2/STF2 or OPA3/STF3 observation"),
         Rejected::Source(Source::Budget)
         | Rejected::Source(Source::Candidate(allocation::Failure::Admission))
         | Rejected::Terminal(Terminal::Candidate(allocation::Failure::Admission))
@@ -116,7 +116,10 @@ pub(in crate::frontend) fn import_produced(
     operation: Operation,
 ) -> Result {
     let defaults = IndexLimits::default();
-    let extra = crate::frontend::hir_producer::named_bytes()
+    let protocol = super::Protocol::from_opa(observation).ok_or_else(|| {
+        refusal("experimental HIR producer requires a validated observation version")
+    })?;
+    let extra = crate::frontend::hir_producer::named_bytes_for(protocol)
         .checked_add(crate::frontend::driver::producer_transport_bytes())
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| refusal("experimental HIR producer carrier accounting overflow"))?;
@@ -130,7 +133,7 @@ pub(in crate::frontend) fn import_produced(
         })
     })()
     .ok_or_else(|| refusal("experimental HIR producer resource limit exceeded"))?;
-    if observation.len() == super::OPA_BYTES + 16 {
+    if observation.len() == protocol.diagnostic_bytes() {
         // The error-only branch bypasses execute, but its shared live facade
         // carriers/dispatch still pay the same complete conservative allowance.
         let diagnostic_limits = allowance(limited).ok_or_else(|| {

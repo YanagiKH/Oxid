@@ -2,6 +2,7 @@
 //! terminal. The caller has prepaid CONNECTION_WORK and the complete fixed bank.
 //! Inherited compiler/native heap payloads are outside that named-carrier bank.
 use super::super::{ComparedSyntax, Failure};
+use super::Endpoint;
 use super::{Context, EmitArtifact, Facts, Outcome, Rejected, WorkPlan};
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
@@ -28,16 +29,18 @@ use std::mem::{size_of, size_of_val};
 /// Re-audit these concrete bodies if changed. Path/OIR/format/body loops,
 /// allocator internals and physical-memory claims do not belong to this tariff.
 const CONNECTION_WORK: u64 = super::super::EMIT_CONNECTION_WORK;
-// Independently reviewed finite formula tariff: at most 4,048 units. This is
-// paid immediately before calculate, never borrowed from scan setup or body.
+// Inherited finite formula tariff: at most 4,048 units. V3 adds only one
+// constant match alternative, within the remaining 48 units (one scalar
+// selector/constant result, no loop or new carrier). This is paid immediately
+// before calculate, never borrowed from scan setup or body.
 const FORMULA_WORK: u64 = 4_096;
 
 /// No reusable verified witness escapes. Only the parent genuine terminal can
 /// call this helper, after Session's allocator borrow and canonical HIR drop.
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-pub(super) fn run(
+pub(super) fn run<E: Endpoint>(
     verified: VerifiedProgram,
-    syntax: &ComparedSyntax<'_, '_, '_>,
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     entry: Option<hir::DefId>,
     facts: Facts,
     plan: WorkPlan,
@@ -100,7 +103,14 @@ pub(super) fn run(
     Ok(EmitArtifact {
         text,
         verified: facts,
-        connection_work: CONNECTION_WORK,
+        // E is sealed and selected from the authenticated protocol before
+        // planning. A constant branch adds no runtime protocol transport or
+        // widened legacy carrier; both values are the leaf's prepaid tariffs.
+        connection_work: if E::WIDE {
+            super::super::EMIT_CONNECTION_WORK_V3
+        } else {
+            CONNECTION_WORK
+        },
         scan_work,
         formula_work: FORMULA_WORK,
         body_work: cost.body,
@@ -134,9 +144,9 @@ fn prepay_body_protocol(
     Ok(cost)
 }
 
-type Inputs<'a> = (
+type Inputs<'a, E> = (
     VerifiedProgram,
-    &'a ComparedSyntax<'a, 'a, 'a>,
+    &'a ComparedSyntax<'a, 'a, 'a, E>,
     Option<hir::DefId>,
     Facts,
     WorkPlan,
@@ -150,13 +160,13 @@ type CostInputs<'a> = (emit_work::Dimensions, usize, Protocol, &'a WorkMeter, Sp
 /// Full real call/input/local/result roles, conservatively summed across moves
 /// and branches. These inventory types are not runtime allocations or alternate
 /// owners. The one eventual String payload is added once at native preflight.
-pub(super) fn named_bytes() -> Result<usize, Failure> {
+pub(super) fn named_bytes<E: Endpoint>() -> Result<usize, Failure> {
     let roles = [
         // Parent call transport, callee input, and named moved input bindings.
-        size_of::<Inputs<'_>>(),
-        size_of::<Inputs<'_>>(),
+        size_of::<Inputs<'_, E>>(),
+        size_of::<Inputs<'_, E>>(),
         size_of::<VerifiedProgram>(),
-        size_of::<&ComparedSyntax<'_, '_, '_>>(),
+        size_of::<&ComparedSyntax<'_, '_, '_, E>>(),
         size_of::<Option<hir::DefId>>(),
         size_of::<Facts>(),
         size_of::<WorkPlan>(),
@@ -314,6 +324,25 @@ mod tests {
     }
 
     #[test]
+    fn v3_emit_connection_supplement_covers_new_fixed_work() {
+        // Inventory rows: outer11 + AST6 + builder4 + typed4. Remaining
+        // categories are fixed helper/dispatch/arithmetic source events,
+        // never row/source walks borrowed from a later body payment.
+        let extra = 25 * 32 + 4 * 128 + 4 * 128 + 17 * 32 + 2 * 6 * 32 + 8 * 128 + 32;
+        assert_eq!(extra, 3_808);
+        let wide = super::super::super::emit_connection_work_for(Protocol::V3);
+        assert_eq!(wide, super::super::super::EMIT_CONNECTION_WORK_V3);
+        assert_eq!(wide, 36_864);
+        assert!(extra <= wide - CONNECTION_WORK);
+        for protocol in [Protocol::V1, Protocol::V2] {
+            assert_eq!(
+                super::super::super::emit_connection_work_for(protocol),
+                32_768
+            );
+        }
+    }
+
+    #[test]
     fn denied_emit_connection_glue_is_not_charged_again_by_the_fixed_pass_plan() {
         let counts = super::super::Counts([2, 2, 1, 2, 11, 5, 7, 2]);
         let run = WorkPlan::calculate_request(counts, 29, super::super::Request::Run).unwrap();
@@ -406,6 +435,56 @@ mod tests {
             );
             assert_eq!(work.used(), expected_used);
         }
+    }
+
+    #[test]
+    fn v3_emit_formula_and_body_debits_preserve_the_original_meter() {
+        let (verified, sources) = ordinary("main.ox");
+        let source = sources.get(SourceFileId(0));
+        let origin = source.span(0, 0);
+        // This isolated seam uses a deliberately arbitrary already-paid
+        // prefix; whole-import V3 prefix accounting belongs to entry tests.
+        let prior = 137;
+        let prefix = prior + RICH_SCAN;
+        // Rich K=1, G+K=22: v1 body + 44*(16384-4096).
+        let body = 9_254_272;
+        let exact = prefix + FORMULA_WORK + body;
+        for (limit, path, expected_used, expected) in [
+            (
+                prefix + FORMULA_WORK - 1,
+                usize::MAX,
+                prefix,
+                Err(emit_work::Failure::Work),
+            ),
+            (
+                exact - 1,
+                source.path().len(),
+                prefix + FORMULA_WORK,
+                Err(emit_work::Failure::Work),
+            ),
+            (exact, source.path().len(), exact, Ok(body)),
+        ] {
+            let work = WorkMeter::new(limit);
+            emit_work::debit(&work, prior, origin, "already paid v3 prefix").unwrap();
+            let dimensions = emit_work::scan(&verified, RICH_UPPER, &work, origin).unwrap();
+            assert_eq!(work.used(), prefix);
+            assert_eq!(
+                prepay_body_protocol(dimensions, path, Protocol::V3, &work, origin)
+                    .map(|cost| cost.body),
+                expected
+            );
+            assert_eq!(work.used(), expected_used);
+        }
+    }
+
+    #[test]
+    fn v3_emit_terminal_prices_real_generic_transports() {
+        // E only appears behind a borrowed ComparedSyntax in this terminal.
+        // Its owned row/cache expansion is charged by the enclosing generic
+        // source banks, never by pretending a u16 cache is a u8 cache here.
+        assert_eq!(size_of::<Inputs<'_, u16>>(), size_of::<Inputs<'_, u8>>());
+        assert_eq!(named_bytes::<u16>(), named_bytes::<u8>());
+        assert!(named_bytes::<u16>().unwrap() > size_of::<Inputs<'_, u16>>());
     }
 
     #[test]

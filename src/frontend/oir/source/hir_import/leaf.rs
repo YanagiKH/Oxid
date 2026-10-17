@@ -1,7 +1,8 @@
 //! Private comparison and fixed-facts Verify entries. No default caller is
 //! connected. The experimental facade uses fixed Verify/Run facts or owned text.
 use super::{
-    allocation, ast_compare, candidate, source_work_bound_for, BoundObservation, Boundary, Protocol,
+    allocation, ast_compare, candidate, source_work_bound_for, BoundObservation, Boundary,
+    Protocol, Wire,
 };
 use crate::frontend::{
     declaration_index::{IndexLimits, SourceOwner, WorkMeter},
@@ -109,10 +110,20 @@ impl SourcePlan {
     }
     #[allow(clippy::result_large_err)]
     fn calculate_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
-        let outside_fixed_bytes = outer_named_bytes()?
-            .checked_add(ast_compare::named_bytes()?)
+        match protocol {
+            Protocol::V1 | Protocol::V2 => Self::calculate_for_endpoint::<u8>(limits, protocol),
+            Protocol::V3 => Self::calculate_for_endpoint::<u16>(limits, protocol),
+        }
+    }
+    #[allow(clippy::result_large_err)]
+    fn calculate_for_endpoint<E: ast_compare::Endpoint>(
+        limits: IndexLimits,
+        protocol: Protocol,
+    ) -> Result<Self, Rejected> {
+        let outside_fixed_bytes = outer_named_bytes_for(protocol)?
+            .checked_add(ast_compare::named_bytes::<E>()?)
             .ok_or(Boundary::Overflow)?;
-        let builder_named = candidate::builder_named_bytes()?;
+        let builder_named = candidate::builder_named_bytes::<E>()?;
         let helper_named = allocation::helper_named_bytes()?;
         let fixed_bytes = outside_fixed_bytes
             .checked_add(builder_named)
@@ -140,9 +151,21 @@ impl SourcePlan {
     }
     #[allow(clippy::result_large_err)]
     fn calculate_verify_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
-        let mut plan = Self::calculate_for(limits, protocol)?;
+        match protocol {
+            Protocol::V1 | Protocol::V2 => {
+                Self::calculate_verify_for_endpoint::<u8>(limits, protocol)
+            }
+            Protocol::V3 => Self::calculate_verify_for_endpoint::<u16>(limits, protocol),
+        }
+    }
+    #[allow(clippy::result_large_err)]
+    fn calculate_verify_for_endpoint<E: ast_compare::Endpoint>(
+        limits: IndexLimits,
+        protocol: Protocol,
+    ) -> Result<Self, Rejected> {
+        let mut plan = Self::calculate_for_endpoint::<E>(limits, protocol)?;
         let extra = verify_outer_named_bytes()?
-            .checked_add(candidate::verify_named_bytes()?)
+            .checked_add(candidate::verify_named_bytes::<E>()?)
             .ok_or(Boundary::Overflow)?;
         plan.outside_fixed_bytes = plan
             .outside_fixed_bytes
@@ -168,9 +191,21 @@ impl SourcePlan {
     }
     #[allow(clippy::result_large_err)]
     fn calculate_emit_for(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
-        let mut plan = Self::calculate_verify_for(limits, protocol)?;
+        match protocol {
+            Protocol::V1 | Protocol::V2 => {
+                Self::calculate_emit_for_endpoint::<u8>(limits, protocol)
+            }
+            Protocol::V3 => Self::calculate_emit_for_endpoint::<u16>(limits, protocol),
+        }
+    }
+    #[allow(clippy::result_large_err)]
+    fn calculate_emit_for_endpoint<E: ast_compare::Endpoint>(
+        limits: IndexLimits,
+        protocol: Protocol,
+    ) -> Result<Self, Rejected> {
+        let mut plan = Self::calculate_verify_for_endpoint::<E>(limits, protocol)?;
         let extra = emit_outer_named_bytes()?
-            .checked_add(candidate::emit_named_bytes()?)
+            .checked_add(candidate::emit_named_bytes::<E>()?)
             .ok_or(Boundary::Overflow)?;
         plan.outside_fixed_bytes = plan
             .outside_fixed_bytes
@@ -283,6 +318,36 @@ fn requested(
     candidate_allocator: &mut Allocator,
     limits: IndexLimits,
 ) -> Result<Requested, VerifyRejected> {
+    // Unrecognized magic retains the legacy rejection/preflight order; only
+    // validated OPA3 magic selects the wide bank. Wire still rejects it.
+    match Protocol::from_opa(observation).unwrap_or(Protocol::V1) {
+        Protocol::V1 | Protocol::V2 => requested_endpoint::<u8>(
+            request,
+            owner,
+            captured_source,
+            observation,
+            candidate_allocator,
+            limits,
+        ),
+        Protocol::V3 => requested_endpoint::<u16>(
+            request,
+            owner,
+            captured_source,
+            observation,
+            candidate_allocator,
+            limits,
+        ),
+    }
+}
+#[allow(clippy::result_large_err)]
+fn requested_endpoint<E: ast_compare::Endpoint>(
+    request: candidate::Request,
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<Requested, VerifyRejected> {
     if !candidate::VERIFY_ADMITTED {
         return Err(VerifyRejected::Disabled);
     }
@@ -330,7 +395,7 @@ fn requested(
     .map_err(|_| VerifyRejected::Source(Rejected::Budget))?;
     let bound_result = BoundObservation::bind(owner, captured_source, observation);
     let bound = bound_result?;
-    let syntax_result = ast_compare::compare(&bound);
+    let syntax_result = ast_compare::compare::<E>(&bound);
     let syntax = syntax_result?;
     let canonical_result = {
         let mut canonical_allocator = Allocator::default();
@@ -340,7 +405,7 @@ fn requested(
         .map_err(Rejected::Canonical)
         .map_err(VerifyRejected::Source)?;
     let connection_work = if request == candidate::Request::Emit {
-        candidate::EMIT_CONNECTION_WORK
+        candidate::emit_connection_work_for(protocol)
     } else {
         0
     };
@@ -412,7 +477,7 @@ fn metered_emit_plan_for(
 ) -> Result<SourcePlan, VerifyRejected> {
     emit_work::debit(
         work,
-        candidate::EMIT_CONNECTION_WORK,
+        candidate::emit_connection_work_for(protocol),
         origin,
         "private Emit fixed connection and banks",
     )
@@ -431,6 +496,33 @@ fn metered_emit_plan_for(
 /// contained comparison and fixed denial facts, with no typed authority.
 #[allow(clippy::result_large_err)] // Preserve fixed paid transports without an error allocation.
 pub(super) fn denied(
+    owner: SourceOwner<'_>,
+    captured_source: &[u8],
+    observation: &[u8],
+    candidate_allocator: &mut Allocator,
+    limits: IndexLimits,
+) -> Result<Infallible, Rejected> {
+    // Unrecognized magic retains the legacy rejection/preflight order; only
+    // validated OPA3 magic selects the wide bank. Wire still rejects it.
+    match Protocol::from_opa(observation).unwrap_or(Protocol::V1) {
+        Protocol::V1 | Protocol::V2 => denied_endpoint::<u8>(
+            owner,
+            captured_source,
+            observation,
+            candidate_allocator,
+            limits,
+        ),
+        Protocol::V3 => denied_endpoint::<u16>(
+            owner,
+            captured_source,
+            observation,
+            candidate_allocator,
+            limits,
+        ),
+    }
+}
+#[allow(clippy::result_large_err)]
+fn denied_endpoint<E: ast_compare::Endpoint>(
     owner: SourceOwner<'_>,
     captured_source: &[u8],
     observation: &[u8],
@@ -457,7 +549,7 @@ pub(super) fn denied(
     .map_err(|_| Rejected::Budget)?;
     let bound_result = BoundObservation::bind(owner, captured_source, observation);
     let bound = bound_result?;
-    let syntax_result = ast_compare::compare(&bound);
+    let syntax_result = ast_compare::compare::<E>(&bound);
     let syntax = syntax_result?;
     // Full source correspondence precedes canonical resolver assumptions.
     // Its own existing checks run with this same work meter. The inherited
@@ -727,9 +819,173 @@ fn emit_outer_named_bytes() -> Result<usize, Boundary> {
     })
 }
 
+/// Additional V3 decoder/selection/formula roles; the legacy bank above is unchanged.
+fn wide_outer_extra_bytes() -> Result<usize, Boundary> {
+    let roles = [
+        3 * size_of::<(Wire<'static>, usize, usize)>(),
+        3 * size_of::<Result<u16, Boundary>>(),
+        3 * size_of::<[u16; 5]>(),
+        3 * size_of::<[u8; 2]>(),
+        3 * size_of::<[usize; 8]>(),
+        3 * size_of::<[u64; 8]>(),
+        3 * size_of::<(
+            SourceOwner<'static>,
+            &[u8],
+            &[u8],
+            &mut Allocator,
+            IndexLimits,
+        )>(),
+        3 * size_of::<(
+            candidate::Request,
+            SourceOwner<'static>,
+            &[u8],
+            &[u8],
+            &mut Allocator,
+            IndexLimits,
+        )>(),
+        3 * size_of::<Result<Requested, VerifyRejected>>(),
+        3 * size_of::<Result<Infallible, Rejected>>(),
+        3 * size_of::<Result<SourcePlan, Rejected>>(),
+    ];
+    let bank = 2 * size_of_val(&roles) + size_of_val(&roles.into_iter());
+    roles
+        .into_iter()
+        .try_fold(bank, |n, v| n.checked_add(v).ok_or(Boundary::Overflow))
+}
+pub(super) fn outer_named_bytes_for(protocol: Protocol) -> Result<usize, Boundary> {
+    let legacy = outer_named_bytes()?;
+    if protocol == Protocol::V3 {
+        legacy
+            .checked_add(wide_outer_extra_bytes()?)
+            .ok_or(Boundary::Overflow)
+    } else {
+        Ok(legacy)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Exercise the fixed-size, allocation-free rejection carriers without boxing.
+    #[allow(clippy::result_large_err)]
+    #[test]
+    fn checked_hir_v3_source_preflight_exact_and_minus_one_before_consumers() {
+        for mode in [0, 1, 2] {
+            let calculate = |limits| match mode {
+                0 => SourcePlan::calculate_for(limits, Protocol::V3),
+                1 => SourcePlan::calculate_verify_for(limits, Protocol::V3),
+                _ => SourcePlan::calculate_emit_for(limits, Protocol::V3),
+            };
+            let plan = calculate(IndexLimits::default()).unwrap();
+            let exact = IndexLimits {
+                retained: plan.fixed_bytes as u64,
+                scratch: plan.fixed_bytes as u64,
+                work: plan.source_work,
+            };
+            assert!(calculate(exact).is_ok());
+            for short in [
+                IndexLimits {
+                    retained: exact.retained - 1,
+                    ..exact
+                },
+                IndexLimits {
+                    scratch: exact.scratch - 1,
+                    ..exact
+                },
+                IndexLimits {
+                    work: exact.work - 1,
+                    ..exact
+                },
+            ] {
+                assert!(matches!(calculate(short), Err(Rejected::Budget)));
+            }
+        }
+        let text = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/rich.ox"
+        ));
+        let bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/checked_hir_import_v3/rich.bin"
+        ));
+        let project = super::super::tests::project(text);
+        for request in [
+            candidate::Request::Verify,
+            candidate::Request::Run,
+            candidate::Request::Emit,
+        ] {
+            let emit = request == candidate::Request::Emit;
+            let plan = if emit {
+                SourcePlan::calculate_emit_for(IndexLimits::default(), Protocol::V3)
+            } else {
+                SourcePlan::calculate_verify_for(IndexLimits::default(), Protocol::V3)
+            }
+            .unwrap();
+            let connection = if emit {
+                candidate::emit_connection_work_for(Protocol::V3)
+            } else {
+                0
+            };
+            let d = IndexLimits::default();
+            for short in [
+                IndexLimits {
+                    retained: plan.fixed_bytes as u64 - 1,
+                    ..d
+                },
+                IndexLimits {
+                    scratch: plan.fixed_bytes as u64 - 1,
+                    ..d
+                },
+                IndexLimits {
+                    work: plan.source_work + connection - 1,
+                    ..d
+                },
+            ] {
+                let mut allocator = Allocator::default();
+                assert!(matches!(
+                    requested(
+                        request,
+                        SourceOwner::project(&project),
+                        text.as_bytes(),
+                        bytes,
+                        &mut allocator,
+                        short
+                    ),
+                    Err(VerifyRejected::Source(Rejected::Budget))
+                ));
+                assert_eq!(allocator.attempts, 0);
+            }
+            println!(
+                "V3_PREFLIGHT {request:?} fixed={} source={} connection={connection}",
+                plan.fixed_bytes, plan.source_work
+            );
+        }
+        let owner = SourceOwner::project(&project);
+        let origin = owner.file(ModuleId(0)).unwrap().span(0, 0);
+        let connection = candidate::emit_connection_work_for(Protocol::V3);
+        for available in [0, connection - 1, connection] {
+            let work = WorkMeter::new(available);
+            assert!(metered_emit_plan_for(
+                IndexLimits {
+                    work: available,
+                    ..IndexLimits::default()
+                },
+                &work,
+                origin,
+                Protocol::V3
+            )
+            .is_err());
+            assert_eq!(
+                work.used(),
+                if available < connection {
+                    0
+                } else {
+                    connection
+                }
+            );
+        }
+    }
 
     #[test]
     fn checked_hir_import_v2_source_preflight_exact_and_minus_one() {
@@ -878,7 +1134,7 @@ mod tests {
         assert_eq!(plan.source_work, comparison.source_work);
         assert_eq!(
             plan.fixed_bytes - comparison.fixed_bytes,
-            verify_outer_named_bytes().unwrap() + candidate::verify_named_bytes().unwrap(),
+            verify_outer_named_bytes().unwrap() + candidate::verify_named_bytes::<u8>().unwrap(),
         );
         let exact = IndexLimits {
             retained: plan.fixed_bytes as u64,
@@ -907,7 +1163,7 @@ mod tests {
         }
         println!(
             "HIR_IMPORT_VERIFY_LEAF extra={} candidate={} outside={} fixed={} facts={} rejection={} result={} requested={} requested_result={} emit_output={} emit_result={}",
-            verify_outer_named_bytes().unwrap(), candidate::verify_named_bytes().unwrap(),
+            verify_outer_named_bytes().unwrap(), candidate::verify_named_bytes::<u8>().unwrap(),
             plan.outside_fixed_bytes, plan.fixed_bytes, size_of::<VerifyFacts>(),
             size_of::<VerifyRejected>(), size_of::<Result<VerifyFacts, VerifyRejected>>(),
             size_of::<Requested>(), size_of::<Result<Requested, VerifyRejected>>(),
@@ -1037,12 +1293,12 @@ mod tests {
         assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
         assert_eq!(
             plan.fixed_bytes - fixed.fixed_bytes,
-            emit_outer_named_bytes().unwrap() + candidate::emit_named_bytes().unwrap()
+            emit_outer_named_bytes().unwrap() + candidate::emit_named_bytes::<u8>().unwrap()
         );
         assert_eq!(
             plan.fixed_bytes,
             plan.outside_fixed_bytes
-                + candidate::builder_named_bytes().unwrap()
+                + candidate::builder_named_bytes::<u8>().unwrap()
                 + allocation::helper_named_bytes().unwrap()
         );
         let exact = IndexLimits {
@@ -1080,7 +1336,7 @@ mod tests {
             assert_eq!(work.used(), candidate::EMIT_CONNECTION_WORK);
         }
         println!("HIR_IMPORT_EMIT_PLAN private outer={} terminal={} outside={} fixed={} common_fixed={} glue={} source_work={} artifact={} outcome={} requested={} result={}",
-            emit_outer_named_bytes().unwrap(), candidate::emit_named_bytes().unwrap(),
+            emit_outer_named_bytes().unwrap(), candidate::emit_named_bytes::<u8>().unwrap(),
             plan.outside_fixed_bytes, plan.fixed_bytes, fixed.fixed_bytes,
             candidate::EMIT_CONNECTION_WORK, plan.source_work, size_of::<candidate::EmitArtifact>(),
             size_of::<candidate::Outcome>(), size_of::<Requested>(), size_of::<Result<EmitOutput, VerifyRejected>>());

@@ -168,8 +168,15 @@ fn process_import(request: &options::ImportOptions) -> i32 {
                 }
             }
         }
-        if length != oir::IMPORT_BYTES {
-            return Err(vec![*Diagnostic::new("E0702", "hir-import", "experimental HIR observation must contain exactly 2607 bytes with no trailing data", None)]);
+        if !super::hir_protocol::Protocol::from_opa(&observation[..length])
+            .is_some_and(|protocol| length == protocol.success_bytes())
+        {
+            let message = if observation[..length].starts_with(b"OPA3") {
+                "experimental V3 HIR observation must contain exactly 2356 bytes with no trailing data"
+            } else {
+                "experimental HIR observation must contain exactly 2607 bytes with no trailing data"
+            };
+            return Err(vec![*Diagnostic::new("E0702", "hir-import", message, None)]);
         }
         match oir::import_checked(&project, &observation[..length], request.operation)? {
             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),

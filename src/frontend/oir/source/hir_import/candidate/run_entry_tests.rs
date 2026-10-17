@@ -73,7 +73,7 @@ fn checked_hir_import_run_candidate_zero_work_precedes_reserves() {
     wire[..4].copy_from_slice(b"OPA1");
     wire[OPA_BYTES..OPA_BYTES + 4].copy_from_slice(b"STF1");
     let bound = BoundObservation::bind(owner, b"", &wire).unwrap();
-    let syntax = ast_compare::compare(&bound).unwrap();
+    let syntax = ast_compare::compare::<u8>(&bound).unwrap();
     let canonical = hir::resolve_sources(owner).unwrap();
     assert_eq!(canonical.signatures.capacity(), 0);
     assert_eq!(canonical.functions.capacity(), 0);
@@ -271,7 +271,7 @@ fn checked_hir_import_run_work_and_complete_carriers_only() {
     println!("HIR_IMPORT_RUN_CARRIERS request={} canonical_input={} completion={} completion_result={} context={} plan={} terminal_facts={} terminal_rejected={} fixed_facts_result={} builder_named={} terminal_named={} candidate_named={} terminal_outcome={} terminal_result={}",
         size_of::<Request>(), size_of::<CanonicalInput<'_, '_>>(), size_of::<Completion>(), size_of::<Result<Completion, VerifyRejected>>(),
         size_of::<verify_terminal::Context<'_>>(), size_of::<verify_terminal::WorkPlan>(), size_of::<VerifyFacts>(), size_of::<VerifyRejected>(), size_of::<Result<VerifyFacts, VerifyRejected>>(),
-        builder_named_bytes().unwrap(), verify_terminal::named_bytes().unwrap(), verify_named_bytes().unwrap(), size_of::<Outcome>(), size_of::<Result<Outcome, VerifyRejected>>());
+        builder_named_bytes::<u8>().unwrap(), verify_terminal::named_bytes::<u8>().unwrap(), verify_named_bytes::<u8>().unwrap(), size_of::<Outcome>(), size_of::<Result<Outcome, VerifyRejected>>());
 }
 
 #[test]

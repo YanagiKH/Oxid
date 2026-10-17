@@ -3,6 +3,37 @@
 use super::{ast, BoundObservation, Boundary, Wire, MAX_ROWS};
 use crate::frontend::{lexer::Kind, project::ModuleId, source::Span};
 
+mod endpoint_seal {
+    pub trait Sealed {}
+    impl Sealed for u8 {}
+    impl Sealed for u16 {}
+}
+pub(super) trait Endpoint:
+    endpoint_seal::Sealed + Copy + Eq + Ord + std::fmt::Debug + From<u8>
+{
+    const WIDE: bool;
+    fn index(self) -> usize;
+    fn checked(value: usize) -> Result<Self, Boundary>;
+}
+impl Endpoint for u8 {
+    const WIDE: bool = false;
+    fn index(self) -> usize {
+        usize::from(self)
+    }
+    fn checked(value: usize) -> Result<Self, Boundary> {
+        u8::try_from(value).map_err(|_| Boundary::Frame)
+    }
+}
+impl Endpoint for u16 {
+    const WIDE: bool = true;
+    fn index(self) -> usize {
+        usize::from(self)
+    }
+    fn checked(value: usize) -> Result<Self, Boundary> {
+        u16::try_from(value).map_err(|_| Boundary::Frame)
+    }
+}
+
 const NONE: u8 = u8::MAX;
 // Charge each row its entry event plus every event it emits. Entries emitted by
 // a parent are charged to the child instead, so they are not counted twice.
@@ -13,37 +44,55 @@ const NONE: u8 = u8::MAX;
 // of each nonempty function, or by the two-event empty-program special case.
 // No event recursively calls the walker.
 const MAX_EVENTS: usize = 16 * MAX_ROWS + 1;
-// Event visits, row reads (at most three per row), token slots and source bytes.
+// Event<E> visits, row reads (at most three per row), token slots and source bytes.
 pub(super) const MAX_WORK: usize = MAX_EVENTS + 4 * MAX_ROWS + 1 + 255;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Row {
+pub(super) struct Row<E: Endpoint = u8> {
     pub(super) kind: u8,
-    pub(super) start: u8,
-    pub(super) end: u8,
+    pub(super) start: E,
+    pub(super) end: E,
     pub(super) next: u8,
     pub(super) a: u8,
     pub(super) b: u8,
     pub(super) c: u8,
     pub(super) d: u8,
 }
-impl Row {
+impl<E: Endpoint> Row<E> {
     fn read(wire: Wire<'_>, reference: u8) -> Result<Self, Boundary> {
         if reference == 0 || reference > wire.rows {
             return Err(Boundary::Frame);
         }
         let cell = usize::from(reference - 1);
+        if wire.protocol() == super::Protocol::V3 {
+            // decode_v3 has already checked every raw cell, including inactive tails.
+            let header = wire.wide_cell(0, cell)?;
+            let start = E::checked(usize::from(wire.wide_cell(1, cell)?))?;
+            let end = E::checked(usize::from(wire.wide_cell(2, cell)?))?;
+            let ab = wire.wide_cell(3, cell)?;
+            let cd = wire.wide_cell(4, cell)?;
+            return Ok(Self {
+                kind: (header & 63) as u8,
+                start,
+                end,
+                next: (header >> 6) as u8,
+                a: (ab & 255) as u8,
+                b: (ab >> 8) as u8,
+                c: (cd & 255) as u8,
+                d: (cd >> 8) as u8,
+            });
+        }
         let header = u32::try_from(wire.word(0, cell)?).map_err(|_| Boundary::Frame)?;
         let ab = u32::try_from(wire.word(1, cell)?).map_err(|_| Boundary::Frame)?;
         let cd = u32::try_from(wire.word(2, cell)?).map_err(|_| Boundary::Frame)?;
         let kind = (header & 63) as u8;
-        let start = ((header >> 6) & 255) as u8;
-        let end = ((header >> 14) & 255) as u8;
+        let start = E::from(((header >> 6) & 255) as u8);
+        let end = E::from(((header >> 14) & 255) as u8);
         let next = header >> 22;
         let values = [ab & 255, ab >> 8, cd & 255, cd >> 8];
         if !(1..=36).contains(&kind)
             || start > end
-            || usize::from(end) > wire.protocol().source_max()
+            || end.index() > wire.protocol().source_max()
             || next > u32::from(wire.rows)
             || values.iter().any(|&value| value > MAX_ROWS as u32)
         {
@@ -62,20 +111,21 @@ impl Row {
     }
 }
 
-pub(super) struct ComparedSyntax<'b, 's, 'w> {
+pub(super) struct ComparedSyntax<'b, 's, 'w, E: Endpoint = u8> {
     pub(super) bound: &'b BoundObservation<'s, 'w>,
     visits: usize,
     expression_rows: [u8; MAX_ROWS],
     function_rows: [u8; MAX_ROWS],
     block_functions: [u8; MAX_ROWS],
     block_ids: [u8; MAX_ROWS],
+    endpoint: std::marker::PhantomData<E>,
 }
-impl ComparedSyntax<'_, '_, '_> {
+impl<E: Endpoint> ComparedSyntax<'_, '_, '_, E> {
     pub(super) fn visits(&self) -> usize {
         self.visits
     }
-    pub(super) fn row(&self, reference: u8) -> Result<Row, Boundary> {
-        Row::read(self.bound.wire, reference)
+    pub(super) fn row(&self, reference: u8) -> Result<Row<E>, Boundary> {
+        Row::<E>::read(self.bound.wire, reference)
     }
     pub(super) fn expr_row(&self, id: ast::ExprId) -> Result<u8, Boundary> {
         self.expression_rows
@@ -106,13 +156,13 @@ impl ComparedSyntax<'_, '_, '_> {
 }
 
 #[derive(Clone, Copy)]
-enum Event {
+enum Event<E: Endpoint = u8> {
     Empty,
     Token {
         kind: Kind,
         reference: u8,
-        start: Option<u8>,
-        end: Option<u8>,
+        start: Option<E>,
+        end: Option<E>,
     },
     Allocate(u8),
     Function {
@@ -162,8 +212,8 @@ enum Event {
         depth: u8,
     },
 }
-struct Scratch {
-    events: [Event; MAX_EVENTS],
+struct Scratch<E: Endpoint = u8> {
+    events: [Event<E>; MAX_EVENTS],
     pending: usize,
     scheduled: usize,
     claimed: [bool; MAX_ROWS],
@@ -173,10 +223,10 @@ struct Scratch {
     next_expression: usize,
     next_block: usize,
 }
-impl Scratch {
+impl<E: Endpoint> Scratch<E> {
     fn new() -> Self {
         Self {
-            events: [Event::Empty; MAX_EVENTS],
+            events: [Event::<E>::Empty; MAX_EVENTS],
             pending: 0,
             scheduled: 0,
             claimed: [false; MAX_ROWS],
@@ -187,7 +237,7 @@ impl Scratch {
             next_block: 0,
         }
     }
-    fn push(&mut self, event: Event) -> Result<(), Boundary> {
+    fn push(&mut self, event: Event<E>) -> Result<(), Boundary> {
         if self.scheduled == MAX_EVENTS {
             return Err(Boundary::Frame);
         }
@@ -196,42 +246,45 @@ impl Scratch {
         self.scheduled += 1;
         Ok(())
     }
-    fn pop(&mut self) -> Option<Event> {
+    fn pop(&mut self) -> Option<Event<E>> {
         self.pending = self.pending.checked_sub(1)?;
         Some(std::mem::replace(
             &mut self.events[self.pending],
-            Event::Empty,
+            Event::<E>::Empty,
         ))
     }
 }
 // Includes the actual explicit traversal stack, ownership bits and heights.
-pub(super) const SCRATCH_BYTES: usize = std::mem::size_of::<Scratch>();
+pub(super) const SCRATCH_BYTES: usize = std::mem::size_of::<Scratch<u8>>();
 
 /// Named fixed comparison banks and their construction/return transports.
 /// This deliberately adds roles whose optimized machine lifetimes may not
 /// overlap. It is neither a measured stack maximum nor a general lexer budget.
 /// The source owner, retained source/AST, caller and canonical/candidate HIR
 /// owners belong to the enclosing leaf's separate accounting.
-pub(super) fn named_bytes() -> Result<usize, Boundary> {
+pub(super) fn named_bytes<E: Endpoint>() -> Result<usize, Boundary> {
     use std::mem::{size_of, size_of_val};
     let copies = |size: usize, count: usize| size.checked_mul(count).ok_or(Boundary::Overflow);
     let roles = [
         // Explicit stack initializer, constructor return, and actual walker.
-        size_of::<[Event; MAX_EVENTS]>(),
-        size_of::<Scratch>(),
-        size_of::<Walker<'_, '_, '_>>(),
+        size_of::<[Event<E>; MAX_EVENTS]>(),
+        size_of::<Scratch<E>>(),
+        size_of::<Walker<'_, '_, '_, E>>(),
         // Local syntax, returned syntax, and the caller-held comparison result.
-        copies(size_of::<ComparedSyntax<'_, '_, '_>>(), 3)?,
-        copies(size_of::<Result<ComparedSyntax<'_, '_, '_>, Boundary>>(), 2)?,
+        copies(size_of::<ComparedSyntax<'_, '_, '_, E>>(), 3)?,
+        copies(
+            size_of::<Result<ComparedSyntax<'_, '_, '_, E>, Boundary>>(),
+            2,
+        )?,
         size_of::<&BoundObservation<'_, '_>>(),
         size_of::<&ast::Program>(),
         size_of::<crate::frontend::source::SourceFileId>(),
         // Bounded event/row/span read and forwarding roles, including the
         // four-byte word decoder and the four-value row validation array.
-        copies(size_of::<Event>(), 3)?,
-        size_of::<Option<Event>>(),
-        copies(size_of::<Row>(), 3)?,
-        copies(size_of::<Result<Row, Boundary>>(), 3)?,
+        copies(size_of::<Event<E>>(), 3)?,
+        size_of::<Option<Event<E>>>(),
+        copies(size_of::<Row<E>>(), 3)?,
+        copies(size_of::<Result<Row<E>, Boundary>>(), 3)?,
         copies(size_of::<Span>(), 3)?,
         size_of::<[u8; 4]>(),
         size_of::<[u32; 4]>(),
@@ -246,29 +299,50 @@ pub(super) fn named_bytes() -> Result<usize, Boundary> {
         size_of::<std::array::IntoIter<(&[u8; 2], Kind), 7>>(),
         copies(size_of::<usize>(), 16)?,
         copies(size_of::<u8>(), 12)?,
-        copies(size_of::<Option<u8>>(), 12)?, // Span helper inputs and destructured endpoints.
+        copies(size_of::<Option<E>>(), 12)?, // Span helper inputs and destructured endpoints.
         size_of::<[super::Protocol; 4]>(),
-        size_of::<[(Option<u8>, usize); 4]>(),
+        size_of::<[(Option<E>, usize); 4]>(),
         size_of::<[bool; 4]>(),
     ];
     let bank = size_of_val(&roles)
         .checked_mul(2)
         .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
         .ok_or(Boundary::Overflow)?;
-    roles.into_iter().try_fold(bank, |sum, value| {
+    let legacy = roles.into_iter().try_fold(bank, |sum, value| {
         sum.checked_add(value).ok_or(Boundary::Overflow)
-    })
+    })?;
+    if E::WIDE {
+        legacy
+            .checked_add(wide_named_bytes())
+            .ok_or(Boundary::Overflow)
+    } else {
+        Ok(legacy)
+    }
+}
+// Wide Row reader and checked endpoint conversion have their own complete
+// locals/input/return roles, never charged through an altered legacy array.
+fn wide_named_bytes() -> usize {
+    use std::mem::{size_of, size_of_val};
+    let roles = [
+        3 * size_of::<[u16; 5]>(),
+        3 * size_of::<Result<u16, Boundary>>(),
+        3 * size_of::<(Wire<'static>, usize, usize)>(),
+        3 * size_of::<[u8; 2]>(),
+        4 * size_of::<(usize, Result<u16, Boundary>)>(),
+        4 * size_of::<[bool; 4]>(),
+    ];
+    2 * size_of_val(&roles) + size_of_val(&roles.into_iter()) + roles.into_iter().sum::<usize>()
 }
 
-struct Walker<'b, 's, 'w> {
-    syntax: ComparedSyntax<'b, 's, 'w>,
+struct Walker<'b, 's, 'w, E: Endpoint = u8> {
+    syntax: ComparedSyntax<'b, 's, 'w, E>,
     program: &'s ast::Program,
     file: crate::frontend::source::SourceFileId,
-    scratch: Scratch,
+    scratch: Scratch<E>,
 }
 // An endpoint of 255 is data, never an absent-boundary sentinel.
-fn endpoint_matches(expected: Option<u8>, actual: usize) -> bool {
-    expected.is_none_or(|expected| usize::from(expected) == actual)
+fn endpoint_matches<E: Endpoint>(expected: Option<E>, actual: usize) -> bool {
+    expected.is_none_or(|expected| expected.index() == actual)
 }
 fn require(condition: bool) -> Result<(), Boundary> {
     if condition {
@@ -283,12 +357,12 @@ fn small(value: usize) -> Result<u8, Boundary> {
         .filter(|&v| usize::from(v) < MAX_ROWS)
         .ok_or(Boundary::Frame)
 }
-impl Walker<'_, '_, '_> {
-    fn push(&mut self, event: Event) -> Result<(), Boundary> {
+impl<E: Endpoint> Walker<'_, '_, '_, E> {
+    fn push(&mut self, event: Event<E>) -> Result<(), Boundary> {
         self.scratch.push(event)
     }
     fn token(&mut self, kind: Kind) -> Result<(), Boundary> {
-        self.push(Event::Token {
+        self.push(Event::<E>::Token {
             kind,
             reference: 0,
             start: None,
@@ -297,20 +371,15 @@ impl Walker<'_, '_, '_> {
     }
     fn token_span(&mut self, kind: Kind, reference: u8, span: Span) -> Result<(), Boundary> {
         self.span(span)?;
-        self.push(Event::Token {
+        self.push(Event::<E>::Token {
             kind,
             reference,
-            start: Some(span.start as u8),
-            end: Some(span.end as u8),
+            start: Some(E::checked(span.start)?),
+            end: Some(E::checked(span.end)?),
         })
     }
-    fn edge_token(
-        &mut self,
-        kind: Kind,
-        start: Option<u8>,
-        end: Option<u8>,
-    ) -> Result<(), Boundary> {
-        self.push(Event::Token {
+    fn edge_token(&mut self, kind: Kind, start: Option<E>, end: Option<E>) -> Result<(), Boundary> {
+        self.push(Event::<E>::Token {
             kind,
             reference: 0,
             start,
@@ -324,17 +393,17 @@ impl Walker<'_, '_, '_> {
                 && span.end <= self.syntax.bound.source.len(),
         )
     }
-    fn row_span(&self, row: Row, span: Span) -> Result<(), Boundary> {
+    fn row_span(&self, row: Row<E>, span: Span) -> Result<(), Boundary> {
         self.span(span)?;
-        require(usize::from(row.start) == span.start && usize::from(row.end) == span.end)
+        require(row.start.index() == span.start && row.end.index() == span.end)
     }
-    fn claim(&mut self, reference: u8, kind: u8, linked: bool) -> Result<Row, Boundary> {
+    fn claim(&mut self, reference: u8, kind: u8, linked: bool) -> Result<Row<E>, Boundary> {
         self.syntax.visits += 1;
         let row = self.syntax.row(reference)?;
         require(
             row.kind == kind
                 && (linked || row.next == 0)
-                && usize::from(row.end) <= self.syntax.bound.source.len(),
+                && row.end.index() <= self.syntax.bound.source.len(),
         )?;
         let mark = &mut self.scratch.claimed[usize::from(reference - 1)];
         require(!*mark)?;
@@ -349,7 +418,7 @@ impl Walker<'_, '_, '_> {
         floor: u8,
         depth: u8,
     ) -> Result<(), Boundary> {
-        self.push(Event::Expression {
+        self.push(Event::<E>::Expression {
             id: small(id.0)?,
             row,
             linked,
@@ -367,15 +436,15 @@ impl Walker<'_, '_, '_> {
             .ok_or(Boundary::Frame)
     }
     fn run(&mut self) -> Result<(), Boundary> {
-        self.push(Event::Function {
+        self.push(Event::<E>::Function {
             index: 0,
-            row: self.syntax.bound.wire.bytes[9],
+            row: self.syntax.bound.wire.first(),
         })?;
         while let Some(event) = self.scratch.pop() {
             self.syntax.visits += 1;
             match event {
-                Event::Empty => return Err(Boundary::Frame),
-                Event::Token {
+                Event::<E>::Empty => return Err(Boundary::Frame),
+                Event::<E>::Token {
                     kind,
                     reference,
                     start,
@@ -403,47 +472,47 @@ impl Walker<'_, '_, '_> {
                     )?;
                     self.scratch.cursor += 1;
                 }
-                Event::Allocate(row) => {
+                Event::<E>::Allocate(row) => {
                     require(usize::from(row) == self.scratch.next_row)?;
                     self.scratch.next_row += 1;
                 }
-                Event::Function { index, row } => self.function_start(index, row)?,
-                Event::FunctionEnd(index) => {
+                Event::<E>::Function { index, row } => self.function_start(index, row)?,
+                Event::<E>::FunctionEnd(index) => {
                     require(self.scratch.next_block == self.function(index)?.blocks.len())?;
                 }
-                Event::Params {
+                Event::<E>::Params {
                     function,
                     index,
                     row,
                 } => self.parameter(function, index, row)?,
-                Event::Type {
+                Event::<E>::Type {
                     function,
                     block,
                     slot,
                     row,
                 } => self.ty(function, block, slot, row)?,
-                Event::Block {
+                Event::<E>::Block {
                     function,
                     id,
                     row,
                     depth,
                 } => self.block(function, id, row, depth)?,
-                Event::Statements {
+                Event::<E>::Statements {
                     function,
                     block,
                     index,
                     row,
                     depth,
                 } => self.statement(function, block, index, row, depth)?,
-                Event::Expression {
+                Event::<E>::Expression {
                     id,
                     row,
                     linked,
                     floor,
                     depth,
                 } => self.expr(id, row, linked, floor, depth)?,
-                Event::ExpressionEnd { id, row } => self.expression_end(id, row)?,
-                Event::Arguments {
+                Event::<E>::ExpressionEnd { id, row } => self.expression_end(id, row)?,
+                Event::<E>::Arguments {
                     expression,
                     index,
                     row,
@@ -482,18 +551,18 @@ impl Walker<'_, '_, '_> {
             .get(function.body.0)
             .ok_or(Boundary::Frame)?;
         require(function.end == body.end)?;
-        self.push(Event::Function {
+        self.push(Event::<E>::Function {
             index: index + 1,
             row: row.next,
         })?;
-        self.push(Event::FunctionEnd(index))?;
-        self.push(Event::Block {
+        self.push(Event::<E>::FunctionEnd(index))?;
+        self.push(Event::<E>::Block {
             function: index,
             id: small(function.body.0)?,
             row: row.d,
             depth: 1,
         })?;
-        self.push(Event::Type {
+        self.push(Event::<E>::Type {
             function: index,
             block: NONE,
             slot: NONE,
@@ -501,7 +570,7 @@ impl Walker<'_, '_, '_> {
         })?;
         self.token(Kind::Arrow)?;
         self.token(Kind::RParen)?;
-        self.push(Event::Params {
+        self.push(Event::<E>::Params {
             function: index,
             index: 0,
             row: row.b,
@@ -515,7 +584,7 @@ impl Walker<'_, '_, '_> {
         } else {
             require(row.a == 0)?;
         }
-        self.push(Event::Allocate(reference))
+        self.push(Event::<E>::Allocate(reference))
     }
     fn parameter(&mut self, function: u8, index: u8, reference: u8) -> Result<(), Boundary> {
         let params = &self
@@ -531,12 +600,12 @@ impl Walker<'_, '_, '_> {
         let row = self.claim(reference, 2, true)?;
         self.row_span(row, param.name)?;
         require(row.b == 0 && row.c == 0 && row.d == 0)?;
-        self.push(Event::Params {
+        self.push(Event::<E>::Params {
             function,
             index: index + 1,
             row: row.next,
         })?;
-        self.push(Event::Type {
+        self.push(Event::<E>::Type {
             function,
             block: NONE,
             slot: index,
@@ -544,7 +613,7 @@ impl Walker<'_, '_, '_> {
         })?;
         self.token(Kind::Colon)?;
         self.token_span(Kind::Ident, 0, param.name)?;
-        self.push(Event::Allocate(reference))?;
+        self.push(Event::<E>::Allocate(reference))?;
         if index != 0 {
             self.token(Kind::Comma)?;
         }
@@ -593,7 +662,7 @@ impl Walker<'_, '_, '_> {
             self.edge_token(Kind::RParen, None, Some(row.end))?;
             self.edge_token(Kind::LParen, Some(row.start), None)?;
         }
-        self.push(Event::Allocate(reference))
+        self.push(Event::<E>::Allocate(reference))
     }
     fn block(&mut self, function: u8, id: u8, reference: u8, depth: u8) -> Result<(), Boundary> {
         require((1..=64).contains(&depth) && usize::from(id) == self.scratch.next_block)?;
@@ -610,7 +679,7 @@ impl Walker<'_, '_, '_> {
         self.syntax.block_functions[usize::from(reference - 1)] = function;
         self.syntax.block_ids[usize::from(reference - 1)] = id;
         self.token_span(Kind::RBrace, row.a, block.end)?;
-        self.push(Event::Statements {
+        self.push(Event::<E>::Statements {
             function,
             block: id,
             index: 0,
@@ -618,7 +687,7 @@ impl Walker<'_, '_, '_> {
             depth,
         })?;
         self.edge_token(Kind::LBrace, Some(row.start), None)?;
-        self.push(Event::Allocate(reference))
+        self.push(Event::<E>::Allocate(reference))
     }
     fn statement(
         &mut self,
@@ -659,7 +728,7 @@ impl Walker<'_, '_, '_> {
         let row = self.claim(reference, tag, true)?;
         self.row_span(row, statement.span)?;
         require(row.d == 0)?;
-        self.push(Event::Statements {
+        self.push(Event::<E>::Statements {
             function,
             block,
             index: index + 1,
@@ -667,7 +736,7 @@ impl Walker<'_, '_, '_> {
             depth,
         })?;
         if tag == 9 {
-            self.push(Event::Allocate(reference))?;
+            self.push(Event::<E>::Allocate(reference))?;
         }
         if tag < 13 {
             self.edge_token(Kind::Semi, None, Some(row.end))?;
@@ -682,7 +751,7 @@ impl Walker<'_, '_, '_> {
                 self.expression_event(init, row.c, false, 0, 1)?;
                 self.token(Kind::Equal)?;
                 if annotation.is_some() {
-                    self.push(Event::Type {
+                    self.push(Event::<E>::Type {
                         function,
                         block,
                         slot: index,
@@ -752,7 +821,7 @@ impl Walker<'_, '_, '_> {
                     .end;
                 require(end.end == statement.span.end)?;
                 if let Some(otherwise) = else_block {
-                    self.push(Event::Block {
+                    self.push(Event::<E>::Block {
                         function,
                         id: small(otherwise.0)?,
                         row: row.c,
@@ -762,7 +831,7 @@ impl Walker<'_, '_, '_> {
                 } else {
                     require(row.c == 0)?;
                 }
-                self.push(Event::Block {
+                self.push(Event::<E>::Block {
                     function,
                     id: small(then_block.0)?,
                     row: row.b,
@@ -783,7 +852,7 @@ impl Walker<'_, '_, '_> {
                             .end
                             == statement.span.end,
                 )?;
-                self.push(Event::Block {
+                self.push(Event::<E>::Block {
                     function,
                     id: small(body.0)?,
                     row: row.b,
@@ -795,7 +864,7 @@ impl Walker<'_, '_, '_> {
             _ => return Err(Boundary::Frame),
         }
         if tag != 9 {
-            self.push(Event::Allocate(reference))?;
+            self.push(Event::<E>::Allocate(reference))?;
         }
         Ok(())
     }
@@ -816,7 +885,7 @@ impl Walker<'_, '_, '_> {
         let (tag, binary) = expression_tag(&expression.kind)?;
         let row = self.claim(reference, tag, linked)?;
         self.row_span(row, expression.span)?;
-        self.push(Event::ExpressionEnd { id, row: reference })?;
+        self.push(Event::<E>::ExpressionEnd { id, row: reference })?;
         if let Some((operator, precedence, comparison)) = binary {
             require(precedence >= floor && row.c != 0)?;
             let (left, right, operator_span) = match expression.kind {
@@ -845,7 +914,7 @@ impl Walker<'_, '_, '_> {
                     && expression.span.end == self.expression(right)?.span.end,
             )?;
             self.expression_event(right, row.b, false, precedence + 1, depth + 1)?;
-            self.push(Event::Allocate(reference))?;
+            self.push(Event::<E>::Allocate(reference))?;
             self.token_span(operator, row.c, operator_span)?;
             return self.expression_event(
                 left,
@@ -898,7 +967,7 @@ impl Walker<'_, '_, '_> {
             } => {
                 require(row.a != 0 && name.start == expression.span.start)?;
                 self.edge_token(Kind::RParen, None, Some(row.end))?;
-                self.push(Event::Arguments {
+                self.push(Event::<E>::Arguments {
                     expression: id,
                     index: 0,
                     row: row.b,
@@ -944,7 +1013,7 @@ impl Walker<'_, '_, '_> {
             }
             _ => return Err(Boundary::Frame),
         }
-        self.push(Event::Allocate(reference))
+        self.push(Event::<E>::Allocate(reference))
     }
     fn argument(
         &mut self,
@@ -971,7 +1040,7 @@ impl Walker<'_, '_, '_> {
         };
         self.syntax.visits += 1;
         let next = self.syntax.row(reference)?.next;
-        self.push(Event::Arguments {
+        self.push(Event::<E>::Arguments {
             expression,
             index: index + 1,
             row: next,
@@ -1178,9 +1247,10 @@ fn lexical_extent(source: &[u8], start: usize) -> Result<(Kind, usize), Boundary
     Ok((kind, end))
 }
 
-pub(super) fn compare<'b, 's, 'w>(
+pub(super) fn compare<'b, 's, 'w, E: Endpoint>(
     bound: &'b BoundObservation<'s, 'w>,
-) -> Result<ComparedSyntax<'b, 's, 'w>, Boundary> {
+) -> Result<ComparedSyntax<'b, 's, 'w, E>, Boundary> {
+    require(E::WIDE == (bound.wire.protocol() == super::Protocol::V3))?;
     let program = bound.owner.ast(ModuleId(0)).map_err(|_| Boundary::Source)?;
     let file = bound
         .owner
@@ -1190,19 +1260,20 @@ pub(super) fn compare<'b, 's, 'w>(
         .file;
     require(program.items.len() == program.functions.len())?;
     tokens(program, bound.source, file)?;
-    let syntax = ComparedSyntax {
+    let syntax = ComparedSyntax::<E> {
         bound,
         visits: program.tokens.len() + bound.source.len(),
         expression_rows: [0; MAX_ROWS],
         function_rows: [0; MAX_ROWS],
         block_functions: [NONE; MAX_ROWS],
         block_ids: [NONE; MAX_ROWS],
+        endpoint: std::marker::PhantomData,
     };
-    let mut walker = Walker {
+    let mut walker = Walker::<E> {
         syntax,
         program,
         file,
-        scratch: Scratch::new(),
+        scratch: Scratch::<E>::new(),
     };
     walker.run()?;
     Ok(walker.syntax)

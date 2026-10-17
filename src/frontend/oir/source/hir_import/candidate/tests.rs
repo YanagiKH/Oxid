@@ -83,7 +83,7 @@ fn checked_hir_import_candidate_all_scalar_fixtures_match() {
         );
         assert_eq!(
             facts.candidate.builder_named_bytes,
-            builder_named_bytes().unwrap()
+            builder_named_bytes::<u8>().unwrap()
         );
         assert_eq!(allocator.trace.capacity(), trace_capacity);
         assert!(!allocator.observer_trace_overflow);
@@ -220,8 +220,8 @@ fn checked_hir_import_candidate_function_window_uses_local_expression_ids() {
 #[test]
 fn checked_hir_import_candidate_layout_only() {
     println!("HIR_IMPORT_CANDIDATE named_bytes={} work_at_128={} facts={} result={} window={} cursors={} mapping={}",
-        builder_named_bytes().unwrap(), work_bound(MAX_ROWS).unwrap(), size_of::<ComparisonFacts>(), size_of::<Result<ComparisonFacts, Failure>>(), size_of::<FunctionWindow>(), size_of::<BuilderCursors>(), size_of::<Mapping<'_, '_, '_, '_>>());
-    assert!(builder_named_bytes().unwrap() >= size_of::<hir::Program>());
+        builder_named_bytes::<u8>().unwrap(), work_bound(MAX_ROWS).unwrap(), size_of::<ComparisonFacts>(), size_of::<Result<ComparisonFacts, Failure>>(), size_of::<FunctionWindow>(), size_of::<BuilderCursors>(), size_of::<Mapping<'_, '_, '_, '_>>());
+    assert!(builder_named_bytes::<u8>().unwrap() >= size_of::<hir::Program>());
     assert!(work_bound(MAX_ROWS).unwrap() < IndexLimits::default().work);
 }
 

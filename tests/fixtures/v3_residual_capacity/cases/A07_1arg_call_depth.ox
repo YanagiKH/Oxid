@@ -1,0 +1,1 @@
+fn f(a:i32)->i32{return a;}fn main()->i32{return f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(0)))))))))))))))))))))))))))))))));}

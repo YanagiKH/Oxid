@@ -1,0 +1,46 @@
+{
+  "rich": {
+    "source_sha256": "922ae9da4b48d7c9e41fdb799028e9b0812b16b1aa629539fa1c004c7047f7cb",
+    "observation_sha256": "a67bc0437ea87e49bb75e133c53d1588898a8597ad07641d9e59d8b7f2c59398",
+    "bytes": 2356
+  },
+  "duplicate": {
+    "source_sha256": "8060a6516a822e2b27a160d4528750947b81b903bfd38a2cca38050d57bda47e",
+    "observation_sha256": "639d4c2e34d6add009eca83211e9390c988c95b187a0afb4c660f9fbe4bce3df",
+    "bytes": 1324
+  },
+  "unknown": {
+    "source_sha256": "169911ce3208c80792c7fb463c97e2beca510e0bca8cbeb8ecac00ab1aade96b",
+    "observation_sha256": "b950e3b8ffca9367ac4f19a1dae0d801d37119b606e1a152e58c0902f2c0439c",
+    "bytes": 1324
+  },
+  "multiple": {
+    "source_sha256": "6b793fd91be8fd06a27569bc2806573f986e54d735357b1c983e7997f8d8a03a",
+    "observation_sha256": "f87e83a49c1c839239b56aaf1da73f67a5e1fb05555c8300ef57d83f320a265c",
+    "bytes": 1324
+  },
+  "many-functions": {
+    "source_sha256": "62ab6032bc11cd3f30488fa0246e1b57b501d921e414a17dfe534aea4915a585",
+    "observation_sha256": "b4a16d3c7495607a31504ffb8da8eed43d8bc98a0930fa95ec2b87451cc683a4",
+    "bytes": 2356,
+    "rows": 40,
+    "parameter": 10
+  },
+  "many-rows": {
+    "source_sha256": "b5e4603b8d68bc69c131045cc23fcc28b476f8393272c47daf431614f12993c4",
+    "observation_sha256": "5c5e50a9bdb4a2ade082d53462e2d0a8caa86b83f645b711ab3f286c514fbed1",
+    "bytes": 2356,
+    "rows": 109,
+    "parameter": 102,
+    "parser_returncode": 0,
+    "static_returncode": 0,
+    "stderr_empty": true
+  },
+  "_provenance": {
+    "producer_build": "review-v3-host-integration-live-build",
+    "parser_sha256": "142b19e22134651c9bc5a8bc91e60d2e1d2643b19f40d3cdbbd69015a63f4c2f",
+    "static_sha256": "0acb292ad07eca1050ef96f5ceab44bc468e3c59d7cc8be9287aba2082c2562a",
+    "framing": "AST3 + u16_le source length + original ASCII source + exact parser OPA3; static OPA echo required",
+    "scope": "Experimental captures; not qualification proof or compiler-source binding"
+  }
+}

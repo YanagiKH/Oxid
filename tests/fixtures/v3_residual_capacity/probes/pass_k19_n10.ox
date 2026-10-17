@@ -1,0 +1,1 @@
+fn main()->i32{let zqqqqqqq00=0;let zqqqqqqq01=1;let zqqqqqqq02=2;let zqqqqqqq03=3;let zqqqqqqq04=4;let zqqqqqqq05=5;let zqqqqqqq06=6;let zqqqqqqq07=7;let zqqqqqqq08=8;let zqqqqqqq09=9;let zqqqqqqq10=10;let zqqqqqqq11=11;let zqqqqqqq12=12;let zqqqqqqq13=13;let zqqqqqqq14=14;let zqqqqqqq15=15;let zqqqqqqq16=16;let zqqqqqqq17=17;let zqqqqqqq18=18;return zqqqqqqq00;}

@@ -217,7 +217,9 @@ mod linux {
     fn parse_manifest(bytes: &[u8]) -> Result<Manifest, &'static str> {
         const INVALID: &str = "producer bundle manifest does not match the closed format";
         if bytes.len() != MANIFEST_LEN
-            || (!bytes.starts_with(MAGIC) && !bytes.starts_with(b"OXID-HIR-PRODUCERS-2\n"))
+            || (!bytes.starts_with(MAGIC)
+                && !bytes.starts_with(b"OXID-HIR-PRODUCERS-2\n")
+                && !bytes.starts_with(b"OXID-HIR-PRODUCERS-3\n"))
         {
             return Err(INVALID);
         }
@@ -231,10 +233,11 @@ mod linux {
             return Err(INVALID);
         }
         Ok(Manifest {
-            protocol: if bytes[MAGIC.len() - 2] == b'1' {
-                Protocol::V1
-            } else {
-                Protocol::V2
+            protocol: match bytes[MAGIC.len() - 2] {
+                b'1' => Protocol::V1,
+                b'2' => Protocol::V2,
+                b'3' => Protocol::V3,
+                _ => return Err(INVALID),
             },
             parser: decode_hash(&parser_line[7..71]).ok_or(INVALID)?,
             static_consumer: decode_hash(&static_line[7..71]).ok_or(INVALID)?,
@@ -531,7 +534,11 @@ mod linux {
         fn exact_manifest_grammar_and_known_sha256() {
             let known = b"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
             assert_eq!(decode_hash(known).unwrap(), digest(b"abc"));
-            for (version, protocol) in [(b'1', Protocol::V1), (b'2', Protocol::V2)] {
+            for (version, protocol) in [
+                (b'1', Protocol::V1),
+                (b'2', Protocol::V2),
+                (b'3', Protocol::V3),
+            ] {
                 let mut bytes = manifest_bytes(b"abc", b"other");
                 bytes[MAGIC.len() - 2] = version;
                 assert_eq!(bytes.len(), MANIFEST_LEN);
@@ -550,7 +557,7 @@ mod linux {
         fn rejects_unsupported_manifest_versions() {
             let mut bytes = manifest_bytes(b"abc", b"other");
             for version in u8::MIN..=u8::MAX {
-                if matches!(version, b'1' | b'2') {
+                if matches!(version, b'1' | b'2' | b'3') {
                     continue;
                 }
                 bytes[MAGIC.len() - 2] = version;
@@ -560,7 +567,7 @@ mod linux {
 
         #[test]
         fn rejects_noncanonical_manifest_variants() {
-            for version in *b"12" {
+            for version in *b"123" {
                 let mut valid = manifest_bytes(b"abc", b"other");
                 valid[MAGIC.len() - 2] = version;
                 let text = String::from_utf8(valid.clone()).unwrap();

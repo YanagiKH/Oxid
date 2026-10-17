@@ -10,6 +10,7 @@
 //! the checker's inherited TypedProgram, HIR and typed-table allocations are
 //! excluded from this helper's *new* named carrier ledger. Their coexistence
 //! belongs to the enclosing phase ledger, not to this fixed comparison bank.
+use super::Endpoint;
 use super::{ast, hir, require, small, ComparedSyntax, Failure, FunctionWindow, Mapping, Row};
 use crate::frontend::{
     project::ModuleId,
@@ -76,8 +77,8 @@ fn flow_code(flow: FlowSummary) -> i32 {
     outcome_code(flow.outcomes())
 }
 
-fn compare_cell(
-    syntax: &ComparedSyntax<'_, '_, '_>,
+fn compare_cell<E: Endpoint>(
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     facts: &mut ComparisonFacts,
     reference: u8,
     expected: i32,
@@ -100,16 +101,19 @@ fn compare_cell(
 /// The caller must prepay `work_bound(rows)` and `named_bytes()` in its shared
 /// phase plan. `remaining_work` is the allowance available for this operation,
 /// not a fresh meter; this helper returns exactly its conservative debit.
-pub(super) fn compare(
-    syntax: &ComparedSyntax<'_, '_, '_>,
+pub(super) fn compare<E: Endpoint>(
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     typed: &TypedProgram,
     remaining_work: u64,
 ) -> Result<ComparisonFacts, Failure> {
-    let charged_work = work_bound(usize::from(syntax.bound.wire.rows))?;
+    let charged_work = work_bound_for(
+        usize::from(syntax.bound.wire.rows),
+        syntax.bound.wire.protocol(),
+    )?;
     if charged_work > remaining_work {
         return Err(Failure::Admission);
     }
-    let named_bytes = named_bytes()?;
+    let named_bytes = named_bytes::<E>()?;
     let program = syntax
         .bound
         .owner
@@ -266,6 +270,25 @@ pub(super) fn work_bound(rows: usize) -> Result<u64, Failure> {
         .ok_or(Failure::Overflow)
 }
 
+pub(super) fn work_bound_for(
+    rows: usize,
+    protocol: crate::frontend::hir_protocol::Protocol,
+) -> Result<u64, Failure> {
+    let legacy = work_bound(rows)?;
+    if protocol != crate::frontend::hir_protocol::Protocol::V3 {
+        return Ok(legacy);
+    }
+    let visits = u64::try_from(rows)
+        .map_err(|_| Failure::Overflow)?
+        .checked_add(1)
+        .ok_or(Failure::Overflow)?;
+    let extra = visits
+        .checked_mul(4 * (5 * 24 + 64) + 3 * 16)
+        .and_then(|n| n.checked_add(256))
+        .ok_or(Failure::Overflow)?;
+    legacy.checked_add(extra).ok_or(Failure::Overflow)
+}
+
 fn copies<T>(count: usize) -> Result<usize, Failure> {
     size_of::<T>().checked_mul(count).ok_or(Failure::Overflow)
 }
@@ -289,10 +312,10 @@ where
 /// This is not a machine stack maximum, an allocator bound, or a price for the
 /// inherited checker/typed owners. The parent must also price its call/result
 /// carriers and the source/OPA comparison bank it keeps alive here.
-pub(super) fn named_bytes() -> Result<usize, Failure> {
+pub(super) fn named_bytes<E: Endpoint>() -> Result<usize, Failure> {
     let roles = [
-        size_of::<(&ComparedSyntax<'_, '_, '_>, &TypedProgram, u64)>(),
-        copies::<Mapping<'_, '_, '_, '_>>(2)?,
+        size_of::<(&ComparedSyntax<'_, '_, '_, E>, &TypedProgram, u64)>(),
+        copies::<Mapping<'_, '_, '_, '_, E>>(2)?,
         size_of::<&ast::Program>(),
         size_of::<Result<&ast::Program, Box<crate::frontend::diagnostic::Diagnostic>>>(),
         size_of::<Cursors>(),
@@ -313,22 +336,27 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         size_of::<(&TypedFunction<'_>, hir::BodyBlockId)>(),
         copies::<FunctionWindow>(3)?,
         size_of::<Result<FunctionWindow, Failure>>(),
-        size_of::<(&Mapping<'_, '_, '_, '_>, usize, usize)>(),
+        size_of::<(&Mapping<'_, '_, '_, '_, E>, usize, usize)>(),
         copies::<std::ops::Range<usize>>(3)?,
-        copies::<(&Mapping<'_, '_, '_, '_>, u8)>(3)?,
-        copies::<(&Mapping<'_, '_, '_, '_>, FunctionWindow, u8)>(2)?,
+        copies::<(&Mapping<'_, '_, '_, '_, E>, u8)>(3)?,
+        copies::<(&Mapping<'_, '_, '_, '_, E>, FunctionWindow, u8)>(2)?,
         size_of::<(FunctionWindow, ast::ExprId)>(),
         size_of::<(FunctionWindow, u8)>(),
-        size_of::<(&ComparedSyntax<'_, '_, '_>, ast::ExprId)>(),
-        size_of::<(&ComparedSyntax<'_, '_, '_>, usize)>(),
-        size_of::<(&ComparedSyntax<'_, '_, '_>, u8)>(),
-        copies::<Row>(3)?,
-        copies::<Result<Row, Failure>>(2)?,
-        size_of::<Result<Row, super::super::Boundary>>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_, E>, ast::ExprId)>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_, E>, usize)>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_, E>, u8)>(),
+        copies::<Row<E>>(3)?,
+        copies::<Result<Row<E>, Failure>>(2)?,
+        size_of::<Result<Row<E>, super::super::Boundary>>(),
         copies::<Result<u8, super::super::Boundary>>(2)?,
         size_of::<Result<(usize, ast::BodyBlockId), super::super::Boundary>>(),
         size_of::<(usize, ast::BodyBlockId)>(),
-        size_of::<(&ComparedSyntax<'_, '_, '_>, &mut ComparisonFacts, u8, i32)>(),
+        size_of::<(
+            &ComparedSyntax<'_, '_, '_, E>,
+            &mut ComparisonFacts,
+            u8,
+            i32,
+        )>(),
         copies::<CellComparison>(2)?,
         size_of::<(
             super::super::Wire<'_>,
@@ -379,9 +407,16 @@ pub(super) fn named_bytes() -> Result<usize, Failure> {
         .checked_mul(2)
         .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
         .ok_or(Failure::Overflow)?;
-    roles.into_iter().try_fold(bank, |total, value| {
+    let legacy = roles.into_iter().try_fold(bank, |total, value| {
         total.checked_add(value).ok_or(Failure::Overflow)
-    })
+    })?;
+    if E::WIDE {
+        legacy
+            .checked_add(super::wide_formula_named_bytes())
+            .ok_or(Failure::Overflow)
+    } else {
+        Ok(legacy)
+    }
 }
 
 #[cfg(test)]
@@ -409,7 +444,9 @@ mod tests {
 
     #[test]
     fn checked_hir_import_typed_comparison_layout_and_work_are_fixed() {
-        assert!(named_bytes().unwrap() >= size_of::<Cursors>() + 2 * size_of::<ComparisonFacts>());
+        assert!(
+            named_bytes::<u8>().unwrap() >= size_of::<Cursors>() + 2 * size_of::<ComparisonFacts>()
+        );
         assert!(work_bound(0).unwrap() > 0);
         for rows in 1..=super::super::MAX_ROWS {
             assert_eq!(
@@ -425,7 +462,7 @@ mod tests {
             size_of::<Result<ComparisonFacts, Failure>>(),
             size_of::<Cursors>(),
             size_of::<CellComparison>(),
-            named_bytes().unwrap(),
+            named_bytes::<u8>().unwrap(),
         );
     }
 }

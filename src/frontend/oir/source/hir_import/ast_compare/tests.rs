@@ -83,7 +83,7 @@ fn encode_row(bytes: &mut [u8], reference: u8, row: Row) {
 fn checked_hir_import_source_opa_actual_producer_rows_match() {
     let (sources, program) = parsed(SOURCE);
     let bound = BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), WIRE).unwrap();
-    let compared = compare(&bound).unwrap();
+    let compared = compare::<u8>(&bound).unwrap();
     assert_eq!(compared.function_row(0).unwrap(), 1);
     for (index, expression) in program.expressions.iter().enumerate() {
         let row = compared
@@ -119,7 +119,7 @@ fn checked_hir_import_source_opa_scalar_producer_grammar_matches() {
         // These controls need neither project admission nor canonical HIR.
         let bound = BoundObservation::bind(owner(&sources, &program), text.as_bytes(), bytes)
             .unwrap_or_else(|error| panic!("{name}: {error:?}"));
-        let compared = compare(&bound).unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        let compared = compare::<u8>(&bound).unwrap_or_else(|error| panic!("{name}: {error:?}"));
         let mut kinds = [false; 37];
         for reference in 1..=bound.wire.rows {
             let row = compared.row(reference).unwrap();
@@ -148,7 +148,7 @@ fn checked_hir_import_source_opa_scalar_producer_grammar_matches() {
     }
     let (sources, program) = parsed(SOURCE);
     let bound = BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), WIRE).unwrap();
-    let compared = compare(&bound).unwrap();
+    let compared = compare::<u8>(&bound).unwrap();
     for reference in 1..=bound.wire.rows {
         covered[usize::from(compared.row(reference).unwrap().kind)] = true;
     }
@@ -167,7 +167,7 @@ fn checked_hir_import_source_opa_scalar_producer_changed_row_kinds_reject() {
             let bound =
                 BoundObservation::bind(owner(&sources, &program), text.as_bytes(), &changed)
                     .unwrap();
-            assert!(compare(&bound).is_err(), "{name}: row {reference}");
+            assert!(compare::<u8>(&bound).is_err(), "{name}: row {reference}");
         }
     }
 }
@@ -181,7 +181,7 @@ fn checked_hir_import_source_opa_bounded_split_trivia_tape_rejects() {
         {
             let bound =
                 BoundObservation::bind(owner(&sources, &program), text.as_bytes(), bytes).unwrap();
-            assert!(compare(&bound).is_ok(), "{name}");
+            assert!(compare::<u8>(&bound).is_ok(), "{name}");
         }
         let index = program
             .tokens
@@ -198,7 +198,7 @@ fn checked_hir_import_source_opa_bounded_split_trivia_tape_rejects() {
         assert!(program.tokens.len() <= MAX_ROWS + 1);
         let bound =
             BoundObservation::bind(owner(&sources, &program), text.as_bytes(), bytes).unwrap();
-        assert!(compare(&bound).is_err(), "{name}");
+        assert!(compare::<u8>(&bound).is_err(), "{name}");
     }
 }
 #[test]
@@ -230,7 +230,7 @@ fn checked_hir_import_source_opa_public_producer_matches_project() {
         ProjectSources::load_typed(path.to_str().unwrap(), ProjectLimits::default()).unwrap();
     let bound =
         BoundObservation::bind(SourceOwner::project(&project), text.as_bytes(), bytes).unwrap();
-    assert!(compare(&bound).is_ok());
+    assert!(compare::<u8>(&bound).is_ok());
 }
 #[test]
 fn checked_hir_import_source_opa_every_active_bit_is_compared() {
@@ -244,7 +244,7 @@ fn checked_hir_import_source_opa_every_active_bit_is_compared() {
                     BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), &bytes)
                         .unwrap();
                 assert!(
-                    compare(&bound).is_err(),
+                    compare::<u8>(&bound).is_err(),
                     "cell={cell} column={column} bit={bit}"
                 );
             }
@@ -298,7 +298,10 @@ fn checked_hir_import_source_opa_repaired_row_permutations_reject() {
         }
         let bound =
             BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), &bytes).unwrap();
-        assert!(compare(&bound).is_err(), "repaired swap {left}/{right}");
+        assert!(
+            compare::<u8>(&bound).is_err(),
+            "repaired swap {left}/{right}"
+        );
     }
 }
 #[test]
@@ -362,13 +365,13 @@ fn checked_hir_import_source_opa_independent_ast_mutations_reject() {
         mutate(&mut program);
         let bound =
             BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), WIRE).unwrap();
-        assert!(compare(&bound).is_err(), "AST mutation {index}");
+        assert!(compare::<u8>(&bound).is_err(), "AST mutation {index}");
     }
     let changed = SOURCE.replace("n+1", "n*1");
     let (sources, program) = parsed(&changed);
     let bound =
         BoundObservation::bind(owner(&sources, &program), changed.as_bytes(), WIRE).unwrap();
-    assert!(compare(&bound).is_err());
+    assert!(compare::<u8>(&bound).is_err());
     assert!(BoundObservation::bind(owner(&sources, &program), SOURCE.as_bytes(), WIRE).is_err());
 }
 #[test]
@@ -385,7 +388,7 @@ fn checked_hir_import_source_opa_empty_and_full_trivia_domain() {
         bytes[OPA_BYTES..OPA_BYTES + 4].copy_from_slice(b"STF1");
         let bound =
             BoundObservation::bind(owner(&sources, &program), text.as_bytes(), &bytes).unwrap();
-        assert!(compare(&bound).is_ok());
+        assert!(compare::<u8>(&bound).is_ok());
     }
 }
 #[test]
@@ -411,7 +414,10 @@ fn checked_hir_import_source_opa_complete_layouts() {
         "compared-result",
         Result<ComparedSyntax<'static, 'static, 'static>, Boundary>
     );
-    println!("HIR_IMPORT_AST named_bytes={}", named_bytes().unwrap());
+    println!(
+        "HIR_IMPORT_AST named_bytes={}",
+        named_bytes::<u8>().unwrap()
+    );
     assert_eq!(SCRATCH_BYTES, size_of::<Scratch>());
     assert!(
         SCRATCH_BYTES >= size_of::<[Event; MAX_EVENTS]>() + 2 * MAX_ROWS + 6 * size_of::<usize>()
@@ -420,9 +426,9 @@ fn checked_hir_import_source_opa_complete_layouts() {
 
 #[test]
 fn checked_hir_import_v2_endpoint_255_is_compared_not_a_wildcard() {
-    assert!(endpoint_matches(Some(255), 255));
-    assert!(!endpoint_matches(Some(255), 254));
-    assert!(!endpoint_matches(Some(254), 255));
-    assert!(!endpoint_matches(Some(255), 256));
-    assert!(endpoint_matches(None, 254));
+    assert!(endpoint_matches::<u8>(Some(255), 255));
+    assert!(!endpoint_matches::<u8>(Some(255), 254));
+    assert!(!endpoint_matches::<u8>(Some(254), 255));
+    assert!(!endpoint_matches::<u8>(Some(255), 256));
+    assert!(endpoint_matches::<u8>(None, 254));
 }

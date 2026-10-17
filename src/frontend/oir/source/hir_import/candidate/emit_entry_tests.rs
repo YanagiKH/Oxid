@@ -24,7 +24,7 @@ fn checked_hir_import_emit_candidate_boundaries_reject_before_consumers() {
     wire[..4].copy_from_slice(b"OPA1");
     wire[OPA_BYTES..OPA_BYTES + 4].copy_from_slice(b"STF1");
     let bound = BoundObservation::bind(owner, b"", &wire).unwrap();
-    let syntax = ast_compare::compare(&bound).unwrap();
+    let syntax = ast_compare::compare::<u8>(&bound).unwrap();
     for seam in 0..3 {
         let canonical = hir::resolve_sources(owner).unwrap();
         let mut comparison = compare_candidate(

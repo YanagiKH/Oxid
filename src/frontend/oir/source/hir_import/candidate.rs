@@ -7,7 +7,7 @@
 use super::{
     allocation::{Failure, Key, Receipt, Session},
     ast,
-    ast_compare::{ComparedSyntax, Row},
+    ast_compare::{ComparedSyntax, Endpoint, Row},
     hir, MAX_ROWS,
 };
 use crate::frontend::{
@@ -35,6 +35,16 @@ pub(super) const EMIT_ADMITTED: bool = true;
 // Paid on the original Emit meter before its new fixed-bank calculations.
 // The private terminal documents the complete finite source-event tariff.
 pub(super) const EMIT_CONNECTION_WORK: u64 = 32_768;
+pub(super) const EMIT_CONNECTION_WORK_V3: u64 = EMIT_CONNECTION_WORK + 4_096;
+/// V3 bank/setup supplement, prepaid before any wide bank calculation.
+/// Legacy paths retain their exact fixed connection charge.
+pub(super) fn emit_connection_work_for(protocol: super::Protocol) -> u64 {
+    if protocol == super::Protocol::V3 {
+        EMIT_CONNECTION_WORK_V3
+    } else {
+        EMIT_CONNECTION_WORK
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Request {
@@ -117,12 +127,12 @@ struct BuilderCursors {
     parameter_row: u8,
 }
 
-struct Mapping<'a, 'b, 's, 'w> {
-    syntax: &'a ComparedSyntax<'b, 's, 'w>,
+struct Mapping<'a, 'b, 's, 'w, E: Endpoint = u8> {
+    syntax: &'a ComparedSyntax<'b, 's, 'w, E>,
     program: &'s ast::Program,
 }
-impl Mapping<'_, '_, '_, '_> {
-    fn row(&self, reference: u8) -> Result<Row, Failure> {
+impl<E: Endpoint> Mapping<'_, '_, '_, '_, E> {
+    fn row(&self, reference: u8) -> Result<Row<E>, Failure> {
         self.syntax.row(reference).map_err(Into::into)
     }
     fn resolution(&self, reference: u8) -> Result<i32, Failure> {
@@ -302,8 +312,8 @@ fn small(value: usize) -> Result<u8, Failure> {
 /// it is never replenished here. Returned charged_work excludes that outer work.
 /// This entry returns fixed facts only, including on a complete disagreement.
 /// Its parent must retain an uninhabited success type even when `equal` is true.
-pub(super) fn compare_candidate(
-    syntax: &ComparedSyntax<'_, '_, '_>,
+pub(super) fn compare_candidate<E: Endpoint>(
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     canonical: &hir::Program,
     allocator: &mut Allocator,
     outside_fixed_bytes: usize,
@@ -324,9 +334,9 @@ pub(super) fn compare_candidate(
 }
 
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-pub(super) fn request_candidate(
+pub(super) fn request_candidate<E: Endpoint>(
     request: Request,
-    syntax: &ComparedSyntax<'_, '_, '_>,
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     canonical: hir::Program,
     allocator: &mut Allocator,
     outside_fixed_bytes: usize,
@@ -363,8 +373,8 @@ pub(super) fn request_candidate(
 /// Observe drops the candidate inside its existing allocation-observer scope;
 /// Verify owns canonical HIR so it can release it before genuine typechecking.
 #[allow(clippy::result_large_err)]
-fn construct(
-    syntax: &ComparedSyntax<'_, '_, '_>,
+fn construct<E: Endpoint>(
+    syntax: &ComparedSyntax<'_, '_, '_, E>,
     input: CanonicalInput<'_, '_>,
     allocator: &mut Allocator,
     outside_fixed_bytes: usize,
@@ -382,11 +392,14 @@ fn construct(
         .ast(ModuleId(0))
         .map_err(|_| Failure::Shape)?;
     let mapping = Mapping { syntax, program };
-    let builder_named_bytes = builder_named_bytes()?;
+    let builder_named_bytes = builder_named_bytes::<E>()?;
     let fixed = outside_fixed_bytes
         .checked_add(builder_named_bytes)
         .ok_or(Failure::Overflow)?;
-    let builder_work = work_bound(usize::from(syntax.bound.wire.rows))?;
+    let builder_work = work_bound_for(
+        usize::from(syntax.bound.wire.rows),
+        syntax.bound.wire.protocol(),
+    )?;
     let helper_limits = IndexLimits {
         work: remaining
             .work
@@ -654,11 +667,11 @@ fn construct(
     }
 }
 
-fn statement_kind(
-    mapping: &Mapping<'_, '_, '_, '_>,
+fn statement_kind<E: Endpoint>(
+    mapping: &Mapping<'_, '_, '_, '_, E>,
     window: FunctionWindow,
     reference: u8,
-    row: Row,
+    row: Row<E>,
     kind: &ast::StmtKind,
 ) -> Result<hir::StmtKind, Failure> {
     Ok(match kind {
@@ -727,8 +740,8 @@ fn statement_kind(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn expression_kind(
-    mapping: &Mapping<'_, '_, '_, '_>,
+fn expression_kind<E: Endpoint>(
+    mapping: &Mapping<'_, '_, '_, '_, E>,
     window: FunctionWindow,
     index: usize,
     reference: u8,
@@ -1162,13 +1175,13 @@ fn sum<const N: usize>(values: [usize; N]) -> Result<usize, Failure> {
 /// BodyBlock wrappers while a Stmt vector is filled. No such wrapper is added a
 /// second time here; nested in-slot Vec headers are already charged in Hn/Hc.
 /// Rows constructed locally and their helper transport are separate named roles.
-pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
+pub(super) fn builder_named_bytes<E: Endpoint>() -> Result<usize, Failure> {
     let roles = [
         // Complete common dispatch/input/result carriers, including the owned
         // canonical alternative even for the preserved Observe entry. These
         // are transport roles additional to the enclosing Program owners.
         size_of::<(
-            &ComparedSyntax<'_, '_, '_>,
+            &ComparedSyntax<'_, '_, '_, E>,
             CanonicalInput<'_, '_>,
             &mut Allocator,
             usize,
@@ -1183,13 +1196,13 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
         size_of::<Option<verify_terminal::WorkPlan>>(),
         // Entry arguments, mapping construction/caller and source AST borrow.
         size_of::<(
-            &ComparedSyntax<'_, '_, '_>,
+            &ComparedSyntax<'_, '_, '_, E>,
             &hir::Program,
             &mut Allocator,
             usize,
             IndexLimits,
         )>(),
-        copies::<Mapping<'_, '_, '_, '_>>(2)?,
+        copies::<Mapping<'_, '_, '_, '_, E>>(2)?,
         size_of::<&ast::Program>(),
         size_of::<Result<&ast::Program, Box<crate::frontend::diagnostic::Diagnostic>>>(),
         // Candidate owner once; canonical owner belongs to outside_fixed_bytes.
@@ -1203,7 +1216,7 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
         copies::<BuilderCursors>(2)?,
         copies::<FunctionWindow>(3)?,
         size_of::<Result<FunctionWindow, Failure>>(),
-        size_of::<(&Mapping<'_, '_, '_, '_>, usize, usize)>(),
+        size_of::<(&Mapping<'_, '_, '_, '_, E>, usize, usize)>(),
         copies::<usize>(8)?,
         copies::<std::ops::Range<usize>>(3)?,
         // Source borrows and simultaneous row construction/read transports.
@@ -1216,30 +1229,30 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
             &ast::Argument,
             &Token,
         )>(),
-        copies::<Row>(4)?,
-        copies::<Result<Row, Failure>>(3)?,
-        size_of::<Result<Row, super::Boundary>>(),
+        copies::<Row<E>>(4)?,
+        copies::<Result<Row<E>, Failure>>(3)?,
+        size_of::<Result<Row<E>, super::Boundary>>(),
         // Mapping helper inputs along callee -> target -> positive -> resolution
         // and block/local target chains. These are scalar/reference roles only.
-        copies::<(&Mapping<'_, '_, '_, '_>, u8)>(5)?,
-        copies::<(&Mapping<'_, '_, '_, '_>, FunctionWindow, u8)>(3)?,
+        copies::<(&Mapping<'_, '_, '_, '_, E>, u8)>(5)?,
+        copies::<(&Mapping<'_, '_, '_, '_, E>, FunctionWindow, u8)>(3)?,
         size_of::<(FunctionWindow, ast::ExprId, usize)>(),
         // Distinct nested window receiver inputs and compared-ID transports;
         // these are additional to the window-construction/caller copies above.
         size_of::<(FunctionWindow, ast::ExprId)>(),
         size_of::<(FunctionWindow, u8)>(),
-        size_of::<(&ComparedSyntax<'_, '_, '_>, ast::ExprId)>(),
-        size_of::<(&ComparedSyntax<'_, '_, '_>, usize)>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_, E>, ast::ExprId)>(),
+        size_of::<(&ComparedSyntax<'_, '_, '_, E>, usize)>(),
         copies::<Result<u8, super::Boundary>>(2)?,
         size_of::<(
-            &Mapping<'_, '_, '_, '_>,
+            &Mapping<'_, '_, '_, '_, E>,
             FunctionWindow,
             u8,
-            Row,
+            Row<E>,
             &ast::StmtKind,
         )>(),
         size_of::<(
-            &Mapping<'_, '_, '_, '_>,
+            &Mapping<'_, '_, '_, '_, E>,
             FunctionWindow,
             usize,
             u8,
@@ -1248,7 +1261,7 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
             &mut usize,
         )>(),
         // Fixed decoding values/returns/caller roles, including the exact
-        // Row::read / Wire::word byte, word and arithmetic carrier banks.
+        // Row<E>::read / Wire::word byte, word and arithmetic carrier banks.
         size_of::<(super::Wire<'_>, u8, usize, u32, u32, u32, u8, u32, [u32; 4])>(),
         size_of::<(
             super::Wire<'_>,
@@ -1430,16 +1443,35 @@ pub(super) fn builder_named_bytes() -> Result<usize, Failure> {
         .checked_mul(2)
         .and_then(|n| n.checked_add(size_of_val(&roles.into_iter())))
         .ok_or(Failure::Overflow)?;
-    sum(roles)?.checked_add(bank).ok_or(Failure::Overflow)
+    let legacy = sum(roles)?.checked_add(bank).ok_or(Failure::Overflow)?;
+    if E::WIDE {
+        legacy
+            .checked_add(wide_formula_named_bytes())
+            .ok_or(Failure::Overflow)
+    } else {
+        Ok(legacy)
+    }
+}
+
+// V3-only work formula input, intermediate, return and held projection roles.
+// Reused by the independently charged builder and typed-comparison phases.
+fn wide_formula_named_bytes() -> usize {
+    let roles = [
+        3 * size_of::<(usize, super::Protocol)>(),
+        3 * size_of::<[u64; 4]>(),
+        3 * size_of::<Result<u64, Failure>>(),
+        3 * size_of::<[bool; 2]>(),
+    ];
+    2 * size_of_val(&roles) + size_of_val(&roles.into_iter()) + roles.into_iter().sum::<usize>()
 }
 
 /// Only the private Verify source plan adds this complete downstream bank.
-pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
+pub(super) fn verify_named_bytes<E: Endpoint>() -> Result<usize, Failure> {
     let roles = [
-        verify_terminal::named_bytes()?,
+        verify_terminal::named_bytes::<E>()?,
         copies::<(
             Request,
-            &ComparedSyntax<'_, '_, '_>,
+            &ComparedSyntax<'_, '_, '_, E>,
             hir::Program,
             &mut Allocator,
             usize,
@@ -1463,8 +1495,8 @@ pub(super) fn verify_named_bytes() -> Result<usize, Failure> {
 }
 
 /// The separately admitted Emit-only terminal and native consumer bank.
-pub(super) fn emit_named_bytes() -> Result<usize, Failure> {
-    verify_terminal::emit_named_bytes()
+pub(super) fn emit_named_bytes<E: Endpoint>() -> Result<usize, Failure> {
+    verify_terminal::emit_named_bytes::<E>()
 }
 
 /// A deterministic bookkeeping bound, not elapsed time or CPU instructions.
@@ -1494,6 +1526,24 @@ fn work_bound(rows: usize) -> Result<u64, Failure> {
         .ok_or(Failure::Overflow)
 }
 
+/// V3 repeated mapping reads are separately prepaid, not absorbed into the
+/// unchanged256-unit legacy visit tariff. See v3-checked-import-resources.md.
+fn work_bound_for(rows: usize, protocol: super::Protocol) -> Result<u64, Failure> {
+    let legacy = work_bound(rows)?;
+    if protocol != super::Protocol::V3 {
+        return Ok(legacy);
+    }
+    let visits = u64::try_from(rows)
+        .map_err(|_| Failure::Overflow)?
+        .checked_add(1)
+        .ok_or(Failure::Overflow)?;
+    let extra = visits
+        .checked_mul(20 * (5 * 24 + 64) + 16 * 16)
+        .and_then(|n| n.checked_add(512))
+        .ok_or(Failure::Overflow)?;
+    legacy.checked_add(extra).ok_or(Failure::Overflow)
+}
+
 #[cfg(test)]
 mod emit_entry_tests;
 #[cfg(test)]
@@ -1503,5 +1553,5 @@ mod tests;
 
 #[cfg(test)]
 pub(super) fn u8_projection_named_bytes() -> usize {
-    typed_compare::named_bytes().unwrap()
+    typed_compare::named_bytes::<u8>().unwrap()
 }

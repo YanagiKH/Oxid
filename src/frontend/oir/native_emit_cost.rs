@@ -79,8 +79,8 @@ fn diagnostic_cost(
     has_byte_range_failure: bool,
 ) -> Result<DiagnosticCost, Failure> {
     let path = u64::try_from(path_utf8_len).map_err(|_| Failure::Overflow)?;
-    // Both source caps give at most three decimal digits for each one-based
-    // location (v2 <=256). Both protocols use the same message envelope.
+    // All source caps give at most three decimal digits for each one-based
+    // location (v3 <=512). All protocols use the same message envelope.
     // E0610's fixed message is ten UTF-8 bytes longer than the inherited
     // maximum. Keep the predecessor formula for every no-byte input.
     let fixed_human = if has_byte_range_failure { 81 } else { 71 };
@@ -93,6 +93,14 @@ fn diagnostic_cost(
     let fixed_render = match protocol {
         Protocol::V1 => 4_096,
         Protocol::V2 => 8_192,
+        // V3's B<=511 gives <=512 line starts and <=511 ASCII scalars.
+        // Each is <=4 times v1's 129/128 bound. partition_point performs
+        // <=10 predicate calls versus <=9 at 129 entries; constant offset
+        // validation and three-digit formatting do not grow. Thus every
+        // source-dependent term in the inherited nonnegative fixed allowance
+        // is bounded by four copies, including setup. Path/output terms below
+        // remain separate. This is a source-event bound, not elapsed time.
+        Protocol::V3 => 16_384,
     };
     let render = add(fixed_render, mul(128, add(path, human_bytes)?)?)?;
     let escape = mul(128, human_bytes)?;
@@ -504,6 +512,102 @@ mod tests {
             arithmetic_failures: 1,
             has_byte_range_failure: false,
             maybe_cyclic: true,
+        }
+    }
+
+    #[test]
+    fn v3_location_bound_tracks_the_actual_source_algorithm() {
+        use crate::frontend::{oir::RunFailure, source::SourceMap};
+        // Exercise every valid offset for the maximum single-line, all-LF,
+        // and alternating CRLF sources. Independent prefix coordinates catch
+        // EOF and newline-side mistakes in the actual location implementation.
+        for text in [" ".repeat(511), "\n".repeat(511), "\r\n".repeat(255) + "x"] {
+            let mut sources = SourceMap::new();
+            let id = sources.add("\u{0}\u{1b}é".into(), text.clone());
+            let source = sources.get(id);
+            for offset in 0..=511 {
+                let prefix = &text[..offset];
+                let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+                let column = prefix.rsplit('\n').next().unwrap().len() + 1;
+                assert_eq!(source.location(offset), (line, column));
+                assert!(line <= 512 && column <= 512);
+                let span = source.span(offset, offset);
+                for failure in [
+                    RunFailure::Fuel(span),
+                    RunFailure::Overflow(span),
+                    RunFailure::DivisionByZero(span),
+                    RunFailure::ByteRange(span),
+                ] {
+                    let byte_range = matches!(failure, RunFailure::ByteRange(_));
+                    let bound =
+                        diagnostic_cost(source.path().len(), Protocol::V3, byte_range).unwrap();
+                    let rendered = failure.diagnostic(&sources).render_human(&sources);
+                    assert!(rendered.len() as u64 <= bound.human_bytes);
+                    assert!(rendered.ends_with(&format!(":{line}:{column}\n")));
+                }
+            }
+        }
+        // Count actual standard-library partition predicates, not a guessed
+        // logarithm. Every admitted line-start cardinality and search offset.
+        for count in 1..=512 {
+            let starts: Vec<usize> = (0..count).collect();
+            for offset in 0..=511 {
+                let mut visits = 0;
+                let _ = starts.partition_point(|start| {
+                    visits += 1;
+                    *start <= offset
+                });
+                assert!(visits <= 10);
+            }
+        }
+        // A false inequality makes the compile-time array lengths disagree.
+        const _: [(); 1] = [(); (512 <= 4 * 129 && 511 <= 4 * 128 && 10 <= 4 * 9) as usize];
+    }
+
+    #[test]
+    fn v3_emit_cost_changes_only_source_location_allowance() {
+        assert_eq!(size_of::<Protocol>(), 1);
+        for path in [0, 7, 1_024, 4_096, usize::MAX] {
+            assert_eq!(
+                calculate_protocol(literal(), path, Protocol::V3),
+                calculate(literal(), path)
+            );
+        }
+        for path in [0, 7, 1_024, 4_096] {
+            for byte_range in [false, true] {
+                let dimensions = Dimensions {
+                    has_byte_range_failure: byte_range,
+                    ..rich()
+                };
+                let v1 = calculate_protocol(dimensions, path, Protocol::V1).unwrap();
+                let v2 = calculate_protocol(dimensions, path, Protocol::V2).unwrap();
+                let v3 = calculate_protocol(dimensions, path, Protocol::V3).unwrap();
+                assert_eq!((v3.admission, v3.finish), (v1.admission, v1.finish));
+                assert_eq!(v3.unguarded - v1.unguarded, 4 * 12_288);
+                assert_eq!(v3.guarded.unwrap() - v1.guarded.unwrap(), 44 * 12_288);
+                assert_eq!(v3.body - v2.body, 44 * 8_192);
+                let old = diagnostic_cost(path, Protocol::V1, byte_range).unwrap();
+                let wide = diagnostic_cost(path, Protocol::V3, byte_range).unwrap();
+                assert_eq!(
+                    (wide.human_bytes, wide.escape),
+                    (old.human_bytes, old.escape)
+                );
+                assert_eq!(wide.render - old.render, 12_288);
+            }
+        }
+        assert_eq!(
+            calculate_protocol(rich(), 7, Protocol::V3).unwrap().body,
+            9_254_272
+        );
+        if usize::BITS == 64 {
+            assert_eq!(
+                calculate_protocol(division(), usize::MAX, Protocol::V3),
+                Err(Failure::Overflow)
+            );
+            assert_eq!(
+                calculate_protocol(simple_loop(), usize::MAX, Protocol::V3),
+                Err(Failure::Overflow)
+            );
         }
     }
 

@@ -57,14 +57,101 @@ struct Wire<'w> {
 impl<'w> Wire<'w> {
     fn protocol(self) -> Protocol {
         // Only decode constructs Wire after checking the complete header.
-        if self.bytes[3] == b'1' {
-            Protocol::V1
+        Protocol::from_opa(self.bytes).expect("validated Wire magic")
+    }
+    fn first(self) -> u8 {
+        self.bytes[if self.protocol() == Protocol::V3 {
+            11
         } else {
-            Protocol::V2
+            9
+        }]
+    }
+    fn source_len(self) -> usize {
+        if self.protocol() == Protocol::V3 {
+            usize::from(u16::from_le_bytes([self.bytes[12], self.bytes[13]]))
+        } else {
+            usize::from(self.bytes[10])
         }
     }
+    /// V3 OPA uses five separate little-endian u16 planes, never legacy packed spans.
+    fn wide_cell(self, column: usize, cell: usize) -> Result<u16, Boundary> {
+        if self.protocol() != Protocol::V3 || column >= 5 || cell >= CELLS {
+            return Err(Boundary::Frame);
+        }
+        let at = 14 + column * 2 * CELLS + cell;
+        Ok(u16::from_le_bytes([
+            *self.bytes.get(at).ok_or(Boundary::Frame)?,
+            *self.bytes.get(at + CELLS).ok_or(Boundary::Frame)?,
+        ]))
+    }
+    fn decode_v3(bytes: &'w [u8], source_len: usize, diagnostic: bool) -> Result<Self, Boundary> {
+        let expected = if diagnostic {
+            Protocol::V3.diagnostic_bytes()
+        } else {
+            Protocol::V3.success_bytes()
+        };
+        if bytes.len() != expected
+            || source_len > 511
+            || &bytes[..4] != b"OPA3"
+            || bytes[4..10] != [0; 6]
+            || usize::from(bytes[10]) > MAX_ROWS
+            || &bytes[1304..1308] != b"STF3"
+            || bytes[1308] != u8::from(diagnostic)
+            || bytes[1309] != bytes[10]
+        {
+            return Err(Boundary::Frame);
+        }
+        let wire = Self {
+            bytes,
+            rows: bytes[10],
+        };
+        if wire.source_len() != source_len
+            || (wire.rows == 0) != (wire.first() == 0)
+            || wire.first() > wire.rows
+            || (!diagnostic && bytes[1310..1324] != [0; 14])
+        {
+            return Err(Boundary::Frame);
+        }
+        // Raw bounds are checked before any masking, narrowing, or semantic packing.
+        for cell in 0..CELLS {
+            let h = wire.wide_cell(0, cell)?;
+            let start = wire.wide_cell(1, cell)?;
+            let end = wire.wide_cell(2, cell)?;
+            let ab = wire.wide_cell(3, cell)?;
+            let cd = wire.wide_cell(4, cell)?;
+            if cell >= usize::from(wire.rows) {
+                if h != 0 || start != 0 || end != 0 || ab != 0 || cd != 0 {
+                    return Err(Boundary::Frame);
+                }
+            } else if !(1..=36).contains(&(h & 63))
+                || h >> 6 > u16::from(wire.rows)
+                || start > end
+                || usize::from(end) > source_len
+                || ab & 255 > 128
+                || ab >> 8 > 128
+                || cd & 255 > 128
+                || cd >> 8 > 128
+            {
+                return Err(Boundary::Frame);
+            }
+        }
+        if !diagnostic {
+            for column in 3..5 {
+                for cell in usize::from(wire.rows)..CELLS {
+                    if wire.word(column, cell)? != 0 {
+                        return Err(Boundary::Frame);
+                    }
+                }
+            }
+        }
+        Ok(wire)
+    }
+
     fn decode(bytes: &'w [u8], source_len: usize) -> Result<Self, Boundary> {
         let protocol = Protocol::from_opa(bytes).ok_or(Boundary::Frame)?;
+        if protocol == Protocol::V3 {
+            return Self::decode_v3(bytes, source_len, false);
+        }
         if source_len > protocol.source_max()
             || bytes.len() != SUCCESS_BYTES
             || bytes[4..8] != [0; 4]
@@ -97,6 +184,9 @@ impl<'w> Wire<'w> {
     /// Diagnostic frames carry only OPA rows, never synthetic typed columns.
     fn decode_diagnostic(bytes: &'w [u8], source_len: usize) -> Result<Self, Boundary> {
         let protocol = Protocol::from_opa(bytes).ok_or(Boundary::Frame)?;
+        if protocol == Protocol::V3 {
+            return Self::decode_v3(bytes, source_len, true);
+        }
         if source_len > protocol.source_max()
             || bytes.len() != OPA_BYTES + 16
             || bytes[4..8] != [0; 4]
@@ -124,7 +214,14 @@ impl<'w> Wire<'w> {
         Ok(wire)
     }
     fn word(self, column: usize, cell: usize) -> Result<i32, Boundary> {
-        let start = *COLUMN_STARTS.get(column).ok_or(Boundary::Frame)?;
+        let start = if self.protocol() == Protocol::V3 {
+            if !(3..5).contains(&column) {
+                return Err(Boundary::Frame);
+            }
+            1324 + (column - 3) * 4 * CELLS
+        } else {
+            *COLUMN_STARTS.get(column).ok_or(Boundary::Frame)?
+        };
         if cell >= CELLS {
             return Err(Boundary::Frame);
         }
@@ -444,7 +541,30 @@ fn source_work_bound_for(protocol: Protocol) -> Result<u64, Boundary> {
         mul(r, add(b, 80)?)?,
         q,
     ];
-    terms.into_iter().try_fold(0u64, add)
+    let legacy_model = terms.into_iter().try_fold(0u64, add)?;
+    if protocol != Protocol::V3 {
+        return Ok(legacy_model);
+    }
+    // V3-only supplemental visits. Keep the seven-term legacy model and its
+    // concrete array/iterator unchanged. See v3-checked-import-resources.md.
+    // Every wide_cell call gets 24 units; decoding visits all five columns,
+    // and up to three Row::read calls per row each revisit five columns.
+    let wide_cells = mul(24, add(mul(5, c)?, mul(15, r)?)?)?;
+    // Raw header/span/reference checks before narrowing:64 per decoded cell
+    // and64 per subsequent row read, including type-directed checked endpoints.
+    let wide_rows = mul(64, add(c, mul(3, r)?)?)?;
+    // Two checked token endpoints per event (a deliberately loose upper bound).
+    let endpoints = mul(16, e)?;
+    // Version/start dispatch in each typed read, including inactive tails and
+    // resolution/semantic reads: two columns, at most C+R calls each.
+    let typed_dispatch = mul(32, add(c, r)?)?;
+    // Fixed decoder headers, first/source projections, dispatch and diagnostic
+    // four-u16 endpoint assembly; no source or row loops are hidden here.
+    let wide_extra = add(
+        512,
+        add(wide_cells, add(wide_rows, add(endpoints, typed_dispatch)?)?)?,
+    )?;
+    add(legacy_model, wide_extra)
 }
 
 fn denied_probe(
@@ -504,3 +624,6 @@ mod emit_failure_tests;
 
 #[cfg(test)]
 mod u8_resource_successor;
+
+#[cfg(test)]
+mod v3_tests;

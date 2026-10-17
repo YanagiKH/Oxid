@@ -51,9 +51,25 @@ struct Plan {
 }
 impl Plan {
     fn calculate(limits: IndexLimits, protocol: Protocol) -> Result<Self, Rejected> {
-        let fixed_bytes = leaf::outer_named_bytes()?
-            .checked_add(ast_compare::named_bytes()?)
+        match protocol {
+            Protocol::V1 | Protocol::V2 => Self::calculate_endpoint::<u8>(limits, protocol),
+            Protocol::V3 => Self::calculate_endpoint::<u16>(limits, protocol),
+        }
+    }
+    fn calculate_endpoint<E: ast_compare::Endpoint>(
+        limits: IndexLimits,
+        protocol: Protocol,
+    ) -> Result<Self, Rejected> {
+        let fixed_bytes = leaf::outer_named_bytes_for(protocol)?
+            .checked_add(ast_compare::named_bytes::<E>()?)
             .and_then(|n| n.checked_add(named_bytes()))
+            .and_then(|n| {
+                n.checked_add(if protocol == Protocol::V3 {
+                    wide_named_bytes()
+                } else {
+                    0
+                })
+            })
             .ok_or(Boundary::Overflow)?;
         let bytes = u64::try_from(fixed_bytes).map_err(|_| Boundary::Overflow)?;
         let prepaid_work = source_work_bound_for(protocol)?
@@ -149,6 +165,20 @@ fn execute(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<Infallible, Rejected> {
+    match Protocol::from_opa(observation).ok_or(Boundary::Frame)? {
+        Protocol::V1 | Protocol::V2 => {
+            execute_endpoint::<u8>(project, observation, limits, work, allocator)
+        }
+        Protocol::V3 => execute_endpoint::<u16>(project, observation, limits, work, allocator),
+    }
+}
+fn execute_endpoint<E: ast_compare::Endpoint>(
+    project: &ProjectSources,
+    observation: &[u8],
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<Infallible, Rejected> {
     let protocol = Protocol::from_opa(observation).unwrap_or(Protocol::V1);
     let plan = Plan::calculate(limits, protocol)?;
     let owner = SourceOwner::project(project);
@@ -160,7 +190,7 @@ fn execute(
     )
     .map_err(|_| Rejected::Budget)?;
     let bound = BoundObservation::bind_diagnostic(owner, source.text().as_bytes(), observation)?;
-    let _syntax = ast_compare::compare(&bound)?;
+    let _syntax = ast_compare::compare::<E>(&bound)?;
     // This existing Types-depth source facade selects genuine owned/scalar
     // resolution, including global-first and full-vector diagnostic ordering.
     // It never lowers, emits or runs anything. Successful checking invalidates
@@ -170,7 +200,13 @@ fn execute(
         Err(errors) => errors,
     };
     let first = errors.first().ok_or(Rejected::Mismatch)?;
-    if !matches_first(&observation[super::OPA_BYTES..], source, first) {
+    let header = &observation[protocol.opa_bytes()..];
+    let matches = if protocol == Protocol::V3 {
+        matches_first_v3(header, source, first)
+    } else {
+        matches_first(header, source, first)
+    };
+    if !matches {
         return Err(Rejected::Mismatch);
     }
     Err(Rejected::Confirmed(errors))
@@ -312,6 +348,151 @@ fn matches_first(header: &[u8], source: &SourceFile, first: &Diagnostic) -> bool
         14 => first.message == "assignment requires a mutable local",
         _ => false,
     }
+}
+
+fn matches_first_v3(header: &[u8], source: &SourceFile, first: &Diagnostic) -> bool {
+    if header.len() != 20 || !first.notes.is_empty() {
+        return false;
+    }
+    let kind = header[6];
+    let start = u16::from_le_bytes([header[7], header[8]]);
+    let end = u16::from_le_bytes([header[9], header[10]]);
+    let secondary_start = u16::from_le_bytes([header[11], header[12]]);
+    let secondary_end = u16::from_le_bytes([header[13], header[14]]);
+    let [label, expected, actual, nargs, argc] =
+        <[u8; 5]>::try_from(&header[15..]).expect("exact V3 diagnostic header");
+    if !(1..=14).contains(&kind)
+        || start >= end
+        || usize::from(end) > source.text().len()
+        || first.primary != Some(source.span(usize::from(start), usize::from(end)))
+    {
+        return false;
+    }
+    let label_text = match label {
+        0 => "",
+        1 => "first declared here",
+        2 => "function declared here",
+        3 => "binding declared here",
+        4 => "immutable binding declared here",
+        _ => return false,
+    };
+    if label == 0 {
+        if secondary_start != 0 || secondary_end != 0 || !first.secondary.is_empty() {
+            return false;
+        }
+    } else if secondary_start >= secondary_end
+        || usize::from(secondary_end) > source.text().len()
+        || first.secondary.len() != 1
+        || first.secondary[0].0
+            != source.span(usize::from(secondary_start), usize::from(secondary_end))
+        || first.secondary[0].1 != label_text
+    {
+        return false;
+    }
+    let valid_label = match kind {
+        3 => label == 1,
+        8 => matches!(label, 0 | 2 | 3),
+        10 => label == 2,
+        14 => label == 4,
+        _ => label == 0,
+    };
+    let valid_payload = match kind {
+        8 => {
+            (1..=3).contains(&expected)
+                && (1..=3).contains(&actual)
+                && expected != actual
+                && nargs == 0
+                && argc == 0
+        }
+        10 => {
+            expected == 0
+                && actual == 0
+                && nargs != argc
+                && usize::from(nargs) <= super::MAX_ROWS
+                && usize::from(argc) <= super::MAX_ROWS
+        }
+        _ => expected == 0 && actual == 0 && nargs == 0 && argc == 0,
+    };
+    if !valid_label || !valid_payload {
+        return false;
+    }
+    let code = match kind {
+        1 | 2 => "E0200",
+        3 => "E0201",
+        4 => "E0202",
+        5 => "E0203",
+        6 | 7 => "E0204",
+        8 | 9 => "E0300",
+        10 => "E0301",
+        11 => "E0302",
+        12 | 13 => "E0303",
+        14 => "E0304",
+        _ => return false,
+    };
+    if first.code != code || first.stage != if kind <= 7 { "resolve" } else { "type" } {
+        return false;
+    }
+    let name = &source.text()[usize::from(start)..usize::from(end)];
+    match kind {
+        1 => message(&first.message, format_args!("unknown local `{name}`")),
+        2 => message(
+            &first.message,
+            format_args!("unknown direct function `{name}`"),
+        ),
+        3 => first.message == "duplicate binding; shadowing is unavailable in typed-preview",
+        4 => message(
+            &first.message,
+            format_args!("unknown type `{}`", owned_diagnostic::name(name)),
+        ),
+        5 => first.message == "decimal literal is outside the i32 range [-2147483648, 2147483647]",
+        6 => first.message == "`break` requires an enclosing while in the same function",
+        7 => first.message == "`continue` requires an enclosing while in the same function",
+        8 => {
+            let types = ["", "bool", "i32", "()"];
+            message(
+                &first.message,
+                format_args!(
+                    "type mismatch: expected {}, found {}",
+                    types[usize::from(expected)],
+                    types[usize::from(actual)]
+                ),
+            )
+        }
+        9 => first.message == "equality requires i32 or bool operands, found ()",
+        10 => message(
+            &first.message,
+            format_args!("wrong argument count: expected {nargs}, found {argc}"),
+        ),
+        11 => first.message == "function requires an explicit terminal return",
+        12 => first.message == "statement after terminal return is unavailable in typed-preview",
+        13 => {
+            first.message
+                == "statement after terminal control transfer is unavailable in typed-preview"
+        }
+        14 => first.message == "assignment requires a mutable local",
+        _ => false,
+    }
+}
+
+// Separate complete wide projection/dispatch roles, leaving the legacy sum intact.
+fn wide_named_bytes() -> usize {
+    let roles = [
+        4 * size_of::<[u16; 4]>(),
+        4 * size_of::<[u8; 5]>(),
+        4 * size_of::<[u8; 2]>(),
+        3 * size_of::<(&[u8], &SourceFile, &Diagnostic)>(),
+        3 * size_of::<(
+            &ProjectSources,
+            &[u8],
+            IndexLimits,
+            &WorkMeter,
+            &mut Allocator,
+        )>(),
+        3 * size_of::<Result<Infallible, Rejected>>(),
+    ];
+    2 * std::mem::size_of_val(&roles)
+        + std::mem::size_of_val(&roles.into_iter())
+        + roles.into_iter().sum::<usize>()
 }
 
 #[cfg(test)]

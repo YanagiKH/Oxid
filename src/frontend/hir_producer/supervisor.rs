@@ -185,6 +185,16 @@ pub(super) fn run_versioned(
     let input_max = match protocol {
         Protocol::V1 => INPUT_MAX,
         Protocol::V2 => INPUT_MAX + 127,
+        // V3 has two closed roles. Refuse unknown output bounds before spawn,
+        // rather than letting parser input borrow the static consumer capacity.
+        Protocol::V3 => match output_limit {
+            1304 => 511,
+            2356 => 1821,
+            _ => {
+                captured.stop = Stop::InputLimit;
+                return captured;
+            }
+        },
     };
     if input.len() > input_max || output_limit > OUTPUT_MAX {
         captured.stop = Stop::InputLimit;
@@ -518,6 +528,72 @@ int main(void) {
         );
         assert_eq!(refused.stop, Stop::InputLimit);
         assert!(!refused.spawned);
+    }
+
+    #[test]
+    fn producer_supervisor_v3_closed_role_limits_are_checked_before_spawn() {
+        let absent = Path::new("/absent-v3-producer");
+        for (length, output_limit) in [(512, 1304), (1822, 2356), (0, 2607), (0, 1303), (0, 2355)] {
+            let captured = run_versioned(
+                absent,
+                Path::new("/tmp"),
+                &vec![0; length],
+                output_limit,
+                DEADLINE,
+                Protocol::V3,
+            );
+            assert_eq!(captured.stop, Stop::InputLimit);
+            assert!(!captured.spawned);
+        }
+        for (length, output_limit) in [(511, 1304), (1821, 2356)] {
+            let captured = run_versioned(
+                absent,
+                Path::new("/tmp"),
+                &vec![0; length],
+                output_limit,
+                DEADLINE,
+                Protocol::V3,
+            );
+            assert_eq!(captured.stop, Stop::Spawn);
+            assert!(!captured.spawned);
+        }
+    }
+
+    #[test]
+    fn producer_supervisor_v3_fragmented_transport_and_failure_caps() {
+        let f = Fixture::new(0);
+        for (length, limit) in [(511, 1304), (1821, 2356)] {
+            let input = vec![b'x'; length];
+            let output = run_versioned(
+                &f.0.join("helper"),
+                &f.0,
+                &input,
+                limit,
+                DEADLINE,
+                Protocol::V3,
+            );
+            assert_eq!(output.stop, Stop::Exited);
+            assert_eq!(output.code(), Some(0));
+            assert_eq!(output.input_written, length);
+            assert_eq!(&output.stdout[..output.stdout_len], input);
+        }
+        for (mode, expected) in [
+            (1, Stop::StdoutLimit),
+            (2, Stop::StderrLimit),
+            (3, Stop::Timeout),
+        ] {
+            let f = Fixture::new(mode);
+            let output = run_versioned(
+                &f.0.join("helper"),
+                &f.0,
+                b"",
+                1304,
+                Duration::from_millis(250),
+                Protocol::V3,
+            );
+            assert_eq!(output.stop, expected);
+            assert!(output.status.is_some());
+        }
     }
 
     #[test]
