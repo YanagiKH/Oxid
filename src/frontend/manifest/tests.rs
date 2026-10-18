@@ -45,13 +45,13 @@ fn manifest_cli_competition_and_rendering() {
             false,
         ),
         (
-            vec!["build", "--manifest-path="],
+            vec!["install", "--manifest-path="],
             "--manifest-path requires a value",
             false,
         ),
         (
-            vec!["build", "--manifest-path", "p.toml"],
-            "--manifest-path requires check or run",
+            vec!["install", "--manifest-path", "p.toml"],
+            "--manifest-path requires check, run or build",
             false,
         ),
         (
@@ -603,7 +603,7 @@ fn manifest_script_names_and_global_error_tier() {
     for (words, reason, json) in [
         (
             vec!["script", "--manifest-path", "./pkg/oxid.toml", "echo"],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             false,
         ),
         (
@@ -613,7 +613,7 @@ fn manifest_script_names_and_global_error_tier() {
                 "--message-format=json",
                 "echo",
             ],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             true,
         ),
         (
@@ -624,7 +624,7 @@ fn manifest_script_names_and_global_error_tier() {
                 "--message-format=json",
                 "echo",
             ],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             true,
         ),
         (
@@ -635,7 +635,7 @@ fn manifest_script_names_and_global_error_tier() {
                 "x",
                 "--message-format=json",
             ],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             false,
         ),
         (
@@ -645,7 +645,7 @@ fn manifest_script_names_and_global_error_tier() {
                 "--output",
                 "--message-format=json",
             ],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             false,
         ),
         (
@@ -754,7 +754,7 @@ fn manifest_local_options_do_not_hide_first_forwarded_word() {
         words.extend_from_slice(&local);
         words.extend(["echo", "--edition=bad", "--message-format=json"]);
         let (failure, json) = error(&words);
-        assert_eq!(failure.message(), "--manifest-path requires check or run");
+        assert_eq!(failure.message(), "--manifest-path requires check, run or build");
         assert!(!json, "{words:?}");
 
         // Without a selector, the opt-in scan must still defer unchanged.
@@ -1115,13 +1115,13 @@ fn manifest_run_selection_wording_and_summary_operation() {
                 "--manifest-path=missing.toml",
                 "--message-format=json",
             ],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             true,
             Operation::Check,
         ),
         (
             vec!["--manifest-path=p"],
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             false,
             Operation::Check,
         ),
@@ -1143,9 +1143,9 @@ fn manifest_run_selection_wording_and_summary_operation() {
         assert_eq!(actual_json, json, "{words:?}");
         assert_eq!(actual_operation, operation, "{words:?}");
     }
-    for command in ["build", "test", "package", "fmt", "new"] {
+    for command in ["install", "test", "package", "fmt", "new"] {
         let (message, _, operation) = refusal_with_operation(&[command, "--manifest-path=p"]);
-        assert_eq!(message, "--manifest-path requires check or run");
+        assert_eq!(message, "--manifest-path requires check, run or build");
         assert_eq!(operation, Operation::Check);
     }
     for flag in [

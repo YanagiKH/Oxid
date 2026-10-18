@@ -11,6 +11,15 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    ManifestBuild {
+        request: Box<[super::manifest::Request; 1]>,
+        entry_policy: EntryPolicy,
+    },
+    ManifestBuildError {
+        failure: super::manifest::Failure,
+        json: bool,
+        entry_policy: EntryPolicy,
+    },
     ManifestCheck {
         request: Box<[super::manifest::Request; 1]>,
     },

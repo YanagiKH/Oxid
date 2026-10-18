@@ -1,7 +1,8 @@
 //! Borrow-only opt-in gate. Calls without an eligible selector never allocate
 //! here and go unchanged to the old classifier, including Process error routing.
-//! Only `check` and `run` are eligible; RUN reuses the CHECK scan unchanged.
+//! CHECK/RUN retain their existing scan; explicit BUILD also admits entry mode.
 use super::{word, Allocator, Failure, Operation, Route};
+use crate::frontend::options::EntryPolicy;
 const OPTIONS: [&str; 10] = [
     "--manifest-path",
     "--edition",
@@ -52,6 +53,7 @@ pub(super) struct Scan<'a> {
     operands: bool,
     script_name: bool,
     separated: bool,
+    process: bool,
 }
 pub(super) fn select(args: &[String]) -> Option<Route> {
     select_with(args, Allocator::default())
@@ -116,7 +118,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 (2, Some(value)) => {
                     error.get_or_insert(Error::Format(value));
                 }
-                (3, Some("result" | "process")) => {}
+                (3, Some(value @ ("result" | "process"))) => scan.process = value == "process",
                 (3, Some(value)) => {
                     error.get_or_insert(Error::Entry(value));
                 }
@@ -149,23 +151,45 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     } else {
         Operation::Check
     };
-    let op = word(operation);
+    let build = scan.command == Some("build");
+    let entry_policy = if scan.process {
+        EntryPolicy::Process
+    } else {
+        EntryPolicy::Result
+    };
+    let op = if build { "build" } else { word(operation) };
     let message = if let Some(error) = scan.error.or(scan.local_error) {
-        Some(error.message(operation))
-    } else if !matches!(scan.command, Some("check" | "run")) {
-        Some("--manifest-path requires check or run".into())
+        Some(if build {
+            error.message(Operation::Compile)
+        } else {
+            error.message(operation)
+        })
+    } else if !matches!(scan.command, Some("check" | "run" | "build")) {
+        Some("--manifest-path requires check, run or build".into())
     } else if scan.before {
         Some(format!("--manifest-path must follow {op}"))
     } else if scan.edition == Some("legacy-0.9") {
         Some(format!("manifest {op} conflicts with --edition legacy-0.9"))
     } else if scan.operands {
         Some(format!("manifest {op} does not accept a source operand"))
-    } else if scan.seen & !7 != 0 {
-        Some(format!("manifest {op} does not support entry-mode, backend, target, output or experimental selectors"))
+    } else if scan.seen & !(if build { 15 } else { 7 }) != 0 {
+        Some(if build {
+            "manifest build does not support backend, target, output or experimental selectors"
+                .into()
+        } else {
+            format!("manifest {op} does not support entry-mode, backend, target, output or experimental selectors")
+        })
     } else {
         None
     };
     if let Some(message) = message {
+        if build {
+            return Some(Route::ManifestBuildError {
+                failure: Failure::Cli(message),
+                json: scan.json,
+                entry_policy,
+            });
+        }
         return Some(Route::ManifestError {
             failure: Failure::Cli(message),
             json: scan.json,
@@ -174,8 +198,17 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     }
     Some(
         match super::request(scan.path.unwrap_or(""), scan.json, allocator) {
+            Ok(request) if build => Route::ManifestBuild {
+                request,
+                entry_policy,
+            },
             Ok(request) if operation == Operation::Run => Route::ManifestRun { request },
             Ok(request) => Route::ManifestCheck { request },
+            Err(failure) if build => Route::ManifestBuildError {
+                failure,
+                json: scan.json,
+                entry_policy,
+            },
             Err(failure) => Route::ManifestError {
                 failure,
                 json: scan.json,

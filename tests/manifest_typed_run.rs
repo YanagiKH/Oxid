@@ -519,7 +519,7 @@ fn manifest_run_cli_precedence_and_summary_selection() {
             vec!["compile", "--manifest-path=missing.toml", "--message-format=json"],
             "E0001",
             "cli",
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             CHECK_FAILURE_SUMMARY,
         ),
         (
@@ -567,10 +567,10 @@ fn manifest_run_cli_precedence_and_summary_selection() {
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["build", "--manifest-path=example/oxid.toml", "--message-format=json"],
+            vec!["install", "--manifest-path=example/oxid.toml", "--message-format=json"],
             "E0001",
             "cli",
-            "--manifest-path requires check or run",
+            "--manifest-path requires check, run or build",
             CHECK_FAILURE_SUMMARY,
         ),
         (
@@ -708,7 +708,7 @@ fn manifest_run_boundaries_keep_existing_routes() {
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8(out.stderr)
         .unwrap()
-        .contains("--manifest-path requires check or run"));
+        .contains("--manifest-path requires check, run or build"));
 }
 
 #[test]

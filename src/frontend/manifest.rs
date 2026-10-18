@@ -1,4 +1,4 @@
-//! Explicit manifest CHECK/RUN transport. Independent limits/allocator; no legacy
+//! Explicit manifest selection. Independent limits/allocator; no legacy
 //! manifest/dependency machinery and no change to the source loader's ledger.
 use super::options::{Operation, Route};
 use std::{
@@ -67,11 +67,12 @@ fn capacity_failure() -> Failure {
 fn add(a: usize, b: usize) -> Result<usize, Failure> {
     a.checked_add(b).ok_or_else(overflow)
 }
-/// Diagnostic wording only; the operation is never retained in the carrier.
+/// Diagnostic wording only; Compile labels the explicit managed BUILD selection.
 fn word(operation: Operation) -> &'static str {
     match operation {
         Operation::Run => "run",
-        Operation::Check | Operation::Compile => "check",
+        Operation::Check => "check",
+        Operation::Compile => "build",
     }
 }
 
@@ -264,10 +265,35 @@ pub(super) fn select(args: &[String]) -> Option<Route> {
 
 /// Consumes the request and returns before source loading. Nothing but the joined
 /// String remains; raw/file/scratch/metadata/decoded/path/carrier owners are gone.
-pub(super) fn entry(
+pub(super) fn entry(request: Box<[Request; 1]>, operation: Operation) -> Result<String, Failure> {
+    with_manifest(request, |path, raw, allocator| {
+        prepare(path, raw, allocator, operation)
+    })
+}
+
+/// Build alone retains the selected lexical directory and name. No manifest is
+/// reread after source checking, and CHECK/RUN still discard optional metadata.
+pub(super) struct BuildSelection {
+    pub entry: String,
+    pub parent: String,
+    pub name: String,
+}
+pub(super) fn build(request: Box<[Request; 1]>) -> Result<BuildSelection, Failure> {
+    with_manifest(request, |path, raw, allocator| {
+        let mut name = String::new();
+        let entry = prepare_inner(path, raw, allocator, Operation::Compile, Some(&mut name))?;
+        Ok(BuildSelection {
+            entry,
+            parent: parent(path, cfg!(windows)).to_owned(),
+            name,
+        })
+    })
+}
+
+fn with_manifest<T>(
     mut request: Box<[Request; 1]>,
-    operation: Operation,
-) -> Result<String, Failure> {
+    consume: impl FnOnce(&str, &[u8], &mut Allocator) -> Result<T, Failure>,
+) -> Result<T, Failure> {
     let Request {
         path, allocator, ..
     } = &mut request[0];
@@ -293,7 +319,7 @@ pub(super) fn entry(
         ReadFailure::Io(e) => io_error(e),
         ReadFailure::Limit(e) => e,
     })?;
-    prepare(path, &raw, allocator, operation)
+    consume(path, &raw, allocator)
 }
 enum ReadFailure {
     Io(io::Error),
@@ -597,6 +623,15 @@ fn prepare(
     allocator: &mut Allocator,
     operation: Operation,
 ) -> Result<String, Failure> {
+    prepare_inner(path, raw, allocator, operation, None)
+}
+fn prepare_inner(
+    path: &str,
+    raw: &[u8],
+    allocator: &mut Allocator,
+    operation: Operation,
+    build_name: Option<&mut String>,
+) -> Result<String, Failure> {
     let text = std::str::from_utf8(raw)
         .map_err(|_| Failure::Utf8(format!("manifest `{path}` is not valid UTF-8")))?;
     let parsed = parse(path, text, operation)?;
@@ -642,6 +677,22 @@ fn prepare(
             "manifest decoded total exceeds 3072 bytes",
         ));
     }
+    if build_name.is_some() {
+        let field = parsed.fields[2]
+            .ok_or_else(|| Failure::Cli("manifest build requires [project].name".into()))?;
+        let mut position = 0;
+        let mut valid = (1..=64).contains(&field.decoded);
+        visit(text, field, |c| {
+            valid &= c.is_ascii_alphanumeric() || (position > 0 && matches!(c, '_' | '-'));
+            position += 1;
+            Ok(())
+        })?;
+        if !valid {
+            return Err(Failure::Cli(
+                "manifest build name must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}".into(),
+            ));
+        }
+    }
     let parent = parent(path, cfg!(windows));
     // parent already ends at a supplied separator or at a drive-relative colon.
     let joined_len = add(parent.len(), entry.decoded)?;
@@ -667,6 +718,9 @@ fn prepare(
     joined.push_str(&decoded[1]);
     if joined.len() != joined_len {
         return Err(Failure::Invariant);
+    }
+    if let Some(name) = build_name {
+        *name = std::mem::take(&mut decoded[2]);
     }
     Ok(joined)
 }

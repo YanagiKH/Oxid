@@ -14,6 +14,24 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::ManifestBuild {
+            request,
+            entry_policy,
+        } => Some(manifest_build(request, entry_policy)),
+        Route::ManifestBuildError {
+            failure,
+            json,
+            entry_policy,
+        } => {
+            let diagnostic = manifest_diagnostic(failure);
+            Some(report_build(
+                &SourceMap::new(),
+                vec![diagnostic],
+                json,
+                entry_policy,
+                None,
+            ))
+        }
         Route::ManifestError {
             failure,
             json,
@@ -109,6 +127,131 @@ fn manifest_file(request: Box<[super::manifest::Request; 1]>, operation: Operati
         Err(failure) => manifest_error(failure, json, operation),
     }
 }
+fn manifest_diagnostic(failure: super::manifest::Failure) -> Diagnostic {
+    let (code, stage) = failure.classification();
+    *Diagnostic::new(code, stage, failure.message(), None)
+}
+
+fn manifest_build(request: Box<[super::manifest::Request; 1]>, entry_policy: EntryPolicy) -> i32 {
+    let json = request[0].json;
+    let selection = match super::manifest::build(request) {
+        Ok(selection) => selection,
+        Err(failure) => {
+            return report_build(
+                &SourceMap::new(),
+                vec![manifest_diagnostic(failure)],
+                json,
+                entry_policy,
+                None,
+            )
+        }
+    };
+    // Match explicit Process compile host ordering, without terminal setup.
+    if entry_policy == EntryPolicy::Process && !oir::process::supported_host() {
+        return report_build(
+            &SourceMap::new(),
+            vec![*Diagnostic::new(
+                "E0608",
+                "oir-run",
+                "process execution requires Linux x86_64",
+                None,
+            )],
+            json,
+            entry_policy,
+            None,
+        );
+    }
+    let project = match ProjectSources::load_typed(&selection.entry, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report_build(
+                &failure.sources,
+                failure.diagnostics,
+                json,
+                entry_policy,
+                None,
+            )
+        }
+    };
+    let result = (|| {
+        let verified = check_loaded_project(&project)?;
+        let module = native_module(&verified, entry_policy).map_err(|e| vec![*e])?;
+        super::project_build::publish(&module, &selection, entry_policy).map_err(|e| vec![*e])
+    })();
+    match result {
+        Ok(output) => report_build(
+            project.sources(),
+            Vec::new(),
+            json,
+            entry_policy,
+            Some(output),
+        ),
+        Err(diagnostics) => report_build(project.sources(), diagnostics, json, entry_policy, None),
+    }
+}
+
+fn report_build(
+    sources: &SourceMap,
+    diagnostics: Vec<Diagnostic>,
+    json: bool,
+    entry_policy: EntryPolicy,
+    output: Option<String>,
+) -> i32 {
+    write_build_report(
+        sources,
+        &diagnostics,
+        json,
+        entry_policy,
+        output.as_deref(),
+        &mut std::io::stdout().lock(),
+        &mut std::io::stderr().lock(),
+    )
+}
+
+fn write_build_report(
+    sources: &SourceMap,
+    diagnostics: &[Diagnostic],
+    json: bool,
+    entry_policy: EntryPolicy,
+    published: Option<&str>,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> i32 {
+    let success = diagnostics.is_empty();
+    let mode = super::project_build::mode(entry_policy);
+    let written = (|| -> std::io::Result<()> {
+        for diagnostic in diagnostics {
+            if json {
+                writeln!(stdout, "{}", diagnostic.render_json(sources))?;
+            } else {
+                write!(stderr, "{}", diagnostic.render_human(sources))?;
+            }
+        }
+        if json {
+            writeln!(stdout, "{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"build-summary\",\"success\":{},\"errors\":{},\"output\":{},\"entry_mode\":{}}}", success, diagnostics.len(), published.filter(|_| success).map_or("null".into(), json_string), json_string(mode))?;
+        } else if let Some(path) = published.filter(|_| success) {
+            writeln!(
+                stdout,
+                "typed-preview native build ok: {}",
+                json_string(path)
+            )?;
+        }
+        stdout.flush()?;
+        stderr.flush()
+    })();
+    if let Err(error) = written {
+        let state = published.map_or("no executable was published".into(), |path| {
+            format!(
+                "executable already published at {}; previous artifact was not restored",
+                json_string(path)
+            )
+        });
+        let _ = writeln!(stderr, "error: build reporting failed: {error}; {state}");
+        return 1;
+    }
+    exit_status(diagnostics)
+}
+
 fn manifest_error(failure: super::manifest::Failure, json: bool, operation: Operation) -> i32 {
     let (code, stage) = failure.classification();
     report(
@@ -522,21 +665,7 @@ fn process_file_with_lexical(
             }
         }
     };
-    let executable = match project.syntax_flavor() {
-        SyntaxFlavor::OriginalSingleFile => {
-            let (source, ast) = project
-                .original_file()
-                .expect("original syntax retains one source file");
-            debug_assert!(!ast.tokens.is_empty());
-            oir::check_source(source, ast, project.sources())
-        }
-        SyntaxFlavor::ProjectSyntax => {
-            let limits = IndexLimits::default();
-            let work = WorkMeter::new(limits.work);
-            let mut allocator = Allocator::default();
-            oir::project::check_project_executable(&project, limits, &work, &mut allocator)
-        }
-    };
+    let executable = check_loaded_project(&project);
     if process_run {
         return match executable {
             Ok(verified) => match verified.run_process() {
@@ -555,6 +684,37 @@ fn process_file_with_lexical(
     process_loaded(&project, json, operation, output, executable)
 }
 
+fn check_loaded_project(
+    project: &ProjectSources,
+) -> Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>> {
+    match project.syntax_flavor() {
+        SyntaxFlavor::OriginalSingleFile => {
+            let (source, ast) = project
+                .original_file()
+                .expect("original syntax retains one source file");
+            debug_assert!(!ast.tokens.is_empty());
+            oir::check_source(source, ast, project.sources())
+        }
+        SyntaxFlavor::ProjectSyntax => {
+            let limits = IndexLimits::default();
+            let work = WorkMeter::new(limits.work);
+            let mut allocator = Allocator::default();
+            oir::project::check_project_executable(project, limits, &work, &mut allocator)
+        }
+    }
+}
+
+/// Emission only: no publication, reporting, terminal setup, or execution.
+fn native_module(
+    verified: &oir::CheckedSourceProgram<'_>,
+    entry_policy: EntryPolicy,
+) -> Result<String, Box<Diagnostic>> {
+    match entry_policy {
+        EntryPolicy::Result => verified.native_module(),
+        EntryPolicy::Process => verified.native_process_module(),
+    }
+}
+
 /// Shared post-load operation path for both original and project source syntax.
 fn process_loaded(
     project: &ProjectSources,
@@ -569,7 +729,7 @@ fn process_loaded(
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
-                let module = verified.native_module().map_err(|e| vec![*e])?;
+                let module = native_module(&verified, EntryPolicy::Result).map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
                 super::native::compile(&module, output).map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))
@@ -596,7 +756,7 @@ fn process_compile_loaded(
 ) -> i32 {
     let result = (|| {
         let verified = executable?;
-        let module = verified.native_process_module().map_err(|e| vec![*e])?;
+        let module = native_module(&verified, EntryPolicy::Process).map_err(|e| vec![*e])?;
         let output = output.expect("compile route validates output");
         super::native::compile(&module, output).map_err(|e| vec![*e])?;
         Ok(Summary::Compile(Some(output.to_string())))
@@ -663,5 +823,92 @@ mod tests {
             2
         );
         assert_eq!(check_summary(1, Some(7)), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}");
+    }
+}
+
+#[cfg(test)]
+mod build_reporting_tests {
+    use super::*;
+    #[test]
+    fn build_reporting_success_uses_final_output_and_one_summary() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            write_build_report(
+                &SourceMap::new(),
+                &[],
+                true,
+                EntryPolicy::Process,
+                Some(".oxid/typed-preview/process/app"),
+                &mut out,
+                &mut err
+            ),
+            0
+        );
+        assert!(err.is_empty());
+        assert_eq!(String::from_utf8(out).unwrap(), "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"build-summary\",\"success\":true,\"errors\":0,\"output\":\".oxid/typed-preview/process/app\",\"entry_mode\":\"process\"}\n");
+        let mut out = Vec::new();
+        assert_eq!(
+            write_build_report(
+                &SourceMap::new(),
+                &[],
+                false,
+                EntryPolicy::Result,
+                Some("output"),
+                &mut out,
+                &mut err
+            ),
+            0
+        );
+        assert_eq!(out, b"typed-preview native build ok: \"output\"\n");
+    }
+    #[test]
+    fn build_reporting_failure_after_publication_does_not_claim_rollback() {
+        struct Broken;
+        impl std::io::Write for Broken {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut err = Vec::new();
+        assert_eq!(
+            write_build_report(
+                &SourceMap::new(),
+                &[],
+                true,
+                EntryPolicy::Result,
+                Some("output"),
+                &mut Broken,
+                &mut err
+            ),
+            1
+        );
+        let text = String::from_utf8(err).unwrap();
+        assert!(text.contains("already published"));
+        assert!(text.contains("not restored"));
+    }
+    #[test]
+    fn build_reporting_internal_failure_keeps_exit_two_and_null_output() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let diagnostic = *Diagnostic::new("E0500", "oir-verify", "internal compiler error", None);
+        assert_eq!(
+            write_build_report(
+                &SourceMap::new(),
+                &[diagnostic],
+                true,
+                EntryPolicy::Result,
+                None,
+                &mut out,
+                &mut err
+            ),
+            2
+        );
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.contains("\"output\":null"));
     }
 }
