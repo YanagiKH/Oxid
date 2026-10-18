@@ -11,6 +11,9 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    TypedNew {
+        path: String,
+    },
     ManifestBuild {
         request: Box<[super::manifest::Request; 1]>,
         entry_policy: EntryPolicy,
@@ -25,6 +28,10 @@ pub enum Route {
     },
     ManifestRun {
         request: Box<[super::manifest::Request; 1]>,
+    },
+    ManifestNativeRun {
+        request: Box<[super::manifest::Request; 1]>,
+        entry_policy: EntryPolicy,
     },
     ManifestError {
         failure: super::manifest::Failure,
@@ -252,6 +259,38 @@ pub fn route(args: &[String]) -> Route {
     }
 }
 
+/// Edition and global-option validation have already completed without I/O.
+fn route_new(forwarded: Vec<String>, json: bool) -> Route {
+    let fail = |message: String| Route::Error {
+        message,
+        json,
+        operation: Operation::Check,
+    };
+    if json {
+        return fail("typed-preview new does not support --message-format=json".into());
+    }
+    let mut path = None;
+    let mut separated = false;
+    for argument in forwarded.into_iter().skip(1) {
+        if !separated && argument == "--" {
+            separated = true;
+            continue;
+        }
+        if !separated && argument.starts_with('-') {
+            return fail(format!(
+                "unsupported option for typed-preview new: {argument}"
+            ));
+        }
+        if argument.is_empty() || path.replace(argument).is_some() {
+            return fail("typed-preview new requires exactly one nonempty project path".into());
+        }
+    }
+    match path {
+        Some(path) => Route::TypedNew { path },
+        None => fail("typed-preview new requires exactly one nonempty project path".into()),
+    }
+}
+
 struct EntryOptionScan {
     policy: EntryPolicy,
     seen: bool,
@@ -463,12 +502,15 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     if forwarded.first().map(String::as_str) == Some("fmt") {
         return route_format(forwarded, json);
     }
+    if forwarded.first().map(String::as_str) == Some("new") {
+        return route_new(forwarded, json);
+    }
     let operation = match forwarded.first().map(String::as_str) {
         Some("check") => Operation::Check,
         Some("run") => Operation::Run,
         Some("compile") => Operation::Compile,
         _ => return Route::Error {
-            message: format!("edition `typed-preview` supports only `check`, explicit `run`, explicit native `compile`, and explicit `fmt`; command `{}` is unavailable",
+            message: format!("edition `typed-preview` supports only `check`, explicit `run`, explicit native `compile`, explicit `fmt`, and explicit `new`; command `{}` is unavailable",
                 forwarded.first().map(String::as_str).unwrap_or("<missing>")),
             json, operation: Operation::Check,
         },

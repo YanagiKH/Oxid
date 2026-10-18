@@ -36,6 +36,7 @@ impl Scratch {
             fs::write(path, bytes).unwrap();
             Ok(())
         })
+        .map(|artifact| artifact.path)
     }
 }
 impl Drop for Scratch {
@@ -43,7 +44,7 @@ impl Drop for Scratch {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-fn refused(error: Box<Diagnostic>, text: &str) {
+fn refused(error: &Diagnostic, text: &str) {
     assert_eq!(error.code, "E0710");
     assert!(error
         .render_human(&crate::frontend::source::SourceMap::new())
@@ -88,7 +89,7 @@ fn managed_build_rejects_unowned_files_symlinks_and_symlink_directories() {
         })
         .unwrap_err();
         refused(
-            err,
+            &err,
             if kind == "file" {
                 "unowned"
             } else {
@@ -107,14 +108,17 @@ fn managed_build_rejects_unowned_files_symlinks_and_symlink_directories() {
 fn managed_build_excludes_simultaneous_build_and_rejects_stale_stage() {
     let s = Scratch::new();
     publish_with(&s.selection(), EntryPolicy::Result, |path| {
-        refused(s.publish(b"concurrent").unwrap_err(), "another build");
+        refused(&s.publish(b"concurrent").unwrap_err(), "another build");
         fs::write(path, b"winner").unwrap();
         Ok(())
     })
     .unwrap();
     fs::create_dir(s.state().join("stage")).unwrap();
     fs::write(s.state().join("stage/partial"), b"interrupted").unwrap();
-    refused(s.publish(b"next").unwrap_err(), "interrupted build staging");
+    refused(
+        &s.publish(b"next").unwrap_err(),
+        "interrupted build staging",
+    );
     assert_eq!(fs::read(s.mode().join("app")).unwrap(), b"winner");
     fs::remove_dir_all(s.state().join("stage")).unwrap();
     s.publish(b"retry").unwrap();
@@ -129,7 +133,7 @@ fn managed_build_keeps_old_output_when_receipt_publication_fails() {
         fs::create_dir(s.state().join("next")).unwrap();
         Ok(())
     });
-    refused(result.unwrap_err(), "ownership receipt");
+    refused(&result.unwrap_err(), "ownership receipt");
     assert_eq!(fs::read(output).unwrap(), b"old");
 }
 #[test]
@@ -142,7 +146,7 @@ fn managed_build_detects_external_output_replacement() {
         fs::rename(s.0.join("external"), &output).unwrap();
         Ok(())
     });
-    refused(result.unwrap_err(), "unowned");
+    refused(&result.unwrap_err(), "unowned");
     assert_eq!(fs::read(output).unwrap(), b"external");
 }
 #[test]
@@ -153,7 +157,8 @@ fn managed_build_modes_have_separate_outputs_and_receipts() {
         fs::write(path, b"process").unwrap();
         Ok(())
     })
-    .unwrap();
+    .unwrap()
+    .path;
     assert_ne!(result, process);
     assert_eq!(fs::read(result).unwrap(), b"result");
     assert_eq!(fs::read(process).unwrap(), b"process");
@@ -193,10 +198,10 @@ fn managed_build_first_creator_initializes_despite_losing_lock() {
         0
     );
     assert!(!s.state().join("owner").exists());
-    refused(
-        linux::lock_state(&creator, true).unwrap_err(),
-        "another build",
-    );
+    let error = linux::lock_state(&creator, true)
+        .err()
+        .expect("creator loses lock");
+    refused(&error, "another build");
     // B sees the complete marker, even though A lost the lock and exits.
     drop(creator);
     linux::lock_state(&contender, false).unwrap();
@@ -218,11 +223,118 @@ fn managed_build_rejects_uninitialized_and_incomplete_markers() {
             panic!("unrecognized state must refuse before compilation")
         })
         .unwrap_err();
-        refused(error, "unrecognized managed build directory");
+        refused(&error, "unrecognized managed build directory");
         assert!(!s.state().join("stage").exists());
         assert!(!s.mode().join("app").exists());
         if let Some(name) = marker {
             assert_eq!(fs::read(s.state().join(name)).unwrap(), b"oxid managed");
         }
     }
+}
+
+// These handoff tests copy existing host ELF tools; they do not simulate LLVM
+// or claim that Oxid native compilation was exercised.
+#[test]
+fn managed_build_releases_lock_with_an_inherited_descriptor_still_open() {
+    let s = Scratch::new();
+    s.publish(b"old").unwrap();
+    let state = fs::File::open(s.state()).unwrap();
+    let lock = linux::lock_state(&state, false).unwrap();
+    let inherited = state.try_clone().unwrap();
+    refused(&s.publish(b"busy").unwrap_err(), "another build");
+    drop(lock);
+    drop(state);
+    s.publish(b"new").unwrap();
+    drop(inherited);
+    assert_eq!(fs::read(s.mode().join("app")).unwrap(), b"new");
+}
+
+#[cfg(target_arch = "x86_64")]
+fn host_artifact(s: &Scratch, tool: &str) -> Artifact {
+    publish_with(&s.selection(), EntryPolicy::Result, |path| {
+        fs::copy(tool, path).unwrap();
+        Ok(())
+    })
+    .unwrap()
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn native_run_artifact_survives_two_replacements_and_receipt_retirement() {
+    use std::os::unix::fs::MetadataExt;
+    let s = Scratch::new();
+    let first = host_artifact(&s, "/bin/true");
+    for _ in 0..2 {
+        let later = host_artifact(&s, "/bin/false");
+        assert_eq!(later.run().unwrap(), 1);
+    }
+    // No pathname still owns the first inode, including either receipt.
+    assert_eq!(first.executable.metadata().unwrap().nlink(), 0);
+    assert_ne!(
+        first.executable.metadata().unwrap().ino(),
+        fs::metadata(&first.path).unwrap().ino()
+    );
+    assert_eq!(first.run().unwrap(), 0);
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn native_run_artifact_command_keeps_raw_streams_cwd_and_cloexec() {
+    use std::{io::Write, os::fd::AsRawFd, process::Stdio};
+    let s = Scratch::new();
+    let artifact = host_artifact(&s, "/bin/sh");
+    let fd = artifact.executable.as_raw_fd();
+    assert_ne!(
+        unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC,
+        0
+    );
+    let mut command = artifact.command();
+    assert!(command.get_args().next().is_none());
+    assert!(command.get_current_dir().is_none());
+    // Supply test commands via -c so stdin contains application data alone.
+    let script = format!("test ! -e /proc/self/fd/{fd} || exit 99; read line; printf '%s\\n' \"$line\"; printf 'application stderr\\n' >&2; pwd; exit 7");
+    let mut child = command
+        .arg("-c")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"application stdin\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(
+        output.stdout,
+        format!(
+            "application stdin\n{}\n",
+            std::env::current_dir().unwrap().display()
+        )
+        .as_bytes()
+    );
+    assert_eq!(output.stderr, b"application stderr\n");
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn native_run_launch_failure_keeps_the_published_artifact() {
+    let s = Scratch::new();
+    let artifact = publish_with(&s.selection(), EntryPolicy::Result, |path| {
+        fs::write(path, b"not executable").unwrap();
+        Ok(())
+    })
+    .unwrap();
+    let path = artifact.path.clone();
+    let error = artifact.run().unwrap_err();
+    assert_eq!(error.code, "E0711");
+    let text = error.render_human(&crate::frontend::source::SourceMap::new());
+    assert!(text.contains("native project launch failed"));
+    assert!(text.contains("executable was published"));
+    assert!(text.contains("previous artifact was not restored"));
+    assert_eq!(fs::read(path).unwrap(), b"not executable");
 }

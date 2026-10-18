@@ -19,6 +19,7 @@ mod owned_diagnostic;
 mod parser;
 mod project;
 mod project_build;
+mod project_scaffold;
 mod source;
 mod typeck;
 pub use driver::dispatch;

@@ -1,9 +1,9 @@
 //! Borrow-only opt-in gate. Calls without an eligible selector never allocate
 //! here and go unchanged to the old classifier, including Process error routing.
-//! CHECK/RUN retain their existing scan; explicit BUILD also admits entry mode.
+//! Native RUN and BUILD admit entry mode; interpreter RUN keeps its old contract.
 use super::{word, Allocator, Failure, Operation, Route};
 use crate::frontend::options::EntryPolicy;
-const OPTIONS: [&str; 10] = [
+const OPTIONS: [&str; 11] = [
     "--manifest-path",
     "--edition",
     "--message-format",
@@ -14,6 +14,7 @@ const OPTIONS: [&str; 10] = [
     "--backend",
     "--target",
     "--output",
+    "--engine",
 ];
 #[derive(Clone, Copy)]
 enum Error<'a> {
@@ -22,6 +23,7 @@ enum Error<'a> {
     Edition(&'a str),
     Format(&'a str),
     Entry(&'a str),
+    Engine(&'a str),
     Unsupported(&'a str),
 }
 impl Error<'_> {
@@ -34,6 +36,7 @@ impl Error<'_> {
             }
             Self::Format(v) => format!("unknown --message-format `{v}`; expected text or json"),
             Self::Entry(v) => format!("unknown --entry-mode `{v}`; expected result or process"),
+            Self::Engine(v) => format!("unknown --engine `{v}`; expected interpreter or native"),
             Self::Unsupported(v) => {
                 format!("unsupported option for manifest {}: {v}", word(operation))
             }
@@ -54,6 +57,7 @@ pub(super) struct Scan<'a> {
     script_name: bool,
     separated: bool,
     process: bool,
+    native: bool,
 }
 pub(super) fn select(args: &[String]) -> Option<Route> {
     select_with(args, Allocator::default())
@@ -122,6 +126,10 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 (3, Some(value)) => {
                     error.get_or_insert(Error::Entry(value));
                 }
+                (10, Some(value @ ("interpreter" | "native"))) => scan.native = value == "native",
+                (10, Some(value)) => {
+                    error.get_or_insert(Error::Engine(value));
+                }
                 _ => {}
             }
         } else if scan.command.is_none() {
@@ -152,6 +160,8 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Operation::Check
     };
     let build = scan.command == Some("build");
+    let run = scan.command == Some("run");
+    let native_run = run && scan.native;
     let entry_policy = if scan.process {
         EntryPolicy::Process
     } else {
@@ -172,13 +182,21 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Some(format!("manifest {op} conflicts with --edition legacy-0.9"))
     } else if scan.operands {
         Some(format!("manifest {op} does not accept a source operand"))
-    } else if scan.seen & !(if build { 15 } else { 7 }) != 0 {
-        Some(if build {
-            "manifest build does not support backend, target, output or experimental selectors"
-                .into()
+    } else if !run && scan.seen & (1 << 10) != 0 {
+        Some("--engine is only supported by manifest run".into())
+    } else if scan.seen
+        & !((if build || native_run { 15 } else { 7 }) | (if run { 1 << 10 } else { 0 }))
+        != 0
+    {
+        Some(if build || native_run {
+            format!(
+                "manifest {op} does not support backend, target, output or experimental selectors"
+            )
         } else {
             format!("manifest {op} does not support entry-mode, backend, target, output or experimental selectors")
         })
+    } else if native_run && scan.json {
+        Some("native manifest run does not support --message-format=json".into())
     } else {
         None
     };
@@ -199,6 +217,10 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     Some(
         match super::request(scan.path.unwrap_or(""), scan.json, allocator) {
             Ok(request) if build => Route::ManifestBuild {
+                request,
+                entry_policy,
+            },
+            Ok(request) if native_run => Route::ManifestNativeRun {
                 request,
                 entry_policy,
             },

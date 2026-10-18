@@ -14,6 +14,67 @@
 //! opened without following symlinks and operations use held directory handles.
 use super::{diagnostic::Diagnostic, manifest::BuildSelection, options::EntryPolicy};
 
+/// The open executable pins this invocation's inode across later publications.
+/// Cooperating builds replace names, never the contents of published inodes.
+#[derive(Debug)]
+pub(super) struct Artifact {
+    pub path: String,
+    #[cfg(target_os = "linux")]
+    executable: std::fs::File,
+}
+impl Artifact {
+    fn run_error(&self, action: &str, error: impl std::fmt::Display) -> Box<Diagnostic> {
+        Diagnostic::new(
+            "E0711",
+            "project-run",
+            format!(
+            "{action}: {error}; executable was published at {}; previous artifact was not restored",
+            super::diagnostic::json_string(&self.path)
+        ),
+            None,
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    fn command(&self) -> std::process::Command {
+        use std::{
+            os::{fd::AsRawFd, unix::process::CommandExt},
+            process::{Command, Stdio},
+        };
+        // Keep self alive through spawn: exec resolves the pinned ELF before
+        // CLOEXEC closes the descriptor. No fallback to the mutable output path.
+        // Missing/inaccessible procfs is an explicit launch failure.
+        let mut command = Command::new(format!("/proc/self/fd/{}", self.executable.as_raw_fd()));
+        command
+            .arg0(&self.path)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        command
+    }
+
+    pub fn run(self) -> Result<i32, Box<Diagnostic>> {
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            let mut child = self
+                .command()
+                .spawn()
+                .map_err(|error| self.run_error("native project launch failed", error))?;
+            let status = child.wait().map_err(|error| {
+                self.run_error(
+                    "native project wait failed; application completion is unknown",
+                    error,
+                )
+            })?;
+            // Preserve normal application statuses. Match the existing subprocess
+            // convention for signal termination; do not install global handlers.
+            Ok(status.code().unwrap_or(1))
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        Err(self.run_error("native project launch failed", "requires Linux x86_64"))
+    }
+}
+
 pub(super) fn mode(policy: EntryPolicy) -> &'static str {
     match policy {
         EntryPolicy::Result => "result",
@@ -25,7 +86,7 @@ pub(super) fn publish(
     module: &str,
     selection: &BuildSelection,
     policy: EntryPolicy,
-) -> Result<String, Box<Diagnostic>> {
+) -> Result<Artifact, Box<Diagnostic>> {
     // Result compile historically reaches host validation after native emission.
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(Diagnostic::new(
@@ -181,7 +242,15 @@ mod linux {
             let _ = fs::remove_dir_all(format!("/proc/self/fd/{}/stage", self.0.as_raw_fd()));
         }
     }
-    pub(super) fn lock_state(state: &File, fresh: bool) -> Result<(), Box<Diagnostic>> {
+    pub(super) struct StateLock<'a>(&'a File);
+    impl Drop for StateLock<'_> {
+        fn drop(&mut self) {
+            // Release explicitly: a concurrent fork can briefly retain a copy
+            // of this open description even after our descriptor is closed.
+            unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+        }
+    }
+    pub(super) fn lock_state(state: &File, fresh: bool) -> Result<StateLock<'_>, Box<Diagnostic>> {
         // Only the mkdir winner initializes. Finish before contending for the
         // lock: another opener may already hold it and must not strand us.
         if fresh {
@@ -216,7 +285,8 @@ mod linux {
                 io(error)
             });
         }
-        // Kernel releases the lock on exit, including interruption. The directory
+        let lock = StateLock(state);
+        // Kernel also releases locks on exit. The directory
         // persists so later processes always lock the same inode. An opener that
         // arrives before marker publication refuses; it never initializes state.
         let mut marker = Vec::new();
@@ -234,13 +304,13 @@ mod linux {
                 "unrecognized managed build directory; inspect it before retrying",
             ));
         }
-        Ok(())
+        Ok(lock)
     }
     pub(super) fn publish_with(
         selection: &BuildSelection,
         policy: EntryPolicy,
         compile: impl FnOnce(&str) -> Result<(), Box<Diagnostic>>,
-    ) -> Result<String, Box<Diagnostic>> {
+    ) -> Result<Artifact, Box<Diagnostic>> {
         let parent = if selection.parent.is_empty() {
             "."
         } else {
@@ -255,7 +325,7 @@ mod linux {
         let state_name = format!(".{}.build", selection.name);
         let fresh = mkdir(&root, &state_name)?;
         let state = open(&root, &state_name, libc::O_RDONLY | libc::O_DIRECTORY)?;
-        lock_state(&state, fresh)?;
+        let _lock = lock_state(&state, fresh)?;
         let old = validate_output(&root, &selection.name, &state)?;
         // Normalize a previous committed next receipt before reusing that slot.
         if let (Some(old), Some(next)) = (&old, receipt(&state, "next")?) {
@@ -275,6 +345,9 @@ mod linux {
                 "native compiler did not produce a regular staged executable",
             ));
         }
+        // Acquire before the commit point while the stage is private and locked.
+        // Failure leaves the old output intact; the descriptor outlives all names.
+        let executable = open(&stage, "executable", libc::O_RDONLY)?;
         let now = validate_output(&root, &selection.name, &state)?;
         if match (&old, &now) {
             (None, None) => false,
@@ -304,12 +377,15 @@ mod linux {
         // The only commit point. Every failure above leaves old output bytes intact.
         // next already owns the new inode; nothing fallible is required afterward.
         rename(&stage, "executable", &root, &selection.name)?;
-        Ok(format!(
-            "{}.oxid/typed-preview/{}/{}",
-            selection.parent,
-            mode(policy),
-            selection.name
-        ))
+        Ok(Artifact {
+            executable,
+            path: format!(
+                "{}.oxid/typed-preview/{}/{}",
+                selection.parent,
+                mode(policy),
+                selection.name
+            ),
+        })
     }
 }
 

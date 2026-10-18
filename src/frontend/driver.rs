@@ -14,6 +14,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::TypedNew { path } => Some(scaffold_project(&path)),
         Route::ManifestBuild {
             request,
             entry_policy,
@@ -39,6 +40,10 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         } => Some(manifest_error(failure, json, operation)),
         Route::ManifestCheck { request } => Some(manifest_file(request, Operation::Check)),
         Route::ManifestRun { request } => Some(manifest_file(request, Operation::Run)),
+        Route::ManifestNativeRun {
+            request,
+            entry_policy,
+        } => Some(manifest_native_run(request, entry_policy)),
         Route::TypedLexical { request }
             if request[0].operation == Operation::Run
                 && request[0].entry_policy == EntryPolicy::Process
@@ -114,6 +119,34 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         )),
     }
 }
+/// Project creation is a command, not a source-checking operation.
+fn scaffold_project(path: &str) -> i32 {
+    use std::io::Write;
+    let result = super::project_scaffold::create(std::path::Path::new(path));
+    let error = match result {
+        Ok(()) => {
+            if writeln!(
+                std::io::stdout().lock(),
+                "created typed project: {}",
+                json_string(path)
+            )
+            .is_ok()
+            {
+                return 0;
+            }
+            format!("project {} was created, but its success message could not be written; files were retained", json_string(path))
+        }
+        Err(error) => error,
+    };
+    let diagnostic = Diagnostic::new("E0002", "project-new", error, None);
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "{}",
+        diagnostic.render_human(&SourceMap::new())
+    );
+    1
+}
+
 /// Explicit manifest CHECK or Result RUN: no output, provider, or Process policy.
 fn manifest_file(request: Box<[super::manifest::Request; 1]>, operation: Operation) -> i32 {
     let json = request[0].json;
@@ -132,62 +165,107 @@ fn manifest_diagnostic(failure: super::manifest::Failure) -> Diagnostic {
     *Diagnostic::new(code, stage, failure.message(), None)
 }
 
+/// One resolved project, shared by managed BUILD and native RUN. Edition selection
+/// stays in the manifest gate; entry policy is passed separately to emission.
+/// This seam never reports or executes, and retains existing compiler limits.
+struct NativeProject {
+    selection: super::manifest::BuildSelection,
+    project: ProjectSources,
+}
+impl NativeProject {
+    fn load(
+        request: Box<[super::manifest::Request; 1]>,
+        operation: Operation,
+        entry_policy: EntryPolicy,
+    ) -> Result<Self, (SourceMap, Vec<Diagnostic>)> {
+        let selection = super::manifest::build(request, operation)
+            .map_err(|failure| (SourceMap::new(), vec![manifest_diagnostic(failure)]))?;
+        // Match explicit Process compile host ordering, without terminal setup.
+        if entry_policy == EntryPolicy::Process && !oir::process::supported_host() {
+            return Err((
+                SourceMap::new(),
+                vec![*Diagnostic::new(
+                    "E0608",
+                    "oir-run",
+                    "process execution requires Linux x86_64",
+                    None,
+                )],
+            ));
+        }
+        let project = ProjectSources::load_typed(&selection.entry, ProjectLimits::default())
+            .map_err(|failure| (failure.sources, failure.diagnostics))?;
+        Ok(Self { selection, project })
+    }
+
+    fn build(
+        &self,
+        entry_policy: EntryPolicy,
+    ) -> Result<super::project_build::Artifact, Vec<Diagnostic>> {
+        let verified = check_loaded_project(&self.project)?;
+        let module = native_module(&verified, entry_policy).map_err(|e| vec![*e])?;
+        super::project_build::publish(&module, &self.selection, entry_policy).map_err(|e| vec![*e])
+    }
+}
+
 fn manifest_build(request: Box<[super::manifest::Request; 1]>, entry_policy: EntryPolicy) -> i32 {
     let json = request[0].json;
-    let selection = match super::manifest::build(request) {
-        Ok(selection) => selection,
-        Err(failure) => {
-            return report_build(
-                &SourceMap::new(),
-                vec![manifest_diagnostic(failure)],
-                json,
-                entry_policy,
-                None,
-            )
+    let session = match NativeProject::load(request, Operation::Compile, entry_policy) {
+        Ok(session) => session,
+        Err((sources, diagnostics)) => {
+            return report_build(&sources, diagnostics, json, entry_policy, None);
         }
     };
-    // Match explicit Process compile host ordering, without terminal setup.
-    if entry_policy == EntryPolicy::Process && !oir::process::supported_host() {
-        return report_build(
-            &SourceMap::new(),
-            vec![*Diagnostic::new(
-                "E0608",
-                "oir-run",
-                "process execution requires Linux x86_64",
-                None,
-            )],
-            json,
-            entry_policy,
-            None,
-        );
-    }
-    let project = match ProjectSources::load_typed(&selection.entry, ProjectLimits::default()) {
-        Ok(project) => project,
-        Err(failure) => {
-            return report_build(
-                &failure.sources,
-                failure.diagnostics,
-                json,
-                entry_policy,
-                None,
-            )
-        }
-    };
-    let result = (|| {
-        let verified = check_loaded_project(&project)?;
-        let module = native_module(&verified, entry_policy).map_err(|e| vec![*e])?;
-        super::project_build::publish(&module, &selection, entry_policy).map_err(|e| vec![*e])
-    })();
-    match result {
-        Ok(output) => report_build(
-            project.sources(),
+    match session.build(entry_policy) {
+        Ok(artifact) => report_build(
+            session.project.sources(),
             Vec::new(),
             json,
             entry_policy,
-            Some(output),
+            Some(artifact.path),
         ),
-        Err(diagnostics) => report_build(project.sources(), diagnostics, json, entry_policy, None),
+        Err(diagnostics) => report_build(
+            session.project.sources(),
+            diagnostics,
+            json,
+            entry_policy,
+            None,
+        ),
     }
+}
+
+fn manifest_native_run(
+    request: Box<[super::manifest::Request; 1]>,
+    entry_policy: EntryPolicy,
+) -> i32 {
+    let session = match NativeProject::load(request, Operation::Run, entry_policy) {
+        Ok(session) => session,
+        Err((sources, diagnostics)) => return report_native_run(&sources, &diagnostics),
+    };
+    let artifact = match session.build(entry_policy) {
+        Ok(artifact) => artifact,
+        Err(diagnostics) => return report_native_run(session.project.sources(), &diagnostics),
+    };
+    // Release compiler/source owners before spawning. The artifact owns its inode,
+    // independently of the managed path, receipts, and the released build lock.
+    drop(session);
+    match artifact.run() {
+        Ok(status) => status,
+        Err(diagnostic) => report_native_run(&SourceMap::new(), &[*diagnostic]),
+    }
+}
+
+fn report_native_run(sources: &SourceMap, diagnostics: &[Diagnostic]) -> i32 {
+    use std::io::Write;
+    let stderr = &mut std::io::stderr().lock();
+    for diagnostic in diagnostics {
+        if write!(stderr, "{}", diagnostic.render_human(sources)).is_err() {
+            return 1;
+        }
+    }
+    if stderr.flush().is_err() {
+        return 1;
+    }
+    exit_status(diagnostics)
 }
 
 fn report_build(
@@ -910,5 +988,47 @@ mod build_reporting_tests {
         let text = String::from_utf8(out).unwrap();
         assert_eq!(text.lines().count(), 2);
         assert!(text.contains("\"output\":null"));
+    }
+}
+
+#[cfg(test)]
+mod native_project_tests {
+    use super::*;
+    #[test]
+    fn native_project_session_retains_one_manifest_and_source_snapshot() {
+        let root = std::env::temp_dir().join(format!("oxid-native-session-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("oxid.toml");
+        std::fs::write(
+            &path,
+            "[project]\nedition=\"typed-preview\"\nentry=\"main.ox\"\nname=\"app\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("main.ox"), "fn main()->i32{return true;}").unwrap();
+        let args = vec![
+            "run".into(),
+            format!("--manifest-path={}", path.display()),
+            "--engine=native".into(),
+        ];
+        let Route::ManifestNativeRun {
+            request,
+            entry_policy,
+        } = options::route(&args)
+        else {
+            panic!("native route");
+        };
+        let session = NativeProject::load(request, Operation::Run, entry_policy)
+            .unwrap_or_else(|_| panic!("load snapshot"));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_file(root.join("main.ox")).unwrap();
+        let diagnostics = session.build(entry_policy).unwrap_err();
+        assert!(diagnostics.iter().any(|d| d.code == "E0300"));
+        assert!(diagnostics.iter().any(|d| d
+            .render_human(session.project.sources())
+            .contains("main.ox")));
+        assert_eq!(session.selection.name, "app");
+        assert_eq!(session.selection.parent, format!("{}/", root.display()));
+        assert!(!root.join(".oxid").exists());
+        std::fs::remove_dir(root).unwrap();
     }
 }

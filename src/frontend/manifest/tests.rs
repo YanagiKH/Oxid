@@ -754,7 +754,10 @@ fn manifest_local_options_do_not_hide_first_forwarded_word() {
         words.extend_from_slice(&local);
         words.extend(["echo", "--edition=bad", "--message-format=json"]);
         let (failure, json) = error(&words);
-        assert_eq!(failure.message(), "--manifest-path requires check, run or build");
+        assert_eq!(
+            failure.message(),
+            "--manifest-path requires check, run or build"
+        );
         assert!(!json, "{words:?}");
 
         // Without a selector, the opt-in scan must still defer unchanged.

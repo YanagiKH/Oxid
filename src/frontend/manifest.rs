@@ -271,17 +271,20 @@ pub(super) fn entry(request: Box<[Request; 1]>, operation: Operation) -> Result<
     })
 }
 
-/// Build alone retains the selected lexical directory and name. No manifest is
-/// reread after source checking, and CHECK/RUN still discard optional metadata.
+/// Managed native commands retain the selected lexical directory and name.
+/// No manifest is reread; CHECK/interpreter RUN discard optional metadata.
 pub(super) struct BuildSelection {
     pub entry: String,
     pub parent: String,
     pub name: String,
 }
-pub(super) fn build(request: Box<[Request; 1]>) -> Result<BuildSelection, Failure> {
+pub(super) fn build(
+    request: Box<[Request; 1]>,
+    operation: Operation,
+) -> Result<BuildSelection, Failure> {
     with_manifest(request, |path, raw, allocator| {
         let mut name = String::new();
-        let entry = prepare_inner(path, raw, allocator, Operation::Compile, Some(&mut name))?;
+        let entry = prepare_inner(path, raw, allocator, operation, Some(&mut name))?;
         Ok(BuildSelection {
             entry,
             parent: parent(path, cfg!(windows)).to_owned(),
@@ -290,6 +293,12 @@ pub(super) fn build(request: Box<[Request; 1]>) -> Result<BuildSelection, Failur
     })
 }
 
+// The route transfers its fallibly allocated carrier; retain that ownership
+// through manifest I/O rather than moving the payload onto the call frame.
+#[expect(
+    clippy::boxed_local,
+    reason = "retain the owned manifest route carrier through I/O"
+)]
 fn with_manifest<T>(
     mut request: Box<[Request; 1]>,
     consume: impl FnOnce(&str, &[u8], &mut Allocator) -> Result<T, Failure>,
@@ -300,17 +309,17 @@ fn with_manifest<T>(
     let io_error = |reason| Failure::Io(format!("cannot read manifest `{path}`: {reason}"));
     #[cfg(test)]
     tests::record(tests::Event::PathMetadata);
-    if !std::fs::metadata(&*path).map_err(&io_error)?.is_file() {
+    if !std::fs::metadata(&*path).map_err(io_error)?.is_file() {
         return Err(Failure::Io(format!(
             "manifest `{path}` must be a regular file"
         )));
     }
     #[cfg(test)]
     tests::record(tests::Event::Open);
-    let mut file = File::open(&*path).map_err(&io_error)?;
+    let mut file = File::open(&*path).map_err(io_error)?;
     #[cfg(test)]
     tests::record(tests::Event::HandleMetadata);
-    if !file.metadata().map_err(&io_error)?.is_file() {
+    if !file.metadata().map_err(io_error)?.is_file() {
         return Err(Failure::Io(format!(
             "manifest `{path}` must be a regular file"
         )));
@@ -678,8 +687,12 @@ fn prepare_inner(
         ));
     }
     if build_name.is_some() {
-        let field = parsed.fields[2]
-            .ok_or_else(|| Failure::Cli("manifest build requires [project].name".into()))?;
+        let field = parsed.fields[2].ok_or_else(|| {
+            Failure::Cli(format!(
+                "manifest {} requires [project].name",
+                word(operation)
+            ))
+        })?;
         let mut position = 0;
         let mut valid = (1..=64).contains(&field.decoded);
         visit(text, field, |c| {
@@ -688,9 +701,10 @@ fn prepare_inner(
             Ok(())
         })?;
         if !valid {
-            return Err(Failure::Cli(
-                "manifest build name must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}".into(),
-            ));
+            return Err(Failure::Cli(format!(
+                "manifest {} name must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}",
+                word(operation)
+            )));
         }
     }
     let parent = parent(path, cfg!(windows));
