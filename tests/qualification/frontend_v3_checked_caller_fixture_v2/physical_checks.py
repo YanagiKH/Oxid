@@ -72,6 +72,7 @@ class RootAnchor:
     identity: tuple
     chain: tuple
     directories: tuple = ()
+    files: tuple = ()
 
 
 # Private synchronous instrumentation; never available as a consumer operation.
@@ -136,6 +137,7 @@ def read_regular(root_anchor, relative_components, expected_file):
     body = None
     file_fd = None
     before = None
+    baseline = None
     parent_fd = root_anchor.fd
     try:
         check_anchor(root_anchor)
@@ -154,11 +156,15 @@ def read_regular(root_anchor, relative_components, expected_file):
         pre = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
         _observe('pre', info=pre, parent_fd=parent_fd, name=name)
         before = file_identity(pre)
+        admitted_files = dict(root_anchor.files)
+        need(relative_components in admitted_files, 'file baseline was not established')
+        baseline = admitted_files[relative_components]
+        need(before == baseline, 'admitted file identity changed')
         need(stat.S_IMODE(pre.st_mode) == expected_file.permission_mode and pre.st_size == expected_file.bytes,
              'file differs from expected mode/size')
         file_fd = os.open(name, flags(), dir_fd=parent_fd); opened.append(file_fd)
         info = os.fstat(file_fd); _observe('fd_before', info=info, fd=file_fd)
-        need(file_identity(info) == before, 'file changed before body read')
+        need(file_identity(info) == before == baseline, 'file changed before body read')
         chunks, remaining = [], expected_file.bytes
         while remaining:
             chunk = os.read(file_fd, min(65536, remaining))
@@ -173,14 +179,14 @@ def read_regular(root_anchor, relative_components, expected_file):
         if file_fd is not None:
             try:
                 info = os.fstat(file_fd); _observe('fd_after', info=info, fd=file_fd)
-                need(file_identity(info) == before, 'file changed after body read')
+                need(file_identity(info) == before == baseline, 'file changed after body read')
             except BaseException as error:
                 errors.append(error)
         if before is not None:
             try:
                 info = os.stat(relative_components[-1], dir_fd=parent_fd, follow_symlinks=False)
                 _observe('post', info=info, parent_fd=parent_fd, name=relative_components[-1])
-                need(file_identity(info) == before, 'original file name changed')
+                need(file_identity(info) == before == baseline, 'original file name changed')
             except BaseException as error:
                 errors.append(error)
         for parent, part, child, identity in reversed(parents):

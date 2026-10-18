@@ -146,3 +146,36 @@ success in both isolated normal and optimized Python children. Its production
 watchdog is 60 seconds. A separate trusted direct-child test waits at most ten
 seconds for readiness before testing a one-second timeout, and checks diagnostic
 retention, termination and reaping. It does not claim process-group guarantees.
+
+## File identity continuity at defined observations
+
+Initial metadata admission records each validated regular file's identity once:
+(st_dev, st_ino, st_mode, st_nlink, st_uid, st_gid, st_size, st_mtime_ns,
+st_ctime_ns), exactly as returned by physical_checks.file_identity. Mode, size,
+regular-file type and single-link validation precede establishment. These
+baselines are retained by original relative path and frozen into RootAnchor.files
+before initial body reads. Later metadata and final seals compare against them;
+they never adopt a replacement identity. Successful seals retain path, baseline
+identity and body digest. Partial initial failures retain every established
+baseline, the complete expected row roster and the original admission failure.
+An unestablished file baseline is an explicit refusal in later checks, not an
+invitation to establish one during finalization.
+
+The local reader requires its descriptor-relative pre-open identity to match
+that initial baseline before body reading. Its fd-before, fd-after and original
+name postchecks compare against both the pre-open observation and the baseline.
+Baseline refusal still attempts applicable name/ancestor/root postchecks and
+resource closure; cancellation and other errors remain preserved. Caller
+metadata checks before and after seals also compare the retained baseline.
+This covers persistent replacements between those defined observations,
+including after initial sealing but before view construction, and after the
+view's final layout check. It is not continuous monitoring or universal ABA
+detection: changes that leave no distinguishable state at any defined
+observation are outside the claim, as is concurrent hostile filesystem mutation.
+
+Standalone reader tests establish identities from completed fixtures before
+reading; an empty-file case starts with a fresh empty fixture. The 42 named
+fixture controls and hosted wrapper roster are unchanged. Replacement subcases
+exercise both the source helper and unconsumed outer sibling with unchanged
+bytes and mode, while verifying refusal, replacement read counts and cleanup
+outside the operation's expected-error handling.

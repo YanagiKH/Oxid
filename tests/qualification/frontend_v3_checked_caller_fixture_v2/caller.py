@@ -159,6 +159,7 @@ class _Scope:
     def __init__(self, root, rows, anchor):
         self.root, self.rows, self.anchor = root, rows, anchor
         self.directory_ids = {(): anchor.identity}
+        self.file_ids = {}
         self.initial = None
 
 
@@ -179,8 +180,12 @@ def _metadata(scope, *, establish=False):
             expected = frozenset(p[-1] for p in index if p and p[:-1] == row.path)
             pc.need(names == expected, 'scope directory membership changed')
         else:
-            pc.file_identity(info)
+            identity = pc.file_identity(info)
             pc.need(info.st_size == row.expected.bytes, 'scope file size changed')
+            if establish and row.path not in scope.file_ids:
+                scope.file_ids[row.path] = identity
+            pc.need(row.path in scope.file_ids, 'file baseline was not established')
+            pc.need(identity == scope.file_ids[row.path], 'scope file identity changed')
     pc.check_anchor(scope.anchor)
 
 
@@ -191,13 +196,14 @@ def _seal(scope, *, initial=False):
     except BaseException as error:
         errors.append(error)
     if initial:
-        scope.anchor = replace(scope.anchor, directories=tuple(sorted(scope.directory_ids.items())))
+        scope.anchor = replace(scope.anchor, directories=tuple(sorted(scope.directory_ids.items())),
+                               files=tuple(sorted(scope.file_ids.items())))
     # Every expected body is attempted, including when an earlier body failed.
     for row in scope.rows:
         if row.kind == 'file':
             try:
                 body = pc.read_regular(scope.anchor, row.path, row.expected)
-                bodies.append((row.path, hashlib.sha256(body).hexdigest()))
+                bodies.append((row.path, dict(scope.anchor.files)[row.path], hashlib.sha256(body).hexdigest()))
             except BaseException as error:
                 errors.append(error)
     try:

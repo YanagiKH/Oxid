@@ -227,6 +227,49 @@ class CallerControls(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual({r.phase:r.status for r in error.fixture_result.finalization}['evidence_final'], 'passed')
 
+        fresh = CallerControls(methodName=self._testMethodName)
+        fresh.setUp()
+        try:
+            target = fresh.evidence / 'wide-span' / 'raw.stdout'
+            missing_inode = target.stat().st_ino
+            sibling_id = pc.file_identity((fresh.evidence / 'sibling').stat())
+            original = OSError('initial metadata identity refused')
+            failed, visits, snapshots, body_reads = [], [], [], []
+            actual_identity, actual_reader, actual_read = pc.file_identity, pc.read_regular, os.read
+            def identity(info):
+                if info.st_ino == missing_inode and not failed:
+                    failed.append(original)
+                    raise original
+                return actual_identity(info)
+            def reader(anchor, parts, expected):
+                visits.append((anchor.path, parts))
+                if anchor.path == str(fresh.evidence):
+                    snapshots.append(anchor.files)
+                return actual_reader(anchor, parts, expected)
+            def read(fd, count):
+                if os.fstat(fd).st_ino == missing_inode:
+                    body_reads.append(count)
+                return actual_read(fd, count)
+            with patch.object(pc, 'file_identity', identity), patch.object(pc, 'read_regular', reader), \
+                    patch.object(pc.os, 'read', read):
+                error = fresh.invoke_error()
+            self.assertIn(original, leaves(error))
+            self.assertEqual(error.fixture_failures[0][0], 'admission_evidence')
+            self.assertEqual(fresh.calls, [])
+            self.assertEqual(len(visits), 10)
+            self.assertEqual(len(snapshots), 8)
+            self.assertTrue(all(value == ((('sibling',), sibling_id),) for value in snapshots))
+            self.assertEqual(body_reads, [])
+            self.assertIn('file baseline was not established', str(leaves(error)))
+            statuses = {r.phase:r.status for r in error.fixture_result.finalization}
+            self.assertEqual(statuses['source_final'], 'passed')
+            self.assertEqual(statuses['evidence_final'], 'failed')
+            self.assertEqual(statuses['cleanup'], 'passed')
+            self.assertEqual(statuses['resource_close'], 'passed')
+            self.assertFalse(Path(fresh.owner.owned_root).exists())
+        finally:
+            fresh.doCleanups()
+
     def test_view_construction_failure_zero_admitted_views_with_full_finalization(self):
         views = []
         original = RuntimeError('construct refused')
@@ -245,6 +288,81 @@ class CallerControls(unittest.TestCase):
             return c.RAW_OUTCOME
         error = self.invoke_error(self.binding(raw=raw))
         self.assertIn('evidence_final', [label for label, _ in error.fixture_failures])
+
+        for scope in ('source', 'evidence'):
+            for stage in ('view_construct', 'view_admitted', 'extra_metadata',
+                          'initial_before', 'initial_after', 'final_before', 'final_after'):
+                with self.subTest(scope=scope, stage=stage):
+                    fresh = CallerControls(methodName=self._testMethodName)
+                    fresh.setUp()
+                    try:
+                        root = fresh.source if scope == 'source' else fresh.evidence
+                        parts = ('helper.py',) if scope == 'source' else ('sibling',)
+                        target = root.joinpath(*parts)
+                        original_id = pc.file_identity(target.stat())
+                        replacement = fresh.root / 'replacement'
+                        replacement.write_bytes(BODIES[parts]); replacement.chmod(0o600)
+                        replacement_id = pc.file_identity(replacement.stat())
+                        events, visits, replacement_reads, snapshots = [], [], [], []
+                        active = [None]
+                        swapped = [False]
+                        actual_reader, actual_read = pc.read_regular, os.read
+                        def swap():
+                            os.replace(replacement, target)
+                            swapped[0] = True
+                        def observe(phase, **values):
+                            active[0] = phase
+                            events.append(phase)
+                            if phase == stage:
+                                swap()
+                        def reader(anchor, path, expected):
+                            visits.append((anchor.path, path))
+                            match = anchor.path == str(root) and path == parts
+                            if match:
+                                snapshots.append(dict(anchor.files).get(parts))
+                            phase = scope + ('_initial' if stage.startswith('initial_') else '_final')
+                            inject = match and active[0] == phase and not swapped[0]
+                            if inject and stage.endswith('_before'):
+                                swap()
+                            body = actual_reader(anchor, path, expected)
+                            if inject and stage.endswith('_after'):
+                                swap()
+                            return body
+                        def read(fd, count):
+                            info = os.fstat(fd)
+                            if (info.st_dev, info.st_ino) == replacement_id[:2]:
+                                replacement_reads.append((fd, count))
+                            return actual_read(fd, count)
+                        with patch.object(c, '_observe', observe), patch.object(pc, 'read_regular', reader), \
+                                patch.object(pc.os, 'read', read):
+                            error = fresh.invoke_error()
+                        self.assertTrue(swapped[0])
+                        self.assertNotEqual(original_id[:2], replacement_id[:2])
+                        self.assertEqual(replacement_reads, [])
+                        self.assertTrue(snapshots)
+                        self.assertTrue(all(identity == original_id for identity in snapshots))
+                        expected_visits = 10 if stage.startswith('initial_') else 15
+                        if scope == 'source' and stage in ('view_construct', 'view_admitted'):
+                            expected_visits = 11 if stage == 'view_construct' else 10
+                        self.assertEqual(len(visits), expected_visits)
+                        self.assertEqual(visits[-5:], [(str(fresh.source), ('helper.py',))] +
+                                         [(str(fresh.evidence), row.path) for row in OUTER_ROWS if row.kind == 'file'])
+                        statuses = {r.phase:r.status for r in error.fixture_result.finalization}
+                        self.assertEqual(statuses[scope + '_final'], 'failed')
+                        self.assertEqual(statuses[('evidence' if scope == 'source' else 'source') + '_final'], 'passed')
+                        self.assertEqual(statuses['cleanup'], 'passed')
+                        self.assertEqual(statuses['resource_close'], 'passed')
+                        self.assertEqual(events.count('cleanup'), 1)
+                        self.assertEqual(events[-1], 'cleanup')
+                        self.assertEqual(error.fixture_result.state, 'CLOSED')
+                        self.assertFalse(Path(fresh.owner.owned_root).exists())
+                        self.assertEqual(target.read_bytes(), BODIES[parts])
+                        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+                        if stage.startswith('initial_'):
+                            self.assertEqual(fresh.calls, [])
+                            self.assertEqual(error.fixture_failures[0][0], 'admission_' + scope)
+                    finally:
+                        fresh.doCleanups()
 
     def test_membership_and_known_absence_mutations_detected(self):
         def raw(reads):
@@ -482,11 +600,12 @@ class PhysicalReaderControls(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='oxid-reader-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.body = bytes(range(251)) * 600
+        self.body = getattr(self, 'fixture_body', bytes(range(251)) * 600)
         self.path = self.root / 'body'
         self.path.write_bytes(self.body); self.path.chmod(0o600)
         self.expected = pc.ExpectedFile(0o600, len(self.body), hashlib.sha256(self.body).hexdigest())
         self.anchor = pc.open_anchor(str(self.root))
+        self.anchor = replace(self.anchor, files=((('body',), pc.file_identity(self.path.stat())),))
         self.addCleanup(os.close, self.anchor.fd)
 
     def read(self, expected=None):
@@ -573,18 +692,49 @@ class PhysicalReaderControls(unittest.TestCase):
         self.assertEqual(read.call_count, 0)
         self.assertEqual(opened.call_count, 0)
 
+        baseline = dict(self.anchor.files)[('body',)]
+        for changed_field in range(10):
+            with self.subTest(changed_field=changed_field):
+                altered = list(baseline)
+                if changed_field < 9:
+                    altered[changed_field] += 1
+                files = ((('body',), tuple(altered)),) if changed_field < 9 else ()
+                anchor = replace(self.anchor, files=files)
+                observations = []
+                with patch.object(pc.os, 'read', wraps=os.read) as read, \
+                        patch.object(pc, '_observe', lambda phase, **kw: observations.append(phase)), \
+                        self.assertRaises(BaseExceptionGroup) as caught:
+                    pc.read_regular(anchor, ('body',), self.expected)
+                self.assertEqual(read.call_count, 0)
+                self.assertEqual(observations, ['pre', 'post'])
+                self.assertIn('admitted file identity changed' if files else 'file baseline was not established',
+                              str(leaves(caught.exception)))
+        cancellation = c.FixtureCancellation('postcheck cancellation after baseline refusal')
+        def observe(phase, **kw):
+            if phase == 'post':
+                raise cancellation
+        with patch.object(pc, '_observe', observe), self.assertRaises(BaseExceptionGroup) as caught:
+            pc.read_regular(replace(self.anchor, files=()), ('body',), self.expected)
+        self.assertIn(cancellation, leaves(caught.exception))
+        self.assertIn('file baseline was not established', str(leaves(caught.exception)))
+
     def test_missing_platform_features_reject(self):
         with patch.object(pc.sys,'platform','win32'),self.assertRaises(pc.PhysicalReject):pc.supported()
         with patch.object(pc.os,'supports_fd',set()),self.assertRaises(pc.PhysicalReject):pc.supported()
 
     def test_empty_file_reads_only_one_eof_sentinel(self):
-        self.path.write_bytes(b'')
-        actual = os.read
-        counts = []
-        def read(fd,count):counts.append(count);return actual(fd,count)
-        with patch.object(pc.os,'read',read):
-            self.assertEqual(self.read(pc.ExpectedFile(0o600,0,hashlib.sha256(b'').hexdigest())),b'')
-        self.assertEqual(counts,[1])
+        fresh = PhysicalReaderControls(methodName=self._testMethodName)
+        fresh.fixture_body = b''
+        fresh.setUp()
+        try:
+            actual = os.read
+            counts = []
+            def read(fd,count):counts.append(count);return actual(fd,count)
+            with patch.object(pc.os,'read',read):
+                self.assertEqual(fresh.read(pc.ExpectedFile(0o600,0,hashlib.sha256(b'').hexdigest())),b'')
+            self.assertEqual(counts,[1])
+        finally:
+            fresh.doCleanups()
 
     def test_partial_anchor_traversal_closes_every_opened_fd(self):
         actual_open,actual_close=os.open,os.close
