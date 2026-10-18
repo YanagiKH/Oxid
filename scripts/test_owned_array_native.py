@@ -845,6 +845,10 @@ class PackageTests(unittest.TestCase):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     if not path.exists():
                         path.write_text('synthetic predecessor dependency, not executed\n')
+        for package in ('stdlib_feature_storage_v1', 'stdlib_feature_storage_activation_v3'):
+            shutil.copytree(source_repo/'tests/qualification'/package, repo/'tests/qualification'/package)
+        for name in ['docs/API.md', 'docs/MODULES.md', 'stdlib/numbers.ox', 'tests/legacy_modules.rs', 'tests/stdlib_numbers.rs']:
+            target=repo/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((source_repo/name).read_bytes())
         environment = {"PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"], "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
         for arguments in (["init", "-q"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Synthetic fixture"]):
             subprocess.run(["/usr/bin/git", "-C", str(repo), *arguments], env=environment, check=True, capture_output=True)

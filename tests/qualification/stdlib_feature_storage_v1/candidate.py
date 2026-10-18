@@ -1,0 +1,207 @@
+"""Fresh, finite accepted-main view; historical helpers execute at genuine paths.
+
+The view contains all accepted regular non-executable blobs, with the two
+unrelated executable entrypoints explicitly excluded. It is not a Git checkout.
+The selected source bodies MUST come from the exact two-source inverse.
+"""
+from contextlib import contextmanager
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+import threading
+import types
+
+import generation as g
+
+VIEW_NAME = g.ROOT + 'accepted-view-v1.json'
+PREFIX = g.ROOT + 'predecessor-v1/'
+EXCLUDED = ('install.sh', 'scripts/verify_repo.py')
+_LEASE = threading.Lock()
+
+
+# Fixed storage relocation, independent of any caller-supplied seal or mapping.
+_STRINGS = 'stdlib/strings.ox'
+_ARCHIVE = 'tests/qualification/stdlib_trim_storage_v1/archive/stdlib/strings.ox.data'
+_VIEW_PIN = (1023905, 'ddcf5e3c09cda020aca4f1b639d2a66d7357f843f130054800d20228606ad76a')
+_STRINGS_ROW = {
+    'path': 'stdlib/strings.ox', 'read_from': 'stdlib/strings.ox',
+    'bytes': 2345, 'mode': '100644',
+    'sha256': '6ecb6b4c96acd0e788bf49db9a480c930d4235e317af8ffc596bbe8868fb65fd',
+    'git_blob': '9f81e678fa63bd44b3387db2e1f06e2279b2d72f',
+}
+
+
+def _strings_archive(repo, row):
+    g.need(g.encoded(row) == g.encoded(_STRINGS_ROW), 'fixed historical strings row')
+    body = g.regular(repo, _ARCHIVE, limit=2345)
+    g.pin(body, (2345, _STRINGS_ROW['sha256']), 'fixed historical strings bytes')
+    g.need(g.gitid('blob', body) == _STRINGS_ROW['git_blob'], 'fixed historical strings blob')
+    return body
+
+
+# Fixed text relocation; the earlier strings relocation remains unchanged.
+_TEXT = 'stdlib/text.ox'
+_TEXT_ARCHIVE = 'tests/qualification/stdlib_text_case_v1/archive/stdlib/text.ox.data'
+_TEXT_ROW = {'bytes': 192, 'git_blob': 'c8bfe5052483e748422a5ef7b401b41da053743d', 'mode': '100644', 'path': 'stdlib/text.ox', 'read_from': 'stdlib/text.ox', 'sha256': 'db27438c3f467d3185805be4593700bc76f70fe124b174ce1b392fa0e4a99f5b'}
+
+def _text_archive(repo, row):
+    g.need(g.encoded(row) == g.encoded(_TEXT_ROW), 'fixed historical text row')
+    body = g.regular(repo, _TEXT_ARCHIVE, limit=_TEXT_ROW['bytes'])
+    g.pin(body, (_TEXT_ROW['bytes'], _TEXT_ROW['sha256']), 'fixed historical text bytes')
+    g.need(g.gitid('blob', body) == _TEXT_ROW['git_blob'], 'fixed historical text blob')
+    return body
+
+
+# One fixed test-body relocation; previous text/strings rules remain intact.
+_FIXTURE_TEST = 'scripts/test_verify_repo_fixture_data.py'
+_FIXTURE_ARCHIVE = 'tests/qualification/wide_span_fixture_storage_v1/archive/scripts/test_verify_repo_fixture_data.py.data'
+_FIXTURE_ROW = {'bytes': 56742, 'git_blob': '74e71a1a8e252bdfa426e214a0e2606c1445287d', 'mode': '100644', 'path': 'scripts/test_verify_repo_fixture_data.py', 'read_from': 'scripts/test_verify_repo_fixture_data.py', 'sha256': '623a6ac490d97c3e45132630f5a0f334d81e13493f8384d27bedf2956b3872c6'}
+
+def _fixture_archive(repo, row):
+    g.need(g.encoded(row) == g.encoded(_FIXTURE_ROW), 'fixed historical fixture-data test row')
+    body = g.regular(repo, _FIXTURE_ARCHIVE, limit=_FIXTURE_ROW['bytes'])
+    g.pin(body, (_FIXTURE_ROW['bytes'], _FIXTURE_ROW['sha256']), 'fixed historical fixture-data test bytes')
+    g.need(g.gitid('blob', body) == _FIXTURE_ROW['git_blob'], 'fixed historical fixture-data test blob')
+    return body
+
+
+# Four fixed historical storage routes; no current source authority.
+_FEATURE_ROWS = {'docs/API.md': {'bytes': 2358, 'git_blob': '1924416108c91d9d5d0bb312c2da13812d2d9dc9', 'mode': '100644', 'path': 'docs/API.md', 'read_from': 'docs/API.md', 'sha256': 'a022ce558db0032ae34716a0dfa18d52b30fe1e99dc664b50ac030e5f72315d8'}, 'docs/MODULES.md': {'bytes': 3249, 'git_blob': '8d943b4dc2d7349bb64c4088d94011969003abf0', 'mode': '100644', 'path': 'docs/MODULES.md', 'read_from': 'docs/MODULES.md', 'sha256': '2787a21a75d110724bb53c32693c46e3efc72e08ee0d7fbf8b20044020392da7'}, 'stdlib/numbers.ox': {'bytes': 315, 'git_blob': '5388b1f00daa76e5ad60c1fefa3f4a24aabbf5f8', 'mode': '100644', 'path': 'stdlib/numbers.ox', 'read_from': 'stdlib/numbers.ox', 'sha256': 'a8c0d74e2e8b7e7964122ce8c9ce8806334dda6b8c55cb55c75a5a5695b14b3d'}, 'tests/legacy_modules.rs': {'bytes': 7782, 'git_blob': '82abceb3cae2609bb8b102f975a8b3a689debc53', 'mode': '100644', 'path': 'tests/legacy_modules.rs', 'read_from': 'tests/legacy_modules.rs', 'sha256': '53cb238bba1626bd45868ea1e640cb7a3214c5474a744b5cec60a3cb1f9349f4'}}
+_FEATURE_ARCHIVE = 'tests/qualification/stdlib_feature_storage_v1/archive/'
+
+def _feature_archive(repo, row):
+    name = row.get("path")
+    g.need(name in _FEATURE_ROWS and g.encoded(row) == g.encoded(_FEATURE_ROWS[name]),
+           "fixed historical feature row")
+    expected = _FEATURE_ROWS[name]
+    body = g.regular(repo, _FEATURE_ARCHIVE + name + ".data", limit=expected["bytes"])
+    g.pin(body, (expected["bytes"], expected["sha256"]), "fixed historical feature bytes")
+    g.need(g.gitid("blob", body) == expected["git_blob"], "fixed historical feature blob")
+    return body
+
+
+def capture(repo, restored, descriptor):
+    g.need(not set(restored) & set(_FEATURE_ROWS), 'feature path cannot be restored source')
+    raw = g.regular(repo, VIEW_NAME)
+    g.pin(raw, _VIEW_PIN, 'immutable accepted-view descriptor')
+    g.need(_STRINGS not in restored, 'strings cannot be restored source')
+    g.need(_TEXT not in restored, 'text cannot be restored source')
+    g.need(_FIXTURE_TEST not in restored, 'fixture-data test cannot be restored source')
+    g.need(g.identity(VIEW_NAME, raw) == descriptor, 'fixed accepted-view descriptor')
+    value = json.loads(raw)
+    g.need(set(value) == {'schema', 'accepted_main', 'excluded_executables', 'files', 'logical_bytes'}
+           and value['schema'] == 'oxid-package-json-accepted-view-v1'
+           and value['accepted_main'] == g.MAIN and value['excluded_executables'] == list(EXCLUDED),
+           'accepted view provenance')
+    tree = g.verify_git(json.loads(g.regular(repo, g.ROOT + 'source-proof/accepted-main.json')),
+                        g.MAIN, 'refs/heads/main', 3417)
+    rows = g.rows_map(value['files'])
+    g.need(set(rows) == set(tree) - set(EXCLUDED), 'complete finite accepted view membership')
+    bodies = {}
+    for name, row in rows.items():
+        g.need(set(row) == {'path', 'bytes', 'sha256', 'mode', 'git_blob', 'read_from'}
+               and type(row['bytes']) is int and row['mode'] == tree[name]['mode'] == '100644',
+               'accepted view fields/mode')
+        if name == _STRINGS:
+            body = _strings_archive(repo, row)
+        elif name == _TEXT:
+            body = _text_archive(repo, row)
+        elif name == _FIXTURE_TEST:
+            body = _fixture_archive(repo, row)
+        elif name in _FEATURE_ROWS:
+            body = _feature_archive(repo, row)
+        elif name in restored:
+            g.need(row['read_from'] is None, 'selected body must be recovered by inverse')
+            body = restored[name]
+        else:
+            g.need(row['read_from'] in (name, PREFIX + name), 'unapproved accepted alias')
+            g.need(0 <= row['bytes'] <= 16 * 1024 * 1024, 'bounded accepted body size')
+            body = g.regular(repo, row['read_from'], limit=row['bytes'])
+        g.need(g.identity(name, body) == {k: row[k] for k in ('path', 'bytes', 'sha256')}
+               and g.gitid('blob', body) == row['git_blob'] == tree[name]['sha'],
+               'accepted view body: ' + name)
+        bodies[name] = body
+    g.need(sum(map(len, bodies.values())) == value['logical_bytes'], 'accepted view byte count')
+    return bodies
+
+
+def check(root, bodies):
+    expected_dirs = {p.as_posix() for name in bodies for p in Path(name).parents if str(p) != '.'}
+    found, dirs, pending = set(), set(), ['']
+    root_info = root.lstat()
+    g.need(stat.S_ISDIR(root_info.st_mode) and not root.is_symlink()
+           and not getattr(root_info, 'st_file_attributes', 0) & 0x400, 'accepted view root')
+    while pending:
+        parent = pending.pop()
+        with os.scandir(root / parent) as entries:
+            for entry in entries:
+                name = parent + '/' + entry.name if parent else entry.name
+                info = entry.stat(follow_symlinks=False)
+                g.need(not getattr(info, 'st_file_attributes', 0) & 0x400, 'accepted view reparse point')
+                if name in expected_dirs:
+                    g.need(stat.S_ISDIR(info.st_mode) and name not in dirs, 'accepted view directory')
+                    dirs.add(name); pending.append(name)
+                else:
+                    g.need(name in bodies and name not in found, 'unexpected accepted view member')
+                    g.need(g.regular(root, name, limit=len(bodies[name])) == bodies[name], 'changed accepted view member')
+                    found.add(name)
+    g.need(found == set(bodies) and dirs == expected_dirs, 'accepted view exact closure')
+
+
+@contextmanager
+def view(repo, restored, descriptor):
+    g.need(_LEASE.acquire(blocking=False), 'overlapping accepted predecessor view')
+    try:
+        with _view(repo, restored, descriptor) as root:
+            yield root
+    finally:
+        _LEASE.release()
+
+
+@contextmanager
+def _view(repo, restored, descriptor):
+    bodies = capture(repo, restored, descriptor)
+    parent = Path(tempfile.gettempdir()).resolve(strict=True)
+    with tempfile.TemporaryDirectory(prefix='oxid-package-json-predecessor-', dir=parent) as directory:
+        root = Path(directory) / 'repository'; root.mkdir()
+        for name, body in bodies.items():
+            target = root / name; target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open('xb') as stream:
+                stream.write(body)
+        check(root, bodies)
+        root_stamp = (root.stat().st_dev, root.stat().st_ino)
+        # Helpers have fixed historical import aliases. Restore all aliases that
+        # were actually replaced, before closing the view, even on exceptions.
+        modules = dict(sys.modules)
+        error = None
+        try:
+            yield root
+        except BaseException as primary:
+            error = primary
+            raise
+        finally:
+            for name, module in list(sys.modules.items()):
+                filename = getattr(module, '__file__', None)
+                if isinstance(filename, str) and Path(filename).absolute().is_relative_to(root):
+                    if name in modules:
+                        sys.modules[name] = modules[name]
+                    else:
+                        del sys.modules[name]
+            try:
+                g.need((root.lstat().st_dev, root.lstat().st_ino) == root_stamp, 'replaced predecessor root')
+                check(root, bodies)
+            except BaseException as preservation:
+                if error is not None:
+                    raise BaseExceptionGroup('operation and predecessor preservation failed', [error, preservation]) from None
+                raise
+
+
+def load(root, name, module_name):
+    raw = g.regular(root, name)
+    module = types.ModuleType(module_name)
+    module.__file__ = str(root / name)
+    exec(compile(raw, module.__file__, 'exec'), module.__dict__)
+    return module

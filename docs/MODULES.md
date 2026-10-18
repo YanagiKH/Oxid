@@ -26,6 +26,26 @@ Import hoisting can change binding availability as well as print order. If an
 imported module uses a variable initialized earlier by its importer, source
 execution can succeed while the compiled artifact reports an undefined variable.
 
+Imports also share global bindings and can replace builtins. In particular,
+[`stdlib/tables.ox`](API.md#record-keys-and-deprecated-tables) replaces native
+`keys(record)` with a zero-argument placeholder. Importing `records.ox` before
+or after tables does not prevent the collision in either execution route.
+
+Saving the builtin before importing tables is not a portable workaround:
+
+```oxid
+let saved_keys = keys;
+use "stdlib/tables.ox";
+print json_stringify(saved_keys({a: 1}));
+```
+
+Source execution prints `["a"]`. Compilation succeeds, but OXBC execution fails
+with ``function `keys` expected 0 arguments but received 1``: hoisting places the
+table definitions before the assignment to `saved_keys`. These are current
+legacy limitations, not intended v1.0 table semantics. The focused cases in
+[`tests/legacy_modules.rs`](../tests/legacy_modules.rs) characterize the collision
+and this route difference.
+
 Only top-level imports are recursively bundled. An import inside a function can
 still require its `.ox` file when the artifact runs, so moving the artifact alone
 can break that program. Source ranges do not guarantee preserved runtime module

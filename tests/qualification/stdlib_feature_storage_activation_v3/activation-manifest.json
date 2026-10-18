@@ -1,0 +1,132 @@
+{
+  "authority_issued": false,
+  "composition": "combined",
+  "outputs": [
+    {
+      "bytes": 20903,
+      "path": "scripts/test_lexer_current_ci.py",
+      "sha256": "ed412ef926631af68d17b6a339598bb34df13ac5b48275b4a264c58f6922931c"
+    },
+    {
+      "bytes": 150852,
+      "path": "scripts/test_owned_array_native.py",
+      "sha256": "d2a43331c08bf40bbdc55e14d3da6d3a9dcb07179b9704a7a873274b45ab43e8"
+    },
+    {
+      "bytes": 2190,
+      "path": "scripts/test_published_formatter_source.py",
+      "sha256": "81c46045c946e6a6c9ef1e5defc5072c13bf7d3b3da5f853408ae0f55171a6ba"
+    },
+    {
+      "bytes": 153664,
+      "path": "scripts/verify_owned_array_native.py",
+      "sha256": "a6115b187476e77d93525d88a87409bfa7863b589b0db30c7fc6256cf53fc156"
+    },
+    {
+      "bytes": 16690,
+      "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
+      "sha256": "c0dffaa45d0820eb3223e001a9fe2a4a30c2c3d3b304447578a7e2bb84fea27c"
+    },
+    {
+      "bytes": 6775,
+      "path": "tests/fixtures/typed_project_source_binding/run.py",
+      "sha256": "193e82e5b08ad394240fa5df531286f133e10d06941aa8e5c354b83387e879e9"
+    },
+    {
+      "bytes": 3493,
+      "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
+      "sha256": "845492033fab16127fbcb68d4da4b062653347a395a2f082ebcd45711ce8b740"
+    },
+    {
+      "bytes": 13746,
+      "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
+      "sha256": "61dfdcae5b05e8ad7152ab23eae3382febd6ca80818cf97c71dcf50f15a1ce2d"
+    },
+    {
+      "bytes": 507,
+      "path": "tests/qualification/package_json_current_v1/test_hosted.py",
+      "sha256": "4fdc5e11a7d63f89bb727bca5ae009e7f627e6cd15205bb41b82bcbb0c349605"
+    },
+    {
+      "bytes": 913,
+      "path": "tests/qualification/stdlib_feature_storage_activation_v3/hosted-derivation.json",
+      "sha256": "d064460eeeacb29095e410b3af7b98e9015ff4b1146ee2ac75dfd7f773fdcee1"
+    },
+    {
+      "bytes": 184125,
+      "path": "tests/qualification/stdlib_feature_storage_activation_v3/hosted_controls.py",
+      "sha256": "57da469df9fcb3399b7a6ebeaf6808641f14d1d5b7b3127fb0fd543b1d34efa0"
+    },
+    {
+      "bytes": 261946,
+      "path": "tests/qualification/stdlib_feature_storage_activation_v3/inputs-stdlib-feature-storage-v1.json",
+      "sha256": "496109cfcd21f034a8a073e2893154a7c3df0638c33981a1f609ce9674b6e235"
+    },
+    {
+      "bytes": 145624,
+      "path": "tests/qualification/stdlib_feature_storage_activation_v3/lifecycle-proof.json",
+      "sha256": "4584634688a3c69ab5f74c3510e9ccdcd3a80295e7cbe1fec76a2ec857ce1937"
+    },
+    {
+      "bytes": 5739,
+      "path": "tests/qualification/stdlib_feature_storage_activation_v3/lifecycle.py",
+      "sha256": "3718a518e82b0cb837d04098182f9c4afb8ab5004e0e79ccd350742bb0e5f22b"
+    },
+    {
+      "bytes": 529359,
+      "path": "tests/qualification/stdlib_feature_storage_activation_v3/parser-authority.json",
+      "sha256": "aae547854fab78012a38bf458950011b3b71a9619c0dc9b9dec29751bc487baf"
+    },
+    {
+      "bytes": 18427,
+      "path": "tests/qualification/unit4_ci/common.py",
+      "sha256": "456e98f6858ae4254eab294f1081aa2e7d9f33797e1bad4fcf3ffb98c6af1808"
+    },
+    {
+      "bytes": 261946,
+      "path": "tests/qualification/unit4_ci/inputs.json",
+      "sha256": "496109cfcd21f034a8a073e2893154a7c3df0638c33981a1f609ce9674b6e235"
+    },
+    {
+      "bytes": 192760,
+      "path": "tests/qualification/unit4_ci/test_integration.py",
+      "sha256": "88cd2a909eda821488819cdffc469f067f883f157b8278aaf004799a20ccd9ab"
+    },
+    {
+      "bytes": 26074,
+      "path": "tests/qualification/unit4_ci/test_scheduling.py",
+      "sha256": "d52478dd30a406313e990aebb47817e1785243caeef01f5aabbacb49bb7c96c9"
+    },
+    {
+      "bytes": 529359,
+      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "aae547854fab78012a38bf458950011b3b71a9619c0dc9b9dec29751bc487baf"
+    },
+    {
+      "bytes": 238733,
+      "path": "tests/qualification/unit4_parser_current/portable.py",
+      "sha256": "0383ea4bc90a137731937a119eb4044680745b68ece1959af3595541e739ebc7"
+    },
+    {
+      "bytes": 3482,
+      "path": "tests/qualification/unit4_parser_current/test_current.py",
+      "sha256": "bff5e9f928b58bbb8fe80b62e1b6cd8072cb198e24bd75c1f5697e14e7849eb7"
+    },
+    {
+      "bytes": 3491,
+      "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
+      "sha256": "7a31cc023f97217d6b9a65f6827f4004f3e9ba2f3f56eef5560623e67bc0024e"
+    },
+    {
+      "bytes": 2422,
+      "path": "tests/qualification/unit4_public_v3/authority.py",
+      "sha256": "2498be9aba4a899f8826c95000652ead1b2d45b9a37c9e65f5fbe7f2bdbe402b"
+    },
+    {
+      "bytes": 4512,
+      "path": "tests/qualification/unit4_public_v3/test_lexer_reservation.py",
+      "sha256": "a202c177b81c7b865ee0513ea55d01fc00a2cba9b48904c6b586b30fc6d2545d"
+    }
+  ],
+  "schema": "oxid-inactive-feature-overlay-v1"
+}

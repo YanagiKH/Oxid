@@ -1,7 +1,7 @@
 use "core.ox";
 
 fn is_even(n) {
-    return n == (n / 2) * 2;
+    return n % 2 == 0;
 }
 
 fn is_odd(n) {

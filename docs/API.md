@@ -24,6 +24,36 @@ user["visits"] = 1;
 - Web: `web_response`, `web_serve_once`
 - native ABI: `c_len`, `c_hash`, `cpp_len`, `cpp_hash`
 
+## Record keys and deprecated tables
+
+The native `keys(value)` accepts one record and returns a fresh array of its
+string keys in sorted order, rather than insertion order. An empty record yields
+`[]`. Importing `stdlib/records.ox` provides `record_keys(value)`, a wrapper around
+that builtin. `len(record)` counts fields. For example, `{z: 2, a: 1}` has keys
+`["a", "z"]` and length `2`. Key strings retain their case and Unicode characters.
+The `record_from_pairs` helper accepts a flat alternating array such as
+`["a", 1]`, not a nested pair array such as `[["a", 1]]`.
+
+`stdlib/tables.ox` is deprecated compatibility scaffolding. Its zero-argument
+`keys()` and `values()` currently return fresh empty arrays, and `entry_count(xs)`
+only calls `len(xs)`, including for strings and arbitrary arrays. These
+placeholders do not define a supported table API for v1.0. This deprecation
+changes neither their public signatures nor runtime behavior.
+
+Legacy imports share global bindings: importing `tables.ox` replaces native
+`keys` with its zero-argument function. Calls such as `keys(record)` and
+`record_keys(record)` then fail with an argument-count error. Importing
+`records.ox` afterward does not restore native `keys`; reversing the two imports
+also leaves the collision. Avoid importing tables when using record APIs. See
+[binding and packaging limits](MODULES.md#binding-and-packaging-limits) for the
+source/OXBC difference that also makes saving the builtin before import unsafe.
+
+Use native `keys(record)`, or `record_keys(record)` from `records.ox`, together
+with `len(record)` for record enumeration and counting. There is no native
+`values` function or supported values-projection contract yet. Replacement
+record-value and pair-sequence APIs remain deferred. This guidance applies to
+the legacy runtime and OXBC; it does not extend typed-preview or change text APIs.
+
 ## Network signatures
 
 ```text
