@@ -5191,9 +5191,9 @@
       "sha256": "aae547854fab78012a38bf458950011b3b71a9619c0dc9b9dec29751bc487baf"
     },
     {
-      "bytes": 31067,
+      "bytes": 34320,
       "path": "tests/qualification/stdlib_feature_storage_activation_v3/successor.py",
-      "sha256": "c4a989bfeacbef0bc17194f25eea6186f83efec374d2e805107869d06fa94b2c"
+      "sha256": "edc33537376fa135cddebbd04cd45b66e2efe5876cb0b978abfdbc52fe4ac327"
     },
     {
       "bytes": 12708,

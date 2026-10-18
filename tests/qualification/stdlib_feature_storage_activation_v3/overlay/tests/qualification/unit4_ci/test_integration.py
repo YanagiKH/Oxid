@@ -741,6 +741,7 @@ class PackageControls(unittest.TestCase):
         with self.assertRaisesRegex(q.Reject, 'fixed complete feature inventory'):
             q.verify_package(self.root, self.manifest)
         q.verify_package(REPO, q.read(REPO / 'tests/qualification/unit4_ci/inputs.json'))
+        self.check_final_inventory_rejection_cannot_mask_negative_checks()
 
     def test_coherently_bound_python_cache_is_rejected(self):
         for name in ('package/__pycache__/member.cpython-312.pyc', 'package/member.pyc', 'package/member.pyo'):
@@ -789,7 +790,7 @@ class PackageControls(unittest.TestCase):
         with self.assertRaisesRegex(q.Reject, '^missing/nonregular input:'): q.verify_package(self.root, self.manifest)
 
 
-    def test_final_inventory_rejection_cannot_mask_negative_checks(self):
+    def check_final_inventory_rejection_cannot_mask_negative_checks(self):
         # Inject the actual final-guard rejection in place of each intended
         # rejection. The nested test must fail its reason-specific assertion.
         cases = (
@@ -2507,7 +2508,8 @@ class ParserPreparationBoundaryControls(unittest.TestCase):
                     calls.append(timeout)
                     return {'status': 0, 'timed_out': False, 'stream_limit_exceeded': False,
                             'stdout': '', 'stderr': ''}
-                driver = gate.Driver(REPO, root, provenance, SimpleNamespace(process=process))
+                with patch.object(gate.time, 'monotonic', return_value=0.0):
+                    driver = gate.Driver(REPO, root, provenance, SimpleNamespace(process=process))
                 with patch.object(q, 'admit', return_value=provenance), \
                      patch.object(gate.time, 'monotonic', return_value=driver.start + elapsed):
                     if expected is None:
