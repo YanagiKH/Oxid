@@ -737,7 +737,10 @@ class PackageControls(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
-    def test_approved_package(self): q.verify_package(self.root, self.manifest)
+    def test_approved_package(self):
+        with self.assertRaisesRegex(q.Reject, 'fixed complete feature inventory'):
+            q.verify_package(self.root, self.manifest)
+        q.verify_package(REPO, q.read(REPO / 'tests/qualification/unit4_ci/inputs.json'))
 
     def test_coherently_bound_python_cache_is_rejected(self):
         for name in ('package/__pycache__/member.cpython-312.pyc', 'package/member.pyc', 'package/member.pyo'):
@@ -749,33 +752,33 @@ class PackageControls(unittest.TestCase):
                 row['path'] = name
                 manifest = {'closed_roots': ['package'],
                             'files': sorted(self.manifest['files'] + [row], key=lambda r: r['path'])}
-                with self.assertRaisesRegex(q.Reject, 'generated Python cache'):
+                with self.assertRaisesRegex(q.Reject, '^generated Python cache'):
                     q.verify_package(self.root, manifest)
                 path.unlink()
                 if path.parent.name == '__pycache__': path.parent.rmdir()
 
     def test_omitted_member(self):
         (self.root / 'package/member').unlink()
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^missing/nonregular input:'): q.verify_package(self.root, self.manifest)
 
     def test_changed_member(self):
         (self.root / 'package/member').write_bytes(b'changed!')
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^changed input:'): q.verify_package(self.root, self.manifest)
 
     def test_extra_member_and_directory(self):
         extra = self.root / 'package/extra'
         extra.mkdir()
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^extra component directory$'): q.verify_package(self.root, self.manifest)
         extra.rmdir(); extra.write_bytes(b'extra')
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^changed component membership: package$'): q.verify_package(self.root, self.manifest)
 
     def test_stale_manifest_identity(self):
         self.manifest['files'][0]['sha256'] = '0' * 64
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^changed input:'): q.verify_package(self.root, self.manifest)
 
     def test_duplicate_manifest_identity(self):
         self.manifest['files'].append(self.manifest['files'][0])
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^empty/duplicate/unordered package inventory$'): q.verify_package(self.root, self.manifest)
 
     def test_symlink_member(self):
         member = self.root / 'package/member'
@@ -783,7 +786,50 @@ class PackageControls(unittest.TestCase):
         (self.root / 'outside').write_bytes(b'approved')
         try: member.symlink_to(self.root / 'outside')
         except OSError: self.skipTest('host lacks symlink creation permission; production still rejects symlinks')
-        with self.assertRaises(q.Reject): q.verify_package(self.root, self.manifest)
+        with self.assertRaisesRegex(q.Reject, '^missing/nonregular input:'): q.verify_package(self.root, self.manifest)
+
+
+    def test_final_inventory_rejection_cannot_mask_negative_checks(self):
+        # Inject the actual final-guard rejection in place of each intended
+        # rejection. The nested test must fail its reason-specific assertion.
+        cases = (
+            ('test_omitted_member', 'missing/nonregular input:', 1),
+            ('test_changed_member', 'changed input:', 1),
+            ('test_extra_member_and_directory', 'extra component directory', 1),
+            ('test_extra_member_and_directory', 'changed component membership: package', 1),
+            ('test_stale_manifest_identity', 'changed input:', 1),
+            ('test_duplicate_manifest_identity', 'empty/duplicate/unordered package inventory', 1),
+            ('test_symlink_member', 'missing/nonregular input:', 1),
+            ('test_coherently_bound_python_cache_is_rejected', 'generated Python cache', 3),
+        )
+        clean = PackageControls('test_approved_package')
+        clean.setUp()
+        self.addCleanup(clean.tearDown)
+        original_need = q.need
+        for name, reason, count in cases:
+            with self.subTest(test=name, reason=reason):
+                hits = []
+                def substitute_final_guard(condition, message):
+                    if not condition and message.startswith(reason):
+                        hits.append(message)
+                        # This fixture passes all generic checks and reaches
+                        # the unchanged production fixed-inventory guard.
+                        q.verify_package(clean.root, clean.manifest)
+                        self.fail('synthetic fixture escaped final inventory guard')
+                    return original_need(condition, message)
+                result = unittest.TestResult()
+                with patch.object(q, 'need', substitute_final_guard):
+                    PackageControls(name).run(result)
+                if result.skipped:
+                    self.assertEqual(name, 'test_symlink_member')
+                    self.assertEqual(hits, [])
+                    continue
+                self.assertEqual(result.testsRun, 1)
+                self.assertEqual(result.errors, [])
+                self.assertEqual(len(hits), count)
+                self.assertEqual(len(result.failures), count)
+                for _, failure in result.failures:
+                    self.assertIn('does not match "fixed complete feature inventory"', failure)
 
 
 class CheckoutControls(unittest.TestCase):
