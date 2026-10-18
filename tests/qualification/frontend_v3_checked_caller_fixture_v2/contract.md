@@ -125,8 +125,10 @@ checks refuse symlink ancestors/files and hardlinked files. Each load captures
 bytes once, verifies their digest, and compiles that same captured value. This
 trusted synchronous harness is not a concurrent hostile-filesystem sandbox.
 
-The repository MIT notice is retained; separate recovered-component licensing
-provenance is unresolved, explicitly recorded, and publication is deferred.
+The project owner confirmed that the two recovered support components were
+created for Oxid and approved their public inclusion with the project. The
+existing repository MIT notice is retained unchanged. No historical creation
+transcript or separate historical license grant is claimed to have been recovered.
 The explicit wrapper is included in existing scripts/test_*.py discovery; no
 workflow or closed Unit4 roster is changed. Support packaging does not alter
 the reader or owner protocols or produce qualification evidence.

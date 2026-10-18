@@ -9,13 +9,14 @@ The caller and controls use two byte-identical reviewed dependencies under
 `support/`, pinned in `fixed-inputs.json`. `support/provenance.json` records their
 complete enclosing archive/member chain and exact hashes. These are recovered
 Oxid development source bytes, not recreated execution evidence. Archive
-identities document the retained byte chain; they do not establish originating
-task authorization or component license coverage.
+identities document the retained byte chain. The project owner confirmed that
+both components were created for Oxid and approved their public inclusion with
+the project. This confirmation does not mean a historical creation transcript
+was recovered.
 
-The repository retains its MIT LICENSE. Separate licensing provenance for the
-recovered components remains unresolved: their inspected component tarballs and
-source headers contain no separate license notice. This packaging does not assert
-MIT coverage for those bytes, and publication remains deferred.
+The repository's existing MIT LICENSE notice is retained unchanged. The inspected
+component archives and source headers contain no separate license notice; this
+record does not invent a separate historical license grant.
 
 ## Run the focused fixture controls
 
