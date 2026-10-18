@@ -75,15 +75,24 @@ fn assert_valid_object(output: &Output) {
 }
 
 fn assert_trailing_comma_rejected(output: &Output) {
+    assert_trailing_comma_rejected_at(output, 7);
+}
+
+fn assert_stdout(output: &Output, expected: &[u8]) {
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, expected);
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+fn assert_trailing_comma_rejected_at(output: &Output, offset: usize) {
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(output.stdout.is_empty(), "{output:?}");
     let diagnostic = std::str::from_utf8(&output.stderr).expect("UTF-8 diagnostic");
     assert!(diagnostic.starts_with("error: "), "{diagnostic}");
-    // Pin the current reason and ASCII offset, not environment-dependent paths.
-    assert!(
-        diagnostic.contains("trailing commas are not valid JSON at byte 7"),
-        "{diagnostic}"
-    );
+    // Pin the current reason and ASCII offset, not environment-dependent paths. The
+    // offset is the existing parser's index of the closing delimiter after whitespace.
+    let reason = format!("trailing commas are not valid JSON at byte {offset}");
+    assert!(diagnostic.trim_end().ends_with(&reason), "{diagnostic}");
 }
 
 #[test]
@@ -109,4 +118,70 @@ print json_decode("{\"a\":1,}");
     assert_trailing_comma_rejected(&project.command(&["run", "main.ox"]));
     project.compile();
     assert_trailing_comma_rejected(&project.command(&["run", "main.oxb"]));
+}
+
+#[test]
+fn json_decode_accepts_neighboring_valid_array_and_spaced_object_on_both_routes() {
+    let project = Project::new(
+        r#"use "stdlib/json.ox";
+print json_encode(json_decode("[1]"));
+print json_encode(json_decode("{\"a\":1 }"));
+"#,
+    );
+    let expected = b"[1]\n{\"a\":1}\n";
+    assert_stdout(&project.command(&["run", "main.ox"]), expected);
+    project.compile();
+    assert_stdout(&project.command(&["run", "main.oxb"]), expected);
+}
+
+#[test]
+fn json_decode_rejects_array_trailing_comma_on_both_routes() {
+    // `[1,]`: the closing `]` is byte 3.
+    let project = Project::new(
+        r#"use "stdlib/json.ox";
+print json_decode("[1,]");
+"#,
+    );
+    assert_trailing_comma_rejected_at(&project.command(&["run", "main.ox"]), 3);
+    project.compile();
+    assert_trailing_comma_rejected_at(&project.command(&["run", "main.oxb"]), 3);
+}
+
+#[test]
+fn json_decode_rejects_object_trailing_comma_before_whitespace_on_both_routes() {
+    // `{"a":1, }`: whitespace after the comma is skipped; the closing `}` is byte 8.
+    let project = Project::new(
+        r#"use "stdlib/json.ox";
+print json_decode("{\"a\":1, }");
+"#,
+    );
+    assert_trailing_comma_rejected_at(&project.command(&["run", "main.ox"]), 8);
+    project.compile();
+    assert_trailing_comma_rejected_at(&project.command(&["run", "main.oxb"]), 8);
+}
+
+#[test]
+fn json_decode_accepts_array_with_whitespace_before_close_on_both_routes() {
+    // `[1 ]`: positive neighbor of `[1, ]`; whitespace before `]` without a comma is valid.
+    let project = Project::new(
+        r#"use "stdlib/json.ox";
+print json_encode(json_decode("[1 ]"));
+"#,
+    );
+    assert_stdout(&project.command(&["run", "main.ox"]), b"[1]\n");
+    project.compile();
+    assert_stdout(&project.command(&["run", "main.oxb"]), b"[1]\n");
+}
+
+#[test]
+fn json_decode_rejects_array_trailing_comma_before_whitespace_on_both_routes() {
+    // `[1, ]`: whitespace after the comma is skipped; the closing `]` is byte 4.
+    let project = Project::new(
+        r#"use "stdlib/json.ox";
+print json_decode("[1, ]");
+"#,
+    );
+    assert_trailing_comma_rejected_at(&project.command(&["run", "main.ox"]), 4);
+    project.compile();
+    assert_trailing_comma_rejected_at(&project.command(&["run", "main.oxb"]), 4);
 }
