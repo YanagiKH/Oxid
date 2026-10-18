@@ -1,0 +1,21 @@
+{
+  "schema": "oxid-v3-local-fixture-fixed-inputs-v2",
+  "fixture_only": true,
+  "qualified": false,
+  "physical_checks_sha256": "86a9f82166b6c766b0ed051110fc294c47626e0b2f99e8cbd0eda1c16a690182",
+  "v5": {
+    "path": "support/sealed_read_view.py",
+    "sha256": "ba3cad72317bea5a0ef1177c35c548040ccdbafc4e74f70e76f92c04f58cd34f"
+  },
+  "core": {
+    "path": "support/run_hir_producer_v3_ci.py",
+    "sha256": "306d5ce9874412f45f63f052e4d1ed5a70377ea58d2e0a4ec00ba4e2370bf9aa"
+  },
+  "parent_contract_sha256": "4d6f28a458d72e63648559352f480a0176c0d047c0a60462c617df5321fe3a49",
+  "local_support_sha256": {
+    "caller.py": "ecb3aa4ee4fc93b980c44b1b82f3d55b5c15508e5019a8df29c43d808a84e357",
+    "physical_checks.py": "86a9f82166b6c766b0ed051110fc294c47626e0b2f99e8cbd0eda1c16a690182",
+    "fixture_owner.py": "a8f65ba56b4ba141f77c67672b35c76f317f2f9953a1e76867afc3bb30213570",
+    "test_caller.py": "5ed84c8120384d25fc4f127c01d221986b4e239a75670d7003f97529ac4f4370"
+  }
+}
