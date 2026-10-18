@@ -1,0 +1,61 @@
+{
+  "schema": "oxid-v3-fixture-support-provenance-v1",
+  "purpose": "Exact recovered source packaging; not historical execution evidence or qualification",
+  "components": [
+    {
+      "component": "v5",
+      "packaged_path": "support/sealed_read_view.py",
+      "bytes": 20144,
+      "sha256": "ba3cad72317bea5a0ef1177c35c548040ccdbafc4e74f70e76f92c04f58cd34f",
+      "enclosing_archives": [
+        {
+          "path": "F0C9LS7MS9M.zip",
+          "bytes": 951119,
+          "sha256": "73fa14103b65f0e35e0d8d64b27f294e5ec51ec71d8a4e4610878247c5f2db54"
+        },
+        {
+          "member": "ci-owner/index-plan-public-milestone-v1.tar.gz",
+          "bytes": 405056,
+          "sha256": "5021e93b4320739b8e6fade517002d52baaccf877d45dd88b413a08f617d26f7"
+        }
+      ],
+      "member": "sealed-read-view-v5/sealed_read_view.py",
+      "license_provenance": "Unresolved: no component license notice found in the inspected component tarball or source header. Repository MIT coverage is not asserted for these recovered bytes."
+    },
+    {
+      "component": "core",
+      "packaged_path": "support/run_hir_producer_v3_ci.py",
+      "bytes": 8732,
+      "sha256": "306d5ce9874412f45f63f052e4d1ed5a70377ea58d2e0a4ec00ba4e2370bf9aa",
+      "enclosing_archives": [
+        {
+          "path": "F0CA5JS4RRA.zip",
+          "bytes": 1120044,
+          "sha256": "b3bd4ab74595ba248f0f9f56e22cabd9b28c7639e9ab6cba035ca461b2370859"
+        },
+        {
+          "member": "ci-owner/reviewed-ci-components-20261017.zip",
+          "bytes": 68589,
+          "sha256": "6e20124f355fa04c825224809607787f4879d114710dd4589fec04c1df36de49"
+        },
+        {
+          "member": "runner-core-public-milestone-v2.tar.gz",
+          "bytes": 6542,
+          "sha256": "0724d4fd05b3fb0d717fbaa6aa7e66f2075c1a873db3a0e419ac115f07875a81"
+        }
+      ],
+      "member": "scripts/run_hir_producer_v3_ci.py",
+      "license_provenance": "Unresolved: no component license notice found in the inspected component tarball or source header. Repository MIT coverage is not asserted for these recovered bytes."
+    }
+  ],
+  "repository_license": {
+    "path": "LICENSE",
+    "repository": "YanagiKH/Oxid",
+    "revision": "cb546a2713c71c231242812475cadbdf2cef72aa",
+    "sha256": "afcda8b9200cadb3ec92eca2de491cf459cf8c0ca7922b35fb01a794ad0d0c72",
+    "notice": "MIT License; Copyright (c) 2026 Oxid Project",
+    "scope_note": "Known repository notice retained unchanged; component licensing provenance remains unresolved."
+  },
+  "publication": "Deferred pending resolution of component licensing provenance",
+  "origin_note": "Recovered Oxid project development archives. Archive identities establish the retained byte chain; originating task authorization and component license coverage are not established by these records."
+}
