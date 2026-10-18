@@ -63,7 +63,7 @@ def literal_source_pin(source, name, kind):
 
 # Named CI-only successor; historical workflow assertions use its pinned view.
 import types as _wide_types
-_wide_path = REPO / 'tests/qualification/wide_span_parser_ci_v1/successor.py'
+_wide_path = REPO / 'tests/qualification/stdlib_feature_storage_activation_v3/successor.py'
 _wide_ci = _wide_types.ModuleType('wide_ci_controls'); _wide_ci.__file__ = str(_wide_path)
 exec(compile(_wide_path.read_bytes(), str(_wide_path), 'exec'), _wide_ci.__dict__)
 

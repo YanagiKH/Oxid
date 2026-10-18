@@ -695,10 +695,13 @@ def source_members(repo, tracked):
                 "tests/qualification/stdlib_text_case_v1/",
                 "tests/qualification/wide_span_fixture_storage_v1/",
                 "tests/qualification/wide_span_parser_ci_v1/",
+                "tests/qualification/stdlib_feature_storage_v1/",
+                "tests/qualification/stdlib_feature_storage_activation_v3/",
                 "tests/fixtures/typed_project_source_binding_byte_storage_v1/",
                 "tests/qualification/unit2_u8_current/",
                 "tests/fixtures/typed_project_unit2_independent/",
                 "fixtures/typed-streaming-lexer/")
+    names.update(['docs/API.md', 'docs/MODULES.md', 'stdlib/numbers.ox', 'tests/legacy_modules.rs', 'tests/stdlib_numbers.rs'])
     selected_names = {name for name in tracked if name.startswith(prefixes)}
     actual_names = set()
     for prefix in prefixes:

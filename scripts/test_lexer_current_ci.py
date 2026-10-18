@@ -13,7 +13,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 # Named CI-only successor; historical workflow assertions use its pinned view.
 import types as _wide_types
-_wide_path = REPO / 'tests/qualification/wide_span_parser_ci_v1/successor.py'
+_wide_path = REPO / 'tests/qualification/stdlib_feature_storage_activation_v3/successor.py'
 _wide_ci = _wide_types.ModuleType('wide_ci_controls'); _wide_ci.__file__ = str(_wide_path)
 exec(compile(_wide_path.read_bytes(), str(_wide_path), 'exec'), _wide_ci.__dict__)
 
@@ -263,6 +263,8 @@ class CurrentCIActivationControls(unittest.TestCase):
                  'tests/qualification/stdlib_text_case_v1',
                  'tests/qualification/wide_span_fixture_storage_v1',
                  'tests/qualification/wide_span_parser_ci_v1',
+                 'tests/qualification/stdlib_feature_storage_v1',
+                 'tests/qualification/stdlib_feature_storage_activation_v3',
                  'tests/fixtures/typed_project_source_binding_byte_storage_v1',
                  'tests/qualification/unit2_u8_current',
                  'tests/fixtures/typed_project_unit2_independent',
@@ -278,6 +280,7 @@ class CurrentCIActivationControls(unittest.TestCase):
         successor = read(REPO / 'tests/qualification/package_json_current_v1/accepted-view-v1.json')
         dependencies.update(row['read_from'] for row in successor['files'] if row['read_from'] is not None)
         tracked.update({name: {} for name in dependencies})
+        tracked.update({name: {} for name in ['docs/API.md', 'docs/MODULES.md', 'stdlib/numbers.ox', 'tests/legacy_modules.rs', 'tests/stdlib_numbers.rs']})
         manifest, names = producer.source_members(REPO, tracked)
         self.assertTrue(dependencies <= set(names))
         self.assertTrue({p.relative_to(REPO).as_posix() for p in PUBLISHED.rglob('*') if p.is_file()} <= set(names))

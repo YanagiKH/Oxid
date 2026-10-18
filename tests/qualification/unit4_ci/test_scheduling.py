@@ -20,7 +20,7 @@ REPO = activation.REPO
 
 # Named CI-only successor; historical workflow assertions use its pinned view.
 import types as _wide_types
-_wide_path = REPO / 'tests/qualification/wide_span_parser_ci_v1/successor.py'
+_wide_path = REPO / 'tests/qualification/stdlib_feature_storage_activation_v3/successor.py'
 _wide_ci = _wide_types.ModuleType('wide_ci_controls'); _wide_ci.__file__ = str(_wide_path)
 exec(compile(_wide_path.read_bytes(), str(_wide_path), 'exec'), _wide_ci.__dict__)
 
@@ -354,7 +354,7 @@ class CheckoutSchedulingControls(unittest.TestCase):
         checked = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "
             "from pathlib import Path; sys.path.insert(0, 'tests/qualification/stdlib_trim_storage_v1'); "
             ""
-            "import types; p=Path('tests/qualification/wide_span_parser_ci_v1/successor.py').absolute(); m=types.ModuleType('wide_checkout_activation'); m.__file__=str(p); exec(compile(p.read_bytes(),str(p),'exec'),m.__dict__); m.fixture(Path.cwd()).assert_scheduling_outputs(); m.check_predecessor_outputs(Path.cwd()); m.verify_workflow(Path.cwd()); m.verify_inventory(Path.cwd())")
+            "import types; p=Path('tests/qualification/stdlib_feature_storage_activation_v3/successor.py').absolute(); m=types.ModuleType('wide_checkout_activation'); m.__file__=str(p); exec(compile(p.read_bytes(),str(p),'exec'),m.__dict__); m.fixture(Path.cwd()).assert_scheduling_outputs(); m.check_predecessor_outputs(Path.cwd()); m.verify_workflow(Path.cwd()); m.verify_inventory(Path.cwd())")
         self.assertEqual(checked.returncode, 0, checked.stderr)
         # A wrong expected tree must fail even if fetch itself succeeds.
         refused = self.command(repo, "import sys; sys.path.insert(0, 'tests/qualification/unit4_ci'); "

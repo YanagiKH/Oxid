@@ -1,0 +1,43 @@
+{
+  "authority_issued": false,
+  "baseline_commit": "cb546a2713c71c231242812475cadbdf2cef72aa",
+  "files": [
+    {
+      "bytes": 2358,
+      "git_blob": "1924416108c91d9d5d0bb312c2da13812d2d9dc9",
+      "mode": "100644",
+      "path": "docs/API.md",
+      "read_from": "docs/API.md",
+      "sha256": "a022ce558db0032ae34716a0dfa18d52b30fe1e99dc664b50ac030e5f72315d8",
+      "storage": "tests/qualification/stdlib_feature_storage_v1/archive/docs/API.md.data"
+    },
+    {
+      "bytes": 3249,
+      "git_blob": "8d943b4dc2d7349bb64c4088d94011969003abf0",
+      "mode": "100644",
+      "path": "docs/MODULES.md",
+      "read_from": "docs/MODULES.md",
+      "sha256": "2787a21a75d110724bb53c32693c46e3efc72e08ee0d7fbf8b20044020392da7",
+      "storage": "tests/qualification/stdlib_feature_storage_v1/archive/docs/MODULES.md.data"
+    },
+    {
+      "bytes": 315,
+      "git_blob": "5388b1f00daa76e5ad60c1fefa3f4a24aabbf5f8",
+      "mode": "100644",
+      "path": "stdlib/numbers.ox",
+      "read_from": "stdlib/numbers.ox",
+      "sha256": "a8c0d74e2e8b7e7964122ce8c9ce8806334dda6b8c55cb55c75a5a5695b14b3d",
+      "storage": "tests/qualification/stdlib_feature_storage_v1/archive/stdlib/numbers.ox.data"
+    },
+    {
+      "bytes": 7782,
+      "git_blob": "82abceb3cae2609bb8b102f975a8b3a689debc53",
+      "mode": "100644",
+      "path": "tests/legacy_modules.rs",
+      "read_from": "tests/legacy_modules.rs",
+      "sha256": "53cb238bba1626bd45868ea1e640cb7a3214c5474a744b5cec60a3cb1f9349f4",
+      "storage": "tests/qualification/stdlib_feature_storage_v1/archive/tests/legacy_modules.rs.data"
+    }
+  ],
+  "schema": "oxid-stdlib-feature-storage-originals-v1"
+}

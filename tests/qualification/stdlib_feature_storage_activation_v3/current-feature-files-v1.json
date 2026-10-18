@@ -1,0 +1,144 @@
+{
+  "base": "cb546a2713c71c231242812475cadbdf2cef72aa",
+  "compositions": {
+    "base": [
+      {
+        "bytes": 2358,
+        "git_blob": "1924416108c91d9d5d0bb312c2da13812d2d9dc9",
+        "mode": "100644",
+        "path": "docs/API.md",
+        "sha256": "a022ce558db0032ae34716a0dfa18d52b30fe1e99dc664b50ac030e5f72315d8"
+      },
+      {
+        "bytes": 3249,
+        "git_blob": "8d943b4dc2d7349bb64c4088d94011969003abf0",
+        "mode": "100644",
+        "path": "docs/MODULES.md",
+        "sha256": "2787a21a75d110724bb53c32693c46e3efc72e08ee0d7fbf8b20044020392da7"
+      },
+      {
+        "bytes": 315,
+        "git_blob": "5388b1f00daa76e5ad60c1fefa3f4a24aabbf5f8",
+        "mode": "100644",
+        "path": "stdlib/numbers.ox",
+        "sha256": "a8c0d74e2e8b7e7964122ce8c9ce8806334dda6b8c55cb55c75a5a5695b14b3d"
+      },
+      {
+        "bytes": 7782,
+        "git_blob": "82abceb3cae2609bb8b102f975a8b3a689debc53",
+        "mode": "100644",
+        "path": "tests/legacy_modules.rs",
+        "sha256": "53cb238bba1626bd45868ea1e640cb7a3214c5474a744b5cec60a3cb1f9349f4"
+      }
+    ],
+    "combined": [
+      {
+        "bytes": 4237,
+        "git_blob": "b595d0843c4e72edf098c007b8127974e19de210",
+        "mode": "100644",
+        "path": "docs/API.md",
+        "sha256": "586ee0e369e476849f21864143d8af207d88a0a74332033f6b0cce1390beb6d6"
+      },
+      {
+        "bytes": 4158,
+        "git_blob": "0949c7260263393601c10f73e12b0e232dfa0960",
+        "mode": "100644",
+        "path": "docs/MODULES.md",
+        "sha256": "65162f9403046013316ba16770a80690b3027a8b667596110e63099e0227cf57"
+      },
+      {
+        "bytes": 309,
+        "git_blob": "89d75c636401d1aa7ff31c0d42614bdc2d3d66a8",
+        "mode": "100644",
+        "path": "stdlib/numbers.ox",
+        "sha256": "01f02b0edbbd8e4d5837a316964efa9ac4d63e7c91cdb35310e158b872477c7f"
+      },
+      {
+        "bytes": 10256,
+        "git_blob": "514ccc233312123b1d82d52b19733dbce3e144df",
+        "mode": "100644",
+        "path": "tests/legacy_modules.rs",
+        "sha256": "e80cdd5f7afda482f8c15a4a82aa9f5e5303672a3190ba4280002a56083be060"
+      },
+      {
+        "bytes": 6526,
+        "git_blob": "1908c9a552212f4861c281002d479a5823114e2b",
+        "mode": "100644",
+        "path": "tests/stdlib_numbers.rs",
+        "sha256": "394c10ca4373ba7ceb91930328b19c46606a9a8916b27ab9d55690aac3fc950f"
+      }
+    ],
+    "numbers": [
+      {
+        "bytes": 2358,
+        "git_blob": "1924416108c91d9d5d0bb312c2da13812d2d9dc9",
+        "mode": "100644",
+        "path": "docs/API.md",
+        "sha256": "a022ce558db0032ae34716a0dfa18d52b30fe1e99dc664b50ac030e5f72315d8"
+      },
+      {
+        "bytes": 3249,
+        "git_blob": "8d943b4dc2d7349bb64c4088d94011969003abf0",
+        "mode": "100644",
+        "path": "docs/MODULES.md",
+        "sha256": "2787a21a75d110724bb53c32693c46e3efc72e08ee0d7fbf8b20044020392da7"
+      },
+      {
+        "bytes": 309,
+        "git_blob": "89d75c636401d1aa7ff31c0d42614bdc2d3d66a8",
+        "mode": "100644",
+        "path": "stdlib/numbers.ox",
+        "sha256": "01f02b0edbbd8e4d5837a316964efa9ac4d63e7c91cdb35310e158b872477c7f"
+      },
+      {
+        "bytes": 7782,
+        "git_blob": "82abceb3cae2609bb8b102f975a8b3a689debc53",
+        "mode": "100644",
+        "path": "tests/legacy_modules.rs",
+        "sha256": "53cb238bba1626bd45868ea1e640cb7a3214c5474a744b5cec60a3cb1f9349f4"
+      },
+      {
+        "bytes": 6526,
+        "git_blob": "1908c9a552212f4861c281002d479a5823114e2b",
+        "mode": "100644",
+        "path": "tests/stdlib_numbers.rs",
+        "sha256": "394c10ca4373ba7ceb91930328b19c46606a9a8916b27ab9d55690aac3fc950f"
+      }
+    ],
+    "tables": [
+      {
+        "bytes": 4237,
+        "git_blob": "b595d0843c4e72edf098c007b8127974e19de210",
+        "mode": "100644",
+        "path": "docs/API.md",
+        "sha256": "586ee0e369e476849f21864143d8af207d88a0a74332033f6b0cce1390beb6d6"
+      },
+      {
+        "bytes": 4158,
+        "git_blob": "0949c7260263393601c10f73e12b0e232dfa0960",
+        "mode": "100644",
+        "path": "docs/MODULES.md",
+        "sha256": "65162f9403046013316ba16770a80690b3027a8b667596110e63099e0227cf57"
+      },
+      {
+        "bytes": 315,
+        "git_blob": "5388b1f00daa76e5ad60c1fefa3f4a24aabbf5f8",
+        "mode": "100644",
+        "path": "stdlib/numbers.ox",
+        "sha256": "a8c0d74e2e8b7e7964122ce8c9ce8806334dda6b8c55cb55c75a5a5695b14b3d"
+      },
+      {
+        "bytes": 10256,
+        "git_blob": "514ccc233312123b1d82d52b19733dbce3e144df",
+        "mode": "100644",
+        "path": "tests/legacy_modules.rs",
+        "sha256": "e80cdd5f7afda482f8c15a4a82aa9f5e5303672a3190ba4280002a56083be060"
+      }
+    ]
+  },
+  "patches": {
+    "numbers": "d1e0194b30262d65c84041b4295e2bb956a14e84e417f515487b6643662e0c63",
+    "tables": "72e165a347068c92fddc42cf10edc6505c71891ae0768f1b7ac7aa6c695199c2"
+  },
+  "schema": "oxid-current-feature-files-v1"
+}

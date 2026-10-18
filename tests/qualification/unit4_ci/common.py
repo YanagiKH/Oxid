@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-INPUTS_SHA = '00ec988c5018214f37dddcd4908fa3907c93e635bb7ce2d2d03852228c1cbb52'
+INPUTS_SHA = '7bb62d57320ce8b506c6efed3becbcbc355ea37ec21873eef1f4998076715b61'
 CURRENT_COMPILER_BODIES = 291
 CURRENT_SOURCE_MEMBERS = 376
 CURRENT_SHA = 'd33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0'
@@ -183,6 +183,14 @@ def verify_package(repo, manifest):
         expected_dirs |= {parent.as_posix() for p in expected for parent in Path(p).parents if parent.as_posix().startswith(root)}
         need(all(p.relative_to(repo).as_posix() in expected_dirs for p in base.rglob('*') if p.is_dir()), 'extra component directory')
 
+    need(sha((json.dumps(manifest,indent=2,sort_keys=True)+'\n').encode()) == INPUTS_SHA, 'fixed complete feature inventory')
+    import types
+    feature_path=Path(repo)/'tests/qualification/stdlib_feature_storage_activation_v3/current_features.py'
+    feature_raw=feature_path.read_bytes()
+    need(sha(feature_raw)=='20df3a6b5ce7b39f2ec10eb55699b420962144b8d81160d65ac0a3a11999d29c', 'fixed feature verifier')
+    feature=types.ModuleType('current_features');feature.__file__=str(feature_path)
+    exec(compile(feature_raw,str(feature_path),'exec'),feature.__dict__)
+    feature.verify(repo,'combined')
 
 def relative_path_order(paths, root):
     # Path comparison folds case on Windows; committed names must stay exact.

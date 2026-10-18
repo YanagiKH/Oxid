@@ -1,0 +1,171 @@
+"""Inactive storage controls; synthetic live edits are not feature acceptance."""
+import ast
+import builtins
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import types
+import unittest
+
+HERE = Path(__file__).absolute().parent
+REPO = HERE.parents[2]
+GENERATION = 'tests/qualification/package_json_current_v1/generation.py'
+GENERATION_PIN = (13680, '66ca7aee20a7d17b332ab3c2f8bad72d5882e7a52f07d86ebbd6ccaa85cae9ea')
+
+def load(path, raw=None, **scope):
+    m = types.ModuleType('feature_storage_' + path.stem)
+    m.__file__ = str(path)
+    m.__dict__.update(scope)
+    exec(compile(path.read_bytes() if raw is None else raw, str(path), 'exec'), m.__dict__)
+    return m
+
+d = load(HERE / 'derive.py')
+
+def helpers():
+    raw = (REPO / GENERATION).read_bytes()
+    if (len(raw), hashlib.sha256(raw).hexdigest()) != GENERATION_PIN:
+        raise ValueError('fixed generation bytes')
+    g = load(REPO / GENERATION, raw)
+    original = g.regular(REPO, d.PREVIOUS)
+    derived = d.derive(original)
+    if derived != (HERE / 'candidate.py').read_bytes():
+        raise ValueError('candidate derivation changed')
+    def private(raw, name):
+        text = d.exact(raw.decode(), 'import generation as g\n', '')
+        return load(HERE / name, text.encode(), g=g)
+    return private(derived, 'candidate.py'), private(original, 'predecessor.py'), g
+
+class Storage(unittest.TestCase):
+    def test_derivation_preserves_every_existing_function_except_capture(self):
+        before = (REPO / d.PREVIOUS).read_bytes()
+        after = d.derive(before)
+        self.assertEqual(after, (HERE / 'candidate.py').read_bytes())
+        def methods(raw):
+            text = raw.decode()
+            return {n.name: ast.get_source_segment(text, n) for n in ast.parse(text).body
+                    if isinstance(n, ast.FunctionDef)}
+        a, b = methods(before), methods(after)
+        self.assertEqual({n for n in a if a[n] != b[n]}, {'capture'})
+        self.assertEqual(set(b) - set(a), {'_feature_archive'})
+        for raw in (before + b'\n', bytearray(before), before[:-1]):
+            with self.assertRaises(ValueError): d.derive(raw)
+
+    def test_baseline_git_and_frozen_row_identity(self):
+        p, _, g = helpers()
+        manifest = json.loads((HERE / 'originals.json').read_bytes())
+        self.assertFalse(manifest['authority_issued'])
+        self.assertEqual(manifest['baseline_commit'], 'cb546a2713c71c231242812475cadbdf2cef72aa')
+        view = json.loads(g.regular(REPO, p.VIEW_NAME))
+        source = json.loads(g.regular(REPO, g.PACKAGE + 'package-json-source-v1.json'))
+        source_names = {r['path'] for r in source['files']}
+        self.assertEqual(len(manifest['files']), 4)
+        for row in manifest['files']:
+            name = row['path']; fixed = dict(row); storage = fixed.pop('storage')
+            self.assertEqual(fixed, p._FEATURE_ROWS[name])
+            self.assertEqual(fixed, next(r for r in view['files'] if r['path'] == name))
+            self.assertEqual(storage, p._FEATURE_ARCHIVE + name + '.data')
+            raw = subprocess.check_output(['git', '-C', str(REPO), 'show', manifest['baseline_commit'] + ':' + name])
+            self.assertEqual(p._feature_archive(REPO, fixed), raw)
+            self.assertNotIn(name, source_names)
+        self.assertNotIn('tests/stdlib_numbers.rs', source_names)
+        self.assertFalse(any(n.startswith('tests/qualification/stdlib_feature_storage_v1/') for n in source_names))
+
+    def test_every_archive_rejects_missing_mutated_alias_and_special_input(self):
+        p, _, _ = helpers()
+        for name, row in p._FEATURE_ROWS.items():
+            body = p._feature_archive(REPO, row)
+            for mutation in ('missing', 'changed', 'oversize', 'symlink', 'hardlink', 'executable', 'directory', 'fifo'):
+                with self.subTest(name=name, mutation=mutation), tempfile.TemporaryDirectory() as t:
+                    root = Path(t); dst = root / (p._FEATURE_ARCHIVE + name + '.data')
+                    dst.parent.mkdir(parents=True)
+                    live = root / name; live.parent.mkdir(parents=True, exist_ok=True); live.write_bytes(body)
+                    real = root / 'real'; real.write_bytes(body)
+                    if mutation == 'changed': dst.write_bytes(b'X' + body[1:])
+                    elif mutation == 'oversize': dst.write_bytes(body + b'\n')
+                    elif mutation == 'symlink': dst.symlink_to(real)
+                    elif mutation == 'hardlink': os.link(real, dst)
+                    elif mutation == 'executable': dst.write_bytes(body); dst.chmod(0o755)
+                    elif mutation == 'directory': dst.mkdir()
+                    elif mutation == 'fifo': os.mkfifo(dst)
+                    with self.assertRaises((ValueError, OSError)): p._feature_archive(root, row)
+
+    def test_rows_reject_relabel_types_and_coherent_rehash(self):
+        p, _, g = helpers()
+        for name, row in p._FEATURE_ROWS.items():
+            for key, value in [('read_from', p._FEATURE_ARCHIVE + name + '.data'), ('bytes', True),
+                               ('bytes', float(row['bytes'])), ('mode', '100755'), ('git_blob', '0'*40),
+                               ('sha256', '0'*64), ('extra', 1), ('path', 'unlisted')]:
+                with self.subTest(name=name, key=key), self.assertRaises(ValueError):
+                    p._feature_archive(REPO, {**row, key: value})
+            raw = p._feature_archive(REPO, row) + b'\n'
+            with self.assertRaises(ValueError):
+                p._feature_archive(REPO, {**row, **g.identity(name, raw), 'git_blob': g.gitid('blob', raw)})
+            with self.assertRaisesRegex(ValueError, 'feature path cannot be restored source'):
+                p.capture(REPO, {name: raw}, {})
+
+    def test_real_complete_view_survives_four_live_edits_and_excludes_new_test(self):
+        p, old, g = helpers()
+        modules = dict(sys.modules)
+        try:
+            runtime = load(REPO / 'tests/fixtures/typed_project_source_binding/run.py')
+            admitted = runtime._modules['package_current'].admit(REPO, runtime._SOURCE_SEAL)
+            restored = admitted['predecessor_inputs']; descriptor = runtime._SOURCE_SEAL['predecessor_view']
+            baseline = old.capture(REPO, restored, descriptor)
+            self.assertEqual(len(baseline), 2724)
+            self.assertEqual(sum(map(len, baseline.values())), 78507317)
+            self.assertEqual(g.sha(g.encoded([g.identity(n, b) for n, b in sorted(baseline.items())])),
+                             'e70b8b790756e0fb9e0cd1341779c51646b964afcf9e2eade2bd9480716b1882')
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / 'repo'; root.mkdir()
+                names = subprocess.check_output(['git', '-C', str(REPO), 'ls-files', '-z']).decode().split('\0')
+                for name in filter(None, names):
+                    dst = root / name; dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(REPO / name, dst)
+                shutil.copytree(HERE, root / 'tests/qualification/stdlib_feature_storage_v1')
+                for name in p._FEATURE_ROWS:
+                    (root / name).write_bytes(b'synthetic current feature edit\n')
+                (root / 'tests/stdlib_numbers.rs').write_bytes(b'// synthetic new feature test\n')
+                with self.assertRaisesRegex(ValueError, 'accepted view body:'):
+                    old.capture(root, restored, descriptor)
+                self.assertEqual(p.capture(root, restored, descriptor), baseline)
+                # Execute the genuine package consumer through a private import
+                # scope; no global predecessor alias or active pin is replaced.
+                original_import = builtins.__import__
+                def scoped_import(name, globals=None, locals=None, fromlist=(), level=0):
+                    if name == 'predecessor' and level == 0:
+                        return p
+                    return original_import(name, globals, locals, fromlist, level)
+                consumer_path = REPO / 'tests/qualification/package_json_current_v1/package_current.py'
+                consumer_raw = consumer_path.read_bytes()
+                self.assertEqual(hashlib.sha256(consumer_raw).hexdigest(),
+                                 'f15b58cdb23562e572f4e558f068c5a4dab810ac442a486525db6f0764126355')
+                consumer = load(consumer_path, consumer_raw,
+                                __builtins__=dict(vars(builtins), __import__=scoped_import))
+                if sys.flags.optimize:
+                    with self.assertRaisesRegex(Exception, 'optimized Python is not supported'):
+                        consumer.predecessor_capture(root, admitted, runtime._SOURCE_SEAL)
+                else:
+                    captured = consumer.predecessor_capture(root, admitted, runtime._SOURCE_SEAL)
+                    self.assertEqual(captured['inputs'], restored)
+                with p.view(root, restored, descriptor) as view:
+                    for name in p._FEATURE_ROWS:
+                        self.assertEqual((view / name).read_bytes(), baseline[name])
+                    self.assertFalse((view / 'tests/stdlib_numbers.rs').exists())
+                for name in p._FEATURE_ROWS:
+                    self.assertEqual((root / name).read_bytes(), b'synthetic current feature edit\n')
+                (root / '.dockerignore').write_bytes(b'changed unrelated historical input')
+                with self.assertRaises(ValueError): p.capture(root, restored, descriptor)
+        finally:
+            for name in set(sys.modules) - set(modules):
+                if getattr(sys.modules[name], '__file__', '').startswith(str(REPO)):
+                    del sys.modules[name]
+            for name in modules:
+                if sys.modules.get(name) is not modules[name]: sys.modules[name] = modules[name]
+
+if __name__ == '__main__': unittest.main()

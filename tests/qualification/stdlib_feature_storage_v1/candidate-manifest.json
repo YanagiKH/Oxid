@@ -1,0 +1,67 @@
+{
+  "activation_enabled": false,
+  "authority_issued": false,
+  "files": [
+    {
+      "bytes": 1022,
+      "path": "README.md",
+      "sha256": "5e4e4d705a0000ffc107056aebabcee782477c86b3b2a4243487a4884caaa2e4"
+    },
+    {
+      "bytes": 2358,
+      "path": "archive/docs/API.md.data",
+      "sha256": "a022ce558db0032ae34716a0dfa18d52b30fe1e99dc664b50ac030e5f72315d8"
+    },
+    {
+      "bytes": 3249,
+      "path": "archive/docs/MODULES.md.data",
+      "sha256": "2787a21a75d110724bb53c32693c46e3efc72e08ee0d7fbf8b20044020392da7"
+    },
+    {
+      "bytes": 315,
+      "path": "archive/stdlib/numbers.ox.data",
+      "sha256": "a8c0d74e2e8b7e7964122ce8c9ce8806334dda6b8c55cb55c75a5a5695b14b3d"
+    },
+    {
+      "bytes": 10003,
+      "path": "archive/test_storage.py.data",
+      "sha256": "4a6c3adb9db770e8d0fa5ab2aa5377e7ad7b29c3d5a0a3b8d2f7835c74c00494"
+    },
+    {
+      "bytes": 7782,
+      "path": "archive/tests/legacy_modules.rs.data",
+      "sha256": "53cb238bba1626bd45868ea1e640cb7a3214c5474a744b5cec60a3cb1f9349f4"
+    },
+    {
+      "bytes": 11178,
+      "path": "candidate.py",
+      "sha256": "ff7cd01cad7c7bb414a1973ee6f9ab3a775d8cf218a97e320d90af148c2ed1d4"
+    },
+    {
+      "bytes": 3108,
+      "path": "derive.py",
+      "sha256": "aaffbbcd59d486831f9b931f829271f1c2b8642a3367eb135dc91502bc643b28"
+    },
+    {
+      "bytes": 1663,
+      "path": "originals.json",
+      "sha256": "c1acb6ed7e8f10ae053a028991b195dc2c13e297a8108875b37be168719b70cc"
+    },
+    {
+      "bytes": 6904,
+      "path": "storage_test_derivation.py",
+      "sha256": "27f452f8128a0fcbca4431c9debd908bf57033ac8aba4524c705174ac59b1f65"
+    },
+    {
+      "bytes": 14925,
+      "path": "test_storage.py",
+      "sha256": "8dcd07e0b8ef80685e270622e35e42a376aee91fc1da7dd8e47bb884e30dbc43"
+    }
+  ],
+  "historical_test": {
+    "bytes": 10003,
+    "path": "archive/test_storage.py.data",
+    "sha256": "4a6c3adb9db770e8d0fa5ab2aa5377e7ad7b29c3d5a0a3b8d2f7835c74c00494"
+  },
+  "schema": "oxid-stdlib-feature-storage-packaging-v3"
+}

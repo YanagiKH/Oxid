@@ -1,0 +1,120 @@
+{
+  "baseline": "cb546a2713c71c231242812475cadbdf2cef72aa",
+  "files": [
+    {
+      "bytes": 6779,
+      "path": "tests/fixtures/typed_project_source_binding/run.py",
+      "sha256": "fdab130862dceb5d53e0885db72e60710bb827d5612621c4a5d4f9d513919169",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/fixtures/typed_project_source_binding/run.py.data"
+    },
+    {
+      "bytes": 16690,
+      "path": "tests/fixtures/typed_project_source_binding/package-manifest.json",
+      "sha256": "ac8bbb78c14340bfb386790a0691a3e134848e69a3d24dfcb77e15b552c6dd9b",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/fixtures/typed_project_source_binding/package-manifest.json.data"
+    },
+    {
+      "bytes": 13746,
+      "path": "tests/qualification/lexer_reservation_current/unit1_current_support.py",
+      "sha256": "524eed8580e0a2745c7e6b28caf72a45294fe29aabd18375b75dc5ce4dc70492",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/lexer_reservation_current/unit1_current_support.py.data"
+    },
+    {
+      "bytes": 3493,
+      "path": "tests/qualification/lexer_reservation_current/test_current_source.py",
+      "sha256": "d58d1124650988a50fb0880ee500987c7d97301e3654a8d5950b72616918dd76",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/lexer_reservation_current/test_current_source.py.data"
+    },
+    {
+      "bytes": 3482,
+      "path": "tests/qualification/unit4_parser_current/test_current.py",
+      "sha256": "3bea352eea094641be464deef993b692fdf3785547cc6701af3cf19e4703b155",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_parser_current/test_current.py.data"
+    },
+    {
+      "bytes": 3491,
+      "path": "tests/qualification/unit4_parser_current/test_lexer_reservation.py",
+      "sha256": "ecc4e6b2012ca02fcbb67d31a2fe7dd44b17c3f18399a9528bf5a54a1408616e",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_parser_current/test_lexer_reservation.py.data"
+    },
+    {
+      "bytes": 529359,
+      "path": "tests/qualification/unit4_parser_current/authority.json",
+      "sha256": "c28eee5af3e24f0169750cd54232846cbe7be311af85f28277fdfe064a887026",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_parser_current/authority.json.data"
+    },
+    {
+      "bytes": 238733,
+      "path": "tests/qualification/unit4_parser_current/portable.py",
+      "sha256": "024fab6876420ac54378ff52794b6d2b8d42d811b49f8ad322700632f4118929",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_parser_current/portable.py.data"
+    },
+    {
+      "bytes": 2406,
+      "path": "tests/qualification/unit4_public_v3/authority.py",
+      "sha256": "3d11d59a2bb5aef7fec54efd78b09d6690f7bb8d098fbdb85466871143c5648f",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_public_v3/authority.py.data"
+    },
+    {
+      "bytes": 4504,
+      "path": "tests/qualification/unit4_public_v3/test_lexer_reservation.py",
+      "sha256": "e62e7dbd8e42fbec71d3e95ea1ead90ff6f1515ca55d89847e29cb8d59819673",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_public_v3/test_lexer_reservation.py.data"
+    },
+    {
+      "bytes": 2182,
+      "path": "scripts/test_published_formatter_source.py",
+      "sha256": "caec70e061992b4e7000e5e2297bd6588e1521af7a34f8a4afce63074a9dcee5",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/scripts/test_published_formatter_source.py.data"
+    },
+    {
+      "bytes": 153393,
+      "path": "scripts/verify_owned_array_native.py",
+      "sha256": "568a18e26506841743936f766813058ef59e52fd95a599f516d9479ad2f495b6",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/scripts/verify_owned_array_native.py.data"
+    },
+    {
+      "bytes": 150391,
+      "path": "scripts/test_owned_array_native.py",
+      "sha256": "fee9935173ac3c29588f354bbde1835d79a7d225b90b11100464f3d7219eb111",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/scripts/test_owned_array_native.py.data"
+    },
+    {
+      "bytes": 20589,
+      "path": "scripts/test_lexer_current_ci.py",
+      "sha256": "c7d339632a28ac5003919d60e4c48516d7d357f34fdade5ce1548f9114504378",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/scripts/test_lexer_current_ci.py.data"
+    },
+    {
+      "bytes": 493,
+      "path": "tests/qualification/package_json_current_v1/test_hosted.py",
+      "sha256": "c1709658831c6408373e667b28f18f1fa25911069223ba6f6e42f97b5efac56b",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/package_json_current_v1/test_hosted.py.data"
+    },
+    {
+      "bytes": 17821,
+      "path": "tests/qualification/unit4_ci/common.py",
+      "sha256": "ef724f36957ec27e8ef8abcfdc8b3bd51ccd876e4085c77a6372aa236038aa01",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_ci/common.py.data"
+    },
+    {
+      "bytes": 248049,
+      "path": "tests/qualification/unit4_ci/inputs.json",
+      "sha256": "00ec988c5018214f37dddcd4908fa3907c93e635bb7ce2d2d03852228c1cbb52",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_ci/inputs.json.data"
+    },
+    {
+      "bytes": 189727,
+      "path": "tests/qualification/unit4_ci/test_integration.py",
+      "sha256": "20d394a9cbe38539d536f12b275c7c4231ad31cdfa5d1052b651e83bc19ca00e",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_ci/test_integration.py.data"
+    },
+    {
+      "bytes": 26046,
+      "path": "tests/qualification/unit4_ci/test_scheduling.py",
+      "sha256": "198d40db89460293c1683f894dfd8385c03c494af0765d7299715d16b969207d",
+      "storage": "tests/qualification/stdlib_feature_storage_activation_v3/archive/tests/qualification/unit4_ci/test_scheduling.py.data"
+    }
+  ],
+  "schema": "oxid-feature-activation-originals-v1"
+}

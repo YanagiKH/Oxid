@@ -216,3 +216,68 @@ fn function_scoped_import_keeps_a_runtime_source_dependency() {
     assert!(diagnostic.contains("module.ox"), "{diagnostic}");
     assert!(diagnostic.contains("main.ox:1:14-1:"), "{diagnostic}");
 }
+
+// Focused coverage for the tables deprecation guidance. Use the checkout's real
+// modules. The failure cases characterize existing legacy hazards, not intended
+// v1.0 semantics; an accepted migration can replace these expectations. Do not
+// turn the zero-argument empty placeholders into a supported table contract.
+fn tables_guidance_project(source: &str) -> Project {
+    Project::new(&[
+        ("main.ox", source),
+        ("stdlib/records.ox", include_str!("../stdlib/records.ox")),
+        ("stdlib/tables.ox", include_str!("../stdlib/tables.ox")),
+    ])
+}
+
+#[test]
+fn tables_guidance_supported_record_keys_and_count() {
+    let project = tables_guidance_project(
+        "use \"stdlib/records.ox\";\n\
+         let value = record_from_pairs([\"z\", 2, \"a\", 1]);\n\
+         print json_stringify(keys(value));\n\
+         print json_stringify(record_keys(value));\n\
+         print len(value);\n\
+         print json_stringify(record_keys({}));\n\
+         print len({});\n\
+         print json_stringify(keys({\"中\": 4, \"é\": 3, a: 2, Z: 1}));\n",
+    );
+    for output in project.routes(&project.0) {
+        assert_success(
+            &output,
+            "[\"a\",\"z\"]\n[\"a\",\"z\"]\n2\n[]\n0\n[\"Z\",\"a\",\"é\",\"中\"]\n",
+        );
+    }
+}
+
+#[test]
+fn tables_guidance_current_import_collision_in_both_orders() {
+    for source in [
+        "use \"stdlib/records.ox\";\nuse \"stdlib/tables.ox\";\nprint record_keys({a: 1});\n",
+        "use \"stdlib/tables.ox\";\nuse \"stdlib/records.ox\";\nprint record_keys({a: 1});\n",
+    ] {
+        let project = tables_guidance_project(source);
+        for output in project.routes(&project.0) {
+            let diagnostic = assert_failure(
+                &output,
+                "function `keys` expected 0 arguments but received 1",
+            );
+            assert!(diagnostic.contains("records.ox:10:"), "{diagnostic}");
+        }
+    }
+}
+
+#[test]
+fn tables_guidance_current_saved_builtin_differs_after_import_hoisting() {
+    let project = tables_guidance_project(
+        "let saved_keys = keys;\n\
+         use \"stdlib/tables.ox\";\n\
+         print json_stringify(saved_keys({a: 1}));\n",
+    );
+    let [source, artifact] = project.routes(&project.0);
+    assert_success(&source, "[\"a\"]\n");
+    let diagnostic = assert_failure(
+        &artifact,
+        "function `keys` expected 0 arguments but received 1",
+    );
+    assert!(diagnostic.contains("main.ox:3:1-3:"), "{diagnostic}");
+}
