@@ -11,6 +11,7 @@ mod hir_producer;
 mod hir_protocol;
 mod lexer;
 mod lexical_provider;
+mod manifest;
 mod native;
 mod oir;
 mod options;

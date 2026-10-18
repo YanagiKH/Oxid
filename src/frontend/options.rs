@@ -11,6 +11,17 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    ManifestCheck {
+        request: Box<[super::manifest::Request; 1]>,
+    },
+    ManifestRun {
+        request: Box<[super::manifest::Request; 1]>,
+    },
+    ManifestError {
+        failure: super::manifest::Failure,
+        json: bool,
+        operation: Operation,
+    },
     TypedLexical {
         request: Box<[LexicalOptions; 1]>,
     },
@@ -203,6 +214,9 @@ mod output_layout_feasibility {
 
 /// Classify arguments excluding the executable name, without reading any files.
 pub fn route(args: &[String]) -> Route {
+    if let Some(route) = super::manifest::select(args) {
+        return route;
+    }
     let mut entry = EntryOptionScan::new();
     let classified = classify(args, &mut entry);
     match classified {

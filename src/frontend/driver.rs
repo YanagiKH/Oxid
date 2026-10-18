@@ -14,6 +14,13 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::ManifestError {
+            failure,
+            json,
+            operation,
+        } => Some(manifest_error(failure, json, operation)),
+        Route::ManifestCheck { request } => Some(manifest_file(request, Operation::Check)),
+        Route::ManifestRun { request } => Some(manifest_file(request, Operation::Run)),
         Route::TypedLexical { request }
             if request[0].operation == Operation::Run
                 && request[0].entry_policy == EntryPolicy::Process
@@ -88,6 +95,28 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             entry_policy,
         )),
     }
+}
+/// Explicit manifest CHECK or Result RUN: no output, provider, or Process policy.
+fn manifest_file(request: Box<[super::manifest::Request; 1]>, operation: Operation) -> i32 {
+    let json = request[0].json;
+    // The helper consumes and releases every manifest owner before loading source.
+    match super::manifest::entry(request, operation) {
+        Ok(path) => {
+            #[cfg(test)]
+            super::manifest::observe_source_load();
+            process_file(&path, json, operation, None, EntryPolicy::Result)
+        }
+        Err(failure) => manifest_error(failure, json, operation),
+    }
+}
+fn manifest_error(failure: super::manifest::Failure, json: bool, operation: Operation) -> i32 {
+    let (code, stage) = failure.classification();
+    report(
+        &SourceMap::new(),
+        vec![*Diagnostic::new(code, stage, failure.message(), None)],
+        json,
+        Summary::empty(operation),
+    )
 }
 /// Actual bridge-only I/O/result carriers, debited by the import facade. The
 /// already loaded ProjectSources and ordinary reporting infrastructure retain
