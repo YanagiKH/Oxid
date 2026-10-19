@@ -36,6 +36,17 @@ pub enum ScalarAppendStatus {
     MemoryLimit
 }
 
+pub struct ScalarStep {
+    pub scalar: i32,
+    pub next_byte_offset: i32
+}
+
+pub enum ScalarRead {
+    Value(ScalarStep),
+    End,
+    InvalidOffset
+}
+
 pub enum SliceResult {
     Ok(Text),
     InvalidRange,
@@ -161,6 +172,46 @@ fn count_valid_scalars(input: &[u8]) -> i32 {
 
 pub fn scalar_count(text: &Text) -> i32 {
     return count_valid_scalars(&*text.bytes);
+}
+
+// Only called with Text's valid UTF-8 storage. Inspect at most one scalar.
+fn read_valid_scalar(input: &[u8], offset: i32) -> ScalarRead {
+    let length = input.len();
+    if offset < 0 || offset > length {
+        return ScalarRead::InvalidOffset;
+    }
+    if offset == length {
+        return ScalarRead::End;
+    }
+    let lead_byte = input[offset];
+    let lead = lead_byte.to_i32();
+    if continuation(lead) {
+        return ScalarRead::InvalidOffset;
+    }
+    if lead <= 127 {
+        return ScalarRead::Value(ScalarStep { scalar: lead, next_byte_offset: offset + 1 });
+    }
+    // Valid Text guarantees that each selected tail exists and is a continuation.
+    let second_byte = input[offset + 1];
+    let second = second_byte.to_i32();
+    if lead <= 223 {
+        let scalar_two = (lead - 192) * 64 + second - 128;
+        return ScalarRead::Value(ScalarStep { scalar: scalar_two, next_byte_offset: offset + 2 });
+    }
+    let third_byte = input[offset + 2];
+    let third = third_byte.to_i32();
+    if lead <= 239 {
+        let scalar_three = (lead - 224) * 4096 + (second - 128) * 64 + third - 128;
+        return ScalarRead::Value(ScalarStep { scalar: scalar_three, next_byte_offset: offset + 3 });
+    }
+    let fourth_byte = input[offset + 3];
+    let fourth = fourth_byte.to_i32();
+    let scalar_four = (lead - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + fourth - 128;
+    return ScalarRead::Value(ScalarStep { scalar: scalar_four, next_byte_offset: offset + 4 });
+}
+
+pub fn next_scalar(text: &Text, offset: i32) -> ScalarRead {
+    return read_valid_scalar(&*text.bytes, offset);
 }
 
 pub fn append_utf8(text: &mut Text, input: &[u8]) -> AppendStatus {

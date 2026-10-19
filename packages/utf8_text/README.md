@@ -35,6 +35,16 @@ Callers must match `GrowStatus` to handle a possibly refused nonempty export.
 
 - `Text` owns a private ByteBuf; mutable byte access never escapes.
 - `new_text() -> Text`, `byte_len(&Text) -> i32`, `scalar_count(&Text) -> i32`.
+- `next_scalar(&Text, offset: i32) -> ScalarRead`: `Value(ScalarStep)`, `End`,
+  or `InvalidOffset`. `ScalarStep` has public `scalar: i32` and
+  `next_byte_offset: i32` fields. A scalar-start BYTE offset returns its Unicode
+  scalar value and the following byte offset. Exactly `byte_len` returns `End`,
+  including offset zero on empty Text. Negative, past-end, and continuation-byte
+  offsets return `InvalidOffset`. Text is unchanged on every result; the input
+  offset is passed by value. Continue using the returned `next_byte_offset`.
+  These public fields are ordinary data, not proof of a valid boundary or access
+  authority; every supplied offset is checked again. This is scalar traversal,
+  not grapheme traversal or a streaming decoder.
 - `validate(&[u8]) -> Validation`: `Valid` or `Invalid(byte_offset)`.
 - `from_bytes(ByteBuf) -> FromBytes`: `Ok(Text)` or `Invalid(ByteBuf)`;
   invalid input returns the original unchanged owner. Validate first for offset.
@@ -85,6 +95,14 @@ the result is built, so existing ByteBuf allocation and memory-limit admission
 still applies; a source that fits does not guarantee its copy will fit.
 Execution-budget failures remain terminal. No whole-Text clone is performed.
 
+`next_scalar` relies on Text's valid-UTF-8 invariant and reads at most four
+payload bytes through a private borrowed-byte helper. It neither scans a prefix
+nor validates the whole Text, and it performs no payload allocation, copy, or
+export. Existing runtime borrow/descriptor validation and call/control bookkeeping
+still apply; the entire invocation is not promised to be allocation-free or
+constant-time. Returned scalars include NUL, BOM, and Unicode noncharacters;
+valid Text excludes surrogates and values above U+10FFFF.
+
 Validation, equality and scalar counting are linear source loops; scalar count
 is not grapheme count. There is no escaping byte borrow or general
 field extraction, lossy conversion, normalization, streaming decoder, or text
@@ -92,6 +110,26 @@ indexing by scalar or grapheme. Keep I/O in a separate consumer package: even
 unused loaded I/O helpers affect Result/Test admission.
 
 ## Validation scope
+
+The `next_scalar`, `ScalarStep`, and `ScalarRead` addition passed focused
+acceptance with the independent `owned_text_scalars` client. After splitting
+one oversized token-scan test into helpers, client CHECK passed with 58
+functions. Ordinary acceptance passed two tests with two ignored; explicitly
+enabling the native tests passed all four. The harness checks interpreter
+and native twelve-case TEST summaries and exact Result/standalone `42\n`,
+exit 0 and empty stderr, including standalone execution after deleting the
+copied sources with cwd `/` and an empty environment. The repaired client
+passed its typed-preview format check.
+
+The helper split preserves the fixed corpus and oracle; the existing native
+256-slot per-function ceiling is unchanged. Native tests require the existing
+LLVM 19.1.7 gate. The delivered successful logs contain passing harness
+results, not separate successful child captures or tool-version stdout.
+Earlier regression and scoped lint passes were reported by the executor;
+their raw archive was unavailable to this review. No full-suite, exact-head CI,
+allocation-failure, capacity/fuel or process qualification is claimed.
+The focused results below describe the earlier `slice` and consuming-export
+additions.
 
 The `slice` addition passed focused package CHECK (23 functions) and its
 independent pure client CHECK (47 functions). The client passed both ordinary
