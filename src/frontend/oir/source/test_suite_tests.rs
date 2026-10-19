@@ -203,7 +203,6 @@ fn typed_project_test_native_agrees_with_interpreter() {
         let suite = checked(&project).unwrap();
         let parent = format!("{}/", fixture.0.display());
         let selection = BuildSelection {
-            entry: "app.ox".into(),
             parent: parent.clone(),
             name: "app".into(),
         };

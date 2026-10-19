@@ -192,6 +192,7 @@ impl<'a> Fingerprint<'a> {
             PathRoot::Crate => "crate-root",
             PathRoot::LocalType => "local-type-root",
             PathRoot::Std => "std-import-root",
+            PathRoot::Dependency => "dependency-import-root",
         });
         self.span(span);
         let segment_len = usize::from(segment_len);

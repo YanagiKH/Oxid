@@ -1,0 +1,7 @@
+[project]
+edition="typed-preview"
+entry="main.ox"
+name="path-session"
+
+[dependencies]
+math="../library"

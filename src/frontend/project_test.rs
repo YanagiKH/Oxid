@@ -1,11 +1,11 @@
 //! Explicit, text-only project suites. Complete preparation precedes execution.
 use super::{
-    declaration_index::{IndexLimits, WorkMeter},
     diagnostic::Diagnostic,
     manifest,
-    oir::{self, CheckedProjectTests},
-    project::{budget::Allocator, ProjectLimits, ProjectSources},
+    oir::CheckedProjectTests,
+    options::EntryPolicy,
     project_build::{self, Artifact},
+    session::{CompilerSession, Configuration, Engine},
     source::SourceMap,
 };
 use std::io::Write;
@@ -61,26 +61,27 @@ fn prepare_native(
 }
 
 pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool) -> i32 {
-    let (entry, parent) = match manifest::test(request) {
-        Ok(selection) => selection,
-        Err(failure) => return cli_error(failure, false),
+    let configuration = Configuration::new(
+        manifest::Command::Test,
+        if native {
+            Engine::Native
+        } else {
+            Engine::Interpreter
+        },
+        EntryPolicy::Result,
+        false,
+    );
+    let session = match CompilerSession::load(request, configuration) {
+        Ok(session) => session,
+        Err((sources, diagnostics)) => return report_errors(&sources, &diagnostics),
     };
-    let project = match ProjectSources::load_typed(&entry, ProjectLimits::default()) {
-        Ok(project) => project,
-        Err(failure) => return report_errors(&failure.sources, &failure.diagnostics),
-    };
-    let limits = IndexLimits::default();
-    let suite = match oir::check_project_tests(
-        &project,
-        limits,
-        &WorkMeter::new(limits.work),
-        &mut Allocator::default(),
-    ) {
+    let project = session.project();
+    let suite = match session.tests() {
         Ok(suite) => suite,
         Err(errors) => return report_errors(project.sources(), &errors),
     };
     let artifacts = if native {
-        match prepare_native(&suite, &parent) {
+        match prepare_native(&suite, session.parent()) {
             Ok(artifacts) => Some(artifacts),
             Err(error) => return report_errors(project.sources(), &[*error]),
         }

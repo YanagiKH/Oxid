@@ -885,10 +885,23 @@ impl Tables<'_> {
         work: &WorkMeter,
         allow_enum_member: bool,
     ) -> Result<AbsolutePrefix, Box<Diagnostic>> {
+        if self.sources.root_count() > 1 {
+            work.debit(9, segments[0], "package membership lookup")?;
+        }
+        let root = self.sources.crate_root(requester)?;
+        self.absolute_prefix_from(requester, segments, work, allow_enum_member, root)
+    }
+    fn absolute_prefix_from(
+        &self,
+        requester: ModuleId,
+        segments: &[Span],
+        work: &WorkMeter,
+        allow_enum_member: bool,
+        mut owner: ModuleId,
+    ) -> Result<AbsolutePrefix, Box<Diagnostic>> {
         if !(2..=super::parser::MAX_PATH_SEGMENTS).contains(&segments.len()) {
             return Err(bad(self.sources.eof()));
         }
-        let mut owner = ModuleId(0);
         for (position, &segment) in segments[1..segments.len() - 1].iter().enumerate() {
             work.debit(1, segment, "absolute path segment")?;
             let Some(id) = self.lookup_original(owner, true, segment, work)? else {
@@ -1017,8 +1030,31 @@ impl Tables<'_> {
         work: &WorkMeter,
         importing: bool,
     ) -> Result<(Option<DeclarationHandle>, Option<DeclarationHandle>), Box<Diagnostic>> {
-        let segments = self.sources.segments(path)?;
-        let owner = match self.absolute_prefix(requester, segments, work, false)? {
+        let view = if importing {
+            let ast::ItemPath::Absolute(id) = path.path else {
+                return Err(bad(self.sources.eof()));
+            };
+            Some(self.sources.import_path(QualifiedPathRef {
+                file: path.file,
+                path: id,
+            })?)
+        } else {
+            None
+        };
+        let segments = match &view {
+            Some(view) => view.segments(),
+            None => self.sources.segments(path)?,
+        };
+        let prefix = if view
+            .as_ref()
+            .is_some_and(|v| v.root() == ast::PathRoot::Dependency)
+        {
+            let root = self.sources.dependency_root(requester, segments[0], work)?;
+            self.absolute_prefix_from(requester, segments, work, false, root)?
+        } else {
+            self.absolute_prefix(requester, segments, work, false)?
+        };
+        let owner = match prefix {
             AbsolutePrefix::Module(owner) => owner,
             AbsolutePrefix::Enumeration(_) => return Err(bad(self.sources.eof())),
         };
@@ -1466,7 +1502,7 @@ impl<'i, 's> QuerySession<'i, 's> {
         let segments = view.segments();
         let member = *segments.last().ok_or_else(|| bad(at))?;
         let enumeration = match view.root() {
-            ast::PathRoot::Std => return Err(bad(at)),
+            ast::PathRoot::Std | ast::PathRoot::Dependency => return Err(bad(at)),
             ast::PathRoot::LocalType => {
                 let prefix = segments[0];
                 self.work.debit(1, prefix, "qualified path segment")?;
@@ -1797,6 +1833,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     original: false,
                     is_enum: true,
                     builtin: true,
+                    package: None,
                 });
             }
             DeclarationProjection::SourceOriginal(id) => id,
@@ -1807,7 +1844,25 @@ impl<'i, 's> QuerySession<'i, 's> {
         let mut names = [CompactSpan::default(); 32];
         let mut count = 0;
         let mut owner = original.owner;
-        while owner != 0 {
+        let (root, package) = match self.tables.sources.as_project() {
+            Some(project) if project.package_count() > 1 => {
+                // Package IDs are the canonical graph's deterministic DFS ordinals,
+                // independent of import aliases and user-supplied project names.
+                self.work.debit(9, at, "nominal package lookup")?;
+                let id = project
+                    .package_for_module(ModuleId(owner as usize))
+                    .ok_or_else(|| bad(at))?;
+                let root = project
+                    .graph()
+                    .and_then(|graph| graph.packages.get(id.0))
+                    .ok_or_else(|| bad(at))?
+                    .root;
+                (root.0, Some(u16::try_from(id.0).map_err(|_| bad(at))?))
+            }
+            _ => (0, None),
+        };
+        // Package roots have no original module declaration, including nonzero roots.
+        while owner as usize != root {
             self.work.debit(1, at, "nominal name ancestor")?;
             if count >= 32 {
                 return Err(bad(at));
@@ -1823,7 +1878,9 @@ impl<'i, 's> QuerySession<'i, 's> {
             count += 1;
             owner = module.parent;
         }
-        let mut total = 7usize
+        let mut total = PreparedTypeName::prefix_len(package)
+            .checked_add(2)
+            .ok_or_else(|| overflow(at))?
             .checked_add(terminal.len())
             .ok_or_else(|| overflow(at))?;
         for name in &names[..count] {
@@ -1855,6 +1912,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             original,
             is_enum: matches!(nominal, NominalId::Enum(_)),
             builtin: false,
+            package,
         })
     }
 }
@@ -1870,6 +1928,21 @@ pub(super) struct PreparedTypeName<'s> {
     original: bool,
     is_enum: bool,
     builtin: bool,
+    // The existing package/module cap is 256. This fits the carrier's scalar padding.
+    package: Option<u16>,
+}
+impl PreparedTypeName<'_> {
+    fn prefix_len(package: Option<u16>) -> usize {
+        package.map_or(5, |id| {
+            8 + if id == 0 { 1 } else { id.ilog10() as usize + 1 }
+        })
+    }
+    fn write_prefix(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.package {
+            Some(id) => write!(f, "package#{id}"),
+            None => f.write_str("crate"),
+        }
+    }
 }
 impl fmt::Display for PreparedTypeName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1880,7 +1953,7 @@ impl fmt::Display for PreparedTypeName<'_> {
             return write!(f, "{}", owned_diagnostic::name(self.terminal));
         }
         if self.total <= 160 {
-            f.write_str("crate")?;
+            self.write_prefix(f)?;
             for name in self.names[..self.count].iter().rev() {
                 write!(f, "::{}", self.sources.prepared_text(*name))?;
             }
@@ -1898,6 +1971,9 @@ impl fmt::Display for PreparedTypeName<'_> {
         let module_len = self.total - self.terminal.len() - 2;
         let truncated = module_len > allowance;
         let mut remaining = if truncated { allowance - 3 } else { allowance };
+        // Even the longest package prefix fits before the bounded module suffix.
+        self.write_prefix(f)?;
+        remaining -= Self::prefix_len(self.package);
         let mut write_piece = |piece: &str| -> fmt::Result {
             let mut n = remaining.min(piece.len());
             while !piece.is_char_boundary(n) {
@@ -1907,7 +1983,6 @@ impl fmt::Display for PreparedTypeName<'_> {
             remaining -= n;
             Ok(())
         };
-        write_piece("crate")?;
         for name in self.names[..self.count].iter().rev() {
             write_piece("::")?;
             write_piece(self.sources.prepared_text(*name))?;

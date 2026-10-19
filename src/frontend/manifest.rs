@@ -7,6 +7,7 @@ use std::{
     mem::{align_of, size_of},
 };
 mod cli;
+pub(super) mod graph;
 #[cfg(test)]
 mod tests;
 
@@ -73,7 +74,7 @@ fn word(operation: Operation) -> &'static str {
 }
 /// Keep TEST local to manifest commands; source compiler operations stay closed.
 #[derive(Clone, Copy)]
-enum Command {
+pub(super) enum Command {
     Check,
     Run,
     Build,
@@ -286,43 +287,11 @@ pub(super) fn select(args: &[String]) -> Option<Route> {
     cli::select(args)
 }
 
-/// Consumes the request and returns before source loading. Nothing but the joined
-/// String remains; raw/file/scratch/metadata/decoded/path/carrier owners are gone.
-pub(super) fn entry(request: Box<[Request; 1]>, operation: Operation) -> Result<String, Failure> {
-    with_manifest(request, |path, raw, allocator| {
-        prepare(path, raw, allocator, operation)
-    })
-}
-
-/// Managed native commands retain the selected lexical directory and name.
-/// No manifest is reread; CHECK/interpreter RUN discard optional metadata.
+/// Publication metadata of the selected application; graph entries remain in
+/// the session's immutable resolved manifests.
 pub(super) struct BuildSelection {
-    pub entry: String,
     pub parent: String,
     pub name: String,
-}
-pub(super) fn build(
-    request: Box<[Request; 1]>,
-    operation: Operation,
-) -> Result<BuildSelection, Failure> {
-    with_manifest(request, |path, raw, allocator| {
-        let mut name = String::new();
-        let entry = prepare_inner(path, raw, allocator, operation.into(), Some(&mut name))?;
-        Ok(BuildSelection {
-            entry,
-            parent: parent(path, cfg!(windows)).to_owned(),
-            name,
-        })
-    })
-}
-
-/// Tests use the same project entry; optional name/version remain metadata.
-/// Both engines accept the same manifest and retain its lexical output parent.
-pub(super) fn test(request: Box<[Request; 1]>) -> Result<(String, String), Failure> {
-    with_manifest(request, |path, raw, allocator| {
-        let entry = prepare_inner(path, raw, allocator, Command::Test, None)?;
-        Ok((entry, parent(path, cfg!(windows)).to_owned()))
-    })
 }
 
 // The route transfers its fallibly allocated carrier; retain that ownership
@@ -338,17 +307,21 @@ fn with_manifest<T>(
     let Request {
         path, allocator, ..
     } = &mut request[0];
+    let raw = read_path(path, allocator, M_RAW)?;
+    consume(path, &raw, allocator)
+}
+fn read_path(path: &str, allocator: &mut Allocator, limit: usize) -> Result<Vec<u8>, Failure> {
     let io_error = |reason| Failure::Io(format!("cannot read manifest `{path}`: {reason}"));
     #[cfg(test)]
     tests::record(tests::Event::PathMetadata);
-    if !std::fs::metadata(&*path).map_err(io_error)?.is_file() {
+    if !std::fs::metadata(path).map_err(io_error)?.is_file() {
         return Err(Failure::Io(format!(
             "manifest `{path}` must be a regular file"
         )));
     }
     #[cfg(test)]
     tests::record(tests::Event::Open);
-    let mut file = File::open(&*path).map_err(io_error)?;
+    let mut file = File::open(path).map_err(io_error)?;
     #[cfg(test)]
     tests::record(tests::Event::HandleMetadata);
     if !file.metadata().map_err(io_error)?.is_file() {
@@ -356,21 +329,28 @@ fn with_manifest<T>(
             "manifest `{path}` must be a regular file"
         )));
     }
-    let raw = read(&mut file, allocator).map_err(|e| match e {
+    read_limit(&mut file, allocator, limit).map_err(|e| match e {
         ReadFailure::Io(e) => io_error(e),
         ReadFailure::Limit(e) => e,
-    })?;
-    consume(path, &raw, allocator)
+    })
 }
 enum ReadFailure {
     Io(io::Error),
     Limit(Failure),
 }
+#[cfg(test)]
 fn read(reader: &mut impl Read, allocator: &mut Allocator) -> Result<Vec<u8>, ReadFailure> {
-    let mut raw = allocator.vector(M_RAW).map_err(ReadFailure::Limit)?;
+    read_limit(reader, allocator, M_RAW)
+}
+fn read_limit(
+    reader: &mut impl Read,
+    allocator: &mut Allocator,
+    limit: usize,
+) -> Result<Vec<u8>, ReadFailure> {
+    let mut raw = allocator.vector(limit).map_err(ReadFailure::Limit)?;
     let mut scratch = [0u8; S_READ];
     loop {
-        let remaining = M_RAW
+        let remaining = limit
             .checked_sub(raw.len())
             .ok_or_else(|| ReadFailure::Limit(overflow()))?;
         let count = add(remaining, 1).map_err(ReadFailure::Limit)?.min(S_READ);
@@ -380,9 +360,11 @@ fn read(reader: &mut impl Read, allocator: &mut Allocator) -> Result<Vec<u8>, Re
             Ok(0) => return Ok(raw),
             Ok(n) if n > count => return Err(ReadFailure::Limit(Failure::Invariant)),
             Ok(n) if n > remaining => {
-                return Err(ReadFailure::Limit(Failure::Resource(
-                    "manifest input exceeds 16384 bytes",
-                )))
+                return Err(ReadFailure::Limit(Failure::Resource(if limit == M_RAW {
+                    "manifest input exceeds 16384 bytes"
+                } else {
+                    "aggregate manifest input exceeds 16384 bytes"
+                })))
             }
             Ok(n) => raw.extend_from_slice(&scratch[..n]),
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -505,13 +487,25 @@ impl<'a> Scanner<'a> {
         }
     }
 }
+#[cfg(test)]
 fn parse(path: &str, text: &str, operation: Command) -> Result<Parsed, Failure> {
+    parse_with_dependencies(path, text, operation, None)
+}
+type DependencyVisitor<'a> = dyn FnMut(&str, Field, usize) -> Result<(), Failure> + 'a;
+fn parse_with_dependencies(
+    path: &str,
+    text: &str,
+    operation: Command,
+    mut dependency: Option<&mut DependencyVisitor<'_>>,
+) -> Result<Parsed, Failure> {
     let mut scan = Scanner::new(text);
     if text.starts_with('\u{feff}') {
         return Err(scan.syntax(path, "manifest BOM is not supported"));
     }
     let mut result = Parsed::default();
     let mut project = false;
+    let mut dependencies = false;
+    let mut in_dependencies = false;
     while !scan.rest().is_empty() {
         scan.horizontal()?;
         match scan.peek() {
@@ -529,6 +523,16 @@ fn parse(path: &str, text: &str, operation: Command) -> Result<Parsed, Failure> 
                     return Err(scan.syntax(path, "invalid table header"));
                 }
                 scan.end_line(path)?;
+                if section == "dependencies" && dependency.is_some() {
+                    if dependencies {
+                        return Err(Failure::Cli(format!(
+                            "manifest `{path}` line {header_line}: duplicate manifest table: dependencies"
+                        )));
+                    }
+                    dependencies = true;
+                    in_dependencies = true;
+                    continue;
+                }
                 if section != "project" {
                     return Err(Failure::Cli(format!(
                         "manifest `{path}` line {header_line}: unsupported manifest section for typed {}: {section}",
@@ -541,12 +545,21 @@ fn parse(path: &str, text: &str, operation: Command) -> Result<Parsed, Failure> 
                     )));
                 }
                 project = true;
+                in_dependencies = false;
             }
             _ => {
                 let key = scan.identifier()?;
                 scan.horizontal()?;
                 if key.is_empty() || scan.next()? != Some('=') {
                     return Err(scan.syntax(path, "expected bare key and ="));
+                }
+                if in_dependencies {
+                    scan.horizontal()?;
+                    let line = scan.line;
+                    let value = scan.string(path)?;
+                    dependency.as_mut().ok_or(Failure::Invariant)?(key, value, line)?;
+                    scan.end_line(path)?;
+                    continue;
                 }
                 if !project {
                     return Err(scan.syntax(path, "manifest keys require [project]"));
@@ -658,6 +671,7 @@ fn parent(path: &str, windows: bool) -> &str {
         ""
     }
 }
+#[cfg(test)]
 fn prepare(
     path: &str,
     raw: &[u8],
@@ -666,6 +680,7 @@ fn prepare(
 ) -> Result<String, Failure> {
     prepare_inner(path, raw, allocator, operation.into(), None)
 }
+#[cfg(test)]
 fn prepare_inner(
     path: &str,
     raw: &[u8],
@@ -676,7 +691,17 @@ fn prepare_inner(
     let text = std::str::from_utf8(raw)
         .map_err(|_| Failure::Utf8(format!("manifest `{path}` is not valid UTF-8")))?;
     let parsed = parse(path, text, operation)?;
-    let edition = admitted_field(&parsed, 0, operation)?;
+    prepare_parsed(path, text, allocator, operation, build_name, &parsed)
+}
+fn prepare_parsed(
+    path: &str,
+    text: &str,
+    allocator: &mut Allocator,
+    operation: Command,
+    build_name: Option<&mut String>,
+    parsed: &Parsed,
+) -> Result<String, Failure> {
+    let edition = admitted_field(parsed, 0, operation)?;
     let mut expected = "typed-preview".chars();
     let mut equal = true;
     visit(text, edition, |c| {
@@ -689,7 +714,7 @@ fn prepare_inner(
             operation.word()
         )));
     }
-    let entry = admitted_field(&parsed, 1, operation)?;
+    let entry = admitted_field(parsed, 1, operation)?;
     entry_policy(text, entry)?;
     #[cfg(test)]
     if tests::invariant_fault() {
@@ -705,7 +730,7 @@ fn prepare_inner(
     }
     for index in 2..4 {
         if parsed.fields[index].is_some() {
-            admitted_field(&parsed, index, operation)?;
+            admitted_field(parsed, index, operation)?;
         }
     }
     let total = parsed

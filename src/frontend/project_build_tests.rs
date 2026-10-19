@@ -20,7 +20,6 @@ impl Scratch {
     }
     fn selection(&self) -> BuildSelection {
         BuildSelection {
-            entry: "unused.ox".into(),
             parent: format!("{}/", self.0.display()),
             name: "app".into(),
         }

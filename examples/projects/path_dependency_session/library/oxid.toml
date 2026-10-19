@@ -1,0 +1,7 @@
+[project]
+edition="typed-preview"
+entry="lib.ox"
+name="library"
+
+[dependencies]
+shared="../shared"

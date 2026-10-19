@@ -18,6 +18,7 @@ mod enum_carrier_tests;
 #[path = "project/enum_index_tests.rs"]
 mod enum_index_tests;
 mod filesystem;
+pub(super) mod forest;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -145,6 +146,7 @@ pub(super) struct ProjectSources {
     programs: Vec<ast::Program>,
     modules: Vec<ModuleHeader>,
     canonical_root: Option<PathBuf>,
+    graph: Option<forest::PackageGraph>,
     usage: SourceUsage,
     syntax_flavor: SyntaxFlavor,
 }
@@ -477,6 +479,7 @@ impl ProjectSources {
                 programs: Vec::new(),
                 modules: Vec::new(),
                 canonical_root: None,
+                graph: None,
                 usage: SourceUsage::default(),
                 syntax_flavor: SyntaxFlavor::OriginalSingleFile,
             },
@@ -826,6 +829,10 @@ impl SourceSetBuilder<'_> {
         &mut self,
         provider: &mut Option<&mut dyn LexicalProvider>,
     ) -> Result<(), Errors> {
+        let root_id = self.project.modules.len();
+        if root_id >= self.limits.modules.min(ProjectLimits::default().modules) {
+            return Err(one(resource("module count limit exceeded", None)));
+        }
         let text = self
             .read_source(Path::new(self.entry), self.entry, None)
             .map_err(one)?;
@@ -835,14 +842,15 @@ impl SourceSetBuilder<'_> {
             .map_err(|error| one(reserve_error(error, None)))?;
         display.push_str(self.entry);
         let program = self.parse_file_with_provider(display, text, None, provider)?;
-        let root = self.project.root_eof();
+        let root_file = self.project.sources.get(SourceFileId(root_id));
+        let root = root_file.span(root_file.text().len(), root_file.text().len());
         if self.limits.modules == 0 {
             return Err(one(resource("module count limit exceeded", Some(root))));
         }
         self.reserve_file(Some(root)).map_err(one)?;
         self.project.programs.push(program);
         self.project.modules.push(ModuleHeader {
-            file: SourceFileId(0),
+            file: SourceFileId(root_id),
             parent: None,
             declaration: None,
             public: None,
@@ -850,13 +858,13 @@ impl SourceSetBuilder<'_> {
             relative_path: String::new(),
             canonical_path: None,
         });
-        self.project.usage.modules = 1;
+        self.project.usage.modules = root_id + 1;
         // No additional path policy, including host capability checks, for one file.
-        if self.project.programs[0].modules.is_empty() {
+        if self.project.programs[root_id].modules.is_empty() {
             return Ok(());
         }
         self.project.syntax_flavor = SyntaxFlavor::ProjectSyntax;
-        let origin = self.project.programs[0].modules[0].name;
+        let origin = self.project.programs[root_id].modules[0].name;
         // Root canonicalization is deferred until the first declared child has
         // passed the earlier M/D/component/relative-path dimensional checks.
         let first_name_bytes = self.project.text(origin).len();
@@ -898,10 +906,10 @@ impl SourceSetBuilder<'_> {
         }
         self.project.usage.retained_path_bytes = retained;
         self.project.canonical_root = Some(root_path);
-        self.project.modules[0].canonical_path = Some(entry_path);
+        self.project.modules[root_id].canonical_path = Some(entry_path);
         // Fixed depth-bounded traversal storage: no recursive AST/vector remapping.
         let mut stack = [Frame {
-            module: ModuleId(0),
+            module: ModuleId(root_id),
             next: 0,
         }; 33];
         let mut height = 1;
@@ -1047,6 +1055,12 @@ impl SourceSetBuilder<'_> {
             origin,
         )
         .map_err(one)?;
+        if path_bytes > self.limits.path_bytes {
+            return Err(one(resource(
+                "retained module path budget exceeded",
+                origin,
+            )));
+        }
         let file = self
             .project
             .sources
@@ -1290,11 +1304,20 @@ impl SourceSetBuilder<'_> {
                 declaration.name,
             )));
         }
-        for header in &self.project.modules {
+        // Canonical source reuse is prohibited inside one package. Distinct
+        // packages retain distinct nominal identities even with overlapping roots.
+        let package_start = self
+            .project
+            .modules
+            .iter()
+            .rposition(|h| h.parent.is_none())
+            .unwrap_or(0);
+        for header in &self.project.modules[package_start..] {
             if header.canonical_path.as_ref() == Some(&canonical) {
-                let earlier = header
-                    .declaration
-                    .unwrap_or_else(|| self.project.root_eof());
+                let earlier = header.declaration.unwrap_or_else(|| {
+                    let file = self.project.sources.get(header.file);
+                    file.span(file.text().len(), file.text().len())
+                });
                 return Err(one(owned_diagnostic::secondary(
                     policy(
                         "module canonical pathname was already loaded",
@@ -1455,6 +1478,7 @@ impl ProjectSources {
             programs: Vec::new(),
             modules: Vec::new(),
             canonical_root: None,
+            graph: None,
             usage: SourceUsage::default(),
             syntax_flavor: SyntaxFlavor::ProjectSyntax,
         };
@@ -1864,6 +1888,7 @@ mod lexer_reservation_caller_tests {
                 programs: Vec::new(),
                 modules: Vec::new(),
                 canonical_root: None,
+                graph: None,
                 usage: SourceUsage::default(),
                 syntax_flavor: SyntaxFlavor::OriginalSingleFile,
             },

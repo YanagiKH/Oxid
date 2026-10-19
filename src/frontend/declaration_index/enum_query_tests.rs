@@ -874,6 +874,7 @@ fn enum_query_utf8_display_preserves_boundaries_without_source_identifiers() {
         original: false,
         is_enum: true,
         builtin: false,
+        package: None,
     };
     let display = prepared.to_string();
     assert!(display.len() <= 160);

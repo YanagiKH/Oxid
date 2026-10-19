@@ -89,6 +89,51 @@ impl<'s> SourceOwner<'s> {
             Kind::Original { .. } => 1,
         }
     }
+    pub(super) fn root_count(self) -> usize {
+        match self.kind {
+            Kind::Project(p) => p.package_count(),
+            Kind::Original { .. } => 1,
+        }
+    }
+    pub(super) fn crate_root(self, module: ModuleId) -> Result<ModuleId, Box<Diagnostic>> {
+        match self.kind {
+            Kind::Project(p) => p.package_root(module).ok_or_else(|| bad(self.eof())),
+            Kind::Original { .. } if module.0 == 0 => Ok(module),
+            _ => Err(bad(self.eof())),
+        }
+    }
+    pub(super) fn dependency_root(
+        self,
+        module: ModuleId,
+        alias: Span,
+        work: &WorkMeter,
+    ) -> Result<ModuleId, Box<Diagnostic>> {
+        if let Kind::Project(project) = self.kind {
+            if let Some(graph) = project.graph() {
+                work.debit(9, alias, "package membership lookup")?;
+                let package = project
+                    .package_for_module(module)
+                    .ok_or_else(|| bad(alias))?;
+                for edge in &graph.packages[package.0].dependencies {
+                    if compare_bytes(&edge.alias, self.text(alias)?, work, alias)?
+                        == Ordering::Equal
+                    {
+                        return graph
+                            .packages
+                            .get(edge.target.0)
+                            .map(|p| p.root)
+                            .ok_or_else(|| bad(alias));
+                    }
+                }
+            }
+        }
+        Err(diagnostic(
+            "E0205",
+            "resolve",
+            "unknown direct dependency alias",
+            alias,
+        ))
+    }
     pub fn file(self, module: ModuleId) -> Result<&'s SourceFile, Box<Diagnostic>> {
         match self.kind {
             Kind::Original { file, .. } if module.0 == 0 => Ok(file),
@@ -212,7 +257,10 @@ impl<'s> SourceOwner<'s> {
         path: QualifiedPathRef,
     ) -> Result<QualifiedPathView<'s>, Box<Diagnostic>> {
         let view = self.qualified_path(path)?;
-        if !matches!(view.root, ast::PathRoot::Crate | ast::PathRoot::Std) {
+        if !matches!(
+            view.root,
+            ast::PathRoot::Crate | ast::PathRoot::Std | ast::PathRoot::Dependency
+        ) {
             return Err(bad(self.eof()));
         }
         Ok(view)

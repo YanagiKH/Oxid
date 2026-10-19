@@ -571,7 +571,9 @@ fn collect<'s>(
     }
     c.originals = add(
         add(add(c.functions, c.records, at)?, c.enums, at)?,
-        c.modules - 1,
+        c.modules
+            .checked_sub(sources.root_count() as u64)
+            .ok_or_else(|| bad(at))?,
         at,
     )?;
     for count in [
@@ -686,7 +688,7 @@ fn collect<'s>(
             work,
         )?,
         children: allocate(
-            c.modules as usize - 1,
+            c.modules as usize - sources.root_count(),
             NONE,
             allocator,
             "index children",
@@ -773,8 +775,13 @@ fn collect<'s>(
             }
             _ => (NONE, 0),
         };
-        if (m == 0 && (parent != NONE || depth != 0))
-            || (m > 0 && (parent as usize >= m || depth == 0 || depth > 32))
+        if sources.root_count() > 1 {
+            work.debit(9, at, "package membership lookup")?;
+        }
+        let root = sources.crate_root(ModuleId(m))?;
+        if (m == root.0 && (parent != NONE || depth != 0))
+            || (m != root.0
+                && (parent as usize >= m || (parent as usize) < root.0 || depth == 0 || depth > 32))
         {
             return Err(bad(at));
         }
@@ -819,7 +826,7 @@ fn collect<'s>(
         c.enums as usize,
         c.originals as usize,
         c.imports as usize,
-        c.modules as usize - 1,
+        c.modules as usize - sources.root_count(),
     ) {
         return Err(bad(at));
     }
@@ -828,7 +835,14 @@ fn collect<'s>(
     for m in 0..sources.count() {
         work.debit(1, at, "module ancestry")?;
         let row = tables.modules[m];
-        if m > 0 {
+        if row.parent == NONE {
+            // Finish the previous package's DFS interval before starting a root.
+            while stack_len > 0 {
+                work.debit(1, at, "package subtree close")?;
+                stack_len -= 1;
+                tables.modules[stack[stack_len] as usize].subtree_end = m as u32;
+            }
+        } else {
             let parent = row.parent as usize;
             while stack_len > 0 {
                 work.debit(1, at, "module parent edge")?;
@@ -996,6 +1010,9 @@ fn collect<'s>(
     for m in 1..tables.modules.len() {
         work.debit(1, at, "module domain")?;
         let row = tables.modules[m];
+        if row.parent == NONE {
+            continue;
+        }
         let parent = tables.modules[row.parent as usize];
         let original = tables.originals[row.original as usize];
         let own = if original.flags & PUBLIC != 0 {

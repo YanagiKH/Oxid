@@ -21,6 +21,7 @@ mod project;
 mod project_build;
 mod project_scaffold;
 mod project_test;
+mod session;
 mod source;
 mod toolchain_doctor;
 mod typeck;

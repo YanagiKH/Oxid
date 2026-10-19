@@ -626,6 +626,7 @@ impl Parser<'_> {
         let root = match self.source.text_at(first) {
             "crate" => PathRoot::Crate,
             "std" if self.std_imports.enabled() => PathRoot::Std,
+            _ if self.std_imports == StdImportPolicy::Enabled => PathRoot::Dependency,
             _ => {
                 return Err(self.diagnostic(
                     "E0101",

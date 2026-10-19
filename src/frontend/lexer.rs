@@ -337,27 +337,7 @@ fn lex_core(
                 {
                     cursor += 1;
                 }
-                match &text[start..cursor] {
-                    "fn" => Kind::Fn,
-                    "struct" => Kind::Struct,
-                    "mod" => Kind::Mod,
-                    "use" => Kind::Use,
-                    "pub" => Kind::Pub,
-                    "let" => Kind::Let,
-                    "mut" => Kind::Mut,
-                    "return" => Kind::Return,
-                    "break" => Kind::Break,
-                    "continue" => Kind::Continue,
-                    "if" => Kind::If,
-                    "while" => Kind::While,
-                    "else" => Kind::Else,
-                    "true" => Kind::True,
-                    "false" => Kind::False,
-                    "import" | "macro" | "macro_rules" | "const" | "for" | "loop" | "match"
-                    | "async" | "await" | "move" | "ref" | "unsafe" | "extern" | "enum"
-                    | "trait" | "impl" | "type" | "null" | "and" | "or" => Kind::Unsupported,
-                    _ => Kind::Ident,
-                }
+                identifier_kind(&text[start..cursor])
             }
             c if c.is_numeric() => {
                 // Preserve the whole candidate, including unsupported Unicode,
@@ -957,5 +937,30 @@ mod lexer_real_null_tests {
                 assert!(!event.success);
             }
         }
+    }
+}
+
+/// Shared lexical keyword classification for source and manifest aliases.
+pub(super) fn identifier_kind(name: &str) -> Kind {
+    match name {
+        "fn" => Kind::Fn,
+        "struct" => Kind::Struct,
+        "mod" => Kind::Mod,
+        "use" => Kind::Use,
+        "pub" => Kind::Pub,
+        "let" => Kind::Let,
+        "mut" => Kind::Mut,
+        "return" => Kind::Return,
+        "break" => Kind::Break,
+        "continue" => Kind::Continue,
+        "if" => Kind::If,
+        "while" => Kind::While,
+        "else" => Kind::Else,
+        "true" => Kind::True,
+        "false" => Kind::False,
+        "import" | "macro" | "macro_rules" | "const" | "for" | "loop" | "match" | "async"
+        | "await" | "move" | "ref" | "unsafe" | "extern" | "enum" | "trait" | "impl" | "type"
+        | "null" | "and" | "or" => Kind::Unsupported,
+        _ => Kind::Ident,
     }
 }

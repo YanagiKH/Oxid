@@ -47,6 +47,7 @@ fn fixture(text: &str) -> ProjectSources {
             canonical_path: None,
         }],
         canonical_root: None,
+        graph: None,
         usage,
         syntax_flavor: flavor,
     }

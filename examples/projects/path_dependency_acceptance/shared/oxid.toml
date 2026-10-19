@@ -1,0 +1,3 @@
+[project]
+edition = "typed-preview"
+entry = "src/lib.ox"

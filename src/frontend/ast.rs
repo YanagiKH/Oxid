@@ -12,6 +12,7 @@ pub enum PathRoot {
     Crate,
     Std,
     LocalType,
+    Dependency,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct QualifiedPath {
@@ -403,7 +404,10 @@ impl Program {
         // Both private summaries are derived during bounded AST construction.
         // The index never needs an unmetered path/import scan to read them.
         for path in &paths {
-            project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
+            project_syntax |= matches!(
+                path.root,
+                PathRoot::Crate | PathRoot::Std | PathRoot::Dependency
+            );
             std_import_syntax |= path.root == PathRoot::Std;
         }
         project_syntax |= functions.iter().any(|function| function.public.is_some())
@@ -524,6 +528,8 @@ impl Program {
         };
         let mut std_paths = 0usize;
         let mut std_imports = 0usize;
+        let mut dependency_paths = 0usize;
+        let mut dependency_imports = 0usize;
         let mut path_end = 0;
         let mut previous_path: Option<Span> = None;
         for (index, path) in self.paths.iter().enumerate() {
@@ -531,7 +537,19 @@ impl Program {
                 return false;
             }
             let length = usize::from(path.segment_len);
-            project_syntax |= matches!(path.root, PathRoot::Crate | PathRoot::Std);
+            project_syntax |= matches!(
+                path.root,
+                PathRoot::Crate | PathRoot::Std | PathRoot::Dependency
+            );
+            if path.root == PathRoot::Dependency {
+                if std_policy != super::parser::StdImportPolicy::Enabled {
+                    return false;
+                }
+                let Some(next) = dependency_paths.checked_add(1) else {
+                    return false;
+                };
+                dependency_paths = next;
+            }
             if path.root == PathRoot::Std {
                 *std_syntax = true;
                 if !std_policy.enabled() {
@@ -612,6 +630,16 @@ impl Program {
             if self
                 .paths
                 .get(import.path.0)
+                .is_some_and(|p| p.root == PathRoot::Dependency)
+            {
+                let Some(next) = dependency_imports.checked_add(1) else {
+                    return false;
+                };
+                dependency_imports = next;
+            }
+            if self
+                .paths
+                .get(import.path.0)
                 .is_some_and(|path| path.root == PathRoot::Std)
             {
                 let Some(next) = std_imports.checked_add(1) else {
@@ -620,7 +648,10 @@ impl Program {
                 std_imports = next;
             }
             if !self.paths.get(import.path.0).is_some_and(|path| {
-                path.root == PathRoot::Crate || (std_policy.enabled() && path.root == PathRoot::Std)
+                path.root == PathRoot::Crate
+                    || (std_policy.enabled() && path.root == PathRoot::Std)
+                    || (std_policy == super::parser::StdImportPolicy::Enabled
+                        && path.root == PathRoot::Dependency)
             }) || !valid(import.alias)
                 || !valid(import.span)
             {
@@ -629,7 +660,7 @@ impl Program {
         }
         // The checked import inventory separately checks strict source order,
         // so these equal cardinalities also exclude detached/reused std rows.
-        if std_paths != std_imports {
+        if std_paths != std_imports || dependency_paths != dependency_imports {
             return false;
         }
         let mut counts = [0usize; 5];
@@ -911,10 +942,9 @@ impl Program {
                 ExprKind::QualifiedValue { path, args } => {
                     enum_syntax.get_or_insert(expression.span);
                     visit()
-                        && self
-                            .paths
-                            .get(path.0)
-                            .is_some_and(|path| path.root != PathRoot::Std)
+                        && self.paths.get(path.0).is_some_and(|path| {
+                            matches!(path.root, PathRoot::Crate | PathRoot::LocalType)
+                        })
                         && args.as_ref().is_none_or(|args| {
                             args.len() <= super::parser::MAX_PARAMS
                                 && args.iter().all(|arg| {
