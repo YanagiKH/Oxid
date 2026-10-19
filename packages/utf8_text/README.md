@@ -43,6 +43,14 @@ Callers must match `GrowStatus` to handle a possibly refused nonempty export.
 - `append_scalar(&mut Text, i32) -> ScalarAppendStatus`: `Ok`,
   `InvalidScalar(original_value)`, or the same three recoverable growth failures.
 - `equals_utf8(&Text, &[u8]) -> bool`: exact byte equality, without allocation.
+- `slice(&Text, start: i32, end: i32) -> SliceResult`: return `Ok(Text)`,
+  `InvalidRange`, `CapacityOverflow`, `AllocationFailed`, or `MemoryLimit`.
+  Offsets are half-open BYTE offsets, not scalar or grapheme indices.
+  Require `0 <= start <= end <= byte_len` and both endpoints at UTF-8 scalar
+  boundaries. Invalid ranges are rejected before creating the destination.
+  A boundary-aligned empty range succeeds; an empty range inside a multibyte
+  scalar is invalid. Success returns an independently owned copy; the source
+  remains unchanged on every result.
 - `truncate(&mut Text, i32) -> bool`: reject negative, past-end, or inside-scalar
   lengths unchanged; zero and current byte length are valid boundaries.
 - `into_bytes(Text) -> ByteBuf`: consume Text and transfer its descriptor,
@@ -70,13 +78,33 @@ loan checks still apply. `into_bytes` avoids this payload copy and allocation;
 ordinary call/control work and registry validation still apply, so the whole
 function invocation is not promised to be allocation-free or constant-time.
 
+`slice` checks both boundaries before creating a new ByteBuf and makes one
+checked `try_extend` from the borrowed byte subrange. Copying costs O(end - start)
+bytes and may allocate destination capacity. Source storage remains live while
+the result is built, so existing ByteBuf allocation and memory-limit admission
+still applies; a source that fits does not guarantee its copy will fit.
+Execution-budget failures remain terminal. No whole-Text clone is performed.
+
 Validation, equality and scalar counting are linear source loops; scalar count
 is not grapheme count. There is no escaping byte borrow or general
 field extraction, lossy conversion, normalization, streaming decoder, or text
-indexing. Keep I/O in a separate consumer package: even unused loaded I/O
-helpers affect Result/Test admission.
+indexing by scalar or grapheme. Keep I/O in a separate consumer package: even
+unused loaded I/O helpers affect Result/Test admission.
 
 ## Validation scope
+
+The `slice` addition passed focused package CHECK (23 functions) and its
+independent pure client CHECK (47 functions). The client passed both ordinary
+acceptance tests and, with LLVM 19.1.7 explicitly enabled, all four acceptance
+tests: interpreter Result 42, fourteen interpreter contracts, fourteen native
+contracts, and BUILD followed by standalone Result 42 outside the removed
+source tree. The existing Text regression target also passed all three tests.
+Scoped Clippy with warnings denied, Rust formatting and typed-preview source
+format checks passed. The harness asserts exact stdout, exit and empty stderr;
+successful child output is not separately retained in these logs.
+
+These focused checks do not establish full repository CI, allocation-failure
+injection, capacity/fuel or terminal-failure qualification.
 
 On Linux x86_64 with LLVM 19.1.7, the `take`/`into_bytes` addition passed
 three focused Take source/reference and native-IR regression tests and three

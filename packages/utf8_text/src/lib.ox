@@ -36,6 +36,14 @@ pub enum ScalarAppendStatus {
     MemoryLimit
 }
 
+pub enum SliceResult {
+    Ok(Text),
+    InvalidRange,
+    CapacityOverflow,
+    AllocationFailed,
+    MemoryLimit
+}
+
 fn continuation(value: i32) -> bool {
     return value >= 128 && value <= 191;
 }
@@ -250,6 +258,29 @@ fn valid_boundary(input: &[u8], length: i32) -> bool {
     let next_byte = input[length];
     let next = next_byte.to_i32();
     return !continuation(next);
+}
+
+fn copy_valid_range(input: &[u8], start: i32, end: i32) -> SliceResult {
+    let mut copied_bytes = new_bytes();
+    let copied_status = try_extend(&mut copied_bytes, &*input[start..end]);
+    match copied_status {
+        GrowStatus::Ok => { return SliceResult::Ok(Text { bytes: copied_bytes }); },
+        GrowStatus::CapacityOverflow => { return SliceResult::CapacityOverflow; },
+        GrowStatus::AllocationFailed => { return SliceResult::AllocationFailed; },
+        GrowStatus::MemoryLimit => { return SliceResult::MemoryLimit; },
+    }
+}
+
+// Copy a boundary-aligned half-open byte range into an independent owner.
+pub fn slice(text: &Text, start: i32, end: i32) -> SliceResult {
+    let source_length = bytes_len(&*text.bytes);
+    if start < 0 || start > end || end > source_length {
+        return SliceResult::InvalidRange;
+    }
+    if !valid_boundary(&*text.bytes, start) || !valid_boundary(&*text.bytes, end) {
+        return SliceResult::InvalidRange;
+    }
+    return copy_valid_range(&*text.bytes, start, end);
 }
 
 pub fn truncate(text: &mut Text, length: i32) -> bool {
