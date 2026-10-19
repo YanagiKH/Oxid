@@ -47,3 +47,6 @@ tests/qualification/bounded_u8_current/source-data-manifest.json -text
 
 # RFC0031 immutable byte corpus, registry and predecessor archive retain exact bytes.
 tests/qualification/byte_storage_current/** -text
+
+# Fixed binary input and output oracles retain exact bytes across hosts.
+examples/projects/oxi32sort/cases/*.bin -text
