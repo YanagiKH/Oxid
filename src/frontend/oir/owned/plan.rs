@@ -130,6 +130,19 @@ pub(super) struct ExecutionPlan<'a> {
     metadata_bytes: usize,
 }
 impl<'a> ExecutionPlan<'a> {
+    pub(super) fn uses_dynamic_resources(&self) -> bool {
+        self.witness.has_experimental_operations()
+            || self.witness.declarations().has_resource_declarations()
+            || self.witness.functions().iter().any(|function| {
+                function
+                    .owners
+                    .iter()
+                    .any(|owner| owner.aggregate() == AggregateTy::ByteBuf)
+                    || function.references.iter().any(|reference| {
+                        reference.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf)
+                    })
+            })
+    }
     pub fn build(witness: &'a VerifiedOwnedProgram) -> Result<Self, AdmissionFailure> {
         Self::build_with_limit(witness, MAX_PLAN_BYTES)
     }
@@ -184,10 +197,32 @@ impl<'a> ExecutionPlan<'a> {
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
     }
+    /// Only the sealed one-block binary primitives may prepay their immediate
+    /// return. Ordinary source wrappers keep their ordinary return checks.
+    pub(super) fn binary_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ReadSome, Function::WriteSome]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation) == Some(function))
+            .then(|| {
+                let terminator = self.witness.functions()[function.0].blocks[0]
+                    .terminator
+                    .as_ref()
+                    .expect("sealed binary return");
+                self.terminator_cost(function, &terminator.kind)
+            })
+    }
+    pub(super) fn has_binary_delivery(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ReadSome, Function::WriteSome]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
             // The consumer charges the validated capacity and each I/O attempt.
+            OwnedInstruction::Experimental { .. } => 4,
             OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
@@ -453,7 +488,7 @@ fn frame_usage(
             mul(add(u.scalar_slots, u.arguments)?, 8)?,
             mul(add(u.references, u.loans)?, 8)?,
         )?,
-        align(u.payload_bytes, 4)?,
+        align(u.payload_bytes, native_owner_alignment(declarations, f))?,
     )?;
     // Slice descriptors add native-only i32 length slots. The reference consumer
     // derives length from validated whole-owner provenance and stores no sidecar.
@@ -469,6 +504,20 @@ fn frame_usage(
         .count();
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
     Ok(u)
+}
+
+pub(super) fn native_owner_alignment(declarations: &Declarations, f: &RawOwnedFunction) -> usize {
+    f.owners
+        .iter()
+        .map(|owner| {
+            declarations
+                .aggregate_layout(owner.aggregate())
+                .expect("verified owner layout")
+                .align()
+        })
+        .max()
+        .unwrap_or(4)
+        .max(4)
 }
 
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {

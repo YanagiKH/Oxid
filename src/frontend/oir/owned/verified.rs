@@ -12,6 +12,21 @@ pub(super) struct VerifiedOwnedProgram {
 #[derive(Debug)]
 struct OwnershipSeal;
 impl VerifiedOwnedProgram {
+    pub(super) fn experimental_function(
+        &self,
+        item: crate::frontend::builtin_catalog::experimental::Function,
+    ) -> Option<hir::DefId> {
+        let rank = self.program.builtins.experimental_function_rank(item)?;
+        self.program
+            .functions
+            .len()
+            .checked_sub(self.program.builtins.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
+    }
+    pub(super) fn has_experimental_operations(&self) -> bool {
+        self.program.builtins.experimental().functions() != 0
+    }
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
         let rank = self
             .program

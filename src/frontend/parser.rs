@@ -571,6 +571,12 @@ impl Parser<'_> {
                 next.kind == Kind::Colon && self.peek().span.end == next.span.start
             })
     }
+    fn double_dot(&self) -> bool {
+        self.peek().kind == Kind::Dot
+            && self.tokens.get(self.cursor + 1).is_some_and(|next| {
+                next.kind == Kind::Dot && self.peek().span.end == next.span.start
+            })
+    }
     fn project_reserve_error(
         &self,
         error: ReserveFailure,
@@ -626,6 +632,7 @@ impl Parser<'_> {
         let root = match self.source.text_at(first) {
             "crate" => PathRoot::Crate,
             "std" if self.std_imports.enabled() => PathRoot::Std,
+            "alloc" if self.std_imports == StdImportPolicy::Enabled => PathRoot::Std,
             _ if self.std_imports == StdImportPolicy::Enabled => PathRoot::Dependency,
             _ => {
                 return Err(self.diagnostic(
@@ -638,15 +645,24 @@ impl Parser<'_> {
         };
         let id = self.qualified_segments(first, root)?;
         if root == PathRoot::Std && self.std_imports == StdImportPolicy::Enabled {
-            use super::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+            use super::builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction};
             let path = &self.paths[id.0];
             let segments = &self.path_segments[path.segment_start..];
-            if segments.len() != 3
-                || self.source.text_at(segments[1]) != "io"
-                || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
-                    && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name()
-                    && self.source.text_at(segments[2]) != BuiltinEnum::WriteStatus.name()
-                    && self.source.text_at(segments[2]) != BuiltinFunction::WriteStdout.name())
+            let experimental = segments.len() == 3
+                && experimental::Item::ALL.into_iter().any(|item| {
+                    item.path()
+                        .into_iter()
+                        .zip(segments)
+                        .all(|(name, span)| self.source.text_at(*span) == name)
+                });
+            if !experimental
+                && (segments.len() != 3
+                    || self.source.text_at(segments[0]) != "std"
+                    || self.source.text_at(segments[1]) != "io"
+                    || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
+                        && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name()
+                        && self.source.text_at(segments[2]) != BuiltinEnum::WriteStatus.name()
+                        && self.source.text_at(segments[2]) != BuiltinFunction::WriteStdout.name()))
             {
                 return Err(self.diagnostic(
                     "E0101",
@@ -1128,19 +1144,44 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            let place = star.map_or(BorrowPlace::OwnerName(name), |star| {
+            let mut place = star.map_or(BorrowPlace::OwnerName(name), |star| {
                 BorrowPlace::ForwardedParameter {
                     name,
                     star_span: star.span,
                 }
             });
+            let mut end = name.end;
+            if self.arrays_enabled() && self.array_punctuation("[") {
+                let bracket = self.bump();
+                let range_start = self.expression(depth + 1, LiteralContext::Allowed)?;
+                if !self.double_dot() {
+                    return Err(self.array_unsupported(bracket.span));
+                }
+                self.bump();
+                self.bump();
+                let range_end = self.expression(depth + 1, LiteralContext::Allowed)?;
+                end = self.array_close("byte view range requires `]`")?;
+                let star = star
+                    .map(|token| {
+                        u32::try_from(token.span.start).map_err(|_| {
+                            self.project_reserve_error(ReserveFailure::Overflow, token.span)
+                        })
+                    })
+                    .transpose()?;
+                place = BorrowPlace::Range {
+                    name,
+                    start: range_start,
+                    end: range_end,
+                    star,
+                };
+            }
             if !matches!(self.peek().kind, Kind::Comma | Kind::RParen) {
                 return Err(self.error("borrow must be the complete call argument"));
             }
             return Ok(Argument::Borrow {
                 mutable,
                 place,
-                span: self.source.span(start, name.end),
+                span: self.source.span(start, end),
             });
         }
         Ok(Argument::Value(
@@ -1561,6 +1602,10 @@ impl Parser<'_> {
                 .iter()
                 .map(|arg| match arg {
                     Argument::Value(id) => self.heights[id.0],
+                    Argument::Borrow {
+                        place: BorrowPlace::Range { start, end, .. },
+                        ..
+                    } => self.heights[start.0].max(self.heights[end.0]),
                     Argument::Borrow { .. } => 1,
                 })
                 .max()
@@ -1570,6 +1615,10 @@ impl Parser<'_> {
                 .flatten()
                 .map(|arg| match arg {
                     Argument::Value(id) => self.heights[id.0],
+                    Argument::Borrow {
+                        place: BorrowPlace::Range { start, end, .. },
+                        ..
+                    } => self.heights[start.0].max(self.heights[end.0]),
                     Argument::Borrow { .. } => 1,
                 })
                 .max()
@@ -1743,6 +1792,9 @@ impl Parser<'_> {
                         return Err(self.array_missing("array index requires an expression"));
                     }
                     let index = self.expression(depth + 1, LiteralContext::Allowed)?;
+                    if self.double_dot() {
+                        return Err(self.array_index_range_error(index));
+                    }
                     end = self.array_close("array index requires `]`")?;
                     ExprKind::IndexRead {
                         base: token.span,
@@ -1764,6 +1816,7 @@ impl Parser<'_> {
                     }
                 } else if self.mode.owned()
                     && matches!(path, ItemPath::Unqualified(_))
+                    && !self.double_dot()
                     && self.take(Kind::Dot).is_some()
                 {
                     let first = self
@@ -1782,7 +1835,7 @@ impl Parser<'_> {
                                 Some(self.peek().span),
                             ));
                         }
-                        if self.peek().kind != Kind::Dot {
+                        if self.peek().kind != Kind::Dot || self.double_dot() {
                             break;
                         }
                         if self.named_conversion_ahead(path).is_some() {
@@ -1829,6 +1882,9 @@ impl Parser<'_> {
                             return Err(self.array_missing("array index requires an expression"));
                         }
                         let index = self.expression(depth + 1, LiteralContext::Allowed)?;
+                        if self.double_dot() {
+                            return Err(self.array_index_range_error(index));
+                        }
                         end = self.array_close("array index requires `]`")?;
                         ExprKind::IndexRead {
                             base: self.source.span(token.span.start, field.end),
@@ -1920,7 +1976,9 @@ impl Parser<'_> {
             }
             None => return Err(self.error("expected a bool, i32 or unit expression")),
         };
-        if (self.arrays_enabled() && (self.array_punctuation("[") || self.peek().kind == Kind::Dot))
+        if (self.arrays_enabled()
+            && (self.array_punctuation("[")
+                || (self.peek().kind == Kind::Dot && !self.double_dot())))
             || (matches!(kind, ExprKind::Conversion { .. }) && self.peek().kind == Kind::LParen)
         {
             return Err(self.array_unsupported(self.peek().span));

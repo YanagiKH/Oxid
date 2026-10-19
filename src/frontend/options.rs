@@ -40,6 +40,12 @@ pub enum Route {
     ManifestRun {
         request: Box<[super::manifest::Request; 1]>,
     },
+    ManifestProcessRun {
+        request: Box<[super::manifest::Request; 1]>,
+    },
+    ManifestProcessError {
+        failure: super::manifest::Failure,
+    },
     ManifestTest {
         request: Box<[super::manifest::Request; 1]>,
         native: bool,

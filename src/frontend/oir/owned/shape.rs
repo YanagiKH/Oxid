@@ -32,7 +32,7 @@ impl Shape {
     ) -> Result<Span, OwnedFailure> {
         let instruction = self.acquisitions.get(loan.0).and_then(|site| *site)
             .and_then(|site| f.blocks.get(site.block)?.statements.get(site.statement))
-            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } if actual == loan))
+            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } | OwnedInstruction::PrepareBorrowRange { loan: actual, .. } if actual == loan))
             .ok_or_else(|| bad(Malformed::CanonicalSite, f.span))?;
         Ok(instruction.cause_span())
     }
@@ -106,13 +106,17 @@ fn same_aggregate(
 fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
+            Err(bad(Malformed::Type, s))
+        }
     }
 }
 fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
     match aggregate {
         AggregateTy::FixedArray(array) => Ok(array),
-        AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
+            Err(bad(Malformed::Type, s))
+        }
     }
 }
 fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
@@ -122,6 +126,9 @@ fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
     }
 }
 fn array_element(ty: BorrowedTy, s: Span) -> Result<hir::Ty, OwnedFailure> {
+    if ty == BorrowedTy::Exact(AggregateTy::ByteBuf) {
+        return Err(bad(Malformed::Type, s));
+    }
     ty.element().ok_or_else(|| bad(Malformed::Type, s))
 }
 pub(super) fn base(
@@ -186,12 +193,29 @@ pub(super) fn signatures(
     d: &Declarations,
     sources: &SourceMap,
 ) -> Result<(), OwnedFailure> {
+    // Resource authority comes from the closed canonical inventory, never from
+    // a producer's nominal spelling or a resource-bearing declaration alone.
+    let resource_authority = raw
+        .builtins
+        .experimental()
+        .contains(crate::frontend::builtin_catalog::experimental::Item::ByteBuf);
+    if d.has_resource_declarations() && !resource_authority {
+        return Err(DeclarationError::TypeMismatch.into());
+    }
     for (index, f) in raw.functions.iter().enumerate() {
         span(sources, f.span)?;
         if f.id != hir::DefId(index) {
             return Err(bad(Malformed::Id, f.span));
         }
         d.check_value_type(f.result)?;
+        if !resource_authority
+            && (f.result == ValueTy::Owned(AggregateTy::ByteBuf)
+                || f.loans
+                    .iter()
+                    .any(|loan| loan.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf)))
+        {
+            return Err(bad(Malformed::Type, f.span));
+        }
         if f.blocks.is_empty() || f.entry.0 >= f.blocks.len() {
             return Err(bad(Malformed::Id, f.span));
         }
@@ -234,6 +258,9 @@ pub(super) fn signatures(
         for (id, o) in f.owners.iter().enumerate() {
             span(sources, o.span)?;
             d.check_aggregate_type(o.aggregate())?;
+            if o.aggregate() == AggregateTy::ByteBuf && !resource_authority {
+                return Err(bad(Malformed::Type, o.span));
+            }
             match o.kind {
                 OwnerKind::Parameter { position } => {
                     parameter_owners += 1;
@@ -263,6 +290,9 @@ pub(super) fn signatures(
         for (id, r) in f.references.iter().enumerate() {
             span(sources, r.span)?;
             d.check_borrowed_type(r.referent())?;
+            if r.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf) && !resource_authority {
+                return Err(bad(Malformed::Type, r.span));
+            }
             if !matches!(f.parameters.get(r.position),Some(ParameterBinding::Reference(p)) if p.0==id)
             {
                 return Err(bad(Malformed::Binding, r.span));
@@ -394,15 +424,16 @@ pub(super) fn check_with_conversion_authority(
             for _ in &l.projection {
                 meter.visit()?;
             }
-            let (ValueTy::Owned(AggregateTy::FixedArray(array)), _) =
-                d.projection(root, &l.projection)?
-            else {
-                return Err(bad(Malformed::Type, l.span));
-            };
-            if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
-                return Err(bad(Malformed::Type, l.span));
+            match d.projection(root, &l.projection)?.0 {
+                ValueTy::Owned(AggregateTy::FixedArray(array)) => {
+                    if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
+                        return Err(bad(Malformed::Type, l.span));
+                    }
+                    BorrowedTy::Exact(AggregateTy::FixedArray(array))
+                }
+                ValueTy::Owned(AggregateTy::ByteBuf) => BorrowedTy::Exact(AggregateTy::ByteBuf),
+                _ => return Err(bad(Malformed::Type, l.span)),
             }
-            BorrowedTy::Exact(AggregateTy::FixedArray(array))
         };
         d.check_borrowed_view(record, l.referent())
             .map_err(|_| bad(Malformed::Type, l.span))?;
@@ -437,6 +468,39 @@ pub(super) fn check_with_conversion_authority(
                 statement: si,
             };
             match &instruction.kind {
+                OwnedInstruction::Experimental {
+                    operation,
+                    destination,
+                } => {
+                    let expected = raw
+                        .functions
+                        .len()
+                        .checked_sub(raw.builtins.extra_functions())
+                        .and_then(|base| {
+                            base.checked_add(raw.builtins.experimental_function_rank(*operation)?)
+                        });
+                    if expected != Some(f.id.0) {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    match *destination {
+                        CallResult::Owned(destination) => {
+                            let o = ordinary(f, destination, s)?;
+                            if o.kind != OwnerKind::Temporary
+                                || ValueTy::Owned(o.aggregate()) != f.result
+                            {
+                                return Err(bad(Malformed::Binding, s));
+                            }
+                            let previous = &mut owners[destination.0].initialize;
+                            if previous.is_some() {
+                                return Err(bad(Malformed::CanonicalSite, s));
+                            }
+                            *previous = Some(site);
+                        }
+                        CallResult::Scalar(destination) => {
+                            equal(ValueTy::Scalar(local(f, destination, s)?), f.result, s)?
+                        }
+                    }
+                }
                 OwnedInstruction::ReadStdin {
                     buffer,
                     destination,
@@ -929,7 +993,24 @@ pub(super) fn check_with_conversion_authority(
                     call: c,
                     argument,
                     loan: l,
+                }
+                | OwnedInstruction::PrepareBorrowRange {
+                    call: c,
+                    argument,
+                    loan: l,
+                    ..
                 } => {
+                    if let OwnedInstruction::PrepareBorrowRange { start, end, .. } =
+                        instruction.kind
+                    {
+                        equal(operand(f, start, sources)?, hir::Ty::I32, s)?;
+                        equal(operand(f, end, sources)?, hir::Ty::I32, s)?;
+                        equal(
+                            loan(f, *l, s)?.referent(),
+                            BorrowedTy::ScalarSlice(hir::Ty::U8),
+                            s,
+                        )?;
+                    }
                     let decl = call(f, *c, s)?;
                     if decl.arguments.get(*argument) != Some(&ArgumentSlot::Borrow(*l)) {
                         return Err(bad(Malformed::Binding, s));

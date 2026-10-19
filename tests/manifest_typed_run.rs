@@ -481,7 +481,13 @@ fn manifest_run_cli_precedence_and_summary_selection() {
     // Contract section 3 examples; JSON is selected before the boundary.
     for (args, code, stage, message, summary) in [
         (
-            vec!["run", "--wat", "--manifest-path=missing.toml", "--edition=bad", "--message-format=json"],
+            vec![
+                "run",
+                "--wat",
+                "--manifest-path=missing.toml",
+                "--edition=bad",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "unknown edition `bad`",
@@ -495,86 +501,117 @@ fn manifest_run_cli_precedence_and_summary_selection() {
             CHECK_FAILURE_SUMMARY,
         ),
         (
-            vec!["run", "--manifest-path=missing.toml", "--output=out", "--message-format=json"],
+            vec![
+                "run",
+                "--manifest-path=missing.toml",
+                "--output=out",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
-            "manifest run does not support entry-mode, backend, target, output or experimental selectors",
+            "manifest run does not support backend, target, output or experimental selectors",
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["run", "source.ox", "--manifest-path=missing.toml", "--output=out", "--message-format=json"],
+            vec![
+                "run",
+                "source.ox",
+                "--manifest-path=missing.toml",
+                "--output=out",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "manifest run does not accept a source operand",
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["run", "--manifest-path=missing.toml", "--message-format=json"],
+            vec![
+                "run",
+                "--manifest-path=missing.toml",
+                "--message-format=json",
+            ],
             "E0002",
             "source",
             "cannot read manifest `missing.toml`",
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["compile", "--manifest-path=missing.toml", "--message-format=json"],
+            vec![
+                "compile",
+                "--manifest-path=missing.toml",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "--manifest-path requires check, run or build",
             CHECK_FAILURE_SUMMARY,
         ),
         (
-            vec!["--manifest-path=example/oxid.toml", "run", "--message-format=json"],
+            vec![
+                "--manifest-path=example/oxid.toml",
+                "run",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "--manifest-path must follow run",
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["run", "--manifest-path=example/oxid.toml", "--edition=legacy-0.9", "--message-format=json"],
+            vec![
+                "run",
+                "--manifest-path=example/oxid.toml",
+                "--edition=legacy-0.9",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "manifest run conflicts with --edition legacy-0.9",
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["run", "--manifest-path=example/oxid.toml", "--message-format=json", "--", "argument"],
+            vec![
+                "run",
+                "--manifest-path=example/oxid.toml",
+                "--message-format=json",
+                "--",
+                "argument",
+            ],
             "E0001",
             "cli",
             "manifest run does not accept a source operand",
             RUN_FAILURE_SUMMARY,
         ),
         (
-            vec!["run", "--manifest-path=example/oxid.toml", "--profile=release", "--message-format=json"],
+            vec![
+                "run",
+                "--manifest-path=example/oxid.toml",
+                "--profile=release",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "unsupported option for manifest run: --profile=release",
             RUN_FAILURE_SUMMARY,
         ),
-        // Process entry is an ordinary manifest CLI refusal on stdout NDJSON,
-        // not the Process safe-stderr protocol.
         (
-            vec!["run", "--manifest-path=example/oxid.toml", "--entry-mode=process", "--message-format=json"],
-            "E0001",
-            "cli",
-            "manifest run does not support entry-mode",
-            RUN_FAILURE_SUMMARY,
-        ),
-        (
-            vec!["run", "--manifest-path=example/oxid.toml", "--entry-mode=result", "--message-format=json"],
-            "E0001",
-            "cli",
-            "manifest run does not support entry-mode",
-            RUN_FAILURE_SUMMARY,
-        ),
-        (
-            vec!["install", "--manifest-path=example/oxid.toml", "--message-format=json"],
+            vec![
+                "install",
+                "--manifest-path=example/oxid.toml",
+                "--message-format=json",
+            ],
             "E0001",
             "cli",
             "--manifest-path requires check, run or build",
             CHECK_FAILURE_SUMMARY,
         ),
         (
-            vec!["check", "--manifest-path=missing.toml", "--message-format=json"],
+            vec![
+                "check",
+                "--manifest-path=missing.toml",
+                "--message-format=json",
+            ],
             "E0002",
             "source",
             "cannot read manifest `missing.toml`",
@@ -583,9 +620,27 @@ fn manifest_run_cli_precedence_and_summary_selection() {
     ] {
         let out = fixture.command(&args);
         refusal(&out, code, stage, message, summary);
-        assert!(String::from_utf8_lossy(&out.stdout).contains("\"primary\":null"), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("\"primary\":null"),
+            "{args:?}"
+        );
     }
-    // Text mode: human diagnostic on stderr, nothing on stdout.
+    let out = fixture.command(&[
+        "run",
+        "--manifest-path=example/oxid.toml",
+        "--entry-mode=result",
+        "--message-format=json",
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout)
+            .contains(&success_json("{\"type\":\"i32\",\"value\":7}")),
+        "{out:?}"
+    );
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        return;
+    }
+    // Process mode has safe stderr diagnostics and never emits a run summary.
     let out = fixture.command(&[
         "run",
         "--manifest-path=missing.toml",
@@ -595,7 +650,14 @@ fn manifest_run_cli_precedence_and_summary_selection() {
     assert!(out.stdout.is_empty());
     assert!(String::from_utf8(out.stderr)
         .unwrap()
-        .contains("error[E0001] (cli): manifest run does not support"));
+        .contains("error[E0002] (source): cannot read manifest"));
+    let out = fixture.command(&[
+        "run",
+        "--manifest-path=example/oxid.toml",
+        "--entry-mode=process",
+    ]);
+    assert_eq!(out.status.code(), Some(7), "{out:?}");
+    assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{out:?}");
 }
 
 #[test]

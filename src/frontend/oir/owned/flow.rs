@@ -221,7 +221,7 @@ impl DenialContext {
             (OwnedInstruction::ArrayLength { base: actual, .. }, ArrayBase) if base == *actual => {
                 DeniedOperation::ArrayLength
             }
-            (OwnedInstruction::PrepareBorrow { loan, .. }, BorrowAuthority) => {
+            (OwnedInstruction::PrepareBorrow { loan, .. } | OwnedInstruction::PrepareBorrowRange { loan, .. }, BorrowAuthority) => {
                 let loan = f.loans.get(loan.0)?;
                 if base != loan.authority {
                     return None;
@@ -386,7 +386,11 @@ fn step(
             failure = Violation::Lifetime;
             role = DeniedRole::InitializationDestination;
         }
-        OwnedInstruction::Construct { destination, .. }
+        OwnedInstruction::Experimental {
+            destination: CallResult::Owned(destination),
+            ..
+        }
+        | OwnedInstruction::Construct { destination, .. }
         | OwnedInstruction::ConstructArray { destination, .. }
         | OwnedInstruction::ConstructEnum { destination, .. }
         | OwnedInstruction::ConstructOwnedEnum { destination, .. }
@@ -485,6 +489,7 @@ fn step(
             role = DeniedRole::ArrayBase;
         }
         OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::PrepareBorrowRange { loan, .. }
             if f.loans[loan.0].authority == AccessBase::Owner(owner) =>
         {
             event = true;
@@ -829,6 +834,26 @@ fn accesses(
     mut visit: impl FnMut(AccessBase, Access, DeniedRole) -> Result<(), OwnedFailure>,
 ) -> Result<(), OwnedFailure> {
     match i {
+        OwnedInstruction::Experimental { destination, .. } => {
+            for (index, reference) in f.references.iter().enumerate() {
+                visit(
+                    AccessBase::Parameter(ReferenceParamId(index)),
+                    if reference.kind == BorrowKind::Exclusive {
+                        Access::Write
+                    } else {
+                        Access::Read
+                    },
+                    DeniedRole::ArrayBase,
+                )?;
+            }
+            if let CallResult::Owned(destination) = destination {
+                visit(
+                    AccessBase::Owner(*destination),
+                    Access::Write,
+                    DeniedRole::InitializationDestination,
+                )?;
+            }
+        }
         OwnedInstruction::WriteStdout {
             buffer,
             destination,
@@ -968,7 +993,8 @@ fn accesses(
         OwnedInstruction::StorageEnd(o) => {
             visit(AccessBase::Owner(*o), Access::End, DeniedRole::Storage)?
         }
-        OwnedInstruction::PrepareBorrow { loan, .. } => {
+        OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::PrepareBorrowRange { loan, .. } => {
             let l = &f.loans[loan.0];
             visit(
                 l.authority,
@@ -1008,7 +1034,8 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                 OwnedInstruction::WriteIndex { base, .. } if !shape::base(f, base, i.span)?.1 => {
                     Some((base, DeniedRole::ArrayBase, None))
                 }
-                OwnedInstruction::PrepareBorrow { loan, .. } => {
+                OwnedInstruction::PrepareBorrow { loan, .. }
+                | OwnedInstruction::PrepareBorrowRange { loan, .. } => {
                     let l = &f.loans[loan.0];
                     (l.kind == BorrowKind::Exclusive && !shape::base(f, l.authority, i.span)?.1)
                         .then_some((l.authority, DeniedRole::BorrowAuthority, Some(l.span)))
@@ -1080,7 +1107,8 @@ fn loans(
         0,
         meter,
         |mut state, i| {
-            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} if loan.0==id) {
+            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} if loan.0==id)
+            {
                 if state != 0 {
                     return Err(OwnedFailure::violation(
                         Violation::LoanRegion,
@@ -1213,7 +1241,8 @@ fn call_regions(
                 }
                 OwnedInstruction::PrepareScalar { call, argument, .. }
                 | OwnedInstruction::PrepareOwned { call, argument, .. }
-                | OwnedInstruction::PrepareBorrow { call, argument, .. } => {
+                | OwnedInstruction::PrepareBorrow { call, argument, .. }
+                | OwnedInstruction::PrepareBorrowRange { call, argument, .. } => {
                     if call.0 == id {
                         if state != argument + 1 {
                             return Err(OwnedFailure::violation(

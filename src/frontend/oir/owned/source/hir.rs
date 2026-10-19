@@ -39,6 +39,14 @@ pub(super) enum BorrowPlace {
 #[derive(Debug)]
 pub(super) enum Argument {
     Value(ExprId),
+    BorrowRange {
+        kind: BorrowKind,
+        place: BorrowPlace,
+        span: Span,
+        name_span: Span,
+        start: ExprId,
+        end: ExprId,
+    },
     Borrow {
         kind: BorrowKind,
         place: BorrowPlace,

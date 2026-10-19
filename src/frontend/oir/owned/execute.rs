@@ -8,6 +8,14 @@ use super::{
 use crate::frontend::options::EntryPolicy;
 use std::mem::size_of;
 
+#[path = "execute_experimental.rs"]
+mod experimental;
+pub(super) fn binary_delivery_control_bytes() -> usize {
+    experimental::binary_delivery_control_bytes()
+}
+#[path = "execute_resources.rs"]
+mod resources;
+
 const DEAD: u64 = 0;
 const UNINITIALIZED: u64 = 1;
 const AVAILABLE: u64 = 2;
@@ -24,6 +32,8 @@ pub(super) enum OwnedRunFailure {
     InputHost(Span),
     OutputHost(Span),
     OutputEntry(Span),
+    BinaryEntry(Span),
+    BinaryHost(Span),
     ProcessHost,
     ProcessSetup,
     ProcessEntry(Span),
@@ -52,6 +62,18 @@ impl OwnedRunFailure {
     }
     pub fn diagnostic(&self, sources: &SourceMap) -> Box<Diagnostic> {
         match self {
+            Self::BinaryEntry(span) => Diagnostic::new(
+                "E0609",
+                "oir-owned-run",
+                "binary I/O requires process entry mode",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::BinaryHost(span) => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "binary I/O requires Linux x86_64",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
             Self::Scalar(e) => e.diagnostic(sources),
             Self::EntryResult(s) => Diagnostic::new(
                 "E0600",
@@ -240,6 +262,7 @@ pub(super) enum Event {
 struct EnumValue {
     tag: u32,
     payload: Option<Scalar>,
+    payload_offset: u8,
 }
 #[derive(Clone, Copy)]
 enum Access {
@@ -258,6 +281,7 @@ struct Machine<'p, 'w> {
     live_cells: usize,
     live_bytes: usize,
     header_bytes: usize,
+    heap: byte_buffer::Heap,
     #[cfg(test)]
     events: Vec<Event>,
     #[cfg(test)]
@@ -554,7 +578,9 @@ impl<'p, 'w> Machine<'p, 'w> {
     fn array_type(&self, key: OwnerKey, span: Span) -> Result<FixedArrayTy> {
         match self.aggregate(key, span)? {
             AggregateTy::FixedArray(array) => Ok(array),
-            AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad("array aggregate type", span)),
+            AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
+                Err(bad("array aggregate type", span))
+            }
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -572,19 +598,27 @@ impl<'p, 'w> Machine<'p, 'w> {
             .ok_or_else(|| bad("missing view type", span))?
             .aggregate();
         let root_type = self.aggregate(key, span)?;
-        if (matches!(root_type, AggregateTy::FixedArray(_))
-            || matches!(aggregate, AggregateTy::Record(_)))
+        if matches!(aggregate, AggregateTy::Record(_))
             && (view.offset != 0 || root_type != aggregate)
         {
             return Err(bad("view root type", span));
         }
-        let size = self
-            .plan
-            .witness()
-            .declarations()
-            .aggregate_layout(aggregate)
-            .map_err(|_| bad("view layout", span))?
-            .size();
+        if let AggregateTy::FixedArray(root_array) = root_type {
+            if !matches!(aggregate, AggregateTy::FixedArray(array) if array.element() == root_array.element())
+            {
+                return Err(bad("view root element", span));
+            }
+        }
+        let size = match aggregate {
+            AggregateTy::FixedArray(array) if array.length() == 0 => 0,
+            _ => self
+                .plan
+                .witness()
+                .declarations()
+                .aggregate_layout(aggregate)
+                .map_err(|_| bad("view layout", span))?
+                .size(),
+        };
         let extent = self.owner_extent(key, span)?;
         index(view.offset, span)?
             .checked_add(size)
@@ -613,7 +647,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                 .get(index(permission.loan, span)?)
                 .ok_or_else(|| bad("view loan descriptor", span))?;
             if !descriptor.projection.is_empty() {
-                let (ValueTy::Owned(aggregate @ AggregateTy::FixedArray(_)), offset) = self
+                let (
+                    ValueTy::Owned(aggregate @ (AggregateTy::FixedArray(_) | AggregateTy::ByteBuf)),
+                    offset,
+                ) = self
                     .plan
                     .witness()
                     .declarations()
@@ -638,13 +675,44 @@ impl<'p, 'w> Machine<'p, 'w> {
         Err(bad("projected view provenance", span))
     }
     fn checked_handle_view(&self, handle: ReferenceHandle, span: Span) -> Result<AggregateTy> {
-        let actual = self.view_extent(handle.root, handle.view, span)?;
-        if matches!(
-            (self.aggregate(handle.root, span)?, actual),
-            (AggregateTy::Record(_), AggregateTy::FixedArray(_))
-        ) && self.projected_view(handle.permission, handle.root, span)? != handle.view
+        let actual = handle
+            .view
+            .aggregate
+            .ok_or_else(|| bad("handle view type", span))?
+            .aggregate();
+        let f = self.function(self.frames[index(handle.permission.frame, span)?].function);
+        let loan = &f.loans[index(handle.permission.loan, span)?];
+        if actual == AggregateTy::ByteBuf && loan.referent() == BorrowedTy::ScalarSlice(hir::Ty::U8)
         {
-            return Err(bad("projected view mismatch", span));
+            self.buffer_slice(handle, span)?;
+            return Ok(actual);
+        }
+        self.view_extent(handle.root, handle.view, span)?;
+        if matches!(self.aggregate(handle.root, span)?, AggregateTy::Record(_))
+            && matches!(actual, AggregateTy::FixedArray(_) | AggregateTy::ByteBuf)
+        {
+            let original = self.projected_view(handle.permission, handle.root, span)?;
+            match (original.aggregate.map(AggregateSlot::aggregate), actual) {
+                (Some(AggregateTy::FixedArray(original_array)), AggregateTy::FixedArray(array))
+                    if original_array.element() == array.element() =>
+                {
+                    let relative = handle
+                        .view
+                        .offset
+                        .checked_sub(original.offset)
+                        .ok_or_else(|| bad("projected range start", span))?;
+                    if relative
+                        .checked_add(array.length() as u64 * array.stride() as u64)
+                        .is_none_or(|end| {
+                            end > original_array.length() as u64 * original_array.stride() as u64
+                        })
+                    {
+                        return Err(bad("projected range end", span));
+                    }
+                }
+                _ if original == handle.view => (),
+                _ => return Err(bad("projected view mismatch", span)),
+            }
         }
         Ok(actual)
     }
@@ -919,9 +987,18 @@ impl<'p, 'w> Machine<'p, 'w> {
         if expected.is_some_and(|expected| expected != variant) {
             return Err(bad("enum tag", span));
         }
+        let payload_offset = self
+            .plan
+            .witness()
+            .declarations()
+            .enums()
+            .variant(variant.enumeration, variant)
+            .map_err(|_| bad("enum variant", span))?
+            .payload_offset()
+            .unwrap_or(0);
         let payload = if let Some(ValueTy::Scalar(ty)) = payload_ty {
             let extent = self.owner_extent(key, span)?;
-            let offset = scalar_offset(extent, 4, ty, span)?;
+            let offset = scalar_offset(extent, payload_offset, ty, span)?;
             #[cfg(test)]
             self.record_event(Event::EnumPayloadRead(key, scalar_size(ty)));
             Some(
@@ -936,6 +1013,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         Ok(EnumValue {
             tag: variant.index as u32,
             payload,
+            payload_offset: payload_offset as u8,
         })
     }
     fn preflight_enum_binding(
@@ -998,7 +1076,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         }
         // Sums have no static leaves. Snapshot only the checked active value,
         // before any destination write; caller state/epoch preflights precede us.
-        if self.owned_enum(record) {
+        if self.active_aggregate(record) {
             self.preflight_active(from, source.clone(), record, destination.clone(), span)?;
             #[cfg(test)]
             let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
@@ -1060,7 +1138,16 @@ impl<'p, 'w> Machine<'p, 'w> {
     }
     /// Scalar-only sums keep their original snapshot and event path. An owned
     /// alternative requires tag-directed traversal even when another arm is active.
-    fn owned_enum(&self, aggregate: AggregateTy) -> bool {
+    fn active_aggregate(&self, aggregate: AggregateTy) -> bool {
+        if self
+            .plan
+            .witness()
+            .declarations()
+            .contains_resources(aggregate)
+            .expect("verified resource containment")
+        {
+            return true;
+        }
         let AggregateTy::Enum(enumeration) = aggregate else {
             return false;
         };
@@ -1085,14 +1172,40 @@ impl<'p, 'w> Machine<'p, 'w> {
         for cell in ActiveCells::new(
             declarations,
             &self.frames[from.frame as usize].payload,
-            source,
+            source.clone(),
             aggregate,
             span,
         ) {
             let (leaf, _) = cell?;
             scalar_offset(destination.clone(), leaf.offset, leaf.ty, span)?;
         }
+        resources::preflight(
+            declarations,
+            &self.heap,
+            aggregate,
+            &self.frames[from.frame as usize].payload[source],
+            destination.len(),
+            span,
+        )?;
         Ok(())
+    }
+    fn release_resources(&mut self, key: OwnerKey, span: Span) -> Result<()> {
+        let aggregate = self.aggregate(key, span)?;
+        let declarations = self.plan.witness().declarations();
+        if !declarations
+            .contains_resources(aggregate)
+            .map_err(|_| bad("resource type", span))?
+        {
+            return Ok(());
+        }
+        let extent = self.owner_extent(key, span)?;
+        resources::release(
+            declarations,
+            &mut self.heap,
+            aggregate,
+            &self.frames[key.frame as usize].payload[extent],
+            span,
+        )
     }
     /// The caller validates every active cell and both ownership transitions
     /// before entering here. Source and destination have disjoint storage, so
@@ -1250,6 +1363,15 @@ impl<'p, 'w> Machine<'p, 'w> {
         Ok(self.plan.function(f.id).call(call).argument_start() + argument)
     }
     fn acquire(&mut self, frame: usize, id: LoanId, span: Span) -> Result<()> {
+        self.acquire_range(frame, id, None, span)
+    }
+    fn acquire_range(
+        &mut self,
+        frame: usize,
+        id: LoanId,
+        range: Option<(i32, i32)>,
+        span: Span,
+    ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         let descriptor = &f.loans[id.0];
         let root = self.base(
@@ -1259,9 +1381,15 @@ impl<'p, 'w> Machine<'p, 'w> {
             span,
         )?;
         let mut view = self.base_view(frame, descriptor.authority, root, span)?;
-        let mut actual = self.view_extent(root, view, span)?;
+        let mut actual = view
+            .aggregate
+            .ok_or_else(|| bad("loan view type", span))?
+            .aggregate();
         if !descriptor.projection.is_empty() {
-            let (ValueTy::Owned(projected @ AggregateTy::FixedArray(_)), relative) = self
+            let (
+                ValueTy::Owned(projected @ (AggregateTy::FixedArray(_) | AggregateTy::ByteBuf)),
+                relative,
+            ) = self
                 .plan
                 .witness()
                 .declarations()
@@ -1285,6 +1413,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             .declarations()
             .check_borrowed_view(BorrowedTy::Exact(actual), descriptor.referent())
             .map_err(|_| bad("loan borrowed view", span))?;
+        view = self.stage_byte_view(frame, descriptor, root, view, range, span)?;
         let parent = match descriptor.authority {
             AccessBase::Owner(_) => LoanKey::default(),
             AccessBase::Parameter(p) => self.frames[frame].references[p.0].permission,
@@ -1809,6 +1938,10 @@ impl<'p, 'w> Machine<'p, 'w> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         match instruction {
+            OwnedInstruction::Experimental {
+                operation,
+                destination,
+            } => self.experimental(frame, *operation, *destination, span)?,
             OwnedInstruction::ReadStdin {
                 buffer,
                 destination,
@@ -1936,11 +2069,14 @@ impl<'p, 'w> Machine<'p, 'w> {
                 declarations
                     .check_payload(enumeration, *variant, payload.map(Scalar::ty))
                     .map_err(|_| bad("enum construction type", span))?;
-                let tag = declarations
+                let variant = declarations
                     .variant(enumeration, *variant)
-                    .map_err(|_| bad("enum tag", span))?
-                    .tag();
-                let value = EnumValue { tag, payload };
+                    .map_err(|_| bad("enum tag", span))?;
+                let value = EnumValue {
+                    tag: variant.tag(),
+                    payload,
+                    payload_offset: variant.payload_offset().unwrap_or(0) as u8,
+                };
                 let extent = self.owner_extent(key, span)?;
                 enum_offsets(extent.clone(), value, span)?;
                 #[cfg(test)]
@@ -2036,6 +2172,32 @@ impl<'p, 'w> Machine<'p, 'w> {
                             {
                                 return Err(bad("overlapping composite transfer", span));
                             }
+                            if declarations
+                                .contains_resources(expected)
+                                .map_err(|_| bad("construction resource type", span))?
+                            {
+                                let start = destination_extent
+                                    .start
+                                    .checked_add(field.offset())
+                                    .ok_or_else(|| bad("construction resource extent", span))?;
+                                let end = start
+                                    .checked_add(
+                                        declarations
+                                            .aggregate_layout(expected)
+                                            .map_err(|_| bad("construction resource layout", span))?
+                                            .size(),
+                                    )
+                                    .filter(|end| *end <= destination_extent.end)
+                                    .ok_or_else(|| bad("construction resource extent", span))?;
+                                self.preflight_active(
+                                    from,
+                                    source_extent,
+                                    expected,
+                                    start..end,
+                                    span,
+                                )?;
+                                continue;
+                            }
                             for leaf in declarations
                                 .leaves(expected)
                                 .map_err(|_| bad("construction leaves", span))?
@@ -2076,8 +2238,29 @@ impl<'p, 'w> Machine<'p, 'w> {
                         }
                         FieldInitializer::Owned(source) => {
                             let from = self.owner_key(frame, *source, span)?;
+                            let aggregate = self.aggregate(from, span)?;
+                            if declarations
+                                .contains_resources(aggregate)
+                                .map_err(|_| bad("construction resource type", span))?
+                            {
+                                let start = destination_extent.start + field.offset();
+                                let end = start
+                                    + declarations
+                                        .aggregate_layout(aggregate)
+                                        .map_err(|_| bad("construction resource layout", span))?
+                                        .size();
+                                self.copy_active(
+                                    from,
+                                    self.owner_extent(from, span)?,
+                                    key,
+                                    start..end,
+                                    aggregate,
+                                    span,
+                                )?;
+                                continue;
+                            }
                             for leaf in declarations
-                                .leaves(self.aggregate(from, span)?)
+                                .leaves(aggregate)
                                 .map_err(|_| bad("construction leaves", span))?
                             {
                                 let value = self.load_leaf(from, leaf, span)?;
@@ -2208,6 +2391,9 @@ impl<'p, 'w> Machine<'p, 'w> {
                 base,
                 index,
             } => {
+                if self.dynamic_byte_view(frame, *base) {
+                    return self.dynamic_index_read(frame, *destination, *base, *index, span);
+                }
                 let (key, array, relative) = self.array_base(frame, *base, Access::Read, span)?;
                 if f.locals.get(destination.0).map(|local| local.ty) != Some(array.element()) {
                     return Err(bad("array read type", span));
@@ -2232,6 +2418,9 @@ impl<'p, 'w> Machine<'p, 'w> {
                 self.record_event(Event::ReadIndex(key, ordinal, value));
             }
             OwnedInstruction::WriteIndex { base, index, value } => {
+                if self.dynamic_byte_view(frame, *base) {
+                    return self.dynamic_index_write(frame, *base, *index, *value, span);
+                }
                 let (key, array, relative) = self.array_base(frame, *base, Access::Write, span)?;
                 let value = self.read(frame, *value)?;
                 if value.ty() != array.element() {
@@ -2262,6 +2451,9 @@ impl<'p, 'w> Machine<'p, 'w> {
                 }
             }
             OwnedInstruction::ArrayLength { destination, base } => {
+                if self.dynamic_byte_view(frame, *base) {
+                    return self.dynamic_length(frame, *destination, *base, span);
+                }
                 let (_key, array, _relative) = self.array_base(frame, *base, Access::Read, span)?;
                 self.write(
                     frame,
@@ -2279,18 +2471,22 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
             OwnedInstruction::StorageEnd(o) => {
                 self.expect_owner(frame, *o, &[UNINITIALIZED, AVAILABLE, MOVED], span)?;
+                if self.frames[frame].owners[o.0].state == AVAILABLE {
+                    self.release_resources(self.raw_key(frame, *o), span)?;
+                }
                 self.change_owner(frame, *o, DEAD, span)?;
             }
             OwnedInstruction::Discard(o) => {
                 let key = self.base(frame, AccessBase::Owner(*o), Access::Consume, span)?;
                 self.expect_owner(frame, *o, &[AVAILABLE], span)?;
                 let aggregate = self.aggregate(key, span)?;
-                if self.owned_enum(aggregate) {
+                if self.active_aggregate(aggregate) {
                     let extent = self.owner_extent(key, span)?;
                     self.preflight_active(key, extent.clone(), aggregate, extent, span)?;
                 } else if matches!(aggregate, AggregateTy::Enum(_)) {
                     self.load_enum(key, None, span)?;
                 }
+                self.release_resources(key, span)?;
                 self.change_owner(frame, *o, MOVED, span)?;
             }
             OwnedInstruction::Construct {
@@ -2350,6 +2546,25 @@ impl<'p, 'w> Machine<'p, 'w> {
                     return Err(bad("overlapping whole transfer", span));
                 }
                 let to = self.raw_key(frame, *destination);
+                if replacing && self.frames[frame].owners[destination.0].state == AVAILABLE {
+                    let aggregate = self.aggregate(from, span)?;
+                    if self
+                        .plan
+                        .witness()
+                        .declarations()
+                        .contains_resources(aggregate)
+                        .map_err(|_| bad("resource type", span))?
+                    {
+                        self.preflight_active(
+                            from,
+                            self.owner_extent(from, span)?,
+                            aggregate,
+                            self.owner_extent(to, span)?,
+                            span,
+                        )?;
+                        self.release_resources(to, span)?;
+                    }
+                }
                 self.transfer_payload(from, to, span)?;
                 self.change_owner(frame, *source, MOVED, span)?;
                 self.change_owner(frame, *destination, AVAILABLE, span)?;
@@ -2410,6 +2625,22 @@ impl<'p, 'w> Machine<'p, 'w> {
                 self.transfer_payload(from, self.raw_key(frame, destination), span)?;
                 self.change_owner(frame, *source, MOVED, span)?;
                 self.change_owner(frame, destination, AVAILABLE, span)?;
+                self.frames[frame].calls[call.0].next_argument += 1;
+            }
+            OwnedInstruction::PrepareBorrowRange {
+                call,
+                argument,
+                loan,
+                start,
+                end,
+            } => {
+                self.prepared(frame, *call, *argument, span)?;
+                let (Scalar::I32(start), Scalar::I32(end)) =
+                    (self.read(frame, *start)?, self.read(frame, *end)?)
+                else {
+                    return Err(bad("byte range endpoint type", span));
+                };
+                self.acquire_range(frame, *loan, Some((start, end)), span)?;
                 self.frames[frame].calls[call.0].next_argument += 1;
             }
             OwnedInstruction::PrepareBorrow {
@@ -2528,7 +2759,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .checked_add(size)
                         .filter(|end| *end <= child.payload.len())
                         .ok_or_else(|| bad("incoming aggregate range", span))?;
-                    let owned_enum = self.owned_enum(record);
+                    let owned_enum = self.active_aggregate(record);
                     let active = if owned_enum {
                         self.preflight_active(
                             key,
@@ -2712,6 +2943,13 @@ impl<'p, 'w> Machine<'p, 'w> {
         self.record_event(Event::Return(f.id));
         #[cfg(test)]
         self.observe_frame(frame, StorageObservationKind::Return, span);
+        // The result has transferred before ordinary frame cleanup. StorageEnd
+        // handles lexical exits; this also releases live parameters and stages.
+        for owner in (0..f.owners.len()).rev() {
+            if self.frames[frame].owners[owner].state == AVAILABLE {
+                self.release_resources(self.raw_key(frame, OwnerPlaceId(owner)), span)?;
+            }
+        }
         let u = self.plan.function(f.id).usage();
         self.frames.pop();
         self.live_slots -= u.scalar_slots;
@@ -2769,6 +3007,18 @@ impl<'p, 'w> Machine<'p, 'w> {
                 }
                 #[cfg(test)]
                 self.inject_statement(frame, &statement.kind, span);
+                if let OwnedInstruction::Experimental {
+                    operation,
+                    destination,
+                } = statement.kind
+                {
+                    use crate::frontend::builtin_catalog::experimental::Function;
+                    if matches!(operation, Function::ReadSome | Function::WriteSome) {
+                        self.binary_delivery(frame, operation, destination, span)?;
+                        // The canonical frame has completed its prepaid return.
+                        continue;
+                    }
+                }
                 self.statement(frame, &statement.kind, span)?;
                 self.frames[frame].next += 1;
                 continue;
@@ -2898,6 +3148,9 @@ impl Iterator for ActiveCells<'_> {
                 offset: relative,
                 ty,
             })),
+            // Resource identities are never scalar cells. A separate checked
+            // traversal validates and transfers their allocation obligations.
+            ValueTy::Owned(AggregateTy::ByteBuf) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                 let result = (|| {
                     let leaf = ScalarLeaf {
@@ -2952,6 +3205,7 @@ fn copy_active_bytes(
         let offset = scalar_offset(0..destination.len(), leaf.offset, leaf.ty, span)?;
         encode(destination, offset, value, span)?;
     }
+    resources::copy(declarations, aggregate, source, destination, span)?;
     Ok(())
 }
 
@@ -2965,7 +3219,14 @@ fn enum_offsets(
     let tag = scalar_offset(extent.clone(), 0, hir::Ty::I32, span)?;
     let payload = value
         .payload
-        .map(|payload| scalar_offset(extent, 4, payload.ty(), span))
+        .map(|payload| {
+            scalar_offset(
+                extent,
+                usize::from(value.payload_offset),
+                payload.ty(),
+                span,
+            )
+        })
         .transpose()?;
     Ok((tag, payload))
 }
@@ -3104,6 +3365,20 @@ fn checked_entry_policy(
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
+    for operation in [
+        crate::frontend::builtin_catalog::experimental::Function::ReadSome,
+        crate::frontend::builtin_catalog::experimental::Function::WriteSome,
+    ] {
+        if let Some(function) = witness.experimental_function(operation) {
+            let span = witness.functions()[function.0].span;
+            if policy == EntryPolicy::Result {
+                return Err(OwnedRunFailure::BinaryEntry(span));
+            }
+            if !input::supported_host() {
+                return Err(OwnedRunFailure::BinaryHost(span));
+            }
+        }
+    }
     if policy == EntryPolicy::Result {
         if let Some(function) = witness.builtin_output_function() {
             // The ordinary result-mode route must deny even an unused output
@@ -3192,7 +3467,22 @@ fn execute_plan_inner(
         live_slots: 0,
         live_cells: 0,
         live_bytes: 0,
-        header_bytes: plan::mul(limits.frames, size_of::<Frame>())?,
+        header_bytes: plan::add(
+            plan::mul(limits.frames, size_of::<Frame>())?,
+            plan::add(
+                if plan.uses_dynamic_resources() {
+                    size_of::<byte_buffer::Heap>()
+                } else {
+                    0
+                },
+                if plan.has_binary_delivery() {
+                    binary_delivery_control_bytes()
+                } else {
+                    0
+                },
+            )?,
+        )?,
+        heap: byte_buffer::Heap::for_execution(),
         #[cfg(test)]
         events: Vec::new(),
         #[cfg(test)]
@@ -3207,7 +3497,7 @@ fn execute_plan_inner(
         // the first write. The private process seam has no observation sink.
         machine.observer.silent = true;
     }
-    let result = (|| {
+    let mut result = (|| {
         machine.activation_preflight(
             entry,
             plan::add(1, plan.function(entry).usage().activation_fuel_cells())?,
@@ -3220,6 +3510,16 @@ fn execute_plan_inner(
         machine.install(root);
         machine.execute()
     })();
+    if result.is_ok() && machine.heap.ledger().live_allocations != 0 {
+        result = Err(bad("resource obligations at execution end", f.span));
+    }
+    // Terminal reclamation is outside all user fuel/admission paths. It also
+    // runs on ordinary completion, after the zero-obligation check above.
+    #[cfg(test)]
+    let before_cleanup = machine.heap.ledger();
+    machine.heap.cleanup();
+    #[cfg(test)]
+    byte_buffer::testing::record(&machine.heap, before_cleanup);
     #[cfg(test)]
     {
         if result.is_err() && machine.observer.collecting() {
@@ -3368,7 +3668,7 @@ fn stage_stdout(source: &[u8], staged: &mut [u8]) -> bool {
 fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => {
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
             Err(bad("unsupported aggregate carrier", span))
         }
     }
@@ -3418,6 +3718,7 @@ mod u8_payment_tests {
                 live_cells: 7,
                 live_bytes: 56,
                 header_bytes: 0,
+                heap: byte_buffer::Heap::default(),
                 events: vec![],
                 observer: Default::default(),
             };

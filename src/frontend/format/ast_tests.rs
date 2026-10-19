@@ -264,6 +264,18 @@ impl<'a> Fingerprint<'a> {
                 self.flag(*mutable);
                 self.span(*span);
                 match *place {
+                    BorrowPlace::Range {
+                        name,
+                        start,
+                        end,
+                        star,
+                    } => {
+                        self.tag("range");
+                        self.access_path(name);
+                        self.flag(star.is_some());
+                        self.expression(start);
+                        self.expression(end);
+                    }
                     BorrowPlace::OwnerName(name) => {
                         self.tag("owner");
                         self.access_path(name);
@@ -1742,6 +1754,33 @@ fn byte_storage_formatter_preserves_array_only_types_and_source_origins() {
     let mut output = SourceMap::new();
     output.add("unrelated.ox".into(), "".into());
     let id = output.add("byte-formatted.ox".into(), formatted);
+    let after = output.get(id);
+    assert_eq!(before, fingerprint(after, &parse(after)));
+    assert_eq!(format_source(after).unwrap(), after.text());
+}
+
+#[test]
+fn bytebuf_formatter_preserves_call_only_range_endpoints_and_forwarding() {
+    fn parse(source: &SourceFile) -> Program {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    }
+    let text = "use alloc::bytes::new;fn take(p:&[u8])->i32{return p.len();}fn f(p:&mut [u8])->i32{return take(&*p[0..p.len()]);}fn main()->i32{let mut b=new();return f(&mut b[0..0]);}";
+    let mut sources = SourceMap::new();
+    let id = sources.add("range-format.ox".into(), text.into());
+    let source = sources.get(id);
+    let before = fingerprint(source, &parse(source));
+    let formatted = format_source(source).unwrap();
+    let mut output = SourceMap::new();
+    let id = output.add("range-formatted.ox".into(), formatted);
     let after = output.get(id);
     assert_eq!(before, fingerprint(after, &parse(after)));
     assert_eq!(format_source(after).unwrap(), after.text());

@@ -76,6 +76,7 @@ fn byte_storage_views_rederive_whole_owner_identity_before_offsets() {
             live_cells: 0,
             live_bytes: 0,
             header_bytes: 0,
+            heap: byte_buffer::Heap::default(),
             events: Vec::new(),
             observer: array_observe::Observer::default(),
         };
@@ -297,6 +298,7 @@ fn byte_storage_dynamic_reborrows_preserve_root_view_and_parent_permissions() {
                 live_cells: 0,
                 live_bytes: 0,
                 header_bytes: 0,
+                heap: byte_buffer::Heap::default(),
                 events: Vec::new(),
                 observer: array_observe::Observer::default(),
             };

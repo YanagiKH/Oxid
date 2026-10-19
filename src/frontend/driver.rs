@@ -55,6 +55,12 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         } => Some(manifest_error(failure, json, operation)),
         Route::ManifestCheck { request } => Some(manifest_file(request, Operation::Check)),
         Route::ManifestRun { request } => Some(manifest_file(request, Operation::Run)),
+        Route::ManifestProcessRun { request } => Some(manifest_process_run(request)),
+        Route::ManifestProcessError { failure } => Some(if !oir::process::setup() {
+            74
+        } else {
+            report_process(&SourceMap::new(), &[manifest_diagnostic(failure)])
+        }),
         Route::ManifestTest { request, native } => Some(super::project_test::run(request, native)),
         Route::ManifestTestError { failure, json } => {
             Some(super::project_test::cli_error(failure, json))
@@ -192,6 +198,36 @@ fn manifest_file(request: Box<[super::manifest::Request; 1]>, operation: Operati
 fn manifest_diagnostic(failure: super::manifest::Failure) -> Diagnostic {
     let (code, stage) = failure.classification();
     *Diagnostic::new(code, stage, failure.message(), None)
+}
+
+/// The same selected package/source session as ordinary manifest run, with
+/// process signal setup before loading and status-only execution/reporting.
+fn manifest_process_run(request: Box<[super::manifest::Request; 1]>) -> i32 {
+    if !oir::process::setup() {
+        return 74;
+    }
+    let session = match CompilerSession::load(
+        request,
+        Configuration::new(
+            super::manifest::Command::Run,
+            Engine::Interpreter,
+            EntryPolicy::Process,
+            false,
+        ),
+    ) {
+        Ok(session) => session,
+        Err((sources, diagnostics)) => return report_process(&sources, &diagnostics),
+    };
+    match session.check() {
+        Ok(verified) => match verified.run_process() {
+            Ok(status) => status,
+            Err(oir::ProcessFailure::Setup) => 74,
+            Err(oir::ProcessFailure::Diagnostic(diagnostic)) => {
+                report_process(session.project().sources(), &[*diagnostic])
+            }
+        },
+        Err(diagnostics) => report_process(session.project().sources(), &diagnostics),
+    }
 }
 
 fn manifest_build(request: Box<[super::manifest::Request; 1]>, entry_policy: EntryPolicy) -> i32 {

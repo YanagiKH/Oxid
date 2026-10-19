@@ -122,6 +122,7 @@ fn rv_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>) -> Machine<'p, 'w> {
         live_cells: 0,
         live_bytes: 0,
         header_bytes: 8 * size_of::<Frame>(),
+        heap: byte_buffer::Heap::default(),
         events: vec![],
         observer: array_observe::Observer::default(),
     };

@@ -251,7 +251,9 @@ fn admit(total: usize, extra: usize, limit: usize, at: Span) -> Result<usize, Bo
 }
 impl HirPlan {
     fn calculate(c: HirCounts, at: Span) -> Result<Self, Box<Diagnostic>> {
-        if c.signatures < c.functions || c.signatures - c.functions > 2 {
+        let canonical_functions =
+            2 + crate::frontend::builtin_catalog::experimental::Function::ALL.len();
+        if c.signatures < c.functions || c.signatures - c.functions > canonical_functions {
             return Err(invalid(at));
         }
         let mut resolved = 0;
@@ -692,7 +694,7 @@ pub(super) fn preflight_current_hir(
     work: &WorkMeter,
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
     index.require_current_source_pipeline()?;
-    if index.enum_count() == 0 {
+    if !resolve::requires_paid_source(index) {
         return Ok(None);
     }
     preflight_hir(index, work, false)
@@ -765,7 +767,21 @@ fn preflight_hir(
         increment(&mut counts.signatures, 1, anchor)?;
         increment(&mut counts.parameters, 1, anchor)?;
     }
+    for builtin in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if index.builtin_set().experimental().contains(builtin.item()) {
+            let anchor = index.experimental_anchor(builtin.item())?;
+            let signature = index.experimental_signature(builtin)?;
+            visit(work, 1 + signature.parameters().len(), anchor)?;
+            increment(&mut counts.signatures, 1, anchor)?;
+            increment(&mut counts.parameters, signature.parameters().len(), anchor)?;
+        }
+    }
     let mut plan = HirPlan::calculate(counts, at)?;
+    if !index.builtin_set().experimental().is_empty() {
+        let extra = crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes();
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
     if index.has_owned_enum_payloads(work)? {
         // New owned-payload roles supplement the frozen scalar banks only for
         // this feature. They consume the existing ceiling before HIR allocation.
@@ -1007,9 +1023,13 @@ fn count_expression(
                 ast::ExprKind::Call { args, .. }
                 | ast::ExprKind::QualifiedValue {
                     args: Some(args), ..
-                } => match args.get(next) {
-                    Some(ast::Argument::Value(value)) => Some(*value),
-                    Some(ast::Argument::Borrow { .. }) => continue,
+                } => match args.get(next / 2) {
+                    Some(ast::Argument::Value(value)) if next % 2 == 0 => Some(*value),
+                    Some(ast::Argument::Borrow {
+                        place: ast::BorrowPlace::Range { start, end, .. },
+                        ..
+                    }) => Some(if next % 2 == 0 { *start } else { *end }),
+                    Some(_) => continue,
                     None => None,
                 },
                 ast::ExprKind::StructLiteral { fields, .. } => {

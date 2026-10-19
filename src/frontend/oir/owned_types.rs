@@ -11,6 +11,9 @@ use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
 mod enums;
+mod resources;
+#[allow(unused_imports)]
+pub(super) use resources::{ResourceKind, ResourceLeaf, ResourceLeaves};
 #[cfg(test)]
 mod owned_enum_tests;
 #[allow(unused_imports)]
@@ -82,6 +85,7 @@ pub(in crate::frontend) enum AggregateTy {
     Record(RecordId),
     Enum(EnumId),
     FixedArray(FixedArrayTy),
+    ByteBuf,
 }
 
 /// A call-only borrowed view. Unsized slices are never owned value types.
@@ -100,6 +104,7 @@ impl BorrowedTy {
             (Self::Exact(AggregateTy::FixedArray(array)), Self::ScalarSlice(element)) => {
                 array.element() == element
             }
+            (Self::Exact(AggregateTy::ByteBuf), Self::ScalarSlice(hir::Ty::U8)) => true,
             (Self::ScalarSlice(actual), Self::ScalarSlice(expected)) => actual == expected,
             _ => false,
         }
@@ -108,6 +113,7 @@ impl BorrowedTy {
         match self {
             Self::Exact(AggregateTy::FixedArray(array)) => Some(array.element()),
             Self::ScalarSlice(element) => Some(element),
+            Self::Exact(AggregateTy::ByteBuf) => Some(hir::Ty::U8),
             Self::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => None,
         }
     }
@@ -121,11 +127,13 @@ enum BorrowedSlotRepr {
     Record(u32),
     FixedArray(FixedArrayTy),
     ScalarSlice(hir::Ty),
+    ByteBuf,
 }
 impl BorrowedSlot {
     pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
         Ok(Self(match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
+            BorrowedTy::Exact(AggregateTy::ByteBuf) => BorrowedSlotRepr::ByteBuf,
             BorrowedTy::Exact(AggregateTy::Record(id)) => BorrowedSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -140,6 +148,7 @@ impl BorrowedSlot {
     }
     pub(in crate::frontend) fn referent(self) -> BorrowedTy {
         match self.0 {
+            BorrowedSlotRepr::ByteBuf => BorrowedTy::Exact(AggregateTy::ByteBuf),
             BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
             ))),
@@ -161,12 +170,14 @@ enum AggregateSlotRepr {
     Record(u32),
     Enum(u32),
     FixedArray(FixedArrayTy),
+    ByteBuf,
 }
 impl AggregateSlot {
     pub(in crate::frontend) fn try_from_aggregate(
         ty: AggregateTy,
     ) -> Result<Self, DeclarationError> {
         Ok(Self(match ty {
+            AggregateTy::ByteBuf => AggregateSlotRepr::ByteBuf,
             AggregateTy::Record(id) => AggregateSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -181,6 +192,7 @@ impl AggregateSlot {
     }
     pub(in crate::frontend) fn aggregate(self) -> AggregateTy {
         match self.0 {
+            AggregateSlotRepr::ByteBuf => AggregateTy::ByteBuf,
             // All qualified hosts are 64-bit; no truncation on supported targets.
             AggregateSlotRepr::Record(id) => AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
@@ -592,7 +604,7 @@ impl Declarations {
         aggregate: AggregateTy,
     ) -> Result<ScalarLeaves<'_>, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
-        if matches!(aggregate, AggregateTy::Enum(_)) {
+        if matches!(aggregate, AggregateTy::Enum(_) | AggregateTy::ByteBuf) {
             return Err(DeclarationError::TypeMismatch);
         }
         let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
@@ -641,6 +653,7 @@ impl Declarations {
     }
     pub(super) fn check_aggregate_type(&self, ty: AggregateTy) -> Result<(), DeclarationError> {
         match ty {
+            AggregateTy::ByteBuf => Ok(()),
             AggregateTy::Record(id) => self.record(id).map(|_| ()),
             AggregateTy::Enum(id) => self.enums.enumeration(id).map(|_| ()).map_err(Into::into),
             AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
@@ -648,6 +661,7 @@ impl Declarations {
     }
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
         match ty {
+            AggregateTy::ByteBuf => Ok(Layout { size: 16, align: 8 }),
             AggregateTy::Record(id) => self.record(id).map(RecordDecl::layout),
             AggregateTy::Enum(id) => self
                 .enums
@@ -659,6 +673,7 @@ impl Declarations {
     }
     pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
         match ty {
+            AggregateTy::ByteBuf => Ok(3),
             AggregateTy::Record(id) => self.record(id).map(|record| record.width),
             AggregateTy::Enum(id) => self
                 .enums
@@ -772,6 +787,11 @@ impl Iterator for ScalarLeaves<'_> {
                 ValueTy::Owned(AggregateTy::Enum(_)) => {
                     unreachable!("enum excluded from static leaves")
                 }
+                ValueTy::Owned(AggregateTy::ByteBuf) => {
+                    // Resources have their own checked traversal. A descriptor
+                    // is never reinterpreted as scalar storage or a pointer leaf.
+                    self.length -= 1;
+                }
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {
                         self.stack[position] = Some((ty, offset, next + 1));
@@ -859,6 +879,11 @@ fn value_summary(
         ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
             layout: array.layout()?,
             width: array.length().max(1),
+            depth: 0,
+        },
+        ValueTy::Owned(AggregateTy::ByteBuf) => ContainmentSummary {
+            layout: Layout { size: 16, align: 8 },
+            width: 3,
             depth: 0,
         },
         ValueTy::Owned(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),

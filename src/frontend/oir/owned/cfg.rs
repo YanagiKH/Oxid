@@ -58,6 +58,10 @@ impl CfgView for RawOwnedFunction {
     ) -> Result<Option<(LocalId, Span)>, OirFailure> {
         let i = self.instruction(b, s)?;
         Ok(match &i.kind {
+            OwnedInstruction::Experimental {
+                destination: CallResult::Scalar(local),
+                ..
+            } => Some((*local, i.span)),
             OwnedInstruction::Scalar(Statement::Assign(a)) => Some((a.destination, a.span)),
             OwnedInstruction::ReadField { destination, .. }
             | OwnedInstruction::ReadIndex { destination, .. }
@@ -96,6 +100,20 @@ impl CfgView for RawOwnedFunction {
         visit: &mut dyn FnMut(ScalarUse) -> Result<(), OirFailure>,
     ) -> Result<(), OirFailure> {
         match &self.instruction(b, s)?.kind {
+            OwnedInstruction::PrepareBorrowRange { start, end, .. } => {
+                visit(ScalarUse::Operand(*start))?;
+                visit(ScalarUse::Operand(*end))?;
+            }
+            OwnedInstruction::Experimental { .. } => {
+                for parameter in &self.parameters {
+                    if let ParameterBinding::Scalar(local) = parameter {
+                        visit(ScalarUse::Operand(Operand {
+                            local: *local,
+                            span: self.instruction(b, s)?.span,
+                        }))?;
+                    }
+                }
+            }
             OwnedInstruction::Scalar(i) => super::super::verify::scalar_statement_uses(i, visit)?,
             OwnedInstruction::ConstructEnum {
                 payload: Some(value),

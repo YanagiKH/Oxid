@@ -343,6 +343,9 @@ fn lex_core(
                 // Preserve the whole candidate, including unsupported Unicode,
                 // suffix/radix/float spelling. Parsing accepts ASCII digits only.
                 while cursor < bytes.len() {
+                    if bytes[cursor..].starts_with(b"..") {
+                        break;
+                    }
                     let next = text[cursor..].chars().next().unwrap();
                     if !next.is_alphanumeric() && !matches!(next, '_' | '.') {
                         break;

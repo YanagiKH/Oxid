@@ -135,7 +135,10 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
-        OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => {
+        OwnedInstruction::PrepareBorrowRange { .. }
+        | OwnedInstruction::Experimental { .. }
+        | OwnedInstruction::ReadStdin { .. }
+        | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")
         }
         OwnedInstruction::ConstructEnum { .. }

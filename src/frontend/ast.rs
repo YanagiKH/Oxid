@@ -263,6 +263,12 @@ pub enum BorrowPlace {
         name: Span,
         star_span: Span,
     },
+    Range {
+        name: Span,
+        start: ExprId,
+        end: ExprId,
+        star: Option<u32>,
+    },
 }
 #[derive(Debug)]
 pub enum Argument {
@@ -962,6 +968,23 @@ impl Program {
                                 Argument::Borrow { place, span, .. } => {
                                     valid(*span)
                                         && match place {
+                                            BorrowPlace::Range {
+                                                name,
+                                                start,
+                                                end,
+                                                star,
+                                            } => {
+                                                valid(*name)
+                                                    && earlier(*start)
+                                                    && earlier(*end)
+                                                    && star.is_none_or(|start| {
+                                                        valid(Span {
+                                                            file: name.file,
+                                                            start: start as usize,
+                                                            end: start as usize + 1,
+                                                        })
+                                                    })
+                                            }
                                             BorrowPlace::OwnerName(name) => valid(*name),
                                             BorrowPlace::ForwardedParameter { name, star_span } => {
                                                 valid(*name) && valid(*star_span)
@@ -988,6 +1011,23 @@ impl Program {
                                         Argument::Borrow { place, span, .. } => {
                                             valid(*span)
                                                 && match place {
+                                                    BorrowPlace::Range {
+                                                        name,
+                                                        start,
+                                                        end,
+                                                        star,
+                                                    } => {
+                                                        valid(*name)
+                                                            && earlier(*start)
+                                                            && earlier(*end)
+                                                            && star.is_none_or(|start| {
+                                                                valid(Span {
+                                                                    file: name.file,
+                                                                    start: start as usize,
+                                                                    end: start as usize + 1,
+                                                                })
+                                                            })
+                                                    }
                                                     BorrowPlace::OwnerName(name) => valid(*name),
                                                     BorrowPlace::ForwardedParameter {
                                                         name,

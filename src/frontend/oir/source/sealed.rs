@@ -193,7 +193,7 @@ fn check_project<'s>(
             )
         }
         ProjectRoute::Owned => {
-            let typed = if frozen.enum_count() != 0 {
+            let typed = if owned::source::resolve::requires_paid_source(&frozen) {
                 owned::source::resolve::type_enum_source(&frozen, work, allocator)?
             } else {
                 let resolved = owned::source::resolve::resolve_project(&frozen, work)?;

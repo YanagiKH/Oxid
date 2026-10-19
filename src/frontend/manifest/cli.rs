@@ -1,6 +1,6 @@
 //! Borrow-only opt-in gate. Calls without an eligible selector never allocate
 //! here and go unchanged to the old classifier, including Process error routing.
-//! Native RUN and BUILD admit entry mode; interpreter RUN keeps its old contract.
+//! Both RUN engines and BUILD admit explicit process entry mode.
 use super::{word, Allocator, Failure, Operation, Route};
 use crate::frontend::options::EntryPolicy;
 const OPTIONS: [&str; 12] = [
@@ -200,18 +200,15 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     } else if !run && !test && scan.seen & (1 << 10) != 0 {
         Some("--engine is only supported by manifest run or test".into())
     } else if scan.seen
-        & !((if build || native_run || package {
-            15
-        } else {
-            7
-        }) | (if run || test { 1 << 10 } else { 0 })
+        & !((if build || run || package { 15 } else { 7 })
+            | (if run || test { 1 << 10 } else { 0 })
             | (if package { 1 << 9 } else { 0 })
             | (1 << 11))
         != 0
     {
         Some(if package {
             "manifest package does not support backend, target or experimental selectors".into()
-        } else if build || native_run {
+        } else if build || run {
             format!(
                 "manifest {op} does not support backend, target, output or experimental selectors"
             )
@@ -220,6 +217,8 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         })
     } else if native_run && scan.json {
         Some("native manifest run does not support --message-format=json".into())
+    } else if run && scan.process && scan.json {
+        Some("process-mode run does not support --message-format=json".into())
     } else if test && scan.json {
         Some("manifest test does not support --message-format=json".into())
     } else if package && scan.output.is_none() {
@@ -228,6 +227,9 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         None
     };
     if let Some(message) = message {
+        if run && scan.process && !native_run {
+            return Some(Route::ProcessError { message });
+        }
         if package {
             return Some(Route::ManifestPackageError {
                 failure: Failure::Cli(message),
@@ -290,6 +292,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 request,
                 entry_policy,
             },
+            Ok(request) if run && scan.process => Route::ManifestProcessRun { request },
             Ok(request) if operation == Operation::Run => Route::ManifestRun { request },
             Ok(request) => Route::ManifestCheck { request },
             Err(failure) if package => Route::ManifestPackageError {
@@ -306,6 +309,9 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 failure,
                 json: scan.json,
             },
+            Err(failure) if run && scan.process && !native_run => {
+                Route::ManifestProcessError { failure }
+            }
             Err(failure) => Route::ManifestError {
                 failure,
                 json: scan.json,

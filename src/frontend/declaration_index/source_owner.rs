@@ -288,7 +288,7 @@ impl<'s> SourceOwner<'s> {
             || first.start != row.span.start
             || last.end != row.span.end
             || (row.root == ast::PathRoot::Crate && self.text(*first)? != "crate")
-            || (row.root == ast::PathRoot::Std && self.text(*first)? != "std")
+            || (row.root == ast::PathRoot::Std && !matches!(self.text(*first)?, "std" | "alloc"))
         {
             return Err(bad(self.eof()));
         }

@@ -6,16 +6,23 @@
 // transport would add an allocation on ownership/resource failure paths.
 #![allow(clippy::result_large_err)]
 use super::{owned_types::*, *};
+mod binary_io;
 mod budget;
 mod builtins;
+// Runtime groundwork only. No source, raw instruction, or witness admits this
+// resource until the complete compiler/consumer path is connected.
+mod byte_buffer;
 mod cfg;
 mod execute;
+mod experimental_descriptors;
 mod flow;
 mod input;
 mod native;
 mod output;
 mod plan;
 pub(in crate::frontend) mod process;
+#[cfg(test)]
+mod resource_gate_tests;
 mod shape;
 pub(super) mod source;
 pub(super) use source::SourceProgram;
@@ -190,6 +197,12 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    /// Operands are the independently checked canonical parameter rows. No
+    /// spelling, producer layout, or arbitrary owner ID grants this authority.
+    Experimental {
+        operation: crate::frontend::builtin_catalog::experimental::Function,
+        destination: CallResult,
+    },
     // Atomic input is confined to the verified canonical builtin body.
     ReadStdin {
         buffer: ReferenceParamId,
@@ -297,6 +310,13 @@ enum OwnedInstruction {
         call: CallSiteId,
         argument: usize,
         source: OwnerPlaceId,
+    },
+    PrepareBorrowRange {
+        call: CallSiteId,
+        argument: usize,
+        loan: LoanId,
+        start: Operand,
+        end: Operand,
     },
     PrepareBorrow {
         call: CallSiteId,
