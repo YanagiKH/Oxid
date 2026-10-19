@@ -7,6 +7,7 @@ oxid test --manifest-path path/to/oxid.toml
 oxid test --manifest-path path/to/oxid.toml --engine interpreter
 oxid test --manifest-path path/to/oxid.toml --engine native
 oxid test --manifest-path path/to/oxid.toml --filter parser
+oxid test --manifest-path path/to/oxid.toml --filter parser --fail-fast
 ```
 
 The interpreter is the default. The manifest requires
@@ -36,8 +37,28 @@ option is never consumed as the value. The entire selected project, including
 path dependencies, is still checked and every discovered test signature is
 validated before selection. A filter matching nothing fails with a diagnostic,
 without running cases or printing a success summary. Matching tests retain source
-order; the summary counts only executed cases. Without a filter, behavior and
-output are unchanged. Workspace `--package` selection is unchanged.
+order; the summary counts only executed cases. Without a filter, all discovered
+tests remain selected. Workspace `--package` selection is unchanged.
+
+`--fail-fast` is a bare, valueless option for explicit manifest `test` with either
+engine, and composes with `--filter`. Attached values, including an empty value,
+and duplicate flags are CLI errors. It does not change legacy, script-argument,
+or separator ownership. Whole-project and every discovered signature validation
+still precede selection; native preparation still completes for all selected
+artifacts before any case executes. The first logical or runtime case failure
+retains its diagnostic and FAIL line, then stops execution. The existing summary
+counts executed cases only. If selected cases remain, it is followed by exactly:
+
+```text
+test stopped: N selected tests not run (--fail-fast)
+```
+
+N is the number of selected cases not executed. The exit status is 1. Passing
+suites and failure on the final selected case have no stopped line. Infrastructure
+and preparation failures retain their existing abort behavior without a fabricated
+case summary. Without `--fail-fast`, execution and output are unchanged. The
+flag uses a scanner seen bit and a boolean; no argument text or ordinal vector is
+allocated for it.
 
 The CLI retains an index into the unchanged argument vector and borrows the
 filter at dispatch; it does not copy the filter or add a filter length limit.
@@ -47,7 +68,7 @@ selected case count, never more than the original suite. This is host-side
 selection work, not a new runtime/source qualification or a raised resource limit.
 
 Each case uses fresh existing runtime limits. Runtime diagnostics and logical
-failures fail the case; subsequent cases still run. The Result-mode restriction
+failures fail the case; subsequent cases still run unless `--fail-fast` is set. The Result-mode restriction
 on `write_stdout` imports remains. Importing the actual `std::io::read_stdin`
 function is also rejected during suite preflight, even if unused or aliased or
 imported only in a child module. `ReadStatus` alone and user functions named
@@ -117,3 +138,27 @@ test. No production changes followed the companion reference runs. Existing
 formatting differences elsewhere in main.rs were preserved. No full-repository
 format, full-suite, exact-head hosted CI, source qualification or resource-policy
 qualification is claimed by these focused results.
+
+## Focused fail-fast validation status
+
+The reviewed compiler and independent companion source reproduce tree
+`1f2166664fd1f26c755f58338dda535d57709737`. Recorded checks passed: the
+five-target compile gate, four fail-fast and three filter CLI unit tests, two
+unchanged carrier/layout controls, the help control, fourteen ordinary and
+four native fail-fast companion tests, twelve ordinary and five native filter
+regression tests, scoped Clippy, and diff checks. Native checks used LLVM 19.1.7.
+
+The raw command records bind these checks to the final clean source tree. The
+new and existing companion runs are bracketed by the same compiler SHA-256;
+earlier unit/layout/help checks have source identity records but no two-sided
+main-binary hash bracket. The carrier output (Route 56, Request 80, Scan 160)
+is a regression measurement, not resource qualification. The existing
+project_test_core target was compile-checked only. Native launch/wait failures
+were reviewed statically rather than directly fault-injected.
+
+Formatting checks were scoped. The 196 existing main.rs formatting hunks were
+preserved; the added help line required no formatting change. Predecessor
+unsupported-flag failures remain separate reference records. This validation
+does not claim a full-suite pass, hosted exact-head CI, source qualification,
+or resource-policy qualification. Only documentation changes follow the
+validated source tree.

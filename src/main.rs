@@ -2648,7 +2648,7 @@ fn help() {
     println!("  oxid build --manifest-path <oxid.toml> [--entry-mode result|process]");
     println!("  oxid run --manifest-path <oxid.toml> [--engine interpreter|native] [--entry-mode result|process]");
     println!(
-        "  oxid test --manifest-path <oxid.toml> [--engine interpreter|native] [--filter <text>]"
+        "  oxid test --manifest-path <oxid.toml> [--engine interpreter|native] [--filter <text>] [--fail-fast]"
     );
     println!("  oxid package --manifest-path <oxid.toml> --output <archive.tar> [--entry-mode result|process]");
     println!("  oxid doctor --edition typed-preview");

@@ -72,7 +72,12 @@ fn selected_ordinals<'a>(
     })
 }
 
-pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool, filter: Option<&str>) -> i32 {
+pub(super) fn run(
+    request: Box<[manifest::Request; 1]>,
+    native: bool,
+    filter: Option<&str>,
+    fail_fast: bool,
+) -> i32 {
     let configuration = Configuration::new(
         manifest::Command::Test,
         if native {
@@ -115,6 +120,7 @@ pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool, filter: Op
         None
     };
     let mut passed = 0;
+    let mut executed = 0;
     let stdout = &mut std::io::stdout().lock();
     // Artifact slots follow selection order; names retain original suite ordinals.
     for (selected_index, ordinal) in selected_ordinals(&suite, filter).enumerate() {
@@ -134,6 +140,7 @@ pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool, filter: Op
             }
         };
         passed += usize::from(success);
+        executed += 1;
         if writeln!(
             stdout,
             "{} {}",
@@ -145,17 +152,31 @@ pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool, filter: Op
         {
             return 1;
         }
+        if fail_fast && !success {
+            break;
+        }
     }
-    let failed = selected_count - passed;
+    let failed = executed - passed;
     if writeln!(
         stdout,
         "test result: {passed} passed; {failed} failed; {} total",
-        selected_count
+        executed
     )
     .and_then(|_| stdout.flush())
     .is_err()
     {
         return 1;
     }
-    i32::from(selected_count == 0 || failed != 0)
+    let remaining = selected_count - executed;
+    if remaining != 0
+        && writeln!(
+            stdout,
+            "test stopped: {remaining} selected tests not run (--fail-fast)"
+        )
+        .and_then(|_| stdout.flush())
+        .is_err()
+    {
+        return 1;
+    }
+    i32::from(executed == 0 || failed != 0)
 }

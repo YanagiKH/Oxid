@@ -26,7 +26,7 @@ fn root_help_lists_typed_projects_and_preserves_legacy_usage() {
             "oxid package --manifest-path <oxid.toml> --output <archive.tar>",
             "oxid doctor --edition typed-preview",
             "--package <name>",
-            "[--filter <text>]",
+            "[--filter <text>] [--fail-fast]",
             "--entry-mode result|process",
             "Entry mode defaults to result",
             "run/test default to the interpreter",

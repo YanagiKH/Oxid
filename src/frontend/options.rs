@@ -51,6 +51,7 @@ pub enum Route {
         native: bool,
         // Index into the unchanged argv; filter text is borrowed only at dispatch.
         filter: Option<usize>,
+        fail_fast: bool,
     },
     ManifestTestError {
         failure: super::manifest::Failure,

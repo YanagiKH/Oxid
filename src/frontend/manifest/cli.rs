@@ -3,7 +3,7 @@
 //! Both RUN engines and BUILD admit explicit process entry mode.
 use super::{word, Allocator, Failure, Operation, Route};
 use crate::frontend::options::EntryPolicy;
-const OPTIONS: [&str; 13] = [
+const OPTIONS: [&str; 14] = [
     "--manifest-path",
     "--edition",
     "--message-format",
@@ -17,11 +17,13 @@ const OPTIONS: [&str; 13] = [
     "--engine",
     "--package",
     "--filter",
+    "--fail-fast",
 ];
 #[derive(Clone, Copy)]
 enum Error<'a> {
     Duplicate(&'static str),
     Missing(&'static str),
+    UnexpectedValue(&'static str),
     Edition(&'a str),
     Format(&'a str),
     Entry(&'a str),
@@ -33,6 +35,7 @@ impl Error<'_> {
         match self {
             Self::Duplicate(n) => format!("{n} may only be specified once"),
             Self::Missing(n) => format!("{n} requires a value"),
+            Self::UnexpectedValue(n) => format!("{n} does not accept a value"),
             Self::Edition(v) => {
                 format!("unknown edition `{v}`; expected legacy-0.9 or typed-preview")
             }
@@ -63,6 +66,7 @@ pub(super) struct Scan<'a> {
     separated: bool,
     process: bool,
     native: bool,
+    fail_fast: bool,
 }
 pub(super) fn select(args: &[String]) -> Option<Route> {
     select_with(args, Allocator::default())
@@ -105,6 +109,15 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
             scan.seen |= 1 << slot;
             if slot == 0 && scan.command.is_none() {
                 scan.before = true;
+            }
+            // This local flag never consumes the following argument. Preserve the
+            // first scanner error in this tier, including a prior duplicate.
+            if slot == 13 {
+                if arg.contains('=') {
+                    error.get_or_insert(Error::UnexpectedValue(name));
+                }
+                scan.fail_fast = true;
+                continue;
             }
             let value = if let Some((_, value)) = arg.split_once('=') {
                 Some(value)
@@ -209,6 +222,8 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Some(format!("manifest {op} does not accept a source operand"))
     } else if !test && scan.seen & (1 << 12) != 0 {
         Some("--filter is only supported by explicit manifest test".into())
+    } else if !test && scan.seen & (1 << 13) != 0 {
+        Some("--fail-fast is only supported by explicit manifest test".into())
     } else if !run && !test && scan.seen & (1 << 10) != 0 {
         Some("--engine is only supported by manifest run or test".into())
     } else if scan.seen
@@ -216,7 +231,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
             | (if run || test { 1 << 10 } else { 0 })
             | (if package { 1 << 9 } else { 0 })
             | (1 << 11)
-            | (if test { 1 << 12 } else { 0 }))
+            | (if test { (1 << 12) | (1 << 13) } else { 0 }))
         != 0
     {
         Some(if package {
@@ -297,6 +312,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 request,
                 native: scan.native,
                 filter: scan.filter,
+                fail_fast: scan.fail_fast,
             },
             Ok(request) if build => Route::ManifestBuild {
                 request,
@@ -519,5 +535,195 @@ mod filter_tests {
         assert!(failure
             .message()
             .contains("does not accept a source operand"));
+    }
+}
+
+#[cfg(test)]
+mod fail_fast_tests {
+    use super::*;
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).into()).collect()
+    }
+
+    #[test]
+    fn fail_fast_is_valueless_and_composes_with_filter_and_both_engines() {
+        for engine in ["--engine=interpreter", "--engine=native"] {
+            for words in [
+                vec!["test", "--fail-fast", "--manifest-path=p", engine],
+                vec![
+                    "test",
+                    "--manifest-path=p",
+                    "--filter=keep",
+                    engine,
+                    "--fail-fast",
+                ],
+                vec![
+                    "test",
+                    "--fail-fast",
+                    "--filter",
+                    "keep",
+                    "--manifest-path=p",
+                    engine,
+                ],
+            ] {
+                let Some(Route::ManifestTest {
+                    native, fail_fast, ..
+                }) = select(&args(&words))
+                else {
+                    panic!("expected fail-fast route: {words:?}");
+                };
+                assert!(fail_fast);
+                assert_eq!(native, engine == "--engine=native");
+            }
+        }
+        assert!(matches!(
+            select(&args(&["test", "--manifest-path=p"])),
+            Some(Route::ManifestTest {
+                fail_fast: false,
+                ..
+            })
+        ));
+        println!(
+            "FAIL_FAST_CARRIERS route={} scan={} request={}",
+            std::mem::size_of::<Route>(),
+            std::mem::size_of::<Scan<'_>>(),
+            std::mem::size_of::<super::super::Request>()
+        );
+    }
+
+    #[test]
+    fn fail_fast_errors_keep_first_error_per_tier_and_json_refusal() {
+        for (tail, expected, json) in [
+            (
+                vec!["--fail-fast="],
+                "--fail-fast does not accept a value",
+                false,
+            ),
+            (
+                vec!["--fail-fast=true"],
+                "--fail-fast does not accept a value",
+                false,
+            ),
+            (
+                vec!["--fail-fast", "--fail-fast="],
+                "--fail-fast may only be specified once",
+                false,
+            ),
+            (
+                vec!["--fail-fast=", "--fail-fast"],
+                "--fail-fast does not accept a value",
+                false,
+            ),
+            (
+                vec!["--filter=", "--fail-fast="],
+                "--filter requires a value",
+                false,
+            ),
+            (
+                vec!["--fail-fast=", "--filter="],
+                "--fail-fast does not accept a value",
+                false,
+            ),
+            (
+                vec!["--fail-fast=", "--edition=wrong"],
+                "unknown edition `wrong`; expected legacy-0.9 or typed-preview",
+                false,
+            ),
+            (
+                vec!["--fail-fast", "--message-format=json"],
+                "manifest test does not support --message-format=json",
+                true,
+            ),
+            (
+                vec!["--fail-fast=", "--message-format=json"],
+                "--fail-fast does not accept a value",
+                true,
+            ),
+            (
+                vec!["--fail-fast", "operand"],
+                "manifest test does not accept a source operand",
+                false,
+            ),
+        ] {
+            let mut words = vec!["test", "--manifest-path=missing"];
+            words.extend(tail);
+            let Some(Route::ManifestTestError {
+                failure,
+                json: actual_json,
+            }) = select(&args(&words))
+            else {
+                panic!("expected fail-fast refusal: {words:?}");
+            };
+            assert_eq!(failure.message(), expected, "{words:?}");
+            assert_eq!(actual_json, json);
+        }
+    }
+
+    #[test]
+    fn fail_fast_applicability_follows_filter_and_keeps_package_route() {
+        for command in ["check", "run", "build", "package"] {
+            for tail in [
+                vec!["--fail-fast"],
+                vec!["--fail-fast", "--filter=keep"],
+                vec!["--filter=keep", "--fail-fast"],
+            ] {
+                let expected = if tail.len() == 1 {
+                    "--fail-fast is only supported by explicit manifest test"
+                } else {
+                    "--filter is only supported by explicit manifest test"
+                };
+                let mut words = vec![command, "--manifest-path=missing"];
+                words.extend(tail);
+                let route = select(&args(&words)).expect("manifest route");
+                if command == "package" {
+                    assert!(matches!(&route, Route::ManifestPackageError { .. }));
+                }
+                let failure = match route {
+                    Route::ManifestError { failure, .. }
+                    | Route::ManifestBuildError { failure, .. }
+                    | Route::ManifestPackageError { failure, .. } => failure,
+                    other => panic!("expected applicability error: {other:?}"),
+                };
+                assert_eq!(failure.message(), expected, "{words:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn fail_fast_does_not_claim_legacy_script_or_separator_arguments() {
+        use crate::frontend::options;
+        for words in [
+            vec!["test", "--fail-fast"],
+            vec!["test", "--fail-fast=true"],
+            vec!["script", "task", "--fail-fast", "--manifest-path=p"],
+            vec!["script", "--fail-fast", "--manifest-path=p"],
+            vec!["test", "--", "--fail-fast", "--manifest-path=p"],
+        ] {
+            let arguments = args(&words);
+            assert!(select(&arguments).is_none());
+            assert_eq!(options::route(&arguments), Route::Legacy(arguments));
+        }
+        assert_eq!(
+            options::route(&args(&[
+                "check",
+                "--edition=typed-preview",
+                "--",
+                "--fail-fast.ox",
+            ])),
+            Route::TypedCheck {
+                path: "--fail-fast.ox".into(),
+                json: false,
+            }
+        );
+        let Some(Route::ManifestTestError { failure, .. }) =
+            select(&args(&["test", "--manifest-path=p", "--", "--fail-fast"]))
+        else {
+            panic!("manifest separator must preserve literal operand ownership");
+        };
+        assert_eq!(
+            failure.message(),
+            "manifest test does not accept a source operand"
+        );
     }
 }

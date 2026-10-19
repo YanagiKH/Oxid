@@ -65,13 +65,14 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             request,
             native,
             filter,
+            fail_fast,
         } => {
             let filter = filter.map(|index| {
                 args[index]
                     .strip_prefix("--filter=")
                     .unwrap_or(args[index].as_str())
             });
-            Some(super::project_test::run(request, native, filter))
+            Some(super::project_test::run(request, native, filter, fail_fast))
         }
         Route::ManifestTestError { failure, json } => {
             Some(super::project_test::cli_error(failure, json))
