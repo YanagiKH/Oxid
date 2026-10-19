@@ -1,5 +1,5 @@
 //! RFC0031 structural admission. Expected sizes/widths follow the closed form,
-//! and record rejection is tested independently of public source resolution.
+//! and byte record admission is tested independently of public source resolution.
 use super::tests::{record, source};
 use super::*;
 
@@ -65,54 +65,123 @@ fn byte_storage_borrow_matrix_is_directional_and_preserves_element_identity() {
 }
 
 #[test]
-fn byte_storage_raw_unused_and_nested_record_fields_reject_before_output_reserve() {
+fn byte_record_raw_fields_preserve_layout_width_and_scalar_leaves() {
     let (mut sources, span) = source();
     let imported_file = sources.add("imported.ox".into(), "field".into());
     let imported_span = sources.get(imported_file).span(0, 5);
     for n in [0, 1, 1024] {
-        // Raw declaration validation has no body/reachability input: direct
-        // and unused fields share this mandatory all-declaration gate.
-        for placement in ["used-direct", "unused", "nested", "imported"] {
-            let nested = placement == "nested";
-            let field_span = if placement == "imported" {
-                imported_span
-            } else {
-                span
-            };
-            let mut inner = record(usize::from(nested), &[hir::Ty::Unit], field_span);
-            let ty = ValueTy::Owned(AggregateTy::FixedArray(
+        for ty in [
+            ValueTy::Scalar(hir::Ty::U8),
+            ValueTy::Owned(AggregateTy::FixedArray(
                 FixedArrayTy::check(hir::Ty::U8, n).unwrap(),
-            ));
-            inner.fields[0].ty = ParameterTy::Value(ty);
-            let id = inner.fields[0].id;
-            assert_eq!(
-                value_field(&inner.fields[0]),
-                Err(DeclarationError::NonScalarField(id))
-            );
-            assert!(matches!(
-                value_summary(ty, &[]),
-                Err(DeclarationError::TypeMismatch)
-            ));
-            let raw = if nested {
-                let mut outer = record(0, &[hir::Ty::Unit], span);
-                outer.fields[0].ty =
-                    ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(1))));
-                vec![outer, inner]
+            )),
+        ] {
+            let width = if matches!(ty, ValueTy::Scalar(_)) {
+                1
             } else {
-                vec![inner]
+                n.max(1)
             };
-            let mut allocator = Allocator::default();
-            assert!(
-                matches!(Declarations::check_combined_with_limits(&raw, &[], &sources, Limits::DEFAULT, &mut allocator), Err(DeclarationError::NonScalarField(found)) if found == id)
-            );
-            assert_eq!(allocator.attempts, 0);
-            println!("BYTE-STORAGE-LANE-A raw-record-{n}-{placement} field={id:?} attempts=0");
-            assert!(matches!(
-                admit_value_layouts(std::iter::once(std::iter::once(ty))),
-                Err(DeclarationError::TypeMismatch)
-            ));
+            for (nested, field_span) in [(false, span), (true, span), (true, imported_span)] {
+                let mut inner = record(usize::from(nested), &[hir::Ty::Unit], field_span);
+                inner.fields[0].ty = ParameterTy::Value(ty);
+                let id = inner.fields[0].id;
+                assert_eq!(value_field(&inner.fields[0]), Ok(ty));
+                let summary = value_summary(ty, &[]).unwrap();
+                assert_eq!(
+                    summary.layout,
+                    Layout {
+                        size: width,
+                        align: 1
+                    }
+                );
+                assert_eq!(summary.width, width);
+                let raw = if nested {
+                    let mut outer = record(0, &[hir::Ty::Unit], span);
+                    outer.fields[0].ty =
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(RecordId(1))));
+                    vec![outer, inner]
+                } else {
+                    vec![inner]
+                };
+                let checked = Declarations::check(&raw, &sources).unwrap();
+                let root = AggregateTy::Record(RecordId(0));
+                assert_eq!(
+                    checked.aggregate_layout(root).unwrap(),
+                    Layout {
+                        size: width,
+                        align: 1
+                    }
+                );
+                assert_eq!(checked.aggregate_width(root).unwrap(), width);
+                assert_eq!(checked.field(id.record, id).unwrap().span(), field_span);
+                let leaves: Vec<_> = checked
+                    .leaves(root)
+                    .unwrap()
+                    .map(|leaf| (leaf.offset, leaf.ty))
+                    .collect();
+                assert_eq!(
+                    leaves,
+                    (0..width)
+                        .map(|offset| (offset, hir::Ty::U8))
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    admit_value_layouts(raw.iter().map(|record| {
+                        record
+                            .fields
+                            .iter()
+                            .map(|field| value_field(field).unwrap())
+                    }))
+                    .unwrap(),
+                    width * raw.len()
+                );
+            }
         }
     }
+}
+
+#[test]
+fn byte_record_mixed_layout_keeps_padding_and_neighbor_offsets() {
+    let (sources, span) = source();
+    let mut raw = record(
+        0,
+        &[hir::Ty::U8, hir::Ty::I32, hir::Ty::U8, hir::Ty::Bool],
+        span,
+    );
+    raw.fields[2].ty = ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(
+        FixedArrayTy::check(hir::Ty::U8, 3).unwrap(),
+    )));
+    let checked = Declarations::check(&[raw], &sources).unwrap();
+    let root = AggregateTy::Record(RecordId(0));
+    assert_eq!(
+        checked.aggregate_layout(root).unwrap(),
+        Layout { size: 12, align: 4 }
+    );
+    assert_eq!(checked.aggregate_width(root).unwrap(), 6);
+    assert_eq!(
+        checked
+            .fields(RecordId(0))
+            .unwrap()
+            .iter()
+            .map(FieldDecl::offset)
+            .collect::<Vec<_>>(),
+        [0, 4, 8, 11]
+    );
+    assert_eq!(
+        checked
+            .leaves(root)
+            .unwrap()
+            .map(|leaf| (leaf.offset, leaf.ty))
+            .collect::<Vec<_>>(),
+        [
+            (0, hir::Ty::U8),
+            (4, hir::Ty::I32),
+            (8, hir::Ty::U8),
+            (9, hir::Ty::U8),
+            (10, hir::Ty::U8),
+            (11, hir::Ty::Bool),
+        ]
+    );
 }
 
 #[test]
@@ -129,7 +198,7 @@ fn byte_storage_previous_record_elements_and_r2_owned_enum_arrays() {
     }
     assert_eq!(
         admit_scalar_layouts(std::iter::once(std::iter::once(hir::Ty::U8))),
-        Err(DeclarationError::TypeMismatch)
+        Ok(1)
     );
     for n in [0, 1, 1024] {
         let enumeration = RawEnumDecl {
@@ -146,8 +215,8 @@ fn byte_storage_previous_record_elements_and_r2_owned_enum_arrays() {
                 )))),
             }],
         };
-        // R2 admits complete fixed arrays as owned payloads. Scalar u8 and
-        // byte-array record fields retain their separate existing exclusions.
+        // R2 admits complete fixed arrays as owned payloads; scalar u8
+        // enum payloads retain their separate existing exclusion.
         assert!(Declarations::check_combined(&[], &[enumeration], &sources).is_ok());
     }
 }

@@ -330,20 +330,7 @@ fn value_type(
 }
 // Generic value-type resolution must never silently authorize enum containment.
 fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>> {
-    if ty == ValueTy::Scalar(Ty::U8) {
-        Err(error(
-            "E0202",
-            format_args!("u8 record fields are not supported"),
-            span,
-        ))
-    } else if matches!(ty, ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == Ty::U8)
-    {
-        Err(error(
-            "E0202",
-            format_args!("u8 array record fields are not supported"),
-            span,
-        ))
-    } else if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
+    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
         Err(error(
             "E0300",
             format_args!("enum values cannot be record fields"),
@@ -1226,16 +1213,7 @@ fn resolve_index_impl(
                     return Err(duplicate(field.name, first));
                 }
                 let ty = value_type(&mut index.query(work), module, field.ty)?;
-                let ty = record_field_type(
-                    ty,
-                    if ty == ValueTy::Scalar(Ty::U8)
-                        || matches!(ty, ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == Ty::U8)
-                    {
-                        field.ty.span
-                    } else {
-                        field.span
-                    },
-                )?;
+                let ty = record_field_type(ty, field.span)?;
                 storage::room(&fields, fields.capacity(), paid.is_some(), field.span)?;
                 fields.push(Field {
                     id: FieldId {

@@ -140,7 +140,7 @@ fn byte_storage_raw_array_identity_scalar_tags_and_lengths_are_rechecked() {
 }
 
 #[test]
-fn byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested() {
+fn byte_storage_raw_record_byte_fields_are_admitted_even_unused_and_nested() {
     use crate::frontend::oir::owned_types::{RawFieldDecl, RawRecordDecl};
     let (sources, s) = super::super::consumer_fixtures::context();
     for n in [0, 1, 1024] {
@@ -178,7 +178,7 @@ fn byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested() {
                 functions: vec![],
             };
             assert!(
-                verified::verify_owned(raw, &sources).is_err(),
+                verified::verify_owned(raw, &sources).is_ok(),
                 "N={n}, nested={nested}"
             );
         }
@@ -242,5 +242,17 @@ fn byte_storage_historical_raw_mutation_cannot_change_trusted_lowering() {
             .iter()
             .all(|owner| owner.aggregate() == slot(hir::Ty::U8, 0).aggregate()));
         assert!(verified::verify_associated(current).is_ok());
+    });
+}
+
+#[test]
+fn byte_record_raw_equal_sized_scalar_substitution_is_rejected() {
+    let text = "struct R{b:u8}fn f(b:u8)->u8{let mut r=R{b:b};r.b=b;return r.b;}";
+    with_raw(text, |sources, _, raw| {
+        assert!(verified::verify_owned(raw, sources).is_ok());
+    });
+    with_raw(text, |sources, _, mut raw| {
+        raw.records[0].fields[0].ty = ParameterTy::Value(ValueTy::Scalar(hir::Ty::Bool));
+        assert!(verified::verify_owned(raw, sources).is_err());
     });
 }

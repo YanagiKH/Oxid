@@ -12,7 +12,7 @@ fn u8_standalone_value_and_parameter_byte_storage_successor() {
         .is_ok());
     // RFC0030 historical array/slice expectation: TypeMismatch at every
     // independent check below, and false from BorrowedTy::accepts. RFC0031
-    // replaces only those standalone exclusions. The declaration fences stay.
+    // replaces those standalone exclusions; byte record fields are now admitted.
     const PREDECESSOR: DeclarationError = DeclarationError::TypeMismatch;
     for n in [0, 1, 1024] {
         let array = FixedArrayTy::check(hir::Ty::U8, n)
@@ -30,7 +30,7 @@ fn u8_standalone_value_and_parameter_byte_storage_successor() {
     assert!(borrow.accepts(borrow));
     assert_eq!(BorrowedSlot::check(borrow).unwrap().referent(), borrow);
     assert_eq!(empty.check_borrowed_type(borrow), Ok(()));
-    assert!(Declarations::check(&[record(0, &[hir::Ty::U8], span)], &sources).is_err());
+    assert!(Declarations::check(&[record(0, &[hir::Ty::U8], span)], &sources).is_ok());
     let enumeration = RawEnumDecl {
         id: EnumId(0),
         span,

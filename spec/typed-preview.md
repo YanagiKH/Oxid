@@ -146,12 +146,13 @@ existing whole-owner loans, explicit reborrows and evaluation/fuel order.
 An indexed byte must first be bound to a local before widening; `a[i].to_i32()`
 is not a supported receiver.
 
-Byte arrays cannot be record fields, including unused/nested/imported fields
-and N=0. Such fields fail E0202/resolve at the complete field type with
-`u8 array record fields are not supported`. Direct u8 fields and scalar u8 enum payloads
-remain excluded. Predecessor bool/i32/unit record arrays and projections stay
-available. There are no byte-record projections, element references, subslices,
-heap buffers, I/O signature changes or provider wire expansions. Existing
+Scalar u8 and fixed `[u8; N]` record fields are admitted, including nested,
+unused and imported declarations and N=0. They use the existing record
+construction, whole-value move/call/return and scalar-field read/write paths.
+A byte-bearing record may be an existing owned enum payload; a direct scalar
+u8 enum payload remains excluded. Contained byte arrays support i32 indexing,
+`len()` and the call-only projected slice rules below. There are no element
+references, subslices, heap buffers, I/O signature changes or provider wire expansions. Existing
 stdin/stdout builtins continue to use i32 arrays/slices.
 
 Physical standalone byte array storage uses stride/alignment1 and max(1,N)
@@ -162,10 +163,13 @@ before tools/output. Native qualification remains Linux x86_64 LLVM19.1.7 O0.
 
 ## Bounded owned record composition
 
-[RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold
-bool/i32/unit, another nominal record, or a fixed bool/i32/unit array. Standalone
-byte arrays are excluded from record fields. Forward type
-references are allowed, but by-value containment must be acyclic even in unused
+Record composition from [RFC 0020](../rfcs/0020-owned-record-composition.md),
+with the byte-bearing amendment here, permits bool/i32/u8/unit fields, another
+nominal record, or a fixed bool/i32/u8/unit array.
+The byte-bearing record amendment reuses existing checked layouts and consumers;
+it adds no ABI, carrier, resource ceiling or ownership rule. Existing standalone
+byte-storage qualification does not establish qualification for this amendment.
+Forward type references are allowed, but by-value containment must be acyclic even in unused
 declarations. Records remain nominal and move-only. Containment and named-root
 field paths are bounded to 64 levels, with the existing byte and work ceilings.
 
@@ -220,7 +224,7 @@ transfer initialized leaves and empty sentinels without copying padding.
 
 [RFC 0022](../rfcs/0022-projected-array-slices.md) permits `sum(&batch.samples)`
 and `bump(&mut batch.samples)` when the bounded named-root field path ends in a
-fixed bool/i32/unit array and the formal is exactly the matching shared/exclusive
+fixed bool/i32/u8/unit array and the formal is exactly the matching shared/exclusive
 scalar slice. Paths may contain up to 64 fields and visibility is checked at each
 hop. Length zero works through an explicitly typed empty-array initializer.
 

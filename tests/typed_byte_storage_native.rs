@@ -301,23 +301,14 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
 }
 
 #[test]
-fn byte_storage_public_record_reference_projection_stops_at_declaration() {
-    // The sealed direct/unused-record oracle fixes E0202 at the full field type.
-    // A whole-record reference and unused projection cannot get past that gate.
+fn byte_storage_public_record_reference_projection_reaches_native_toolchain() {
     for n in [0, 1, 1024] {
-        let ty = format!("[u8;{n}]");
         let source = format!(
-            "struct R{{a:{ty}}}fn f(r:&R)->i32{{return r.a.len();}}fn main()->i32{{return 0;}}"
+            "struct R{{a:[u8;{n}]}}fn f(r:&R)->i32{{return r.a.len();}}fn main()->i32{{return 0;}}"
         );
         let case = Case::new(&source);
-        let start = source.find(&ty).unwrap();
-        let end = start + ty.len();
-        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0202\",\"stage\":\"resolve\",\"message\":\"u8 array record fields are not supported\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
         for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), "E0202", "resolve");
-            assert_eq!(text.lines().count(), 2);
-            assert_eq!(text.lines().next(), Some(expected.as_str()));
-            assert!(!text.contains("E0701"));
+            diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
             case.unchanged();
         }
     }

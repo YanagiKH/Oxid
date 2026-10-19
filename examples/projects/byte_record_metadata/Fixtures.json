@@ -1,0 +1,51 @@
+[
+  {
+    "name": "one",
+    "stdin_hex": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de",
+    "stdout": "1\n",
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "wide",
+    "stdin_hex": "89504e470d0a1a0a0000000d494844520000040000000300080200000035d8825a",
+    "stdout": "1024\n",
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "maximum-representable-width",
+    "stdin_hex": "89504e470d0a1a0a0000000d494844527fffffff0000000108020000002f54a48a",
+    "stdout": "2147483647\n",
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "unsigned-width-outside-i32",
+    "stdin_hex": "89504e470d0a1a0a0000000d4948445280000000000000010802000000dfdf1df7",
+    "stdout": "-5\n",
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "zero-width",
+    "stdin_hex": "89504e470d0a1a0a0000000d49484452000000000000000108020000007fb538e0",
+    "stdout": "-5\n",
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "wrong-signature",
+    "stdin_hex": "58504e470d0a1a0a0000000d4948445200000001000000010802000000907753de",
+    "stdout": "-3\n",
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "short",
+    "stdin_hex": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753",
+    "stdout": "-1\n",
+    "exit": 0,
+    "stderr": ""
+  }
+]

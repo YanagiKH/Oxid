@@ -1,0 +1,8 @@
+[project]
+name = "png-width"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+metadata = "../library"
