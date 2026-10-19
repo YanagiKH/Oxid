@@ -74,7 +74,10 @@ impl CompilerSession {
             (Edition::TypedPreview, Target::Host, Profile::Default)
         ));
         let needs_name = configuration.engine == Engine::Native
-            && matches!(configuration.command, Command::Run | Command::Build);
+            && matches!(
+                configuration.command,
+                Command::Run | Command::Build | Command::Package
+            );
         let selection = manifest::graph::resolve(request, configuration.command, needs_name)
             .map_err(|failure| {
                 let (code, stage) = failure.classification();
@@ -114,6 +117,14 @@ impl CompilerSession {
     }
     pub fn configuration(&self) -> Configuration {
         self.configuration
+    }
+    pub fn selected_name(&self) -> &str {
+        &self
+            .project
+            .graph()
+            .expect("manifest session graph")
+            .packages[self.selected.0]
+            .name
     }
     pub fn check(&self) -> Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>> {
         check_project(&self.project)

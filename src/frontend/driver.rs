@@ -16,6 +16,20 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
         Route::TypedDoctor => Some(super::toolchain_doctor::run()),
         Route::TypedNew { path } => Some(scaffold_project(&path)),
+        Route::ManifestPackage {
+            request,
+            output,
+            entry_policy,
+        } => Some(super::project_package::run(request, &output, entry_policy)),
+        Route::ManifestPackageError {
+            failure,
+            json,
+            entry_policy,
+        } => Some(super::project_package::cli_error(
+            failure,
+            json,
+            entry_policy,
+        )),
         Route::ManifestBuild {
             request,
             entry_policy,
@@ -609,7 +623,7 @@ fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
         errors == 0, result.filter(|_| errors == 0).and_then(oir::Scalar::json).unwrap_or_else(|| "null".into()))
 }
 
-fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
+pub(super) fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
     if diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "E0500")

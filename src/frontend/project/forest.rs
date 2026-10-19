@@ -32,6 +32,8 @@ pub(in crate::frontend) struct PackageGraph {
 impl ProjectSources {
     /// Move the same source/AST owner through each package DFS. There are no
     /// separately parsed source maps, ID remapping, or synthetic declarations.
+    // Test-only allocation traces enlarge LoadFailure; keep its owner transfer unboxed.
+    #[cfg_attr(test, allow(clippy::result_large_err))]
     pub(in crate::frontend) fn load_forest(
         mut graph: PackageGraph,
         limits: ProjectLimits,

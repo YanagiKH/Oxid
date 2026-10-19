@@ -395,3 +395,225 @@ fn native_run_launch_failure_keeps_the_published_artifact() {
     assert!(text.contains("previous artifact was not restored"));
     assert_eq!(fs::read(path).unwrap(), b"not executable");
 }
+
+fn package_elf(tag: u8) -> Vec<u8> {
+    let mut bytes = vec![0; 65];
+    bytes[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+    bytes[16..24].copy_from_slice(&[3, 0, 62, 0, 1, 0, 0, 0]);
+    bytes[52] = 64;
+    bytes[64] = tag;
+    bytes
+}
+fn package_session(s: &Scratch) -> crate::frontend::session::CompilerSession {
+    use crate::frontend::{manifest::Command, options, session::*};
+    fs::write(
+        s.0.join("oxid.toml"),
+        "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n",
+    )
+    .unwrap();
+    fs::write(
+        s.0.join("main.ox"),
+        "mod helper; fn main()->i32{return crate::helper::answer();}",
+    )
+    .unwrap();
+    fs::write(s.0.join("helper.ox"), "pub fn answer()->i32{return 7;}").unwrap();
+    let args = vec![
+        "package".into(),
+        format!("--manifest-path={}/oxid.toml", s.0.display()),
+        "--output=unused.tar".into(),
+        "--message-format=json".into(),
+    ];
+    let options::Route::ManifestPackage {
+        request,
+        entry_policy,
+        ..
+    } = options::route(&args)
+    else {
+        panic!("package route");
+    };
+    CompilerSession::load(
+        request,
+        Configuration::new(Command::Package, Engine::Native, entry_policy, true),
+    )
+    .unwrap_or_else(|(_, errors)| panic!("{errors:?}"))
+}
+fn package_artifact(s: &Scratch, bytes: &[u8]) -> Artifact {
+    publish_with(&s.selection(), EntryPolicy::Result, |path| {
+        fs::write(path, bytes).unwrap();
+        Ok(())
+    })
+    .unwrap()
+}
+#[test]
+fn package_descriptor_keeps_a_after_b_c_publication_and_repeated_reads() {
+    use std::io::{Read, Seek, SeekFrom};
+    let s = Scratch::new();
+    let a_bytes = package_elf(b'A');
+    let a = package_artifact(&s, &a_bytes);
+    let b = package_artifact(&s, &package_elf(b'B'));
+    let c = package_artifact(&s, &package_elf(b'C'));
+    assert_eq!(fs::read(&a.path).unwrap(), c.package_bytes().unwrap());
+    assert_eq!(
+        fs::read(s.state().join("current")).unwrap(),
+        package_elf(b'B')
+    );
+    assert_eq!(fs::read(s.state().join("next")).unwrap(), package_elf(b'C'));
+    // A cloned descriptor shares its cursor: positional reads must leave it alone.
+    let mut shared = a.executable.try_clone().unwrap();
+    shared.seek(SeekFrom::Start(8)).unwrap();
+    for _ in 0..2 {
+        assert_eq!(a.package_bytes().unwrap(), a_bytes);
+    }
+    assert_eq!(shared.stream_position().unwrap(), 8);
+    let mut one = [0];
+    shared.read_exact(&mut one).unwrap();
+    assert_eq!(one[0], a_bytes[8]);
+    assert_eq!(b.package_bytes().unwrap(), package_elf(b'B'));
+    assert!(a
+        .package_bytes_limit(64)
+        .unwrap_err()
+        .contains("size limit"));
+}
+#[test]
+fn package_descriptor_rejects_nonfiles_and_u64_oversize_before_reading() {
+    let s = Scratch::new();
+    let directory = Artifact {
+        path: "unused".into(),
+        executable: fs::File::open(&s.0).unwrap(),
+    };
+    assert!(directory
+        .package_bytes()
+        .unwrap_err()
+        .contains("regular file"));
+    let path = s.0.join("sparse");
+    let file = fs::File::create(&path).unwrap();
+    file.set_len(crate::frontend::native_bundle::MAX_EXECUTABLE as u64 + 1)
+        .unwrap();
+    // The unreadable descriptor makes an accidental read fail differently.
+    let oversize = Artifact {
+        path: path.to_string_lossy().into_owned(),
+        executable: file,
+    };
+    assert!(oversize.package_bytes().unwrap_err().contains("size limit"));
+}
+#[test]
+fn package_finish_uses_session_name_and_retained_a_not_current_c() {
+    use crate::frontend::project_package::finish;
+    let s = Scratch::new();
+    let session = package_session(&s);
+    let module = session.check().unwrap().native_module().unwrap();
+    fs::write(s.0.join("oxid.toml"), "not a manifest").unwrap();
+    fs::remove_file(s.0.join("main.ox")).unwrap();
+    fs::remove_file(s.0.join("helper.ox")).unwrap();
+    assert_eq!(session.selected_name(), "app");
+    assert_eq!(session.check().unwrap().native_module().unwrap(), module);
+    let a = package_artifact(&s, &package_elf(b'A'));
+    package_artifact(&s, &package_elf(b'B'));
+    package_artifact(&s, &package_elf(b'C'));
+    let output = s.0.join("different-name.tar");
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        finish(
+            &session,
+            &a,
+            output.to_str().unwrap(),
+            &mut stdout,
+            &mut stderr
+        ),
+        0
+    );
+    let archive = fs::read(&output).unwrap();
+    assert_eq!(&archive[..7], b"bin/app");
+    assert_eq!(&archive[512..577], package_elf(b'A'));
+    assert!(String::from_utf8_lossy(&archive).contains("\"name\":\"app\""));
+    assert_eq!(fs::read(&a.path).unwrap(), package_elf(b'C'));
+    let report = String::from_utf8(stdout).unwrap();
+    assert_eq!(report.matches("package-summary").count(), 1);
+    assert!(!report.contains("build-summary"));
+    assert!(report.contains("\"managed_published\":true"));
+    assert!(report.contains("\"archive_published\":true"));
+    assert!(stderr.is_empty());
+}
+#[test]
+fn package_finish_failure_keeps_managed_fact_and_does_not_replace_archive() {
+    use crate::frontend::project_package::finish;
+    for collision in [false, true] {
+        let s = Scratch::new();
+        let session = package_session(&s);
+        let bytes = if collision {
+            package_elf(b'A')
+        } else {
+            b"not ELF".to_vec()
+        };
+        let artifact = package_artifact(&s, &bytes);
+        let output = s.0.join("out.tar");
+        if collision {
+            fs::write(&output, b"racing winner").unwrap();
+        }
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            finish(
+                &session,
+                &artifact,
+                output.to_str().unwrap(),
+                &mut out,
+                &mut err
+            ),
+            1
+        );
+        let report = String::from_utf8(out).unwrap();
+        assert!(report.contains("\"code\":\"E0720\""));
+        assert!(report.contains("\"success\":false"));
+        assert!(report.contains("\"managed_published\":true"));
+        assert!(report.contains("\"archive_published\":false"));
+        assert!(report.contains(&crate::frontend::diagnostic::json_string(&artifact.path)));
+        assert_eq!(fs::read(&artifact.path).unwrap(), bytes);
+        if collision {
+            assert_eq!(fs::read(output).unwrap(), b"racing winner");
+        } else {
+            assert!(!output.exists());
+        }
+        assert!(fs::read_dir(&s.0).unwrap().all(|e| !e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".oxid-package-")));
+    }
+}
+#[test]
+fn package_reporting_failure_retains_both_published_files() {
+    use crate::frontend::project_package::finish;
+    struct Broken;
+    impl std::io::Write for Broken {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let s = Scratch::new();
+    let session = package_session(&s);
+    let artifact = package_artifact(&s, &package_elf(b'A'));
+    let output = s.0.join("out.tar");
+    let mut err = Vec::new();
+    assert_eq!(
+        finish(
+            &session,
+            &artifact,
+            output.to_str().unwrap(),
+            &mut Broken,
+            &mut err
+        ),
+        1
+    );
+    assert_eq!(fs::read(&artifact.path).unwrap(), package_elf(b'A'));
+    assert_eq!(&fs::read(&output).unwrap()[512..577], package_elf(b'A'));
+    let diagnostic = String::from_utf8(err).unwrap();
+    assert!(diagnostic.contains("E0721"));
+    assert!(diagnostic.contains(&artifact.path));
+    assert!(diagnostic.contains(output.to_str().unwrap()));
+    assert!(diagnostic.contains("published files were retained"));
+}

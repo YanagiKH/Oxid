@@ -72,13 +72,14 @@ fn add(a: usize, b: usize) -> Result<usize, Failure> {
 fn word(operation: Operation) -> &'static str {
     Command::from(operation).word()
 }
-/// Keep TEST local to manifest commands; source compiler operations stay closed.
+/// Keep project commands local; source compiler operations stay closed.
 #[derive(Clone, Copy)]
 pub(super) enum Command {
     Check,
     Run,
     Build,
     Test,
+    Package,
 }
 impl From<Operation> for Command {
     fn from(operation: Operation) -> Self {
@@ -96,6 +97,7 @@ impl Command {
             Self::Run => "run",
             Self::Build => "build",
             Self::Test => "test",
+            Self::Package => "package",
         }
     }
 }

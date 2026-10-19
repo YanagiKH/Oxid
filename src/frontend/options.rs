@@ -15,6 +15,16 @@ pub enum Route {
     TypedNew {
         path: String,
     },
+    ManifestPackage {
+        request: Box<[super::manifest::Request; 1]>,
+        output: String,
+        entry_policy: EntryPolicy,
+    },
+    ManifestPackageError {
+        failure: super::manifest::Failure,
+        json: bool,
+        entry_policy: EntryPolicy,
+    },
     ManifestBuild {
         request: Box<[super::manifest::Request; 1]>,
         entry_policy: EntryPolicy,

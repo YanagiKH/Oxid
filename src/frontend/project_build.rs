@@ -23,6 +23,57 @@ pub(super) struct Artifact {
     executable: std::fs::File,
 }
 impl Artifact {
+    /// Read the held inode from offset zero without changing its shared cursor.
+    /// Cooperating publication replaces names, not bytes. Noncooperating inode
+    /// mutation is outside this stable-filesystem contract, not an atomic snapshot.
+    pub fn package_bytes(&self) -> Result<Vec<u8>, String> {
+        #[cfg(target_os = "linux")]
+        return self.package_bytes_limit(super::native_bundle::MAX_EXECUTABLE as u64);
+        #[cfg(not(target_os = "linux"))]
+        Err("native package artifact access requires Linux".into())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn package_bytes_limit(&self, limit: u64) -> Result<Vec<u8>, String> {
+        use std::{io::ErrorKind, os::unix::fs::FileExt};
+        let metadata = self
+            .executable
+            .metadata()
+            .map_err(|e| format!("inspect retained executable: {e}"))?;
+        if !metadata.is_file() {
+            return Err("retained executable is not a regular file".into());
+        }
+        let length = metadata.len();
+        // Check the u64 length before narrowing or allocating, even on 32-bit.
+        if length > limit.min(super::native_bundle::MAX_EXECUTABLE as u64) {
+            return Err("retained executable exceeds package size limit (maximum 64 MiB)".into());
+        }
+        let length = usize::try_from(length)
+            .map_err(|_| "retained executable length is not representable")?;
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(length)
+            .map_err(|_| "package executable allocation failed")?;
+        bytes.resize(length, 0);
+        let mut offset = 0;
+        while offset < length {
+            match self.executable.read_at(&mut bytes[offset..], offset as u64) {
+                Ok(0) => return Err("retained executable shortened while reading".into()),
+                Ok(n) => offset += n,
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(e) => return Err(format!("read retained executable: {e}")),
+            }
+        }
+        loop {
+            match self.executable.read_at(&mut [0], length as u64) {
+                Ok(0) => return Ok(bytes),
+                Ok(_) => return Err("retained executable grew while reading".into()),
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(e) => return Err(format!("finish reading retained executable: {e}")),
+            }
+        }
+    }
+
     fn run_error(&self, action: &str, error: impl std::fmt::Display) -> Box<Diagnostic> {
         Diagnostic::new(
             "E0711",

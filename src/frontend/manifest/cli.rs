@@ -48,6 +48,7 @@ impl Error<'_> {
 pub(super) struct Scan<'a> {
     path: Option<&'a str>,
     package: Option<&'a str>,
+    output: Option<&'a str>,
     command: Option<&'a str>,
     edition: Option<&'a str>,
     error: Option<Error<'a>>,
@@ -133,6 +134,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                     error.get_or_insert(Error::Engine(value));
                 }
                 (11, value) => scan.package = value,
+                (9, value) => scan.output = value,
                 _ => {}
             }
         } else if scan.command.is_none() {
@@ -163,6 +165,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Operation::Check
     };
     let build = scan.command == Some("build");
+    let package = scan.command == Some("package");
     let test = scan.command == Some("test");
     let run = scan.command == Some("run");
     let native_run = run && scan.native;
@@ -171,7 +174,9 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     } else {
         EntryPolicy::Result
     };
-    let op = if build {
+    let op = if package {
+        "package"
+    } else if build {
         "build"
     } else if test {
         "test"
@@ -180,7 +185,11 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     };
     let message = if let Some(error) = scan.error.or(scan.local_error) {
         Some(error.message(op))
-    } else if !matches!(scan.command, Some("check" | "run" | "build" | "test")) {
+    } else if !matches!(
+        scan.command,
+        Some("check" | "run" | "build" | "test" | "package")
+    ) {
+        // Preserve the existing fallback diagnostic for unrelated commands.
         Some("--manifest-path requires check, run or build, or test".into())
     } else if scan.before {
         Some(format!("--manifest-path must follow {op}"))
@@ -191,12 +200,18 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     } else if !run && !test && scan.seen & (1 << 10) != 0 {
         Some("--engine is only supported by manifest run or test".into())
     } else if scan.seen
-        & !((if build || native_run { 15 } else { 7 })
-            | (if run || test { 1 << 10 } else { 0 })
+        & !((if build || native_run || package {
+            15
+        } else {
+            7
+        }) | (if run || test { 1 << 10 } else { 0 })
+            | (if package { 1 << 9 } else { 0 })
             | (1 << 11))
         != 0
     {
-        Some(if build || native_run {
+        Some(if package {
+            "manifest package does not support backend, target or experimental selectors".into()
+        } else if build || native_run {
             format!(
                 "manifest {op} does not support backend, target, output or experimental selectors"
             )
@@ -207,10 +222,19 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Some("native manifest run does not support --message-format=json".into())
     } else if test && scan.json {
         Some("manifest test does not support --message-format=json".into())
+    } else if package && scan.output.is_none() {
+        Some("manifest package requires --output ARCHIVE".into())
     } else {
         None
     };
     if let Some(message) = message {
+        if package {
+            return Some(Route::ManifestPackageError {
+                failure: Failure::Cli(message),
+                json: scan.json,
+                entry_policy,
+            });
+        }
         if test {
             return Some(Route::ManifestTestError {
                 failure: Failure::Cli(message),
@@ -230,8 +254,30 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
             operation,
         });
     }
+    // The package-only owned path is fallibly copied after CLI validation. It
+    // does not enlarge Request or change the manifest allocation sequence.
+    let output = if package {
+        let text = scan.output.expect("validated package output");
+        let mut output = String::new();
+        if output.try_reserve_exact(text.len()).is_err() {
+            return Some(Route::ManifestPackageError {
+                failure: Failure::Resource("package output path allocation failed"),
+                json: scan.json,
+                entry_policy,
+            });
+        }
+        output.push_str(text);
+        output
+    } else {
+        String::new()
+    };
     Some(
         match super::request_selected(scan.path.unwrap_or(""), scan.package, scan.json, allocator) {
+            Ok(request) if package => Route::ManifestPackage {
+                request,
+                output,
+                entry_policy,
+            },
             Ok(request) if test => Route::ManifestTest {
                 request,
                 native: scan.native,
@@ -246,6 +292,11 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
             },
             Ok(request) if operation == Operation::Run => Route::ManifestRun { request },
             Ok(request) => Route::ManifestCheck { request },
+            Err(failure) if package => Route::ManifestPackageError {
+                failure,
+                json: scan.json,
+                entry_policy,
+            },
             Err(failure) if build => Route::ManifestBuildError {
                 failure,
                 json: scan.json,
@@ -262,4 +313,47 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
             },
         },
     )
+}
+
+#[cfg(test)]
+mod package_tests {
+    use super::*;
+    #[test]
+    fn package_cli_carriers_and_legacy_boundaries() {
+        use std::mem::{align_of, size_of};
+        println!(
+            "PACKAGE_CARRIERS route={} request={} scan={} inventory={} route_alignment={}",
+            size_of::<Route>(),
+            size_of::<super::super::Request>(),
+            size_of::<Scan<'_>>(),
+            super::super::inventory().unwrap(),
+            align_of::<Route>()
+        );
+        let args = |words: &[&str]| words.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        for words in [
+            vec!["package", "--output=x.tar"],
+            vec!["script", "name", "--manifest-path=x", "--output=y"],
+            vec!["package", "--", "--manifest-path=x"],
+        ] {
+            assert!(select(&args(&words)).is_none());
+        }
+        let words = args(&[
+            "package",
+            "--manifest-path=x",
+            "--output=out.tar",
+            "--package=app",
+            "--entry-mode=process",
+        ]);
+        let Some(Route::ManifestPackage {
+            output,
+            entry_policy,
+            request,
+        }) = select(&words)
+        else {
+            panic!("package route");
+        };
+        assert_eq!(output, "out.tar");
+        assert_eq!(entry_policy, EntryPolicy::Process);
+        assert_eq!(request[0].package.as_deref(), Some("app"));
+    }
 }
