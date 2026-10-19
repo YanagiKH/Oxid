@@ -1,12 +1,13 @@
 # Owned UTF-8 Text source prototype
 
-This ordinary two-module `typed-preview` project builds on the experimental
+This ordinary `typed-preview` path-dependency consumer builds on the experimental
 `alloc::bytes::ByteBuf` contract in RFC 0032 (reviewed source baseline
 `156714f67b2e11b9f00c809acf6b1b9484d04dcb`). It adds no compiler operation,
 runtime code, allocator, or native UTF-8 kernel. It is not canonical stdlib,
 a stable `String` API, generic container support, or completion of R2.
 
-`src/text.ox` exposes:
+The single implementation is in [`packages/utf8_text`](../../../packages/utf8_text).
+The direct dependency alias `text` exposes:
 
 - `Text`, whose sole `ByteBuf` field is private.
 - `new_text()`, `byte_len(&Text)`, and `scalar_count(&Text)`.
@@ -22,6 +23,10 @@ a stable `String` API, generic container support, or completion of R2.
 - `equals_utf8(&Text, &[u8]) -> bool`: exact byte equality with an input slice;
   no allocation, reference escape, or mutation. Invalid UTF-8 cannot equal Text.
 - `truncate(&mut Text, byte_length) -> bool`.
+- `append_to_bytes(&Text, &mut ByteBuf) -> GrowStatus`: append exact initialized
+  bytes to an existing destination, preserving its prefix and the source Text.
+  Empty Text is a no-op; recoverable refusal preserves destination state.
+  See the package README for copying, allocation and peak-live-memory costs.
 
 Validation is strict and complete-input: ASCII (including NUL), BOM and Unicode
 noncharacters are allowed; overlong sequences, surrogates, values above
@@ -55,7 +60,18 @@ or implicit clone. Scalar count counts Unicode scalar values, not graphemes;
 for example `e` plus U+0301 counts as two scalars. Validation and scalar count
 are linear, allocation-free source loops. Boundary checking is constant-time.
 
-## Focused scalar-append acceptance
+## Package migration validation status
+
+The package migration is not yet executed with Oxid in this preparation
+environment. All original checks -1..-57 remain unchanged. New partitioned
+checks -58..-70 cover export to empty and prefixed ByteBuf destinations, exact
+mixed-width/NUL bytes, unchanged source, and empty Text export. The regression
+copies package and consumer into a fresh repository-shaped directory, preserving
+relative manifest paths. Private-storage and moved-owner negatives now import
+the package. Native acceptance uses manifest BUILD and standalone execution;
+a bare source compile cannot resolve manifest dependencies.
+
+## Historical focused scalar-append acceptance (before package migration)
 
 The revised scalar extension passed source checking (40 functions) and the
 focused `owned_utf8_text` regression on source tree
@@ -113,8 +129,8 @@ With the existing supported native toolchain configured, reproduce the
 standalone native route using:
 
 ```sh
-oxid compile examples/projects/owned_utf8_text/src/main.ox --edition=typed-preview --entry-mode=result --backend=llvm --target=x86_64-unknown-linux-gnu --output=/tmp/owned-utf8-text
-/tmp/owned-utf8-text
+oxid build --manifest-path examples/projects/owned_utf8_text/oxid.toml --entry-mode=result
+examples/projects/owned_utf8_text/.oxid/typed-preview/result/owned-utf8-text-prototype
 ```
 
 The focused native result is for that standalone executable; no separate
@@ -131,3 +147,12 @@ acceptance, not general String or R2 completion.
 Fixture cross-checking against a host decoder is an independent oracle only.
 Separate Rust/C UTF-8 kernels are not called by this project and do not
 establish its interpreter/native result.
+
+## Path-package integration acceptance
+
+The path-dependency migration passed CHECK (44 functions), interpreter
+execution, and manifest BUILD followed by standalone native execution with
+LLVM 19.1.7 on Linux x86_64. The focused Rust regression target passed two
+ordinary tests and one native test, with scoped clippy passing. The final
+Rust formatting change is mechanical. Original pre-migration results above
+remain historical; no full repository or release qualification pass is claimed.

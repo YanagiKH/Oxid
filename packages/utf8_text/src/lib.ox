@@ -258,3 +258,8 @@ pub fn truncate(text: &mut Text, length: i32) -> bool {
     truncate_bytes(&mut *text.bytes, length);
     return true;
 }
+
+// Append initialized bytes without exposing or moving the private owner.
+pub fn append_to_bytes(text: &Text, output: &mut ByteBuf) -> GrowStatus {
+    return try_extend(&mut *output, &*text.bytes);
+}

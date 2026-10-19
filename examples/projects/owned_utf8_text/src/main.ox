@@ -1,24 +1,23 @@
-mod text;
-
 use alloc::bytes::GrowStatus;
 use alloc::bytes::new;
 use alloc::bytes::len;
 use alloc::bytes::try_extend;
-use crate::text::Text;
-use crate::text::Validation;
-use crate::text::FromBytes;
-use crate::text::AppendStatus;
-use crate::text::validate;
-use crate::text::new_text;
-use crate::text::from_bytes;
-use crate::text::byte_len;
-use crate::text::scalar_count;
-use crate::text::append_utf8;
-use crate::text::truncate;
+use text::Text;
+use text::Validation;
+use text::FromBytes;
+use text::AppendStatus;
+use text::validate;
+use text::new_text;
+use text::from_bytes;
+use text::byte_len;
+use text::scalar_count;
+use text::append_utf8;
+use text::truncate;
 
-use crate::text::ScalarAppendStatus;
-use crate::text::append_scalar;
-use crate::text::equals_utf8;
+use text::ScalarAppendStatus;
+use text::append_scalar;
+use text::equals_utf8;
+use text::append_to_bytes;
 
 fn byte(value: i32) -> u8 {
     return value.to_u8_checked();
@@ -304,6 +303,47 @@ fn check_scalar_refusals() -> i32 {
     return 0;
 }
 
+fn check_export() -> i32 {
+    let expected = [byte(0), byte(65), byte(194), byte(162), byte(226), byte(130), byte(172), byte(240), byte(159), byte(152), byte(128)];
+    let mut owner = new();
+    if !grew(try_extend(&mut owner, &expected)) { return -58; }
+    let converted = from_bytes(owner);
+    match converted {
+        FromBytes::Invalid(rejected) => { return -59; },
+        FromBytes::Ok(document) => {
+            let mut output = new();
+            if !grew(append_to_bytes(&document, &mut output)) { return -60; }
+            if !equal_bytes(&output, &expected) { return -61; }
+            if !equals_utf8(&document, &expected) || byte_len(&document) != 11 || scalar_count(&document) != 5 { return -62; }
+            let prefixed_result = check_prefixed_export(&document, &expected);
+            if prefixed_result != 0 { return prefixed_result; }
+        },
+    }
+    return 0;
+}
+
+fn check_empty_export() -> i32 {
+    let document = new_text();
+    let mut output = new();
+    if !grew(append_to_bytes(&document, &mut output)) || len(&output) != 0 { return -67; }
+    let prefix = [byte(255), byte(0)];
+    if !grew(try_extend(&mut output, &prefix)) { return -68; }
+    if !grew(append_to_bytes(&document, &mut output)) || !equal_bytes(&output, &prefix) { return -69; }
+    if byte_len(&document) != 0 || scalar_count(&document) != 0 { return -70; }
+    return 0;
+}
+
+fn check_prefixed_export(document: &Text, expected: &[u8]) -> i32 {
+    let prefix = [byte(255), byte(0)];
+    let combined = [byte(255), byte(0), byte(0), byte(65), byte(194), byte(162), byte(226), byte(130), byte(172), byte(240), byte(159), byte(152), byte(128)];
+    let mut prefixed = new();
+    if !grew(try_extend(&mut prefixed, &prefix)) { return -63; }
+    if !grew(append_to_bytes(&*document, &mut prefixed)) { return -64; }
+    if !equal_bytes(&prefixed, &combined) { return -65; }
+    if !equals_utf8(&*document, &*expected) || byte_len(&*document) != 11 || scalar_count(&*document) != 5 { return -66; }
+    return 0;
+}
+
 fn main() -> i32 {
     let empty_result = check_empty();
     if empty_result != 0 { return empty_result; }
@@ -323,5 +363,9 @@ fn main() -> i32 {
     if scalar_high_result != 0 { return scalar_high_result; }
     let scalar_refusal_result = check_scalar_refusals();
     if scalar_refusal_result != 0 { return scalar_refusal_result; }
+    let export_result = check_export();
+    if export_result != 0 { return export_result; }
+    let empty_export_result = check_empty_export();
+    if empty_export_result != 0 { return empty_export_result; }
     return 42;
 }
