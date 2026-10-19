@@ -12,6 +12,7 @@ use std::path::Path;
 const EDGE_BYTES: usize = M_RAW;
 #[cfg(test)]
 mod tests;
+mod workspace;
 
 pub(in crate::frontend) struct Selection {
     pub graph: PackageGraph,
@@ -23,6 +24,36 @@ struct Budget {
     manifest_bytes: usize,
     edge_bytes: usize,
     path_bytes: usize,
+}
+impl Budget {
+    fn manifest(&mut self, bytes: usize) -> Result<(), Failure> {
+        let total = add(self.manifest_bytes, bytes)?;
+        if total > M_RAW {
+            return Err(Failure::Resource(
+                "aggregate manifest input exceeds 16384 bytes",
+            ));
+        }
+        self.manifest_bytes = total;
+        Ok(())
+    }
+    fn paths(&mut self, bytes: usize) -> Result<(), Failure> {
+        let total = add(self.path_bytes, bytes)?;
+        if total > ProjectLimits::default().path_bytes {
+            return Err(Failure::Resource("retained manifest path budget exceeded"));
+        }
+        self.path_bytes = total;
+        Ok(())
+    }
+    fn edges(&mut self, bytes: usize) -> Result<(), Failure> {
+        let total = add(self.edge_bytes, bytes)?;
+        if total > EDGE_BYTES {
+            return Err(Failure::Resource(
+                "manifest member/edge storage exceeds 16384 bytes",
+            ));
+        }
+        self.edge_bytes = total;
+        Ok(())
+    }
 }
 
 fn reserve<T>(items: &mut Vec<T>, allocator: &mut Allocator) -> Result<(), Failure> {
@@ -67,6 +98,20 @@ fn canonical(path: &str) -> Result<std::path::PathBuf, Failure> {
     Ok(result)
 }
 
+fn joined_manifest(path: &str, directory: &str) -> Result<std::path::PathBuf, Failure> {
+    let base = Path::new(path).parent().unwrap_or(Path::new(""));
+    let joined = add(
+        add(base.as_os_str().as_encoded_bytes().len(), directory.len())?,
+        12,
+    )?;
+    if joined > P_MANIFEST {
+        return Err(Failure::Resource(
+            "dependency/member manifest path exceeds 4096 bytes",
+        ));
+    }
+    Ok(base.join(directory).join("oxid.toml"))
+}
+
 fn package(
     path: &str,
     canonical_manifest: std::path::PathBuf,
@@ -76,12 +121,7 @@ fn package(
     budget: &mut Budget,
     allocator: &mut Allocator,
 ) -> Result<Package, Failure> {
-    budget.manifest_bytes = add(budget.manifest_bytes, raw.len())?;
-    if budget.manifest_bytes > M_RAW {
-        return Err(Failure::Resource(
-            "aggregate manifest input exceeds 16384 bytes",
-        ));
-    }
+    budget.manifest(raw.len())?;
     let text = std::str::from_utf8(raw)
         .map_err(|_| Failure::Utf8(format!("manifest `{path}` is not valid UTF-8")))?;
     let mut dependencies: Vec<Dependency> = Vec::new();
@@ -106,12 +146,8 @@ fn package(
                 ));
             }
             let bytes = add(size_of::<Dependency>(), add(alias.len(), field.decoded)?)?;
-            let edge_bytes = add(budget.edge_bytes, bytes)?;
-            if edge_bytes > EDGE_BYTES {
-                return Err(Failure::Resource(
-                    "dependency edge storage exceeds 16384 bytes",
-                ));
-            }
+            budget.edges(bytes)?;
+            budget.paths(field.decoded)?;
             visit(text, field, |c| {
                 if c.is_control() || c == '\\' {
                     Err(invalid(
@@ -130,10 +166,18 @@ fn package(
                 target: PackageId(usize::MAX),
                 line,
             });
-            budget.edge_bytes = edge_bytes;
             Ok(())
         }),
     )?;
+    // Charge the complete retained spelling before prepare_parsed allocates it.
+    let entry_bytes = add(
+        parent(path, cfg!(windows)).len(),
+        parsed.fields[1].map_or(0, |f| f.decoded),
+    )?;
+    budget.paths(add(
+        add(path.len(), entry_bytes)?,
+        canonical_manifest.as_os_str().as_encoded_bytes().len(),
+    )?)?;
     let mut name = String::new();
     let entry = prepare_parsed(
         path,
@@ -147,16 +191,6 @@ fn package(
         if let Some(field) = parsed.fields[2] {
             name = decoded(text, field, allocator)?;
         }
-    }
-    budget.path_bytes = add(
-        budget.path_bytes,
-        add(
-            add(path.len(), entry.len())?,
-            canonical_manifest.as_os_str().as_encoded_bytes().len(),
-        )?,
-    )?;
-    if budget.path_bytes > ProjectLimits::default().path_bytes {
-        return Err(Failure::Resource("retained manifest path budget exceeded"));
     }
     Ok(Package {
         manifest: owned(path, allocator)?,
@@ -174,76 +208,89 @@ pub(in crate::frontend) fn resolve(
     operation: Command,
     needs_name: bool,
 ) -> Result<Selection, Failure> {
-    with_manifest(request, |path, raw, allocator| {
+    with_manifest(request, |path, raw, selector, allocator| {
         let mut budget = Budget::default();
-        let root = package(
+        let selected = workspace::select(
             path,
-            canonical(path)?,
             raw,
+            selector,
             operation,
             needs_name,
             &mut budget,
             allocator,
         )?;
-        let mut packages = Vec::new();
-        reserve(&mut packages, allocator)?;
-        packages.push(root);
-        // Every graph node requires a source module. No recursion or per-node
-        // budget multiplier; both node count and traversal fit the existing cap.
-        let mut stack = [(PackageId(0), 0usize); 256];
-        let mut height = 1;
-        while height > 0 {
-            let (id, next) = stack[height - 1];
-            if next == packages[id.0].dependencies.len() {
-                height -= 1;
-                continue;
+        finish(selected, operation, &mut budget, allocator)
+    })
+}
+
+fn finish(
+    selected: workspace::Selected,
+    operation: Command,
+    budget: &mut Budget,
+    allocator: &mut Allocator,
+) -> Result<Selection, Failure> {
+    let workspace::Selected {
+        root,
+        mut cached,
+        workspace,
+    } = selected;
+    let mut packages = Vec::new();
+    reserve(&mut packages, allocator)?;
+    packages.push(root);
+    // Every graph node requires a source module. No recursion or per-node
+    // budget multiplier; both node count and traversal fit the existing cap.
+    let mut stack = [(PackageId(0), 0usize); 256];
+    let mut height = 1;
+    while height > 0 {
+        let (id, next) = stack[height - 1];
+        if next == packages[id.0].dependencies.len() {
+            height -= 1;
+            continue;
+        }
+        stack[height - 1].1 += 1;
+        let node = &packages[id.0];
+        let edge = &node.dependencies[next];
+        let failure = |reason: &str| {
+            Failure::Cli(format!(
+                "manifest `{}` line {}: {reason}: {}",
+                node.manifest, edge.line, edge.alias
+            ))
+        };
+        let target_path = joined_manifest(&node.manifest, &edge.directory)?;
+        let target_path = target_path.to_str().ok_or(Failure::Invariant)?;
+        let target = canonical(target_path)?;
+        if workspace.as_ref() == Some(&target) {
+            return Err(failure("dependency cycle through virtual workspace"));
+        }
+        let existing = packages.iter().position(|p| p.canonical_manifest == target);
+        if let Some(found) = existing {
+            if stack[..height]
+                .iter()
+                .any(|(ancestor, _)| ancestor.0 == found)
+            {
+                return Err(failure("dependency cycle"));
             }
-            stack[height - 1].1 += 1;
-            let node = &packages[id.0];
-            let edge = &node.dependencies[next];
-            let failure = |reason: &str| {
-                Failure::Cli(format!(
-                    "manifest `{}` line {}: {reason}: {}",
-                    node.manifest, edge.line, edge.alias
-                ))
-            };
-            let base = Path::new(&node.manifest).parent().unwrap_or(Path::new(""));
-            // Check a conservative join size before allocating either PathBuf.
-            let joined = add(
-                add(
-                    base.as_os_str().as_encoded_bytes().len(),
-                    edge.directory.len(),
-                )?,
-                12,
-            )?;
-            if joined > P_MANIFEST {
-                return Err(Failure::Resource(
-                    "dependency manifest path exceeds 4096 bytes",
-                ));
+            if node.dependencies[..next]
+                .iter()
+                .any(|d| d.target == PackageId(found))
+            {
+                return Err(failure("duplicate canonical dependency target"));
             }
-            let target_path = base.join(&edge.directory).join("oxid.toml");
-            let target_path = target_path.to_str().ok_or(Failure::Invariant)?;
-            let target = canonical(target_path)?;
-            let existing = packages.iter().position(|p| p.canonical_manifest == target);
-            if let Some(found) = existing {
-                if stack[..height]
-                    .iter()
-                    .any(|(ancestor, _)| ancestor.0 == found)
-                {
-                    return Err(failure("dependency cycle"));
-                }
-                if node.dependencies[..next]
-                    .iter()
-                    .any(|d| d.target == PackageId(found))
-                {
-                    return Err(failure("duplicate canonical dependency target"));
-                }
-                packages[id.0].dependencies[next].target = PackageId(found);
-                continue;
-            }
-            if packages.len() >= ProjectLimits::default().modules {
-                return Err(Failure::Resource("package count exceeds module limit"));
-            }
+            packages[id.0].dependencies[next].target = PackageId(found);
+            continue;
+        }
+        if packages.len() >= ProjectLimits::default().modules {
+            return Err(Failure::Resource("package count exceeds module limit"));
+        }
+        let cached_member = cached.iter_mut().find(|snapshot| {
+            snapshot
+                .package
+                .as_ref()
+                .is_some_and(|p| p.canonical_manifest == target)
+        });
+        let child = if let Some(snapshot) = cached_member {
+            snapshot.package.take().ok_or(Failure::Invariant)?
+        } else {
             let raw = read_path(
                 target_path,
                 allocator,
@@ -257,7 +304,7 @@ pub(in crate::frontend) fn resolve(
                 &raw,
                 operation,
                 false,
-                &mut budget,
+                budget,
                 allocator,
             )
             .map_err(|failure| match failure {
@@ -266,19 +313,26 @@ pub(in crate::frontend) fn resolve(
                 }
                 failure => failure,
             })?;
-            let child_id = PackageId(packages.len());
-            reserve(&mut packages, allocator)?;
-            packages.push(child);
-            packages[id.0].dependencies[next].target = child_id;
-            stack[height] = (child_id, 0);
-            height += 1;
-        }
-        Ok(Selection {
-            graph: PackageGraph {
-                packages,
-                retained_path_bytes: budget.path_bytes,
-            },
-            parent: owned(parent(path, cfg!(windows)), allocator)?,
-        })
+            if workspace.is_some() {
+                workspace::retain(&mut cached, None, &raw, budget, allocator)?;
+            }
+            child
+        };
+        let child_id = PackageId(packages.len());
+        reserve(&mut packages, allocator)?;
+        packages.push(child);
+        packages[id.0].dependencies[next].target = child_id;
+        stack[height] = (child_id, 0);
+        height += 1;
+    }
+    let output_parent = parent(&packages[0].manifest, cfg!(windows));
+    budget.paths(output_parent.len())?;
+    let output_parent = owned(output_parent, allocator)?;
+    Ok(Selection {
+        graph: PackageGraph {
+            packages,
+            retained_path_bytes: budget.path_bytes,
+        },
+        parent: output_parent,
     })
 }

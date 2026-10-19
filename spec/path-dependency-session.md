@@ -43,8 +43,10 @@ retained graph paths also consume the existing retained-path allowance. All
 graph growth is checked before reservation; graph DFS uses bounded storage.
 No budgets, native pins, legacy routes or compiler-owned std imports change.
 
-No workspaces, lockfile writes, downloads, library ABI, publication or
-incremental cache are introduced. Native acceptance still requires the separately
+The initial dependency slice introduced no workspaces. The follow-on
+[explicit workspace selection](workspace-selection.md) selects one member into
+this same session. Neither slice introduces lockfile writes, downloads, a library
+ABI, publication or an incremental cache. Native acceptance still requires the separately
 authorized LLVM 19.1.7/Linux x86_64 toolchain. These changes do not qualify the
 base or resume held qualification/capacity work.
 

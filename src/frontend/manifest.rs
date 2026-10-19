@@ -136,6 +136,7 @@ impl Allocator {
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Request {
     path: String,
+    package: Option<String>,
     pub(super) json: bool,
     allocator: Allocator,
 }
@@ -259,11 +260,30 @@ fn admit_layout() -> Result<(), Failure> {
     }
     Ok(())
 }
-fn request(path: &str, json: bool, mut allocator: Allocator) -> Result<Box<[Request; 1]>, Failure> {
+#[cfg(test)]
+fn request(path: &str, json: bool, allocator: Allocator) -> Result<Box<[Request; 1]>, Failure> {
+    request_selected(path, None, json, allocator)
+}
+fn request_selected(
+    path: &str,
+    package: Option<&str>,
+    json: bool,
+    mut allocator: Allocator,
+) -> Result<Box<[Request; 1]>, Failure> {
     if path.len() > P_MANIFEST {
         return Err(Failure::Resource("manifest path exceeds 4096 bytes"));
     }
     admit_layout()?;
+    let package = package
+        .map(|name| {
+            if name.len() > 64 {
+                return Err(Failure::Cli("--package name exceeds 64 bytes".into()));
+            }
+            let mut result = allocator.string(name.len())?;
+            result.push_str(name);
+            Ok(result)
+        })
+        .transpose()?;
     let mut owned_path = allocator.string(path.len())?;
     owned_path.push_str(path);
     let count = 1;
@@ -275,6 +295,7 @@ fn request(path: &str, json: bool, mut allocator: Allocator) -> Result<Box<[Requ
     }
     carrier.push(Request {
         path: owned_path,
+        package,
         json,
         allocator,
     });
@@ -302,13 +323,16 @@ pub(super) struct BuildSelection {
 )]
 fn with_manifest<T>(
     mut request: Box<[Request; 1]>,
-    consume: impl FnOnce(&str, &[u8], &mut Allocator) -> Result<T, Failure>,
+    consume: impl FnOnce(&str, &[u8], Option<&str>, &mut Allocator) -> Result<T, Failure>,
 ) -> Result<T, Failure> {
     let Request {
-        path, allocator, ..
+        path,
+        package,
+        allocator,
+        ..
     } = &mut request[0];
     let raw = read_path(path, allocator, M_RAW)?;
-    consume(path, &raw, allocator)
+    consume(path, &raw, package.as_deref(), allocator)
 }
 fn read_path(path: &str, allocator: &mut Allocator, limit: usize) -> Result<Vec<u8>, Failure> {
     let io_error = |reason| Failure::Io(format!("cannot read manifest `{path}`: {reason}"));

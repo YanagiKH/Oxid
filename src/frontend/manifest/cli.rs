@@ -3,7 +3,7 @@
 //! Native RUN and BUILD admit entry mode; interpreter RUN keeps its old contract.
 use super::{word, Allocator, Failure, Operation, Route};
 use crate::frontend::options::EntryPolicy;
-const OPTIONS: [&str; 11] = [
+const OPTIONS: [&str; 12] = [
     "--manifest-path",
     "--edition",
     "--message-format",
@@ -15,6 +15,7 @@ const OPTIONS: [&str; 11] = [
     "--target",
     "--output",
     "--engine",
+    "--package",
 ];
 #[derive(Clone, Copy)]
 enum Error<'a> {
@@ -46,6 +47,7 @@ impl Error<'_> {
 #[derive(Default)]
 pub(super) struct Scan<'a> {
     path: Option<&'a str>,
+    package: Option<&'a str>,
     command: Option<&'a str>,
     edition: Option<&'a str>,
     error: Option<Error<'a>>,
@@ -130,6 +132,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 (10, Some(value)) => {
                     error.get_or_insert(Error::Engine(value));
                 }
+                (11, value) => scan.package = value,
                 _ => {}
             }
         } else if scan.command.is_none() {
@@ -188,7 +191,9 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     } else if !run && !test && scan.seen & (1 << 10) != 0 {
         Some("--engine is only supported by manifest run or test".into())
     } else if scan.seen
-        & !((if build || native_run { 15 } else { 7 }) | (if run || test { 1 << 10 } else { 0 }))
+        & !((if build || native_run { 15 } else { 7 })
+            | (if run || test { 1 << 10 } else { 0 })
+            | (1 << 11))
         != 0
     {
         Some(if build || native_run {
@@ -226,7 +231,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         });
     }
     Some(
-        match super::request(scan.path.unwrap_or(""), scan.json, allocator) {
+        match super::request_selected(scan.path.unwrap_or(""), scan.package, scan.json, allocator) {
             Ok(request) if test => Route::ManifestTest {
                 request,
                 native: scan.native,

@@ -1,0 +1,7 @@
+[project]
+name = "workspace-app"
+edition = "typed-preview"
+entry = "main.ox"
+
+[dependencies]
+math = "../library"
