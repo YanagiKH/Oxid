@@ -1,0 +1,5 @@
+[project]
+name = "owned-utf8-text-prototype"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
