@@ -43,9 +43,11 @@ fn report_errors(sources: &SourceMap, errors: &[Diagnostic]) -> i32 {
 fn prepare_native(
     suite: &CheckedProjectTests<'_>,
     parent: &str,
+    filter: Option<&str>,
+    selected_count: usize,
 ) -> Result<Vec<Artifact>, Box<Diagnostic>> {
     let mut artifacts = Vec::new();
-    artifacts.try_reserve_exact(suite.len()).map_err(|_| {
+    artifacts.try_reserve_exact(selected_count).map_err(|_| {
         Diagnostic::new(
             "E0400",
             "project-test",
@@ -53,14 +55,24 @@ fn prepare_native(
             None,
         )
     })?;
-    for ordinal in 0..suite.len() {
+    for ordinal in selected_ordinals(suite, filter) {
         let module = suite.native_module(ordinal)?;
         artifacts.push(project_build::publish_test(&module, parent, ordinal)?);
     }
     Ok(artifacts)
 }
 
-pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool) -> i32 {
+// Borrow the validated root suite and argv. No names or ordinal vector are copied.
+fn selected_ordinals<'a>(
+    suite: &'a CheckedProjectTests<'a>,
+    filter: Option<&'a str>,
+) -> impl Iterator<Item = usize> + 'a {
+    (0..suite.len()).filter(move |&ordinal| {
+        filter.is_none_or(|text| suite.name(ordinal).expect("checked ordinal").contains(text))
+    })
+}
+
+pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool, filter: Option<&str>) -> i32 {
     let configuration = Configuration::new(
         manifest::Command::Test,
         if native {
@@ -80,8 +92,22 @@ pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool) -> i32 {
         Ok(suite) => suite,
         Err(errors) => return report_errors(project.sources(), &errors),
     };
+    // Loading checks the whole graph; tests() validates every discovered signature.
+    // Selection is deliberately later, including the zero-match error.
+    let selected_count = selected_ordinals(&suite, filter).count();
+    if filter.is_some() && selected_count == 0 {
+        return report_errors(
+            project.sources(),
+            &[*Diagnostic::new(
+                "E0800",
+                "project-test",
+                "no tests match --filter",
+                None,
+            )],
+        );
+    }
     let artifacts = if native {
-        match prepare_native(&suite, session.parent()) {
+        match prepare_native(&suite, session.parent(), filter, selected_count) {
             Ok(artifacts) => Some(artifacts),
             Err(error) => return report_errors(project.sources(), &[*error]),
         }
@@ -90,9 +116,10 @@ pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool) -> i32 {
     };
     let mut passed = 0;
     let stdout = &mut std::io::stdout().lock();
-    for ordinal in 0..suite.len() {
+    // Artifact slots follow selection order; names retain original suite ordinals.
+    for (selected_index, ordinal) in selected_ordinals(&suite, filter).enumerate() {
         let success = if let Some(artifacts) = &artifacts {
-            match artifacts[ordinal].run_test() {
+            match artifacts[selected_index].run_test() {
                 Ok(success) => success,
                 // Launch/wait errors are infrastructure failures, not outcomes.
                 Err(error) => return report_errors(project.sources(), &[*error]),
@@ -119,16 +146,16 @@ pub(super) fn run(request: Box<[manifest::Request; 1]>, native: bool) -> i32 {
             return 1;
         }
     }
-    let failed = suite.len() - passed;
+    let failed = selected_count - passed;
     if writeln!(
         stdout,
         "test result: {passed} passed; {failed} failed; {} total",
-        suite.len()
+        selected_count
     )
     .and_then(|_| stdout.flush())
     .is_err()
     {
         return 1;
     }
-    i32::from(suite.len() == 0 || failed != 0)
+    i32::from(selected_count == 0 || failed != 0)
 }

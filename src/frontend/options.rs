@@ -49,6 +49,8 @@ pub enum Route {
     ManifestTest {
         request: Box<[super::manifest::Request; 1]>,
         native: bool,
+        // Index into the unchanged argv; filter text is borrowed only at dispatch.
+        filter: Option<usize>,
     },
     ManifestTestError {
         failure: super::manifest::Failure,
@@ -345,6 +347,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     let mut import = None;
     let mut producer_seen = false;
     let mut producer = None;
+    let mut unsupported_filter = false;
     let mut lexical_seen = false;
     let mut lexical = None;
     let mut json = false;
@@ -379,6 +382,18 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
                     .is_some_and(|suffix| suffix.starts_with('='))
         });
         let Some(name) = option else {
+            if argument == "--filter" || argument.starts_with("--filter=") {
+                unsupported_filter = true;
+                if argument == "--filter"
+                    && args
+                        .get(index + 1)
+                        .is_some_and(|next| !next.starts_with('-'))
+                {
+                    index += 1;
+                }
+                index += 1;
+                continue;
+            }
             forwarded.push(args[index].clone());
             index += 1;
             continue;
@@ -513,6 +528,9 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     if format_seen && edition != Some("typed-preview") {
         error
             .get_or_insert_with(|| "--message-format requires --edition typed-preview".to_string());
+    }
+    if unsupported_filter {
+        error.get_or_insert_with(|| "--filter is only supported by explicit manifest test".into());
     }
     if let Some(message) = error {
         return Route::Error {

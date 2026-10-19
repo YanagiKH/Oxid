@@ -61,7 +61,18 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         } else {
             report_process(&SourceMap::new(), &[manifest_diagnostic(failure)])
         }),
-        Route::ManifestTest { request, native } => Some(super::project_test::run(request, native)),
+        Route::ManifestTest {
+            request,
+            native,
+            filter,
+        } => {
+            let filter = filter.map(|index| {
+                args[index]
+                    .strip_prefix("--filter=")
+                    .unwrap_or(args[index].as_str())
+            });
+            Some(super::project_test::run(request, native, filter))
+        }
         Route::ManifestTestError { failure, json } => {
             Some(super::project_test::cli_error(failure, json))
         }

@@ -2647,7 +2647,9 @@ fn help() {
     println!("  oxid check --manifest-path <oxid.toml>");
     println!("  oxid build --manifest-path <oxid.toml> [--entry-mode result|process]");
     println!("  oxid run --manifest-path <oxid.toml> [--engine interpreter|native] [--entry-mode result|process]");
-    println!("  oxid test --manifest-path <oxid.toml> [--engine interpreter|native]");
+    println!(
+        "  oxid test --manifest-path <oxid.toml> [--engine interpreter|native] [--filter <text>]"
+    );
     println!("  oxid package --manifest-path <oxid.toml> --output <archive.tar> [--entry-mode result|process]");
     println!("  oxid doctor --edition typed-preview");
     println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");

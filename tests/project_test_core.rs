@@ -146,7 +146,12 @@ fn test_cli_json_and_invalid_options_are_rejected_before_io() {
         ),
         (vec!["--engine"], "requires a value"),
         (vec!["--entry-mode=process"], "does not support entry-mode"),
-        (vec!["--filter=test_a"], "unsupported option"),
+        (vec!["--not-a-test-option=test_a"], "unsupported option"),
+        (vec!["--filter=a", "--filter=b"], "only be specified once"),
+        (vec!["--filter"], "requires a value"),
+        (vec!["--filter="], "requires a value"),
+        (vec!["--filter", ""], "requires a value"),
+        (vec!["--filter", "--engine=native"], "requires a value"),
         (vec!["--", "app.ox"], "does not accept a source operand"),
     ] {
         refusal(p.test(&options), message);
@@ -218,4 +223,130 @@ fn test_cli_native_prepares_every_artifact_before_first_execution() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("division by zero"));
     assert!(dir.join("case-0").is_file());
     assert_eq!(fs::read(dir.join("case-1")).unwrap(), b"unowned");
+}
+
+#[test]
+fn test_cli_filter_selects_root_names_in_source_order_and_counts_only_matches() {
+    let p = Project::new("mod helper; fn test_keep_z()->bool{return true;} fn test_skip()->bool{return false;} fn test_keep_a()->(){return;} fn test_KEEP()->bool{return false;}");
+    fs::write(
+        p.0.join("helper.ox"),
+        "fn test_keep_child(x:i32)->i32{return x;}",
+    )
+    .unwrap();
+    for options in [vec!["--filter", "keep"], vec!["--filter=keep"]] {
+        let out = p.test(&options);
+        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        assert!(out.stderr.is_empty(), "{out:?}");
+        assert_eq!(
+            out.stdout,
+            b"PASS test_keep_z\nPASS test_keep_a\ntest result: 2 passed; 0 failed; 2 total\n"
+        );
+    }
+    for engine in ["interpreter", "native"] {
+        refusal(
+            p.test(&["--engine", engine, "--filter=absent"]),
+            "no tests match --filter",
+        );
+        refusal(
+            p.test(&["--engine", engine, "--filter=child"]),
+            "no tests match --filter",
+        );
+    }
+    assert!(!p.0.join(".oxid").exists());
+}
+
+#[test]
+fn test_cli_filter_does_not_hide_invalid_signatures_or_project_errors() {
+    for (source, expected) in [
+        (
+            "fn test_keep()->bool{return true;} fn test_bad(x:i32)->i32{return x;}",
+            "zero parameters",
+        ),
+        (
+            "fn test_keep()->bool{return true;} fn unused()->i32{return true;}",
+            "E0300",
+        ),
+    ] {
+        let p = Project::new(source);
+        for engine in ["interpreter", "native"] {
+            for filter in ["keep", "absent"] {
+                refusal(p.test(&["--engine", engine, "--filter", filter]), expected);
+                assert!(!p.0.join(".oxid").exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn test_cli_filtered_failures_still_continue() {
+    let p = Project::new("fn test_skip()->bool{return false;} fn test_keep_false()->bool{return false;} fn test_keep_error()->i32{return 1/0;} fn test_keep_later()->bool{return true;}");
+    let out = p.test(&["--filter=keep"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("zero"));
+    assert_eq!(out.stdout, b"FAIL test_keep_false\nFAIL test_keep_error\nPASS test_keep_later\ntest result: 1 passed; 2 failed; 3 total\n");
+}
+
+#[test]
+fn test_cli_filter_is_rejected_outside_manifest_test_before_effects() {
+    let p = Project::new("");
+    fs::remove_file(p.0.join("oxid.toml")).unwrap();
+    for command in ["check", "run", "build", "package"] {
+        let out = p.command(&[command, "--manifest-path=oxid.toml", "--filter=a"]);
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        let expected_stdout: &[u8] = if command == "package" {
+            b"typed-preview native package failed: managed executable not published; archive not published\n"
+        } else {
+            b""
+        };
+        assert_eq!(out.stdout.as_slice(), expected_stdout, "{out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr)
+                .contains("only supported by explicit manifest test"),
+            "{out:?}"
+        );
+    }
+    for command in ["test", "check", "run", "build", "package"] {
+        refusal(
+            p.command(&[command, "--filter=a"]),
+            "only supported by explicit manifest test",
+        );
+    }
+    assert!(!p.0.join(".oxid").exists());
+}
+
+#[test]
+#[ignore = "requires separately installed LLVM 19.1.7 on Linux x86_64"]
+fn test_cli_native_filter_keeps_original_ordinals_and_preparation_barrier() {
+    for blocked in [false, true] {
+        let p = Project::new("fn test_skip()->bool{return true;} fn test_keep_fail()->bool{return false;} fn test_skip_later()->bool{return true;} fn test_keep_pass()->bool{return true;}");
+        let dir = p.0.join(".oxid/typed-preview/test");
+        if blocked {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("case-3"), "unowned").unwrap();
+        }
+        let out = Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .current_dir(&p.0)
+            .args([
+                "test",
+                "--manifest-path=oxid.toml",
+                "--engine=native",
+                "--filter=keep",
+            ])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        if blocked {
+            assert!(out.stdout.is_empty(), "{out:?}");
+            assert!(String::from_utf8_lossy(&out.stderr).contains("unowned"));
+            assert_eq!(fs::read(dir.join("case-3")).unwrap(), b"unowned");
+        } else {
+            assert!(out.stderr.is_empty(), "{out:?}");
+            assert_eq!(out.stdout, b"FAIL test_keep_fail\nPASS test_keep_pass\ntest result: 1 passed; 1 failed; 2 total\n");
+            assert!(dir.join("case-3").is_file());
+        }
+        assert!(dir.join("case-1").is_file());
+        assert!(!dir.join("case-0").exists());
+        assert!(!dir.join("case-2").exists());
+    }
 }

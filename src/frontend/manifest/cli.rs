@@ -3,7 +3,7 @@
 //! Both RUN engines and BUILD admit explicit process entry mode.
 use super::{word, Allocator, Failure, Operation, Route};
 use crate::frontend::options::EntryPolicy;
-const OPTIONS: [&str; 12] = [
+const OPTIONS: [&str; 13] = [
     "--manifest-path",
     "--edition",
     "--message-format",
@@ -16,6 +16,7 @@ const OPTIONS: [&str; 12] = [
     "--output",
     "--engine",
     "--package",
+    "--filter",
 ];
 #[derive(Clone, Copy)]
 enum Error<'a> {
@@ -48,6 +49,7 @@ impl Error<'_> {
 pub(super) struct Scan<'a> {
     path: Option<&'a str>,
     package: Option<&'a str>,
+    filter: Option<usize>,
     output: Option<&'a str>,
     command: Option<&'a str>,
     edition: Option<&'a str>,
@@ -69,6 +71,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     let mut scan = Scan::default();
     let mut index = 0;
     while index < args.len() {
+        let argument_index = index;
         let arg = args[index].as_str();
         index += 1;
         if scan.script_name {
@@ -134,6 +137,13 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                     error.get_or_insert(Error::Engine(value));
                 }
                 (11, value) => scan.package = value,
+                (12, Some(_)) => {
+                    scan.filter = Some(if arg.contains('=') {
+                        argument_index
+                    } else {
+                        argument_index + 1
+                    })
+                }
                 (9, value) => scan.output = value,
                 _ => {}
             }
@@ -197,13 +207,16 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Some(format!("manifest {op} conflicts with --edition legacy-0.9"))
     } else if scan.operands {
         Some(format!("manifest {op} does not accept a source operand"))
+    } else if !test && scan.seen & (1 << 12) != 0 {
+        Some("--filter is only supported by explicit manifest test".into())
     } else if !run && !test && scan.seen & (1 << 10) != 0 {
         Some("--engine is only supported by manifest run or test".into())
     } else if scan.seen
         & !((if build || run || package { 15 } else { 7 })
             | (if run || test { 1 << 10 } else { 0 })
             | (if package { 1 << 9 } else { 0 })
-            | (1 << 11))
+            | (1 << 11)
+            | (if test { 1 << 12 } else { 0 }))
         != 0
     {
         Some(if package {
@@ -283,6 +296,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
             Ok(request) if test => Route::ManifestTest {
                 request,
                 native: scan.native,
+                filter: scan.filter,
             },
             Ok(request) if build => Route::ManifestBuild {
                 request,
@@ -361,5 +375,149 @@ mod package_tests {
         assert_eq!(output, "out.tar");
         assert_eq!(entry_policy, EntryPolicy::Process);
         assert_eq!(request[0].package.as_deref(), Some("app"));
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).into()).collect()
+    }
+
+    #[test]
+    fn filter_retains_original_argv_index_without_text_allocation() {
+        for (words, expected_index, expected) in [
+            (
+                vec!["test", "--filter", "keep", "--manifest-path=p"],
+                2,
+                "keep",
+            ),
+            (
+                vec!["test", "--manifest-path=p", "--filter=keep"],
+                2,
+                "keep",
+            ),
+            (
+                vec![
+                    "--edition=typed-preview",
+                    "test",
+                    "--filter=日本",
+                    "--manifest-path=p",
+                ],
+                2,
+                "日本",
+            ),
+            (
+                vec!["test", "--manifest-path=p", "--filter=--filter=x"],
+                2,
+                "--filter=x",
+            ),
+        ] {
+            let arguments = args(&words);
+            let Some(Route::ManifestTest {
+                filter: Some(index),
+                ..
+            }) = select(&arguments)
+            else {
+                panic!("expected filter route: {words:?}");
+            };
+            assert_eq!(index, expected_index);
+            let text = arguments[index]
+                .strip_prefix("--filter=")
+                .unwrap_or(&arguments[index]);
+            assert_eq!(text, expected);
+        }
+        assert!(matches!(
+            select(&args(&["test", "--manifest-path=p"])),
+            Some(Route::ManifestTest { filter: None, .. })
+        ));
+        println!(
+            "FILTER_CARRIERS route={} scan={} request={} filter_index={}",
+            std::mem::size_of::<Route>(),
+            std::mem::size_of::<Scan<'_>>(),
+            std::mem::size_of::<super::super::Request>(),
+            std::mem::size_of::<Option<usize>>()
+        );
+    }
+
+    #[test]
+    fn filter_cli_preserves_global_error_priority_and_json_refusal() {
+        for (tail, expected, json) in [
+            (
+                vec!["--filter", "--engine=native"],
+                "--filter requires a value",
+                false,
+            ),
+            (vec!["--filter="], "--filter requires a value", false),
+            (
+                vec!["--filter=a", "--filter", "a"],
+                "--filter may only be specified once",
+                false,
+            ),
+            (
+                vec!["--filter=", "--edition=wrong"],
+                "unknown edition",
+                false,
+            ),
+            (
+                vec!["--filter=a", "--message-format=json"],
+                "manifest test does not support --message-format=json",
+                true,
+            ),
+            (
+                vec!["--filter=", "--message-format=json"],
+                "--filter requires a value",
+                true,
+            ),
+        ] {
+            let mut words = vec!["test", "--manifest-path=missing"];
+            words.extend(tail);
+            let Some(Route::ManifestTestError {
+                failure,
+                json: actual_json,
+            }) = select(&args(&words))
+            else {
+                panic!("expected filter refusal: {words:?}");
+            };
+            let message = failure.message();
+            assert!(message.contains(expected), "{message}");
+            assert_eq!(actual_json, json);
+        }
+    }
+
+    #[test]
+    fn filter_preserves_script_arguments_and_separator_ownership() {
+        use crate::frontend::options;
+        for words in [
+            vec!["script", "task", "--filter", "keep", "--manifest-path=p"],
+            vec!["script", "task", "--filter=keep", "--edition=typed-preview"],
+            vec!["test", "--", "--filter=keep", "--manifest-path=p"],
+        ] {
+            let arguments = args(&words);
+            assert!(select(&arguments).is_none());
+            assert_eq!(options::route(&arguments), Route::Legacy(arguments));
+        }
+        assert_eq!(
+            options::route(&args(&[
+                "check",
+                "--edition=typed-preview",
+                "--",
+                "--filter=literal.ox"
+            ])),
+            Route::TypedCheck {
+                path: "--filter=literal.ox".into(),
+                json: false
+            }
+        );
+        let Some(Route::ManifestTestError { failure, .. }) =
+            select(&args(&["test", "--manifest-path=p", "--", "--filter=keep"]))
+        else {
+            panic!("manifest test must reject a literal source operand");
+        };
+        assert!(failure
+            .message()
+            .contains("does not accept a source operand"));
     }
 }
