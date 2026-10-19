@@ -15,6 +15,12 @@ a stable `String` API, generic container support, or completion of R2.
 - `append_utf8(&mut Text, &[u8]) -> AppendStatus`: `Ok`,
   `InvalidInput(byte_offset)`, `CapacityOverflow`, `AllocationFailed`, or
   `MemoryLimit`.
+- `append_scalar(&mut Text, i32) -> ScalarAppendStatus`: `Ok`,
+  `InvalidScalar(original_value)`, `CapacityOverflow`, `AllocationFailed`, or
+  `MemoryLimit`. This separate enum leaves `AppendStatus::InvalidInput`'s
+  byte-offset meaning unchanged.
+- `equals_utf8(&Text, &[u8]) -> bool`: exact byte equality with an input slice;
+  no allocation, reference escape, or mutation. Invalid UTF-8 cannot equal Text.
 - `truncate(&mut Text, byte_length) -> bool`.
 
 Validation is strict and complete-input: ASCII (including NUL), BOM and Unicode
@@ -33,15 +39,57 @@ they are not append statuses. Truncation refuses negative lengths, lengths
 past the end, and positions inside a scalar, leaving the text unchanged.
 Zero and the current length are valid boundaries.
 
+Scalar append rejects negative values, U+D800..U+DFFF, and values above
+U+10FFFF before touching Text. It encodes one accepted value into a four-byte
+initialized stack array, then submits only its one-to-four-byte prefix to a
+single checked `try_extend`. NUL and noncharacters are accepted. All integer
+encoding arithmetic is bounded after the scalar check; `to_u8_checked` is
+used only for values in 0..255. Returned growth failures preserve the original
+Text under the same ByteBuf contract as `append_utf8`. No allocation-failure
+injection is claimed by this client. Equality and scalar count are linear;
+scalar encoding itself has bounded constant work (excluding buffer growth).
+
 There is no mutable byte escape, `into_bytes`, partial field move, lossy
 conversion, normalization, grapheme segmentation, text indexing, streaming,
 or implicit clone. Scalar count counts Unicode scalar values, not graphemes;
 for example `e` plus U+0301 counts as two scalars. Validation and scalar count
 are linear, allocation-free source loops. Boundary checking is constant-time.
 
-## Focused acceptance
+## Focused scalar-append acceptance
 
-The partitioned client passed source checking (32 functions), interpreter
+The revised scalar extension passed source checking (40 functions) and the
+focused `owned_utf8_text` regression on source tree
+`3e9726a9cc661d63151251c4f612c1df344c48d4`, based on commit
+`5ebc252b6af7819195fab8537d38ba852199b104`. The ordinary test run passed two
+tests with one native test ignored. The explicit LLVM 19.1.7 run including
+ignored tests passed all three tests. The regression asserts exact result-mode
+stdout `42\n`, exit 0, and empty stderr for both interpreter and standalone
+native execution, and checks private-field and moved-owner rejection.
+Scoped `rustfmt --check --edition 2021 tests/owned_utf8_text.rs` and
+`cargo clippy --locked --test owned_utf8_text -- -D warnings` also passed.
+Only this README changed after validation; executable sources and regression
+remain byte-identical. No full repository suite, PR-head CI, allocation-failure
+injection, or general R2 completion is claimed.
+
+The first candidate was rejected at check time with E0305 for direct ByteBuf
+field indexing. The source-only repair compares through a private borrowed
+slice helper, without compiler or runtime changes.
+
+Existing checks -1..-33 remain unchanged. New partitioned checks -34..-57
+exercise U+0000, U+007F, U+0080, U+07FF, U+0800, U+D7FF, U+E000, U+FFFF,
+U+10000, and U+10FFFF; explicit negative, surrogate, above-maximum and
+i32-extreme refusals; and append after refusal. Each successful append checks
+fixed bytes, byte length, scalar count and validation of the equal expected
+bytes. Each refusal checks exact original bytes, length and scalar count.
+Truncation inside and at appended scalar boundaries is also checked.
+Recoverable growth failures are forwarded but not forced. Independent Python
+arithmetic/host-codec checks exhaustively agree for all 1,112,064 Unicode
+scalars and reject all 2,048 surrogates; those checks are fixture oracles,
+separate from the Oxid regression acceptance.
+
+## Prior focused acceptance (before scalar extension)
+
+The pre-extension partitioned client passed source checking (32 functions), interpreter
 execution, LLVM compilation, and standalone native execution using the
 compatible compiler source tree
 `f6d19c23f5b69936245d4f4f8991100e92a86383`. The interpreter

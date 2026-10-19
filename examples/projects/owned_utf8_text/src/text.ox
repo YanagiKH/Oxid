@@ -27,6 +27,14 @@ pub enum AppendStatus {
     MemoryLimit
 }
 
+pub enum ScalarAppendStatus {
+    Ok,
+    InvalidScalar(i32),
+    CapacityOverflow,
+    AllocationFailed,
+    MemoryLimit
+}
+
 fn continuation(value: i32) -> bool {
     return value >= 128 && value <= 191;
 }
@@ -160,6 +168,73 @@ pub fn append_utf8(text: &mut Text, input: &[u8]) -> AppendStatus {
         GrowStatus::CapacityOverflow => { return AppendStatus::CapacityOverflow; },
         GrowStatus::AllocationFailed => { return AppendStatus::AllocationFailed; },
         GrowStatus::MemoryLimit => { return AppendStatus::MemoryLimit; },
+    }
+}
+
+fn equal_initialized_bytes(actual: &[u8], input: &[u8]) -> bool {
+    if actual.len() != input.len() {
+        return false;
+    }
+    let mut offset = 0;
+    while offset < input.len() {
+        if actual[offset] != input[offset] {
+            return false;
+        }
+        offset = offset + 1;
+    }
+    return true;
+}
+
+pub fn equals_utf8(text: &Text, input: &[u8]) -> bool {
+    return equal_initialized_bytes(&*text.bytes, &*input);
+}
+
+pub fn append_scalar(text: &mut Text, scalar: i32) -> ScalarAppendStatus {
+    if scalar < 0 || scalar > 1114111 {
+        return ScalarAppendStatus::InvalidScalar(scalar);
+    }
+    if scalar >= 55296 && scalar <= 57343 {
+        return ScalarAppendStatus::InvalidScalar(scalar);
+    }
+    let zero = 0;
+    let mut encoded = [zero.to_u8_checked(), zero.to_u8_checked(), zero.to_u8_checked(), zero.to_u8_checked()];
+    let mut width = 1;
+    if scalar <= 127 {
+        encoded[0] = scalar.to_u8_checked();
+    }
+    if scalar >= 128 && scalar <= 2047 {
+        let lead_two = 192 + scalar / 64;
+        let tail_two = 128 + scalar % 64;
+        encoded[0] = lead_two.to_u8_checked();
+        encoded[1] = tail_two.to_u8_checked();
+        width = 2;
+    }
+    if scalar >= 2048 && scalar <= 65535 {
+        let lead_three = 224 + scalar / 4096;
+        let middle_three = 128 + (scalar / 64) % 64;
+        let tail_three = 128 + scalar % 64;
+        encoded[0] = lead_three.to_u8_checked();
+        encoded[1] = middle_three.to_u8_checked();
+        encoded[2] = tail_three.to_u8_checked();
+        width = 3;
+    }
+    if scalar >= 65536 {
+        let lead_four = 240 + scalar / 262144;
+        let second_four = 128 + (scalar / 4096) % 64;
+        let third_four = 128 + (scalar / 64) % 64;
+        let tail_four = 128 + scalar % 64;
+        encoded[0] = lead_four.to_u8_checked();
+        encoded[1] = second_four.to_u8_checked();
+        encoded[2] = third_four.to_u8_checked();
+        encoded[3] = tail_four.to_u8_checked();
+        width = 4;
+    }
+    let grown = try_extend(&mut *text.bytes, &encoded[0..width]);
+    match grown {
+        GrowStatus::Ok => { return ScalarAppendStatus::Ok; },
+        GrowStatus::CapacityOverflow => { return ScalarAppendStatus::CapacityOverflow; },
+        GrowStatus::AllocationFailed => { return ScalarAppendStatus::AllocationFailed; },
+        GrowStatus::MemoryLimit => { return ScalarAppendStatus::MemoryLimit; },
     }
 }
 

@@ -16,7 +16,7 @@ use std::{
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const RESULT: &[u8] = b"42\n";
-const CHECK: &[u8] = b"typed-preview check ok (32 functions; check only)\n";
+const CHECK: &[u8] = b"typed-preview check ok (40 functions; check only)\n";
 const CHECK_FAILED: &str = "{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":false,\"errors\":1,\"functions\":null}";
 
 struct Fixture {

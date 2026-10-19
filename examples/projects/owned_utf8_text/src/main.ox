@@ -16,6 +16,10 @@ use crate::text::scalar_count;
 use crate::text::append_utf8;
 use crate::text::truncate;
 
+use crate::text::ScalarAppendStatus;
+use crate::text::append_scalar;
+use crate::text::equals_utf8;
+
 fn byte(value: i32) -> u8 {
     return value.to_u8_checked();
 }
@@ -232,6 +236,74 @@ fn check_valid_conversion() -> i32 {
     }
 }
 
+fn scalar_appended(document: &mut Text, scalar: i32, expected: &[u8], count: i32) -> bool {
+    let status = append_scalar(&mut *document, scalar);
+    match status {
+        ScalarAppendStatus::Ok => {},
+        ScalarAppendStatus::InvalidScalar(value) => { return false; },
+        ScalarAppendStatus::CapacityOverflow => { return false; },
+        ScalarAppendStatus::AllocationFailed => { return false; },
+        ScalarAppendStatus::MemoryLimit => { return false; },
+    }
+    return byte_len(&*document) == expected.len() && scalar_count(&*document) == count && equals_utf8(&*document, &*expected) && is_valid(&*expected);
+}
+
+fn check_scalar_low_edges() -> i32 {
+    let mut document = new_text();
+    let expected = [byte(0), byte(127), byte(194), byte(128), byte(223), byte(191), byte(224), byte(160), byte(128)];
+    if !scalar_appended(&mut document, 0, &expected[0..1], 1) { return -34; }
+    if !scalar_appended(&mut document, 127, &expected[0..2], 2) { return -35; }
+    if !scalar_appended(&mut document, 128, &expected[0..4], 3) { return -36; }
+    if !scalar_appended(&mut document, 2047, &expected[0..6], 4) { return -37; }
+    if !scalar_appended(&mut document, 2048, &expected, 5) { return -38; }
+    if truncate(&mut document, 8) || !equals_utf8(&document, &expected) { return -39; }
+    if !truncate(&mut document, 6) || !equals_utf8(&document, &expected[0..6]) || scalar_count(&document) != 4 { return -40; }
+    return 0;
+}
+
+fn check_scalar_high_edges() -> i32 {
+    let mut document = new_text();
+    let expected = [byte(237), byte(159), byte(191), byte(238), byte(128), byte(128), byte(239), byte(191), byte(191), byte(240), byte(144), byte(128), byte(128), byte(244), byte(143), byte(191), byte(191)];
+    if !scalar_appended(&mut document, 55295, &expected[0..3], 1) { return -41; }
+    if !scalar_appended(&mut document, 57344, &expected[0..6], 2) { return -42; }
+    if !scalar_appended(&mut document, 65535, &expected[0..9], 3) { return -43; }
+    if !scalar_appended(&mut document, 65536, &expected[0..13], 4) { return -44; }
+    if !scalar_appended(&mut document, 1114111, &expected, 5) { return -45; }
+    if truncate(&mut document, 16) || !equals_utf8(&document, &expected) { return -46; }
+    if !truncate(&mut document, 13) || !equals_utf8(&document, &expected[0..13]) || scalar_count(&document) != 4 { return -47; }
+    return 0;
+}
+
+fn scalar_refused(document: &mut Text, scalar: i32, expected: &[u8]) -> bool {
+    let status = append_scalar(&mut *document, scalar);
+    match status {
+        ScalarAppendStatus::Ok => { return false; },
+        ScalarAppendStatus::InvalidScalar(value) => {
+            if value != scalar { return false; }
+        },
+        ScalarAppendStatus::CapacityOverflow => { return false; },
+        ScalarAppendStatus::AllocationFailed => { return false; },
+        ScalarAppendStatus::MemoryLimit => { return false; },
+    }
+    return byte_len(&*document) == expected.len() && scalar_count(&*document) == 1 && equals_utf8(&*document, &*expected) && is_valid(&*expected);
+}
+
+fn check_scalar_refusals() -> i32 {
+    let mut document = new_text();
+    let expected = [byte(240), byte(144), byte(128), byte(128), byte(65)];
+    if !scalar_appended(&mut document, 65536, &expected[0..4], 1) { return -48; }
+    if !scalar_refused(&mut document, -1, &expected[0..4]) { return -49; }
+    if !scalar_refused(&mut document, -2147483647 - 1, &expected[0..4]) { return -50; }
+    if !scalar_refused(&mut document, 55296, &expected[0..4]) { return -51; }
+    if !scalar_refused(&mut document, 56319, &expected[0..4]) { return -52; }
+    if !scalar_refused(&mut document, 56320, &expected[0..4]) { return -53; }
+    if !scalar_refused(&mut document, 57343, &expected[0..4]) { return -54; }
+    if !scalar_refused(&mut document, 1114112, &expected[0..4]) { return -55; }
+    if !scalar_refused(&mut document, 2147483647, &expected[0..4]) { return -56; }
+    if !scalar_appended(&mut document, 65, &expected, 2) { return -57; }
+    return 0;
+}
+
 fn main() -> i32 {
     let empty_result = check_empty();
     if empty_result != 0 { return empty_result; }
@@ -245,5 +317,11 @@ fn main() -> i32 {
     if rejected_result != 0 { return rejected_result; }
     let accepted_result = check_valid_conversion();
     if accepted_result != 0 { return accepted_result; }
+    let scalar_low_result = check_scalar_low_edges();
+    if scalar_low_result != 0 { return scalar_low_result; }
+    let scalar_high_result = check_scalar_high_edges();
+    if scalar_high_result != 0 { return scalar_high_result; }
+    let scalar_refusal_result = check_scalar_refusals();
+    if scalar_refusal_result != 0 { return scalar_refusal_result; }
     return 42;
 }
