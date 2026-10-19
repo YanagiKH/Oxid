@@ -240,10 +240,10 @@ fn enum_candidate_rejects_out_of_scope_declarations_and_patterns() {
     for declaration in [
         "enum E{}",
         "enum E{V()}",
-        "enum E{V(i64)}",
-        "enum E{V(R)}",
+        "enum E{V(u8)}",
+        "enum E{V(R<T>)}",
         "enum E{V(&i32)}",
-        "enum E{V([i32;1])}",
+        "enum E{V([R;1])}",
         "enum E{V(i32,bool)}",
         "enum E{pub V}",
         "enum E{V=0}",
@@ -806,4 +806,46 @@ fn enum_candidate_paired_expression_height_failures_publish_neither_row() {
             assert_eq!(parser.expressions.capacity(), 4);
         }
     }
+}
+
+#[test]
+fn r2_owned_payload_syntax_reuses_compact_names_paths_and_arrays() {
+    let sources = source(
+        "struct R{x:i32} enum Inner{Value(i32)} enum Outer{Record(R),Nested(Inner),Array([i32;2]),Empty([();0]),Qualified(crate::R)}",
+    );
+    let file = sources.get(SourceFileId(0));
+    let program = candidate(&sources);
+    assert!(program.validate_spans_and_ids(|span| file.try_text(span).is_some()));
+    let variants = &program.enums[1].variants;
+    assert!(matches!(
+        variants[0].payload.unwrap().kind,
+        ScalarTypeSyntax::Name
+    ));
+    assert!(matches!(
+        variants[1].payload.unwrap().kind,
+        ScalarTypeSyntax::Name
+    ));
+    assert!(matches!(
+        variants[2].payload.unwrap().kind,
+        ScalarTypeSyntax::Array(FixedArraySyntax {
+            element: ArrayElementTypeSyntax::I32,
+            length: 2
+        })
+    ));
+    assert!(matches!(
+        variants[3].payload.unwrap().kind,
+        ScalarTypeSyntax::Array(FixedArraySyntax {
+            element: ArrayElementTypeSyntax::Unit,
+            length: 0
+        })
+    ));
+    let payload = variants[4].payload.unwrap();
+    let ScalarTypeSyntax::Absolute(path) = payload.kind else {
+        panic!("qualified payload")
+    };
+    assert_eq!(file.text_at(program.paths[path as usize].span), "crate::R");
+    assert!(matches!(payload.value_type().kind,
+        TypeSyntaxKind::Name(ItemPath::Absolute(PathId(id))) if id == path as usize));
+    assert_eq!(size_of::<EnumPayloadSyntax>(), 32);
+    assert_eq!(size_of::<EnumVariantSyntax>(), 80);
 }

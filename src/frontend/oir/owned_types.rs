@@ -11,6 +11,8 @@ use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
 mod enums;
+#[cfg(test)]
+mod owned_enum_tests;
 #[allow(unused_imports)]
 pub(in crate::frontend) use enums::{admit_enum_counts, EnumId, EnumUsage, VariantId};
 #[allow(unused_imports)]
@@ -453,7 +455,7 @@ impl Declarations {
         // Independently inventory both raw slices. The added retained enum
         // facade is charged even when both of its vectors are empty.
         let mut usage = preflight(raw, limits)?;
-        let prepared_enums = EnumDeclarations::prepare(raw_enums, sources, usage)?;
+        let prepared_enums = EnumDeclarations::prepare_owned(raw_enums, sources, usage)?;
         let enum_usage = prepared_enums.usage();
         limited_add(
             usage.records,
@@ -473,12 +475,7 @@ impl Declarations {
             limits.table_bytes,
             "declaration table bytes",
         )?;
-        usage.layout_bytes = limited_add(
-            0,
-            enum_usage.layout_bytes,
-            limits.layout_bytes,
-            "declaration layout bytes",
-        )?;
+        usage.layout_bytes = 0;
         for (index, record) in raw.iter().enumerate() {
             if record.id != RecordId(index) {
                 return Err(DeclarationError::InvalidRecordId(record.id));
@@ -510,6 +507,17 @@ impl Declarations {
                 "declaration layout bytes",
             )?;
         }
+        let (prepared_enums, enum_summaries) = prepared_enums.with_owned_layouts(
+            &summaries,
+            usage.layout_bytes,
+            limits.layout_bytes,
+        )?;
+        usage.layout_bytes = limited_add(
+            usage.layout_bytes,
+            prepared_enums.usage().layout_bytes,
+            limits.layout_bytes,
+            "declaration layout bytes",
+        )?;
 
         // All malformed declarations and all size/overflow gates above reject
         // before these output allocations. Flat fields avoid R separate
@@ -522,7 +530,7 @@ impl Declarations {
         if usage.fields != 0 {
             allocator.vector_exact(&mut fields, usage.fields, "checked record fields")?;
         }
-        let enums = prepared_enums.finish_with_allocator(allocator)?;
+        let enums = prepared_enums.finish_owned_with_allocator(allocator, &enum_summaries)?;
         for record in raw {
             let field_start = fields.len();
             let mut cursor = LayoutCursor::default();

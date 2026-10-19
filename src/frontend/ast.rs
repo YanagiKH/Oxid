@@ -144,8 +144,13 @@ pub enum ScalarTypeSyntax {
     Bool,
     I32,
     Unit,
+    /// The payload span itself is the unqualified nominal type name.
+    Name,
+    /// Compact index into the existing bounded qualified-path table.
+    Absolute(u32),
+    Array(FixedArraySyntax),
 }
-/// Array-only syntax. Enum payloads deliberately retain ScalarTypeSyntax.
+/// Scalar elements in the existing fixed-array grammar.
 #[derive(Clone, Copy, Debug)]
 pub enum ArrayElementTypeSyntax {
     Bool,
@@ -201,6 +206,23 @@ pub struct EnumPayloadSyntax {
     #[cfg_attr(not(test), allow(dead_code))] // Read by private structural qualification.
     pub kind: ScalarTypeSyntax,
     pub span: Span,
+}
+impl EnumPayloadSyntax {
+    pub fn value_type(self) -> TypeSyntax {
+        TypeSyntax {
+            span: self.span,
+            kind: match self.kind {
+                ScalarTypeSyntax::Bool | ScalarTypeSyntax::I32 | ScalarTypeSyntax::Name => {
+                    TypeSyntaxKind::Name(ItemPath::Unqualified(self.span))
+                }
+                ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
+                ScalarTypeSyntax::Absolute(id) => {
+                    TypeSyntaxKind::Name(ItemPath::Absolute(PathId(id as usize)))
+                }
+                ScalarTypeSyntax::Array(array) => TypeSyntaxKind::Array(array),
+            },
+        }
+    }
 }
 #[derive(Debug)]
 pub struct EnumVariantSyntax {
@@ -712,9 +734,19 @@ impl Program {
                 if !visit()
                     || !valid(variant.name)
                     || !valid(variant.span)
-                    || variant
-                        .payload
-                        .is_some_and(|payload| !visit() || !valid(payload.span))
+                    || variant.payload.is_some_and(|payload| {
+                        !visit()
+                            || !valid(payload.span)
+                            || match payload.kind {
+                                ScalarTypeSyntax::Absolute(id) => {
+                                    !path_valid(ItemPath::Absolute(PathId(id as usize)), &mut valid)
+                                }
+                                ScalarTypeSyntax::Array(array) => {
+                                    usize::from(array.length) > super::parser::MAX_ARRAY_ELEMENTS
+                                }
+                                _ => false,
+                            }
+                    })
                 {
                     return false;
                 }

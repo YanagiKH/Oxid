@@ -1,7 +1,7 @@
 //! Checked sum declarations, integrated by the combined declaration facade.
-//! Nominal types do not admit stored enum fields, borrows, source lowering or
-//! executable consumers. The facade independently recomputes record inventory
-//! and completes both preflights before retained allocation.
+//! Finite owned alternatives use independently checked maximum-alternative
+//! layouts. Stored enum fields and enum borrows remain excluded. The facade
+//! recomputes record and enum inventory before retained allocation.
 
 use super::{
     hir, DeclarationError, DeclarationUsage, Layout, ParameterTy, SourceMap, Span, ValueTy,
@@ -31,8 +31,8 @@ pub(in crate::frontend::oir) struct RawEnumDecl {
 #[derive(Clone, Copy, Debug)]
 pub(in crate::frontend::oir) struct RawVariantDecl {
     pub(in crate::frontend::oir) id: VariantId,
-    // This fixed-size raw carrier permits unsupported aggregate/reference types
-    // so their rejection belongs to the checker, never a trusted producer.
+    // This fixed-size raw carrier permits owned and unsupported reference types
+    // so admission belongs to the independent checker, never a trusted producer.
     // None is nullary; Some(Unit) still requires one explicit unit operand.
     pub(in crate::frontend::oir) payload: Option<ParameterTy>,
     pub(in crate::frontend::oir) span: Span,
@@ -79,8 +79,10 @@ pub(in crate::frontend) struct EnumUsage {
 pub(in crate::frontend::oir) struct EnumDecl {
     id: EnumId,
     span: Span,
-    variant_start: usize,
-    variant_end: usize,
+    variant_start: u32,
+    variant_end: u32,
+    size: u32,
+    width: u32,
 }
 
 impl EnumDecl {
@@ -91,18 +93,55 @@ impl EnumDecl {
         self.span
     }
     pub(in crate::frontend::oir) fn layout(&self) -> Layout {
-        Layout { size: 8, align: 4 }
+        Layout {
+            size: self.size as usize,
+            align: 4,
+        }
     }
     pub(in crate::frontend::oir) fn width(&self) -> usize {
-        2
+        self.width as usize
     }
 }
 
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct VariantDecl {
     id: VariantId,
-    payload: Option<hir::Ty>,
+    payload: Option<PayloadSlot>,
     span: Span,
+}
+
+/// Compact retained type identity, not a producer-supplied layout or witness.
+/// Checked ordinals fit u32; the enclosing variant retains its frozen size.
+#[derive(Clone, Copy, Debug)]
+enum PayloadSlot {
+    Scalar(hir::Ty),
+    Record(u32),
+    Enum(u32),
+    Array(super::FixedArrayTy),
+}
+impl PayloadSlot {
+    fn check(ty: ValueTy) -> Result<Self, DeclarationError> {
+        use super::AggregateTy;
+        Ok(match ty {
+            ValueTy::Scalar(ty) => Self::Scalar(ty),
+            ValueTy::Owned(AggregateTy::Record(id)) => Self::Record(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            ValueTy::Owned(AggregateTy::Enum(id)) => {
+                Self::Enum(u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?)
+            }
+            ValueTy::Owned(AggregateTy::FixedArray(array)) => Self::Array(array),
+        })
+    }
+    fn value(self) -> ValueTy {
+        use super::{AggregateTy, RecordId};
+        match self {
+            Self::Scalar(ty) => ValueTy::Scalar(ty),
+            Self::Record(id) => ValueTy::Owned(AggregateTy::Record(RecordId(id as usize))),
+            Self::Enum(id) => ValueTy::Owned(AggregateTy::Enum(EnumId(id as usize))),
+            Self::Array(array) => ValueTy::Owned(AggregateTy::FixedArray(array)),
+        }
+    }
 }
 
 impl VariantDecl {
@@ -113,7 +152,13 @@ impl VariantDecl {
         self.span
     }
     pub(in crate::frontend::oir) fn payload(&self) -> Option<hir::Ty> {
-        self.payload
+        self.value_payload().map(|ty| match ty {
+            ValueTy::Scalar(ty) => ty,
+            ValueTy::Owned(_) => unreachable!("owned variant requires value_payload"),
+        })
+    }
+    pub(in crate::frontend::oir) fn value_payload(&self) -> Option<ValueTy> {
+        self.payload.map(PayloadSlot::value)
     }
     pub(in crate::frontend::oir) fn arity(&self) -> usize {
         usize::from(self.payload.is_some())
@@ -157,6 +202,14 @@ impl EnumDeclarations {
         prepare_with_limits(raw, sources, existing, Limits::DEFAULT)
     }
 
+    pub(super) fn prepare_owned<'a>(
+        raw: &'a [RawEnumDecl],
+        sources: &SourceMap,
+        existing: DeclarationUsage,
+    ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
+        prepare_shapes(raw, sources, existing, Limits::DEFAULT, true)
+    }
+
     pub(in crate::frontend::oir) fn usage(&self) -> EnumUsage {
         self.usage
     }
@@ -178,7 +231,7 @@ impl EnumDeclarations {
     ) -> Result<&[VariantDecl], EnumDeclarationError> {
         let declaration = self.enumeration(id)?;
         self.variants
-            .get(declaration.variant_start..declaration.variant_end)
+            .get(declaration.variant_start as usize..declaration.variant_end as usize)
             .ok_or(EnumDeclarationError::InvalidEnumId(id))
     }
     pub(in crate::frontend::oir) fn variant(
@@ -226,7 +279,15 @@ impl EnumDeclarations {
         id: VariantId,
         actual: Option<hir::Ty>,
     ) -> Result<(), EnumDeclarationError> {
-        let expected = self.variant(enumeration, id)?.payload();
+        self.check_value_payload(enumeration, id, actual.map(ValueTy::Scalar))
+    }
+    pub(in crate::frontend::oir) fn check_value_payload(
+        &self,
+        enumeration: EnumId,
+        id: VariantId,
+        actual: Option<ValueTy>,
+    ) -> Result<(), EnumDeclarationError> {
+        let expected = self.variant(enumeration, id)?.value_payload();
         if actual.is_some() != expected.is_some() {
             return Err(EnumDeclarationError::PayloadArity(id));
         }
@@ -250,9 +311,42 @@ impl PreparedEnums<'_> {
         self.usage
     }
 
+    pub(super) fn with_owned_layouts(
+        mut self,
+        records: &[super::ContainmentSummary],
+        record_bytes: usize,
+        limit: usize,
+    ) -> Result<(Self, Vec<super::ContainmentSummary>), EnumDeclarationError> {
+        let summaries = owned_summaries(self.raw, records, limit)?;
+        self.usage.layout_bytes = 0;
+        for summary in &summaries {
+            self.usage.layout_bytes = super::limited_add(
+                self.usage.layout_bytes,
+                summary.layout.size,
+                limit,
+                "declaration layout bytes",
+            )?;
+        }
+        super::limited_add(
+            record_bytes,
+            self.usage.layout_bytes,
+            limit,
+            "declaration layout bytes",
+        )?;
+        Ok((self, summaries))
+    }
+
     pub(in crate::frontend::oir) fn finish_with_allocator(
         self,
         allocator: &mut Allocator,
+    ) -> Result<EnumDeclarations, EnumDeclarationError> {
+        self.finish_owned_with_allocator(allocator, &[])
+    }
+
+    pub(super) fn finish_owned_with_allocator(
+        self,
+        allocator: &mut Allocator,
+        summaries: &[super::ContainmentSummary],
     ) -> Result<EnumDeclarations, EnumDeclarationError> {
         let mut enums = Vec::new();
         let mut variants = Vec::new();
@@ -267,15 +361,23 @@ impl PreparedEnums<'_> {
             for variant in &declaration.variants {
                 variants.push(VariantDecl {
                     id: variant.id,
-                    payload: scalar_payload(variant)?,
+                    payload: value_payload(variant)?
+                        .map(PayloadSlot::check)
+                        .transpose()?,
                     span: variant.span,
                 });
             }
             enums.push(EnumDecl {
                 id: declaration.id,
                 span: declaration.span,
-                variant_start,
-                variant_end: variants.len(),
+                variant_start: u32::try_from(variant_start)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                variant_end: u32::try_from(variants.len())
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                size: u32::try_from(summaries.get(declaration.id.0).map_or(8, |s| s.layout.size))
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                width: u32::try_from(summaries.get(declaration.id.0).map_or(2, |s| s.width))
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
             });
         }
         Ok(EnumDeclarations {
@@ -325,11 +427,35 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
     }
 }
 
+fn value_payload(variant: &RawVariantDecl) -> Result<Option<ValueTy>, EnumDeclarationError> {
+    match variant.payload {
+        None => Ok(None),
+        Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)))
+        | Some(ParameterTy::Reference { .. }) => {
+            Err(EnumDeclarationError::NonScalarPayload(variant.id))
+        }
+        Some(ParameterTy::Value(ty)) => {
+            PayloadSlot::check(ty)?;
+            Ok(Some(ty))
+        }
+    }
+}
+
 fn prepare_with_limits<'a>(
     raw: &'a [RawEnumDecl],
     sources: &SourceMap,
     existing: DeclarationUsage,
     limits: Limits,
+) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
+    prepare_shapes(raw, sources, existing, limits, false)
+}
+
+fn prepare_shapes<'a>(
+    raw: &'a [RawEnumDecl],
+    sources: &SourceMap,
+    existing: DeclarationUsage,
+    limits: Limits,
+    owned: bool,
 ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
     let usage = preflight_counts(
         raw.iter().map(|declaration| declaration.variants.len()),
@@ -351,10 +477,123 @@ fn prepare_with_limits<'a>(
                 return Err(EnumDeclarationError::InvalidVariantId(variant.id));
             }
             super::check_span(sources, variant.span)?;
-            scalar_payload(variant)?;
+            if owned {
+                value_payload(variant)?;
+            } else {
+                scalar_payload(variant)?;
+            }
         }
     }
     Ok(PreparedEnums { raw, usage })
+}
+
+/// Independent bounded DFS over enum edges. Records cannot contain enums, so
+/// their already checked summaries are leaves. No expanded payload inventory.
+fn owned_summaries(
+    raw: &[RawEnumDecl],
+    records: &[super::ContainmentSummary],
+    limit: usize,
+) -> Result<Vec<super::ContainmentSummary>, EnumDeclarationError> {
+    use super::{AggregateTy, ContainmentSummary, MAX_CONTAINMENT_DEPTH};
+    let mut summaries = Vec::new();
+    summaries
+        .try_reserve_exact(raw.len())
+        .map_err(|_| DeclarationError::Allocation)?;
+    summaries.resize(raw.len(), ContainmentSummary::default());
+    let mut state = Vec::new();
+    state
+        .try_reserve_exact(raw.len())
+        .map_err(|_| DeclarationError::Allocation)?;
+    state.resize(raw.len(), 0u8);
+    let mut stack = Vec::new();
+    stack
+        .try_reserve_exact(raw.len().min(MAX_CONTAINMENT_DEPTH))
+        .map_err(|_| DeclarationError::Allocation)?;
+    for root in 0..raw.len() {
+        if state[root] == 2 {
+            continue;
+        }
+        state[root] = 1;
+        stack.push((root, 0usize));
+        while let Some(&(id, next)) = stack.last() {
+            if let Some(variant) = raw[id].variants.get(next) {
+                stack.last_mut().unwrap().1 += 1;
+                if let Some(ValueTy::Owned(AggregateTy::Enum(child))) = value_payload(variant)? {
+                    let status = *state
+                        .get(child.0)
+                        .ok_or(DeclarationError::InvalidEnumId(child))?;
+                    match status {
+                        1 => {
+                            return Err(
+                                DeclarationError::ResourceLimit("recursive enum layout").into()
+                            )
+                        }
+                        0 => {
+                            if stack.len() == MAX_CONTAINMENT_DEPTH {
+                                return Err(DeclarationError::ResourceLimit(
+                                    "enum containment depth",
+                                )
+                                .into());
+                            }
+                            state[child.0] = 1;
+                            stack.push((child.0, 0));
+                        }
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            let (mut bytes, mut width, mut depth) = (4usize, 1usize, 1usize);
+            for variant in &raw[id].variants {
+                let child = match value_payload(variant)? {
+                    None => continue,
+                    Some(ValueTy::Scalar(ty)) => ContainmentSummary {
+                        layout: Layout::scalar(ty),
+                        width: 1,
+                        depth: 0,
+                    },
+                    Some(ValueTy::Owned(AggregateTy::Record(record))) => *records
+                        .get(record.0)
+                        .ok_or(DeclarationError::InvalidRecordId(record))?,
+                    Some(ValueTy::Owned(AggregateTy::Enum(enumeration))) => *summaries
+                        .get(enumeration.0)
+                        .ok_or(DeclarationError::InvalidEnumId(enumeration))?,
+                    Some(ValueTy::Owned(AggregateTy::FixedArray(array))) => ContainmentSummary {
+                        layout: array.layout()?,
+                        width: array.length().max(1),
+                        depth: 0,
+                    },
+                };
+                bytes = bytes.max(child.layout.size);
+                width = width.max(child.width);
+                depth = depth.max(
+                    child
+                        .depth
+                        .checked_add(1)
+                        .ok_or(DeclarationError::LayoutOverflow)?,
+                );
+                if depth > MAX_CONTAINMENT_DEPTH {
+                    return Err(DeclarationError::ResourceLimit("enum containment depth").into());
+                }
+            }
+            let size = super::align_up(
+                bytes
+                    .checked_add(4)
+                    .ok_or(DeclarationError::LayoutOverflow)?,
+                4,
+            )?;
+            super::limited_add(0, size, limit, "declaration layout bytes")?;
+            let width = super::limited_add(width, 1, limit, "enum expanded width")?;
+            summaries[id] = ContainmentSummary {
+                layout: Layout { size, align: 4 },
+                width,
+                depth,
+            };
+            state[id] = 2;
+            stack.pop();
+        }
+    }
+    Ok(summaries)
 }
 
 /// Allocation-free inventory, not a checked declaration witness. Existing

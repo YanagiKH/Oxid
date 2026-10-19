@@ -159,12 +159,18 @@ qualification remain separate from the preserved predecessor ledgers.
 
 Experimental [bounded nominal enums and consuming matches](../../spec/typed-preview.md#bounded-nominal-enums-and-consuming-match)
 are connected to public typed-preview check/run/native-compile and syntax-only
-formatting. Enums have 1..256 nullary or single bool/i32/unit-payload variants;
+formatting. The R2 candidate extends their 1..256 nullary or single
+bool/i32/unit-payload variants with finite owned record, fixed array and enum
+payloads; private fields retain their visibility. Focused reference and Linux x86_64
+native acceptance has passed with LLVM 19.1.7; broader platform and release
+qualification remain pending. Scalar/nullary behavior
+and existing limits remain unchanged;
 whole values move, and a statement match exhaustively consumes one named owner.
 Existing type aliases, visibility, ownership joins and loop restoration apply.
 Written arm order determines dispatch fuel. Enums share the existing aggregate
 caps; the additional affected enum-bearing HIR account is not a whole-compiler
-memory or RSS limit. Enum borrowing/containment, richer patterns, equality and
+memory or RSS limit. Enum borrowing, enum fields in records/arrays, recursive
+layouts, richer patterns, equality and
 a public enum ABI remain excluded.
 
 The [two-file scanner](../../tests/fixtures/bounded_enum_scanner/main.ox) and

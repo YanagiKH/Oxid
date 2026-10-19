@@ -1075,8 +1075,14 @@ fn diagnostic_occurrences(
                         FailureKind::OutputCapacity,
                         plan::instruction_span(statement),
                     )?,
-                    OwnedInstruction::ConsumeVariant { match_id, .. } => {
+                    OwnedInstruction::ConsumeVariant { match_id, .. }
+                    | OwnedInstruction::ConsumeOwnedVariant { match_id, .. } => {
                         let span = f.matches[match_id.0].span;
+                        visit(FailureKind::EnumTag, span)?;
+                        visit(FailureKind::EnumPayload, span)?;
+                    }
+                    OwnedInstruction::ConstructOwnedEnum { .. } => {
+                        let span = plan::instruction_span(statement);
                         visit(FailureKind::EnumTag, span)?;
                         visit(FailureKind::EnumPayload, span)?;
                     }
@@ -1625,7 +1631,8 @@ fn index_pointer(
     (element, format!("%{name}_ptr"))
 }
 
-/// O(raw emit sites), never an eager walk of expanded scalar cells.
+/// Counts raw sites and active enum branch trees without expanding static
+/// record or array leaves during inventory.
 fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Diagnostic>> {
     let mut cells = 0;
     let mut visits = 0;
@@ -1634,7 +1641,10 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
         for parameter in &f.parameters {
             visits = add(visits, 1)?;
             if let ParameterBinding::Owned(owner) = parameter {
-                cells = add(cells, transfer_expansions(plan, f.id, *owner)?)?;
+                cells = add(
+                    cells,
+                    transfer_expansions_counted(plan, f.id, *owner, &mut visits)?,
+                )?;
             }
         }
         for block in &f.blocks {
@@ -1659,10 +1669,46 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         cells = add(cells, 1 + usize::from(payload.is_some()))?;
                         None
                     }
+                    OwnedInstruction::ConstructOwnedEnum { payload, .. } => {
+                        cells = add(
+                            cells,
+                            add(
+                                1,
+                                active_transfer_inventory(
+                                    plan,
+                                    f.owners[payload.0].aggregate(),
+                                    true,
+                                    &mut visits,
+                                )?,
+                            )?,
+                        )?;
+                        None
+                    }
+                    OwnedInstruction::ConsumeOwnedVariant { destination, .. } => {
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(
+                                plan,
+                                f.owners[destination.0].aggregate(),
+                                true,
+                                &mut visits,
+                            )?,
+                        )?;
+                        None
+                    }
                     OwnedInstruction::Discard(owner)
                         if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) =>
                     {
-                        Some(owner)
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(
+                                plan,
+                                f.owners[owner.0].aggregate(),
+                                false,
+                                &mut visits,
+                            )?,
+                        )?;
+                        None
                     }
                     OwnedInstruction::Construct { destination, .. }
                     | OwnedInstruction::ConstructComposite { destination, .. }
@@ -1673,14 +1719,20 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                     _ => None,
                 };
                 if let Some(owner) = owner {
-                    cells = add(cells, transfer_expansions(plan, f.id, owner)?)?;
+                    cells = add(
+                        cells,
+                        transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
+                    )?;
                 }
             }
             visits = add(visits, 1)?;
             if let OwnedTerminatorKind::ReturnOwned(owner) =
                 block.terminator.as_ref().expect("verified terminator").kind
             {
-                cells = add(cells, transfer_expansions(plan, f.id, owner)?)?;
+                cells = add(
+                    cells,
+                    transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
+                )?;
             }
         }
     }
@@ -1693,22 +1745,106 @@ fn transfer_expansions(
     id: hir::DefId,
     owner: OwnerPlaceId,
 ) -> Result<usize, Box<Diagnostic>> {
-    match plan.witness().functions()[id.0].owners[owner.0].aggregate() {
-        AggregateTy::Enum(enumeration) => mul(
-            plan.witness()
-                .declarations()
-                .enums()
-                .variants(enumeration)
-                .expect("verified enum")
-                .len(),
-            2,
-        ),
-        _ => Ok(plan.owner_width(id, owner)),
+    transfer_expansions_counted(plan, id, owner, &mut 0)
+}
+fn transfer_expansions_counted(
+    plan: &ExecutionPlan<'_>,
+    id: hir::DefId,
+    owner: OwnerPlaceId,
+    visits: &mut usize,
+) -> Result<usize, Box<Diagnostic>> {
+    let aggregate = plan.witness().functions()[id.0].owners[owner.0].aggregate();
+    if matches!(aggregate, AggregateTy::Enum(_)) {
+        active_transfer_inventory(plan, aggregate, true, visits)
+    } else {
+        Ok(plan.owner_width(id, owner))
     }
 }
 
+/// Count the same switch rows, case bodies, active validation cells and copy
+/// cells as the emitter. The bounded stack retains no expanded variant tree.
+/// Reject a count larger than the existing text ceiling before expanding it.
+fn active_transfer_inventory(
+    plan: &ExecutionPlan<'_>,
+    aggregate: AggregateTy,
+    copy: bool,
+    visits: &mut usize,
+) -> Result<usize, Box<Diagnostic>> {
+    let declarations = plan.witness().declarations();
+    let factor = 1 + usize::from(copy);
+    let AggregateTy::Enum(enumeration) = aggregate else {
+        *visits = add(*visits, 1)?;
+        return mul(
+            declarations
+                .aggregate_width(aggregate)
+                .expect("verified width"),
+            factor,
+        );
+    };
+    let variants = declarations
+        .enums()
+        .variants(enumeration)
+        .expect("verified enum");
+    if !variants
+        .iter()
+        .any(|variant| matches!(variant.value_payload(), Some(ValueTy::Owned(_))))
+    {
+        return mul(2, variants.len());
+    }
+    let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
+    stack[0] = Some((enumeration, 0usize));
+    let mut length = 1;
+    let mut cells = 0;
+    while length != 0 {
+        let (enumeration, next) = stack[length - 1].expect("checked enum traversal");
+        let variants = declarations
+            .enums()
+            .variants(enumeration)
+            .expect("verified enum");
+        if next == 0 {
+            *visits = add(*visits, 1)?;
+            cells = add(cells, mul(2, variants.len())?)?;
+        }
+        if let Some(variant) = variants.get(next) {
+            *visits = add(*visits, 1)?;
+            stack[length - 1] = Some((enumeration, next + 1));
+            if let Some(ValueTy::Owned(payload)) = variant.value_payload() {
+                match payload {
+                    AggregateTy::Enum(child) => {
+                        if length == stack.len() {
+                            return Err(mismatch("enum transfer depth"));
+                        }
+                        stack[length] = Some((child, 0));
+                        length += 1;
+                    }
+                    _ => {
+                        cells = add(
+                            cells,
+                            mul(
+                                declarations
+                                    .aggregate_width(payload)
+                                    .expect("verified payload width"),
+                                factor,
+                            )?,
+                        )?
+                    }
+                }
+            }
+        } else {
+            length -= 1;
+        }
+        if cells > MAX_IR_BYTES {
+            return Err(reject(
+                "native owned LLVM bytes limit exceeded by enum transfer expansion",
+                None,
+            ));
+        }
+    }
+    Ok(cells)
+}
+
 /// All callers receive types, extents and ownership transitions from the sealed
-/// witness. Only the runtime tag and active scalar still require validation.
+/// witness. Runtime tags and active payload cells still require validation.
 fn transfer_checked(
     out: &mut Emission,
     plan: &ExecutionPlan<'_>,
@@ -1747,7 +1883,10 @@ fn enum_payload_load(
         .enums()
         .variant(variant.enumeration, variant)
         .expect("verified variant");
-    let scalar = declaration.payload()?;
+    let scalar = match declaration.value_payload()? {
+        ValueTy::Scalar(scalar) => scalar,
+        ValueTy::Owned(_) => unreachable!("owned payload requires active aggregate transfer"),
+    };
     let pointer = field_pointer(
         out,
         &format!("{name}_active"),
@@ -1811,13 +1950,20 @@ fn enum_transfer(
     if out.exceeded {
         return;
     }
-    out.ordinary_visits += 1;
     let variants = plan
         .witness()
         .declarations()
         .enums()
         .variants(enumeration)
         .expect("verified enum");
+    if variants
+        .iter()
+        .any(|variant| matches!(variant.value_payload(), Some(ValueTy::Owned(_))))
+    {
+        owned_enum_transfer(out, plan, name, enumeration, source, destination, failure);
+        return;
+    }
+    out.ordinary_visits += 1;
     writeln!(out, "  %{name}_tag = load i32, ptr {source}, align 1\n  switch i32 %{name}_tag, label %{name}_tag_error [").unwrap();
     for variant in variants {
         if !out.expand(Expansion::Transfer) {
@@ -1861,6 +2007,267 @@ fn enum_transfer(
         writeln!(out, "  br label %{name}_enum_ok").unwrap();
     }
     writeln!(out, "{name}_enum_ok:").unwrap();
+}
+
+/// Each frame is one checked enum declaration on the current containment
+/// path. Names use a flat ordinal, so neither retained names nor host recursion
+/// grow with a nested variant path. The depth comes from checked layouts.
+#[derive(Clone, Copy)]
+struct EnumTransferFrame {
+    enumeration: EnumId,
+    relative: usize,
+    ordinal: usize,
+    next: usize,
+}
+// The traversal retains numeric frames, one static leaf iterator, and only a
+// fixed number of short generated names. Six printed usize IDs plus suffixes
+// bound every name, including nested ordinal/variant/leaf names. This is a
+// containment check inside the existing envelope, with no new allocation cap.
+#[allow(dead_code)]
+struct EnumTransferScratch {
+    frames: [Option<EnumTransferFrame>; MAX_CONTAINMENT_DEPTH + 1],
+    leaves: ScalarLeaves<'static>,
+    names: [String; 32],
+    formatting: [std::fmt::Arguments<'static>; 16],
+}
+const ENUM_TRANSFER_NAME_BYTES: usize = 6 * usize::BITS as usize + 64;
+const _: () = assert!(
+    size_of::<EnumTransferScratch>()
+        + 32 * ENUM_TRANSFER_NAME_BYTES
+        + plan::native_storage::FIXED_CARRIER_ALLOWANCE
+        < EMITTER_TRANSIENT_BYTES
+);
+fn enum_node_name(name: &str, ordinal: usize) -> String {
+    if ordinal == 0 {
+        name.to_owned()
+    } else {
+        format!("{name}_nested{ordinal}")
+    }
+}
+fn enum_node_pointer(name: &str, frame: EnumTransferFrame, root: &str, output: bool) -> String {
+    if frame.ordinal == 0 {
+        root.to_owned()
+    } else {
+        let role = if output { "destination" } else { "source" };
+        format!("%{}_{}_ptr", enum_node_name(name, frame.ordinal), role)
+    }
+}
+fn enum_node_switch(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    frame: EnumTransferFrame,
+    source: &str,
+    destination: Option<&str>,
+    failure: (&Diagnostics, Span),
+) {
+    let node = enum_node_name(name, frame.ordinal);
+    if frame.ordinal != 0 {
+        field_pointer(out, &format!("{node}_source"), source, frame.relative);
+        if let Some(destination) = destination {
+            field_pointer(
+                out,
+                &format!("{node}_destination"),
+                destination,
+                frame.relative,
+            );
+        }
+    }
+    let input = enum_node_pointer(name, frame, source, false);
+    out.ordinary_visits += 1;
+    writeln!(out, "  %{node}_tag = load i32, ptr {input}, align 1\n  switch i32 %{node}_tag, label %{node}_tag_error [").unwrap();
+    for variant in plan
+        .witness()
+        .declarations()
+        .enums()
+        .variants(frame.enumeration)
+        .expect("verified enum")
+    {
+        if !out.expand(Expansion::Transfer) {
+            return;
+        }
+        writeln!(
+            out,
+            "    i32 {}, label %{node}_variant{}",
+            variant.tag(),
+            variant.tag()
+        )
+        .unwrap();
+    }
+    writeln!(out, "  ]\n{node}_tag_error:").unwrap();
+    emit_failure(out, failure.0, FailureKind::EnumTag, failure.1);
+}
+
+/// Validate all terminal leaves before copying any. Enum chains validate each
+/// tag on descent; ancestor tag stores happen only after a complete child has
+/// been validated. Thus a bad nested tag or terminal scalar writes no payload.
+fn owned_enum_transfer(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    enumeration: EnumId,
+    source: &str,
+    destination: Option<&str>,
+    failure: (&Diagnostics, Span),
+) {
+    let first = EnumTransferFrame {
+        enumeration,
+        relative: 0,
+        ordinal: 0,
+        next: 0,
+    };
+    let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
+    stack[0] = Some(first);
+    let mut length = 1;
+    let mut ordinal = 0usize;
+    enum_node_switch(out, plan, name, first, source, destination, failure);
+    while length != 0 && !out.exceeded {
+        let frame = stack[length - 1].expect("checked enum traversal");
+        let node = enum_node_name(name, frame.ordinal);
+        let variants = plan
+            .witness()
+            .declarations()
+            .enums()
+            .variants(frame.enumeration)
+            .expect("verified enum");
+        let Some(variant) = variants.get(frame.next) else {
+            writeln!(out, "{node}_enum_ok:").unwrap();
+            length -= 1;
+            if length != 0 {
+                let parent = stack[length - 1].expect("checked enum parent");
+                let parent_name = enum_node_name(name, parent.ordinal);
+                if let Some(destination) = destination {
+                    let output = enum_node_pointer(name, parent, destination, true);
+                    let tag = plan
+                        .witness()
+                        .declarations()
+                        .enums()
+                        .variants(parent.enumeration)
+                        .expect("verified parent")[parent.next - 1]
+                        .tag();
+                    writeln!(out, "  store i32 {tag}, ptr {output}, align 1").unwrap();
+                }
+                writeln!(out, "  br label %{parent_name}_enum_ok").unwrap();
+            }
+            continue;
+        };
+        stack[length - 1] = Some(EnumTransferFrame {
+            next: frame.next + 1,
+            ..frame
+        });
+        if !out.expand(Expansion::Transfer) {
+            return;
+        }
+        let case = format!("{node}_variant{}", variant.tag());
+        writeln!(out, "{case}:").unwrap();
+        let input = enum_node_pointer(name, frame, source, false);
+        let output = destination.map(|root| enum_node_pointer(name, frame, root, true));
+        match variant.value_payload() {
+            Some(ValueTy::Owned(AggregateTy::Enum(child))) => {
+                ordinal = ordinal.checked_add(1).expect("bounded enum emission");
+                let child = EnumTransferFrame {
+                    enumeration: child,
+                    relative: frame
+                        .relative
+                        .checked_add(variant.payload_offset().expect("owned payload offset"))
+                        .expect("checked payload offset"),
+                    ordinal,
+                    next: 0,
+                };
+                stack[length] = Some(child);
+                length += 1;
+                enum_node_switch(out, plan, name, child, source, destination, failure);
+                continue;
+            }
+            Some(ValueTy::Owned(aggregate)) => {
+                let offset = variant.payload_offset().expect("owned payload offset");
+                let active = field_pointer(out, &format!("{case}_active"), &input, offset);
+                let target = output.as_ref().map(|output| {
+                    field_pointer(out, &format!("{case}_active_out"), output, offset)
+                });
+                active_transfer(
+                    out,
+                    plan,
+                    &case,
+                    aggregate,
+                    &active,
+                    target.as_deref(),
+                    failure,
+                );
+                if let Some(output) = &output {
+                    writeln!(out, "  store i32 {}, ptr {output}, align 1", variant.tag()).unwrap();
+                }
+            }
+            _ => {
+                let active = enum_payload_load(out, plan, &case, &input, variant.id(), failure);
+                if let Some(output) = &output {
+                    writeln!(out, "  store i32 {}, ptr {output}, align 1", variant.tag()).unwrap();
+                    if let Some((scalar, value)) = active {
+                        enum_payload_store(
+                            out,
+                            &case,
+                            output,
+                            scalar,
+                            &value,
+                            variant.payload_offset().expect("active scalar offset"),
+                        );
+                    }
+                }
+            }
+        }
+        writeln!(out, "  br label %{node}_enum_ok").unwrap();
+    }
+}
+
+fn active_transfer(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    aggregate: AggregateTy,
+    source: &str,
+    destination: Option<&str>,
+    failure: (&Diagnostics, Span),
+) {
+    if let AggregateTy::Enum(enumeration) = aggregate {
+        enum_transfer(out, plan, name, enumeration, source, destination, failure);
+        return;
+    }
+    for (index, leaf) in plan
+        .witness()
+        .declarations()
+        .leaves(aggregate)
+        .expect("verified payload leaves")
+        .enumerate()
+    {
+        if !out.expand(Expansion::Transfer) {
+            return;
+        }
+        let cell = format!("{name}_validate{index}");
+        let input = field_pointer(out, &cell, source, leaf.offset);
+        let storage = if leaf.ty == hir::Ty::I32 { "i32" } else { "i8" };
+        writeln!(out, "  %{cell} = load {storage}, ptr {input}, align 1").unwrap();
+        if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
+            let predicate = if leaf.ty == hir::Ty::Bool {
+                "ule"
+            } else {
+                "eq"
+            };
+            let bound = usize::from(leaf.ty == hir::Ty::Bool);
+            writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+            emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+            writeln!(out, "{cell}_ok:").unwrap();
+        }
+    }
+    if let Some(destination) = destination {
+        transfer_leaves(
+            out,
+            plan,
+            &format!("{name}_copy"),
+            aggregate,
+            (source, destination),
+            Expansion::Transfer,
+        );
+    }
 }
 
 fn emit_dispatch(
@@ -2162,7 +2569,9 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
     match instruction {
         OwnedInstruction::ReadStdin { .. } => Continuation::Input,
         OwnedInstruction::WriteStdout { .. } => Continuation::Output,
-        OwnedInstruction::ConsumeVariant { .. } => Continuation::Enum,
+        OwnedInstruction::ConsumeVariant { .. }
+        | OwnedInstruction::ConsumeOwnedVariant { .. }
+        | OwnedInstruction::ConstructOwnedEnum { .. } => Continuation::Enum,
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::Replace { source, .. }
         | OwnedInstruction::PrepareOwned { source, .. }
@@ -2737,6 +3146,77 @@ fn emit_statement(
             (diagnostics, plan::instruction_span(statement)),
             out,
         ),
+        OwnedInstruction::ConstructOwnedEnum {
+            destination,
+            variant,
+            payload,
+        } => {
+            let declaration = plan
+                .witness()
+                .declarations()
+                .enums()
+                .variant(variant.enumeration, *variant)
+                .expect("verified owned constructor");
+            let output = field_pointer(
+                out,
+                &format!("{name}_owned_out"),
+                &format!("%o{}", destination.0),
+                declaration.payload_offset().expect("owned payload offset"),
+            );
+            active_transfer(
+                out,
+                plan,
+                &format!("{name}_owned"),
+                f.owners[payload.0].aggregate(),
+                &format!("%o{}", payload.0),
+                Some(&output),
+                (diagnostics, plan::instruction_span(statement)),
+            );
+            if !out.expand(Expansion::Construct) {
+                return;
+            }
+            writeln!(
+                out,
+                "  store i32 {}, ptr %o{}, align 1\n  br label %{name}_enum_ok\n{name}_enum_ok:",
+                declaration.tag(),
+                destination.0
+            )
+            .unwrap();
+        }
+        OwnedInstruction::ConsumeOwnedVariant {
+            match_id,
+            arm,
+            destination,
+        } => {
+            let descriptor = &f.matches[match_id.0];
+            let selected = descriptor.arms[*arm];
+            let declaration = plan
+                .witness()
+                .declarations()
+                .enums()
+                .variant(selected.variant.enumeration, selected.variant)
+                .expect("verified owned variant");
+            let source = format!("%o{}", descriptor.source.0);
+            writeln!(out, "  %{name}_tag = load i32, ptr {source}, align 1\n  %{name}_selected = icmp eq i32 %{name}_tag, {}\n  br i1 %{name}_selected, label %{name}_tag_valid, label %{name}_tag_error\n{name}_tag_error:", declaration.tag()).unwrap();
+            emit_failure(out, diagnostics, FailureKind::EnumTag, descriptor.span);
+            writeln!(out, "{name}_tag_valid:").unwrap();
+            let input = field_pointer(
+                out,
+                &format!("{name}_owned_in"),
+                &source,
+                declaration.payload_offset().expect("owned payload offset"),
+            );
+            active_transfer(
+                out,
+                plan,
+                &format!("{name}_owned"),
+                f.owners[destination.0].aggregate(),
+                &input,
+                Some(&format!("%o{}", destination.0)),
+                (diagnostics, descriptor.span),
+            );
+            writeln!(out, "  br label %{name}_enum_ok\n{name}_enum_ok:").unwrap();
+        }
         OwnedInstruction::ConstructEnum {
             destination,
             variant,
@@ -4042,3 +4522,53 @@ fn owned_u8_native_roles_are_dominated_by_predecessor_operations() {
 #[cfg(test)]
 #[path = "byte_storage_native_tests.rs"]
 mod byte_storage_tests;
+
+#[cfg(test)]
+#[test]
+fn owned_enum_native_nested_transfer_checks_before_stores_and_counts_branches() {
+    let (sources, raw, _, _) = execute::owned_enum_payload_tests::fixture();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let observed = run_array_observed(
+        &witness,
+        Some(hir::DefId(0)),
+        &sources,
+        NativeControl::default(),
+    );
+    let module = observed.result.unwrap();
+    // Two record cells, then constructor tag + four active leaf operations;
+    // outer constructor tag + four inner case rows + four leaf operations;
+    // whole copy has eight rows + four leaves; discard has eight rows + two
+    // validations. No inactive alternative or padding contributes a leaf.
+    assert_eq!(observed.metrics.transfer_cells, 2 + 5 + 9 + 12 + 10);
+    assert_eq!(
+        observed.metrics.count_expansions,
+        observed.metrics.transfer_cells + observed.metrics.message_bytes
+    );
+    assert_eq!(
+        observed.metrics.count_expansions,
+        observed.metrics.render_expansions
+    );
+    assert_eq!(observed.metrics.count_bytes, module.len());
+    assert_eq!(observed.metrics.render_bytes, module.len());
+    assert_eq!(
+        observed.metrics.count_ordinary_visits,
+        observed.metrics.render_ordinary_visits
+    );
+    let name = "f0_b0_i9";
+    let nested_tag = module
+        .find(&format!("%{name}_nested1_tag = load i32"))
+        .unwrap();
+    let valid_bool = module
+        .find(&format!("{name}_nested1_variant0_validate0_ok:"))
+        .unwrap();
+    let copied_payload = module
+        .find(&format!("%{name}_nested1_variant0_copy_field0 = load i1"))
+        .unwrap();
+    let stored_outer_tag = module
+        .find(&format!("{name}_nested1_enum_ok:\n  store i32 0, ptr %o3"))
+        .unwrap();
+    assert!(
+        nested_tag < valid_bool && valid_bool < copied_payload && copied_payload < stored_outer_tag
+    );
+    assert!(!module.contains("memcpy"));
+}

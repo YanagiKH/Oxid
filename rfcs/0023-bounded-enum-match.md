@@ -9,6 +9,19 @@ See the [public contract](../spec/typed-preview.md#bounded-nominal-enums-and-con
 [two-file scanner](../tests/fixtures/bounded_enum_scanner/main.ox).
 Design base: main `c37a09f332ad68ab401f1c6936e2e17afa430e90`.
 
+R2 amendment, 2026-10-19: the local candidate extends single payloads to finite
+owned records, fixed scalar arrays and enums. The current
+[public contract](../spec/typed-preview.md#bounded-nominal-enums-and-consuming-match)
+specifies maximum-alternative layout/width, whole-payload moves, visibility and
+unchanged limits. The independent raw verifier checks payload identity, ownership,
+cycles and joins. Its owned consume instruction is the first guarded arm
+instruction and the sole lifetime/initialization site of a distinct immutable
+binding; normal exits end that binding. Every active nested value is validated
+before transfer effects. Enum fields in records, heap storage, generics and new
+scalar payload kinds remain excluded. The original scalar contract below is
+preserved as the predecessor; no frozen budget/layout baseline is changed. R2
+native execution and qualification are not claimed by this implementation slice.
+
 ## Boundary
 
 Add nonempty nominal enums with 1..256 unique variants, each nullary or carrying

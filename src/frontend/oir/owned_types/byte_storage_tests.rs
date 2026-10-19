@@ -116,7 +116,7 @@ fn byte_storage_raw_unused_and_nested_record_fields_reject_before_output_reserve
 }
 
 #[test]
-fn byte_storage_previous_record_elements_and_enum_exclusions_are_unchanged() {
+fn byte_storage_previous_record_elements_and_r2_owned_enum_arrays() {
     let (sources, span) = source();
     for element in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
         for n in [0, 1, 1024] {
@@ -146,7 +146,9 @@ fn byte_storage_previous_record_elements_and_enum_exclusions_are_unchanged() {
                 )))),
             }],
         };
-        assert!(Declarations::check_combined(&[], &[enumeration], &sources).is_err());
+        // R2 admits complete fixed arrays as owned payloads. Scalar u8 and
+        // byte-array record fields retain their separate existing exclusions.
+        assert!(Declarations::check_combined(&[], &[enumeration], &sources).is_ok());
     }
 }
 

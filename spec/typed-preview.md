@@ -148,7 +148,7 @@ is not a supported receiver.
 
 Byte arrays cannot be record fields, including unused/nested/imported fields
 and N=0. Such fields fail E0202/resolve at the complete field type with
-`u8 array record fields are not supported`. Direct u8 fields and enum payloads
+`u8 array record fields are not supported`. Direct u8 fields and scalar u8 enum payloads
 remain excluded. Predecessor bool/i32/unit record arrays and projections stay
 available. There are no byte-record projections, element references, subslices,
 heap buffers, I/O signature changes or provider wire expansions. Existing
@@ -323,31 +323,48 @@ fn main() -> i32 { return consume(Token::Integer(7)); }
 ```
 
 Each enum has 1..256 unique variants, each nullary or carrying exactly one
-`bool`, `i32` or `()` value. Nullary construction is `Token::End`, without
+`bool`, `i32`, `()`, finite owned record, fixed scalar array, or finite enum value.
+Nullary construction is `Token::End`, without
 parentheses; payload construction supplies exactly one expression. A `U(())`
 variant is constructed with `E::U(())`. Types match exactly, without coercions.
 Enums share the type namespace with records and builtins; existing type aliases,
 absolute paths and visibility resolve the type prefix. Variants have their
-enum's visibility and no separate `pub` modifier.
+enum's visibility and no separate `pub` modifier. Payload types resolve in the
+declaring enum's module/package and may not expose a less visible nominal type.
+A public record payload may have private fields; extraction preserves their privacy.
 
 Enum values are whole-value move-only locals, mutable replacement destinations,
 by-value parameters and by-value results. `match` is a statement over one bare,
 available named local or parameter. Its arms have braced blocks, comma separators
 and an optional trailing comma. Every variant of that exact enum must occur once,
 including arms that will not run. The selected arm consumes the scrutinee once
-and, for a payload variant, creates one immutable scalar binding scoped to that
+and, for a payload variant, creates one immutable binding scoped to that
 arm. Ordinary no-shadowing, all-path-return, break/continue and loop rules apply.
 Only continuing arms participate in the ownership join; a consumed owner can be
 restored by an explicit same-type assignment to a mutable local. Matching an
-unavailable owner reports E0310 at the complete match statement.
+unavailable owner reports E0310 at the complete match statement. Constructing an
+owned payload moves its whole value once; the selected arm receives that whole
+value once. Enum moves, calls and returns preserve both tag and active payload.
 
-Arm order affects fuel. Selecting zero-based written arm k costs `k + 1` dispatch
+For scalar/nullary enums, arm order affects fuel. Selecting zero-based written arm k costs `k + 1` dispatch
 units and 3 consumption units before its body. Construction costs 3 after its
 payload expression; whole move/owned preparation/discard/StorageEnd cost 3 and
 replacement costs 5. Existing call/frame costs use enum width 2. Ordinary source
 temporaries, argument staging, body operations and cleanup add their own costs;
 these figures are not complete source-statement costs. Fuel failure exposes no
 payload and performs no unpaid consumption.
+
+Owned-payload enum width is one tag cell plus the maximum alternative width
+(at least one payload cell). Construction and consumption cost `1 + w`; existing
+whole-owner operations use that width. Private storage is a four-byte tag and the
+largest alternative storage, padded to alignment four, with at least four payload
+bytes. Empty records and arrays keep their initialized sentinels. Checked layout
+arithmetic rejects every by-value cycle, including unused declarations, and the
+combined record/enum containment depth remains at most 64. Native branch expansion
+is inventoried separately from maximum active width. These are R2 feature changes,
+not a v1.0 qualification claim. Focused reference and Linux x86_64 native
+acceptance has been exercised with LLVM 19.1.7; broader platform and release
+qualification remain pending.
 
 Enums and records share the 4,096 declaration cap. Variants and record fields
 share the 65,536 member cap; record fields retain their 1,024 per-record cap.
@@ -359,7 +376,7 @@ independent whole-program inventories I and W, each at most 8,192, plus unchange
 1 MiB aggregate/live explicit-byte bounds and its other stricter limits; see
 [RFC 0027](../rfcs/0027-native-admission-inventories.md).
 
-Enum borrows, storage in record fields or arrays, aggregate/recursive payloads,
+Enum borrows, storage in record fields or arrays, recursive payloads,
 partial moves, equality, printing and source-visible tags are unavailable.
 Match expressions, guards, wildcard/alternative/nested patterns and arbitrary
 scrutinee expressions are also unavailable. An enum-returning `main` may check;
@@ -634,7 +651,7 @@ function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
 scalar_type    := "bool" | "i32" | "u8" | "(" ")"
 array_element_type := "bool" | "i32" | "u8" | "(" ")"
-enum_payload_type := "bool" | "i32" | "(" ")"
+enum_payload_type := "bool" | "i32" | "(" ")" | item_path | fixed_array_type
 fixed_array_type := "[" array_element_type ";" decimal "]"
 slice_type     := "[" array_element_type "]"
 value_type     := scalar_type | item_path | fixed_array_type
@@ -1310,7 +1327,7 @@ For each function, let S count scalar locals and mutable places, A all call
 argument descriptors, O all owner slots, R incoming references, L loans, C call
 sites, and P the sum of each owner's checked recursive width: scalar leaves
 count 1, records use `max(1, sum(field widths))`, fixed arrays use `max(1, N)`,
-and enums use 2. This includes zero-length and unit arrays. B is the
+and enums use one plus the maximum alternative width (at least 2). This includes zero-length and unit arrays. B is the
 checked aligned owner arena, including parameters, locals, expression temporaries,
 argument staging, call results and inter-owner padding. Let T be 1024 scratch
 bytes for each canonical input or output builtin and 0 otherwise; it reserves
@@ -1347,7 +1364,7 @@ already reserved in the caller's owner arena; no extra variable return scratch
 is hidden. Loops reuse activation storage with checked owner generations.
 
 The owned ledger charges before work. Let w be the affected owner's width,
-as defined above (2 for an enum), and r be the call's number of borrowed arguments:
+as defined above (2 for a scalar/nullary enum), and r be the call's number of borrowed arguments:
 
 | Event | Fuel |
 | --- | ---: |

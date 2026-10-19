@@ -205,7 +205,9 @@ fn function(
                         visitor.span(payload.span)?;
                     }
                 }
-                OwnedInstruction::ConsumeVariant { .. } => {
+                OwnedInstruction::ConsumeVariant { .. }
+                | OwnedInstruction::ConstructOwnedEnum { .. }
+                | OwnedInstruction::ConsumeOwnedVariant { .. } => {
                     if !allow_enums {
                         return Err(bad());
                     }
@@ -604,9 +606,15 @@ fn check_impl(
             if variant.id != id
                 || variant.span != expected.diagnostic_span()
                 || variant.payload
-                    != expected
-                        .payload()
-                        .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty)))
+                    != if expected.has_owned_payload() {
+                        expected
+                            .value_payload(typed.ok_or_else(bad)?.work())?
+                            .map(ParameterTy::Value)
+                    } else {
+                        expected
+                            .payload()
+                            .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty)))
+                    }
             {
                 return Err(bad());
             }
