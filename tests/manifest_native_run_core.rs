@@ -88,13 +88,51 @@ fn native_run_interpreter_default_and_explicit_engine_preserve_text_and_json() {
                 .contains("\"result\":{\"type\":\"i32\",\"value\":7}"));
         }
     }
-    for mode in ["result", "process"] {
-        let mode = format!("--entry-mode={mode}");
-        let implicit = p.run(&[&mode]);
-        let explicit = p.run(&["--engine=interpreter", &mode]);
-        assert_eq!(implicit.status.code(), Some(1));
+    for format in ["--message-format=text", "--message-format=json"] {
+        let implicit = p.run(&["--entry-mode=result", format]);
+        let explicit = p.run(&["--engine=interpreter", "--entry-mode=result", format]);
+        assert_eq!(implicit.status.code(), Some(0), "{implicit:?}");
+        assert_eq!(explicit.status.code(), Some(0), "{explicit:?}");
         assert_eq!(implicit.stdout, explicit.stdout);
-        assert_eq!(implicit.stderr, explicit.stderr);
+        assert!(implicit.stderr.is_empty(), "{implicit:?}");
+        assert!(explicit.stderr.is_empty(), "{explicit:?}");
+        let expected: &[u8] = if format.ends_with("text") {
+            b"7\n"
+        } else {
+            b"{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":true,\"errors\":0,\"result\":{\"type\":\"i32\",\"value\":7}}\n"
+        };
+        assert_eq!(implicit.stdout, expected);
+    }
+    // Process execution is qualified only on Linux x86_64; it returns the
+    // program's status and does not print its Result-mode value.
+    for engine in [None, Some("--engine=interpreter")] {
+        let mut args = vec!["--entry-mode=process"];
+        args.extend(engine);
+        let output = p.run(&args);
+        assert!(output.stdout.is_empty(), "{output:?}");
+        if cfg!(all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            target_pointer_width = "64"
+        )) {
+            assert_eq!(output.status.code(), Some(7), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        } else if cfg!(all(
+            target_os = "macos",
+            target_pointer_width = "64",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
+            // Diagnostic setup is available, but execution remains unqualified.
+            assert_eq!(output.status.code(), Some(1), "{output:?}");
+            assert_eq!(
+                output.stderr,
+                b"error[E0608] (oir-run): process execution requires Linux x86_64\n"
+            );
+        } else {
+            // Unsupported terminal setup fails silently before manifest/source I/O.
+            assert_eq!(output.status.code(), Some(74), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
     }
     assert!(!p.0.join("project/.oxid").exists());
 }

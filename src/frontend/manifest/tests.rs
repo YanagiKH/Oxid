@@ -1107,7 +1107,7 @@ fn manifest_run_selection_wording_and_summary_operation() {
                 "--output=out",
                 "--message-format=json",
             ],
-            "manifest run does not support entry-mode, backend, target, output or experimental selectors",
+            "manifest run does not support backend, target, output or experimental selectors",
             true,
             Operation::Run,
         ),
@@ -1146,7 +1146,7 @@ fn manifest_run_selection_wording_and_summary_operation() {
         assert_eq!(actual_json, json, "{words:?}");
         assert_eq!(actual_operation, operation, "{words:?}");
     }
-    for command in ["install", "package", "fmt", "new"] {
+    for command in ["install", "fmt", "new"] {
         let (message, _, operation) = refusal_with_operation(&[command, "--manifest-path=p"]);
         assert_eq!(
             message,
@@ -1154,9 +1154,51 @@ fn manifest_run_selection_wording_and_summary_operation() {
         );
         assert_eq!(operation, Operation::Check);
     }
-    for flag in [
-        "--entry-mode=result",
+    // Entry policies and package/build/test are selected without source I/O.
+    assert!(matches!(
+        select(&args(&["run", "--manifest-path=p", "--entry-mode=result"])),
+        Some(Route::ManifestRun { .. })
+    ));
+    assert!(matches!(
+        select(&args(&["run", "--manifest-path=p", "--entry-mode=process"])),
+        Some(Route::ManifestProcessRun { .. })
+    ));
+    match select(&args(&[
+        "run",
+        "--manifest-path=p",
         "--entry-mode=process",
+        "--message-format=json",
+    ])) {
+        Some(Route::ProcessError { message }) => assert_eq!(
+            message,
+            "process-mode run does not support --message-format=json"
+        ),
+        route => panic!("expected process refusal, got {route:?}"),
+    }
+    assert!(matches!(
+        select(&args(&["build", "--manifest-path=p"])),
+        Some(Route::ManifestBuild { .. })
+    ));
+    assert!(matches!(
+        select(&args(&["test", "--manifest-path=p"])),
+        Some(Route::ManifestTest { .. })
+    ));
+    assert!(matches!(
+        select(&args(&["package", "--manifest-path=p", "--output=app.tar"])),
+        Some(Route::ManifestPackage { output, .. }) if output == "app.tar"
+    ));
+    match select(&args(&["package", "--manifest-path=p"])) {
+        Some(Route::ManifestPackageError { failure, json, .. }) => {
+            assert_eq!(failure.classification(), ("E0001", "cli"));
+            assert_eq!(
+                failure.message(),
+                "manifest package requires --output ARCHIVE"
+            );
+            assert!(!json);
+        }
+        route => panic!("expected package refusal, got {route:?}"),
+    }
+    for flag in [
         "--backend=llvm",
         "--target=x",
         "--output=x",
@@ -1165,7 +1207,11 @@ fn manifest_run_selection_wording_and_summary_operation() {
         "--experimental-lexical-provider=x",
     ] {
         let (message, _, operation) = refusal_with_operation(&["run", "--manifest-path=p", flag]);
-        assert_eq!(message, "manifest run does not support entry-mode, backend, target, output or experimental selectors", "{flag}");
+        assert_eq!(
+            message,
+            "manifest run does not support backend, target, output or experimental selectors",
+            "{flag}"
+        );
         assert_eq!(operation, Operation::Run);
     }
     for flag in ["--profile=x", "--release", "--offline", "--help"] {

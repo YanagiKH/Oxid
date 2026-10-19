@@ -151,17 +151,16 @@ fn typed_compile_without_backend_and_ast_never_create_artifacts_at_any_option_pl
 }
 
 #[test]
-fn typed_project_and_other_operations_reject_before_any_effects() {
+fn typed_new_scaffolds_while_unsupported_operations_reject_without_effects() {
     let commands: &[&[&str]] = &[
         &["build"],
         &["install"],
         &["test"],
         &["watch", "main.ox"],
-        &["new", "created-project"],
         &["init", "created-project"],
         &["clean"],
         &["doc"],
-        &["doctor"],
+        &["doctor", "unexpected"],
         &["diagnose"],
         &["lock"],
         &["fetch"],
@@ -192,8 +191,42 @@ fn typed_project_and_other_operations_reject_before_any_effects() {
             let project = Project::new(LEGACY_SOURCE);
             let mut args = command.to_vec();
             args.splice(position..position, ["--edition", "typed-preview"]);
-            project.rejected_without_effects(&args, "typed-preview");
+            project.rejected_without_effects(
+                &args,
+                if command[0] == "doctor" {
+                    "typed-preview doctor accepts no operands or local options and supports only text output"
+                } else {
+                    "typed-preview"
+                },
+            );
         }
+    }
+    // `new` is a supported typed route; `init` above remains unavailable.
+    for position in 0..=2 {
+        let project = Project::new(LEGACY_SOURCE);
+        let mut expected = project.snapshot();
+        let mut args = vec!["new", "created-project"];
+        args.splice(position..position, ["--edition", "typed-preview"]);
+        let output = project.command(&args);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            output.stdout,
+            b"created typed project: \"created-project\"\n"
+        );
+        assert!(output.stderr.is_empty(), "{output:?}");
+        for directory in ["created-project", "created-project/src"] {
+            expected.insert(PathBuf::from(directory), None);
+        }
+        for (path, contents) in [
+            ("oxid.toml", "[project]\nname = \"created-project\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n"),
+            ("src/main.ox", "mod answer;\nfn main() -> i32 {\n    return crate::answer::value();\n}\n"),
+            ("src/answer.ox", "pub fn value() -> i32 {\n    return 7;\n}\n"),
+            (".gitignore", ".oxid/\n"),
+            ("README.md", "# Typed Oxid project\n\nThis project uses the typed-preview edition.\n\nFrom this directory:\n\n- Check: `oxid check --manifest-path oxid.toml`\n- Interpret: `oxid run --manifest-path oxid.toml`\n- Build: `oxid build --manifest-path oxid.toml`\n\nThe example returns 7. Result-mode execution prints the value and exits successfully.\nEdit `src/answer.ox` to change it. Build currently requires Linux x86_64 and LLVM 19.1.7.\nThe generated project has no external dependencies. Typed-preview is not a stable language release.\n"),
+        ] {
+            expected.insert(Path::new("created-project").join(path), Some(contents.as_bytes().to_vec()));
+        }
+        assert_eq!(project.snapshot(), expected, "{args:?}");
     }
 }
 

@@ -116,17 +116,40 @@ fn byte_storage_native_public_unsupported_target_has_no_artifact_effects() {
     case.unchanged();
 }
 
+fn admitted_byte_array_compile(case: &Case, output: &str) {
+    let text = diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
+    assert_eq!(text.lines().count(), 2, "{text}");
+    assert_eq!(text.lines().last(), Some("{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null}"));
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if output == "existing" {
+            assert_eq!(text.lines().next(), Some("{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0701\",\"stage\":\"native-toolchain\",\"message\":\"native output already exists; choose a new path (existing files and symlinks are never overwritten)\",\"primary\":null,\"secondary\":[],\"notes\":[]}"));
+        } else {
+            assert!(text.contains("cannot launch "), "{text}");
+            assert!(text.contains("missing-tools/clang"), "{text}");
+        }
+    } else {
+        assert!(
+            text.contains("native preview requires a Linux x86_64 build host"),
+            "{text}"
+        );
+    }
+}
+
 #[test]
 fn byte_storage_public_excluded_spellings_fail_before_native_tools() {
-    // Exact baseline b5455ad diagnostics were recorded before these successor
-    // cases ran. Array element acceptance does not widen any of these grammars.
+    // Enum array payloads are admitted, while numeric suffixes and array
+    // repetition below remain exact parser refusals.
+    let admitted = Case::new("enum E{V([u8;0])}fn main()->i32{return 0;}");
+    let checked = source_command(&admitted, "check", true);
+    assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+    assert!(checked.stderr.is_empty(), "{checked:?}");
+    assert_eq!(checked.stdout, b"{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":1}\n");
+    admitted.unchanged();
+    for output in ["existing", "fresh"] {
+        admitted_byte_array_compile(&admitted, output);
+        admitted.unchanged();
+    }
     for (source, code, message, selected) in [
-        (
-            "enum E{V([u8;0])}fn main()->i32{return 0;}",
-            "E0100",
-            "only bool, i32 and () enum payloads are supported",
-            "[",
-        ),
         (
             "fn main()->i32{let a=[1u8];return 0;}",
             "E0101",
@@ -315,32 +338,44 @@ fn byte_storage_public_record_reference_projection_reaches_native_toolchain() {
 }
 
 #[test]
-fn byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser() {
-    // enum_payload_type is byte-identical to b5455ad: '[' is refused before
-    // reading any leaf/length. DFS retains root0, outer1, inner2; no name is used.
+fn byte_storage_public_nested_enum_arrays_admit_and_invalid_spelling_keeps_source_identity() {
+    // Valid payloads now pass admission. The invalid numeric spelling keeps
+    // the exact DFS source identity control (root 0, outer 1, inner 2).
     let root = "mod outer;fn main()->i32{return 0;}";
     let outer = "mod inner;";
-    for n in [0, 1, 1024] {
-        let inner = format!("enum E{{V([u8;{n}])}}");
+    for length in ["0", "1", "1024", "1u8"] {
+        let inner = format!("enum E{{V([u8;{length}])}}");
         let case = Case::new(root);
         fs::write(case.0.join("outer.ox"), outer).unwrap();
         fs::create_dir(case.0.join("outer")).unwrap();
         fs::write(case.0.join("outer/inner.ox"), &inner).unwrap();
-        let start = inner.find('[').unwrap();
-        let end = start + 1;
-        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0100\",\"stage\":\"parse\",\"message\":\"only bool, i32 and () enum payloads are supported\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
-        // Portable source parsing checks the exact inner E0100 on every host;
-        // public discovery reaches it only on its qualified Linux host.
-        let (code, stage, expected) = if cfg!(target_os = "linux") {
-            ("E0100", "parse", expected)
-        } else {
-            ("E0005", "source", unqualified_module_diagnostic("outer"))
-        };
+        let invalid = length == "1u8";
+        let start = inner.find(length).unwrap();
+        let end = start + length.len();
+        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0101\",\"stage\":\"parse\",\"message\":\"unsupported typed-preview construct `1u8`\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+        if cfg!(target_os = "linux") && !invalid {
+            let checked = source_command(&case, "check", true);
+            assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+            assert!(checked.stderr.is_empty(), "{checked:?}");
+            assert_eq!(checked.stdout, b"{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":1}\n");
+        }
         for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), code, stage);
-            assert_eq!(text.lines().count(), 2);
-            assert_eq!(text.lines().next(), Some(expected.as_str()));
-            assert!(!text.contains("E0701"));
+            if !cfg!(target_os = "linux") {
+                let text = diagnostic(case.compile(output, &[]), "E0005", "source");
+                assert_eq!(text.lines().count(), 2);
+                assert_eq!(
+                    text.lines().next(),
+                    Some(unqualified_module_diagnostic("outer").as_str())
+                );
+                assert!(!text.contains("E0701"));
+            } else if invalid {
+                let text = diagnostic(case.compile(output, &[]), "E0101", "parse");
+                assert_eq!(text.lines().count(), 2);
+                assert_eq!(text.lines().next(), Some(expected.as_str()));
+                assert!(!text.contains("E0701"));
+            } else {
+                admitted_byte_array_compile(&case, output);
+            }
             assert_eq!(fs::read(case.0.join("existing")).unwrap(), SENTINEL);
             for (path, expected) in [
                 ("main.ox", root),

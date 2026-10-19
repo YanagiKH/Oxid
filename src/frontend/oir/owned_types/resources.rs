@@ -323,17 +323,35 @@ mod tests {
         assert!(invalid.next().is_none());
     }
     #[test]
-    fn bytebuf_containment_does_not_admit_record_enum_or_byte_array_fields() {
+    fn bytebuf_containment_admits_byte_array_fields_but_rejects_enum_fields() {
         let (sources, span) = source();
-        for ty in [
-            AggregateTy::Enum(EnumId(0)),
-            AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::U8, 1).unwrap()),
-        ] {
-            let mut raw = record(0, &[hir::Ty::Unit], span);
-            raw.fields[0].ty = ParameterTy::Value(owned(ty));
-            let enums = [enumeration(0, &[None], span)];
-            assert!(Declarations::check_combined(&[raw], &enums, &sources).is_err());
-        }
+        let mut raw = record(0, &[hir::Ty::Unit], span);
+        raw.fields[0].ty = ParameterTy::Value(owned(AggregateTy::Enum(EnumId(0))));
+        let field = raw.fields[0].id;
+        let enums = [enumeration(0, &[None], span)];
+        assert!(matches!(
+            Declarations::check_combined(&[raw], &enums, &sources),
+            Err(DeclarationError::NonScalarField(id)) if id == field
+        ));
+
+        // Byte-array fields are ordinary values, not ByteBuf resources.
+        let array = AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::U8, 1).unwrap());
+        let mut raw = record(0, &[hir::Ty::Unit], span);
+        raw.fields[0].ty = ParameterTy::Value(owned(array));
+        let declarations = Declarations::check_combined(&[raw], &[], &sources).unwrap();
+        assert_eq!(
+            declarations.fields(RecordId(0)).unwrap()[0].value_ty(),
+            owned(array)
+        );
+        assert!(!declarations.has_resource_declarations());
+        assert_eq!(
+            declarations
+                .leaves(AggregateTy::Record(RecordId(0)))
+                .unwrap()
+                .map(|leaf| (leaf.offset, leaf.ty))
+                .collect::<Vec<_>>(),
+            [(0, hir::Ty::U8)]
+        );
         assert!(
             BorrowedTy::ScalarSlice(hir::Ty::U8).accepts(BorrowedTy::Exact(AggregateTy::ByteBuf))
         );
