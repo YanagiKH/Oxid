@@ -56,6 +56,21 @@ int32_t __oxid_bytebuf_operation(int32_t operation, void *buffer, int32_t size,
         if (status) return status;
         *(uint64_t *)result = 0;
         return 0;
+    case 10: { /* take: canonical callee has a fresh owned result extent */
+        if (!value) return OXID_BUFFER_DESCRIPTOR;
+        uintptr_t input = (uintptr_t)value, output = (uintptr_t)result;
+        /* Subtract rather than add extents, avoiding address wraparound. */
+        if (input <= output ? output - input < sizeof(*value)
+                            : input - output < sizeof(*value))
+            return OXID_BUFFER_DESCRIPTOR;
+        status = oxid_bytebuf_validate(&execution_heap, value);
+        if (status) return status;
+        oxid_bytebuf moved = *value;
+        /* No fallible work or observer between emptying and result commit. */
+        *value = (oxid_bytebuf){0, 0, 0};
+        *(oxid_bytebuf *)result = moved;
+        return 0;
+    }
     default:
         return OXID_BUFFER_DESCRIPTOR;
     }

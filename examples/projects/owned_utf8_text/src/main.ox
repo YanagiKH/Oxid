@@ -18,6 +18,9 @@ use text::ScalarAppendStatus;
 use text::append_scalar;
 use text::equals_utf8;
 use text::append_to_bytes;
+use text::into_bytes;
+use alloc::bytes::capacity;
+use alloc::bytes::try_reserve;
 
 fn byte(value: i32) -> u8 {
     return value.to_u8_checked();
@@ -344,7 +347,39 @@ fn check_prefixed_export(document: &Text, expected: &[u8]) -> i32 {
     return 0;
 }
 
+fn check_consuming_export() -> i32 {
+    let empty = into_bytes(new_text());
+    if len(&empty) != 0 || capacity(&empty) != 0 { return -71; }
+    let expected = [byte(65), byte(0), byte(194), byte(162), byte(240), byte(159), byte(152), byte(128)];
+    let mut bytes = new();
+    if !grew(try_extend(&mut bytes, &expected)) { return -72; }
+    let original_capacity = capacity(&bytes);
+    let converted = from_bytes(bytes);
+    match converted {
+        FromBytes::Ok(text) => {
+            let exported = into_bytes(text);
+            if !equal_bytes(&exported, &expected) { return -73; }
+            if capacity(&exported) != original_capacity { return -74; }
+        },
+        FromBytes::Invalid(rejected) => { return -75; },
+    }
+    let mut reserved = new();
+    if !grew(try_reserve(&mut reserved, 17)) { return -76; }
+    let reserved_capacity = capacity(&reserved);
+    let converted_empty = from_bytes(reserved);
+    match converted_empty {
+        FromBytes::Ok(text) => {
+            let exported = into_bytes(text);
+            if len(&exported) != 0 || capacity(&exported) != reserved_capacity { return -77; }
+        },
+        FromBytes::Invalid(rejected) => { return -78; },
+    }
+    return 0;
+}
+
 fn main() -> i32 {
+    let consuming_export_result = check_consuming_export();
+    if consuming_export_result != 0 { return consuming_export_result; }
     let empty_result = check_empty();
     if empty_result != 0 { return empty_result; }
     let edges_result = check_valid_edges();

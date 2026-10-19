@@ -10,7 +10,7 @@ use std::io::write_some;
 use text::Text;
 use text::FromBytes;
 use text::from_bytes;
-use text::append_to_bytes;
+use text::into_bytes;
 
 enum Loaded {
     Ok(ByteBuf), CapacityOverflow, AllocationFailed, MemoryLimit, IoError(i32)
@@ -67,15 +67,8 @@ fn write_all(bytes: &[u8]) -> WrittenAll {
     return WrittenAll::Ok;
 }
 
-fn emit(document: &Text) -> i32 {
-    let mut output = new();
-    let appended = append_to_bytes(&*document, &mut output);
-    match appended {
-        GrowStatus::Ok => {},
-        GrowStatus::CapacityOverflow => { return 70; },
-        GrowStatus::AllocationFailed => { return 71; },
-        GrowStatus::MemoryLimit => { return 71; },
-    }
+fn emit(document: Text) -> i32 {
+    let output = into_bytes(document);
     let written = write_all(&output);
     match written {
         WrittenAll::Ok => { return 0; },
@@ -87,7 +80,7 @@ fn emit(document: &Text) -> i32 {
 fn convert(input: ByteBuf) -> i32 {
     let converted = from_bytes(input);
     match converted {
-        FromBytes::Ok(document) => { return emit(&document); },
+        FromBytes::Ok(document) => { return emit(document); },
         FromBytes::Invalid(rejected) => { return 65; },
     }
 }

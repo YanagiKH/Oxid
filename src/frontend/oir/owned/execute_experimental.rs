@@ -325,6 +325,35 @@ impl Machine<'_, '_> {
             return Err(bad("experimental function identity", span));
         }
         let result = self.prepare_experimental_result(frame, destination, span)?;
+        if operation == Function::Take {
+            let (source, value) = self.buffer_parameter(frame, Access::Write, span)?;
+            let ResultPlace::Owner {
+                owner,
+                bytes,
+                generation,
+            } = result
+            else {
+                return Err(bad("take result owner", span));
+            };
+            if self.function(self.frames[frame].function).result
+                != ValueTy::Owned(AggregateTy::ByteBuf)
+                || (source.frame == frame
+                    && source.bytes.start < bytes.end
+                    && bytes.start < source.bytes.end)
+            {
+                return Err(bad("take result extent", span));
+            }
+            // All checks precede the fixed-descriptor commit. Keep the source
+            // owner Available at its existing generation so ancestor loans
+            // still denote the same (now empty) place. No heap or fuel work.
+            let encoding = value.encoding();
+            self.frames[source.frame].payload[source.bytes].fill(0);
+            let target = &mut self.frames[frame];
+            target.payload[bytes].copy_from_slice(&encoding);
+            target.owners[owner.0].generation = generation;
+            target.owners[owner.0].state = AVAILABLE;
+            return Ok(());
+        }
         let value = match operation {
             Function::New => OperationValue::EmptyBuffer,
             Function::ReadSome | Function::WriteSome => {

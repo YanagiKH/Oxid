@@ -458,3 +458,55 @@ fn main()->i32{let mut b=new();return hold(&b,grow(&mut b));}",
         assert!(errors.iter().all(|error| error.code != "E0500"), "{text}: {errors:?}");
     }
 }
+
+#[test]
+fn bytebuf_source_take_preserves_capacity_and_reborrow_place() {
+    accepted(
+        "use alloc::bytes::take;
+fn drain(buffer:&mut ByteBuf)->ByteBuf{return take(&mut *buffer);}
+fn nested(buffer:&mut ByteBuf)->ByteBuf{
+let result=drain(&mut *buffer);
+if len(&*buffer)!=0{return new();}
+try_push(&mut *buffer,byte(9));return result;}
+fn first(bytes:&[u8])->i32{let value=bytes[0];return value.to_i32();}
+fn main()->i32{let mut buffer=new();try_push(&mut buffer,byte(65));
+let old=capacity(&buffer);let mut result=nested(&mut buffer);
+if capacity(&result)!=old||len(&result)!=1||first(&result)!=65{return 1;}
+if len(&buffer)!=1||first(&buffer)!=9{return -2;}
+try_push(&mut result,byte(0));return len(&result);}",
+        2,
+    );
+}
+
+#[test]
+fn bytebuf_source_take_empty_reserved_and_owned_field_return() {
+    accepted(
+        "use alloc::bytes::take;
+struct Text{bytes:ByteBuf}
+fn export(text:Text)->ByteBuf{let mut owned=text;return take(&mut owned.bytes);}
+fn main()->i32{let mut empty=new();let taken=take(&mut empty);
+if len(&taken)!=0||capacity(&taken)!=0{return 1;}
+let mut reserved=new();try_reserve(&mut reserved,17);let old=capacity(&reserved);
+if old<17{return 3;}
+let result=export(Text{bytes:reserved});
+if len(&result)!=0||capacity(&result)!=old{return 2;}
+let mut ignored=new();try_push(&mut ignored,byte(7));take(&mut ignored);
+return len(&ignored);}",
+        0,
+    );
+}
+
+#[test]
+fn bytebuf_source_take_rejects_wrong_inputs_and_live_descendants() {
+    for body in [
+        "fn main()->i32{let buffer=new();take(&buffer);return 0;}",
+        "fn main()->i32{let mut bytes:[u8;0]=[];take(&mut bytes);return 0;}",
+        "fn hold(bytes:&[u8],owner:ByteBuf)->i32{return bytes.len();} fn main()->i32{let mut buffer=new();return hold(&buffer[0..0],take(&mut buffer));}",
+        "struct Text{bytes:ByteBuf} fn export(text:Text)->ByteBuf{let mut owned=text;return take(&mut owned.bytes);} fn main()->i32{let text=Text{bytes:new()};let buffer=export(text);return len(&text.bytes);}",
+    ] {
+        let project = project(&format!("{IMPORTS}use alloc::bytes::take;{body}"));
+        let errors = check_enum_source(SourceOwner::project(&project)).unwrap_err();
+        assert!(!errors.is_empty());
+        assert!(errors.iter().all(|error| error.code != "E0500"), "{body}: {errors:?}");
+    }
+}

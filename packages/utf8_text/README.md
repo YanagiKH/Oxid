@@ -3,8 +3,9 @@
 A pure ordinary-source `typed-preview` path dependency for the Oxid toolchain
 with RFC 0032 ByteBuf and path-dependency sessions. The implementation is here;
 `examples/projects/owned_utf8_text` is its partitioned regression consumer.
-No compiler/runtime additions, I/O imports, registry publication, stable stdlib
-status, or canonical `String` API are implied.
+Consuming export uses the experimental `alloc::bytes::take` primitive. No I/O
+imports, registry publication, stable stdlib status, or canonical `String` API
+are implied.
 
 ## Import
 
@@ -44,6 +45,9 @@ Callers must match `GrowStatus` to handle a possibly refused nonempty export.
 - `equals_utf8(&Text, &[u8]) -> bool`: exact byte equality, without allocation.
 - `truncate(&mut Text, i32) -> bool`: reject negative, past-end, or inside-scalar
   lengths unchanged; zero and current byte length are valid boundaries.
+- `into_bytes(Text) -> ByteBuf`: consume Text and transfer its descriptor,
+  preserving initialized bytes and capacity without payload copying or a new
+  ByteBuf allocation. The consumed Text cannot be used afterward.
 - `append_to_bytes(&Text, &mut ByteBuf) -> GrowStatus`: append exact initialized
   bytes through one checked `try_extend`; preserve any destination prefix.
   Source Text remains unchanged. Empty Text is a no-op. Recoverable refusal
@@ -57,26 +61,39 @@ start of the first ill-formed scalar sequence. Lengths/offsets are i32. Invalid
 append input/scalars are refused before mutation; returned growth failures
 preserve Text. Execution-budget failures remain terminal, not recoverable statuses.
 
-Serialization copies O(n) bytes and can allocate additional capacity. Peak live
+`append_to_bytes` copies O(n) bytes and can allocate additional capacity. Peak live
 memory includes Text storage, existing destination storage, and old-plus-new
 destination allocations during growth, plus allocator-policy overhead. Export
 can fail near the memory limit even if Text alone fits. Two retained owners do
 not imply peak memory is exactly twice the text length. Ordinary whole-root
-loan checks still apply. No implicit clone or allocation-free export is promised.
+loan checks still apply. `into_bytes` avoids this payload copy and allocation;
+ordinary call/control work and registry validation still apply, so the whole
+function invocation is not promised to be allocation-free or constant-time.
 
 Validation, equality and scalar counting are linear source loops; scalar count
-is not grapheme count. There is no escaping byte borrow, consuming `into_bytes`,
+is not grapheme count. There is no escaping byte borrow or general
 field extraction, lossy conversion, normalization, streaming decoder, or text
 indexing. Keep I/O in a separate consumer package: even unused loaded I/O
 helpers affect Result/Test admission.
 
 ## Validation scope
 
-The migrated consumer preserves the original 57 assertions and adds exact
-export checks for empty/prefixed destinations, source preservation and empty
-Text. The migrated example passed CHECK (44 functions), interpreter execution,
-and manifest BUILD followed by standalone native execution on Linux x86_64
-with LLVM 19.1.7. Its focused regression target passed two ordinary tests and
-one native test; package consumers also passed five ordinary and five native
-TEST cases. These are focused results, not a full repository pass or completed
-R2. Recoverable allocation-failure injection was not performed in this slice.
+On Linux x86_64 with LLVM 19.1.7, the `take`/`into_bytes` addition passed
+three focused Take source/reference and native-IR regression tests and three
+catalog/signature/identity tests. The Text regression target passed two
+ordinary tests and its standalone-native test (three passed with ignored
+native coverage enabled). These cover the updated consuming-export consumer,
+including ownership rejection checks. Scoped Clippy with warnings denied and
+the scoped rustfmt recheck passed; the initial rustfmt check required mechanical
+formatting before these focused regression tests.
+
+The consuming-export `oxutf8` app then passed CHECK (29 functions), and its
+unchanged pure contracts passed CHECK (34 functions). The ordinary package
+acceptance wrapper and the wrapper with ignored native coverage enabled both
+passed. A separate direct native acceptance-script run also passed the fixed
+fourteen-input corpus and retained its evidence; see the consumer README for
+the scope of those runs.
+
+These are focused results, not a full repository CI pass or completed R2.
+Recoverable allocation-failure injection, stale-descriptor injection, and
+failure-transport and other outstanding qualifications remain unverified.

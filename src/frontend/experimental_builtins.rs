@@ -19,9 +19,10 @@ pub(in crate::frontend) enum Item {
     Truncate,
     ReadSome,
     WriteSome,
+    Take,
 }
 impl Item {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -36,6 +37,7 @@ impl Item {
         Self::Truncate,
         Self::ReadSome,
         Self::WriteSome,
+        Self::Take,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -53,6 +55,7 @@ impl Item {
             Self::Truncate => "truncate",
             Self::ReadSome => "read_some",
             Self::WriteSome => "write_some",
+            Self::Take => "take",
         }
     }
     pub fn family(self) -> usize {
@@ -81,6 +84,7 @@ impl Item {
             Self::Truncate => Function::Truncate,
             Self::ReadSome => Function::ReadSome,
             Self::WriteSome => Function::WriteSome,
+            Self::Take => Function::Take,
             _ => return None,
         })
     }
@@ -136,9 +140,10 @@ pub(in crate::frontend) enum Function {
     Truncate,
     ReadSome,
     WriteSome,
+    Take,
 }
 impl Function {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -149,6 +154,7 @@ impl Function {
         Self::Truncate,
         Self::ReadSome,
         Self::WriteSome,
+        Self::Take,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -162,6 +168,7 @@ impl Function {
             Self::Truncate => Item::Truncate,
             Self::ReadSome => Item::ReadSome,
             Self::WriteSome => Item::WriteSome,
+            Self::Take => Item::Take,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -191,6 +198,7 @@ impl Function {
         let scalar = |ty| ParameterTy::Value(ValueTy::Scalar(ty));
         let (parameters, count) = match self {
             New => ([unit; 3], 0),
+            Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
             Reserve | Truncate => ([exclusive, scalar(Ty::I32), unit], 2),
             Push => ([exclusive, scalar(Ty::U8), unit], 2),
@@ -200,7 +208,7 @@ impl Function {
             WriteSome => ([bytes(BorrowKind::Shared), unit, unit], 1),
         };
         let result = match self {
-            New => ValueTy::Owned(AggregateTy::ByteBuf),
+            New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
             Len | Capacity => ValueTy::Scalar(Ty::I32),
             Truncate => ValueTy::Scalar(Ty::Unit),
             _ => ValueTy::Owned(AggregateTy::Enum(enumeration(
@@ -288,9 +296,9 @@ impl Inventory {
 struct CompilerCarriers {
     signatures: [Signature; 4],
     signature_results: [Result<Signature, Box<crate::frontend::diagnostic::Diagnostic>>; 4],
-    item_iterations: [std::array::IntoIter<Item, 14>; 4],
+    item_iterations: [std::array::IntoIter<Item, 15>; 4],
     enumeration_iterations: [std::array::IntoIter<Enumeration, 3>; 4],
-    function_iterations: [std::array::IntoIter<Function, 10>; 4],
+    function_iterations: [std::array::IntoIter<Function, 11>; 4],
     path_iterations: [std::iter::Zip<
         std::array::IntoIter<&'static str, 3>,
         std::slice::Iter<'static, crate::frontend::source::Span>,
@@ -330,10 +338,21 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (3, 10));
+        assert_eq!((all.enums(), all.functions()), (3, 11));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }
         assert_eq!(std::mem::size_of::<Inventory>(), 2);
+        assert_eq!(Item::WriteSome as u8, 13);
+        assert_eq!(Item::Take as u8, 14);
+        let take = Function::Take.signature(|_| panic!("take has no status enum"));
+        assert_eq!(take.result, ValueTy::Owned(AggregateTy::ByteBuf));
+        assert_eq!(
+            take.parameters(),
+            &[ParameterTy::Reference {
+                referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
+                kind: BorrowKind::Exclusive,
+            }]
+        );
     }
 }

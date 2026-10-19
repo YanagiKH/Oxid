@@ -1,3 +1,4 @@
+use alloc::bytes::take as take_bytes;
 use alloc::bytes::ByteBuf;
 use alloc::bytes::GrowStatus;
 use alloc::bytes::new as new_bytes;
@@ -262,4 +263,10 @@ pub fn truncate(text: &mut Text, length: i32) -> bool {
 // Append initialized bytes without exposing or moving the private owner.
 pub fn append_to_bytes(text: &Text, output: &mut ByteBuf) -> GrowStatus {
     return try_extend(&mut *output, &*text.bytes);
+}
+
+// Consume Text and transfer its existing allocation without copying bytes.
+pub fn into_bytes(text: Text) -> ByteBuf {
+    let mut owned = text;
+    return take_bytes(&mut owned.bytes);
 }
