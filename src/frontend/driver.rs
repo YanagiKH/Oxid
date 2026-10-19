@@ -14,6 +14,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::TypedDoctor => Some(super::toolchain_doctor::run()),
         Route::TypedNew { path } => Some(scaffold_project(&path)),
         Route::ManifestBuild {
             request,
@@ -40,6 +41,10 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         } => Some(manifest_error(failure, json, operation)),
         Route::ManifestCheck { request } => Some(manifest_file(request, Operation::Check)),
         Route::ManifestRun { request } => Some(manifest_file(request, Operation::Run)),
+        Route::ManifestTest { request, native } => Some(super::project_test::run(request, native)),
+        Route::ManifestTestError { failure, json } => {
+            Some(super::project_test::cli_error(failure, json))
+        }
         Route::ManifestNativeRun {
             request,
             entry_policy,

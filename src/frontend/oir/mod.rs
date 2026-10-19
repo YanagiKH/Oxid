@@ -6,9 +6,11 @@ mod owned;
 pub(super) mod owned_types;
 pub(super) mod project;
 mod source;
+mod test_entry;
 mod verify;
 
 pub(in crate::frontend) use owned::process;
+pub(super) use source::{check_project_tests, CheckedProjectTests};
 pub(super) use source::{
     check_source, import_checked, import_produced, CheckedSourceProgram, Imported, ProcessFailure,
     IMPORT_BYTES,

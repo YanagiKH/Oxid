@@ -277,6 +277,23 @@ pub(super) fn run_array_observed(
 enum NativeEntryPolicy {
     Result,
     Process,
+    Test,
+}
+
+pub(super) fn native_test_module(
+    witness: &VerifiedOwnedProgram,
+    entry: hir::DefId,
+    sources: &SourceMap,
+) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted(
+        witness,
+        Some(entry),
+        sources,
+        plan::MAX_FUEL,
+        Limits::DEFAULT,
+        NativeEntryPolicy::Test,
+        &mut Accounting::default(),
+    )
 }
 
 pub(super) fn native_process_module_with_fuel(
@@ -357,8 +374,14 @@ fn native_module_policy_accounted(
 ) -> Result<String, Box<Diagnostic>> {
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
-    if policy == NativeEntryPolicy::Result && witness.builtin_output_function().is_some() {
+    if policy != NativeEntryPolicy::Process && witness.builtin_output_function().is_some() {
         return Err(reject("write_stdout requires process entry", None));
+    }
+    if policy == NativeEntryPolicy::Test && witness.builtin_function().is_some() {
+        return Err(reject(
+            "read_stdin function imports are not supported by typed tests",
+            None,
+        ));
     }
     // Entry denial is deliberately before plan construction, diagnostics,
     // output text or tools. An invalid identity is an internal error.
@@ -1396,7 +1419,7 @@ impl Diagnostics {
 fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind, span: Span) {
     let (id, len) = diagnostics.get(kind, span);
     let helper = match out.policy {
-        NativeEntryPolicy::Result => "__oxid_overflow",
+        NativeEntryPolicy::Result | NativeEntryPolicy::Test => "__oxid_overflow",
         NativeEntryPolicy::Process => "__oxid_process_failure",
     };
     writeln!(
@@ -2094,6 +2117,11 @@ fn emit(
         out.write_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_complete, label %process_status_error\nprocess_status_error:\n").unwrap();
         emit_failure(out, diagnostics, FailureKind::ProcessStatus, root.span);
         out.write_str("process_complete:\n  ret i32 %value\n}\n")
+            .unwrap();
+        return;
+    }
+    if out.policy == NativeEntryPolicy::Test {
+        out.write_str(super::super::test_entry::return_ir(result))
             .unwrap();
         return;
     }

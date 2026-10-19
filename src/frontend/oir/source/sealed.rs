@@ -1,4 +1,4 @@
-//! The only production owner of the source/body/entry association. No child modules.
+//! The only production owner of source/body/application and test entry associations.
 use super::super::{
     owned,
     project::{CheckedProjectTypes, ProjectRoute},
@@ -91,7 +91,7 @@ pub(in crate::frontend::oir) fn check_project_candidate(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<CheckedProjectTypes, Vec<Diagnostic>> {
-    match check_project(project, limits, work, allocator, CheckDepth::Types)? {
+    match check_project(project, limits, work, allocator, CheckDepth::Types, None)? {
         Checked::Types(checked) => Ok(checked),
         Checked::Executable(_) => Err(vec![*association::bad()]),
     }
@@ -102,8 +102,34 @@ pub(in crate::frontend::oir) fn check_project_executable_candidate<'s>(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
-    match check_project(project, limits, work, allocator, CheckDepth::Executable)? {
+    match check_project(
+        project,
+        limits,
+        work,
+        allocator,
+        CheckDepth::Executable,
+        None,
+    )? {
         Checked::Executable(checked) => Ok(checked),
+        Checked::Types(_) => Err(vec![*association::bad()]),
+    }
+}
+pub(in crate::frontend) fn check_project_tests<'s>(
+    project: &'s ProjectSources,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<CheckedProjectTests<'s>, Vec<Diagnostic>> {
+    let mut cases = Vec::new();
+    match check_project(
+        project,
+        limits,
+        work,
+        allocator,
+        CheckDepth::Executable,
+        Some(&mut cases),
+    )? {
+        Checked::Executable(program) => Ok(CheckedProjectTests { program, cases }),
         Checked::Types(_) => Err(vec![*association::bad()]),
     }
 }
@@ -113,6 +139,7 @@ fn check_project<'s>(
     work: &WorkMeter,
     allocator: &mut Allocator,
     depth: CheckDepth,
+    tests: Option<&mut Vec<TestCase>>,
 ) -> Result<Checked<'s>, Vec<Diagnostic>> {
     let sources = SourceOwner::project(project);
     let route = if sources.owned(work).map_err(|e| vec![*e])? {
@@ -181,12 +208,138 @@ fn check_project<'s>(
             CheckedBody::Owned(owned::source::check_typed(&typed)?)
         }
     };
-    Ok(Checked::Executable(CheckedSourceProgram {
+    let program = CheckedSourceProgram {
         sources: project.sources(),
         body,
         entry,
-    }))
+    };
+    // Only TEST retains this roster; ordinary checked carriers stay unchanged.
+    if let Some(cases) = tests {
+        *cases = CheckedProjectTests::select(&program, &frozen).map_err(|e| vec![*e])?;
+    }
+    Ok(Checked::Executable(program))
 }
+
+#[derive(Debug)]
+struct TestCase {
+    entry: hir::DefId,
+    name: Span,
+}
+
+/// Complete checked project with a closed, source-ordered test roster. Neither
+/// identities nor arbitrary entry selection escape this facade. The ordinary
+/// application's original-root main is retained unchanged in `program`.
+#[derive(Debug)]
+pub(in crate::frontend) struct CheckedProjectTests<'s> {
+    program: CheckedSourceProgram<'s>,
+    cases: Vec<TestCase>,
+}
+impl<'s> CheckedProjectTests<'s> {
+    fn select(
+        program: &CheckedSourceProgram<'s>,
+        index: &index::DeclarationIndex<'_>,
+    ) -> Result<Vec<TestCase>, Box<Diagnostic>> {
+        use crate::frontend::project::{FunctionAstKey, ModuleId};
+        if let CheckedBody::Owned(body) = &program.body {
+            body.require_test_entry_policy(program.sources)?;
+        }
+        let root = index.sources().ast(ModuleId(0))?;
+        let selected = || {
+            root.functions
+                .iter()
+                .enumerate()
+                .filter(|(_, function)| program.sources.text(function.name).starts_with("test_"))
+        };
+        let count = selected().count();
+        if count == 0 {
+            return Err(Diagnostic::new(
+                "E0800",
+                "project-test",
+                "no root test_ function declarations found",
+                None,
+            ));
+        }
+        let mut cases = Vec::new();
+        cases.try_reserve_exact(count).map_err(|_| {
+            Diagnostic::new(
+                "E0400",
+                "project-test",
+                "test roster allocation failed",
+                None,
+            )
+        })?;
+        for (ordinal, declaration) in selected() {
+            let entry = index.def_for(FunctionAstKey {
+                file: declaration.name.file,
+                index: ordinal,
+            })?;
+            let valid = match &program.body {
+                CheckedBody::Scalar(body) => body
+                    .program
+                    .functions
+                    .get(entry.0)
+                    .filter(|f| f.id == entry)
+                    .map(|f| {
+                        f.param_count == 0
+                            && matches!(f.result, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit)
+                    }),
+                CheckedBody::Owned(body) => body.test_signature(entry),
+            }
+            .ok_or_else(association::bad)?;
+            if !valid {
+                return Err(Diagnostic::new(
+                    "E0800",
+                    "project-test",
+                    "test_ functions require zero parameters and return bool, i32 or ()",
+                    Some(declaration.name),
+                ));
+            }
+            cases.push(TestCase {
+                entry,
+                name: declaration.name,
+            });
+        }
+        Ok(cases)
+    }
+    pub(in crate::frontend) fn len(&self) -> usize {
+        self.cases.len()
+    }
+    pub(in crate::frontend) fn name(&self, ordinal: usize) -> Option<&str> {
+        self.cases
+            .get(ordinal)
+            .map(|case| self.program.sources.text(case.name))
+    }
+    pub(in crate::frontend) fn run(&self, ordinal: usize) -> Result<bool, Box<Diagnostic>> {
+        let case = self.cases.get(ordinal).ok_or_else(association::bad)?;
+        // Each backend call constructs a fresh execution with its default limits.
+        let value = match &self.program.body {
+            CheckedBody::Scalar(body) => body
+                .run(Some(case.entry))
+                .map_err(|e| e.diagnostic(self.program.sources))?,
+            CheckedBody::Owned(body) => body.run(Some(case.entry), self.program.sources)?,
+        };
+        match value {
+            Scalar::Bool(value) => Ok(value),
+            Scalar::I32(value) => Ok(value == 0),
+            Scalar::Unit => Ok(true),
+            Scalar::U8(_) => Err(association::bad()),
+        }
+    }
+    pub(in crate::frontend) fn native_module(
+        &self,
+        ordinal: usize,
+    ) -> Result<String, Box<Diagnostic>> {
+        let case = self.cases.get(ordinal).ok_or_else(association::bad)?;
+        match &self.program.body {
+            CheckedBody::Scalar(body) => body.native_test_module(case.entry, self.program.sources),
+            CheckedBody::Owned(body) => body.native_test_module(case.entry, self.program.sources),
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "test_suite_tests.rs"]
+mod test_suite_tests;
 
 /// Process setup failure is kept out of ordinary diagnostic rendering.
 #[derive(Debug)]

@@ -68,17 +68,32 @@ enum EntryPolicy {
     #[default]
     Result,
     Process,
+    Test,
 }
 impl EntryPolicy {
     fn failure_symbol(self) -> &'static str {
         match self {
-            Self::Result => "__oxid_overflow",
+            Self::Result | Self::Test => "__oxid_overflow",
             Self::Process => "__oxid_process_failure",
         }
     }
 }
 
 impl VerifiedProgram {
+    pub(in crate::frontend::oir) fn native_test_module(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits(
+            Some(entry),
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            EntryPolicy::Test,
+        )
+    }
     pub(in crate::frontend) fn native_module(
         &self,
         entry: Option<hir::DefId>,
@@ -226,7 +241,7 @@ impl VerifiedProgram {
         // An i8 helper result is valid internally, but has no public result
         // representation. Reject the selected entry before native plan vectors,
         // diagnostics, count/render passes, output allocation, or tools.
-        if policy == EntryPolicy::Result && root.result == hir::Ty::U8 {
+        if policy != EntryPolicy::Process && root.result == hir::Ty::U8 {
             return Err(reject("native main must return bool, i32 or ()", Some(root.span)).into());
         }
         // The importer already prepays the complete fixed bank. Recheck the
@@ -1283,6 +1298,10 @@ fn emit(
             diagnostics.get(FailureKind::ProcessStatus, program.functions[entry.0].span);
         out.push_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_done, label %status_error\nstatus_error:\n");
         writeln!(out, "  call void @__oxid_process_failure(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable\nprocess_done:\n  ret i32 %value\n}}", message.len()).unwrap();
+        return;
+    }
+    if out.policy == EntryPolicy::Test {
+        out.push_str(super::test_entry::return_ir(result));
         return;
     }
     match result {

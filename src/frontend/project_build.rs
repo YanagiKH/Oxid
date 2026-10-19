@@ -73,6 +73,23 @@ impl Artifact {
         #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
         Err(self.run_error("native project launch failed", "requires Linux x86_64"))
     }
+
+    /// Only the dedicated test wrapper's exit status determines the outcome.
+    /// Runtime stderr is inherited; stdout is never parsed or used as evidence.
+    pub fn run_test(&self) -> Result<bool, Box<Diagnostic>> {
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            use std::process::Stdio;
+            self.command()
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .map_err(|error| self.run_error("native test launch/wait failed", error))
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        Err(self.run_error("native test launch failed", "requires Linux x86_64"))
+    }
 }
 
 pub(super) fn mode(policy: EntryPolicy) -> &'static str {
@@ -87,6 +104,23 @@ pub(super) fn publish(
     selection: &BuildSelection,
     policy: EntryPolicy,
 ) -> Result<Artifact, Box<Diagnostic>> {
+    publish_named(module, &selection.parent, &selection.name, mode(policy))
+}
+
+pub(super) fn publish_test(
+    module: &str,
+    parent: &str,
+    ordinal: usize,
+) -> Result<Artifact, Box<Diagnostic>> {
+    publish_named(module, parent, &format!("case-{ordinal}"), "test")
+}
+
+fn publish_named(
+    module: &str,
+    parent: &str,
+    name: &str,
+    namespace: &str,
+) -> Result<Artifact, Box<Diagnostic>> {
     // Result compile historically reaches host validation after native emission.
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(Diagnostic::new(
@@ -97,12 +131,12 @@ pub(super) fn publish(
         ));
     }
     #[cfg(target_os = "linux")]
-    return linux::publish_with(selection, policy, |staged| {
+    return linux::publish_named_with(parent, name, namespace, |staged| {
         super::native::compile(module, staged)
     });
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (module, selection, policy);
+        let _ = (module, parent, name, namespace);
         unreachable!("host checked above")
     }
 }
@@ -306,27 +340,37 @@ mod linux {
         }
         Ok(lock)
     }
+    #[cfg(test)]
     pub(super) fn publish_with(
         selection: &BuildSelection,
         policy: EntryPolicy,
         compile: impl FnOnce(&str) -> Result<(), Box<Diagnostic>>,
     ) -> Result<Artifact, Box<Diagnostic>> {
-        let parent = if selection.parent.is_empty() {
+        publish_named_with(&selection.parent, &selection.name, mode(policy), compile)
+    }
+
+    pub(super) fn publish_named_with(
+        parent_path: &str,
+        name: &str,
+        namespace: &str,
+        compile: impl FnOnce(&str) -> Result<(), Box<Diagnostic>>,
+    ) -> Result<Artifact, Box<Diagnostic>> {
+        let parent = if parent_path.is_empty() {
             "."
         } else {
-            &selection.parent
+            parent_path
         };
         // The manifest's lexical parent may itself be a symlink, as in CHECK/RUN.
         // Only the managed components below it must be real directories.
         let parent = File::open(Path::new(parent)).map_err(io)?;
         let oxid = directory(&parent, ".oxid")?;
         let typed = directory(&oxid, "typed-preview")?;
-        let root = directory(&typed, mode(policy))?;
-        let state_name = format!(".{}.build", selection.name);
+        let root = directory(&typed, namespace)?;
+        let state_name = format!(".{name}.build");
         let fresh = mkdir(&root, &state_name)?;
         let state = open(&root, &state_name, libc::O_RDONLY | libc::O_DIRECTORY)?;
         let _lock = lock_state(&state, fresh)?;
-        let old = validate_output(&root, &selection.name, &state)?;
+        let old = validate_output(&root, name, &state)?;
         // Normalize a previous committed next receipt before reusing that slot.
         if let (Some(old), Some(next)) = (&old, receipt(&state, "next")?) {
             if same(old, &next) {
@@ -348,7 +392,7 @@ mod linux {
         // Acquire before the commit point while the stage is private and locked.
         // Failure leaves the old output intact; the descriptor outlives all names.
         let executable = open(&stage, "executable", libc::O_RDONLY)?;
-        let now = validate_output(&root, &selection.name, &state)?;
+        let now = validate_output(&root, name, &state)?;
         if match (&old, &now) {
             (None, None) => false,
             (Some(a), Some(b)) => !same(a, b),
@@ -376,15 +420,10 @@ mod linux {
         }
         // The only commit point. Every failure above leaves old output bytes intact.
         // next already owns the new inode; nothing fallible is required afterward.
-        rename(&stage, "executable", &root, &selection.name)?;
+        rename(&stage, "executable", &root, name)?;
         Ok(Artifact {
             executable,
-            path: format!(
-                "{}.oxid/typed-preview/{}/{}",
-                selection.parent,
-                mode(policy),
-                selection.name
-            ),
+            path: format!("{}.oxid/typed-preview/{}/{}", parent_path, namespace, name),
         })
     }
 }

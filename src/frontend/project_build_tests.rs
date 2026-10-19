@@ -165,6 +165,64 @@ fn managed_build_modes_have_separate_outputs_and_receipts() {
 }
 
 #[test]
+fn typed_project_test_artifacts_preserve_app_outputs_receipts_and_pinned_handles() {
+    use std::os::unix::fs::MetadataExt;
+    let s = Scratch::new();
+    let mut preserved = Vec::new();
+    for policy in [EntryPolicy::Result, EntryPolicy::Process] {
+        for bytes in [b"old app", b"new app"] {
+            publish_with(&s.selection(), policy, |path| {
+                fs::write(path, bytes).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        }
+        let directory = s.0.join(format!(".oxid/typed-preview/{}", mode(policy)));
+        for relative in [
+            "app",
+            ".app.build/current",
+            ".app.build/next",
+            ".app.build/owner",
+        ] {
+            let path = directory.join(relative);
+            let meta = fs::metadata(&path).unwrap();
+            preserved.push((path.clone(), meta.ino(), fs::read(path).unwrap()));
+        }
+    }
+    let publish_test = |program: &str| {
+        linux::publish_named_with(&s.selection().parent, "case-0", "test", |path| {
+            fs::copy(program, path).unwrap();
+            Ok(())
+        })
+        .unwrap()
+    };
+    let passed = publish_test("/bin/true");
+    let failed = publish_test("/bin/false");
+    assert_eq!(passed.path, failed.path);
+    assert!(passed.path.ends_with("/test/case-0"));
+    assert!(passed.run_test().unwrap());
+    assert!(!failed.run_test().unwrap());
+    for (path, inode, bytes) in preserved {
+        assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn typed_project_test_namespace_rejects_alias_to_application_directory() {
+    let s = Scratch::new();
+    let output = s.publish(b"application").unwrap();
+    symlink("result", s.0.join(".oxid/typed-preview/test")).unwrap();
+    assert!(
+        linux::publish_named_with(&s.selection().parent, "case-0", "test", |_| {
+            panic!("must refuse before compiling");
+        })
+        .is_err()
+    );
+    assert_eq!(fs::read(output).unwrap(), b"application");
+}
+
+#[test]
 fn managed_build_rename_failure_keeps_previous_executable() {
     use std::os::unix::fs::PermissionsExt;
     // Root bypasses directory write permissions; exercise this on ordinary users.

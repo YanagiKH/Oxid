@@ -20,7 +20,9 @@ mod parser;
 mod project;
 mod project_build;
 mod project_scaffold;
+mod project_test;
 mod source;
+mod toolchain_doctor;
 mod typeck;
 pub use driver::dispatch;
 #[cfg(test)]

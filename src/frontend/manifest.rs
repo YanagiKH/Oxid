@@ -69,10 +69,33 @@ fn add(a: usize, b: usize) -> Result<usize, Failure> {
 }
 /// Diagnostic wording only; Compile labels the explicit managed BUILD selection.
 fn word(operation: Operation) -> &'static str {
-    match operation {
-        Operation::Run => "run",
-        Operation::Check => "check",
-        Operation::Compile => "build",
+    Command::from(operation).word()
+}
+/// Keep TEST local to manifest commands; source compiler operations stay closed.
+#[derive(Clone, Copy)]
+enum Command {
+    Check,
+    Run,
+    Build,
+    Test,
+}
+impl From<Operation> for Command {
+    fn from(operation: Operation) -> Self {
+        match operation {
+            Operation::Check => Self::Check,
+            Operation::Run => Self::Run,
+            Operation::Compile => Self::Build,
+        }
+    }
+}
+impl Command {
+    fn word(self) -> &'static str {
+        match self {
+            Self::Check => "check",
+            Self::Run => "run",
+            Self::Build => "build",
+            Self::Test => "test",
+        }
     }
 }
 
@@ -284,12 +307,21 @@ pub(super) fn build(
 ) -> Result<BuildSelection, Failure> {
     with_manifest(request, |path, raw, allocator| {
         let mut name = String::new();
-        let entry = prepare_inner(path, raw, allocator, operation, Some(&mut name))?;
+        let entry = prepare_inner(path, raw, allocator, operation.into(), Some(&mut name))?;
         Ok(BuildSelection {
             entry,
             parent: parent(path, cfg!(windows)).to_owned(),
             name,
         })
+    })
+}
+
+/// Tests use the same project entry; optional name/version remain metadata.
+/// Both engines accept the same manifest and retain its lexical output parent.
+pub(super) fn test(request: Box<[Request; 1]>) -> Result<(String, String), Failure> {
+    with_manifest(request, |path, raw, allocator| {
+        let entry = prepare_inner(path, raw, allocator, Command::Test, None)?;
+        Ok((entry, parent(path, cfg!(windows)).to_owned()))
     })
 }
 
@@ -473,7 +505,7 @@ impl<'a> Scanner<'a> {
         }
     }
 }
-fn parse(path: &str, text: &str, operation: Operation) -> Result<Parsed, Failure> {
+fn parse(path: &str, text: &str, operation: Command) -> Result<Parsed, Failure> {
     let mut scan = Scanner::new(text);
     if text.starts_with('\u{feff}') {
         return Err(scan.syntax(path, "manifest BOM is not supported"));
@@ -500,7 +532,7 @@ fn parse(path: &str, text: &str, operation: Operation) -> Result<Parsed, Failure
                 if section != "project" {
                     return Err(Failure::Cli(format!(
                         "manifest `{path}` line {header_line}: unsupported manifest section for typed {}: {section}",
-                        word(operation)
+                        operation.word()
                     )));
                 }
                 if project {
@@ -564,9 +596,9 @@ fn visit(
     }
     Ok(())
 }
-fn admitted_field(parsed: &Parsed, index: usize, operation: Operation) -> Result<Field, Failure> {
+fn admitted_field(parsed: &Parsed, index: usize, operation: Command) -> Result<Field, Failure> {
     let field = parsed.fields[index].ok_or_else(|| {
-        let op = word(operation);
+        let op = operation.word();
         Failure::Cli(match index {
             0 => format!("manifest {op} requires [project].edition = \"typed-preview\""),
             _ => format!("manifest {op} requires [project].entry"),
@@ -632,13 +664,13 @@ fn prepare(
     allocator: &mut Allocator,
     operation: Operation,
 ) -> Result<String, Failure> {
-    prepare_inner(path, raw, allocator, operation, None)
+    prepare_inner(path, raw, allocator, operation.into(), None)
 }
 fn prepare_inner(
     path: &str,
     raw: &[u8],
     allocator: &mut Allocator,
-    operation: Operation,
+    operation: Command,
     build_name: Option<&mut String>,
 ) -> Result<String, Failure> {
     let text = std::str::from_utf8(raw)
@@ -654,7 +686,7 @@ fn prepare_inner(
     if !equal || expected.next().is_some() {
         return Err(Failure::Cli(format!(
             "manifest {} requires [project].edition = \"typed-preview\"",
-            word(operation)
+            operation.word()
         )));
     }
     let entry = admitted_field(&parsed, 1, operation)?;
@@ -690,7 +722,7 @@ fn prepare_inner(
         let field = parsed.fields[2].ok_or_else(|| {
             Failure::Cli(format!(
                 "manifest {} requires [project].name",
-                word(operation)
+                operation.word()
             ))
         })?;
         let mut position = 0;
@@ -703,7 +735,7 @@ fn prepare_inner(
         if !valid {
             return Err(Failure::Cli(format!(
                 "manifest {} name must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}",
-                word(operation)
+                operation.word()
             )));
         }
     }

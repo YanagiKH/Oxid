@@ -11,6 +11,7 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    TypedDoctor,
     TypedNew {
         path: String,
     },
@@ -28,6 +29,14 @@ pub enum Route {
     },
     ManifestRun {
         request: Box<[super::manifest::Request; 1]>,
+    },
+    ManifestTest {
+        request: Box<[super::manifest::Request; 1]>,
+        native: bool,
+    },
+    ManifestTestError {
+        failure: super::manifest::Failure,
+        json: bool,
     },
     ManifestNativeRun {
         request: Box<[super::manifest::Request; 1]>,
@@ -505,12 +514,22 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     if forwarded.first().map(String::as_str) == Some("new") {
         return route_new(forwarded, json);
     }
+    if forwarded.first().map(String::as_str) == Some("doctor") {
+        if json || forwarded.len() != 1 {
+            return Route::Error {
+                message: "typed-preview doctor accepts no operands or local options and supports only text output".into(),
+                json,
+                operation: Operation::Check,
+            };
+        }
+        return Route::TypedDoctor;
+    }
     let operation = match forwarded.first().map(String::as_str) {
         Some("check") => Operation::Check,
         Some("run") => Operation::Run,
         Some("compile") => Operation::Compile,
         _ => return Route::Error {
-            message: format!("edition `typed-preview` supports only `check`, explicit `run`, explicit native `compile`, explicit `fmt`, and explicit `new`; command `{}` is unavailable",
+            message: format!("edition `typed-preview` supports only `check`, explicit `run`, explicit native `compile`, explicit `fmt`, explicit `new`, and explicit `doctor`; command `{}` is unavailable",
                 forwarded.first().map(String::as_str).unwrap_or("<missing>")),
             json, operation: Operation::Check,
         },
@@ -1221,6 +1240,47 @@ mod tests {
                 path: "file.ox".into(),
                 json: true
             }
+        );
+    }
+
+    #[test]
+    fn typed_doctor_is_explicit_and_has_no_project_operands() {
+        for args in [
+            vec!["doctor", "--edition=typed-preview"],
+            vec![
+                "--edition",
+                "typed-preview",
+                "doctor",
+                "--message-format=text",
+            ],
+        ] {
+            assert_eq!(route(&arguments(&args)), Route::TypedDoctor);
+        }
+        assert_eq!(
+            route(&arguments(&["doctor"])),
+            Route::Legacy(vec!["doctor".into()])
+        );
+        for args in [
+            vec!["doctor", "--edition=typed-preview", "project"],
+            vec!["doctor", "--edition=typed-preview", "--engine=native"],
+            vec!["doctor", "--edition=typed-preview", "--message-format=json"],
+            vec!["doctor", "--edition=typed-preview", "--entry-mode=result"],
+        ] {
+            assert!(matches!(route(&arguments(&args)), Route::Error { .. }));
+        }
+        assert_eq!(
+            route(&arguments(&[
+                "script",
+                "example",
+                "doctor",
+                "--edition=typed-preview"
+            ])),
+            Route::Legacy(arguments(&[
+                "script",
+                "example",
+                "doctor",
+                "--edition=typed-preview"
+            ]))
         );
     }
 

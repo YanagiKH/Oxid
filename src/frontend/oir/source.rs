@@ -13,6 +13,7 @@ pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;
 pub(in crate::frontend::oir) use sealed::{
     check_project_candidate, check_project_executable_candidate,
 };
+pub(in crate::frontend) use sealed::{check_project_tests, CheckedProjectTests};
 pub(in crate::frontend) use sealed::{check_source, CheckedSourceProgram, ProcessFailure};
 
 #[cfg(test)]

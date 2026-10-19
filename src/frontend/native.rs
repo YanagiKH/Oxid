@@ -209,3 +209,80 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
     fs::hard_link(workspace.0.join("executable"), output).map_err(io)?;
     Ok(())
 }
+
+/// Successful compilation and linking of the bundled runtime for the currently
+/// supported target. This report does not imply that an executable was run.
+pub(super) struct ProbeReport {
+    pub target: &'static str,
+    pub llvm_version: &'static str,
+}
+
+fn verify_probe_header(header: &[u8]) -> Result<(), Box<Diagnostic>> {
+    // ELF64 header, little endian, current version, ET_DYN, EM_X86_64.
+    // This is a target-header check, not an independent ELF loader validation.
+    if header.len() < 64
+        || &header[..4] != b"\x7fELF"
+        || header[4..7] != [2, 1, 1]
+        || header[16..20] != [3, 0, 62, 0]
+        || header[20..24] != [1, 0, 0, 0]
+        || header[52..54] != [64, 0]
+    {
+        return Err(failure(
+            "native toolchain probe did not produce the expected x86_64 ELF header",
+        ));
+    }
+    Ok(())
+}
+
+/// Exercise the same compiler and linker invocation as a real native build,
+/// including the bundled runtime. Never executes the produced probe program.
+pub(super) fn probe() -> Result<ProbeReport, Box<Diagnostic>> {
+    use std::io::Read;
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        return Err(failure("native preview requires a Linux x86_64 build host"));
+    }
+    let workspace = Workspace::create(&std::env::temp_dir())?;
+    let output = workspace.0.join("toolchain-probe");
+    let output = output.to_str().ok_or_else(|| {
+        failure("native toolchain probe requires a UTF-8 temporary directory path")
+    })?;
+    let module =
+        format!("target triple = \"{TARGET}\"\ndefine i32 @main() {{\nentry:\n  ret i32 0\n}}\n");
+    compile(&module, output)?;
+    let mut header = [0u8; 64];
+    fs::File::open(output)
+        .map_err(io)?
+        .read_exact(&mut header)
+        .map_err(io)?;
+    verify_probe_header(&header)?;
+    Ok(ProbeReport {
+        target: TARGET,
+        llvm_version: LLVM_VERSION,
+    })
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    fn header() -> [u8; 64] {
+        let mut value = [0; 64];
+        value[..4].copy_from_slice(b"\x7fELF");
+        value[4..7].copy_from_slice(&[2, 1, 1]);
+        value[16..20].copy_from_slice(&[3, 0, 62, 0]);
+        value[20..24].copy_from_slice(&[1, 0, 0, 0]);
+        value[52..54].copy_from_slice(&[64, 0]);
+        value
+    }
+    #[test]
+    fn probe_header_checks_the_declared_format() {
+        assert!(verify_probe_header(&header()).is_ok());
+        for index in [0, 4, 5, 6, 16, 17, 18, 19, 20, 23, 52, 53] {
+            let mut invalid = header();
+            invalid[index] ^= 1;
+            assert_eq!(verify_probe_header(&invalid).unwrap_err().code, "E0701");
+        }
+        for length in 0..64 {
+            assert!(verify_probe_header(&header()[..length]).is_err());
+        }
+    }
+}

@@ -160,6 +160,45 @@ impl SourceProgram {
         native::native_module(&self.witness, entry, sources)
     }
 
+    pub(in crate::frontend::oir) fn test_signature(&self, id: hir::DefId) -> Option<bool> {
+        self.witness
+            .functions()
+            .get(id.0)
+            .filter(|f| f.id == id)
+            .map(|f| {
+                f.parameters.is_empty()
+                    && matches!(
+                        f.result,
+                        ValueTy::Scalar(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit)
+                    )
+            })
+    }
+
+    pub(in crate::frontend::oir) fn require_test_entry_policy(
+        &self,
+        sources: &SourceMap,
+    ) -> Result<(), Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
+        if let Some(id) = self.witness.builtin_function() {
+            return Err(Diagnostic::new(
+                "E0800",
+                "project-test",
+                "read_stdin function imports are not supported by typed tests",
+                Some(self.witness.functions()[id.0].span),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(in crate::frontend::oir) fn native_test_module(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.require_test_entry_policy(sources)?;
+        native::native_test_module(&self.witness, entry, sources)
+    }
+
     /// Only fixed signature facts escape; the verified function stays sealed.
     pub(in crate::frontend::oir) fn entry_signature(
         &self,

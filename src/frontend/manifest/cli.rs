@@ -27,7 +27,7 @@ enum Error<'a> {
     Unsupported(&'a str),
 }
 impl Error<'_> {
-    fn message(self, operation: Operation) -> String {
+    fn message(self, operation: &str) -> String {
         match self {
             Self::Duplicate(n) => format!("{n} may only be specified once"),
             Self::Missing(n) => format!("{n} requires a value"),
@@ -38,7 +38,7 @@ impl Error<'_> {
             Self::Entry(v) => format!("unknown --entry-mode `{v}`; expected result or process"),
             Self::Engine(v) => format!("unknown --engine `{v}`; expected interpreter or native"),
             Self::Unsupported(v) => {
-                format!("unsupported option for manifest {}: {v}", word(operation))
+                format!("unsupported option for manifest {operation}: {v}")
             }
         }
     }
@@ -160,6 +160,7 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Operation::Check
     };
     let build = scan.command == Some("build");
+    let test = scan.command == Some("test");
     let run = scan.command == Some("run");
     let native_run = run && scan.native;
     let entry_policy = if scan.process {
@@ -167,25 +168,27 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     } else {
         EntryPolicy::Result
     };
-    let op = if build { "build" } else { word(operation) };
+    let op = if build {
+        "build"
+    } else if test {
+        "test"
+    } else {
+        word(operation)
+    };
     let message = if let Some(error) = scan.error.or(scan.local_error) {
-        Some(if build {
-            error.message(Operation::Compile)
-        } else {
-            error.message(operation)
-        })
-    } else if !matches!(scan.command, Some("check" | "run" | "build")) {
-        Some("--manifest-path requires check, run or build".into())
+        Some(error.message(op))
+    } else if !matches!(scan.command, Some("check" | "run" | "build" | "test")) {
+        Some("--manifest-path requires check, run or build, or test".into())
     } else if scan.before {
         Some(format!("--manifest-path must follow {op}"))
     } else if scan.edition == Some("legacy-0.9") {
         Some(format!("manifest {op} conflicts with --edition legacy-0.9"))
     } else if scan.operands {
         Some(format!("manifest {op} does not accept a source operand"))
-    } else if !run && scan.seen & (1 << 10) != 0 {
-        Some("--engine is only supported by manifest run".into())
+    } else if !run && !test && scan.seen & (1 << 10) != 0 {
+        Some("--engine is only supported by manifest run or test".into())
     } else if scan.seen
-        & !((if build || native_run { 15 } else { 7 }) | (if run { 1 << 10 } else { 0 }))
+        & !((if build || native_run { 15 } else { 7 }) | (if run || test { 1 << 10 } else { 0 }))
         != 0
     {
         Some(if build || native_run {
@@ -197,10 +200,18 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         })
     } else if native_run && scan.json {
         Some("native manifest run does not support --message-format=json".into())
+    } else if test && scan.json {
+        Some("manifest test does not support --message-format=json".into())
     } else {
         None
     };
     if let Some(message) = message {
+        if test {
+            return Some(Route::ManifestTestError {
+                failure: Failure::Cli(message),
+                json: scan.json,
+            });
+        }
         if build {
             return Some(Route::ManifestBuildError {
                 failure: Failure::Cli(message),
@@ -216,6 +227,10 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
     }
     Some(
         match super::request(scan.path.unwrap_or(""), scan.json, allocator) {
+            Ok(request) if test => Route::ManifestTest {
+                request,
+                native: scan.native,
+            },
             Ok(request) if build => Route::ManifestBuild {
                 request,
                 entry_policy,
@@ -230,6 +245,10 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 failure,
                 json: scan.json,
                 entry_policy,
+            },
+            Err(failure) if test => Route::ManifestTestError {
+                failure,
+                json: scan.json,
             },
             Err(failure) => Route::ManifestError {
                 failure,
