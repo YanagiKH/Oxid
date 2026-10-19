@@ -16,6 +16,7 @@ impl Parser<'_> {
         matches!(
             self.expressions[target.0].kind,
             ExprKind::ArrayLiteral { .. }
+                | ExprKind::ByteLiteral { .. }
                 | ExprKind::IndexRead { .. }
                 | ExprKind::ArrayLength { .. }
         )

@@ -95,6 +95,8 @@ impl FlowSummary {
 }
 
 pub(super) struct TypedOwnedFunction<'a> {
+    sources: crate::frontend::declaration_index::SourceOwner<'a>,
+    work: &'a crate::frontend::declaration_index::WorkMeter,
     admission: SourceAdmission,
     function: &'a Function,
     signatures: &'a [Signature],
@@ -144,6 +146,27 @@ impl TypedOwnedProgram<'_> {
             })?;
         plan.with_dynamic(dynamic, self.index().sources().eof())
     }
+    /// Byte-literal count and emission scan original source even for ordinary
+    /// owners. Admit their containing HIR and fixed lowering roles before that
+    /// work, without granting the unrelated paid source pipeline any authority.
+    pub(super) fn byte_lower_storage_bytes(&self) -> Result<Option<usize>, Box<Diagnostic>> {
+        if let Some(seed) = self.source_storage_bytes() {
+            return Ok(Some(seed));
+        }
+        for function in self.program.functions() {
+            self.work()
+                .debit(1, function.end, "byte literal lower inventory")?;
+            for expression in &function.expressions {
+                self.work()
+                    .debit(1, expression.span, "byte literal lower inventory")?;
+                if matches!(expression.kind, ExprKind::ByteLiteral { .. }) {
+                    return self.conversion_association_storage_bytes().map(Some);
+                }
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) fn conversion_capacity_excess(&self) -> Result<usize, Box<Diagnostic>> {
         let mut inventory = super::hir_budget::CapacityExcess::new(
             self.program.work(),
@@ -219,6 +242,8 @@ impl TypedOwnedProgram<'_> {
                 assert!(body.block_flows[function.body.0].returns_only());
                 assert_eq!(&body.bindings[..signature.params.len()], &signature.params);
                 TypedOwnedFunction {
+                    sources: self.index().sources(),
+                    work: self.work(),
                     admission: self.admission(),
                     function,
                     signatures: self.signatures(),
@@ -234,6 +259,15 @@ impl TypedOwnedProgram<'_> {
     }
 }
 impl<'a> TypedOwnedFunction<'a> {
+    pub(super) fn source_file(
+        &self,
+        span: Span,
+    ) -> Result<&'a crate::frontend::source::SourceFile, Box<Diagnostic>> {
+        self.sources.file(self.sources.module_for_file(span.file)?)
+    }
+    pub(super) fn work(&self) -> &'a crate::frontend::declaration_index::WorkMeter {
+        self.work
+    }
     pub(super) fn admission(&self) -> SourceAdmission {
         self.admission
     }
@@ -2760,6 +2794,12 @@ fn expression_type(
                 ));
             }
             ValueTy::Owned(AggregateTy::Record(*record))
+        }
+        ExprKind::ByteLiteral { decoded_len, .. } => {
+            program.work().debit(1, expr.span, "byte literal type")?;
+            let array = FixedArrayTy::check(Ty::U8, *decoded_len)
+                .map_err(|_| error("E0500", "invalid resolved byte literal length", expr.span))?;
+            ValueTy::Owned(AggregateTy::FixedArray(array))
         }
         ExprKind::ArrayLiteral { elements } => {
             program.work().debit(1, expr.span, "array type literal")?;

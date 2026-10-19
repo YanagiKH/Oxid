@@ -99,9 +99,10 @@ pub(in crate::frontend::oir) fn debit(
         .map_err(|_| Failure::Invariant)
 }
 
-fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
-    match statement {
+fn arithmetic_failures(statement: &Statement) -> Result<(u64, bool), Failure> {
+    Ok(match statement {
         Statement::Assign(assign) => match &assign.value {
+            Rvalue::ByteConst { .. } => return Err(Failure::Invariant),
             Rvalue::CheckedI32ToU8 { .. } => (1, true),
             Rvalue::CheckedNegateI32 { .. } => (1, false),
             Rvalue::CheckedI32 { op, .. } => match op {
@@ -120,7 +121,7 @@ fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
             | Rvalue::CompareScalar { .. } => (0, false),
         },
         Statement::Initialize { .. } | Statement::Store { .. } => (0, false),
-    }
+    })
 }
 
 /// Each inspection follows its own paid boundary. The setup covers the fixed
@@ -179,7 +180,7 @@ pub(in crate::frontend::oir) fn scan(
             }
             for statement in &block.statements {
                 debit(work, STATEMENT_WORK, origin, "private Emit scan statement")?;
-                let (failures, byte_range) = arithmetic_failures(statement);
+                let (failures, byte_range) = arithmetic_failures(statement)?;
                 dimensions.arithmetic_failures = add(dimensions.arithmetic_failures, failures)?;
                 dimensions.has_byte_range_failure |= byte_range;
             }
@@ -246,6 +247,8 @@ struct ArithmeticBindings {
     value: &'static Rvalue,
     operator: &'static hir::ArithmeticOp,
     returned_counts: (u64, bool),
+    returned_result: Result<(u64, bool), Failure>,
+    caller_result: Result<(u64, bool), Failure>,
     caller_counts: (u64, bool),
     failures: u64,
     byte_range: bool,
@@ -339,11 +342,12 @@ pub(in crate::frontend::oir) fn named_bytes() -> Result<usize, Failure> {
         size_of::<(usize, usize, bool)>(),
         // RFC0030's paid per-statement byte-range selector OR transports.
         size_of::<(bool, bool, bool)>(),
-        // Eight fixed failure expressions: add/length/byte_add overflow,
+        // Nine fixed failure expressions: add/length/byte_add overflow,
         // reconcile mismatch, debit's two Work branches and Invariant mapping,
-        // and the scan's missing-terminator invariant. Complete wrappers above
-        // are also retained. No Diagnostic payload is allocated by this scan.
-        size_of::<[Failure; 8]>(),
+        // the scan's missing-terminator invariant and unsupported byte atom.
+        // Complete wrappers above are also retained. No Diagnostic payload
+        // is allocated by this scan.
+        size_of::<[Failure; 9]>(),
         // This inventory's own named sum and byte_add call/return roles.
         size_of::<usize>(),
         size_of::<usize>(),

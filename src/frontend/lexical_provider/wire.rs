@@ -71,6 +71,8 @@ pub(super) enum Observation {
 }
 
 // Protocol numbers are explicitly one-based. Never transmute Rust discriminants.
+// ByteString has no LXI1/LXS1 tag. Old external producers therefore cannot
+// authenticate byte literals: comparison with the canonical token tape fails.
 fn kind(id: u8) -> Option<Kind> {
     use Kind::*;
     Some(match id {

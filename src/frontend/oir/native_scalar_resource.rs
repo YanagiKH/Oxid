@@ -404,3 +404,32 @@ mod tests {
         println!("U8_NATIVE_ADMISSION_CENSUS cases={attempts} max_local_lookups={maximum} finite_event_bound={ADMISSION_EVENTS} tariff={ADMISSION_TARIFF}");
     }
 }
+
+#[cfg(test)]
+mod byte_literal_gate_tests {
+    use super::*;
+
+    #[test]
+    fn scalar_native_admission_rejects_byte_atoms_for_every_destination_type() {
+        let (verified, _) = super::super::tests::verified_with_sources("fn main()->i32{return 0;}");
+        let mut function = verified.program.functions[0].clone();
+        for ty in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::U8, hir::Ty::Unit] {
+            function.locals[0].ty = ty;
+            let error = admit_assignment(
+                &function,
+                &Assign {
+                    destination: LocalId(0),
+                    value: Rvalue::ByteConst {
+                        value: 255,
+                        source_expr: crate::frontend::ast::ExprId(0),
+                        ordinal: 0,
+                    },
+                    span: function.span,
+                },
+            )
+            .unwrap_err();
+            assert_eq!(error.primary, None);
+            assert_eq!(error.message, INVALID_TYPES);
+        }
+    }
+}

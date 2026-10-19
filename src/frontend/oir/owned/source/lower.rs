@@ -777,17 +777,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                         };
                         require(array.length() == elements.len(), expression.span)?;
                         budget::cap(elements.len(), 1024, "fixed array length")?;
-                        let owner = self.owner(
-                            AggregateTy::FixedArray(array),
-                            OwnerKind::Temporary,
-                            expression.span,
-                        )?;
-                        self.statement(
-                            OwnedInstruction::StorageLive(owner),
-                            expression.span,
-                            expression.span,
-                            cause,
-                        )?;
+                        let owner = self.begin_array(array, expression.span, cause)?;
                         self.counts.constructed_elements =
                             budget::add(self.counts.constructed_elements, elements.len())?;
                         self.check_counts()?;
@@ -812,16 +802,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 )?;
                             }
                         }
-                        self.statement(
-                            OwnedInstruction::ConstructArray {
-                                destination: owner,
-                                elements: values,
-                            },
-                            expression.span,
-                            expression.span,
-                            cause,
-                        )?;
-                        self.set_owned(id, owner);
+                        self.finish_array(id, owner, values, expression.span, cause)?;
                         self.complete(id)?;
                     }
                 }
@@ -1181,11 +1162,123 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         Ok(())
     }
+    fn byte_literal(
+        &mut self,
+        id: source::ExprId,
+        source_expr: crate::frontend::ast::ExprId,
+        decoded_len: usize,
+        span: Span,
+        cause: Span,
+    ) -> Result<()> {
+        use crate::frontend::byte_literal::{scan_work, Scanner};
+        require(self.view.admission().executable(), span)?;
+        let ValueTy::Owned(AggregateTy::FixedArray(array)) = self.view.expression_ty(id) else {
+            return Err(invariant(span));
+        };
+        require(
+            array.element() == hir::Ty::U8 && array.length() == decoded_len,
+            span,
+        )?;
+        budget::cap(
+            decoded_len,
+            crate::frontend::parser::MAX_ARRAY_ELEMENTS,
+            "fixed array length",
+        )?;
+        // Every actual pass scans original bytes, including count-only passes.
+        let work = scan_work(span).ok_or_else(|| invariant(span))?;
+        let work =
+            u64::try_from(work).map_err(|_| OwnedFailure::resource("byte literal lower work"))?;
+        self.view
+            .work()
+            .debit(work, span, "byte literal lower scan")
+            .map_err(|_| OwnedFailure::resource("byte literal lower work"))?;
+        let file = self.view.source_file(span).map_err(|_| invariant(span))?;
+        let mut scanner = Scanner::new(file, span).map_err(|_| invariant(span))?;
+        self.counts.constructed_elements =
+            budget::add(self.counts.constructed_elements, decoded_len)?;
+        self.check_counts()?;
+        let mut elements = if self.output.is_some() {
+            budget::reserve_array_operands(decoded_len)?
+        } else {
+            Vec::new()
+        };
+        let mut ordinal = 0usize;
+        while let Some(atom) = scanner.next_atom().map_err(|_| invariant(span))? {
+            require(ordinal < decoded_len, span)?;
+            let local = self.local(hir::Ty::U8, LocalKind::Temporary, atom.origin)?;
+            self.scalar_assign(
+                local,
+                Rvalue::ByteConst {
+                    value: atom.value,
+                    source_expr,
+                    ordinal,
+                },
+                atom.origin,
+                cause,
+            )?;
+            if self.output.is_some() {
+                budget::append(
+                    &mut elements,
+                    Operand {
+                        local,
+                        span: atom.origin,
+                    },
+                    decoded_len,
+                    span,
+                )?;
+            }
+            ordinal = budget::add(ordinal, 1)?;
+        }
+        require(ordinal == decoded_len, span)?;
+        // Empty literals intentionally use the ordinary fixed-array lifecycle;
+        // they create no ByteConst authority or new empty-origin claim.
+        let owner = self.begin_array(array, span, cause)?;
+        self.finish_array(id, owner, elements, span, cause)
+    }
+
+    fn begin_array(
+        &mut self,
+        array: FixedArrayTy,
+        span: Span,
+        cause: Span,
+    ) -> Result<OwnerPlaceId> {
+        let owner = self.owner(AggregateTy::FixedArray(array), OwnerKind::Temporary, span)?;
+        self.statement(OwnedInstruction::StorageLive(owner), span, span, cause)?;
+        Ok(owner)
+    }
+
+    fn finish_array(
+        &mut self,
+        id: source::ExprId,
+        owner: OwnerPlaceId,
+        elements: Vec<Operand>,
+        span: Span,
+        cause: Span,
+    ) -> Result<()> {
+        self.statement(
+            OwnedInstruction::ConstructArray {
+                destination: owner,
+                elements,
+            },
+            span,
+            span,
+            cause,
+        )?;
+        self.set_owned(id, owner);
+        Ok(())
+    }
+
     fn simple_expression(&mut self, id: source::ExprId, cause: Span) -> Result<()> {
         let expression = &self.view.hir().expressions[id.0];
         let span = expression.span;
         if let ValueTy::Owned(record) = self.view.expression_ty(id) {
             match expression.kind {
+                source::ExprKind::ByteLiteral {
+                    source_expr,
+                    decoded_len,
+                } => {
+                    self.byte_literal(id, source_expr, decoded_len, span, cause)?;
+                }
                 source::ExprKind::ConstructEnum { variant, payload } => {
                     require(record == AggregateTy::Enum(variant.enumeration), span)?;
                     if let Some(child) = payload.filter(|child| {
@@ -1281,7 +1374,9 @@ impl<'a, 'b> Walk<'a, 'b> {
         let destination = self.operand(id)?.local;
         let value = match expression.kind {
             source::ExprKind::ConstructEnum { .. } => return Err(invariant(span)),
-            source::ExprKind::ArrayLiteral { .. } => return Err(invariant(span)),
+            source::ExprKind::ArrayLiteral { .. } | source::ExprKind::ByteLiteral { .. } => {
+                return Err(invariant(span))
+            }
             source::ExprKind::IndexRead { base, index, .. } => {
                 let kind = if let Some(projection) = self.view.expression_projection(id) {
                     OwnedInstruction::ReadProjection {
@@ -2518,17 +2613,52 @@ fn unit3b2_lowering_layout_without_source_observation() {
     );
 }
 
+/// Literal-only helper roles outside Walk and its already-counted payload.
+/// No byte buffer or per-atom table is retained. These are conservative named
+/// transport roles; sizeof(Rvalue/OwnedStatement) prices retained witnesses.
+#[allow(dead_code)]
+struct ByteLowerCarriers {
+    ids: (source::ExprId, crate::frontend::ast::ExprId),
+    spans: [Span; 5],
+    arrays: [FixedArrayTy; 2],
+    array_return: ValueTy,
+    counts: [usize; 3],
+    work: u64,
+    work_return: std::result::Result<u64, std::num::TryFromIntError>,
+    source_return:
+        std::result::Result<&'static crate::frontend::source::SourceFile, Box<Diagnostic>>,
+    source_receivers: [crate::frontend::declaration_index::SourceOwner<'static>; 2],
+    module: crate::frontend::project::ModuleId,
+    module_return: std::result::Result<crate::frontend::project::ModuleId, Box<Diagnostic>>,
+    source: &'static crate::frontend::source::SourceFile,
+    operands: Vec<Operand>,
+    reserve_return: Result<Vec<Operand>>,
+    transported_operands: Vec<Operand>,
+    operand: Operand,
+    local: LocalId,
+    local_return: Result<LocalId>,
+    owners: [OwnerPlaceId; 2],
+    owner_returns: [Result<OwnerPlaceId>; 2],
+    values: [Rvalue; 2],
+    statement: OwnedInstruction,
+    helper_return: Result<()>,
+    inventory_functions: std::slice::Iter<'static, source::Function>,
+    inventory_expressions: std::slice::Iter<'static, source::Expr>,
+    seed_result: std::result::Result<Option<usize>, Box<Diagnostic>>,
+}
+
 /// Invocation-local fixed storage only. Dynamic producer caches must be admitted
 /// separately by the invocation overlay after typed count mode. Output is inline
 /// in Walk and is not charged again.
 #[allow(dead_code)]
-pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
+pub(super) const fn fixed_carrier_bytes() -> [usize; 6] {
     [
         size_of::<Walk<'_, '_>>(),
         size_of::<Stack<ExprFrame, EXPR_FRAMES>>(),
         size_of::<Stack<BodyFrame, BODY_FRAMES>>(),
         size_of::<Stack<LoopTargets, LOOP_FRAMES>>(),
         size_of::<TypedOwnedFunction<'_>>(),
+        crate::frontend::byte_literal::scanner_scratch_bytes() + size_of::<ByteLowerCarriers>(),
     ]
 }
 

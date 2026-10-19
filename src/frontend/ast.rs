@@ -94,6 +94,11 @@ pub enum ExprKind {
         digits: Span,
         negative: bool,
     },
+    /// Compact typed byte sequence; the complete original token is Expr::span.
+    /// The parser count is bounded metadata, never source authentication.
+    ByteLiteral {
+        decoded_len: usize,
+    },
     Unit,
     Name(Span),
     Call {
@@ -956,6 +961,9 @@ impl Program {
                 } => earlier(*left) && earlier(*right) && valid(*operator_span),
                 ExprKind::Bool(_) | ExprKind::Unit => true,
                 ExprKind::Number { digits, .. } => valid(*digits),
+                ExprKind::ByteLiteral { decoded_len } => {
+                    *decoded_len <= super::parser::MAX_ARRAY_ELEMENTS
+                }
                 ExprKind::Name(name) => valid(*name),
                 ExprKind::Call { callee, args } => {
                     path_valid(*callee, &mut valid)
@@ -1099,6 +1107,7 @@ impl Program {
                 ExprKind::StructLiteral { .. }
                 | ExprKind::FieldRead { .. }
                 | ExprKind::ArrayLiteral { .. }
+                | ExprKind::ByteLiteral { .. }
                 | ExprKind::IndexRead { .. }
                 | ExprKind::ArrayLength { .. } => true,
                 ExprKind::Call { args, .. } => {

@@ -172,7 +172,9 @@ impl<'s> Visitor<'s> {
                         self.span(right.span)?;
                         self.span(*operator_span)?;
                     }
-                    Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => (),
+                    // Byte atoms have only the containing Assign origin.
+                    // Authentication is exclusively the owned bundle proof.
+                    Rvalue::ByteConst { .. } | Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => {}
                 }
             }
             Statement::Initialize { place, value, span } => {
@@ -490,6 +492,15 @@ fn scalar_function(
             visitor.merge(merge)?;
         }
         for (ordinal, statement) in block.statements.iter().enumerate() {
+            if matches!(
+                statement,
+                Statement::Assign(Assign {
+                    value: Rvalue::ByteConst { .. },
+                    ..
+                })
+            ) {
+                return Err(bad());
+            }
             visitor.statement(statement)?;
             if let (Some((ast, owner, sources, owner_slot)), Some(assign)) =
                 (authentication, statement.as_assignment())

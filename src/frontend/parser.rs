@@ -135,6 +135,7 @@ enum PrimaryStart {
     Name,
     Group,
     Array,
+    ByteLiteral,
 }
 #[cfg(test)]
 pub fn parse(source: &SourceFile, tokens: Vec<Token>) -> Result<Program, Vec<Diagnostic>> {
@@ -842,6 +843,7 @@ impl Parser<'_> {
                 | Kind::Minus
                 | Kind::Plus
                 | Kind::String
+                | Kind::ByteString
                 | Kind::Struct
                 | Kind::Ampersand
                 | Kind::Dot
@@ -1386,6 +1388,7 @@ impl Parser<'_> {
         Some(match self.peek().kind {
             Kind::True | Kind::False => PrimaryStart::Boolean,
             Kind::Number | Kind::Minus => PrimaryStart::Number,
+            Kind::ByteString if self.arrays_enabled() => PrimaryStart::ByteLiteral,
             Kind::Ident => PrimaryStart::Name,
             Kind::LParen => PrimaryStart::Group,
             Kind::Unsupported if self.arrays_enabled() && self.array_punctuation("[") => {
@@ -1674,6 +1677,9 @@ impl Parser<'_> {
         self.heights.push(height);
         Ok(id)
     }
+    fn byte_literal_error(&self, error: super::byte_literal::Error) -> Box<Diagnostic> {
+        self.diagnostic("E0101", "parse", error.reason.message(), Some(error.span))
+    }
     fn primary(
         &mut self,
         depth: usize,
@@ -1737,6 +1743,29 @@ impl Parser<'_> {
                     ));
                 }
                 ExprKind::Number { digits, negative }
+            }
+            Some(PrimaryStart::ByteLiteral) => {
+                let mut scanner = super::byte_literal::Scanner::new(self.source, token.span)
+                    .map_err(|error| self.byte_literal_error(error))?;
+                let mut decoded_len = 0usize;
+                while let Some(atom) = scanner
+                    .next_atom()
+                    .map_err(|error| self.byte_literal_error(error))?
+                {
+                    decoded_len = decoded_len
+                        .checked_add(1)
+                        .filter(|&length| length <= MAX_ARRAY_ELEMENTS)
+                        .ok_or_else(|| {
+                            self.diagnostic(
+                                "E0400",
+                                "parse",
+                                "byte literal length limit exceeded (1024)",
+                                Some(atom.origin),
+                            )
+                        })?;
+                }
+                self.bump();
+                ExprKind::ByteLiteral { decoded_len }
             }
             Some(PrimaryStart::Name) => {
                 let qualified = if self.enum_qualified_ahead() {
@@ -1986,6 +2015,10 @@ impl Parser<'_> {
         self.push_expr(kind, self.source.span(token.span.start, end))
     }
 }
+
+#[cfg(test)]
+#[path = "parser/byte_literal_tests.rs"]
+mod byte_literal_tests;
 
 #[path = "parser/arrays.rs"]
 mod arrays;

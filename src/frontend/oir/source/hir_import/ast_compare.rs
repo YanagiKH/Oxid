@@ -995,6 +995,7 @@ impl Walker<'_, '_, '_> {
                 .ok_or(Boundary::Frame)
         };
         let children = match &expression.kind {
+            ast::ExprKind::ByteLiteral { .. } => return Err(Boundary::Domain),
             ast::ExprKind::Group(inner)
             | ast::ExprKind::Negate { operand: inner, .. }
             | ast::ExprKind::Not { operand: inner, .. } => height(*inner)?,
@@ -1027,6 +1028,7 @@ type Binary = Option<(Kind, u8, bool)>;
 fn expression_tag(kind: &ast::ExprKind) -> Result<(u8, Binary), Boundary> {
     use ast::{ArithmeticOp as A, ComparisonOp as C, ExprKind as E, LogicalOp as L};
     let (tag, token, precedence, comparison) = match kind {
+        E::ByteLiteral { .. } => return Err(Boundary::Domain),
         E::Number { .. } => return Ok((15, None)),
         E::Bool(false) => return Ok((16, None)),
         E::Bool(true) => return Ok((17, None)),

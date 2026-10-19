@@ -180,6 +180,9 @@ fn call_result(value: CallResult) -> String {
 
 fn rvalue(value: &Rvalue) -> String {
     match value {
+        Rvalue::ByteConst { .. } => {
+            unreachable!("byte literals are outside this predecessor observation domain")
+        }
         Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
             unreachable!("u8 is outside this predecessor fixture or observation domain")
         }

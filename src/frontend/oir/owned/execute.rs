@@ -1539,6 +1539,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
         };
         let value = match assign.value {
+            Rvalue::ByteConst { value, .. } => Scalar::U8(value),
             Rvalue::Bool(v) => Scalar::Bool(v),
             Rvalue::I32(v) => Scalar::I32(v),
             Rvalue::Unit => Scalar::Unit,

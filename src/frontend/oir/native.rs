@@ -445,6 +445,7 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
     scalar_resource::record_closure(&local);
     let destination = local(assignment.destination);
     let valid = match assignment.value {
+        Rvalue::ByteConst { .. } => false,
         Rvalue::CheckedI32ToU8 { operand, .. } => {
             local(operand.local) == Some(hir::Ty::I32) && destination == Some(hir::Ty::U8)
         }
@@ -1014,6 +1015,9 @@ fn emit(
                 let t = ty(f.locals[a.destination.0].ty);
                 #[allow(unreachable_patterns)]
                 let rhs = match a.value {
+                    Rvalue::ByteConst { .. } => {
+                        unreachable!("byte literal rejected by scalar native admission")
+                    }
                     Rvalue::Load(place) => {
                         writeln!(
                             out,

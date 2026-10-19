@@ -9,6 +9,9 @@ use crate::frontend::{
     },
 };
 
+#[path = "byte_literal_association.rs"]
+mod byte_literals;
+
 /// Owns the exact authenticated program; there is no detachable or reusable permit.
 pub(in crate::frontend::oir::owned) struct AssociatedOwned<'s> {
     raw: RawOwnedProgram,
@@ -139,13 +142,31 @@ pub(super) enum FunctionSource<'a> {
         usize,
     ),
 }
-fn function(
+/// Each newly introduced scalar-row inspection is paid on both passes.
+/// Non-witness observations have only the existing association dimension meter.
+fn literal_row_work(
+    visitor: &mut Visitor<'_>,
+    work: Option<(&crate::frontend::declaration_index::WorkMeter, Span)>,
+) -> Result<(), Box<Diagnostic>> {
+    match work {
+        Some((work, at)) => work.debit(1, at, "byte literal raw association row"),
+        None => visitor.dimension(1, 1),
+    }
+}
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keep independently checked proof domains explicit at the association boundary"
+)]
+fn function_with_literals(
     function: &RawOwnedFunction,
     visitor: &mut Visitor<'_>,
     allow_enums: bool,
     builtin: Option<BuiltinFunction>,
     source: FunctionSource<'_>,
     seen: &mut ConversionSeen,
+    literals: &mut Option<byte_literals::LiteralProof<'_>>,
+    literal_count: &mut usize,
+    literal_work: Option<(&crate::frontend::declaration_index::WorkMeter, Span)>,
 ) -> Result<(), Box<Diagnostic>> {
     if !allow_enums && !function.matches.is_empty() {
         return Err(bad());
@@ -179,6 +200,9 @@ fn function(
         }
     }
     for block in &function.blocks {
+        // Nonempty literals are maximal adjacent scalar/live/array bundles.
+        // A fresh block cannot inherit coverage from another block.
+        let mut literal_covered_until = 0usize;
         visitor.span(block.span)?;
         if let Some(merge) = &block.merge {
             visitor.merge(merge)?;
@@ -223,6 +247,36 @@ fn function(
                 }
                 OwnedInstruction::Scalar(statement) => {
                     visitor.statement(statement)?;
+                    literal_row_work(visitor, literal_work)?;
+                    if matches!(
+                        statement,
+                        Statement::Assign(Assign {
+                            value: Rvalue::ByteConst { .. },
+                            ..
+                        })
+                    ) {
+                        literal_row_work(visitor, literal_work)?;
+                        *literal_count = literal_count.checked_add(1).ok_or_else(bad)?;
+                        match source {
+                            FunctionSource::Count => {
+                                // Only a containing typed invocation may count
+                                // candidate byte claims for the later proof.
+                                if literal_work.is_none() {
+                                    return Err(bad());
+                                }
+                            }
+                            FunctionSource::Synthetic => return Err(bad()),
+                            FunctionSource::Original(ast, owner, sources, module) => {
+                                if position >= literal_covered_until {
+                                    literal_covered_until =
+                                        literals.as_mut().ok_or_else(bad)?.bundle(
+                                            function, block, position, ast, owner, sources, module,
+                                            visitor,
+                                        )?;
+                                }
+                            }
+                        }
+                    }
                     if matches!(source, FunctionSource::Synthetic)
                         && matches!(
                             statement,
@@ -327,6 +381,38 @@ fn function(
     }
     Ok(())
 }
+/// Preserve the historical non-witness test seam, including out-of-line
+/// builtin observations. It has no typed source and cannot authorize ByteConst.
+#[cfg(test)]
+fn function(
+    function: &RawOwnedFunction,
+    visitor: &mut Visitor<'_>,
+    allow_enums: bool,
+    builtin: Option<BuiltinFunction>,
+    source: FunctionSource<'_>,
+    seen: &mut ConversionSeen,
+) -> Result<(), Box<Diagnostic>> {
+    super::budget::admit_conversion_scratch(0, byte_literals::control_bytes()).map_err(|_| {
+        Diagnostic::new(
+            "E0400",
+            "oir-project-bind",
+            "conversion source association scratch limit exceeded",
+            None,
+        )
+    })?;
+    function_with_literals(
+        function,
+        visitor,
+        allow_enums,
+        builtin,
+        source,
+        seen,
+        &mut None,
+        &mut 0,
+        None,
+    )
+}
+
 /// Non-witness structural observation. Production must use `associate`, which
 /// derives and admits the complete containing typed-source storage envelope.
 pub(super) fn check(
@@ -563,7 +649,19 @@ fn check_impl(
     if !allow_enums && (!raw.enums.is_empty() || index.enum_count() != 0) {
         return Err(bad());
     }
+    // These controls are live even when the program has no ByteConst. Typed
+    // callers supply the containing HIR seed; raw observations remain an
+    // explicitly control-only, non-witness model and reject byte constants.
+    let literal_seed = match typed {
+        Some(typed) => typed.conversion_association_storage_bytes()?,
+        None => 0,
+    };
+    let literal_seed =
+        super::budget::admit_conversion_scratch(literal_seed, byte_literals::control_bytes())
+            .map_err(|error| super::diagnostic::lower(&error, sources))?;
+    let literal_work = typed.map(|typed| (typed.work(), index.sources().eof()));
     let mut count = Visitor::count();
+    let mut literal_count = 0usize;
     for declaration in &raw.enums {
         enumeration(declaration, &mut count)?;
     }
@@ -571,7 +669,7 @@ fn check_impl(
         record(declaration, &mut count)?;
     }
     for (ordinal, declaration) in raw.functions.iter().enumerate() {
-        function(
+        function_with_literals(
             declaration,
             &mut count,
             allow_enums,
@@ -582,6 +680,9 @@ fn check_impl(
             },
             FunctionSource::Count,
             &mut ConversionSeen::empty(),
+            &mut None,
+            &mut literal_count,
+            literal_work,
         )?;
     }
     let mut visitor = Visitor::validate(sources);
@@ -599,8 +700,8 @@ fn check_impl(
             expressions = expressions.checked_add(extent).ok_or_else(bad)?;
         }
         let requested = conversion_seen_bytes(owners, expressions)?;
-        if let Some(typed) = typed {
-            let seed = typed.conversion_association_storage_bytes()?;
+        if typed.is_some() {
+            let seed = literal_seed;
             // The fixed RFC0030 bank already paid the shared authentication
             // helper. Only tracker/header/reservation overlap is additional.
             let additional = requested
@@ -615,7 +716,22 @@ fn check_impl(
     } else {
         ConversionSeen::empty()
     };
-    // The ordinary zero-enum path keeps its historical dimension/work count.
+    let mut literals = if literal_count != 0 {
+        // A raw observation/import without its containing paid typed source
+        // cannot create byte-constant authority. Ordinary arrays are unchanged.
+        Some(byte_literals::LiteralProof::new(
+            typed.ok_or_else(bad)?,
+            sources,
+            &mut visitor,
+            &seen,
+            literal_seed,
+        )?)
+    } else {
+        None
+    };
+    let mut validated_literals = 0usize;
+    // The enum dimension remains conditional; the added scalar-row work above
+    // is accounted independently, including on the zero-enum route.
     if allow_enums {
         visitor.dimension(raw.enums.len(), index.enum_count())?;
     }
@@ -685,7 +801,7 @@ fn check_impl(
                 return Err(bad());
             }
             visitor.file(declaration.span.file);
-            function(
+            function_with_literals(
                 declaration,
                 &mut visitor,
                 allow_enums,
@@ -696,6 +812,9 @@ fn check_impl(
                 },
                 FunctionSource::Synthetic,
                 &mut seen,
+                &mut literals,
+                &mut validated_literals,
+                literal_work,
             )?;
             continue;
         }
@@ -706,14 +825,23 @@ fn check_impl(
             return Err(bad());
         }
         visitor.file(original.name.file);
-        function(
+        function_with_literals(
             declaration,
             &mut visitor,
             allow_enums,
             None,
             FunctionSource::Original(ast, original, sources, module.0),
             &mut seen,
+            &mut literals,
+            &mut validated_literals,
+            literal_work,
         )?;
+    }
+    if literal_count != validated_literals {
+        return Err(bad());
+    }
+    if let Some(literals) = &literals {
+        literals.finish(literal_count)?;
     }
     visitor.finish(count)
 }
@@ -1424,3 +1552,7 @@ thread_local! {
 #[cfg(test)]
 #[path = "byte_storage_association_tests.rs"]
 mod byte_storage_association_tests;
+
+#[cfg(test)]
+#[path = "byte_literal_association_tests.rs"]
+mod byte_literal_tests;

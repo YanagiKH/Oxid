@@ -2591,6 +2591,13 @@ impl<'a> Resolver<'_, 'a> {
                     }
                 }
             }
+            ast::ExprKind::ByteLiteral { decoded_len } => {
+                self.work.debit(1, expr.span, "byte literal resolve")?;
+                ExprKind::ByteLiteral {
+                    source_expr: id,
+                    decoded_len: *decoded_len,
+                }
+            }
             ast::ExprKind::ArrayLiteral { elements } => {
                 self.work.debit(1, expr.span, "array resolve literal")?;
                 let requested = checked_array_entries(*self.array_entries, elements.len())

@@ -688,6 +688,14 @@ impl<'a> Resolver<'_, 'a> {
                     Some(expr.span),
                 ));
             }
+            ast::ExprKind::ByteLiteral { .. } => {
+                return Err(Diagnostic::new(
+                    "E0101",
+                    "resolve",
+                    "byte literals require the owned typed source route",
+                    Some(expr.span),
+                ));
+            }
             ast::ExprKind::ArrayLiteral { .. }
             | ast::ExprKind::IndexRead { .. }
             | ast::ExprKind::ArrayLength { .. } => {

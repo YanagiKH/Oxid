@@ -352,6 +352,7 @@ impl<'s> SourceOwner<'s> {
                     ast::ExprKind::StructLiteral { .. }
                     | ast::ExprKind::FieldRead { .. }
                     | ast::ExprKind::ArrayLiteral { .. }
+                    | ast::ExprKind::ByteLiteral { .. }
                     | ast::ExprKind::IndexRead { .. }
                     | ast::ExprKind::ArrayLength { .. } => owned = true,
                     ast::ExprKind::Call { args, .. } => {

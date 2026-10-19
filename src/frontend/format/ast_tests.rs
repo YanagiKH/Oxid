@@ -370,6 +370,11 @@ impl<'a> Fingerprint<'a> {
                 self.spelling(*digits);
                 self.flag(*negative);
             }
+            ExprKind::ByteLiteral { decoded_len } => {
+                self.tag("byte-literal");
+                self.count(*decoded_len);
+                self.spelling(*span);
+            }
             ExprKind::Unit => self.tag("unit"),
             ExprKind::Name(name) => {
                 self.tag("name");
@@ -768,6 +773,7 @@ fn normalized(text: &str) -> Vec<Part> {
 // runtime fixtures. No packages or unrelated language proposals are needed.
 const CORPUS: &[(&str, &str)] = &[
     ("empty", ""),
+    ("byte-literals", r##"fn f()->(){let a=b"";let b=b"A\xFF\xff\0\n\\\"";return;}"##),
     ("named-byte-conversions", "// 雪\r\nfn f(x:i32,b:u8)->i32{x /*é*/ . /*dot*/ to_u8_checked /*name*/ ( /*empty*/ );return (b . to_i32 ());}fn u8(x:i32)->i32{return - -x.to_i32()+x.to_i32()*2;}"),
     ("projected-borrow-paths", "fn use_paths()->(){f(&batch /* root */ . inner . samples,&mut batch.inner.samples,&*p . inner . samples,&mut *p /* ref */ .inner.samples);return;}"),
     ("comments-only", "// 雪\r\n/* é\n braces { } and punctuation :: */\r\n"),
@@ -977,6 +983,7 @@ fn handwritten_corpus_reaches_every_ast_variant_and_operator() {
         "i32-element",
         "unit-element",
         "array-literal",
+        "byte-literal",
         "index-read",
         "array-length",
         "index-assign",
@@ -1784,4 +1791,29 @@ fn bytebuf_formatter_preserves_call_only_range_endpoints_and_forwarding() {
     let after = output.get(id);
     assert_eq!(before, fingerprint(after, &parse(after)));
     assert_eq!(format_source(after).unwrap(), after.text());
+}
+
+#[test]
+fn byte_literal_formatter_fingerprint_binds_count_spelling_and_occurrence() {
+    let text = r##"fn main()->(){let a=b"\xFF";let b=b"\xFF";let empty=b"";return;}"##;
+    let mut sources = SourceMap::new();
+    let id = sources.add("byte-literal-origins.ox".into(), text.into());
+    let source = sources.get(id);
+    let expected = fingerprint(source, &parse(source));
+    let formatted = format_source(source).unwrap();
+    let mut output = SourceMap::new();
+    let id = output.add("byte-literal-formatted.ox".into(), formatted);
+    let after = output.get(id);
+    assert_eq!(expected, fingerprint(after, &parse(after)));
+    assert_eq!(format_source(after).unwrap(), after.text());
+
+    let mut changed = parse(source);
+    let ExprKind::ByteLiteral { decoded_len } = &mut changed.expressions[0].kind else {
+        panic!("byte literal")
+    };
+    *decoded_len = 0;
+    assert_ne!(expected, fingerprint(source, &changed));
+    let mut changed = parse(source);
+    changed.expressions[0].span = changed.expressions[1].span;
+    assert_ne!(expected, fingerprint(source, &changed));
 }

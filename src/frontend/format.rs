@@ -551,6 +551,8 @@ fn layout(
                 emit(" ")?;
             }
         }
+        // ByteString is one protected token: preserve its complete original
+        // spelling, including hex case and escapes, in both count/emit passes.
         emit(source.text_at(token.span))?;
         match delimiter(source, token) {
             Some(Delimiter::Open(kind)) => {
@@ -739,6 +741,10 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "format/byte_literal_tests.rs"]
+mod byte_literal_tests;
 
 #[cfg(test)]
 #[path = "format/resource_tests.rs"]

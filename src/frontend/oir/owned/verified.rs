@@ -106,7 +106,8 @@ pub(super) fn verify_with_limits(
     })
 }
 
-/// Only the consuming source-association wrapper can select conversion authority.
+/// Only the consuming source-association wrapper can select conversion and
+/// byte-literal authority for exactly the authenticated raw program.
 pub(super) fn verify_associated(
     associated: super::source::association::AssociatedOwned<'_>,
 ) -> Result<VerifiedOwnedProgram, OwnedFailure> {

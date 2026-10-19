@@ -143,6 +143,7 @@ pub(super) fn scalar_statement_shape(
             )?;
             hir::Ty::I32
         }
+        Rvalue::ByteConst { .. } => hir::Ty::U8,
         Rvalue::Bool(_) => hir::Ty::Bool,
         Rvalue::I32(_) => hir::Ty::I32,
         Rvalue::Unit => hir::Ty::Unit,
@@ -328,6 +329,18 @@ fn verify_impl(
                 }
             }
             for statement in &block.statements {
+                // The scalar-only seal never admits literal atoms, including
+                // when conversion origins have independently authenticated.
+                if statement
+                    .as_assignment()
+                    .is_some_and(|assign| matches!(assign.value, Rvalue::ByteConst { .. }))
+                {
+                    return Err(OirFailure::new(
+                        FailureKind::UnauthenticatedByteLiteral,
+                        STAGE,
+                        None,
+                    ));
+                }
                 if !authenticated
                     && statement.as_assignment().is_some_and(|assign| {
                         matches!(
@@ -471,7 +484,7 @@ pub(super) fn scalar_statement_uses(
                 visit(ScalarUse::Operand(left))?;
                 visit(ScalarUse::Operand(right))
             }
-            Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => Ok(()),
+            Rvalue::ByteConst { .. } | Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => Ok(()),
         },
     }
 }
@@ -1236,5 +1249,89 @@ mod scratch_tests {
         assert_eq!(error.span, Some(origin));
         assert!(scratch_vec(0, 0usize, origin).unwrap().is_empty());
         assert_eq!(scratch_vec(3, NONE, origin).unwrap(), [NONE; 3]);
+    }
+}
+
+#[cfg(test)]
+mod byte_literal_shape_tests {
+    use super::*;
+
+    fn fixture() -> (SourceMap, Program) {
+        let mut sources = SourceMap::new();
+        let file = sources.add("byte-literal-shape.ox".into(), "b\"x\"".into());
+        let origin = sources.get(file).span(2, 3);
+        let operand = Operand {
+            local: LocalId(0),
+            span: origin,
+        };
+        let function = Function {
+            id: hir::DefId(0),
+            span: origin,
+            result: hir::Ty::U8,
+            param_count: 0,
+            locals: vec![LocalDecl {
+                ty: hir::Ty::U8,
+                kind: LocalKind::Temporary,
+                span: origin,
+            }],
+            places: vec![],
+            entry: BlockId(0),
+            blocks: vec![BasicBlock {
+                merge: None,
+                span: origin,
+                statements: vec![Statement::Assign(Assign {
+                    destination: operand.local,
+                    value: Rvalue::ByteConst {
+                        value: b'x',
+                        source_expr: crate::frontend::ast::ExprId(0),
+                        ordinal: 0,
+                    },
+                    span: origin,
+                })],
+                terminator: Some(Terminator {
+                    kind: TerminatorKind::Return(operand),
+                    span: origin,
+                }),
+            }],
+        };
+        (
+            sources,
+            Program {
+                functions: vec![function],
+            },
+        )
+    }
+
+    #[test]
+    fn byte_atom_shape_is_u8_and_has_no_scalar_reads() {
+        let (sources, raw) = fixture();
+        let function = &raw.functions[0];
+        let statement = &function.blocks[0].statements[0];
+        scalar_statement_shape(&function.locals, &function.places, statement, &sources).unwrap();
+        let mut reads = 0;
+        scalar_statement_uses(statement, &mut |_| {
+            reads += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(reads, 0);
+        let mut locals = function.locals.clone();
+        locals[0].ty = hir::Ty::I32;
+        assert_eq!(
+            scalar_statement_shape(&locals, &[], statement, &sources)
+                .unwrap_err()
+                .kind,
+            FailureKind::TypeMismatch,
+        );
+    }
+
+    #[test]
+    fn scalar_only_seal_rejects_byte_atom_even_with_conversion_authority() {
+        let (sources, raw) = fixture();
+        for conversion_authority in [false, true] {
+            let error = verify_impl(raw.clone(), &sources, conversion_authority).unwrap_err();
+            assert_eq!(error.kind, FailureKind::UnauthenticatedByteLiteral);
+            assert_eq!(error.span, None);
+        }
     }
 }

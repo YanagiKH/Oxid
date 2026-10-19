@@ -2783,7 +2783,8 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
                     Continuation::Arithmetic
                 }
                 Rvalue::CheckedI32ToU8 { .. } => Continuation::Conversion,
-                Rvalue::Load(_)
+                Rvalue::ByteConst { .. }
+                | Rvalue::Load(_)
                 | Rvalue::U8ToI32 { .. }
                 | Rvalue::NotBool { .. }
                 | Rvalue::Bool(_)
@@ -3978,6 +3979,7 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::ByteConst { value, .. } => value.to_string(),
         Rvalue::Bool(v) => if v { "true" } else { "false" }.to_string(),
         Rvalue::I32(v) => v.to_string(),
         Rvalue::Unit => "0".into(),

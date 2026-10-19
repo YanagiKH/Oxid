@@ -70,6 +70,10 @@ pub(super) enum ExprKind {
         name_span: Span,
         source_expr: crate::frontend::ast::ExprId,
     },
+    ByteLiteral {
+        source_expr: crate::frontend::ast::ExprId,
+        decoded_len: usize,
+    },
     Bool(bool),
     I32(i32),
     Unit,

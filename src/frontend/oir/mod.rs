@@ -147,6 +147,14 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    /// Atom candidate of a typed byte literal, authenticated only by the owned
+    /// source association. Its Assign carries the exact original atom span;
+    /// no cast or conversion is implied.
+    ByteConst {
+        value: u8,
+        source_expr: crate::frontend::ast::ExprId,
+        ordinal: usize,
+    },
     CheckedI32ToU8 {
         operand: Operand,
         name_span: Span,
@@ -262,6 +270,7 @@ enum FailureKind {
     Unreachable,
     InvalidSpan,
     UnauthenticatedConversion,
+    UnauthenticatedByteLiteral,
     BuilderClosed,
     IncompleteBody,
     Accounting,

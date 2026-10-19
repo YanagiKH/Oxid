@@ -315,6 +315,9 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            source_hir::ExprKind::ByteLiteral { .. } => {
+                unreachable!("byte literals are outside this predecessor observation domain")
+            }
             source_hir::ExprKind::Conversion { .. } => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
@@ -838,6 +841,9 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            Rvalue::ByteConst { .. } => {
+                unreachable!("byte literals are outside this predecessor observation domain")
+            }
             Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }

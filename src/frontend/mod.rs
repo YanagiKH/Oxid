@@ -1,6 +1,7 @@
 //! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
 mod ast;
 mod builtin_catalog;
+mod byte_literal;
 mod declaration_index;
 mod diagnostic;
 mod driver;

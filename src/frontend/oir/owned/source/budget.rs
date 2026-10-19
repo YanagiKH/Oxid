@@ -174,6 +174,16 @@ pub(super) fn preflight(
             OwnedFailure::malformed(Malformed::Binding, typed.index().sources().eof())
         })?;
     }
+    let source_seed = typed.byte_lower_storage_bytes().map_err(|error| {
+        if error.code == "E0400" {
+            OwnedFailure::resource("byte literal lower source accounting")
+        } else {
+            OwnedFailure::malformed(Malformed::CanonicalSite, typed.index().sources().eof())
+        }
+    })?;
+    if let Some(seed) = source_seed {
+        admit_lower_scratch(seed, 0)?;
+    }
     #[cfg(test)]
     guard_event(GuardEvent::DeclarationAdmission);
     let mut declarations =
@@ -277,7 +287,7 @@ pub(super) fn preflight(
     if typed.index().builtin_set() != BuiltinOrigins::None {
         scratch = scratch.max(super::builtin_lower::carrier_bytes());
     }
-    if let Some(seed) = typed.source_storage_bytes() {
+    if let Some(seed) = source_seed {
         admit_lower_scratch(seed, scratch)?;
     }
     Ok(Usage {

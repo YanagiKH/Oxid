@@ -53,6 +53,9 @@ pub enum Kind {
     Unsupported,
     Invalid,
     Eof,
+    // Appended to preserve the existing experimental LXI1/LXS1 tag numbers.
+    // That closed wire protocol deliberately has no byte-string tag.
+    ByteString,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Token {
@@ -330,6 +333,28 @@ fn lex_core(
                     });
                 }
                 Kind::Trivia
+            }
+            'b' if bytes.get(cursor) == Some(&b'"') => {
+                cursor += 1; // The adjacent opening quote belongs to this token.
+                let mut closed = false;
+                while cursor < bytes.len() {
+                    let next = text[cursor..].chars().next().unwrap();
+                    cursor += next.len_utf8();
+                    if next == '"' {
+                        closed = true;
+                        break;
+                    }
+                    if next == '\\' && cursor < bytes.len() {
+                        cursor += text[cursor..].chars().next().unwrap().len_utf8();
+                    }
+                }
+                if !closed {
+                    return Err(Failure {
+                        reason: FailureReason::UnterminatedString,
+                        span: source.span(start, cursor),
+                    });
+                }
+                Kind::ByteString
             }
             'a'..='z' | 'A'..='Z' | '_' => {
                 while cursor < bytes.len()

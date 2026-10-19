@@ -316,6 +316,9 @@ fn execute(
                 }
             };
             let value = match assign.value {
+                Rvalue::ByteConst { .. } => {
+                    return Err(internal(FailureKind::UnauthenticatedByteLiteral, None));
+                }
                 Rvalue::Load(place) => load(active, place)?,
                 Rvalue::CheckedI32ToU8 {
                     operand, name_span, ..

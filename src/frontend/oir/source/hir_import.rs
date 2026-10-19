@@ -207,6 +207,8 @@ fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
     let mut arguments = 0usize;
     for expression in &program.expressions {
         match &expression.kind {
+            // Observation import has no independent byte-literal witness.
+            ast::ExprKind::ByteLiteral { .. } => return Err(Boundary::Domain),
             ast::ExprKind::Negate { .. }
             | ast::ExprKind::Not { .. }
             | ast::ExprKind::Logical { .. }

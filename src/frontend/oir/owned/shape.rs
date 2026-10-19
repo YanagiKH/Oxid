@@ -684,6 +684,22 @@ pub(super) fn check_with_conversion_authority(
                         && matches!(
                             i,
                             Statement::Assign(Assign {
+                                value: Rvalue::ByteConst { .. },
+                                ..
+                            })
+                        )
+                    {
+                        return Err(OirFailure {
+                            kind: FailureKind::UnauthenticatedByteLiteral,
+                            stage: "oir-verify",
+                            span: None,
+                        }
+                        .into());
+                    }
+                    if !source_associated
+                        && matches!(
+                            i,
+                            Statement::Assign(Assign {
                                 value: Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. },
                                 ..
                             })
@@ -1347,4 +1363,38 @@ fn check_matches(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod byte_literal_gate_tests {
+    use super::*;
+
+    #[test]
+    fn bare_owned_byte_atom_cannot_acquire_an_executable_witness() {
+        let (sources, mut raw) =
+            source::u8_tests::raw_source("struct R {} fn main()->i32{return 0;}");
+        let assign = raw
+            .functions
+            .iter_mut()
+            .flat_map(|function| &mut function.blocks)
+            .flat_map(|block| &mut block.statements)
+            .find_map(|statement| match &mut statement.kind {
+                OwnedInstruction::Scalar(Statement::Assign(assign)) => Some(assign),
+                _ => None,
+            })
+            .unwrap();
+        assign.value = Rvalue::ByteConst {
+            value: b'x',
+            source_expr: crate::frontend::ast::ExprId(0),
+            ordinal: 0,
+        };
+        let error = verified::verify_owned(raw, &sources).unwrap_err();
+        assert_eq!(error.primary.get(), None);
+        assert_eq!(
+            error.kind,
+            OwnedFailureKind::Malformed(
+                Malformed::Scalar(FailureKind::UnauthenticatedByteLiteral,)
+            ),
+        );
+    }
 }
