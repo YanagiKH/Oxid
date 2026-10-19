@@ -2605,7 +2605,7 @@ fn help() {
     println!("  oxid run <file.ox|file.oxb>");
     println!("  oxid script <name> [args...]");
     println!("  oxid check <file.ox> [--edition typed-preview --message-format text|json]");
-    println!("  --edition legacy-0.9 keeps the default legacy route; typed-preview is check-only");
+    println!("  --edition legacy-0.9 keeps the default legacy route; typed-preview commands are listed below");
     println!("  oxid compile <file.ox> [-o app.oxb]");
     println!("  oxid ast <file.ox> [-o app.oxa]");
     println!("  oxid inspect <file.oxb>");
@@ -2641,6 +2641,26 @@ fn help() {
     println!("  oxid syntax");
     println!("  oxid interop");
     println!("  oxid help");
+    println!();
+    println!("Typed-preview projects (explicit opt-in):");
+    println!("  oxid new <project-path> --edition typed-preview");
+    println!("  oxid check --manifest-path <oxid.toml>");
+    println!("  oxid build --manifest-path <oxid.toml> [--entry-mode result|process]");
+    println!("  oxid run --manifest-path <oxid.toml> [--engine interpreter|native] [--entry-mode result|process]");
+    println!("  oxid test --manifest-path <oxid.toml> [--engine interpreter|native]");
+    println!("  oxid package --manifest-path <oxid.toml> --output <archive.tar> [--entry-mode result|process]");
+    println!("  oxid doctor --edition typed-preview");
+    println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");
+    println!("  Add --package <name> to select a package from a workspace manifest.");
+    println!("  Entry mode defaults to result; run/test default to the interpreter.");
+    println!("  Native target: x86_64-unknown-linux-gnu.");
+    println!("  Build, package, and native run/test require LLVM 19.1.7 (clang, opt, ld.lld).");
+    println!("  Set OXID_LLVM_BIN to their bin directory; otherwise PATH must provide clang-19, opt-19, ld.lld-19.");
+    println!("Examples:");
+    println!("  oxid new hello --edition typed-preview");
+    println!("  oxid check --manifest-path hello/oxid.toml");
+    println!("  oxid run --manifest-path hello/oxid.toml --engine native");
+    println!("  oxid package --manifest-path hello/oxid.toml --output hello.tar");
 }
 
 fn check_file(path: &Path) -> Result<(), String> {
