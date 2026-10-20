@@ -2,8 +2,8 @@
 //! here and go unchanged to the old classifier, including Process error routing.
 //! Both RUN engines and BUILD admit explicit process entry mode.
 use super::{word, Allocator, Failure, Operation, Route};
-use crate::frontend::options::EntryPolicy;
-const OPTIONS: [&str; 14] = [
+use crate::frontend::options::{BuildProfile, EntryPolicy, PROFILE_APPLICABILITY};
+const OPTIONS: [&str; 15] = [
     "--manifest-path",
     "--edition",
     "--message-format",
@@ -18,6 +18,8 @@ const OPTIONS: [&str; 14] = [
     "--package",
     "--filter",
     "--fail-fast",
+    // Append a global selector without renumbering established local option bits.
+    "--profile",
 ];
 #[derive(Clone, Copy)]
 enum Error<'a> {
@@ -27,6 +29,7 @@ enum Error<'a> {
     Edition(&'a str),
     Format(&'a str),
     Entry(&'a str),
+    Profile(&'a str),
     Engine(&'a str),
     Unsupported(&'a str),
 }
@@ -41,6 +44,7 @@ impl Error<'_> {
             }
             Self::Format(v) => format!("unknown --message-format `{v}`; expected text or json"),
             Self::Entry(v) => format!("unknown --entry-mode `{v}`; expected result or process"),
+            Self::Profile(v) => format!("unknown --profile `{v}`; expected dev or release"),
             Self::Engine(v) => format!("unknown --engine `{v}`; expected interpreter or native"),
             Self::Unsupported(v) => {
                 format!("unsupported option for manifest {operation}: {v}")
@@ -67,6 +71,7 @@ pub(super) struct Scan<'a> {
     process: bool,
     native: bool,
     fail_fast: bool,
+    profile: BuildProfile,
 }
 pub(super) fn select(args: &[String]) -> Option<Route> {
     select_with(args, Allocator::default())
@@ -92,13 +97,13 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         // Only true globals can precede the first forwarded command word.
         // Compile-local options are also ordinary names after `script`.
         let option = OPTIONS.iter().enumerate().position(|(slot, name)| {
-            (slot < 7 || scan.command.is_some_and(|command| command != "script"))
+            (slot < 7 || slot == 14 || scan.command.is_some_and(|command| command != "script"))
                 && (arg == *name || arg.strip_prefix(name).is_some_and(|s| s.starts_with('=')))
         });
         if let Some(slot) = option {
             let name = OPTIONS[slot];
             // Preserve the existing global scan tier before local validation.
-            let error = if slot < 7 {
+            let error = if slot < 7 || slot == 14 {
                 &mut scan.error
             } else {
                 &mut scan.local_error
@@ -158,6 +163,11 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                     })
                 }
                 (9, value) => scan.output = value,
+                (14, Some("dev")) => scan.profile = BuildProfile::Dev,
+                (14, Some("release")) => scan.profile = BuildProfile::Release,
+                (14, Some(value)) => {
+                    error.get_or_insert(Error::Profile(value));
+                }
                 _ => {}
             }
         } else if scan.command.is_none() {
@@ -226,11 +236,16 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
         Some("--fail-fast is only supported by explicit manifest test".into())
     } else if !run && !test && scan.seen & (1 << 10) != 0 {
         Some("--engine is only supported by manifest run or test".into())
+    } else if scan.seen & (1 << 14) != 0
+        && !(build || package || native_run || (test && scan.native))
+    {
+        Some(PROFILE_APPLICABILITY.into())
     } else if scan.seen
         & !((if build || run || package { 15 } else { 7 })
             | (if run || test { 1 << 10 } else { 0 })
             | (if package { 1 << 9 } else { 0 })
             | (1 << 11)
+            | (1 << 14)
             | (if test { (1 << 12) | (1 << 13) } else { 0 }))
         != 0
     {
@@ -307,20 +322,24 @@ pub(super) fn select_with(args: &[String], allocator: Allocator) -> Option<Route
                 request,
                 output,
                 entry_policy,
+                profile: scan.profile,
             },
             Ok(request) if test => Route::ManifestTest {
                 request,
                 native: scan.native,
                 filter: scan.filter,
                 fail_fast: scan.fail_fast,
+                profile: scan.profile,
             },
             Ok(request) if build => Route::ManifestBuild {
                 request,
                 entry_policy,
+                profile: scan.profile,
             },
             Ok(request) if native_run => Route::ManifestNativeRun {
                 request,
                 entry_policy,
+                profile: scan.profile,
             },
             Ok(request) if run && scan.process => Route::ManifestProcessRun { request },
             Ok(request) if operation == Operation::Run => Route::ManifestRun { request },
@@ -384,11 +403,13 @@ mod package_tests {
             output,
             entry_policy,
             request,
+            profile,
         }) = select(&words)
         else {
             panic!("package route");
         };
         assert_eq!(output, "out.tar");
+        assert_eq!(profile, BuildProfile::Dev);
         assert_eq!(entry_policy, EntryPolicy::Process);
         assert_eq!(request[0].package.as_deref(), Some("app"));
     }
@@ -725,5 +746,346 @@ mod fail_fast_tests {
             failure.message(),
             "manifest test does not accept a source operand"
         );
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).into()).collect()
+    }
+
+    fn refusal(words: &[&str], expected: &str) {
+        let route = select(&args(words)).expect("manifest selector");
+        let failure = match route {
+            Route::ManifestError { failure, .. }
+            | Route::ManifestBuildError { failure, .. }
+            | Route::ManifestPackageError { failure, .. }
+            | Route::ManifestTestError { failure, .. } => failure,
+            Route::ProcessError { message } => {
+                assert_eq!(message, expected, "{words:?}");
+                return;
+            }
+            other => panic!("expected profile refusal for {words:?}, got {other:?}"),
+        };
+        assert_eq!(failure.classification(), ("E0001", "cli"));
+        assert_eq!(failure.message(), expected, "{words:?}");
+    }
+
+    #[test]
+    fn native_profile_accepts_both_forms_at_every_global_position_without_edition() {
+        for command in ["build", "package", "run", "test"] {
+            let mut base = vec![
+                command,
+                "--manifest-path=workspace/oxid.toml",
+                "--package=app",
+            ];
+            if command == "package" {
+                base.push("--output=app.tar");
+            }
+            if command == "run" || command == "test" {
+                base.push("--engine=native");
+            }
+            if command == "test" {
+                base.extend(["--filter", "keep", "--fail-fast"]);
+            } else {
+                base.push("--entry-mode=process");
+            }
+            for (selection, expected) in [
+                (vec![], BuildProfile::Dev),
+                (vec!["--profile", "dev"], BuildProfile::Dev),
+                (vec!["--profile=dev"], BuildProfile::Dev),
+                (vec!["--profile", "release"], BuildProfile::Release),
+                (vec!["--profile=release"], BuildProfile::Release),
+            ] {
+                for position in 0..=base.len() {
+                    // An existing local option continues to own its value.
+                    if position > 0 && base[position - 1] == "--filter" {
+                        continue;
+                    }
+                    let mut words = base.clone();
+                    words.splice(position..position, selection.iter().copied());
+                    let arguments = args(&words);
+                    let route = select(&arguments).expect("manifest selector");
+                    let (request, profile) = match route {
+                        Route::ManifestPackage {
+                            request,
+                            profile,
+                            output,
+                            entry_policy,
+                        } => {
+                            assert_eq!(command, "package");
+                            assert_eq!(output, "app.tar");
+                            assert_eq!(entry_policy, EntryPolicy::Process);
+                            (request, profile)
+                        }
+                        Route::ManifestBuild {
+                            request,
+                            profile,
+                            entry_policy,
+                        }
+                        | Route::ManifestNativeRun {
+                            request,
+                            profile,
+                            entry_policy,
+                        } => {
+                            assert!(command == "build" || command == "run");
+                            assert_eq!(entry_policy, EntryPolicy::Process);
+                            (request, profile)
+                        }
+                        Route::ManifestTest {
+                            request,
+                            profile,
+                            native,
+                            filter,
+                            fail_fast,
+                        } => {
+                            assert_eq!(command, "test");
+                            assert!(native && fail_fast);
+                            assert_eq!(arguments[filter.expect("filter index")], "keep");
+                            (request, profile)
+                        }
+                        other => {
+                            panic!("expected native profile route for {words:?}, got {other:?}")
+                        }
+                    };
+                    assert_eq!(profile, expected, "{words:?}");
+                    assert_eq!(request[0].path, "workspace/oxid.toml");
+                    assert_eq!(request[0].package.as_deref(), Some("app"));
+                    assert_eq!(request[0].allocator.attempts, 3);
+                }
+            }
+        }
+        assert!(matches!(
+            select(&args(&[
+                "test",
+                "--manifest-path=p",
+                "--engine=interpreter"
+            ])),
+            Some(Route::ManifestTest {
+                native: false,
+                profile: BuildProfile::Dev,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn explicit_native_profile_preserves_the_manifest_allocation_sequence() {
+        for profile in ["--profile=dev", "--profile=release"] {
+            for fail_at in 1..=3 {
+                let route = select_with(
+                    &args(&["build", "--manifest-path=p", "--package=app", profile]),
+                    Allocator {
+                        attempts: 0,
+                        fail_at: Some(fail_at),
+                    },
+                );
+                assert!(matches!(
+                    route,
+                    Some(Route::ManifestBuildError {
+                        failure: Failure::Resource("manifest transport allocation failed"),
+                        ..
+                    })
+                ));
+            }
+            let Some(Route::ManifestBuild { request, .. }) = select_with(
+                &args(&["build", "--manifest-path=p", profile]),
+                Allocator {
+                    attempts: 0,
+                    fail_at: Some(3),
+                },
+            ) else {
+                panic!("profile added an allocation without a package selector");
+            };
+            assert_eq!(request[0].allocator.attempts, 2);
+        }
+    }
+
+    #[test]
+    fn profile_syntax_is_global_first_error_before_filter_fail_fast_and_local_errors() {
+        for (tail, expected) in [
+            (vec!["--profile"], "--profile requires a value"),
+            (vec!["--profile="], "--profile requires a value"),
+            (
+                vec!["--profile", "--engine=native"],
+                "--profile requires a value",
+            ),
+            (
+                vec!["--profile=debug"],
+                "unknown --profile `debug`; expected dev or release",
+            ),
+            (
+                vec!["--profile=dev", "--profile", "release"],
+                "--profile may only be specified once",
+            ),
+            (
+                vec!["--profile=release", "--profile="],
+                "--profile may only be specified once",
+            ),
+            (
+                vec!["--profile=wrong", "--profile=dev"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+            (
+                vec!["--profile=", "--edition=wrong"],
+                "--profile requires a value",
+            ),
+            (
+                vec!["--edition=wrong", "--profile="],
+                "unknown edition `wrong`; expected legacy-0.9 or typed-preview",
+            ),
+            (
+                vec!["--filter=", "--profile=wrong"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+            (
+                vec!["--fail-fast=", "--profile=wrong"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+            (
+                vec!["--unknown", "--profile=wrong"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+            (
+                vec!["--profile=dev", "--filter=", "--fail-fast="],
+                "--filter requires a value",
+            ),
+            (
+                vec!["--profile=dev", "--fail-fast=", "--filter="],
+                "--fail-fast does not accept a value",
+            ),
+        ] {
+            let mut words = vec!["test", "--manifest-path=missing", "--message-format=json"];
+            words.extend(tail);
+            let Some(Route::ManifestTestError { failure, json }) = select(&args(&words)) else {
+                panic!("expected test refusal: {words:?}");
+            };
+            assert!(json);
+            assert_eq!(failure.message(), expected, "{words:?}");
+        }
+        let Some(Route::ManifestError {
+            failure, operation, ..
+        }) = select(&args(&["run", "--manifest-path=p", "--profile=x"]))
+        else {
+            panic!("global profile syntax error");
+        };
+        assert_eq!(operation, Operation::Check);
+        assert_eq!(
+            failure.message(),
+            "unknown --profile `x`; expected dev or release"
+        );
+    }
+
+    #[test]
+    fn explicit_profile_even_dev_rejects_check_and_interpreter_engines() {
+        for profile in ["--profile=dev", "--profile=release"] {
+            refusal(
+                &["check", "--manifest-path=p", profile],
+                PROFILE_APPLICABILITY,
+            );
+            for command in ["run", "test"] {
+                for engine in [None, Some("--engine=interpreter")] {
+                    let mut words = vec![command, "--manifest-path=p", profile];
+                    words.extend(engine);
+                    refusal(&words, PROFILE_APPLICABILITY);
+                }
+            }
+            refusal(
+                &["run", "--manifest-path=p", "--entry-mode=process", profile],
+                PROFILE_APPLICABILITY,
+            );
+            for local in ["--filter=keep", "--fail-fast"] {
+                for command in ["check", "run", "build", "package"] {
+                    let expected = if local == "--filter=keep" {
+                        "--filter is only supported by explicit manifest test"
+                    } else {
+                        "--fail-fast is only supported by explicit manifest test"
+                    };
+                    refusal(&[command, "--manifest-path=p", profile, local], expected);
+                    refusal(&[command, "--manifest-path=p", local, profile], expected);
+                }
+            }
+        }
+        refusal(
+            &[
+                "test",
+                "--manifest-path=p",
+                "--engine=native",
+                "--profile=release",
+                "--message-format=json",
+            ],
+            "manifest test does not support --message-format=json",
+        );
+        refusal(
+            &[
+                "run",
+                "--manifest-path=p",
+                "--engine=native",
+                "--profile=release",
+                "--message-format=json",
+            ],
+            "native manifest run does not support --message-format=json",
+        );
+    }
+
+    #[test]
+    fn profile_preserves_script_and_separator_ownership_and_other_selector_refusals() {
+        use crate::frontend::options;
+        for words in [
+            vec![
+                "script",
+                "task",
+                "--profile",
+                "release",
+                "--manifest-path=p",
+            ],
+            vec!["script", "task", "--profile=", "--manifest-path=p"],
+            vec!["build", "--", "--profile=release", "--manifest-path=p"],
+        ] {
+            let arguments = args(&words);
+            assert!(select(&arguments).is_none());
+            assert_eq!(options::route(&arguments), Route::Legacy(arguments));
+        }
+        refusal(
+            &["build", "--manifest-path=p", "--", "--profile=release"],
+            "manifest build does not accept a source operand",
+        );
+        refusal(
+            &["--manifest-path=p", "--profile=release", "build"],
+            "--manifest-path must follow build",
+        );
+        refusal(
+            &[
+                "build",
+                "--manifest-path=p",
+                "--edition=legacy-0.9",
+                "--profile=release",
+            ],
+            "manifest build conflicts with --edition legacy-0.9",
+        );
+        for command in ["fmt", "doctor", "new", "compile", "unknown"] {
+            refusal(
+                &[command, "--manifest-path=p", "--profile=release"],
+                "--manifest-path requires check, run or build, or test",
+            );
+        }
+        for experimental in [
+            "--experimental-hir-import=observation",
+            "--experimental-hir-producers=bundle",
+            "--experimental-lexical-provider=bundle",
+        ] {
+            refusal(
+                &[
+                    "build",
+                    "--manifest-path=p",
+                    "--profile=release",
+                    experimental,
+                ],
+                "manifest build does not support backend, target, output or experimental selectors",
+            );
+        }
     }
 }

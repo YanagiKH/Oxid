@@ -3,7 +3,7 @@ use super::{
     diagnostic::Diagnostic,
     manifest,
     oir::CheckedProjectTests,
-    options::EntryPolicy,
+    options::{BuildProfile, EntryPolicy},
     project_build::{self, Artifact},
     session::{CompilerSession, Configuration, Engine},
     source::SourceMap,
@@ -45,6 +45,7 @@ fn prepare_native(
     parent: &str,
     filter: Option<&str>,
     selected_count: usize,
+    profile: BuildProfile,
 ) -> Result<Vec<Artifact>, Box<Diagnostic>> {
     let mut artifacts = Vec::new();
     artifacts.try_reserve_exact(selected_count).map_err(|_| {
@@ -57,7 +58,9 @@ fn prepare_native(
     })?;
     for ordinal in selected_ordinals(suite, filter) {
         let module = suite.native_module(ordinal)?;
-        artifacts.push(project_build::publish_test(&module, parent, ordinal)?);
+        artifacts.push(project_build::publish_test(
+            &module, parent, ordinal, profile,
+        )?);
     }
     Ok(artifacts)
 }
@@ -77,6 +80,7 @@ pub(super) fn run(
     native: bool,
     filter: Option<&str>,
     fail_fast: bool,
+    profile: BuildProfile,
 ) -> i32 {
     let configuration = Configuration::new(
         manifest::Command::Test,
@@ -87,7 +91,8 @@ pub(super) fn run(
         },
         EntryPolicy::Result,
         false,
-    );
+    )
+    .with_profile(profile);
     let session = match CompilerSession::load(request, configuration) {
         Ok(session) => session,
         Err((sources, diagnostics)) => return report_errors(&sources, &diagnostics),
@@ -112,7 +117,13 @@ pub(super) fn run(
         );
     }
     let artifacts = if native {
-        match prepare_native(&suite, session.parent(), filter, selected_count) {
+        match prepare_native(
+            &suite,
+            session.parent(),
+            filter,
+            selected_count,
+            session.configuration().profile,
+        ) {
             Ok(artifacts) => Some(artifacts),
             Err(error) => return report_errors(project.sources(), &[*error]),
         }

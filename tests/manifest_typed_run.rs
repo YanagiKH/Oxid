@@ -592,7 +592,7 @@ fn manifest_run_cli_precedence_and_summary_selection() {
             ],
             "E0001",
             "cli",
-            "unsupported option for manifest run: --profile=release",
+            "--profile is only supported by typed-preview source compile, manifest build, package, native run or native test",
             RUN_FAILURE_SUMMARY,
         ),
         (

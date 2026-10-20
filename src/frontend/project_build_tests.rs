@@ -164,6 +164,131 @@ fn managed_build_modes_have_separate_outputs_and_receipts() {
 }
 
 #[test]
+fn native_profiles_separate_all_output_and_receipt_namespaces() {
+    use std::os::unix::fs::MetadataExt;
+    let s = Scratch::new();
+    let mut artifacts = Vec::new();
+    for (profile, result, process, test) in [
+        (BuildProfile::Dev, "result", "process", "test"),
+        (
+            BuildProfile::Release,
+            "release-result",
+            "release-process",
+            "release-test",
+        ),
+    ] {
+        for (policy, expected) in [
+            (EntryPolicy::Result, result),
+            (EntryPolicy::Process, process),
+        ] {
+            assert_eq!(namespace(policy, profile), expected);
+            let artifact = linux::publish_with_profile(&s.selection(), policy, profile, |path| {
+                fs::write(path, expected).unwrap();
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(artifact.profile(), profile);
+            assert_eq!(
+                artifact.path,
+                s.0.join(format!(".oxid/typed-preview/{expected}/app"))
+                    .to_string_lossy()
+                    .into_owned()
+            );
+            artifacts.push((artifact, expected, "app"));
+        }
+        assert_eq!(test_namespace(profile), test);
+        let artifact = linux::publish_named_with(
+            &s.selection().parent,
+            "case-0",
+            test_namespace(profile),
+            profile,
+            |path| {
+                fs::write(path, test).unwrap();
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(artifact.profile(), profile);
+        artifacts.push((artifact, test, "case-0"));
+    }
+    let mut inodes = std::collections::HashSet::new();
+    for (artifact, namespace, name) in artifacts {
+        assert_eq!(fs::read(&artifact.path).unwrap(), namespace.as_bytes());
+        let directory = s.0.join(format!(".oxid/typed-preview/{namespace}"));
+        let state = directory.join(format!(".{name}.build"));
+        let output = fs::metadata(&artifact.path).unwrap();
+        assert!(inodes.insert(output.ino()));
+        assert_eq!(
+            fs::metadata(state.join("next")).unwrap().ino(),
+            output.ino()
+        );
+        assert!(state.join("owner").is_file());
+        assert!(!state.join("stage").exists());
+    }
+}
+
+#[test]
+fn failed_release_build_preserves_release_and_dev_artifacts_and_receipts() {
+    use std::os::unix::fs::MetadataExt;
+    let s = Scratch::new();
+    let dev = s.publish(b"dev").unwrap();
+    let release = linux::publish_with_profile(
+        &s.selection(),
+        EntryPolicy::Result,
+        BuildProfile::Release,
+        |path| {
+            fs::write(path, b"release").unwrap();
+            Ok(())
+        },
+    )
+    .unwrap();
+    let mut preserved = Vec::new();
+    for namespace in ["result", "release-result"] {
+        for name in ["app", ".app.build/next", ".app.build/owner"] {
+            let path = s.0.join(format!(".oxid/typed-preview/{namespace}/{name}"));
+            preserved.push((
+                path.clone(),
+                fs::metadata(&path).unwrap().ino(),
+                fs::read(path).unwrap(),
+            ));
+        }
+    }
+    let error = linux::publish_with_profile(
+        &s.selection(),
+        EntryPolicy::Result,
+        BuildProfile::Release,
+        |path| {
+            fs::write(path, b"partial release").unwrap();
+            Err(Diagnostic::new(
+                "E0701",
+                "native-toolchain",
+                "injected failure",
+                None,
+            ))
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "E0701");
+    assert_eq!(fs::read(dev).unwrap(), b"dev");
+    assert_eq!(release.package_bytes().unwrap(), b"release");
+    for (path, inode, bytes) in preserved {
+        // A committed next receipt is normalized before the next compile. Its
+        // ownership inode and bytes are preserved, even when its name changes.
+        let path = if path.ends_with("release-result/.app.build/next") {
+            path.with_file_name("current")
+        } else {
+            path
+        };
+        assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+    assert!(!s
+        .0
+        .join(".oxid/typed-preview/release-result/.app.build/stage")
+        .exists());
+}
+
+#[test]
 fn typed_project_test_artifacts_preserve_app_outputs_receipts_and_pinned_handles() {
     use std::os::unix::fs::MetadataExt;
     let s = Scratch::new();
@@ -189,10 +314,16 @@ fn typed_project_test_artifacts_preserve_app_outputs_receipts_and_pinned_handles
         }
     }
     let publish_test = |program: &str| {
-        linux::publish_named_with(&s.selection().parent, "case-0", "test", |path| {
-            fs::copy(program, path).unwrap();
-            Ok(())
-        })
+        linux::publish_named_with(
+            &s.selection().parent,
+            "case-0",
+            "test",
+            BuildProfile::Dev,
+            |path| {
+                fs::copy(program, path).unwrap();
+                Ok(())
+            },
+        )
         .unwrap()
     };
     let passed = publish_test("/bin/true");
@@ -212,12 +343,16 @@ fn typed_project_test_namespace_rejects_alias_to_application_directory() {
     let s = Scratch::new();
     let output = s.publish(b"application").unwrap();
     symlink("result", s.0.join(".oxid/typed-preview/test")).unwrap();
-    assert!(
-        linux::publish_named_with(&s.selection().parent, "case-0", "test", |_| {
+    assert!(linux::publish_named_with(
+        &s.selection().parent,
+        "case-0",
+        "test",
+        BuildProfile::Dev,
+        |_| {
             panic!("must refuse before compiling");
-        })
-        .is_err()
-    );
+        },
+    )
+    .is_err());
     assert_eq!(fs::read(output).unwrap(), b"application");
 }
 
@@ -426,6 +561,7 @@ fn package_session(s: &Scratch) -> crate::frontend::session::CompilerSession {
     let options::Route::ManifestPackage {
         request,
         entry_policy,
+        profile,
         ..
     } = options::route(&args)
     else {
@@ -433,7 +569,8 @@ fn package_session(s: &Scratch) -> crate::frontend::session::CompilerSession {
     };
     CompilerSession::load(
         request,
-        Configuration::new(Command::Package, Engine::Native, entry_policy, true),
+        Configuration::new(Command::Package, Engine::Native, entry_policy, true)
+            .with_profile(profile),
     )
     .unwrap_or_else(|(_, errors)| panic!("{errors:?}"))
 }
@@ -479,6 +616,7 @@ fn package_descriptor_rejects_nonfiles_and_u64_oversize_before_reading() {
     let s = Scratch::new();
     let directory = Artifact {
         path: "unused".into(),
+        profile: BuildProfile::Dev,
         executable: fs::File::open(&s.0).unwrap(),
     };
     assert!(directory
@@ -492,6 +630,7 @@ fn package_descriptor_rejects_nonfiles_and_u64_oversize_before_reading() {
     // The unreadable descriptor makes an accidental read fail differently.
     let oversize = Artifact {
         path: path.to_string_lossy().into_owned(),
+        profile: BuildProfile::Dev,
         executable: file,
     };
     assert!(oversize.package_bytes().unwrap_err().contains("size limit"));
@@ -534,6 +673,54 @@ fn package_finish_uses_session_name_and_retained_a_not_current_c() {
     assert!(report.contains("\"managed_published\":true"));
     assert!(report.contains("\"archive_published\":true"));
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn package_metadata_uses_retained_profile_not_path_or_session_default() {
+    use crate::frontend::project_package::finish;
+    use std::os::unix::fs::MetadataExt;
+    let s = Scratch::new();
+    let session = package_session(&s);
+    assert_eq!(session.configuration().profile, BuildProfile::Dev);
+    let publish = |tag| {
+        linux::publish_with_profile(
+            &s.selection(),
+            EntryPolicy::Result,
+            BuildProfile::Release,
+            |path| {
+                fs::write(path, package_elf(tag)).unwrap();
+                Ok(())
+            },
+        )
+        .unwrap()
+    };
+    let mut artifact = publish(b'A');
+    publish(b'B');
+    publish(b'C');
+    assert_eq!(artifact.executable.metadata().unwrap().nlink(), 0);
+    // The reporting path is deliberately misleading. Neither it nor the
+    // session's default profile may override this retained inode's identity.
+    artifact.path = format!("{}/.oxid/typed-preview/result/app", s.0.display());
+    let output = s.0.join("dev-name.tar");
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        finish(
+            &session,
+            &artifact,
+            output.to_str().unwrap(),
+            &mut out,
+            &mut err
+        ),
+        0
+    );
+    let archive = fs::read(output).unwrap();
+    assert_eq!(&archive[512..577], package_elf(b'A'));
+    let text = String::from_utf8_lossy(&archive);
+    assert!(text.contains("\"profile\":\"native-preview-O2\""));
+    assert!(!text.contains("native-preview-O0"));
+    assert_eq!(artifact.profile(), BuildProfile::Release);
+    assert!(err.is_empty());
 }
 #[test]
 fn package_finish_failure_keeps_managed_fact_and_does_not_replace_archive() {

@@ -12,17 +12,27 @@
 //! directory and retry. Normal unwind removes it best-effort. Directory/receipt
 //! tampering by other processes is unsupported; managed path components are
 //! opened without following symlinks and operations use held directory handles.
-use super::{diagnostic::Diagnostic, manifest::BuildSelection, options::EntryPolicy};
+use super::{
+    diagnostic::Diagnostic,
+    manifest::BuildSelection,
+    options::{BuildProfile, EntryPolicy},
+};
 
 /// The open executable pins this invocation's inode across later publications.
 /// Cooperating builds replace names, never the contents of published inodes.
 #[derive(Debug)]
 pub(super) struct Artifact {
     pub path: String,
+    profile: BuildProfile,
     #[cfg(target_os = "linux")]
     executable: std::fs::File,
 }
 impl Artifact {
+    /// Profile identity belongs to the retained artifact, not its mutable name.
+    pub fn profile(&self) -> BuildProfile {
+        self.profile
+    }
+
     /// Read the held inode from offset zero without changing its shared cursor.
     /// Cooperating publication replaces names, not bytes. Noncooperating inode
     /// mutation is outside this stable-filesystem contract, not an atomic snapshot.
@@ -150,20 +160,50 @@ pub(super) fn mode(policy: EntryPolicy) -> &'static str {
     }
 }
 
+fn namespace(policy: EntryPolicy, profile: BuildProfile) -> &'static str {
+    match (profile, policy) {
+        (BuildProfile::Dev, EntryPolicy::Result) => "result",
+        (BuildProfile::Dev, EntryPolicy::Process) => "process",
+        (BuildProfile::Release, EntryPolicy::Result) => "release-result",
+        (BuildProfile::Release, EntryPolicy::Process) => "release-process",
+    }
+}
+
+fn test_namespace(profile: BuildProfile) -> &'static str {
+    match profile {
+        BuildProfile::Dev => "test",
+        BuildProfile::Release => "release-test",
+    }
+}
+
 pub(super) fn publish(
     module: &str,
     selection: &BuildSelection,
     policy: EntryPolicy,
+    profile: BuildProfile,
 ) -> Result<Artifact, Box<Diagnostic>> {
-    publish_named(module, &selection.parent, &selection.name, mode(policy))
+    publish_named(
+        module,
+        &selection.parent,
+        &selection.name,
+        namespace(policy, profile),
+        profile,
+    )
 }
 
 pub(super) fn publish_test(
     module: &str,
     parent: &str,
     ordinal: usize,
+    profile: BuildProfile,
 ) -> Result<Artifact, Box<Diagnostic>> {
-    publish_named(module, parent, &format!("case-{ordinal}"), "test")
+    publish_named(
+        module,
+        parent,
+        &format!("case-{ordinal}"),
+        test_namespace(profile),
+        profile,
+    )
 }
 
 fn publish_named(
@@ -171,6 +211,7 @@ fn publish_named(
     parent: &str,
     name: &str,
     namespace: &str,
+    profile: BuildProfile,
 ) -> Result<Artifact, Box<Diagnostic>> {
     // Result compile historically reaches host validation after native emission.
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
@@ -182,12 +223,12 @@ fn publish_named(
         ));
     }
     #[cfg(target_os = "linux")]
-    return linux::publish_named_with(parent, name, namespace, |staged| {
-        super::native::compile(module, staged)
+    return linux::publish_named_with(parent, name, namespace, profile, |staged| {
+        super::native::compile_with_profile(module, staged, profile)
     });
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (module, parent, name, namespace);
+        let _ = (module, parent, name, namespace, profile);
         unreachable!("host checked above")
     }
 }
@@ -397,13 +438,30 @@ mod linux {
         policy: EntryPolicy,
         compile: impl FnOnce(&str) -> Result<(), Box<Diagnostic>>,
     ) -> Result<Artifact, Box<Diagnostic>> {
-        publish_named_with(&selection.parent, &selection.name, mode(policy), compile)
+        publish_with_profile(selection, policy, BuildProfile::Dev, compile)
+    }
+
+    #[cfg(test)]
+    pub(super) fn publish_with_profile(
+        selection: &BuildSelection,
+        policy: EntryPolicy,
+        profile: BuildProfile,
+        compile: impl FnOnce(&str) -> Result<(), Box<Diagnostic>>,
+    ) -> Result<Artifact, Box<Diagnostic>> {
+        publish_named_with(
+            &selection.parent,
+            &selection.name,
+            namespace(policy, profile),
+            profile,
+            compile,
+        )
     }
 
     pub(super) fn publish_named_with(
         parent_path: &str,
         name: &str,
         namespace: &str,
+        profile: BuildProfile,
         compile: impl FnOnce(&str) -> Result<(), Box<Diagnostic>>,
     ) -> Result<Artifact, Box<Diagnostic>> {
         let parent = if parent_path.is_empty() {
@@ -474,6 +532,7 @@ mod linux {
         rename(&stage, "executable", &root, name)?;
         Ok(Artifact {
             executable,
+            profile,
             path: format!("{}.oxid/typed-preview/{}/{}", parent_path, namespace, name),
         })
     }

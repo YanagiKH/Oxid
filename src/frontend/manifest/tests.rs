@@ -1214,7 +1214,7 @@ fn manifest_run_selection_wording_and_summary_operation() {
         );
         assert_eq!(operation, Operation::Run);
     }
-    for flag in ["--profile=x", "--release", "--offline", "--help"] {
+    for flag in ["--release", "--offline", "--help"] {
         let (message, _, operation) = refusal_with_operation(&["run", "--manifest-path=p", flag]);
         assert_eq!(
             message,

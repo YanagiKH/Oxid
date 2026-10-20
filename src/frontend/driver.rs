@@ -1,7 +1,7 @@
 use super::{
     diagnostic::{json_string, Diagnostic},
     oir,
-    options::{self, EntryPolicy, Operation, Route},
+    options::{self, BuildProfile, EntryPolicy, Operation, Route},
     project::{ProjectLimits, ProjectSources},
     session::{CompilerSession, Configuration, Engine},
     source::SourceMap,
@@ -20,7 +20,13 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             request,
             output,
             entry_policy,
-        } => Some(super::project_package::run(request, &output, entry_policy)),
+            profile,
+        } => Some(super::project_package::run(
+            request,
+            &output,
+            entry_policy,
+            profile,
+        )),
         Route::ManifestPackageError {
             failure,
             json,
@@ -33,7 +39,8 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         Route::ManifestBuild {
             request,
             entry_policy,
-        } => Some(manifest_build(request, entry_policy)),
+            profile,
+        } => Some(manifest_build(request, entry_policy, profile)),
         Route::ManifestBuildError {
             failure,
             json,
@@ -66,13 +73,16 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             native,
             filter,
             fail_fast,
+            profile,
         } => {
             let filter = filter.map(|index| {
                 args[index]
                     .strip_prefix("--filter=")
                     .unwrap_or(args[index].as_str())
             });
-            Some(super::project_test::run(request, native, filter, fail_fast))
+            Some(super::project_test::run(
+                request, native, filter, fail_fast, profile,
+            ))
         }
         Route::ManifestTestError { failure, json } => {
             Some(super::project_test::cli_error(failure, json))
@@ -80,7 +90,8 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         Route::ManifestNativeRun {
             request,
             entry_policy,
-        } => Some(manifest_native_run(request, entry_policy)),
+            profile,
+        } => Some(manifest_native_run(request, entry_policy, profile)),
         Route::TypedLexical { request }
             if request[0].operation == Operation::Run
                 && request[0].entry_policy == EntryPolicy::Process
@@ -97,6 +108,7 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             request[0].output.as_deref(),
             request[0].entry_policy,
             Some(&request[0].bundle),
+            BuildProfile::Dev,
         )),
         Route::TypedImport { request } => Some(process_import(&request[0])),
         Route::TypedProducer { request } => Some(process_producer(&request[0])),
@@ -147,12 +159,15 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             json,
             output,
             entry_policy,
-        } => Some(process_file(
+            profile,
+        } => Some(process_file_with_lexical(
             &path,
             json,
             Operation::Compile,
             Some(&output),
             entry_policy,
+            None,
+            profile,
         )),
     }
 }
@@ -200,6 +215,7 @@ fn manifest_file(request: Box<[super::manifest::Request; 1]>, operation: Operati
             operation,
             None,
             session.check(),
+            BuildProfile::Dev,
         ),
         Err((sources, diagnostics)) => {
             report(&sources, diagnostics, json, Summary::empty(operation))
@@ -242,7 +258,11 @@ fn manifest_process_run(request: Box<[super::manifest::Request; 1]>) -> i32 {
     }
 }
 
-fn manifest_build(request: Box<[super::manifest::Request; 1]>, entry_policy: EntryPolicy) -> i32 {
+fn manifest_build(
+    request: Box<[super::manifest::Request; 1]>,
+    entry_policy: EntryPolicy,
+    profile: BuildProfile,
+) -> i32 {
     let json = request[0].json;
     let session = match CompilerSession::load(
         request,
@@ -251,7 +271,8 @@ fn manifest_build(request: Box<[super::manifest::Request; 1]>, entry_policy: Ent
             Engine::Native,
             entry_policy,
             json,
-        ),
+        )
+        .with_profile(profile),
     ) {
         Ok(session) => session,
         Err((sources, diagnostics)) => {
@@ -279,6 +300,7 @@ fn manifest_build(request: Box<[super::manifest::Request; 1]>, entry_policy: Ent
 fn manifest_native_run(
     request: Box<[super::manifest::Request; 1]>,
     entry_policy: EntryPolicy,
+    profile: BuildProfile,
 ) -> i32 {
     let session = match CompilerSession::load(
         request,
@@ -287,7 +309,8 @@ fn manifest_native_run(
             Engine::Native,
             entry_policy,
             false,
-        ),
+        )
+        .with_profile(profile),
     ) {
         Ok(session) => session,
         Err((sources, diagnostics)) => return report_native_run(&sources, &diagnostics),
@@ -710,7 +733,15 @@ fn process_file(
     output: Option<&str>,
     entry_policy: EntryPolicy,
 ) -> i32 {
-    process_file_with_lexical(path, json, operation, output, entry_policy, None)
+    process_file_with_lexical(
+        path,
+        json,
+        operation,
+        output,
+        entry_policy,
+        None,
+        BuildProfile::Dev,
+    )
 }
 
 fn process_file_with_lexical(
@@ -720,6 +751,7 @@ fn process_file_with_lexical(
     output: Option<&str>,
     entry_policy: EntryPolicy,
     lexical_bundle: Option<&str>,
+    profile: BuildProfile,
 ) -> i32 {
     let process_run = operation == Operation::Run && entry_policy == EntryPolicy::Process;
     // Pure argv classification already finished. Setup must precede even source
@@ -808,9 +840,9 @@ fn process_file_with_lexical(
         };
     }
     if entry_policy == EntryPolicy::Process {
-        return process_compile_loaded(&project, json, output, executable);
+        return process_compile_loaded(&project, json, output, executable, profile);
     }
-    process_loaded(&project, json, operation, output, executable)
+    process_loaded(&project, json, operation, output, executable, profile)
 }
 
 fn check_loaded_project(
@@ -837,6 +869,7 @@ fn process_loaded(
     operation: Operation,
     output: Option<&str>,
     executable: Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>>,
+    profile: BuildProfile,
 ) -> i32 {
     let sources = project.sources();
     let result = (|| {
@@ -846,7 +879,8 @@ fn process_loaded(
             Operation::Compile => {
                 let module = native_module(&verified, EntryPolicy::Result).map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
-                super::native::compile(&module, output).map_err(|e| vec![*e])?;
+                super::native::compile_with_profile(&module, output, profile)
+                    .map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
@@ -868,12 +902,13 @@ fn process_compile_loaded(
     json: bool,
     output: Option<&str>,
     executable: Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>>,
+    profile: BuildProfile,
 ) -> i32 {
     let result = (|| {
         let verified = executable?;
         let module = native_module(&verified, EntryPolicy::Process).map_err(|e| vec![*e])?;
         let output = output.expect("compile route validates output");
-        super::native::compile(&module, output).map_err(|e| vec![*e])?;
+        super::native::compile_with_profile(&module, output, profile).map_err(|e| vec![*e])?;
         Ok(Summary::Compile(Some(output.to_string())))
     })();
     match result {
@@ -1050,6 +1085,7 @@ mod native_project_tests {
         let Route::ManifestNativeRun {
             request,
             entry_policy,
+            profile,
         } = options::route(&args)
         else {
             panic!("native route");
@@ -1061,7 +1097,8 @@ mod native_project_tests {
                 Engine::Native,
                 entry_policy,
                 false,
-            ),
+            )
+            .with_profile(profile),
         )
         .unwrap_or_else(|_| panic!("load snapshot"));
         std::fs::remove_file(&path).unwrap();

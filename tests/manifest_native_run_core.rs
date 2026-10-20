@@ -178,8 +178,8 @@ fn native_run_cli_errors_precede_manifest_and_source_io() {
             "does not accept a source operand",
         ),
         (
-            vec!["--engine=native", "--profile=release"],
-            "unsupported option",
+            vec!["--engine=native", "--profile=unknown"],
+            "unknown --profile `unknown`; expected dev or release",
         ),
     ] {
         text_failure(p.run(&extra), expected);

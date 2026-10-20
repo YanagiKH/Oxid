@@ -1,7 +1,7 @@
 //! Edition selection is a pure gate, before legacy dispatch or any host effects.
 //!
-//! Global edition, format and entry options are recognized anywhere before `--`. For `script`,
-//! recognition stops immediately after the script name: the remaining arguments
+//! Global edition, format, entry and profile options are recognized anywhere before `--`.
+//! For `script`, recognition stops immediately after the script name: the remaining arguments
 //! belong to the launched process. Without global options, legacy argv is unchanged.
 //! Typed commands accept `check|run|compile [options] [--] <source>` and options before the
 //! command or after the source. The separator is optional and makes all later
@@ -19,6 +19,7 @@ pub enum Route {
         request: Box<[super::manifest::Request; 1]>,
         output: String,
         entry_policy: EntryPolicy,
+        profile: BuildProfile,
     },
     ManifestPackageError {
         failure: super::manifest::Failure,
@@ -28,6 +29,7 @@ pub enum Route {
     ManifestBuild {
         request: Box<[super::manifest::Request; 1]>,
         entry_policy: EntryPolicy,
+        profile: BuildProfile,
     },
     ManifestBuildError {
         failure: super::manifest::Failure,
@@ -52,6 +54,7 @@ pub enum Route {
         // Index into the unchanged argv; filter text is borrowed only at dispatch.
         filter: Option<usize>,
         fail_fast: bool,
+        profile: BuildProfile,
     },
     ManifestTestError {
         failure: super::manifest::Failure,
@@ -60,6 +63,7 @@ pub enum Route {
     ManifestNativeRun {
         request: Box<[super::manifest::Request; 1]>,
         entry_policy: EntryPolicy,
+        profile: BuildProfile,
     },
     ManifestError {
         failure: super::manifest::Failure,
@@ -96,6 +100,7 @@ pub enum Route {
         json: bool,
         output: String,
         entry_policy: EntryPolicy,
+        profile: BuildProfile,
     },
     Error {
         message: String,
@@ -141,6 +146,16 @@ pub struct LexicalOptions {
     pub operation: Operation,
     pub entry_policy: EntryPolicy,
 }
+
+/// Native build selection, never retained in a checked source program.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BuildProfile {
+    #[default]
+    Dev,
+    Release,
+}
+
+pub(super) const PROFILE_APPLICABILITY: &str = "--profile is only supported by typed-preview source compile, manifest build, package, native run or native test";
 
 /// Transient entry selection, never retained in a checked source program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -344,6 +359,8 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     let mut edition = None;
     let mut edition_seen = false;
     let mut format_seen = false;
+    let mut profile_seen = false;
+    let mut profile = BuildProfile::Dev;
     let mut import_seen = false;
     let mut import = None;
     let mut producer_seen = false;
@@ -370,6 +387,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
         let option = [
             "--edition",
             "--message-format",
+            "--profile",
             "--entry-mode",
             "--experimental-hir-import",
             "--experimental-hir-producers",
@@ -403,6 +421,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
         let seen = match name {
             "--edition" => &mut edition_seen,
             "--message-format" => &mut format_seen,
+            "--profile" => &mut profile_seen,
             "--entry-mode" => &mut entry.seen,
             "--experimental-hir-import" => &mut import_seen,
             "--experimental-hir-producers" => &mut producer_seen,
@@ -444,6 +463,13 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
             ("--message-format", Some(value)) => {
                 error.get_or_insert_with(|| {
                     format!("unknown --message-format `{value}`; expected text or json")
+                });
+            }
+            ("--profile", Some("dev")) => profile = BuildProfile::Dev,
+            ("--profile", Some("release")) => profile = BuildProfile::Release,
+            ("--profile", Some(value)) => {
+                error.get_or_insert_with(|| {
+                    format!("unknown --profile `{value}`; expected dev or release")
                 });
             }
             ("--entry-mode", Some("result")) => entry.policy = EntryPolicy::Result,
@@ -532,6 +558,15 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     }
     if unsupported_filter {
         error.get_or_insert_with(|| "--filter is only supported by explicit manifest test".into());
+    }
+    if profile_seen
+        && (edition != Some("typed-preview")
+            || command != Some("compile")
+            || import_seen
+            || producer_seen
+            || lexical_seen)
+    {
+        error.get_or_insert_with(|| PROFILE_APPLICABILITY.into());
     }
     if let Some(message) = error {
         return Route::Error {
@@ -715,6 +750,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
                 json,
                 output: output.expect("validated output"),
                 entry_policy: entry.policy,
+                profile,
             },
         },
         None => Route::Error {
@@ -858,7 +894,7 @@ fn route_format(forwarded: Vec<String>, json: bool) -> Route {
 
 #[cfg(test)]
 mod tests {
-    use super::{route, EntryPolicy, Route};
+    use super::{route, BuildProfile, EntryPolicy, Route};
 
     fn arguments(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
@@ -915,6 +951,7 @@ mod tests {
                     json,
                     output: "program".into(),
                     entry_policy: EntryPolicy::Result,
+                    profile: BuildProfile::Dev,
                 }
             );
         }
@@ -994,6 +1031,7 @@ mod tests {
                     json: true,
                     output: "program".into(),
                     entry_policy: policy,
+                    profile: BuildProfile::Dev,
                 }
             );
         }
@@ -2131,5 +2169,232 @@ mod lexical_options_tests {
         assert_eq!(allocator.attempts, 1);
         #[cfg(target_pointer_width = "64")]
         assert_eq!(std::mem::size_of::<Route>(), 56);
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::{route, BuildProfile, EntryPolicy, Operation, Route, PROFILE_APPLICABILITY};
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).into()).collect()
+    }
+
+    fn refusal(words: &[&str], expected: &str) {
+        match route(&args(words)) {
+            Route::Error { message, .. } | Route::ProcessError { message } => {
+                assert_eq!(message, expected, "{words:?}");
+            }
+            other => panic!("expected profile refusal for {words:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn native_profile_defaults_to_dev_and_accepts_both_forms_at_every_global_position() {
+        let base = [
+            "--edition=typed-preview",
+            "compile",
+            "source.ox",
+            "--backend=llvm",
+            "--output=program",
+            "--entry-mode=process",
+            "--message-format=json",
+        ];
+        for (selection, expected) in [
+            (vec![], BuildProfile::Dev),
+            (vec!["--profile", "dev"], BuildProfile::Dev),
+            (vec!["--profile=dev"], BuildProfile::Dev),
+            (vec!["--profile", "release"], BuildProfile::Release),
+            (vec!["--profile=release"], BuildProfile::Release),
+        ] {
+            for position in 0..=base.len() {
+                let mut words = base.to_vec();
+                words.splice(position..position, selection.iter().copied());
+                assert_eq!(
+                    route(&args(&words)),
+                    Route::TypedCompile {
+                        path: "source.ox".into(),
+                        json: true,
+                        output: "program".into(),
+                        entry_policy: EntryPolicy::Process,
+                        profile: expected,
+                    },
+                    "{words:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_profile_syntax_uses_first_global_error_and_keeps_json_selection() {
+        for (selection, expected) in [
+            (vec!["--profile"], "--profile requires a value"),
+            (vec!["--profile="], "--profile requires a value"),
+            (vec!["--profile", "--unknown"], "--profile requires a value"),
+            (
+                vec!["--profile=Release"],
+                "unknown --profile `Release`; expected dev or release",
+            ),
+            (
+                vec!["--profile", "debug"],
+                "unknown --profile `debug`; expected dev or release",
+            ),
+            (
+                vec!["--profile=dev", "--profile", "release"],
+                "--profile may only be specified once",
+            ),
+            (
+                vec!["--profile=release", "--profile="],
+                "--profile may only be specified once",
+            ),
+            (
+                vec!["--profile=wrong", "--profile=release"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+            (
+                vec!["--profile=wrong", "--edition=wrong"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+            (
+                vec!["--edition=wrong", "--profile=wrong"],
+                "unknown edition `wrong`; expected legacy-0.9 or typed-preview",
+            ),
+            (
+                vec!["--filter=keep", "--profile=wrong"],
+                "unknown --profile `wrong`; expected dev or release",
+            ),
+        ] {
+            let mut words = vec!["compile", "source.ox"];
+            words.extend(selection);
+            words.push("--message-format=json");
+            assert_eq!(
+                route(&args(&words)),
+                Route::Error {
+                    message: expected.into(),
+                    json: true,
+                    operation: Operation::Check,
+                },
+                "{words:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_profile_even_dev_requires_ordinary_typed_source_compile() {
+        for selection in ["--profile=dev", "--profile=release"] {
+            for edition in [
+                None,
+                Some("--edition=legacy-0.9"),
+                Some("--edition=typed-preview"),
+            ] {
+                for command in [
+                    "check", "run", "fmt", "doctor", "new", "build", "package", "test", "unknown",
+                ] {
+                    let mut words = vec![command, "path", selection];
+                    words.extend(edition);
+                    refusal(&words, PROFILE_APPLICABILITY);
+                }
+                if edition != Some("--edition=typed-preview") {
+                    let mut words = vec!["compile", "source.ox", selection];
+                    words.extend(edition);
+                    refusal(&words, PROFILE_APPLICABILITY);
+                }
+            }
+            for experimental in [
+                "--experimental-hir-import=observation",
+                "--experimental-hir-producers=bundle",
+                "--experimental-lexical-provider=bundle",
+            ] {
+                refusal(
+                    &[
+                        "compile",
+                        "source.ox",
+                        "--edition=typed-preview",
+                        "--backend=llvm",
+                        "--output=program",
+                        experimental,
+                        selection,
+                    ],
+                    PROFILE_APPLICABILITY,
+                );
+            }
+            let words = [
+                "run",
+                "source.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+                selection,
+            ];
+            assert_eq!(
+                route(&args(&words)),
+                Route::ProcessError {
+                    message: PROFILE_APPLICABILITY.into(),
+                }
+            );
+        }
+        for words in [
+            vec!["compile", "--profile=dev", "--filter=keep"],
+            vec!["compile", "--filter=keep", "--profile=dev"],
+        ] {
+            refusal(
+                &words,
+                "--filter is only supported by explicit manifest test",
+            );
+        }
+    }
+
+    #[test]
+    fn profile_keeps_script_tail_separator_and_unselected_legacy_ownership() {
+        for words in [
+            vec!["build", "--other"],
+            vec!["compile", "source.ox"],
+            vec![
+                "script",
+                "task",
+                "--profile",
+                "release",
+                "--edition=typed-preview",
+            ],
+            vec!["script", "task", "--profile=", "--manifest-path=p"],
+            vec![
+                "run",
+                "source.ox",
+                "--",
+                "--profile=release",
+                "--edition=typed-preview",
+            ],
+        ] {
+            let arguments = args(&words);
+            assert_eq!(route(&arguments), Route::Legacy(arguments));
+        }
+        assert_eq!(
+            route(&args(&[
+                "compile",
+                "--edition=typed-preview",
+                "--backend=llvm",
+                "--output=program",
+                "--",
+                "--profile=release",
+            ])),
+            Route::TypedCompile {
+                path: "--profile=release".into(),
+                json: false,
+                output: "program".into(),
+                entry_policy: EntryPolicy::Result,
+                profile: BuildProfile::Dev,
+            }
+        );
+        assert_eq!(
+            route(&args(&[
+                "check",
+                "--edition=typed-preview",
+                "--",
+                "--profile=dev",
+            ])),
+            Route::TypedCheck {
+                path: "--profile=dev".into(),
+                json: false,
+            }
+        );
     }
 }

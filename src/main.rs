@@ -2655,6 +2655,11 @@ fn help() {
     println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");
     println!("  Add --package <name> to select a package from a workspace manifest.");
     println!("  Entry mode defaults to result; run/test default to the interpreter.");
+    println!("  Build/package and native run/test accept --profile dev|release (default dev).");
+    println!(
+        "  Typed source compile also accepts --profile dev|release; dev uses O0, release uses O2."
+    );
+    println!("  Explicit profiles are rejected by interpreter and unrelated commands.");
     println!("  Native target: x86_64-unknown-linux-gnu.");
     println!("  Build, package, and native run/test require LLVM 19.1.7 (clang, opt, ld.lld).");
     println!("  Set OXID_LLVM_BIN to their bin directory; otherwise PATH must provide clang-19, opt-19, ld.lld-19.");

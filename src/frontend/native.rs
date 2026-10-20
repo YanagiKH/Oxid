@@ -1,6 +1,6 @@
 //! Trusted external LLVM tool boundary. No shell, source execution, cache, or
 //! legacy runtime. All language admission happens before this module is entered.
-use super::diagnostic::Diagnostic;
+use super::{diagnostic::Diagnostic, options::BuildProfile};
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -92,7 +92,56 @@ fn version(tool: &Path, marker: &str, cwd: &Path) -> Result<(), Box<Diagnostic>>
     Ok(())
 }
 
+/// Compatibility entry point: existing internal callers keep the dev profile.
 pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
+    compile_with_profile(module, output, BuildProfile::Dev)
+}
+
+/// The same optimization level applies to the emitted IR and bundled C runtime.
+/// Keep this command-construction seam pure so both invocations can be checked
+/// without launching the native toolchain or changing process environment.
+fn compile_arguments(profile: BuildProfile) -> [Vec<OsString>; 2] {
+    let optimization = match profile {
+        BuildProfile::Dev => "-O0",
+        BuildProfile::Release => "-O2",
+    };
+    let target = format!("--target={TARGET}");
+    let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+    [
+        args(&[
+            "--no-default-config",
+            &target,
+            optimization,
+            "-fPIE",
+            "-c",
+            "-x",
+            "ir",
+            "program.ll",
+            "-o",
+            "program.o",
+        ]),
+        args(&[
+            "--no-default-config",
+            &target,
+            optimization,
+            "-fPIE",
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-c",
+            "runtime.c",
+            "-o",
+            "runtime.o",
+        ]),
+    ]
+}
+
+pub(super) fn compile_with_profile(
+    module: &str,
+    output: &str,
+    profile: BuildProfile,
+) -> Result<(), Box<Diagnostic>> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(failure("native preview requires a Linux x86_64 build host"));
     }
@@ -170,39 +219,10 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
         &opt,
         args(&["-passes=verify", "-disable-output", "program.ll"]),
     )?;
+    let [program_arguments, runtime_arguments] = compile_arguments(profile);
+    invoke(&clang, program_arguments)?;
+    invoke(&clang, runtime_arguments)?;
     let target = format!("--target={TARGET}");
-    invoke(
-        &clang,
-        args(&[
-            "--no-default-config",
-            &target,
-            "-O0",
-            "-fPIE",
-            "-c",
-            "-x",
-            "ir",
-            "program.ll",
-            "-o",
-            "program.o",
-        ]),
-    )?;
-    invoke(
-        &clang,
-        args(&[
-            "--no-default-config",
-            &target,
-            "-O0",
-            "-fPIE",
-            "-std=c11",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-c",
-            "runtime.c",
-            "-o",
-            "runtime.o",
-        ]),
-    )?;
     let mut link = args(&[
         "--no-default-config",
         &target,
@@ -274,6 +294,70 @@ pub(super) fn probe() -> Result<ProbeReport, Box<Diagnostic>> {
         target: TARGET,
         llvm_version: LLVM_VERSION,
     })
+}
+
+#[cfg(test)]
+mod compile_argument_tests {
+    use super::*;
+
+    #[test]
+    fn profiles_set_both_ir_and_runtime_optimization_without_other_flags() {
+        for (profile, optimization) in [(BuildProfile::Dev, "-O0"), (BuildProfile::Release, "-O2")]
+        {
+            let [program, runtime] = compile_arguments(profile);
+            let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+            assert_eq!(
+                program,
+                args(&[
+                    "--no-default-config",
+                    "--target=x86_64-unknown-linux-gnu",
+                    optimization,
+                    "-fPIE",
+                    "-c",
+                    "-x",
+                    "ir",
+                    "program.ll",
+                    "-o",
+                    "program.o",
+                ])
+            );
+            assert_eq!(
+                runtime,
+                args(&[
+                    "--no-default-config",
+                    "--target=x86_64-unknown-linux-gnu",
+                    optimization,
+                    "-fPIE",
+                    "-std=c11",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-c",
+                    "runtime.c",
+                    "-o",
+                    "runtime.o",
+                ])
+            );
+        }
+    }
+
+    #[test]
+    fn release_changes_only_the_optimization_argument() {
+        let dev = compile_arguments(BuildProfile::Dev);
+        let release = compile_arguments(BuildProfile::Release);
+        for (dev, release) in dev.iter().zip(&release) {
+            assert_eq!(dev.len(), release.len());
+            let differences = dev
+                .iter()
+                .zip(release)
+                .filter(|(left, right)| left != right)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                differences,
+                vec![(&OsString::from("-O0"), &OsString::from("-O2"))]
+            );
+        }
+    }
 }
 
 #[cfg(test)]

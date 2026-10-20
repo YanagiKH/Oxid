@@ -10,6 +10,25 @@ use std::{
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn configuration_defaults_to_dev_and_retains_explicit_release() {
+    let dev = Configuration::new(Command::Build, Engine::Native, EntryPolicy::Process, true);
+    assert_eq!(dev.profile, BuildProfile::Dev);
+    let release = dev.with_profile(BuildProfile::Release);
+    assert_eq!(release.profile, BuildProfile::Release);
+    assert!(matches!(release.command, Command::Build));
+    assert_eq!(release.engine, dev.engine);
+    assert_eq!(release.entry_policy, dev.entry_policy);
+    assert_eq!(release.json, dev.json);
+    assert_eq!(release.edition, dev.edition);
+    assert_eq!(release.target, dev.target);
+    assert_eq!(
+        release.with_profile(BuildProfile::Dev).profile,
+        BuildProfile::Dev
+    );
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
@@ -285,7 +304,7 @@ fn path_dependency_session_deduplicates_diamond_and_pins_one_forest() {
     assert_eq!(session.selected, PackageId(0));
     assert_eq!(session.configuration.edition, Edition::TypedPreview);
     assert_eq!(session.configuration.target, Target::Host);
-    assert_eq!(session.configuration.profile, Profile::Default);
+    assert_eq!(session.configuration.profile, BuildProfile::Dev);
     let p = session.project();
     let graph = p.graph().unwrap();
     assert_eq!(graph.packages.len(), 4);

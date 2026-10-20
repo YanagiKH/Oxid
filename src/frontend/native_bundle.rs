@@ -1,4 +1,5 @@
 //! Deterministic native-bundle serialization. No application execution.
+use super::options::BuildProfile;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -73,6 +74,7 @@ pub(super) fn serialize(
     name: &str,
     entry: BundleEntry,
     executable: &[u8],
+    profile: BuildProfile,
 ) -> Result<(), String> {
     if !name_valid(name) {
         return Err("invalid native package name".into());
@@ -88,8 +90,12 @@ pub(super) fn serialize(
         return Err("native bundle requires a bounded x86_64 ELF64 artifact".into());
     }
     let entry_mode = entry.name();
+    let profile = match profile {
+        BuildProfile::Dev => "native-preview-O0",
+        BuildProfile::Release => "native-preview-O2",
+    };
     let digest = format!("{:x}", Sha256::digest(executable));
-    let metadata = format!("{{\"schema\":\"oxid-native-bundle-v1\",\"name\":\"{name}\",\"target\":\"x86_64-unknown-linux-gnu\",\"profile\":\"native-preview-O0\",\"entry_mode\":\"{entry_mode}\",\"executable\":\"bin/{name}\",\"sha256\":\"{digest}\",\"dynamic_runtime\":\"host-provided\"}}\n");
+    let metadata = format!("{{\"schema\":\"oxid-native-bundle-v1\",\"name\":\"{name}\",\"target\":\"x86_64-unknown-linux-gnu\",\"profile\":\"{profile}\",\"entry_mode\":\"{entry_mode}\",\"executable\":\"bin/{name}\",\"sha256\":\"{digest}\",\"dynamic_runtime\":\"host-provided\"}}\n");
     let readme = format!("Oxid native executable bundle: {name}\nExtract this tar archive into a new directory with a standard tar reader.\nThen run ./bin/{name} from that extracted directory on a compatible Linux x86_64 host.\nEntry mode: {entry_mode}.\nSystem dynamic runtime libraries are not included.\nThis bundle does not certify compatibility with every Linux distribution.\nThe application was not run while packaging.\n");
     member(out, &format!("bin/{name}"), 0o755, executable)?;
     member(out, "package.json", 0o644, metadata.as_bytes())?;
@@ -108,6 +114,7 @@ pub(super) fn create(
     name: &str,
     entry: BundleEntry,
     executable: &[u8],
+    profile: BuildProfile,
 ) -> Result<(), String> {
     let parent = output
         .parent()
@@ -129,7 +136,7 @@ pub(super) fn create(
             Err(e) => return Err(format!("create package temporary file: {e}")),
         };
         let temporary = Temporary(path);
-        serialize(&mut file, name, entry, executable)?;
+        serialize(&mut file, name, entry, executable, profile)?;
         file.flush().map_err(|e| format!("flush package: {e}"))?;
         fs::hard_link(&temporary.0, output)
             .map_err(|e| format!("publish package without replacement: {e}"))?;
@@ -153,8 +160,22 @@ mod tests {
     fn archive_is_deterministic_and_ustar_framed() {
         let mut a = Vec::new();
         let mut b = Vec::new();
-        serialize(&mut a, "demo", BundleEntry::Result, &elf()).unwrap();
-        serialize(&mut b, "demo", BundleEntry::Result, &elf()).unwrap();
+        serialize(
+            &mut a,
+            "demo",
+            BundleEntry::Result,
+            &elf(),
+            BuildProfile::Dev,
+        )
+        .unwrap();
+        serialize(
+            &mut b,
+            "demo",
+            BundleEntry::Result,
+            &elf(),
+            BuildProfile::Dev,
+        )
+        .unwrap();
         assert_eq!(a, b);
         assert_eq!(&a[..8], b"bin/demo");
         assert_eq!(&a[257..265], b"ustar\x0000");
@@ -168,20 +189,56 @@ mod tests {
             (BundleEntry::Process, "process"),
         ] {
             let mut out = Vec::new();
-            serialize(&mut out, "demo", entry, &elf()).unwrap();
+            serialize(&mut out, "demo", entry, &elf(), BuildProfile::Dev).unwrap();
             let text = String::from_utf8_lossy(&out);
             assert!(text.contains(&format!("\"entry_mode\":\"{expected}\"")));
+        }
+    }
+    #[test]
+    fn profiles_keep_v1_metadata_shape_and_deterministic_archives() {
+        let executable = elf();
+        let digest = format!("{:x}", Sha256::digest(&executable));
+        for (profile, expected) in [
+            (BuildProfile::Dev, "native-preview-O0"),
+            (BuildProfile::Release, "native-preview-O2"),
+        ] {
+            for entry in [BundleEntry::Result, BundleEntry::Process] {
+                let mut first = Vec::new();
+                let mut second = Vec::new();
+                serialize(&mut first, "demo", entry, &executable, profile).unwrap();
+                serialize(&mut second, "demo", entry, &executable, profile).unwrap();
+                assert_eq!(first, second);
+                assert_eq!(&first[512..576], executable.as_slice());
+                assert_eq!(&first[1024..1036], b"package.json");
+                let metadata = format!("{{\"schema\":\"oxid-native-bundle-v1\",\"name\":\"demo\",\"target\":\"x86_64-unknown-linux-gnu\",\"profile\":\"{expected}\",\"entry_mode\":\"{}\",\"executable\":\"bin/demo\",\"sha256\":\"{digest}\",\"dynamic_runtime\":\"host-provided\"}}\n", entry.name());
+                assert_eq!(&first[1536..1536 + metadata.len()], metadata.as_bytes());
+                assert!(first[1536 + metadata.len()..2048].iter().all(|b| *b == 0));
+            }
         }
     }
     #[test]
     fn invalid_inputs_write_nothing() {
         for name in ["", "../x", "a/b", "a\\b", "_x"] {
             let mut out = Vec::new();
-            assert!(serialize(&mut out, name, BundleEntry::Result, &elf()).is_err());
+            assert!(serialize(
+                &mut out,
+                name,
+                BundleEntry::Result,
+                &elf(),
+                BuildProfile::Dev
+            )
+            .is_err());
             assert!(out.is_empty());
         }
         let mut out = Vec::new();
-        assert!(serialize(&mut out, "demo", BundleEntry::Result, b"not elf").is_err());
+        assert!(serialize(
+            &mut out,
+            "demo",
+            BundleEntry::Result,
+            b"not elf",
+            BuildProfile::Dev
+        )
+        .is_err());
         assert!(out.is_empty());
     }
 }

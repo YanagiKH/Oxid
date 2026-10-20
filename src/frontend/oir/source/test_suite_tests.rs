@@ -195,7 +195,11 @@ fn typed_project_test_runtime_failure_does_not_reuse_execution_state() {
 #[test]
 #[ignore = "requires separately installed LLVM 19.1.7 on Linux x86_64"]
 fn typed_project_test_native_agrees_with_interpreter() {
-    use crate::frontend::{manifest::BuildSelection, options::EntryPolicy, project_build};
+    use crate::frontend::{
+        manifest::BuildSelection,
+        options::{BuildProfile, EntryPolicy},
+        project_build,
+    };
     use std::os::unix::fs::MetadataExt;
     for prefix in ["", "struct Marker {}"] {
         let fixture = Fixture::new(&format!("{prefix} mod helper; fn main()->i32{{return crate::helper::answer();}} {OUTCOMES} fn test_helper()->bool{{return crate::helper::answer()==7;}} fn test_error()->i32{{return 1/0;}} fn test_later()->bool{{return true;}}"), Some("pub fn answer()->i32{return 7;}"));
@@ -210,6 +214,7 @@ fn typed_project_test_native_agrees_with_interpreter() {
             &suite.program.native_module().unwrap(),
             &selection,
             EntryPolicy::Result,
+            BuildProfile::Dev,
         )
         .unwrap();
         let app_bytes = fs::read(&app.path).unwrap();
@@ -220,6 +225,7 @@ fn typed_project_test_native_agrees_with_interpreter() {
                     &suite.native_module(i).unwrap(),
                     &parent,
                     i,
+                    BuildProfile::Dev,
                 )
                 .unwrap()
             })

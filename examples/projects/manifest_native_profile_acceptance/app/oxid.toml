@@ -1,0 +1,9 @@
+[project]
+name = "npp-app"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+model = "../model"
+text = "../../../../packages/utf8_text"

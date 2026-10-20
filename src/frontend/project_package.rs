@@ -4,7 +4,7 @@ use super::{
     driver::exit_status,
     manifest::{Command, Failure, Request},
     native_bundle::{self, BundleEntry},
-    options::EntryPolicy,
+    options::{BuildProfile, EntryPolicy},
     project_build::{self, Artifact},
     session::{CompilerSession, Configuration, Engine},
     source::SourceMap,
@@ -69,14 +69,20 @@ pub(super) fn cli_error(failure: Failure, json: bool, entry_policy: EntryPolicy)
     )
 }
 
-pub(super) fn run(request: Box<[Request; 1]>, output: &str, entry_policy: EntryPolicy) -> i32 {
+pub(super) fn run(
+    request: Box<[Request; 1]>,
+    output: &str,
+    entry_policy: EntryPolicy,
+    profile: BuildProfile,
+) -> i32 {
     let empty = Report::empty(request[0].json, entry_policy);
     if let Err(diagnostic) = preflight(Path::new(output)) {
         return report(&SourceMap::new(), &[*diagnostic], empty);
     }
     let session = match CompilerSession::load(
         request,
-        Configuration::new(Command::Package, Engine::Native, entry_policy, empty.json),
+        Configuration::new(Command::Package, Engine::Native, entry_policy, empty.json)
+            .with_profile(profile),
     ) {
         Ok(session) => session,
         Err((sources, diagnostics)) => return report(&sources, &diagnostics, empty),
@@ -108,7 +114,13 @@ pub(super) fn finish(
         EntryPolicy::Process => BundleEntry::Process,
     };
     let result = artifact.package_bytes().and_then(|bytes| {
-        native_bundle::create(Path::new(output), session.selected_name(), entry, &bytes)
+        native_bundle::create(
+            Path::new(output),
+            session.selected_name(),
+            entry,
+            &bytes,
+            artifact.profile(),
+        )
     });
     let state = Report {
         json: config.json,

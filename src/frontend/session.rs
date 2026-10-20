@@ -4,7 +4,7 @@ use super::{
     diagnostic::Diagnostic,
     manifest::{self, Command, Request},
     oir,
-    options::EntryPolicy,
+    options::{BuildProfile, EntryPolicy},
     project::{budget::Allocator, forest::PackageId, ProjectLimits, ProjectSources, SyntaxFlavor},
     project_build,
     source::SourceMap,
@@ -25,11 +25,6 @@ pub(super) enum Edition {
 pub(super) enum Target {
     Host,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Profile {
-    Default,
-}
-
 #[derive(Clone, Copy)]
 pub(super) struct Configuration {
     pub command: Command,
@@ -38,7 +33,7 @@ pub(super) struct Configuration {
     pub json: bool,
     edition: Edition,
     target: Target,
-    profile: Profile,
+    pub profile: BuildProfile,
 }
 impl Configuration {
     pub fn new(command: Command, engine: Engine, entry_policy: EntryPolicy, json: bool) -> Self {
@@ -49,8 +44,13 @@ impl Configuration {
             json,
             edition: Edition::TypedPreview,
             target: Target::Host,
-            profile: Profile::Default,
+            profile: BuildProfile::Dev,
         }
+    }
+
+    pub fn with_profile(mut self, profile: BuildProfile) -> Self {
+        self.profile = profile;
+        self
     }
 }
 
@@ -66,12 +66,8 @@ impl CompilerSession {
         configuration: Configuration,
     ) -> Result<Self, (SourceMap, Vec<Diagnostic>)> {
         debug_assert!(matches!(
-            (
-                configuration.edition,
-                configuration.target,
-                configuration.profile
-            ),
-            (Edition::TypedPreview, Target::Host, Profile::Default)
+            (configuration.edition, configuration.target),
+            (Edition::TypedPreview, Target::Host)
         ));
         let needs_name = configuration.engine == Engine::Native
             && matches!(
@@ -167,8 +163,13 @@ impl CompilerSession {
             parent: copy(&self.parent)?,
             name: copy(&package.name)?,
         };
-        project_build::publish(&module, &selection, self.configuration.entry_policy)
-            .map_err(|e| vec![*e])
+        project_build::publish(
+            &module,
+            &selection,
+            self.configuration.entry_policy,
+            self.configuration.profile,
+        )
+        .map_err(|e| vec![*e])
     }
 }
 

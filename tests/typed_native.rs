@@ -146,7 +146,7 @@ fn native_limits_preflight_dead_declarations_and_exponential_calls() {
 fn unsupported_cli_combinations_have_no_effects() {
     for option in [
         "--target=aarch64-unknown-linux-gnu",
-        "--profile=release",
+        "--profile=unknown",
         "--features=avx",
         "--backend=llvm",
         "--output=again",
