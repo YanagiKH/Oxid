@@ -80,6 +80,20 @@ doctor and does not select a manifest project.
 
 ## Create and maintain a project
 
+`oxid new <workspace-path> --edition typed-preview --workspace` creates a virtual
+workspace with two ordinary typed-preview projects, `workspace-app` and
+`workspace-library`, connected by an explicit local path dependency. The
+destination must not exist and its parent must already exist. The valueless
+`--workspace` flag is local to `new`, occurs at most once before `--`, and requires
+explicit typed-preview edition selection. Select either project with
+`--package <name>` when checking, running, testing or building the workspace.
+Creation is text-only and creates no lockfile, cache or downloaded package.
+Failures after creation starts retain partial files for inspection; this is not
+an atomic whole-workspace transaction. Without `--workspace`, typed `new` keeps
+its existing single-project template. See
+[typed workspace scaffolding](../spec/typed-workspace-new.md) for the generated
+layout and commands.
+
 | Command | What it does |
 |---|---|
 | `oxid new <name>` / `oxid init <name>` | Create a new directory and project scaffold; the directory must not exist |

@@ -20,6 +20,7 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
         }
         Route::ManifestDoctorError { failure } => Some(super::project_doctor::cli_error(failure)),
         Route::TypedNew { path } => Some(scaffold_project(&path)),
+        Route::TypedWorkspaceNew { path } => Some(scaffold_workspace(&path)),
         Route::ManifestFormat { request, write } => {
             Some(super::project_format::run(request, write))
         }
@@ -205,6 +206,71 @@ fn scaffold_project(path: &str) -> i32 {
         diagnostic.render_human(&SourceMap::new())
     );
     1
+}
+
+/// Workspace creation shares project-new diagnostics, not manifest execution.
+fn scaffold_workspace(path: &str) -> i32 {
+    use std::io::Write;
+    let result = super::workspace_scaffold::create(std::path::Path::new(path));
+    let error = match result {
+        Ok(()) => {
+            if writeln!(
+                std::io::stdout().lock(),
+                "created typed workspace: {}",
+                workspace_path_display(path)
+            )
+            .is_ok()
+            {
+                return 0;
+            }
+            format!("workspace {} was created, but its success message could not be written; files were retained", workspace_path_display(path))
+        }
+        Err(error) => error,
+    };
+    let diagnostic = Diagnostic::new("E0002", "project-new", error, None);
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "{}",
+        diagnostic.render_human(&SourceMap::new())
+    );
+    1
+}
+
+/// Keep JSON-style quoting while also escaping DEL/C1 in human-only output.
+fn workspace_path_display(path: &str) -> String {
+    use std::fmt::Write;
+    let mut displayed = String::new();
+    for character in json_string(path).chars() {
+        if character.is_control() {
+            let _ = write!(displayed, "\\u{:04x}", character as u32);
+        } else {
+            displayed.push(character);
+        }
+    }
+    displayed
+}
+
+#[cfg(test)]
+mod workspace_report_tests {
+    use super::workspace_path_display;
+
+    #[test]
+    fn workspace_success_path_is_quoted_without_terminal_control_characters() {
+        assert_eq!(workspace_path_display("demo"), "\"demo\"");
+        assert_eq!(
+            workspace_path_display("parent \"quoted\"\\\n\t\u{7f}\u{80}\u{9b}/demo"),
+            "\"parent \\\"quoted\\\"\\\\\\n\\t\\u007f\\u0080\\u009b/demo\""
+        );
+        let controls = (0..=0x9f)
+            .filter_map(char::from_u32)
+            .filter(|character| character.is_control())
+            .collect::<String>();
+        let displayed = workspace_path_display(&format!("{controls}/demo"));
+        assert!(!displayed.chars().any(char::is_control));
+        assert!(displayed.starts_with('"'));
+        assert!(displayed.ends_with("/demo\""));
+        assert_eq!(workspace_path_display("親/demo"), "\"親/demo\"");
+    }
 }
 
 /// Explicit manifest CHECK or Result RUN: no output, provider, or Process policy.

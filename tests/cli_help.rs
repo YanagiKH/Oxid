@@ -19,6 +19,7 @@ fn root_help_lists_typed_projects_and_preserves_legacy_usage() {
             "oxid build [--offline|--locked|--frozen]",
             "--edition legacy-0.9 keeps the default legacy route",
             "oxid new <project-path> --edition typed-preview",
+            "oxid new <workspace-path> --edition typed-preview --workspace",
             "oxid check --manifest-path <oxid.toml>",
             "oxid build --manifest-path <oxid.toml>",
             "oxid run --manifest-path <oxid.toml> [--engine interpreter|native]",

@@ -2644,6 +2644,7 @@ fn help() {
     println!();
     println!("Typed-preview projects (explicit opt-in):");
     println!("  oxid new <project-path> --edition typed-preview");
+    println!("  oxid new <workspace-path> --edition typed-preview --workspace");
     println!("  oxid check --manifest-path <oxid.toml>");
     println!("  oxid build --manifest-path <oxid.toml> [--entry-mode result|process]");
     println!("  oxid run --manifest-path <oxid.toml> [--engine interpreter|native] [--entry-mode result|process]");
@@ -2656,6 +2657,7 @@ fn help() {
     println!("  oxid doctor --edition typed-preview");
     println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");
     println!("  Add --package <name> to select a package from a workspace manifest.");
+    println!("  New --workspace creates workspace-app and workspace-library with an explicit local path dependency.");
     println!("  Entry mode defaults to result; run/test default to the interpreter.");
     println!("  Build/package and native run/test accept --profile dev|release (default dev).");
     println!(

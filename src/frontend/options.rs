@@ -22,6 +22,9 @@ pub enum Route {
     TypedNew {
         path: String,
     },
+    TypedWorkspaceNew {
+        path: String,
+    },
     ManifestFormat {
         request: Box<[super::manifest::Request; 1]>,
         write: bool,
@@ -333,11 +336,22 @@ fn route_new(forwarded: Vec<String>, json: bool) -> Route {
         return fail("typed-preview new does not support --message-format=json".into());
     }
     let mut path = None;
+    let mut workspace = false;
     let mut separated = false;
     for argument in forwarded.into_iter().skip(1) {
         if !separated && argument == "--" {
             separated = true;
             continue;
+        }
+        if !separated && argument == "--workspace" {
+            if workspace {
+                return fail("--workspace may only be specified once".into());
+            }
+            workspace = true;
+            continue;
+        }
+        if !separated && argument.starts_with("--workspace=") {
+            return fail("--workspace does not accept a value".into());
         }
         if !separated && argument.starts_with('-') {
             return fail(format!(
@@ -349,8 +363,334 @@ fn route_new(forwarded: Vec<String>, json: bool) -> Route {
         }
     }
     match path {
+        Some(path) if workspace => Route::TypedWorkspaceNew { path },
         Some(path) => Route::TypedNew { path },
         None => fail("typed-preview new requires exactly one nonempty project path".into()),
+    }
+}
+
+#[cfg(test)]
+mod workspace_new_options_tests {
+    use super::{route, Operation, Route, PROFILE_APPLICABILITY};
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).into()).collect()
+    }
+
+    fn refusal(words: &[&str], expected: &str, json: bool) {
+        assert_eq!(
+            route(&args(words)),
+            Route::Error {
+                message: expected.into(),
+                json,
+                operation: Operation::Check,
+            },
+            "{words:?}"
+        );
+    }
+
+    #[test]
+    fn workspace_new_accepts_local_flag_positions_and_global_edition_forms() {
+        for words in [
+            &["--edition=typed-preview", "new", "--workspace", "demo"][..],
+            &["new", "demo", "--workspace", "--edition", "typed-preview"],
+            &[
+                "new",
+                "--edition=typed-preview",
+                "--workspace",
+                "--",
+                "demo",
+            ],
+            &["--edition", "typed-preview", "new", "demo", "--workspace"],
+            &[
+                "new",
+                "--workspace",
+                "--edition",
+                "typed-preview",
+                "--message-format=text",
+                "demo",
+            ],
+        ] {
+            assert_eq!(
+                route(&args(words)),
+                Route::TypedWorkspaceNew {
+                    path: "demo".into()
+                },
+                "{words:?}"
+            );
+        }
+        assert_eq!(
+            route(&args(&[
+                "new",
+                "--edition=typed-preview",
+                "--workspace",
+                "parent\u{7f}\u{9b}/demo",
+            ])),
+            Route::TypedWorkspaceNew {
+                path: "parent\u{7f}\u{9b}/demo".into()
+            }
+        );
+    }
+
+    #[test]
+    fn workspace_new_preserves_separator_and_plain_project_ownership() {
+        for literal in ["--workspace", "--workspace=true", "--workspace=false"] {
+            assert_eq!(
+                route(&args(&["new", "--edition=typed-preview", "--", literal])),
+                Route::TypedNew {
+                    path: literal.into()
+                }
+            );
+            assert_eq!(
+                route(&args(&[
+                    "new",
+                    "--edition=typed-preview",
+                    "--workspace",
+                    "--",
+                    literal,
+                ])),
+                Route::TypedWorkspaceNew {
+                    path: literal.into()
+                }
+            );
+        }
+        assert_eq!(
+            route(&args(&["new", "demo", "--edition=typed-preview"])),
+            Route::TypedNew {
+                path: "demo".into()
+            }
+        );
+        for words in [
+            &["new", "--", "--workspace"][..],
+            &["new", "demo", "--", "--workspace=true"],
+            &[
+                "new",
+                "--",
+                "demo",
+                "--edition=typed-preview",
+                "--workspace",
+            ],
+        ] {
+            assert_eq!(route(&args(words)), Route::Legacy(args(words)));
+        }
+    }
+
+    #[test]
+    fn workspace_new_rejects_duplicates_values_and_bad_operands_without_io() {
+        for local in [
+            &["--workspace", "--workspace", "demo"][..],
+            &["--workspace", "demo", "--workspace"],
+        ] {
+            let mut words = vec!["new", "--edition=typed-preview"];
+            words.extend_from_slice(local);
+            refusal(&words, "--workspace may only be specified once", false);
+        }
+        for value in ["--workspace=", "--workspace=true", "--workspace=false"] {
+            refusal(
+                &["new", "--edition=typed-preview", "demo", value],
+                "--workspace does not accept a value",
+                false,
+            );
+        }
+        for local in [
+            &["--workspace"][..],
+            &["--workspace", ""],
+            &["--workspace", "demo", "other"],
+            &["--workspace", "--"],
+            &["--workspace", "demo", "--", "--workspace"],
+        ] {
+            let mut words = vec!["new", "--edition=typed-preview"];
+            words.extend_from_slice(local);
+            refusal(
+                &words,
+                "typed-preview new requires exactly one nonempty project path",
+                false,
+            );
+        }
+        for local in [
+            "--unknown",
+            "--native",
+            "--engine=native",
+            "--backend=llvm",
+            "--target=x86_64-unknown-linux-gnu",
+            "--output=program",
+            "--package=workspace-app",
+        ] {
+            refusal(
+                &[
+                    "new",
+                    "demo",
+                    "--edition=typed-preview",
+                    "--workspace",
+                    local,
+                ],
+                &format!("unsupported option for typed-preview new: {local}"),
+                false,
+            );
+        }
+        assert!(matches!(
+            route(&args(&[
+                "new",
+                "demo",
+                "--edition=typed-preview",
+                "--workspace",
+                "--manifest-path=absent.toml",
+            ])),
+            Route::ManifestError { .. }
+        ));
+        assert!(matches!(
+            route(&args(&[
+                "--workspace",
+                "new",
+                "demo",
+                "--edition=typed-preview"
+            ])),
+            Route::Error { .. }
+        ));
+    }
+
+    #[test]
+    fn workspace_spelling_is_narrowly_reserved_before_legacy_new_dispatch() {
+        for flag in ["--workspace", "--workspace=true", "--workspace=false"] {
+            for local in [vec![flag, "demo"], vec!["demo", flag]] {
+                for edition in [vec![], vec!["--edition=legacy-0.9"]] {
+                    let mut words = vec!["new"];
+                    words.extend_from_slice(&local);
+                    words.extend_from_slice(&edition);
+                    refusal(
+                        &words,
+                        "new --workspace requires explicit --edition typed-preview",
+                        false,
+                    );
+                }
+            }
+        }
+        for words in [
+            &["new", "demo"][..],
+            &["new", "demo", "--workspaces"],
+            &["init", "--workspace"],
+            &["check", "source.ox", "--workspace"],
+            &["script", "task", "--workspace", "--edition=typed-preview"],
+            &["script", "--workspace", "demo", "--edition=typed-preview"],
+        ] {
+            assert_eq!(route(&args(words)), Route::Legacy(args(words)));
+        }
+        assert_eq!(
+            route(&args(&["new", "demo", "--edition=legacy-0.9"])),
+            Route::Legacy(args(&["new", "demo"]))
+        );
+        assert_eq!(
+            route(&args(&[
+                "script",
+                "--edition=legacy-0.9",
+                "task",
+                "--workspace",
+                "--edition=typed-preview",
+            ])),
+            Route::Legacy(args(&[
+                "script",
+                "task",
+                "--workspace",
+                "--edition=typed-preview",
+            ]))
+        );
+    }
+
+    #[test]
+    fn workspace_new_preserves_global_error_priority_and_sticky_json() {
+        refusal(
+            &[
+                "new",
+                "--workspace",
+                "--edition=nope",
+                "--message-format=json",
+            ],
+            "unknown edition `nope`; expected legacy-0.9 or typed-preview",
+            true,
+        );
+        refusal(
+            &["new", "--workspace", "--edition", "--message-format=json"],
+            "--edition requires a value",
+            true,
+        );
+        refusal(
+            &["new", "--workspace", "--message-format=json"],
+            "--message-format requires --edition typed-preview",
+            true,
+        );
+        refusal(
+            &[
+                "new",
+                "--workspace",
+                "--edition=typed-preview",
+                "--message-format=json",
+                "--message-format=text",
+            ],
+            "--message-format may only be specified once",
+            true,
+        );
+        refusal(
+            &[
+                "new",
+                "--workspace",
+                "--workspace",
+                "--edition=typed-preview",
+                "--message-format=json",
+            ],
+            "typed-preview new does not support --message-format=json",
+            true,
+        );
+        refusal(
+            &[
+                "new",
+                "--workspace",
+                "--edition=typed-preview",
+                "--profile=release",
+            ],
+            PROFILE_APPLICABILITY,
+            false,
+        );
+        refusal(
+            &["new", "--workspace", "--profile=unknown", "--edition=nope"],
+            "unknown --profile `unknown`; expected dev or release",
+            false,
+        );
+    }
+
+    #[test]
+    fn workspace_new_preserves_process_error_reporting_and_route_layout() {
+        for edition in [
+            None,
+            Some("--edition=legacy-0.9"),
+            Some("--edition=typed-preview"),
+        ] {
+            let mut words = vec!["new", "demo", "--workspace", "--entry-mode=process"];
+            words.extend(edition);
+            assert_eq!(
+                route(&args(&words)),
+                Route::ProcessError {
+                    message: "--entry-mode requires typed-preview run or compile".into()
+                },
+                "{words:?}"
+            );
+        }
+        assert_eq!(
+            route(&args(&[
+                "new",
+                "--workspace",
+                "--edition=nope",
+                "--entry-mode=process",
+                "--message-format=json",
+            ])),
+            Route::ProcessError {
+                message: "unknown edition `nope`; expected legacy-0.9 or typed-preview".into()
+            }
+        );
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(std::mem::size_of::<Route>(), 56);
+            assert_eq!(std::mem::align_of::<Route>(), 8);
+        }
     }
 }
 
@@ -596,6 +936,22 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
         };
     }
     if edition != Some("typed-preview") {
+        // Reserve only the new command-local spelling. Legacy new otherwise
+        // treats its first operand as a path and ignores additional arguments.
+        // Global errors above keep their priority, and `--` keeps literal ownership.
+        if command == Some("new")
+            && forwarded
+                .iter()
+                .skip(1)
+                .take_while(|argument| argument.as_str() != "--")
+                .any(|argument| argument == "--workspace" || argument.starts_with("--workspace="))
+        {
+            return Route::Error {
+                message: "new --workspace requires explicit --edition typed-preview".into(),
+                json,
+                operation: Operation::Check,
+            };
+        }
         return Route::Legacy(forwarded);
     }
     if forwarded.first().map(String::as_str) == Some("fmt") {
