@@ -118,6 +118,8 @@ A [bounded standalone byte-storage successor](rfcs/0031-bounded-standalone-byte-
 
 The experimental [typed formatter](spec/typed-preview.md#single-file-formatting) supports fixed-array syntax and `oxid fmt --edition typed-preview input.ox` (complete source on stdout) and `--check` (exit 1 for drift). It preserves comments and existing line breaks while normalizing spacing and indentation, without loading modules or writing files. Default legacy formatting is unchanged.
 
+The separate [manifest project formatter](spec/typed-project-format.md) uses `oxid fmt --manifest-path oxid.toml --check` or explicit `--write`, with optional workspace `--package` selection. It formats only the selected package's declared source files, not dependencies, without typechecking or running source. Check mode writes no files; write mode validates all candidates before replacing files individually, not as a whole-project transaction.
+
 Run only trusted programs and review dependencies. Generated C/C++ process adapters require trusted paths. See the [security policy](SECURITY.md) for private vulnerability reporting.
 
 ## Build from source

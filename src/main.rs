@@ -2651,6 +2651,7 @@ fn help() {
         "  oxid test --manifest-path <oxid.toml> [--engine interpreter|native] [--filter <text>] [--fail-fast]"
     );
     println!("  oxid package --manifest-path <oxid.toml> --output <archive.tar> [--entry-mode result|process]");
+    println!("  oxid fmt --manifest-path <oxid.toml> [--package <name>] (--check | --write)");
     println!("  oxid doctor --edition typed-preview");
     println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");
     println!("  Add --package <name> to select a package from a workspace manifest.");
@@ -2660,12 +2661,15 @@ fn help() {
         "  Typed source compile also accepts --profile dev|release; dev uses O0, release uses O2."
     );
     println!("  Explicit profiles are rejected by interpreter and unrelated commands.");
+    println!("  Manifest fmt requires --check (no writes) or explicit --write; it never runs source.");
+    println!("  Project fmt is syntax-only and text-only; backend, engine, target and profile are unsupported.");
     println!("  Native target: x86_64-unknown-linux-gnu.");
     println!("  Build, package, and native run/test require LLVM 19.1.7 (clang, opt, ld.lld).");
     println!("  Set OXID_LLVM_BIN to their bin directory; otherwise PATH must provide clang-19, opt-19, ld.lld-19.");
     println!("Examples:");
     println!("  oxid new hello --edition typed-preview");
     println!("  oxid check --manifest-path hello/oxid.toml");
+    println!("  oxid fmt --manifest-path hello/oxid.toml --check");
     println!("  oxid run --manifest-path hello/oxid.toml --engine native");
     println!("  oxid package --manifest-path hello/oxid.toml --output hello.tar");
 }

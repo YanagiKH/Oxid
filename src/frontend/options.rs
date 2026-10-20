@@ -15,6 +15,13 @@ pub enum Route {
     TypedNew {
         path: String,
     },
+    ManifestFormat {
+        request: Box<[super::manifest::Request; 1]>,
+        write: bool,
+    },
+    ManifestFormatError {
+        failure: super::manifest::Failure,
+    },
     ManifestPackage {
         request: Box<[super::manifest::Request; 1]>,
         output: String,
@@ -273,6 +280,9 @@ mod output_layout_feasibility {
 
 /// Classify arguments excluding the executable name, without reading any files.
 pub fn route(args: &[String]) -> Route {
+    if let Some(route) = super::project_format_cli::select(args) {
+        return route;
+    }
     if let Some(route) = super::manifest::select(args) {
         return route;
     }

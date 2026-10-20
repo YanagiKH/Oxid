@@ -31,6 +31,28 @@ Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
 reproduction. Module-free syntax has no discovery host gate; child loading
 currently admits Linux only.
 
+### Explicit manifest project formatting
+
+`oxid fmt --manifest-path oxid.toml --check` checks formatting for the selected
+typed-preview package. Add `--package <name>` when selecting from a workspace.
+Exactly one mode is required: `--check` writes no files and exits 1 for formatting
+drift; `--write` explicitly replaces changed source files and exits 0 on success.
+Both modes exit 2 on errors. No mode is implied, and source operands are rejected.
+
+Only the selected package's declared source files are formatted; dependency
+sources are loaded through the existing project session but are not rewritten.
+Formatting is syntax-only and does not run programs or native tools. Output is
+text-only; `--profile`, `--backend`, `--engine`, `--target`, output paths and
+experimental compiler selectors are unsupported. `--manifest-path` must follow
+`fmt`, and `--` ends option recognition. Single-file typed formatting and default
+legacy formatting keep their existing behavior.
+
+Write mode validates and stages all candidates before replacing originals,
+checks for changed input bytes, and replaces each file atomically. A later
+replacement failure can leave earlier files formatted; the operation is not a
+whole-project transaction. See [project formatting](../spec/typed-project-format.md)
+for the write boundary, source-path restrictions and limitations.
+
 ## Create and maintain a project
 
 | Command | What it does |

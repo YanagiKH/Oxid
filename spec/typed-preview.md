@@ -589,6 +589,12 @@ the current table uses one byte per source byte. These are logical payload
 limits, not whole-process memory or host-I/O guarantees. Full layout policy:
 [RFC 0017](../rfcs/0017-bounded-typed-formatter.md).
 
+The separate [manifest project formatter](typed-project-format.md) uses
+`oxid fmt --manifest-path oxid.toml --check` or explicit `--write`, with optional
+workspace `--package` selection. It loads the existing project session and
+formats only the selected package's declared sources, not dependencies.
+Its explicit write mode does not change this single-file stdout-only contract.
+
 ## Bounded typed projects
 
 The entry file may declare `mod state;`, import original declarations with

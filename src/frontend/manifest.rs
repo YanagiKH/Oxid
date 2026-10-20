@@ -310,6 +310,15 @@ pub(super) fn select(args: &[String]) -> Option<Route> {
     cli::select(args)
 }
 
+/// The formatter reuses the exact manifest request admission and allocation
+/// sequence without extending the established command scanner or its carrier.
+pub(super) fn format_request(
+    path: &str,
+    package: Option<&str>,
+) -> Result<Box<[Request; 1]>, Failure> {
+    request_selected(path, package, false, Allocator::default())
+}
+
 /// Publication metadata of the selected application; graph entries remain in
 /// the session's immutable resolved manifests.
 pub(super) struct BuildSelection {

@@ -16,6 +16,10 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
         Route::TypedDoctor => Some(super::toolchain_doctor::run()),
         Route::TypedNew { path } => Some(scaffold_project(&path)),
+        Route::ManifestFormat { request, write } => {
+            Some(super::project_format::run(request, write))
+        }
+        Route::ManifestFormatError { failure } => Some(super::project_format::cli_error(failure)),
         Route::ManifestPackage {
             request,
             output,
@@ -216,10 +220,15 @@ fn manifest_file(request: Box<[super::manifest::Request; 1]>, operation: Operati
             None,
             session.check(),
             BuildProfile::Dev,
+            operation == Operation::Check,
         ),
-        Err((sources, diagnostics)) => {
-            report(&sources, diagnostics, json, Summary::empty(operation))
-        }
+        Err((sources, diagnostics)) => report_with_source_context(
+            &sources,
+            diagnostics,
+            json,
+            Summary::empty(operation),
+            operation == Operation::Check,
+        ),
     }
 }
 
@@ -376,7 +385,15 @@ fn write_build_report(
             if json {
                 writeln!(stdout, "{}", diagnostic.render_json(sources))?;
             } else {
-                write!(stderr, "{}", diagnostic.render_human(sources))?;
+                write!(
+                    stderr,
+                    "{}",
+                    render_compile_diagnostic(
+                        diagnostic,
+                        sources,
+                        entry_policy == EntryPolicy::Result
+                    )
+                )?;
             }
         }
         if json {
@@ -625,6 +642,52 @@ impl Summary {
         }
     }
 }
+/// Native/build failures share these reporters with frontend failures. Keep a
+/// closed set of source stages, require a primary span, and fall back to the old
+/// renderer for backend, publication, internal, and future diagnostic stages.
+fn render_compile_diagnostic(
+    diagnostic: &Diagnostic,
+    sources: &SourceMap,
+    source_context: bool,
+) -> String {
+    if source_context
+        && diagnostic.primary.is_some()
+        && diagnostic.code != "E0500"
+        && matches!(
+            diagnostic.stage,
+            "source" | "lex" | "parse" | "resolve" | "type" | "ownership"
+        )
+    {
+        super::diagnostic_context::render_human_context(diagnostic, sources)
+    } else {
+        diagnostic.render_human(sources)
+    }
+}
+
+/// Only ordinary source-check/compile error paths may request context. Leave
+/// the original reporter entirely unchanged for JSON, successes, run, Process,
+/// experimental routes, and any future summary shape. Text compile failures
+/// have no success summary, so only their diagnostic rendering differs here.
+fn report_with_source_context(
+    sources: &SourceMap,
+    diagnostics: Vec<Diagnostic>,
+    json: bool,
+    summary: Summary,
+    source_context: bool,
+) -> i32 {
+    if !source_context
+        || json
+        || diagnostics.is_empty()
+        || !matches!(summary, Summary::Check(None) | Summary::Compile(None))
+    {
+        return report(sources, diagnostics, json, summary);
+    }
+    for diagnostic in &diagnostics {
+        eprint!("{}", render_compile_diagnostic(diagnostic, sources, true));
+    }
+    exit_status(&diagnostics)
+}
+
 fn report(
     sources: &SourceMap,
     mut diagnostics: Vec<Diagnostic>,
@@ -754,6 +817,11 @@ fn process_file_with_lexical(
     profile: BuildProfile,
 ) -> i32 {
     let process_run = operation == Operation::Run && entry_policy == EntryPolicy::Process;
+    // Context belongs only to ordinary Result check/compile, never an
+    // experimental lexical route, a run operation, or a Process entry route.
+    let source_context = lexical_bundle.is_none()
+        && entry_policy == EntryPolicy::Result
+        && matches!(operation, Operation::Check | Operation::Compile);
     // Pure argv classification already finished. Setup must precede even source
     // loading, because all subsequent failures use the process stderr channel.
     if process_run && !oir::process::setup() {
@@ -817,11 +885,12 @@ fn process_file_with_lexical(
             return if process_run {
                 report_process(&failure.sources, &failure.diagnostics)
             } else {
-                report(
+                report_with_source_context(
                     &failure.sources,
                     failure.diagnostics,
                     json,
                     Summary::empty(operation),
+                    source_context,
                 )
             }
         }
@@ -842,7 +911,15 @@ fn process_file_with_lexical(
     if entry_policy == EntryPolicy::Process {
         return process_compile_loaded(&project, json, output, executable, profile);
     }
-    process_loaded(&project, json, operation, output, executable, profile)
+    process_loaded(
+        &project,
+        json,
+        operation,
+        output,
+        executable,
+        profile,
+        source_context,
+    )
 }
 
 fn check_loaded_project(
@@ -870,6 +947,7 @@ fn process_loaded(
     output: Option<&str>,
     executable: Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>>,
     profile: BuildProfile,
+    source_context: bool,
 ) -> i32 {
     let sources = project.sources();
     let result = (|| {
@@ -891,7 +969,13 @@ fn process_loaded(
     })();
     match result {
         Ok(summary) => report(sources, Vec::new(), json, summary),
-        Err(diagnostics) => report(sources, diagnostics, json, Summary::empty(operation)),
+        Err(diagnostics) => report_with_source_context(
+            sources,
+            diagnostics,
+            json,
+            Summary::empty(operation),
+            source_context,
+        ),
     }
 }
 
@@ -1114,3 +1198,7 @@ mod native_project_tests {
         std::fs::remove_dir(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "driver_diagnostic_context_tests.rs"]
+mod diagnostic_context_tests;
