@@ -1,0 +1,10 @@
+[project]
+name = "oxcsvsum-core"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+csv = "../../../../packages/csv_records"
+text = "../../../../packages/utf8_text"
+decimal = "../../../../packages/i32_decimal"
