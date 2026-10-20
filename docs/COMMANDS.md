@@ -53,6 +53,31 @@ replacement failure can leave earlier files formatted; the operation is not a
 whole-project transaction. See [project formatting](../spec/typed-project-format.md)
 for the write boundary, source-path restrictions and limitations.
 
+### Explicit manifest project doctor
+
+`oxid doctor --manifest-path oxid.toml` validates manifest configuration and
+resolves the selected typed-preview package's dependency graph. It does not open
+or validate source files, check program health, run the application or its tests,
+or write project build artifacts. Missing or invalid source files therefore do
+not make this configuration-only check fail.
+
+Add `--package <name>` to select a workspace package. The default check does not
+require LLVM; add the valueless, non-repeatable `--native` flag to also check the
+native toolchain through the existing standalone doctor. That opt-in probe may
+create temporary probe files; it does not build or run the selected application.
+
+`--manifest-path` must follow `doctor`. Manifest and package selectors accept
+split or `=` values, and `--` ends option recognition. Output is text-only.
+Explicit `--edition typed-preview` and `--message-format text` are accepted;
+legacy edition, JSON output, source operands, profile, engine, entry mode,
+backend, target, output and experimental compiler selectors are rejected before
+manifest I/O. Exit status is 0 for success and 1 for a failed check or invalid
+request.
+
+Bare `oxid doctor` keeps its legacy project checks. The standalone
+`oxid doctor --edition typed-preview` remains the existing native toolchain
+doctor and does not select a manifest project.
+
 ## Create and maintain a project
 
 | Command | What it does |

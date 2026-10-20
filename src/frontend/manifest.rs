@@ -319,6 +319,15 @@ pub(super) fn format_request(
     request_selected(path, package, false, Allocator::default())
 }
 
+/// Project doctor reuses the same bounded, fallible request admission without
+/// extending the established command scanner or changing its fixed carrier.
+pub(super) fn doctor_request(
+    path: &str,
+    package: Option<&str>,
+) -> Result<Box<[Request; 1]>, Failure> {
+    request_selected(path, package, false, Allocator::default())
+}
+
 /// Publication metadata of the selected application; graph entries remain in
 /// the session's immutable resolved manifests.
 pub(super) struct BuildSelection {
