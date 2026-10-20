@@ -1,0 +1,9 @@
+[project]
+name = "utf8_stream_contracts"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+stream = "../../../packages/utf8_stream"
+stat = "../oxtextstat/core"

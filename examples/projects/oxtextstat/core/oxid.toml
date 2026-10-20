@@ -1,0 +1,9 @@
+[project]
+name = "oxtextstat-core"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+stream = "../../../../packages/utf8_stream"
+decimal = "../../../../packages/i32_decimal"
