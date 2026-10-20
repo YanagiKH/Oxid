@@ -12,6 +12,12 @@
 pub enum Route {
     Legacy(Vec<String>),
     TypedDoctor,
+    ManifestDoc {
+        request: Box<[super::manifest::Request; 1]>,
+    },
+    ManifestDocError {
+        failure: super::manifest::Failure,
+    },
     ManifestDoctor {
         request: Box<[super::manifest::Request; 1]>,
         native: bool,
@@ -290,6 +296,9 @@ mod output_layout_feasibility {
 
 /// Classify arguments excluding the executable name, without reading any files.
 pub fn route(args: &[String]) -> Route {
+    if let Some(route) = super::project_doc_cli::select(args) {
+        return route;
+    }
     if let Some(route) = super::project_doctor_cli::select(args) {
         return route;
     }

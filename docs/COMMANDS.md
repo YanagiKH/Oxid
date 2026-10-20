@@ -78,6 +78,33 @@ Bare `oxid doctor` keeps its legacy project checks. The standalone
 `oxid doctor --edition typed-preview` remains the existing native toolchain
 doctor and does not select a manifest project.
 
+### Checked typed-project API documentation
+
+`oxid doc --manifest-path oxid.toml` checks the selected typed-preview package
+and its dependencies, then writes the selected package's public API as Markdown
+to stdout. Use `--package <name>` for a workspace member. Source, dependencies,
+build artifacts and documentation files are not modified; no source is executed
+and no LLVM tools are invoked. A library-like root need not contain `main`.
+
+Public module ancestry, public functions/types, public record fields and enum
+variants determine what appears. Function bodies and private subtrees do not.
+Immediately preceding standalone `///` comments become escaped plain-text
+notes. Type aliases used by exported signatures are explained by their original
+imports. Successful output contains entry-directory-relative source locations,
+not absolute host paths. It is deterministic and has no generation timestamp.
+
+`--manifest-path` must follow `doc`. Split and `=` selectors are accepted, as
+are explicit `--edition typed-preview` and `--message-format text`. JSON,
+legacy edition, source operands, profiles, execution/native selectors and
+output-path options are rejected. Status 0 means successful documentation;
+status 1 means an error. Loading/checking errors produce no success document;
+a stdout failure may leave a partial document. Redirect stdout yourself if a
+file is wanted. See [typed project documentation](../spec/typed-project-doc.md)
+for the exact API/comment/output contract and current scope.
+
+Bare `oxid doc` still writes its fixed legacy reference to `docs/API.md`.
+This checked experimental documentation is not a claim that G6 or v1.0 is done.
+
 ## Create and maintain a project
 
 `oxid new <workspace-path> --edition typed-preview --workspace` creates a virtual

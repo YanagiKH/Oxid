@@ -12,4 +12,12 @@ The `oxid` executable includes the tools needed to try and package an Oxid proje
 
 `frontend` reports provider declarations. Legacy bootstrap aliases check artifact round-trips. Neither command proves compiler self-hosting.
 
-Run `oxid help` or read [Commands](COMMANDS.md) for flags and side effects. In particular, `fmt` rewrites source, `doc` replaces `docs/API.md`, and `clean` removes the project `.oxid` directory.
+Run `oxid help` or read [Commands](COMMANDS.md) for flags and side effects.
+In particular, legacy `fmt` rewrites source, bare legacy `doc` replaces
+`docs/API.md`, and `clean` removes the project `.oxid` directory.
+
+The explicit typed-project command `oxid doc --manifest-path oxid.toml` checks
+the ordinary compiler session and writes only selected public API Markdown to
+stdout. It does not execute source or create/update documentation files. Use
+`--package <name>` for workspace selection; see
+[typed project documentation](../spec/typed-project-doc.md).

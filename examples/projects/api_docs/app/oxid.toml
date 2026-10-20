@@ -1,0 +1,7 @@
+[project]
+name = "api-docs-app"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+geometry = "../geometry"

@@ -22,6 +22,8 @@ mod owned_diagnostic;
 mod parser;
 mod project;
 mod project_build;
+mod project_doc;
+mod project_doc_cli;
 mod project_doctor;
 mod project_doctor_cli;
 mod project_format;

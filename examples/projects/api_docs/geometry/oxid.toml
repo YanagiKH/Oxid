@@ -1,0 +1,7 @@
+[project]
+name = "api-docs-geometry"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+units = "vendor/units"
