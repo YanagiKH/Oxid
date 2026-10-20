@@ -8,13 +8,10 @@ use std::io::WriteSomeStatus;
 use std::io::read_some;
 use std::io::write_some;
 use vec::I32Vec;
-use vec::Element;
 use vec::FromBytes;
-use vec::len;
-use vec::get;
-use vec::set;
 use vec::from_le_bytes;
 use vec::into_le_bytes;
+use algorithms::heapsort;
 
 enum Loaded {
     Ok(ByteBuf), CapacityOverflow, AllocationFailed, MemoryLimit, IoError(i32)
@@ -71,38 +68,6 @@ fn write_all(bytes: &[u8]) -> WrittenAll {
     return WrittenAll::Ok;
 }
 
-fn insert_at(values: &mut I32Vec, index: i32) -> bool {
-    let current = get(&*values, index);
-    match current {
-        Element::Missing => { return false; },
-        Element::Value(key) => {
-            let mut hole = index;
-            while hole > 0 {
-                let previous = get(&*values, hole - 1);
-                match previous {
-                    Element::Missing => { return false; },
-                    Element::Value(before) => {
-                        if before <= key { break; }
-                        if !set(&mut *values, hole, before) { return false; }
-                        hole = hole - 1;
-                    },
-                }
-            }
-            return set(&mut *values, hole, key);
-        },
-    }
-}
-
-fn insertion_sort(values: &mut I32Vec) -> bool {
-    let count = len(&*values);
-    let mut index = 1;
-    while index < count {
-        if !insert_at(&mut *values, index) { return false; }
-        index = index + 1;
-    }
-    return true;
-}
-
 fn emit(values: I32Vec) -> i32 {
     let output = into_le_bytes(values);
     let written = write_all(&output);
@@ -118,7 +83,7 @@ fn sort_records(input: ByteBuf) -> i32 {
     match converted {
         FromBytes::Ok(parsed) => {
             let mut values = parsed;
-            if !insertion_sort(&mut values) { return 70; }
+            if !heapsort(&mut values) { return 70; }
             return emit(values);
         },
         FromBytes::Invalid(rejected) => { return 65; },

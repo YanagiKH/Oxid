@@ -1,16 +1,18 @@
 //! Focused acceptance for the `oxi32sort` Process CLI workspace in
 //! `examples/projects/oxi32sort` (member `oxi32sort`), a client of the direct
-//! path dependency `packages/i32_vec` (alias `vec`). The app reads stdin to EOF,
-//! converts the complete input with `from_le_bytes`, insertion-sorts the
-//! little-endian signed i32 records with `get`/`set`/`len`, and writes the
+//! path dependency `packages/i32_vec` (alias `vec`) and the pure
+//! `packages/i32_algorithms` dependency (alias `algorithms`). The app reads
+//! stdin to EOF, converts the complete input with `from_le_bytes`, heapsorts
+//! the little-endian signed i32 records through that package, and writes the
 //! result consumed by `into_le_bytes`. A tail that is not a whole record exits
 //! 65 with empty stdout. Stderr stays empty for every fixed case.
 //!
 //! The fixed binary oracle lives in `examples/projects/oxi32sort/cases`; every
 //! file is pinned here by length and SHA-256, and each expected output is also
-//! re-derived independently in Rust. Published sources are copied into a fresh
-//! repo-shaped temp tree (relative package path preserved); the in-tree
-//! workspace is never built. Interpreter coverage runs `oxid run` directly.
+//! re-derived independently in Rust. Published app sources and both package
+//! dependency trees are copied into a fresh repo-shaped temp tree (relative
+//! paths preserved); the in-tree workspace is never built. Interpreter
+//! coverage runs `oxid run` directly.
 //! Native coverage builds and packages, removes the source copy, then runs only
 //! the deployed `bin/oxi32sort` through the existing `scripts/cli_driver.py`
 //! (segmented stdin, close EOF, cwd=/, empty env). Run the ignored native test
@@ -34,6 +36,7 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 const PROJECT: &str = "examples/projects/oxi32sort";
 const PACKAGE_DIR: &str = "packages/i32_vec";
+const ALGORITHMS_PACKAGE_DIR: &str = "packages/i32_algorithms";
 const APP_SOURCES: [&str; 3] = [
     "examples/projects/oxi32sort/oxid.toml",
     "examples/projects/oxi32sort/app/oxid.toml",
@@ -216,6 +219,13 @@ fn materialize(destination: &Path) -> PathBuf {
         package.display()
     );
     copy_tree(&package, &destination.join(PACKAGE_DIR));
+    let algorithms = root().join(ALGORITHMS_PACKAGE_DIR);
+    assert!(
+        algorithms.join("oxid.toml").is_file(),
+        "{} is required (the fixed i32_algorithms package bundle must be applied first)",
+        algorithms.display()
+    );
+    copy_tree(&algorithms, &destination.join(ALGORITHMS_PACKAGE_DIR));
     destination.join(PROJECT)
 }
 

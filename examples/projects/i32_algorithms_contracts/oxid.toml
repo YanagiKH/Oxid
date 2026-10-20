@@ -1,0 +1,9 @@
+[project]
+name = "i32_algorithms_contracts"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+vec = "../../../packages/i32_vec"
+algorithms = "../../../packages/i32_algorithms"
