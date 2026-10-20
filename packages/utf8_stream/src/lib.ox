@@ -114,6 +114,9 @@ pub fn push_byte(decoder: &mut Decoder, byte: u8) -> Step {
     if decoder.remaining != 0 {
         return continue_scalar(&mut *decoder, value);
     }
+    if value <= 127 {
+        return Step::Scalar(value);
+    }
     return begin_scalar(&mut *decoder, value, offset);
 }
 

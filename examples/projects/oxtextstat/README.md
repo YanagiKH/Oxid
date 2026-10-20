@@ -45,12 +45,22 @@ rollback of a partially written report is promised.
 
 The interpreter's existing 1,000,000-unit fuel budget is unchanged. In
 earlier acceptance runs a valid 2,161-byte input exhausted it (E0601, status
-1, no report). That failure is unresolved: it is kept as a recorded limitation with
-its original failure package, exact input and raw evidence, and it is neither
-re-run nor treated as a passing acceptance test. Interpreter Process use is
-therefore limited to small inputs. The 64-byte buffer only lets the smaller
+1, no report). That historical failure is kept as a recorded limitation with
+its original failure package, exact input and raw evidence; the earlier runs
+and their evidence are unchanged. The 64-byte buffer only lets the smaller
 147..195-byte cases cross several read_some calls within budget; those cases
-verify bounded inputs and do not fix the 2,161-byte failure.
+verify bounded inputs and did not by themselves fix the 2,161-byte failure.
+
+A later source-only change removed ordinary per-byte helper calls (a direct
+ASCII return in `push_byte` and the byte/scalar counting inlined into `feed`)
+without changing the API, state order, buffer size, fuel budget or compiler.
+With that change, the same retained 2,161-byte input (sha256
+`289d2b5a4d54b9194f2a6cc9b85b25b31ed85841cb7b4b9fcc592d90ed5abaec`) was run
+once through the interpreter Process route as regular-file stdin and exited 0
+with stdout exactly `2161 1081 181` plus LF and empty stderr. This is a single
+fixed-input result. It does not establish a fuel margin, larger-input or
+unbounded streaming support, or native execution; interpreter Process use is
+still only verified for these bounded inputs.
 
 ## Evidence boundary
 

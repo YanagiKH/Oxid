@@ -27,57 +27,6 @@ fn fail(counts: &mut Counts, status: i32) -> i32 {
     return status;
 }
 
-// Every increment is checked before it happens; i32 overflow is never reached.
-fn count_byte(counts: &mut Counts) -> i32 {
-    if counts.bytes == 2147483647 {
-        return fail(&mut *counts, 70);
-    }
-    counts.bytes = counts.bytes + 1;
-    return 0;
-}
-
-fn count_scalar(counts: &mut Counts, scalar: i32) -> i32 {
-    if counts.scalars == 2147483647 {
-        return fail(&mut *counts, 70);
-    }
-    counts.scalars = counts.scalars + 1;
-    if scalar == 10 {
-        if counts.lines == 2147483647 {
-            return fail(&mut *counts, 70);
-        }
-        counts.lines = counts.lines + 1;
-        counts.last_lf = true;
-        return 0;
-    }
-    counts.last_lf = false;
-    return 0;
-}
-
-fn feed_byte(decoder: &mut Decoder, counts: &mut Counts, current: u8) -> i32 {
-    let step = push_byte(&mut *decoder, current);
-    match step {
-        Step::Pending => {
-            return count_byte(&mut *counts);
-        },
-        Step::Scalar(scalar) => {
-            let counted = count_byte(&mut *counts);
-            if counted != 0 {
-                return counted;
-            }
-            return count_scalar(&mut *counts, scalar);
-        },
-        Step::Invalid(offset) => {
-            return fail(&mut *counts, 65);
-        },
-        Step::PositionOverflow => {
-            return fail(&mut *counts, 70);
-        },
-        Step::Finished => {
-            return fail(&mut *counts, 70);
-        },
-    }
-}
-
 // Feeds every byte of one logical chunk exactly once, in order, into the
 // retained decoder. A chunk boundary never finalizes the stream.
 // Returns 0 when every byte was accepted, otherwise the sticky status.
@@ -92,9 +41,42 @@ pub fn feed(decoder: &mut Decoder, counts: &mut Counts, bytes: &[u8]) -> i32 {
     let mut index = 0;
     while index < length {
         let current = bytes[index];
-        let status = feed_byte(&mut *decoder, &mut *counts, current);
-        if status != 0 {
-            return status;
+        let step = push_byte(&mut *decoder, current);
+        match step {
+            Step::Pending => {
+                if counts.bytes == 2147483647 {
+                    return fail(&mut *counts, 70);
+                }
+                counts.bytes = counts.bytes + 1;
+            },
+            Step::Scalar(scalar) => {
+                if counts.bytes == 2147483647 {
+                    return fail(&mut *counts, 70);
+                }
+                counts.bytes = counts.bytes + 1;
+                if counts.scalars == 2147483647 {
+                    return fail(&mut *counts, 70);
+                }
+                counts.scalars = counts.scalars + 1;
+                if scalar == 10 {
+                    if counts.lines == 2147483647 {
+                        return fail(&mut *counts, 70);
+                    }
+                    counts.lines = counts.lines + 1;
+                    counts.last_lf = true;
+                } else {
+                    counts.last_lf = false;
+                }
+            },
+            Step::Invalid(offset) => {
+                return fail(&mut *counts, 65);
+            },
+            Step::PositionOverflow => {
+                return fail(&mut *counts, 70);
+            },
+            Step::Finished => {
+                return fail(&mut *counts, 70);
+            },
         }
         index = index + 1;
     }
