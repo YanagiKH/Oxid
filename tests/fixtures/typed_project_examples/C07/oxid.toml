@@ -1,0 +1,6 @@
+[project]
+name = "example"
+edition = "typed-preview"
+entry = "main.ox"
+[dependencies]
+helper = "helper"
