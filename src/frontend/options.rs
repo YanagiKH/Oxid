@@ -12,6 +12,13 @@
 pub enum Route {
     Legacy(Vec<String>),
     TypedDoctor,
+    ManifestExport {
+        request: Box<[super::manifest::Request; 1]>,
+        output: String,
+    },
+    ManifestExportError {
+        failure: super::manifest::Failure,
+    },
     ManifestDoc {
         request: Box<[super::manifest::Request; 1]>,
     },
@@ -296,6 +303,9 @@ mod output_layout_feasibility {
 
 /// Classify arguments excluding the executable name, without reading any files.
 pub fn route(args: &[String]) -> Route {
+    if let Some(route) = super::project_export_cli::select(args) {
+        return route;
+    }
     if let Some(route) = super::project_doc_cli::select(args) {
         return route;
     }

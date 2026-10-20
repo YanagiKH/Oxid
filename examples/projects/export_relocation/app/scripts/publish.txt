@@ -1,0 +1,1 @@
+Release notes script placeholder: scripts are never exported or run.

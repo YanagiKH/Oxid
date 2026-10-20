@@ -26,6 +26,8 @@ mod project_doc;
 mod project_doc_cli;
 mod project_doctor;
 mod project_doctor_cli;
+mod project_export;
+mod project_export_cli;
 mod project_format;
 mod project_format_cli;
 mod project_package;

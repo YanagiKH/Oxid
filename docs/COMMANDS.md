@@ -105,6 +105,24 @@ for the exact API/comment/output contract and current scope.
 Bare `oxid doc` still writes its fixed legacy reference to `docs/API.md`.
 This checked experimental documentation is not a claim that G6 or v1.0 is done.
 
+### Export checked compiler sources
+
+`oxid export --manifest-path oxid.toml --output new-directory` checks a selected
+typed-preview package and its transitive local dependencies, then copies their
+retained source bytes into a new self-contained source tree. Use `--package
+<name>` to select a workspace member. Generated manifests retain edition, names,
+dependency aliases and topology, with relocated paths. Move the tree elsewhere
+and use ordinary commands against its root `oxid.toml` without the original
+checkout.
+
+This is a normalized compiler-source export, not a lossless backup: version
+metadata, scripts, assets, unrelated workspace members, lockfiles and artifacts
+are not copied. No source or native tool is executed. The output must not exist;
+existing destinations and symlink ancestors are refused. Failed writes retain
+and report any partial destination. Text-only output and status 0/1 are used.
+See [typed project export](../spec/typed-project-export.md) for the exact scope,
+layout, path restrictions and unchanged compiler limits.
+
 ## Create and maintain a project
 
 `oxid new <workspace-path> --edition typed-preview --workspace` creates a virtual

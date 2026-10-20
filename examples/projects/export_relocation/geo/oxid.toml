@@ -1,0 +1,9 @@
+[project]
+name = "export-geo"
+version = "1.2.0"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+kernel = "../core"
+units = "vendor/units"

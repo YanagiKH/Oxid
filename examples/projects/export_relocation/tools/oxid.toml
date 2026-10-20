@@ -1,0 +1,4 @@
+[project]
+name = "export-tools"
+edition = "typed-preview"
+entry = "src/main.ox"

@@ -1,0 +1,4 @@
+[project]
+name = "export \u0022core\u0022 \u005C \u96EA\u0007\tend"
+edition = "typed-preview"
+entry = "src/lib.ox"

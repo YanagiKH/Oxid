@@ -15,6 +15,10 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
         Route::TypedDoctor => Some(super::toolchain_doctor::run()),
+        Route::ManifestExport { request, output } => {
+            Some(super::project_export::run(request, &output))
+        }
+        Route::ManifestExportError { failure } => Some(super::project_export::cli_error(failure)),
         Route::ManifestDoc { request } => Some(super::project_doc::run(request)),
         Route::ManifestDocError { failure } => Some(super::project_doc::cli_error(failure)),
         Route::ManifestDoctor { request, native } => {

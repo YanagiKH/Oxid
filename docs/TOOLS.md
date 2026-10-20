@@ -21,3 +21,8 @@ the ordinary compiler session and writes only selected public API Markdown to
 stdout. It does not execute source or create/update documentation files. Use
 `--package <name>` for workspace selection; see
 [typed project documentation](../spec/typed-project-doc.md).
+
+Explicit typed `oxid export --manifest-path ... --output ...` creates a fresh,
+normalized source tree containing the selected package and its local dependency
+closure. It is not a lossless backup or a registry/lockfile implementation. See
+[typed project export](../spec/typed-project-export.md).

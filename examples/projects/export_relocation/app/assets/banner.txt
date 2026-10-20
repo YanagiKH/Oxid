@@ -1,0 +1,1 @@
+Asset bytes are project metadata: never exported.

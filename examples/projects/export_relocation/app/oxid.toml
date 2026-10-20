@@ -1,0 +1,10 @@
+# Original manifest comment: normalized away by export.
+[project]
+name = "export-app"
+version = "0.3.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+geo = "../geo"
+stats = "../stats"

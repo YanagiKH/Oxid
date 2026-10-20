@@ -2655,6 +2655,9 @@ fn help() {
     println!("  oxid fmt --manifest-path <oxid.toml> [--package <name>] (--check | --write)");
     println!("  oxid doctor --manifest-path <oxid.toml> [--package <name>] [--native]");
     println!("  oxid doc --manifest-path <oxid.toml> [--package <name>]");
+    println!(
+        "  oxid export --manifest-path <oxid.toml> [--package <name>] --output <new-directory>"
+    );
     println!("  oxid doctor --edition typed-preview");
     println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");
     println!("  Add --package <name> to select a package from a workspace manifest.");

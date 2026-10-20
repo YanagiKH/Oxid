@@ -1,0 +1,8 @@
+[project]
+name = "export-stats"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+measure = "vendor/units"
+kernel = "../core"
