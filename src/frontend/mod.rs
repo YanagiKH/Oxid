@@ -37,6 +37,8 @@ mod session;
 mod source;
 mod toolchain_doctor;
 mod typeck;
+mod workspace_batch;
+mod workspace_batch_cli;
 mod workspace_scaffold;
 pub use driver::dispatch;
 #[cfg(test)]

@@ -68,8 +68,11 @@ artifact. TEST retains its separate namespace and prepares every case before
 running one. Real native execution requires the separately authorized
 LLVM 19.1.7/Linux x86_64 toolchain; ordinary tests do not establish native acceptance.
 
-No workspace fan-out, default-members setting, implicit discovery, network fetch,
-lockfile write, cache, publishing or new target/profile/engine is included.
+This selected-package mode does not fan out. Explicit sequential CHECK and
+interpreter TEST over all members are separately available through
+[`--workspace`](typed-workspace-batch.md), without changing the selected-session
+limits described above. No default-members setting, implicit discovery, network
+fetch, lockfile write, cache, publishing or new target/profile/engine is included.
 The external example is `examples/projects/typed_workspace_selection/`.
 Focused CLI controls are in `tests/workspace_selection_core.rs`; its ignored native
 control is reserved for the authorized toolchain environment.

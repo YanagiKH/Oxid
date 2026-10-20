@@ -2646,11 +2646,13 @@ fn help() {
     println!("  oxid new <project-path> --edition typed-preview");
     println!("  oxid new <workspace-path> --edition typed-preview --workspace");
     println!("  oxid check --manifest-path <oxid.toml>");
+    println!("  oxid check --manifest-path <workspace/oxid.toml> --workspace [--fail-fast]");
     println!("  oxid build --manifest-path <oxid.toml> [--entry-mode result|process]");
     println!("  oxid run --manifest-path <oxid.toml> [--engine interpreter|native] [--entry-mode result|process]");
     println!(
         "  oxid test --manifest-path <oxid.toml> [--engine interpreter|native] [--filter <text>] [--fail-fast]"
     );
+    println!("  oxid test --manifest-path <workspace/oxid.toml> --workspace [--fail-fast]");
     println!("  oxid package --manifest-path <oxid.toml> --output <archive.tar> [--entry-mode result|process]");
     println!("  oxid fmt --manifest-path <oxid.toml> [--package <name>] (--check | --write)");
     println!("  oxid doctor --manifest-path <oxid.toml> [--package <name>] [--native]");
@@ -2661,6 +2663,8 @@ fn help() {
     println!("  oxid doctor --edition typed-preview");
     println!("  Manifest commands require a typed-preview manifest; --manifest-path follows the command.");
     println!("  Add --package <name> to select a package from a workspace manifest.");
+    println!("  Check/test --workspace processes all declared members sequentially with existing per-package limits.");
+    println!("  Workspace test uses the interpreter; --workspace excludes --package, native, profile, filter and JSON.");
     println!("  New --workspace creates workspace-app and workspace-library with an explicit local path dependency.");
     println!("  Entry mode defaults to result; run/test default to the interpreter.");
     println!("  Build/package and native run/test accept --profile dev|release (default dev).");

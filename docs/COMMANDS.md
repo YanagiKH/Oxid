@@ -123,6 +123,20 @@ and report any partial destination. Text-only output and status 0/1 are used.
 See [typed project export](../spec/typed-project-export.md) for the exact scope,
 layout, path restrictions and unchanged compiler limits.
 
+## Check and test every typed workspace member
+
+`oxid check --manifest-path oxid.toml --workspace` checks each declared member,
+and `oxid test --manifest-path oxid.toml --workspace` runs each member's
+interpreter suite. Both require a virtual workspace, run sequentially in declared
+order and print package-level results. They continue after a failure unless
+`--fail-fast` is given. TEST also passes that flag to each member's suite.
+
+The flag conflicts with `--package`. Native execution, profiles, filters, JSON,
+entry-mode and experimental selectors are not supported in batch mode.
+Existing per-package limits are unchanged; this is not a workspace-wide resource
+budget or an atomic all-member preparation. Missing test suites remain errors.
+See [typed workspace batches](../spec/typed-workspace-batch.md).
+
 ## Create and maintain a project
 
 `oxid new <workspace-path> --edition typed-preview --workspace` creates a virtual
@@ -131,7 +145,9 @@ workspace with two ordinary typed-preview projects, `workspace-app` and
 destination must not exist and its parent must already exist. The valueless
 `--workspace` flag is local to `new`, occurs at most once before `--`, and requires
 explicit typed-preview edition selection. Select either project with
-`--package <name>` when checking, running, testing or building the workspace.
+`--package <name>` when checking, running, testing or building one member.
+Use `check --workspace` or `test --workspace` with the manifest path for both
+members.
 Creation is text-only and creates no lockfile, cache or downloaded package.
 Failures after creation starts retain partial files for inspection; this is not
 an atomic whole-workspace transaction. Without `--workspace`, typed `new` keeps

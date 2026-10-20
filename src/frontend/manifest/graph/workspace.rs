@@ -153,30 +153,19 @@ fn available(cache: &[Cached], allocator: &mut Allocator) -> Result<String, Fail
     Ok(names)
 }
 
-pub(super) fn select(
+// The catalog and ordinary selection share this exact parser/allocation path.
+// Keep all Budget charges before the corresponding retained allocations.
+fn read_members(
     path: &str,
     raw: &[u8],
-    selector: Option<&str>,
+    identity: &Path,
+    scan: Scanner<'_>,
     operation: Command,
-    needs_name: bool,
     budget: &mut Budget,
     allocator: &mut Allocator,
-) -> Result<Selected, Failure> {
-    let identity = canonical(path)?;
+) -> Result<Vec<Cached>, Failure> {
     let text = std::str::from_utf8(raw)
         .map_err(|_| Failure::Utf8(format!("manifest `{path}` is not valid UTF-8")))?;
-    let Some(scan) = header(path, text)? else {
-        if selector.is_some() {
-            return Err(Failure::Cli("--package requires a virtual workspace manifest; direct project manifests do not accept it".into()));
-        }
-        return Ok(Selected {
-            root: package(
-                path, identity, raw, operation, needs_name, budget, allocator,
-            )?,
-            cached: Vec::new(),
-            workspace: None,
-        });
-    };
     budget.manifest(raw.len())?;
     budget.paths(add(
         path.len(),
@@ -262,6 +251,54 @@ pub(super) fn select(
         }
         retain(&mut cache, Some(member_package), &raw, budget, allocator)?;
     }
+    Ok(cache)
+}
+
+/// Validate every declared manifest without choosing a root or loading sources.
+pub(super) fn enumerate(
+    path: &str,
+    raw: &[u8],
+    selector: Option<&str>,
+    operation: Command,
+    budget: &mut Budget,
+    allocator: &mut Allocator,
+) -> Result<Vec<Cached>, Failure> {
+    if selector.is_some() {
+        return Err(Failure::Cli("--workspace conflicts with --package".into()));
+    }
+    let identity = canonical(path)?;
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| Failure::Utf8(format!("manifest `{path}` is not valid UTF-8")))?;
+    let scan = header(path, text)?
+        .ok_or_else(|| Failure::Cli("--workspace requires a virtual workspace manifest".into()))?;
+    read_members(path, raw, &identity, scan, operation, budget, allocator)
+}
+
+pub(super) fn select(
+    path: &str,
+    raw: &[u8],
+    selector: Option<&str>,
+    operation: Command,
+    needs_name: bool,
+    budget: &mut Budget,
+    allocator: &mut Allocator,
+) -> Result<Selected, Failure> {
+    let identity = canonical(path)?;
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| Failure::Utf8(format!("manifest `{path}` is not valid UTF-8")))?;
+    let Some(scan) = header(path, text)? else {
+        if selector.is_some() {
+            return Err(Failure::Cli("--package requires a virtual workspace manifest; direct project manifests do not accept it".into()));
+        }
+        return Ok(Selected {
+            root: package(
+                path, identity, raw, operation, needs_name, budget, allocator,
+            )?,
+            cached: Vec::new(),
+            workspace: None,
+        });
+    };
+    let mut cache = read_members(path, raw, &identity, scan, operation, budget, allocator)?;
     let index = match selector {
         Some(name) => match cache
             .iter()

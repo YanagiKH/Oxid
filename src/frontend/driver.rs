@@ -14,6 +14,12 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::WorkspaceBatch {
+            request,
+            test,
+            fail_fast,
+        } => Some(super::workspace_batch::run(request, test, fail_fast)),
+        Route::WorkspaceBatchError { failure } => Some(super::workspace_batch::cli_error(failure)),
         Route::TypedDoctor => Some(super::toolchain_doctor::run()),
         Route::ManifestExport { request, output } => {
             Some(super::project_export::run(request, &output))
@@ -277,6 +283,11 @@ mod workspace_report_tests {
         assert!(displayed.ends_with("/demo\""));
         assert_eq!(workspace_path_display("親/demo"), "\"親/demo\"");
     }
+}
+
+/// Workspace batches reuse the ordinary selected-package CHECK unchanged.
+pub(super) fn check_manifest(request: Box<[super::manifest::Request; 1]>) -> i32 {
+    manifest_file(request, Operation::Check)
 }
 
 /// Explicit manifest CHECK or Result RUN: no output, provider, or Process policy.

@@ -4,6 +4,121 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn batch_catalog_preserves_selection_budget_and_allocation_sequence() {
+    let f = Fixture::new();
+    let root = "[workspace]\nmembers=[\"app\",\"library\"]\n";
+    let app = "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"missing.ox\"\n[dependencies]\nmath=\"../library\"\n";
+    let library = "[project]\nname=\"library\"\nedition=\"typed-preview\"\nentry=\"missing.ox\"\n";
+    for (path, text) in [
+        ("oxid.toml", root),
+        ("app/oxid.toml", app),
+        ("library/oxid.toml", library),
+    ] {
+        f.write(path, text);
+    }
+    for operation in [Command::Check, Command::Test] {
+        let mut selected_budget = Budget::default();
+        let mut selected_allocator = Allocator::default();
+        let selected = select(
+            &f.manifest(),
+            root.as_bytes(),
+            Some("app"),
+            operation,
+            false,
+            &mut selected_budget,
+            &mut selected_allocator,
+        )
+        .unwrap();
+        let mut catalog_budget = Budget::default();
+        let mut catalog_allocator = Allocator::default();
+        let catalog = enumerate(
+            &f.manifest(),
+            root.as_bytes(),
+            None,
+            operation,
+            &mut catalog_budget,
+            &mut catalog_allocator,
+        )
+        .unwrap();
+        assert_eq!(
+            catalog[0].package.as_ref().unwrap().name,
+            selected.root.name
+        );
+        assert_eq!(catalog[1].package.as_ref().unwrap().name, "library");
+        assert_eq!(catalog[0]._raw, app.as_bytes());
+        assert_eq!(catalog[1]._raw, library.as_bytes());
+        assert_eq!(
+            catalog_budget.manifest_bytes,
+            selected_budget.manifest_bytes
+        );
+        assert_eq!(catalog_budget.edge_bytes, selected_budget.edge_bytes);
+        assert_eq!(catalog_budget.path_bytes, selected_budget.path_bytes);
+        assert_eq!(catalog_allocator.attempts, selected_allocator.attempts);
+        assert_eq!(
+            catalog_budget.manifest_bytes,
+            root.len() + app.len() + library.len()
+        );
+    }
+}
+
+#[test]
+fn batch_callback_requires_complete_valid_membership_but_no_sources() {
+    let f = Fixture::new();
+    f.write("oxid.toml", "[workspace]\nmembers=[\"app\",\"library\"]\n");
+    f.write(
+        "app/oxid.toml",
+        "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"missing.ox\"\n",
+    );
+    f.write(
+        "library/oxid.toml",
+        "[project]\nname=\"library\"\nedition=\"typed-preview\"\nentry=\"missing.ox\"\n",
+    );
+    let names = with_workspace_members(
+        crate::frontend::manifest::format_request(&f.manifest(), None).unwrap(),
+        Command::Check,
+        |path, members| {
+            assert_eq!(path, f.manifest());
+            assert_eq!(members.len(), 2);
+            assert_eq!(members.name(2), None);
+            [
+                members.name(0).unwrap().to_owned(),
+                members.name(1).unwrap().to_owned(),
+            ]
+        },
+    )
+    .unwrap();
+    assert_eq!(names, ["app", "library"]);
+    assert!(!f.0.join("app/missing.ox").exists());
+    for (path, selector) in [
+        (f.manifest(), Some("app")),
+        (f.0.join("app/oxid.toml").to_str().unwrap().into(), None),
+    ] {
+        let mut called = false;
+        assert!(with_workspace_members(
+            crate::frontend::manifest::format_request(&path, selector).unwrap(),
+            Command::Check,
+            |_, _| called = true,
+        )
+        .is_err());
+        assert!(!called);
+    }
+    for last_member in [
+        "[project]\nname=broken",
+        "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"missing.ox\"\n",
+    ] {
+        f.write("library/oxid.toml", last_member);
+        let mut called = false;
+        assert!(with_workspace_members(
+            crate::frontend::manifest::format_request(&f.manifest(), None).unwrap(),
+            Command::Test,
+            |_, _| called = true,
+        )
+        .is_err());
+        assert!(!called);
+    }
+}
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {

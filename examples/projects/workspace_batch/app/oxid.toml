@@ -1,0 +1,8 @@
+[project]
+name = "batch-app"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+shared = "../core"

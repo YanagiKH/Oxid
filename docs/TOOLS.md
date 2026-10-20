@@ -26,3 +26,11 @@ Explicit typed `oxid export --manifest-path ... --output ...` creates a fresh,
 normalized source tree containing the selected package and its local dependency
 closure. It is not a lossless backup or a registry/lockfile implementation. See
 [typed project export](../spec/typed-project-export.md).
+
+Explicit `oxid check --manifest-path ... --workspace` and
+`oxid test --manifest-path ... --workspace` process all declared members
+sequentially with the existing per-package limits. TEST uses the interpreter;
+native execution and filters remain selected-package operations. These commands
+report package totals, not an aggregate test-case count, and do not prepare or
+snapshot every member's source before starting. See
+[typed workspace batches](../spec/typed-workspace-batch.md).

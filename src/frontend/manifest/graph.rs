@@ -19,6 +19,39 @@ pub(in crate::frontend) struct Selection {
     pub parent: String,
 }
 
+/// Borrowed, validated workspace membership. No additional name or package copy.
+pub(in crate::frontend) struct WorkspaceMembers<'a> {
+    cached: &'a [workspace::Cached],
+}
+impl WorkspaceMembers<'_> {
+    pub(in crate::frontend) fn len(&self) -> usize {
+        self.cached.len()
+    }
+
+    pub(in crate::frontend) fn name(&self, index: usize) -> Option<&str> {
+        self.cached
+            .get(index)?
+            .package
+            .as_ref()
+            .map(|package| package.name.as_str())
+    }
+}
+
+/// Keep the existing bounded manifest catalog alive only for this callback.
+/// The caller may run one ordinary selected-package session at a time. This is
+/// not a cross-member snapshot or an aggregate source/fuel admission policy.
+pub(in crate::frontend) fn with_workspace_members<T>(
+    request: Box<[Request; 1]>,
+    operation: Command,
+    consume: impl FnOnce(&str, WorkspaceMembers<'_>) -> T,
+) -> Result<T, Failure> {
+    with_manifest(request, |path, raw, selector, allocator| {
+        let mut budget = Budget::default();
+        let cached = workspace::enumerate(path, raw, selector, operation, &mut budget, allocator)?;
+        Ok(consume(path, WorkspaceMembers { cached: &cached }))
+    })
+}
+
 #[derive(Default)]
 struct Budget {
     manifest_bytes: usize,
