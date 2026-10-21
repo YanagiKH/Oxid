@@ -80,11 +80,29 @@ tests; they do not reissue the private historical certificates.
 
 ## Historical certificates
 
-`.github/workflows/historical-qualification.yml` retains the complete previous
-workflow, its jobs, assertions, host matrices and artifacts. Every checkout and
-expected-head input uses the fixed predecessor SHA above. The caller's event SHA
-remains available as event metadata. Its source-pinned tests still read the
-original workflow and source tree, and their expected hashes are unchanged.
+`.github/workflows/historical-qualification.yml` retains the previous jobs,
+assertions, host matrices and artifacts. Qualification checkouts and expected-head
+inputs use the fixed predecessor SHA above. The caller's event SHA remains
+unchanged as event metadata. Source-pinned tests still read the original workflow
+and source tree, and their expected hashes are unchanged.
+
+One frozen suite, `test_published_formatter_source`, requires its checkout to be
+the actual GitHub event commit. A later pull request cannot replay that event.
+`scripts/run_historical_script_tests.py` therefore verifies its original genuine
+schedule run [39226443899](https://github.com/YanagiKH/Oxid/actions/runs/39226443899),
+attempt 1, and successful quality job/step through GitHub's API. It authenticates
+the exact original artifact retained under
+[historical-event-9ff8ef9](../evidence/historical-event-9ff8ef9/README.md), including
+every indexed source-control receipt, original Unit2 input, completion count and
+checkout identity. The archive is retained to survive hosted artifact expiry.
+Only this exact module uses that existing evidence; every other frozen script
+test is discovered and executed normally. Unavailable or mismatched provenance,
+changed sources and replay failures fail CI. No GitHub event variables are
+rewritten, and the output labels original evidence separately from replayed tests.
+
+The current replay controller and archive are copied to runner temporary storage
+before checking out the historical revision. Their hashes and actual caller
+metadata are recorded in a separate `historical-script-replay` receipt.
 
 Repository CI requires both this replay and the current checks. Historical
 receipts describe the predecessor only. In particular they do not establish

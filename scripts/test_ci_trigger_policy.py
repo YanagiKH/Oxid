@@ -71,8 +71,15 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
         historical = block(self.historical, 'quality-and-repository', 2)
         self.assertIn('ref: 9ff8ef90a26f003f4616838dfc186fa3bfb6845c', historical)
-        self.assertIn("python3 -B -m unittest discover -s scripts -p 'test_*.py' -v", historical)
+        self.assertIn('historical-script-controller/run_historical_script_tests.py', historical)
+        self.assertIn('--archive "$RUNNER_TEMP/historical-script-controller/typed-project-unit2-evidence.zip"', historical)
+        self.assertIn('name: historical-script-replay', historical)
         self.assertNotRegex(historical, r'(?m)^    if:|continue-on-error:')
+
+    def test_historical_provenance_reads_are_authorized_without_event_spoofing(self):
+        for workflow in (self.ci, self.release, self.historical):
+            self.assertIn('actions: read', block(workflow, 'permissions'))
+        self.assertNotRegex(self.historical, r'(?m)^\s*GITHUB_SHA:|GITHUB_SHA=|GITHUB_EVENT_PATH=')
 
 
 if __name__ == '__main__':

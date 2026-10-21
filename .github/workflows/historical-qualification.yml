@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,6 +18,16 @@ jobs:
     name: Full repository verification
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout the replay controller and original hosted evidence
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the controller outside the frozen checkout
+        run: |
+          mkdir "$RUNNER_TEMP/historical-script-controller"
+          cp scripts/run_historical_script_tests.py scripts/verify_historical_event_evidence.py \
+            docs/evidence/historical-event-9ff8ef9/typed-project-unit2-evidence.zip \
+            "$RUNNER_TEMP/historical-script-controller/"
       - uses: actions/checkout@v4
         with:
           ref: 9ff8ef90a26f003f4616838dfc186fa3bfb6845c
@@ -49,7 +60,21 @@ jobs:
             --output "$RUNNER_TEMP/typed-project-unit2-results"
 
       - name: Test feature status metadata validation
-        run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B "$RUNNER_TEMP/historical-script-controller/run_historical_script_tests.py" \
+            --repo . \
+            --archive "$RUNNER_TEMP/historical-script-controller/typed-project-unit2-evidence.zip" \
+            --output "$RUNNER_TEMP/historical-script-replay.json"
+      - name: Retain historical replay and original-event provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-script-replay
+          path: ${{ runner.temp }}/historical-script-replay.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Fetch and verify fixed scheduling predecessor
         run: python3 -B tests/qualification/unit4_ci/derive_scheduling.py --fetch-base
