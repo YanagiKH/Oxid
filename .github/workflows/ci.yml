@@ -172,6 +172,7 @@ jobs:
           done
       - name: Run current independent native oracles and private LLVM regressions
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           python3 -B scripts/verify_current_native.py --repo . \
             --output "$RUNNER_TEMP/current-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Retain current native evidence
