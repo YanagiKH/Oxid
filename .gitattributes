@@ -47,3 +47,20 @@ tests/qualification/bounded_u8_current/source-data-manifest.json -text
 
 # RFC0031 immutable byte corpus, registry and predecessor archive retain exact bytes.
 tests/qualification/byte_storage_current/** -text
+
+# Historical-only test modules are replayed at their fixed predecessor.
+# Preserve their authenticated bytes when checking out on Windows too.
+scripts/test_lexer_current_ci.py -text
+scripts/test_lexer_reservation_adapters_current.py -text
+scripts/test_lexer_reservation_source_current.py -text
+scripts/test_owned_array_native.py -text
+scripts/test_package_json_source.py -text
+scripts/test_projected_observer_adapters.py -text
+scripts/test_published_formatter_source.py -text
+scripts/test_record_composition_current_contracts.py -text
+scripts/test_record_composition_observer_adapters.py -text
+scripts/test_record_composition_runtime_view.py -text
+scripts/test_typed_project_source_binding.py -text
+
+# Preserve the supplied roadmap's original CRLF bytes.
+docs/ROADMAP_V2.md -text

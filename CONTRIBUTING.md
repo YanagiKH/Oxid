@@ -22,12 +22,12 @@ From the repository root, with stable Rust, a C/C++ compiler, and Python 3.11 or
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --all-features --locked
-python3 -m unittest discover -s scripts -p 'test_*.py' -v
+python3 -B scripts/run_current_script_tests.py
 cargo build --release --locked
 python3 scripts/verify_repo.py target/release/oxid
 ```
 
-On Windows, pass `target/release/oxid.exe` to the verifier. `make verify` is a shortcut for the release build and repository verifier; it does not run every check above. CI also covers its configured host matrix, installation, and Docker.
+On Windows, pass `target/release/oxid.exe` to the verifier. `make verify` is a shortcut for the release build and repository verifier; it does not run every check above. The Python runner discovers current script tests and explicitly lists the source-pinned modules replayed by the mandatory historical workflow. See [project workflow validation](docs/architecture/project-workflow-validation.md) for the two source revisions and their evidence scopes.
 
 ## Hosted CI triggers
 
@@ -41,7 +41,9 @@ Manual dispatch, reusable workflow calls, and the Monday 03:17 UTC schedule rema
 available. Release packaging depends on the reusable full CI verification job.
 CI has no workflow or job concurrency group: a new run does not automatically
 cancel or replace pending or running verification for the same ref. All existing
-jobs, host matrices, qualification gates, and evidence retention remain enabled.
+historical jobs, host matrices, qualification gates, and evidence retention remain
+enabled on their original source revision. Separate current-source jobs exercise
+the current compiler; historical results do not qualify it.
 
 ## Keep claims tied to behavior
 

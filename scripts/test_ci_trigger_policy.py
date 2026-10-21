@@ -29,6 +29,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def setUpClass(cls):
         cls.ci = (REPO / '.github/workflows/ci.yml').read_text(encoding='utf-8')
         cls.release = (REPO / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        cls.historical = (REPO / '.github/workflows/historical-qualification.yml').read_text(encoding='utf-8')
 
     def test_push_runs_main_and_all_tags_only(self):
         self.assertEqual(block(self.ci, 'push', 2),
@@ -43,18 +44,35 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertEqual(events, ['push', 'pull_request', 'workflow_dispatch', 'workflow_call', 'schedule'])
 
     def test_no_workflow_or_job_concurrency_cancellation(self):
-        for workflow in (self.ci, self.release):
+        for workflow in (self.ci, self.release, self.historical):
             self.assertNotRegex(workflow, r'(?m)^\s*(?:concurrency|cancel-in-progress):')
 
-    def test_release_packages_depend_on_full_reusable_ci(self):
-        self.assertEqual(block(self.release, 'verify', 2),
-                         'uses: ./.github/workflows/ci.yml')
+    def test_release_requires_readiness_then_full_reusable_ci_before_packaging(self):
+        readiness = block(self.release, 'readiness', 2)
+        self.assertIn('scripts/check_release_gates.py --release-tag "$RELEASE_TAG"', readiness)
+        self.assertIn("if: github.ref_type == 'tag'", readiness)
+        self.assertNotRegex(readiness, r'(?m)^    if:|continue-on-error:')
+        verify = block(self.release, 'verify', 2)
+        self.assertEqual(re.findall(r'^(?:    )?needs: (.+)$', verify, re.MULTILINE), ['readiness'])
+        self.assertIn('uses: ./.github/workflows/ci.yml', verify)
+        self.assertNotRegex(verify, r'(?m)^    if:|continue-on-error:')
         package = block(self.release, 'package', 2)
         self.assertEqual(re.findall(r'^    needs: (.+)$', package, re.MULTILINE), ['verify'])
         self.assertNotRegex(package, r'(?m)^    if:')
 
-    def test_regression_is_in_existing_script_discovery(self):
-        self.assertIn("python3 -B -m unittest discover -s scripts -p 'test_*.py' -v", self.ci)
+    def test_current_discovery_and_historical_replay_are_both_mandatory(self):
+        current = block(self.ci, 'quality-and-repository', 2)
+        self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
+        self.assertIn('scripts/verify_project_workflow_current.py', current)
+        self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
+
+        replay = block(self.ci, 'historical-qualification', 2)
+        self.assertIn('uses: ./.github/workflows/historical-qualification.yml', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+        historical = block(self.historical, 'quality-and-repository', 2)
+        self.assertIn('ref: 9ff8ef90a26f003f4616838dfc186fa3bfb6845c', historical)
+        self.assertIn("python3 -B -m unittest discover -s scripts -p 'test_*.py' -v", historical)
+        self.assertNotRegex(historical, r'(?m)^    if:|continue-on-error:')
 
 
 if __name__ == '__main__':

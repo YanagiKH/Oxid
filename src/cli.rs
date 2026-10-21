@@ -8,10 +8,14 @@ mod runtime {
 }
 
 mod frontend;
+mod project_cli;
 
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
     let executable = args.remove(0);
+    if let Some(code) = project_cli::dispatch(&mut args) {
+        std::process::exit(code);
+    }
     if let Some(code) = frontend::dispatch(&mut args) {
         std::process::exit(code);
     }

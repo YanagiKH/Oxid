@@ -428,7 +428,8 @@ class BoundedEnumNativeControls(unittest.TestCase):
         self.assertEqual((gate.REVIEWED_SOURCE_SHA256, stdin_gate.REVIEWED_SOURCE_SHA256,
                           stdout_gate.REVIEWED_SOURCE_SHA256), (expected, expected, expected))
         repo = Path(__file__).resolve().parents[1]
-        workflow = (repo / ".github/workflows/ci.yml").read_text()
+        # The frozen source pin belongs to the mandatory historical replay.
+        workflow = (repo / ".github/workflows/historical-qualification.yml").read_text()
         self.assertEqual(re.findall(r"--source-manifest-sha256 ([0-9a-f]{64})", workflow),
                          [expected, expected])
         for script in ("verify_bounded_stdin_native.py", "verify_bounded_stdout_native.py"):

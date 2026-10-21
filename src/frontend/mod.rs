@@ -19,6 +19,7 @@ mod parser;
 mod project;
 mod source;
 mod typeck;
+pub(crate) use driver::build_project;
 pub use driver::dispatch;
 #[cfg(test)]
 mod owned_syntax_tests;

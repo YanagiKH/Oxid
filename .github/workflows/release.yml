@@ -13,7 +13,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  readiness:
+    name: Verify release version and technical readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Report technical release readiness
+        run: python3 -B scripts/check_release_gates.py
+      - name: Enforce tagged release readiness
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 -B scripts/check_release_gates.py --release-tag "$RELEASE_TAG"
+
   verify:
+    needs: readiness
     uses: ./.github/workflows/ci.yml
 
   package:
@@ -71,9 +88,21 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Classify the validated release tag
+        id: release_kind
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version_without_metadata="${RELEASE_TAG%%+*}"
+          if [[ "$version_without_metadata" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Download packaged binaries
         uses: actions/download-artifact@v4
         with:
+          pattern: oxid-*
           path: dist
           merge-multiple: true
 
@@ -81,6 +110,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ steps.release_kind.outputs.prerelease == 'true' }}
           fail_on_unmatched_files: true
           files: |
             dist/*.tar.gz

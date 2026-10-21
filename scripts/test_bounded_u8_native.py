@@ -161,7 +161,8 @@ class NativeGateTests(unittest.TestCase):
 
     def test_workflow_prescribes_gate_with_evidence_and_unchanged_real_stager(self):
         repo = Path(__file__).resolve().parents[1]
-        workflow = (repo / '.github/workflows/ci.yml').read_text()
+        # This gate authenticates the frozen source, replayed by the historical workflow.
+        workflow = (repo / '.github/workflows/historical-qualification.yml').read_text()
         invocation = workflow.split('python3 -B scripts/verify_bounded_u8_native.py', 1)[1].split('\n      - name:', 1)[0]
         self.assertIn('--build-evidence "$RUNNER_TEMP/bounded-enum-native"', invocation)
         self.assertIn('--expected-head "$UNIT2E_EXPECTED_HEAD"', invocation)

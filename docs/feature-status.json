@@ -1047,6 +1047,36 @@
       "limitations": "Only complete fixed bool/i32/unit array fields as slice formals; max64 path hops. No disjoint-field authority, exact-array projected formals, scalar/record/element borrows, stored references or raised ceilings. No v1.0, stability, self-hosting or broader native platform claim."
     },
     {
+      "id": "typed-preview-project-workflow",
+      "summary": "Manifest-selected typed check, run, build, test and formatting for a single package",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "verified-oir-reference and llvm-19.1.7",
+      "target_scope": "Native builds and process tests: Linux x86_64; portable compiler checks are separate. Development sources, not published v0.9.0.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0032-typed-project-workflow.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/project_cli.rs",
+        "src/main.rs",
+        "src/frontend/driver.rs",
+        "src/frontend/native.rs"
+      ],
+      "tests": [
+        "tests/project_workflow.rs",
+        "tests/edition_boundary.rs",
+        "scripts/test_project_workflow_current.py"
+      ],
+      "evidence": [
+        "docs/architecture/project-workflow-validation.md"
+      ],
+      "limitations": "Single package and existing bounded language only. No typed dependencies, workspace, registry, incremental cache or new native target. Current Unit2 and public regressions do not replace historical private certificates or complete R1/v1 acceptance."
+    },
+    {
       "id": "typed-preview-standalone-byte-storage",
       "summary": "Experimental standalone fixed u8 arrays and whole-array call-only byte slices with exact conversions, owner loans and unchanged limits",
       "status": "experimental",

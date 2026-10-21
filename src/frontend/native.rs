@@ -89,6 +89,70 @@ fn version(tool: &Path, marker: &str, cwd: &Path) -> Result<(), Box<Diagnostic>>
     Ok(())
 }
 
+/// Publish a project-owned native output without destroying the previous build
+/// on a compile/link failure. This route retains the Linux host restriction;
+/// rename replaces a regular file atomically on that supported filesystem.
+pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        return Err(failure("native preview requires a Linux x86_64 build host"));
+    }
+    let output = Path::new(output);
+    let parent = output
+        .parent()
+        .filter(|path| path.file_name() == Some(OsStr::new("bin")))
+        .ok_or_else(|| failure("managed native output must be under .oxid/bin"))?;
+    let build_root = parent
+        .parent()
+        .filter(|path| path.file_name() == Some(OsStr::new(".oxid")))
+        .ok_or_else(|| failure("managed native output must be under .oxid/bin"))?;
+    let name = output
+        .file_name()
+        .and_then(OsStr::to_str)
+        .filter(|name| {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+        })
+        .ok_or_else(|| {
+            failure("managed executable name must contain only letters, digits, _ or -")
+        })?;
+    // Do not follow symlinks in the two directories owned by the build tool.
+    // The project filesystem is trusted and stable, as for source loading; this
+    // is not a sandbox against concurrent hostile directory replacement.
+    for path in [build_root, parent] {
+        match fs::symlink_metadata(path) {
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+            Ok(_) => {
+                return Err(failure(
+                    "managed build directories must be real directories",
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(path).map_err(io)?;
+            }
+            Err(error) => return Err(io(error)),
+        }
+    }
+    let output = parent.join(name);
+    match fs::symlink_metadata(&output) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+        Ok(_) => return Err(failure("managed native output must be a regular file")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io(error)),
+    }
+    let stage = Workspace::create(parent)?;
+    let staged_output = stage.0.join("program");
+    compile(
+        module,
+        staged_output
+            .to_str()
+            .ok_or_else(|| failure("managed output path must be UTF-8"))?,
+    )?;
+    fs::rename(staged_output, output).map_err(io)?;
+    Ok(())
+}
+
 pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(failure("native preview requires a Linux x86_64 build host"));

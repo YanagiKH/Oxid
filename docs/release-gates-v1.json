@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "specification": "docs/ROADMAP_V2.md",
+  "scope": "Technical v1.0 release requirements. This inventory records remaining work; it is not acceptance evidence or release authorization.",
+  "gates": [
+    {
+      "id": "G1",
+      "title": "Stable language",
+      "status": "unmet",
+      "required": [
+        "Versioned language specification, support matrix, compatibility and migration rules, and conformance tests covering the stable semantics."
+      ],
+      "remaining": [
+        "The typed edition is experimental; stable semantics and their complete conformance suite are not implemented."
+      ]
+    },
+    {
+      "id": "G2",
+      "title": "Safe general-purpose core",
+      "status": "unmet",
+      "required": [
+        "General heap allocation, growing containers, borrowing, destruction and concurrency safety contracts, with positive, negative, boundary and regression tests.",
+        "No known blocking miscompilation, soundness, data-corruption or security defect in the supported scope; applicable fuzzing and dynamic checks."
+      ],
+      "remaining": [
+        "Ownership supports bounded records, fixed arrays and call-only borrowing; general containers, heap/destructor semantics and stored or returned references are incomplete."
+      ]
+    },
+    {
+      "id": "G3",
+      "title": "Production native compilation",
+      "status": "unmet",
+      "required": [
+        "Native build, execution, debugging and release profiles on Linux x86_64, Linux ARM64, Windows x86_64, macOS x86_64 and macOS ARM64.",
+        "General hosted execution without demonstration fuel limits, verified optimization and realistic multi-module clean/incremental builds."
+      ],
+      "remaining": [
+        "Native compilation is a bounded Linux x86_64 preview using LLVM 19.1.7 at O0; the other native targets, general hosted policy and release/debug support are incomplete."
+      ]
+    },
+    {
+      "id": "G4",
+      "title": "Complete runtime",
+      "status": "unmet",
+      "required": [
+        "Typed-native binary files and streams, processes, threads, asynchronous I/O, cancellation and resource cleanup with failure-path contracts.",
+        "A concurrent HTTPS/database service with load, timeout, cancellation, restart, connection exhaustion and graceful-shutdown acceptance results."
+      ],
+      "remaining": [
+        "Legacy file/process/network helpers and sequential lazy tasks do not provide the required typed-native runtime."
+      ]
+    },
+    {
+      "id": "G5",
+      "title": "Packages and builds",
+      "status": "in-progress",
+      "required": [
+        "A consistent typed project/workspace build, run, test and package workflow with editions, targets and profiles.",
+        "Multi-version dependencies, registry publishing, lockfiles, offline/frozen/vendor builds, integrity and supply-chain verification."
+      ],
+      "remaining": [
+        "Manifest-selected single-package check/run/build/test is experimental; typed dependencies, workspaces, packaging and the registry/multi-version model remain incomplete."
+      ]
+    },
+    {
+      "id": "G6",
+      "title": "Development tools",
+      "status": "unmet",
+      "required": [
+        "LSP, formatter, test runner, debugger integration, versioned documentation and profiling support the same ordinary project workflow."
+      ],
+      "remaining": [
+        "The typed formatter and existing project tools do not supply the complete cross-file language server, debugger and profiling workflow."
+      ]
+    },
+    {
+      "id": "G7",
+      "title": "Native interoperation and migration",
+      "status": "unmet",
+      "required": [
+        "The same Oxid native library integrates with C, Rust and Python, including error, callback, cross-thread and resource-release tests.",
+        "Migration tooling explicitly reports unsupported features, and Python native extensions support standard packaging."
+      ],
+      "remaining": [
+        "Existing subprocess adapters do not implement the required native library ABI and Python extension workflow."
+      ]
+    },
+    {
+      "id": "G8",
+      "title": "Compiler self-hosting",
+      "status": "unmet",
+      "required": [
+        "A published Oxid seed rebuilds the specified compiler and standard library without Rust/Cargo or hidden Rust frontend fallback.",
+        "Reproducible same-target C1/C2/C3 compiler rebuilds demonstrate a C2/C3 fixed point and compile other supported programs."
+      ],
+      "remaining": [
+        "Rust still owns parser, semantic, ownership, OIR and backend authority; component demos and AST serialization round-trips are not compiler rebuilds."
+      ]
+    },
+    {
+      "id": "G9",
+      "title": "Applications and performance",
+      "status": "unmet",
+      "required": [
+        "Six ordinary applications cover native CLI/data processing, HTTPS/database service, background work, native interoperation, CPU training and the compiler/toolchain.",
+        "Native CPU tensor, autograd, optimizer, data loading and checkpoint resume pass numerical, gradient, convergence and recovery acceptance tests.",
+        "Fixed workload comparisons preserve equivalent outputs and safety semantics, with raw measurements, environment, uncertainty and upgrade/recovery results."
+      ],
+      "remaining": [
+        "The six complete applications, native CPU training stack and comparative performance acceptance corpus are incomplete."
+      ]
+    },
+    {
+      "id": "G10",
+      "title": "Release delivery and upgrades",
+      "status": "unmet",
+      "required": [
+        "Versioned artifacts have source provenance, checksums, signatures, supported platforms and external dependency declarations.",
+        "Installation, update, rollback and offline deployment are exercised; two release candidates pass technical acceptance, with affected checks rerun after core changes."
+      ],
+      "remaining": [
+        "Current four-host archives and checksums do not provide signed five-platform native delivery, the complete upgrade/rollback workflow or two qualified v1 release candidates."
+      ]
+    }
+  ]
+}
