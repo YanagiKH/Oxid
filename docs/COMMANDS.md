@@ -28,6 +28,13 @@ preview. Explicit file commands require one entry source. A manifest declaring
 On Linux these project commands also check local path dependencies in one typed
 session. A dependency alias such as `math` is available through
 `use crate::math::answer;`; each library's `crate::` starts at its own root.
+`oxid lock [--offline]` records the local graph's dependency inputs. Project
+`check/run/build/test --locked` require matching inputs, and `--frozen` combines
+locked and offline operation. Plain project commands verify an existing lock;
+`oxid lock --update` accepts intentional changes. Application/test source bodies
+remain editable; the app manifest and dependency sources are pinned. This typed
+lock format is separate from legacy locking; see
+[the lock contract](../rfcs/0034-typed-local-locking.md).
 Run/compile require an original zero-argument scalar main in the root file.
 Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
 `pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),

@@ -12,8 +12,9 @@ binary stdin/stdout and source-free native deployment.
 
 This extends [RFC 0032](0032-typed-project-workflow.md). Existing explicit file
 commands, single-package source semantics, ownership rules and native contracts
-retain their previous behavior. Typed Git/registry resolution, lockfiles,
-workspaces, packaging and incremental compilation remain future work.
+retain their previous behavior. [RFC 0034](0034-typed-local-locking.md) adds
+local dependency input locks. Typed Git/registry resolution, workspaces,
+packaging and incremental compilation remain future work.
 
 ## Manifest and graph identity
 

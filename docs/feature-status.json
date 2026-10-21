@@ -1048,7 +1048,7 @@
     },
     {
       "id": "typed-preview-project-workflow",
-      "summary": "Manifest-selected typed project commands with Linux local-path dependency sessions",
+      "summary": "Manifest-selected typed project commands with Linux local-path dependency sessions and input locks",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1059,10 +1059,12 @@
       "spec": [
         "rfcs/0032-typed-project-workflow.md",
         "rfcs/0033-typed-path-dependencies.md",
+        "rfcs/0034-typed-local-locking.md",
         "docs/TYPED_PROJECTS.md"
       ],
       "implementation": [
         "src/project_cli.rs",
+        "src/project_lock.rs",
         "src/main.rs",
         "src/frontend/driver.rs",
         "src/frontend/native.rs",
@@ -1071,14 +1073,16 @@
       "tests": [
         "tests/project_workflow.rs",
         "tests/typed_path_dependencies.rs",
+        "tests/typed_package_lock.rs",
         "tests/edition_boundary.rs",
         "scripts/test_project_workflow_current.py",
-        "scripts/verify_typed_package_app.py"
+        "scripts/verify_typed_package_app.py",
+        "scripts/verify_typed_package_lock.py"
       ],
       "evidence": [
         "docs/architecture/project-workflow-validation.md"
       ],
-      "limitations": "Existing bounded language with local path dependencies only. No typed Git/registry resolution, lockfiles, workspace, incremental cache or new native target. Retained single-package Unit2 assertions and package regressions have separate scopes; neither replaces historical private certificates nor completes R1/v1 acceptance."
+      "limitations": "Existing bounded language with local path dependencies and typed input locks only. No typed Git/registry resolution, workspace, vendor, incremental cache or new native target. Locks bind dependency inputs, not reproducible native artifacts. Retained single-package Unit2 assertions and package/lock regressions have separate scopes; neither replaces historical private certificates nor completes R1/v1 acceptance."
     },
     {
       "id": "typed-preview-standalone-byte-storage",

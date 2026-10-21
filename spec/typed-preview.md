@@ -69,8 +69,10 @@ the experimental [project workflow](../docs/TYPED_PROJECTS.md). Explicitly selec
 file commands retain this specification's original argument and entry defaults.
 The Linux project route admits local path dependencies under
 [RFC 0033](../rfcs/0033-typed-path-dependencies.md); it retains package-local roots,
-visibility and nominal identities within one checking session. Typed Git/registry
-dependencies, lockfiles, workspaces and incremental builds remain unimplemented.
+visibility and nominal identities within one checking session.
+[RFC 0034](../rfcs/0034-typed-local-locking.md) adds local dependency input locks
+and locked/offline/frozen project commands using retained source bytes.
+Typed Git/registry dependencies, workspaces and incremental builds remain unimplemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 

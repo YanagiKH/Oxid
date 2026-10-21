@@ -26,8 +26,9 @@ semantic and resource assertions against the complete current compiler input
 set. The authenticated predecessor is
 `9ff8ef90a26f003f4616838dfc186fa3bfb6845c`. Admission permits changes only in
 the five CLI, manifest and build orchestration files plus seven explicitly
-named package loader/declaration/OIR source interfaces. The three additions are
-`src/project_cli.rs`, `src/frontend/project/packages.rs`, and its compiler tests.
+named package loader/declaration/OIR source interfaces. The four additions are
+`src/project_cli.rs`, `src/project_lock.rs`, `src/frontend/project/packages.rs`,
+and its compiler tests.
 All other predecessor inputs remain byte-identical. Compile-time
 include and path directives cannot add inputs through the changed files.
 
@@ -69,6 +70,26 @@ python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/
 
 The command uses Linux x86_64 and LLVM 19.1.7. CI runs both Rust compiler profiles;
 this does not establish an optimized Oxid release profile or an incremental cache.
+
+`tests/typed_package_lock.rs` covers local locking through public project
+commands. The prepared-session compiler tests verify that dependency checksums
+and execution use the same retained bytes after an on-disk source edit.
+`scripts/verify_typed_package_lock.py` checks the real application with Python's
+TOML reader and independently calculated SHA-256 identities/source checksums.
+It exercises locked tests, relocation, editable application sources, rejection
+of changed dependencies and malformed locks, explicit update, and loaded source
+modules under `target`/`.oxid`. Its optional native mode also checks that lock
+rejection preserves the old executable and an accepted change reaches the next
+native build:
+
+```sh
+python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
+  --output /tmp/oxid-package-lock --native
+```
+
+CI retains this evidence separately from the unlocked application workflow.
+These results qualify local dependency input locking, not reproducible machine
+code, registry resolution or general supply-chain acceptance.
 
 `scripts/verify_current_native.py` runs the existing independent native oracles,
 private LLVM regression groups, checked-HIR import, and expression/stack/stdin

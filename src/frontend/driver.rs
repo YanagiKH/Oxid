@@ -1,4 +1,4 @@
-use super::project::packages::{self, PackageSources, PackageSpec};
+use super::project::packages::{self, LoadedSourceInput, PackageSources, PackageSpec};
 use super::{
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
@@ -7,12 +7,309 @@ use super::{
     project::{budget::Allocator, ProjectLimits, ProjectSources, SyntaxFlavor},
     source::SourceMap,
 };
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub(crate) enum PackageCommand<'a> {
     Check,
     Run,
     Compile { output: &'a str, managed: bool },
+}
+
+/// A source checksum has no package identity or manifest semantics. The caller
+/// binds its graph index to the independently admitted manifest and source ID.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PackageInputFingerprint {
+    pub package: usize,
+    pub checksum: String,
+    pub files: usize,
+    pub bytes: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct PreparedPackageProject<'a> {
+    sources: PreparedSources<'a>,
+    dependencies: Vec<PackageInputFingerprint>,
+}
+
+// Keep the bounded package sidecar inline. No existing source/index carrier is
+// enlarged, and ordinary file and package routes do not construct this enum.
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+enum PreparedSources<'a> {
+    Single(ProjectSources),
+    Packages(PackageSources<'a>),
+}
+
+#[derive(Debug)]
+pub(crate) struct PackagePreparationError {
+    sources: SourceMap,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl From<super::project::LoadFailure> for PackagePreparationError {
+    fn from(failure: super::project::LoadFailure) -> Self {
+        Self {
+            sources: failure.sources,
+            diagnostics: failure.diagnostics,
+        }
+    }
+}
+
+impl PackagePreparationError {
+    /// Lock creation needs bounded plain text, while executable commands retain
+    /// the complete source-aware frontend diagnostic protocol through report.
+    pub(crate) fn message(&self) -> String {
+        struct Bounded(String);
+        impl std::fmt::Write for Bounded {
+            fn write_str(&mut self, text: &str) -> std::fmt::Result {
+                let available = 2048 - self.0.len();
+                let mut end = available.min(text.len());
+                while !text.is_char_boundary(end) {
+                    end -= 1;
+                }
+                self.0.push_str(&text[..end]);
+                if end == text.len() {
+                    Ok(())
+                } else {
+                    Err(std::fmt::Error)
+                }
+            }
+        }
+        let mut out = Bounded(String::with_capacity(2048));
+        if let Some(error) = self.diagnostics.first() {
+            let _ = error.write_human(&self.sources, &mut out);
+        } else {
+            out.0.push_str("package source preparation failed");
+        }
+        out.0
+    }
+
+    pub(crate) fn report(self, command: PackageCommand<'_>, json: bool, process: bool) -> i32 {
+        let operation = package_operation(&command);
+        if process && operation == Operation::Run {
+            if json {
+                return process_option_error(
+                    "process-mode run does not support --message-format=json",
+                );
+            }
+            if !oir::process::setup() {
+                return 74;
+            }
+            report_process(&self.sources, &self.diagnostics)
+        } else {
+            report(
+                &self.sources,
+                self.diagnostics,
+                json,
+                Summary::empty(operation),
+            )
+        }
+    }
+}
+
+fn package_operation(command: &PackageCommand<'_>) -> Operation {
+    match command {
+        PackageCommand::Check => Operation::Check,
+        PackageCommand::Run => Operation::Run,
+        PackageCommand::Compile { .. } => Operation::Compile,
+    }
+}
+
+/// Load once, without type checking, execution, LLVM or output publication.
+/// Test overrides select retained application source without changing the graph
+/// metadata supplied by the caller. Only dependencies receive content pins.
+pub(crate) fn prepare_package_project<'a>(
+    packages: &'a [PackageSpec],
+    entry_override: Option<&Path>,
+) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
+    packages::validate_graph(packages, entry_override).map_err(|error| {
+        PackagePreparationError {
+            sources: SourceMap::new(),
+            diagnostics: vec![*error],
+        }
+    })?;
+    if packages.len() == 1 {
+        let entry = entry_override
+            .unwrap_or(&packages[0].entry)
+            .to_str()
+            .expect("validated UTF-8 entry");
+        let project = ProjectSources::load_typed(entry, ProjectLimits::default())?;
+        return Ok(PreparedPackageProject {
+            sources: PreparedSources::Single(project),
+            dependencies: Vec::new(),
+        });
+    }
+    let sources = PackageSources::load(packages, entry_override, ProjectLimits::default())?;
+    let dependencies = match dependency_fingerprints(&sources, packages.len()) {
+        Ok(dependencies) => dependencies,
+        Err(error) => {
+            return Err(PackagePreparationError {
+                sources: sources.into_source_map(),
+                diagnostics: vec![*error],
+            })
+        }
+    };
+    Ok(PreparedPackageProject {
+        sources: PreparedSources::Packages(sources),
+        dependencies,
+    })
+}
+
+fn fingerprint_error() -> Box<Diagnostic> {
+    Diagnostic::new(
+        "E0400",
+        "package",
+        "dependency input fingerprint budget exceeded",
+        None,
+    )
+}
+
+/// lp(b) = u64 little-endian length followed by b. The domain and actual entry
+/// path precede a u64 file count; each path-sorted source is F + lp(path) + lp(bytes).
+/// SHA-256 stays in the driver so standalone parser/static observers need no
+/// extra crate. The loader exposes borrowed inputs, not a second filesystem walk.
+fn dependency_fingerprints(
+    sources: &PackageSources<'_>,
+    count: usize,
+) -> Result<Vec<PackageInputFingerprint>, Box<Diagnostic>> {
+    let mut result = Vec::new();
+    result
+        .try_reserve_exact(count.saturating_sub(1))
+        .map_err(|_| fingerprint_error())?;
+    for package in 1..count {
+        let inputs = sources.source_inputs(package)?;
+        let files = inputs.len();
+        if files == 0 || files > 256 {
+            return Err(fingerprint_error());
+        }
+        let mut sorted = [LoadedSourceInput::default(); 256];
+        let mut bytes = 0usize;
+        for (index, input) in inputs.enumerate() {
+            let input = input?;
+            bytes = bytes
+                .checked_add(input.bytes.len())
+                .ok_or_else(fingerprint_error)?;
+            sorted[index] = input;
+        }
+        let entry = sorted[0].path;
+        sorted[..files].sort_unstable_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+        if sorted[..files]
+            .windows(2)
+            .any(|pair| pair[0].path == pair[1].path)
+        {
+            return Err(fingerprint_error());
+        }
+        fn lp(hash: &mut Sha256, bytes: &[u8]) {
+            hash.update((bytes.len() as u64).to_le_bytes());
+            hash.update(bytes);
+        }
+        let mut hash = Sha256::new();
+        lp(&mut hash, b"oxid-typed-local-source-v1");
+        lp(&mut hash, entry.as_bytes());
+        hash.update((files as u64).to_le_bytes());
+        for input in &sorted[..files] {
+            hash.update(b"F");
+            lp(&mut hash, input.path.as_bytes());
+            lp(&mut hash, input.bytes);
+        }
+        let digest = hash.finalize();
+        let mut checksum = String::new();
+        checksum
+            .try_reserve_exact(71)
+            .map_err(|_| fingerprint_error())?;
+        checksum.push_str("sha256:");
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        for byte in digest {
+            checksum.push(HEX[usize::from(byte >> 4)] as char);
+            checksum.push(HEX[usize::from(byte & 15)] as char);
+        }
+        result.push(PackageInputFingerprint {
+            package,
+            checksum,
+            files,
+            bytes,
+        });
+    }
+    Ok(result)
+}
+
+impl PreparedPackageProject<'_> {
+    pub(crate) fn dependency_fingerprints(&self) -> &[PackageInputFingerprint] {
+        &self.dependencies
+    }
+
+    fn project(&self) -> &ProjectSources {
+        match &self.sources {
+            PreparedSources::Single(project) => project,
+            PreparedSources::Packages(package) => &package.project,
+        }
+    }
+
+    fn checked(&self) -> Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>> {
+        match &self.sources {
+            PreparedSources::Single(project) => check_loaded_project(project),
+            PreparedSources::Packages(package) => {
+                let limits = IndexLimits::default();
+                oir::project::check_package_executable(
+                    package,
+                    limits,
+                    &WorkMeter::new(limits.work),
+                    &mut Allocator::default(),
+                )
+            }
+        }
+    }
+
+    /// Consume the retained input logically, never by reopening a source path.
+    /// All compilation and publication remain behind the ordinary OIR witness.
+    pub(crate) fn execute(&self, command: PackageCommand<'_>, json: bool, process: bool) -> i32 {
+        let operation = package_operation(&command);
+        let process_run = process && operation == Operation::Run;
+        if process_run && json {
+            return process_option_error("process-mode run does not support --message-format=json");
+        }
+        if process_run && !oir::process::setup() {
+            return 74;
+        }
+        let project = self.project();
+        let executable = self.checked();
+        if process_run {
+            return match executable {
+                Ok(checked) => match checked.run_process() {
+                    Ok(status) => status,
+                    Err(oir::ProcessFailure::Setup) => 74,
+                    Err(oir::ProcessFailure::Diagnostic(error)) => {
+                        report_process(project.sources(), &[*error])
+                    }
+                },
+                Err(errors) => report_process(project.sources(), &errors),
+            };
+        }
+        if let PackageCommand::Compile { output, managed } = command {
+            let result = (|| {
+                let checked = executable?;
+                let module = if process {
+                    checked.native_process_module()
+                } else {
+                    checked.native_module()
+                }
+                .map_err(|error| vec![*error])?;
+                if managed {
+                    super::native::compile_managed(&module, output)
+                } else {
+                    super::native::compile(&module, output)
+                }
+                .map_err(|error| vec![*error])?;
+                Ok(Summary::Compile(Some(output.to_owned())))
+            })();
+            return match result {
+                Ok(summary) => report(project.sources(), Vec::new(), json, summary),
+                Err(errors) => report(project.sources(), errors, json, Summary::Compile(None)),
+            };
+        }
+        process_loaded(project, json, operation, None, executable)
+    }
 }
 
 /// Project commands carry the actual admitted dependency graph into the checked
@@ -751,6 +1048,383 @@ mod tests {
     }
 
     use super::*;
+
+    use crate::frontend::project::packages::PackageDependency;
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static NEXT_PREPARED: AtomicUsize = AtomicUsize::new(0);
+
+    struct PreparedFixture(PathBuf);
+    impl PreparedFixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "oxid-prepared-input-{}-{}",
+                std::process::id(),
+                NEXT_PREPARED.fetch_add(1, Ordering::Relaxed),
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path.canonicalize().unwrap())
+        }
+        fn write(&self, path: &str, source: &str) {
+            let path = self.0.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, source).unwrap();
+        }
+        fn spec(&self, name: &str, entry: &str, dependencies: &[(&str, usize)]) -> PackageSpec {
+            PackageSpec {
+                root: self.0.join(name),
+                entry: self.0.join(name).join(entry),
+                dependencies: dependencies
+                    .iter()
+                    .map(|&(alias, package)| PackageDependency {
+                        alias: alias.into(),
+                        package,
+                    })
+                    .collect(),
+            }
+        }
+        #[cfg(target_os = "linux")]
+        fn pair(&self, library_entry: &str) -> [PackageSpec; 2] {
+            [
+                self.spec("app", "src/main.ox", &[("lib", 1)]),
+                self.spec("lib", library_entry, &[]),
+            ]
+        }
+    }
+    impl Drop for PreparedFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn prepared_single_package_preserves_syntax_flavor_usage_and_retained_input() {
+        let fixture = PreparedFixture::new();
+        fixture.write("app/src/main.ox", "fn main()->i32{return 42;}");
+        let specs = [fixture.spec("app", "src/main.ox", &[])];
+        let old =
+            ProjectSources::load_typed(specs[0].entry.to_str().unwrap(), ProjectLimits::default())
+                .unwrap();
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        assert!(matches!(prepared.sources, PreparedSources::Single(_)));
+        assert_eq!(
+            prepared.project().syntax_flavor(),
+            SyntaxFlavor::OriginalSingleFile
+        );
+        assert_eq!(prepared.project().usage(), old.usage());
+        assert!(prepared.dependency_fingerprints().is_empty());
+        fixture.write("app/src/main.ox", "fn main()->i32{return 99;}");
+        let changed = prepare_package_project(&specs, None).unwrap();
+        assert_eq!(
+            changed.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(99)
+        );
+        std::fs::remove_dir_all(fixture.0.join("app")).unwrap();
+        assert_eq!(
+            prepared.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+        assert_eq!(prepared.execute(PackageCommand::Check, false, false), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_fingerprint_known_answer_covers_raw_bytes_and_loaded_target_modules() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        fixture.write(
+            "lib/target/zlib.ox",
+            "mod nested;\r\npub fn value()->i32{return crate::nested::value();}\r\n",
+        );
+        fixture.write(
+            "lib/target/nested.ox",
+            "// λ\npub fn value()->i32{return 42;}\n",
+        );
+        let specs = fixture.pair("target/zlib.ox");
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        // Independently calculated with Python hashlib and struct.pack('<Q').
+        assert_eq!(
+            prepared.dependency_fingerprints(),
+            &[PackageInputFingerprint {
+                package: 1,
+                checksum: "sha256:b11e12f6f2dce024527bca9500ce04e7695e0e04f489bdc2f03f5c2a60875cc9"
+                    .into(),
+                files: 2,
+                bytes: 104,
+            }]
+        );
+        assert_eq!(
+            prepared.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_fingerprint_covers_transitive_dot_oxid_inputs_and_ignores_unloaded_files() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        fixture.write(
+            "lib/.oxid/lib.ox",
+            "mod inner;pub fn value()->i32{return crate::inner::value();}",
+        );
+        fixture.write(
+            "lib/.oxid/inner.ox",
+            "mod deep;pub fn value()->i32{return crate::inner::deep::value();}",
+        );
+        fixture.write("lib/.oxid/inner/deep.ox", "pub fn value()->i32{return 42;}");
+        let specs = fixture.pair(".oxid/lib.ox");
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        assert_eq!(prepared.dependency_fingerprints()[0].files, 3);
+        assert_eq!(
+            prepared.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+        fixture.write("lib/README.md", "not a compiler input");
+        fixture.write("lib/oxid.lock", "not a compiler source");
+        fixture.write("lib/.oxid/unloaded.ox", "this file must not be parsed");
+        let unmodified = prepare_package_project(&specs, None).unwrap();
+        assert_eq!(
+            prepared.dependency_fingerprints(),
+            unmodified.dependency_fingerprints()
+        );
+        fixture.write("lib/.oxid/inner/deep.ox", "pub fn value()->i32{return 43;}");
+        let modified = prepare_package_project(&specs, None).unwrap();
+        assert_ne!(
+            prepared.dependency_fingerprints(),
+            modified.dependency_fingerprints()
+        );
+        assert_eq!(
+            modified.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(43)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_fingerprints_ignore_absolute_paths_source_ids_and_root_test_overrides() {
+        let fixtures = [PreparedFixture::new(), PreparedFixture::new()];
+        for (index, fixture) in fixtures.iter().enumerate() {
+            let sources = [
+                (
+                    "lib/src/lib.ox",
+                    "mod value;pub fn value()->i32{return crate::value::get();}",
+                ),
+                ("lib/src/value.ox", "pub fn get()->i32{return 42;}"),
+            ];
+            for &(name, source) in sources.iter().cycle().skip(index).take(2) {
+                fixture.write(name, source);
+            }
+            fixture.write(
+                "app/src/main.ox",
+                "fn main()->i32{return crate::lib::value();}",
+            );
+            fixture.write(
+                "app/tests/declared.ox",
+                "fn main()->i32{return crate::lib::value()-42;}",
+            );
+        }
+        let first = fixtures[0].pair("src/lib.ox");
+        let second = fixtures[1].pair("src/lib.ox");
+        let prepared = prepare_package_project(&first, None).unwrap();
+        // An additional root module changes dependency SourceFileId values.
+        fixtures[1].write(
+            "app/src/main.ox",
+            "mod extra;fn main()->i32{return crate::extra::number()+crate::lib::value();}",
+        );
+        fixtures[1].write("app/src/extra.ox", "pub fn number()->i32{return 0;}");
+        let relocated = prepare_package_project(&second, None).unwrap();
+        assert_eq!(
+            prepared.dependency_fingerprints(),
+            relocated.dependency_fingerprints()
+        );
+        let test_entry = fixtures[1].0.join("app/tests/declared.ox");
+        let declared = prepare_package_project(&second, Some(&test_entry)).unwrap();
+        assert_eq!(
+            prepared.dependency_fingerprints(),
+            declared.dependency_fingerprints()
+        );
+        assert_eq!(
+            declared.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(0)
+        );
+        assert_eq!(second[0].entry, fixtures[1].0.join("app/src/main.ox"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_fingerprint_binds_exact_entry_path_without_backslash_normalization() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        for path in [
+            "lib/left/lib.ox",
+            "lib/right/lib.ox",
+            "lib/odd\\name.ox",
+            "lib/odd/name.ox",
+        ] {
+            fixture.write(path, "pub fn value()->i32{return 42;}");
+        }
+        let checksums: Vec<_> = ["left/lib.ox", "right/lib.ox", "odd\\name.ox", "odd/name.ox"]
+            .iter()
+            .map(|path| {
+                let specs = fixture.pair(path);
+                prepare_package_project(&specs, None)
+                    .unwrap()
+                    .dependency_fingerprints()[0]
+                    .checksum
+                    .clone()
+            })
+            .collect();
+        for (index, checksum) in checksums.iter().enumerate() {
+            assert!(!checksums[..index].contains(checksum));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_fingerprint_is_independent_of_package_graph_ordinal() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::left::value()+crate::right::value();}",
+        );
+        fixture.write("left/src/lib.ox", "pub fn value()->i32{return 20;}");
+        fixture.write("right/src/lib.ox", "pub fn value()->i32{return 22;}");
+        let first = [
+            fixture.spec("app", "src/main.ox", &[("left", 1), ("right", 2)]),
+            fixture.spec("left", "src/lib.ox", &[]),
+            fixture.spec("right", "src/lib.ox", &[]),
+        ];
+        let second = [
+            fixture.spec("app", "src/main.ox", &[("left", 2), ("right", 1)]),
+            fixture.spec("right", "src/lib.ox", &[]),
+            fixture.spec("left", "src/lib.ox", &[]),
+        ];
+        let before = prepare_package_project(&first, None).unwrap();
+        let after = prepare_package_project(&second, None).unwrap();
+        for (original, reordered) in [(0, 1), (1, 0)] {
+            let original = &before.dependency_fingerprints()[original];
+            let reordered = &after.dependency_fingerprints()[reordered];
+            assert_ne!(original.package, reordered.package);
+            assert_eq!(original.checksum, reordered.checksum);
+            assert_eq!(original.files, reordered.files);
+            assert_eq!(original.bytes, reordered.bytes);
+        }
+        assert_eq!(
+            before.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+        assert_eq!(
+            after.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_package_execution_uses_the_same_fingerprinted_bytes_after_disk_mutation() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        fixture.write("lib/src/lib.ox", "pub fn value()->i32{return 42;}");
+        let specs = fixture.pair("src/lib.ox");
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        let fingerprints = prepared.dependency_fingerprints().to_vec();
+        fixture.write("lib/src/lib.ox", "pub fn value()->i32{return 99;}");
+        let changed = prepare_package_project(&specs, None).unwrap();
+        assert_ne!(fingerprints, changed.dependency_fingerprints());
+        assert_eq!(
+            changed.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(99)
+        );
+        std::fs::remove_dir_all(fixture.0.join("app")).unwrap();
+        std::fs::remove_dir_all(fixture.0.join("lib")).unwrap();
+        assert_eq!(prepared.dependency_fingerprints(), fingerprints);
+        assert_eq!(
+            prepared.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+        assert_eq!(prepared.execute(PackageCommand::Check, false, false), 0);
+        assert_eq!(prepared.execute(PackageCommand::Run, false, false), 0);
+        assert!(prepare_package_project(&specs, None).is_err());
+    }
+
+    #[test]
+    fn prepared_loading_does_not_typecheck_or_execute() {
+        let fixture = PreparedFixture::new();
+        fixture.write("app/src/main.ox", "fn main()->i32{return true+1;}");
+        let specs = [fixture.spec("app", "src/main.ox", &[])];
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        let errors = prepared.checked().unwrap_err();
+        assert!(
+            errors.iter().any(|error| error.code == "E0300"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn prepared_error_message_is_bounded_sanitized_and_utf8_complete() {
+        let error = PackagePreparationError {
+            sources: SourceMap::new(),
+            diagnostics: vec![*Diagnostic::new(
+                "E0006",
+                "package",
+                format!("\u{1b}[31m{}", "λ".repeat(3000)),
+                None,
+            )],
+        };
+        let message = error.message();
+        assert!(message.len() <= 2048);
+        assert!(!message.contains('\u{1b}'));
+        assert!(message.contains('λ'));
+        assert!(message.ends_with('λ'));
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    #[ignore = "requires pinned LLVM 19.1.7 tools"]
+    fn prepared_native_uses_loaded_sources_after_removal() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        fixture.write("lib/src/lib.ox", "pub fn value()->i32{return 42;}");
+        let specs = fixture.pair("src/lib.ox");
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        std::fs::remove_dir_all(fixture.0.join("app")).unwrap();
+        std::fs::remove_dir_all(fixture.0.join("lib")).unwrap();
+        let output = fixture.0.join(".oxid/bin/retained-program");
+        assert_eq!(
+            prepared.execute(
+                PackageCommand::Compile {
+                    output: output.to_str().unwrap(),
+                    managed: true
+                },
+                false,
+                true
+            ),
+            0
+        );
+        let result = std::process::Command::new(&output).output().unwrap();
+        assert_eq!(result.status.code(), Some(42));
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+    }
 
     #[test]
     fn process_dispatch_is_typed_and_cannot_reach_legacy_arguments() {
