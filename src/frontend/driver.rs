@@ -182,65 +182,167 @@ fn dependency_fingerprints(
         .try_reserve_exact(count.saturating_sub(1))
         .map_err(|_| fingerprint_error())?;
     for package in 1..count {
-        let inputs = sources.source_inputs(package)?;
-        let files = inputs.len();
-        if files == 0 || files > 256 {
-            return Err(fingerprint_error());
-        }
-        let mut sorted = [LoadedSourceInput::default(); 256];
-        let mut bytes = 0usize;
-        for (index, input) in inputs.enumerate() {
-            let input = input?;
-            bytes = bytes
-                .checked_add(input.bytes.len())
-                .ok_or_else(fingerprint_error)?;
-            sorted[index] = input;
-        }
-        let entry = sorted[0].path;
-        sorted[..files].sort_unstable_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
-        if sorted[..files]
-            .windows(2)
-            .any(|pair| pair[0].path == pair[1].path)
-        {
-            return Err(fingerprint_error());
-        }
-        fn lp(hash: &mut Sha256, bytes: &[u8]) {
-            hash.update((bytes.len() as u64).to_le_bytes());
-            hash.update(bytes);
-        }
-        let mut hash = Sha256::new();
-        lp(&mut hash, b"oxid-typed-local-source-v1");
-        lp(&mut hash, entry.as_bytes());
-        hash.update((files as u64).to_le_bytes());
-        for input in &sorted[..files] {
-            hash.update(b"F");
-            lp(&mut hash, input.path.as_bytes());
-            lp(&mut hash, input.bytes);
-        }
-        let digest = hash.finalize();
-        let mut checksum = String::new();
-        checksum
-            .try_reserve_exact(71)
-            .map_err(|_| fingerprint_error())?;
-        checksum.push_str("sha256:");
-        const HEX: &[u8; 16] = b"0123456789abcdef";
-        for byte in digest {
-            checksum.push(HEX[usize::from(byte >> 4)] as char);
-            checksum.push(HEX[usize::from(byte & 15)] as char);
-        }
-        result.push(PackageInputFingerprint {
-            package,
-            checksum,
-            files,
-            bytes,
-        });
+        result.push(input_fingerprint(package, sources.source_inputs(package)?)?);
     }
     Ok(result)
+}
+
+fn input_fingerprint<'a>(
+    package: usize,
+    inputs: impl ExactSizeIterator<Item = Result<LoadedSourceInput<'a>, Box<Diagnostic>>>,
+) -> Result<PackageInputFingerprint, Box<Diagnostic>> {
+    let files = inputs.len();
+    if files == 0 || files > 256 {
+        return Err(fingerprint_error());
+    }
+    let mut sorted = [LoadedSourceInput::default(); 256];
+    let mut bytes = 0usize;
+    for (index, input) in inputs.enumerate() {
+        let input = input?;
+        bytes = bytes
+            .checked_add(input.bytes.len())
+            .ok_or_else(fingerprint_error)?;
+        sorted[index] = input;
+    }
+    let entry = sorted[0].path;
+    sorted[..files].sort_unstable_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    if sorted[..files]
+        .windows(2)
+        .any(|pair| pair[0].path == pair[1].path)
+    {
+        return Err(fingerprint_error());
+    }
+    fn lp(hash: &mut Sha256, bytes: &[u8]) {
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    }
+    let mut hash = Sha256::new();
+    lp(&mut hash, b"oxid-typed-local-source-v1");
+    lp(&mut hash, entry.as_bytes());
+    hash.update((files as u64).to_le_bytes());
+    for input in &sorted[..files] {
+        hash.update(b"F");
+        lp(&mut hash, input.path.as_bytes());
+        lp(&mut hash, input.bytes);
+    }
+    let digest = hash.finalize();
+    let mut checksum = String::new();
+    checksum
+        .try_reserve_exact(71)
+        .map_err(|_| fingerprint_error())?;
+    checksum.push_str("sha256:");
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in digest {
+        checksum.push(HEX[usize::from(byte >> 4)] as char);
+        checksum.push(HEX[usize::from(byte & 15)] as char);
+    }
+    Ok(PackageInputFingerprint {
+        package,
+        checksum,
+        files,
+        bytes,
+    })
 }
 
 impl PreparedPackageProject<'_> {
     pub(crate) fn dependency_fingerprints(&self) -> &[PackageInputFingerprint] {
         &self.dependencies
+    }
+
+    /// Workspace roots can also be imported library members. Bind their exact
+    /// retained bytes with the same source protocol before combining sessions.
+    pub(crate) fn workspace_fingerprints(
+        &self,
+        root: &PackageSpec,
+    ) -> Result<Vec<(usize, String)>, String> {
+        let fingerprint = match &self.sources {
+            PreparedSources::Packages(package) => input_fingerprint(
+                0,
+                package
+                    .source_inputs(0)
+                    .map_err(|error| error.message.clone())?,
+            ),
+            PreparedSources::Single(project) => {
+                let inputs = project.modules().iter().map(|header| {
+                    let source = project
+                        .sources()
+                        .files()
+                        .get(header.file.0)
+                        .ok_or_else(fingerprint_error)?;
+                    let path = header
+                        .canonical_path
+                        .as_deref()
+                        .unwrap_or_else(|| Path::new(source.path()))
+                        .strip_prefix(&root.root)
+                        .ok()
+                        .and_then(Path::to_str)
+                        .ok_or_else(fingerprint_error)?;
+                    Ok(LoadedSourceInput {
+                        path,
+                        bytes: source.text().as_bytes(),
+                    })
+                });
+                input_fingerprint(0, inputs)
+            }
+        }
+        .map_err(|error| error.message.clone())?;
+        let mut result = Vec::with_capacity(self.dependencies.len() + 1);
+        result.push((0, fingerprint.checksum));
+        result.extend(
+            self.dependencies
+                .iter()
+                .map(|input| (input.package, input.checksum.clone())),
+        );
+        Ok(result)
+    }
+
+    pub(crate) fn input_usage(&self) -> (usize, usize) {
+        let sources = self.project().sources().files();
+        (
+            sources.len(),
+            sources.iter().map(|source| source.text().len()).sum(),
+        )
+    }
+
+    /// Semantic preflight emits nothing on success and cannot run source or
+    /// invoke native tools, so a later member refusal leaves all outputs intact.
+    pub(crate) fn workspace_preflight(
+        &self,
+        json: bool,
+        process: bool,
+        native: bool,
+        process_run: bool,
+    ) -> i32 {
+        let admitted = self.checked().and_then(|checked| {
+            if native {
+                if process {
+                    checked.native_process_module()
+                } else {
+                    checked.native_module()
+                }
+                .map(|_| ())
+                .map_err(|error| vec![*error])
+            } else if process {
+                checked.process_preflight().map_err(|error| vec![*error])
+            } else {
+                Ok(())
+            }
+        });
+        match admitted {
+            Ok(_) => 0,
+            Err(errors) if process_run => {
+                if !oir::process::setup() {
+                    return 74;
+                }
+                report_process(self.project().sources(), &errors)
+            }
+            Err(errors) => report(
+                self.project().sources(),
+                errors,
+                json,
+                Summary::empty(Operation::Check),
+            ),
+        }
     }
 
     fn project(&self) -> &ProjectSources {
@@ -1198,6 +1300,49 @@ mod tests {
         assert_eq!(
             prepared.checked().unwrap().run().unwrap(),
             oir::Scalar::I32(42)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn workspace_member_fingerprint_matches_imported_bytes_and_binds_test_entry() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        let library = "mod nested;\r\npub fn value()->i32{return crate::nested::value();}\r\n";
+        fixture.write("lib/target/zlib.ox", library);
+        fixture.write(
+            "lib/target/nested.ox",
+            "// λ\npub fn value()->i32{return 42;}\n",
+        );
+        let graph = fixture.pair("target/zlib.ox");
+        let imported = prepare_package_project(&graph, None).unwrap();
+        let member = [fixture.spec("lib", "target/zlib.ox", &[])];
+        let standalone = prepare_package_project(&member, None).unwrap();
+        let root_fingerprint = standalone.workspace_fingerprints(&member[0]).unwrap();
+        assert_eq!(
+            root_fingerprint[0].1,
+            imported.dependency_fingerprints()[0].checksum
+        );
+        assert_eq!(
+            root_fingerprint[0].1,
+            "sha256:b11e12f6f2dce024527bca9500ce04e7695e0e04f489bdc2f03f5c2a60875cc9"
+        );
+
+        fixture.write("lib/target/ztest.ox", library);
+        let test_path = fixture.0.join("lib/target/ztest.ox");
+        let declared = prepare_package_project(&member, Some(&test_path)).unwrap();
+        assert_ne!(
+            declared.workspace_fingerprints(&member[0]).unwrap(),
+            root_fingerprint
+        );
+        // Retained fingerprints do not reopen a member entry or its modules.
+        std::fs::remove_dir_all(fixture.0.join("lib")).unwrap();
+        assert_eq!(
+            standalone.workspace_fingerprints(&member[0]).unwrap(),
+            root_fingerprint
         );
     }
 

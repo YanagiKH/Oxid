@@ -26,8 +26,9 @@ semantic and resource assertions against the complete current compiler input
 set. The authenticated predecessor is
 `9ff8ef90a26f003f4616838dfc186fa3bfb6845c`. Admission permits changes only in
 the five CLI, manifest and build orchestration files plus seven explicitly
-named package loader/declaration/OIR source interfaces. The seven additions are
-`src/project_cli.rs`, `src/project_lock.rs`, `src/doctor_cli.rs`,
+named package loader/declaration/OIR source interfaces. The eight additions are
+`src/project_cli.rs`, `src/project_cli/workspace.rs`, `src/project_lock.rs`,
+`src/doctor_cli.rs`,
 `src/frontend/native_cache.rs`, `src/frontend/native/doctor.rs`,
 `src/frontend/project/packages.rs`, and its compiler tests.
 All other predecessor inputs remain byte-identical. Compile-time
@@ -50,7 +51,7 @@ worktree evidence; CI does not enable it. `--prepare-only` performs admission
 and assembly with zero compiler executions and cannot report a semantic pass.
 These unchanged assertions cover predecessor single-package behavior and
 resource counts on the changed compiler. The source manifest explicitly records
-that they do not qualify new package semantics. Parser, ownership verification,
+that they do not qualify new package or workspace semantics. Parser, ownership verification,
 OIR verification, native lowering and runtime inputs remain unchanged. Future
 changes require another explicit scope revision; a wider source allowance alone
 cannot qualify new semantics.
@@ -155,3 +156,50 @@ v1 release is rejected until real technical acceptance collectors and passing
 results exist. Inventory flags cannot substitute for those results. Explicit
 prereleases are published as prereleases. Release packaging waits for both CI
 paths, and publication downloads only the `oxid-*` platform package artifacts.
+
+## Workspace qualification
+
+[ RFC 0035 ](../../rfcs/0035-typed-workspaces.md) adds bounded member selection,
+real library checking and a shared v3 local-input lock. The source roster admits
+only the ordinary nested module at src/project_cli/workspace.rs; the prohibition
+on new include/path directives is unchanged. Its addition does not broaden any
+retained single-package assertion into workspace acceptance.
+
+The public typed_workspace suite covers virtual/package roots, defaults and
+member selectors, full-union locks, relocation, library source pins, process
+tests, preflight preservation, special files and aggregate source bounds.
+A sparse 128 MiB ancestor manifest under a 64 MiB address-space limit verifies
+that the 1 MiB regular-file admission occurs before content allocation.
+
+Its two opt-in LLVM cases verify retained source snapshots during tool-driven
+file changes, same-name binary isolation and source-free deployment, plus
+per-member cache miss/hit, selective rebuild, whole-workspace native doctor and
+stale-lock preservation of cached objects and executables. CI executes these
+cases with debug and release compiler builds. Library checks produce no native
+artifact or cache, and doctor reports parsing/lock admission without claiming
+that it typechecked or executed member programs.
+
+## Real workspace application
+
+`scripts/verify_typed_workspace_app.py` copies the byte-count application outside
+the checkout and makes its existing three packages a workspace with explicit
+library members. It independently calculates the v3 member roster, canonical
+package IDs, raw manifest hashes, loaded source checksums and shared graph edges;
+seven deliberate lock mutations must be rejected by the Python oracle.
+
+Both compiler profiles check and test the real application, verify that member
+selection cannot hide invalid or stale unselected inputs, and perform explicit
+lock updates. Native mode also checks library-versus-binary output records,
+object-cache miss/hit/invalidation, output preservation, and exact byte/newline
+results from a deployed ELF after deleting the copied sources with an empty PATH.
+The unchanged repository application retains its separate v2 lock coverage.
+
+```sh
+python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
+  --output /tmp/oxid-workspace-application --native
+```
+
+CI runs this verifier with and without native mode, retaining copied compiler
+binaries, commands, input/output bytes, source snapshots, locks and deployed
+executables. This evidence covers the workspace application workflow; it does
+not establish general native reproducibility or complete a v1 release gate.

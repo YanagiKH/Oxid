@@ -125,7 +125,7 @@ and build settings report an error instead of selecting legacy semantics.
 
 Current limits include bounded execution, call-only borrows, the existing
 typed language subset, one native target, and no typed Git/registry dependencies,
-workspaces, vendoring, packaging, or per-module frontend incrementality. Package graphs are
+vendoring, packaging, or per-module frontend incrementality. Package graphs are
 bounded to 256 packages, 1,024 dependency edges and depth 32, with the existing
 256-module limit shared by the complete session. Dependencies rebuild from local
 sources each time; the opt-in object cache reuses only native code generation.
@@ -133,3 +133,56 @@ See [RFC 0032](../rfcs/0032-typed-project-workflow.md) and
 [RFC 0033](../rfcs/0033-typed-path-dependencies.md) and
 [RFC 0034](../rfcs/0034-typed-local-locking.md) for the contracts and
 [ROADMAP_V2](ROADMAP_V2.md) for the remaining R1 and v1.0 requirements.
+
+## Workspaces
+
+A workspace groups typed packages with one shared input lock:
+
+~~~toml
+[workspace]
+edition = "typed-preview"
+members = ["apps/client", "apps/server", "libs/protocol"]
+default-members = ["apps/client"]
+~~~
+
+Each member has its own explicit typed-preview manifest. Library members set
+kind = "lib" in [project] and default to src/lib.ox; ordinary packages default
+to kind = "bin". Imports still require explicit local path dependencies, and
+every package keeps its own crate root and type identities.
+
+~~~sh
+oxid check --workspace
+oxid run --package client
+oxid test --workspace
+oxid lock
+oxid build --workspace --frozen --incremental
+oxid doctor --native
+~~~
+
+At the root, commands select default-members or all members when defaults are
+absent. From a member directory they select that member. --workspace selects all;
+--package / -p selects an exact member path or an unambiguous project name.
+A root that also declares a package joins as ".", selectable with -p . .
+
+Whole-workspace build checks libraries without creating archives or executables,
+and builds each binary in its own .oxid/bin directory. It checks and lowers all
+selected binary sources before invoking the first native tool. --incremental
+enables each binary's existing object cache; library checks create no cache.
+Tests preflight all declared entries and then run separate process children.
+Run requires one binary member and preserves its program stdout and status.
+
+The shared version-3 lock lives only at the workspace root. Member-local locks
+are conflicts. Existing locks cover the complete roster and dependency union
+even when only one member is selected. Imported library source bytes are pinned;
+unimported member program and test bodies remain editable. Removing the workspace
+declaration while leaving its shared lock cannot silently unlock its members.
+Native doctor admits all members and verifies that shared lock without running
+or typechecking their source; its report says exactly what was checked.
+
+Workspaces allow 32 members, 256 aggregate retained package nodes, 1024 edges,
+1024 loaded files, 8 MiB retained source and 256 selected tests. Ancestor manifests
+are admitted as regular files capped at 1 MiB before reading their contents.
+Nested/mixed-edition workspaces, globs and escaping member paths are unsupported.
+Explicit file editions keep their standalone routes.
+See [RFC 0035](../rfcs/0035-typed-workspaces.md) for exact selection, lock,
+filesystem and host rules. This workflow remains experimental.

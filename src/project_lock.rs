@@ -14,7 +14,7 @@ use std::{
 const MAX_LOCK_BYTES: usize = 2 * 1024 * 1024;
 static NEXT_STAGE: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Package {
     id: String,
     path: String,
@@ -36,6 +36,8 @@ struct Edge {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Snapshot {
     root: String,
+    workspace: Option<String>,
+    members: Vec<String>,
     packages: Vec<Package>,
     dependencies: Vec<Edge>,
 }
@@ -160,12 +162,103 @@ pub(crate) fn expected(
     dependencies.sort();
     let snapshot = Snapshot {
         root: ids[0].clone(),
+        workspace: None,
+        members: Vec::new(),
         packages,
         dependencies,
     };
     snapshot.validate()?;
     if snapshot.encode().len() > MAX_LOCK_BYTES {
         return Err("typed lock exceeds the 2 MiB limit".into());
+    }
+    Ok(snapshot)
+}
+
+pub(crate) struct WorkspaceInputs<'a> {
+    pub graph: &'a [frontend::PackageSpec],
+    pub manifests: &'a [runtime::ManifestSnapshot],
+    pub fingerprints: &'a [(usize, String)],
+}
+
+pub(crate) fn expected_workspace(
+    root: &Path,
+    manifest: &str,
+    inputs: &[WorkspaceInputs<'_>],
+) -> Result<Snapshot, String> {
+    let mut packages = std::collections::BTreeMap::<String, Package>::new();
+    let mut dependencies = std::collections::BTreeSet::new();
+    let mut members = Vec::new();
+    let mut retained = HashMap::new();
+    for input in inputs {
+        let dependency_inputs = input
+            .fingerprints
+            .iter()
+            .filter(|(index, _)| *index != 0)
+            .cloned()
+            .collect::<Vec<_>>();
+        let local = expected(input.graph, input.manifests, &dependency_inputs)?;
+        let mut mapping = HashMap::new();
+        for package in input.graph {
+            let old_path = relative(&input.graph[0].root, &package.root)?;
+            let path = relative(root, &package.root)?;
+            mapping.insert(package_id(&old_path), (package_id(&path), path));
+        }
+        members.push(mapping[&local.root].0.clone());
+        for (index, checksum) in input.fingerprints {
+            let spec = input
+                .graph
+                .get(*index)
+                .ok_or("invalid workspace fingerprint identity")?;
+            let id = package_id(&relative(root, &spec.root)?);
+            if retained
+                .insert(id, checksum.clone())
+                .is_some_and(|previous| previous != *checksum)
+            {
+                return Err(
+                    "workspace source changed between prepared member sessions; retry the command"
+                        .into(),
+                );
+            }
+        }
+        for mut package in local.packages {
+            let (id, path) = &mapping[&package.id];
+            package.id = id.clone();
+            package.path = path.clone();
+            if let Some(previous) = packages.get_mut(id) {
+                let source = if package.sources == "root" {
+                    previous.sources.clone()
+                } else {
+                    package.sources.clone()
+                };
+                let mut comparable = previous.clone();
+                comparable.sources = package.sources.clone();
+                if comparable != package {
+                    return Err("workspace package manifest or entry changed between member sessions; retry the command".into());
+                }
+                previous.sources = source;
+            } else {
+                packages.insert(id.clone(), package);
+            }
+        }
+        for edge in local.dependencies {
+            dependencies.insert(Edge {
+                owner: mapping[&edge.owner].0.clone(),
+                alias: edge.alias,
+                package: mapping[&edge.package].0.clone(),
+            });
+        }
+    }
+    members.sort();
+    let snapshot = Snapshot {
+        root: package_id("."),
+        workspace: Some(manifest.to_owned()),
+        members,
+        packages: packages.into_values().collect(),
+        dependencies: dependencies.into_iter().collect(),
+    };
+    snapshot.validate()?;
+    if snapshot.encode().len() > MAX_LOCK_BYTES {
+        return Err("typed workspace lock exceeds the 2 MiB limit".into());
     }
     Ok(snapshot)
 }
@@ -210,6 +303,23 @@ impl Snapshot {
         {
             return Err(invalid());
         }
+        let workspace = self.workspace.is_some();
+        if workspace
+            && (!self.workspace.as_deref().is_some_and(valid_hash)
+                || self.members.is_empty()
+                || self.members.len() > 32
+                || self.members.windows(2).any(|pair| pair[0] >= pair[1]))
+        {
+            return Err(invalid());
+        }
+        if !workspace && !self.members.is_empty() {
+            return Err(invalid());
+        }
+        let imported = self
+            .dependencies
+            .iter()
+            .map(|edge| &edge.package)
+            .collect::<HashSet<_>>();
         let mut ids = HashMap::new();
         let mut last = None;
         for package in &self.packages {
@@ -227,8 +337,17 @@ impl Snapshot {
                     .name
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-                || (package.id != self.root && package.name.is_empty())
-                || if package.id == self.root {
+                || ((workspace || package.id != self.root) && package.name.is_empty())
+                || if workspace {
+                    if self.members.contains(&package.id) && !imported.contains(&package.id) {
+                        package.sources != "root"
+                    } else {
+                        !package
+                            .sources
+                            .strip_prefix("sha256:")
+                            .is_some_and(valid_hash)
+                    }
+                } else if package.id == self.root {
                     package.path != "." || package.sources != "root"
                 } else {
                     !package
@@ -243,7 +362,9 @@ impl Snapshot {
             }
             last = Some(&package.id);
         }
-        if !ids.contains_key(&self.root) {
+        if (!workspace && !ids.contains_key(&self.root))
+            || self.members.iter().any(|member| !ids.contains_key(member))
+        {
             return Err(invalid());
         }
         let mut aliases = HashSet::new();
@@ -281,24 +402,43 @@ impl Snapshot {
             Ok(depth)
         }
         let mut lengths = HashMap::new();
-        if visit(
-            &self.root,
-            &self.dependencies,
-            &mut HashSet::new(),
-            &mut lengths,
-        )? > 32
-            || lengths.len() != self.packages.len()
-        {
+        for member in if workspace {
+            self.members.as_slice()
+        } else {
+            std::slice::from_ref(&self.root)
+        } {
+            if visit(
+                member,
+                &self.dependencies,
+                &mut HashSet::new(),
+                &mut lengths,
+            )? > 32
+            {
+                return Err(invalid());
+            }
+        }
+        if lengths.len() != self.packages.len() {
             return Err(invalid());
         }
         Ok(())
     }
 
     fn encode(&self) -> String {
-        let mut text = format!(
-            "version = 2\nkind = \"typed-local-v1\"\nroot = {}\n",
-            quote(&self.root)
-        );
+        let mut text = if let Some(manifest) = &self.workspace {
+            let mut text = format!(
+                "version = 3\nkind = \"typed-workspace-v1\"\nmanifest = {}\n",
+                quote(manifest)
+            );
+            for member in &self.members {
+                text.push_str(&format!("\n[[member]]\npackage = {}\n", quote(member)));
+            }
+            text
+        } else {
+            format!(
+                "version = 2\nkind = \"typed-local-v1\"\nroot = {}\n",
+                quote(&self.root)
+            )
+        };
         for package in &self.packages {
             text.push_str("\n[[package]]\n");
             for (name, value) in [
@@ -329,9 +469,14 @@ impl Snapshot {
         let text =
             std::str::from_utf8(bytes).map_err(|_| "malformed typed lock: file is not UTF-8")?;
         let mut lines = text.lines().filter(|line| !line.is_empty()).peekable();
-        if lines.next() != Some("version = 2") || lines.next() != Some("kind = \"typed-local-v1\"")
+        let version = lines.next();
+        let kind = lines.next();
+        let workspace =
+            version == Some("version = 3") && kind == Some("kind = \"typed-workspace-v1\"");
+        if !workspace
+            && !(version == Some("version = 2") && kind == Some("kind = \"typed-local-v1\""))
         {
-            return Err("unsupported lock format: typed projects require version = 2 and kind = \"typed-local-v1\"; old or unknown locks are never replaced".into());
+            return Err("unsupported lock format: expected typed-local-v1 version 2 or typed-workspace-v1 version 3; old or unknown locks are never replaced".into());
         }
         fn field<'a>(
             lines: &mut impl Iterator<Item = &'a str>,
@@ -343,7 +488,26 @@ impl Snapshot {
                 .ok_or_else(|| format!("malformed typed lock: expected field `{key}`"))?;
             unquote(raw)
         }
-        let root = field(&mut lines, "root")?;
+        let workspace = if workspace {
+            Some(field(&mut lines, "manifest")?)
+        } else {
+            None
+        };
+        let root = if workspace.is_some() {
+            package_id(".")
+        } else {
+            field(&mut lines, "root")?
+        };
+        let mut members = Vec::new();
+        if workspace.is_some() {
+            while lines.peek() == Some(&"[[member]]") {
+                lines.next();
+                if members.len() >= 32 {
+                    return Err("malformed typed lock: too many workspace members".into());
+                }
+                members.push(field(&mut lines, "package")?);
+            }
+        }
         let mut packages = Vec::new();
         let mut dependencies = Vec::new();
         while lines.peek() == Some(&"[[package]]") {
@@ -378,6 +542,8 @@ impl Snapshot {
         }
         let snapshot = Self {
             root,
+            workspace,
+            members,
             packages,
             dependencies,
         };
@@ -426,6 +592,55 @@ fn unquote(raw: &str) -> Result<String, String> {
 }
 
 pub(crate) fn read(root: &Path, required: bool) -> Result<Option<Existing>, String> {
+    read_kind(root, required, false)
+}
+
+pub(crate) fn read_workspace(root: &Path, required: bool) -> Result<Option<Existing>, String> {
+    read_kind(root, required, true)
+}
+
+/// Discovery only: a generated shared lock still owns the directory when its
+/// manifest declaration is accidentally removed. Unrelated legacy/local locks
+/// remain outside workspace discovery. Full admission always uses read_kind.
+pub(crate) fn has_workspace_marker(root: &Path) -> Result<bool, String> {
+    use std::io::Read;
+    let path = root.join("oxid.lock");
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_file() => {}
+        Ok(_) => return Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("cannot inspect workspace lock ownership: {error}")),
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options
+        .open(path)
+        .map_err(|error| format!("cannot inspect workspace lock ownership: {error}"))?;
+    if !file
+        .metadata()
+        .map_err(|error| error.to_string())?
+        .is_file()
+    {
+        return Ok(false);
+    }
+    let mut prefix = Vec::new();
+    file.take(128)
+        .read_to_end(&mut prefix)
+        .map_err(|error| format!("cannot inspect workspace lock ownership: {error}"))?;
+    let text = String::from_utf8_lossy(&prefix);
+    let mut lines = text.lines();
+    Ok(
+        lines.next() == Some("version = 3")
+            && lines.next() == Some("kind = \"typed-workspace-v1\""),
+    )
+}
+
+fn read_kind(root: &Path, required: bool, workspace: bool) -> Result<Option<Existing>, String> {
     let path = root.join("oxid.lock");
     match fs::symlink_metadata(&path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -440,6 +655,9 @@ pub(crate) fn read(root: &Path, required: bool) -> Result<Option<Existing>, Stri
     }
     let bytes = runtime::read_typed_regular_file(&path, MAX_LOCK_BYTES, "typed lock")?;
     let snapshot = Snapshot::decode(&bytes)?;
+    if snapshot.workspace.is_some() != workspace {
+        return Err("lock format does not match workspace membership; existing locks are never implicitly converted or overwritten".into());
+    }
     Ok(Some(Existing { snapshot, bytes }))
 }
 
@@ -486,7 +704,8 @@ pub(crate) fn publish(
             .map_err(|error| format!("cannot synchronize typed lock: {error}"))?;
         drop(file);
         if let Some(existing) = existing {
-            let current = read(root, true)?.ok_or("typed lock disappeared during update")?;
+            let current = read_kind(root, true, snapshot.workspace.is_some())?
+                .ok_or("typed lock disappeared during update")?;
             if current.bytes != existing.bytes {
                 return Err("typed lock changed during update; retry after reviewing it".into());
             }

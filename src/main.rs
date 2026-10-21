@@ -118,6 +118,7 @@ pub(crate) struct ProjectManifest {
     pub(crate) name: Option<String>,
     pub(crate) version: Option<String>,
     pub(crate) entry: Option<String>,
+    pub(crate) kind: Option<String>,
     pub(crate) edition: Option<String>,
     pub(crate) backend: Option<String>,
     pub(crate) target: Option<String>,
@@ -1361,6 +1362,135 @@ pub(crate) fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
 pub(crate) struct ManifestSnapshot {
     pub(crate) manifest: ProjectManifest,
     pub(crate) digest: String,
+    pub(crate) workspace: Option<WorkspaceManifest>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WorkspaceManifest {
+    pub(crate) edition: Option<String>,
+    pub(crate) members: Option<Vec<String>>,
+    pub(crate) default_members: Option<Vec<String>>,
+}
+
+// Discovery recognizes workspace declarations through the same quote/comment
+// rules, including inert table-like text inside unrelated multiline values.
+pub(crate) fn workspace_declaration(path: &Path) -> Result<Option<WorkspaceManifest>, String> {
+    let bytes = read_typed_regular_file(path, 1024 * 1024, "workspace discovery manifest")?;
+    parse_workspace_text(&String::from_utf8_lossy(&bytes))
+}
+
+fn workspace_array(text: &str) -> Result<Vec<String>, String> {
+    fn skip(text: &str, cursor: &mut usize) {
+        while *cursor < text.len() {
+            match text.as_bytes()[*cursor] {
+                byte if byte.is_ascii_whitespace() => *cursor += 1,
+                b'#' => { while *cursor < text.len() && text.as_bytes()[*cursor] != b'\n' { *cursor += 1; } }
+                _ => break,
+            }
+        }
+    }
+    let mut cursor = 0;
+    skip(text, &mut cursor);
+    if text.as_bytes().get(cursor) != Some(&b'[') { return Err("workspace members require an array of quoted directory paths".into()); }
+    cursor += 1;
+    let mut values = Vec::new();
+    loop {
+        skip(text, &mut cursor);
+        if text.as_bytes().get(cursor) == Some(&b']') { cursor += 1; break; }
+        let start = cursor;
+        let quote = *text.as_bytes().get(cursor).ok_or("unterminated workspace member array")?;
+        if !matches!(quote, b'"' | b'\'') { return Err("workspace members require quoted directory paths".into()); }
+        cursor += 1;
+        let mut closed = false;
+        while cursor < text.len() {
+            let byte = text.as_bytes()[cursor];
+            cursor += 1;
+            if byte == quote { closed = true; break; }
+            if byte == b'\\' && quote == b'"' { cursor += 1; }
+        }
+        if !closed { return Err("unterminated workspace member string".into()); }
+        values.push(parse_manifest_value(&text[start..cursor])?);
+        if values.len() > 32 { return Err("workspace exceeds the 32-member limit".into()); }
+        skip(text, &mut cursor);
+        match text.as_bytes().get(cursor) {
+            Some(b',') => cursor += 1,
+            Some(b']') => { cursor += 1; break; },
+            _ => return Err("workspace member paths must be separated by commas".into()),
+        }
+    }
+    skip(text, &mut cursor);
+    if cursor != text.len() { return Err("unexpected text after workspace member array".into()); }
+    Ok(values)
+}
+
+fn parse_workspace_text(text: &str) -> Result<Option<WorkspaceManifest>, String> {
+    let mut workspace = None;
+    let mut in_workspace = false;
+    let mut at_root = true;
+    let mut continuation = ManifestValueContinuation::default();
+    let mut pending: Option<(String, String)> = None;
+    fn apply(workspace: &mut WorkspaceManifest, key: &str, value: &str) -> Result<(), String> {
+        let duplicate = match key {
+            "edition" => workspace.edition.replace(parse_manifest_value(value)?).is_some(),
+            "members" => workspace.members.replace(workspace_array(value)?).is_some(),
+            "default-members" => workspace.default_members.replace(workspace_array(value)?).is_some(),
+            _ => return Err(format!("unsupported workspace setting `{}`", key)),
+        };
+        if duplicate { return Err(format!("duplicate workspace setting `{}`", key)); }
+        Ok(())
+    }
+    for raw in text.lines() {
+        if continuation.active() {
+            continuation.scan(raw);
+            if let Some((_, value)) = &mut pending { value.push('\n'); value.push_str(raw); }
+            if !continuation.active() {
+                if let Some((key, value)) = pending.take() { apply(workspace.as_mut().expect("workspace value"), &key, &value)?; }
+            }
+            continue;
+        }
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.starts_with('[') {
+            in_workspace = false;
+            at_root = false;
+            let array = line.starts_with("[[");
+            let opening = if array { 2 } else { 1 };
+            let end = manifest_delimiter(&line[opening..], ']').map(|index| index + opening);
+            {
+                let header = line[opening..end.unwrap_or(line.len())].trim();
+                let header = if end.is_none() { header[..manifest_delimiter(header, '#').unwrap_or(header.len())].trim() } else { header };
+                let first = manifest_delimiter(header, '.').unwrap_or(header.len());
+                if parse_manifest_key(header[..first].trim()).as_deref() == Ok("workspace") {
+                    let end = end.ok_or("unterminated [workspace] table")?;
+                    if array || first != header.len() || !line[end + 1..].trim().is_empty() && !line[end + 1..].trim().starts_with('#') {
+                        return Err("workspace configuration requires one ordinary [workspace] table".into());
+                    }
+                    if workspace.is_some() { return Err("duplicate [workspace] table".into()); }
+                    workspace = Some(WorkspaceManifest::default());
+                    in_workspace = true;
+                }
+            }
+            continue;
+        }
+        let Some(equals) = manifest_delimiter(line, '=') else {
+            if in_workspace { return Err("workspace setting requires name = value".into()); }
+            continue;
+        };
+        let key_raw = line[..equals].trim();
+        let value = &line[equals + 1..];
+        if at_root {
+            let first = manifest_delimiter(key_raw, '.').unwrap_or(key_raw.len());
+            if parse_manifest_key(key_raw[..first].trim()).as_deref() == Ok("workspace") { return Err("workspace configuration requires an ordinary [workspace] table".into()); }
+        }
+        continuation.scan(value);
+        if in_workspace {
+            let key = parse_manifest_key(key_raw)?;
+            if continuation.active() { pending = Some((key, value.to_owned())); }
+            else { apply(workspace.as_mut().expect("workspace table"), &key, value)?; }
+        }
+    }
+    if pending.is_some() { return Err("unterminated workspace setting".into()); }
+    Ok(workspace)
 }
 
 pub(crate) fn read_typed_regular_file(path: &Path, limit: usize, kind: &str) -> Result<Vec<u8>, String> {
@@ -1396,7 +1526,8 @@ pub(crate) fn load_typed_manifest(path: &Path) -> Result<ManifestSnapshot, Strin
     let text = std::str::from_utf8(&bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
     let manifest = parse_manifest_text(text, path, false)?;
     let digest = format!("{:x}", Sha256::digest(&bytes));
-    Ok(ManifestSnapshot { manifest, digest })
+    let workspace = parse_workspace_text(text)?;
+    Ok(ManifestSnapshot { manifest, digest, workspace })
 }
 
 // Edition discovery must not make unrelated legacy operations depend on the
@@ -1483,6 +1614,9 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 }
             }
             ("project", "version") | ("", "version") => manifest.version = Some(value),
+            ("project", "kind") => {
+                if manifest.kind.replace(value).is_some() { manifest.configuration_error = Some(format!("duplicate project kind in {}", path.display())); }
+            }
             ("project", "entry") | ("build", "entry") | ("", "entry") => {
                 if manifest.entry.replace(value).is_some() {
                     manifest.configuration_error = Some(format!("duplicate entry in {}", path.display()));
@@ -2763,6 +2897,8 @@ fn help() {
     println!("  oxid check <file.ox> [--edition typed-preview --message-format text|json]");
     println!("  --edition legacy-0.9 keeps legacy behavior; typed-preview enables checked native projects");
     println!("  oxid new <name> --edition typed-preview (experimental Linux x86_64 workflow)");
+    println!("  typed workspaces: check/build/test --workspace; run --package <name-or-member-path>");
+    println!("  workspace lock covers every member; use lock --update for reviewed input changes");
     println!("  oxid compile <file.ox> [-o app.oxb]");
     println!("  oxid ast <file.ox> [-o app.oxa]");
     println!("  oxid inspect <file.oxb>");

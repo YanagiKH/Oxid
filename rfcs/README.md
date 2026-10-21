@@ -87,6 +87,10 @@ with package-local roots, nominal identities and ordinary visibility rules.
 locked/offline/frozen project operations and checksums of the actual retained
 dependency sources used for execution.
 
+[RFC 0035](0035-typed-workspaces.md) adds bounded workspace membership and
+selection, real library checks and a shared input lock across the complete
+canonical package union.
+
 [RFC 0036](0036-native-object-reuse.md) adds opt-in reuse of native LLVM objects,
 with toolchain/environment identities, immutable cache blobs and fresh runtime
 compilation and linking on every build.

@@ -43,6 +43,7 @@ class CurrentSourceAdmission(unittest.TestCase):
         self.assertEqual(inputs["src/frontend/typeck.rs"], self.before["src/frontend/typeck.rs"])
         self.assertNotIn("reviewed_source_head", manifest)
         self.assertFalse(manifest["package_semantics_qualified_by_this_gate"])
+        self.assertFalse(manifest["workspace_semantics_qualified_by_this_gate"])
         self.assertEqual(manifest["package_boundary_inputs"], sorted(gate.PACKAGE_CHANGED))
 
     def test_semantic_resource_runtime_manifest_and_fixture_changes_are_rejected(self):
@@ -89,6 +90,19 @@ class CurrentSourceAdmission(unittest.TestCase):
         self.capture()
         self.put(name, b'include!("elsewhere.rs");\n')
         with self.assertRaisesRegex(ValueError, "compile-time"):
+            self.capture()
+
+    def test_workspace_module_keeps_the_same_compile_time_input_boundary(self):
+        name = "src/project_cli/workspace.rs"
+        for directive in (b'include!("unlisted.rs");',
+                          b'#[path = "../../unlisted.rs"] mod extra;',
+                          b'#[cfg_attr(unix, path = "unlisted.rs")] mod extra;'):
+            with self.subTest(directive=directive):
+                self.put(name, directive)
+                with self.assertRaisesRegex(ValueError, "compile-time"):
+                    self.capture()
+        (self.root / name).unlink()
+        with self.assertRaisesRegex(ValueError, "membership"):
             self.capture()
 
     @unittest.skipIf(__import__("os").name == "nt", "Unix mode and symlink controls")
