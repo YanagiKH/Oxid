@@ -60,6 +60,8 @@ jobs:
           python3 scripts/verify_i32_literals.py target/release/oxid
           python3 scripts/verify_i32_arithmetic.py target/debug/oxid target/release/oxid
           python3 scripts/verify_repo.py target/release/oxid
+          python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-interpreter"
       - name: Retain current source qualification
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,6 +70,14 @@ jobs:
           path: |
             ${{ runner.temp }}/current-project-unit2
             !${{ runner.temp }}/current-project-unit2/**/target/**
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Retain current package interpreter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-package-interpreter
+          path: ${{ runner.temp }}/current-package-interpreter
           if-no-files-found: warn
           retention-days: 14
       - name: Verify current source installation
@@ -164,12 +174,16 @@ jobs:
             profile_flags=()
             if test "$profile" = release; then profile_flags=(--release); fi
             cargo test --locked "${profile_flags[@]}" \
-              --test project_workflow --test typed_native --test typed_process
+              --test project_workflow --test typed_path_dependencies --test typed_native --test typed_process
             cargo test --locked "${profile_flags[@]}" \
-              --test project_workflow --test typed_fixed_arrays --test typed_division \
+              --test project_workflow --test typed_path_dependencies --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import -- --ignored
           done
+      - name: Verify real package application and source-free deployment
+        run: |
+          python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-application" --native
       - name: Run current independent native oracles and private LLVM regressions
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -180,7 +194,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: current-native
-          path: ${{ runner.temp }}/current-native
+          path: |
+            ${{ runner.temp }}/current-native
+            ${{ runner.temp }}/current-package-application
           if-no-files-found: warn
           retention-days: 14
 

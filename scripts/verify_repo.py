@@ -39,6 +39,16 @@ RUNNABLE_PACKAGE_FILES = (
 # Exact typed fixture inventory; all other checked-in .ox files retain their
 # existing legacy checks. Never exclude an entire fixture directory.
 TYPED_SOURCE_FILES = ("fixtures/owned_source/batch.ox", "fixtures/typed-byte-storage/main.ox")
+# These are real manifest applications. Only the enumerated source members
+# enter their package graph; neighboring files retain ordinary source checks.
+TYPED_MANIFEST_PROJECTS = {
+    "apps/byte-count": (
+        "apps/byte-count/src/main.ox",
+        "apps/byte-count/tests/counts.ox",
+        "apps/byte-count/packages/counts/src/lib.ox",
+        "apps/byte-count/packages/report/src/lib.ox",
+    ),
+}
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
@@ -663,8 +673,8 @@ IMAGES = (
 )
 
 
-def run(command: list[str], *, cwd: Path = ROOT) -> None:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+def run(command: list[str], *, cwd: Path = ROOT, input_text: str | None = None) -> None:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, input=input_text)
     if result.returncode:
         detail = (result.stdout + result.stderr).strip()
         raise RuntimeError(f"command failed ({' '.join(command)}):\n{detail}")
@@ -803,6 +813,24 @@ def check_wide_overlays(executable: Path, sources, output: Path) -> None:
         run([str(executable), 'check', str(output / (name + '.ox')), '--edition=typed-preview'])
 
 
+def manifest_project_members(sources: list[Path], root: Path = ROOT, *, required: bool = False):
+    """Admit exact live application members without hiding adjacent sources."""
+    available, selected, entries = set(sources), set(), []
+    for project, members in TYPED_MANIFEST_PROJECTS.items():
+        paths = {root / name for name in members}
+        manifest = root / project / "oxid.toml"
+        if not required and not paths & available and not manifest.exists():
+            continue
+        if (not members or len(paths) != len(members) or paths & selected
+                or any(".." in path.parts or not path.is_relative_to(root / project) for path in paths)):
+            raise RuntimeError("invalid typed manifest project inventory")
+        if not paths <= available or not manifest.is_file():
+            raise RuntimeError("typed manifest application missing from discovery")
+        selected.update(paths)
+        entries.append(root / project)
+    return selected, entries
+
+
 def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path, bool]], list[Path], int]:
     # Admission is mandatory even for direct callers. Only exact frozen paths
     # are data; an unlisted .ox in the same directories remains a legacy check.
@@ -871,6 +899,11 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
             raise RuntimeError('wide parser overlay overlaps another source category')
     else:
         wide_members = set()
+    manifest_members, manifest_entries = manifest_project_members(sources, root)
+    if manifest_members & (typed_members | fixture_data | overlay_members | wide_members):
+        raise RuntimeError("typed manifest application overlaps another source category")
+    typed_members.update(manifest_members)
+    typed_entries.extend(manifest_entries)
     legacy = [(source, False) for source in sources
               if source not in typed_members | fixture_data | overlay_members | wide_members]
     return legacy + [(source, True) for source in typed_entries + typed_check_only], typed_entries, len(typed_members)
@@ -910,6 +943,7 @@ def main() -> int:
     verify_test_fixture_registration(ROOT)
     overlay_sources = typed_overlay_sources(ROOT)
     wide_sources = wide_overlay_sources(ROOT)
+    _, manifest_entries = manifest_project_members(sources, ROOT, required=True)
     import build_wide_span_parser as wide
     wide_count = len(wide.OVERLAY_FILES)
     overlay_member_count = len(TYPED_OVERLAY_FILES)
@@ -922,6 +956,9 @@ def main() -> int:
     # including the independently registered formatter golden check.
     verify_typed_formatter(executable)
     for source, typed in checks:
+        if source in manifest_entries:
+            run([str(executable), "check"], cwd=source)
+            continue
         command = [str(executable), "check", str(source)]
         if typed:
             command.append("--edition=typed-preview")
@@ -936,7 +973,11 @@ def main() -> int:
         for source in runnable:
             run([str(executable), "run", str(source)], cwd=temp)
         for source in typed_entries:
-            run([str(executable), "run", str(source), "--edition=typed-preview"], cwd=temp)
+            if source in manifest_entries:
+                run([str(executable), "run"], cwd=source, input_text="")
+                run([str(executable), "test"], cwd=source, input_text="")
+            else:
+                run([str(executable), "run", str(source), "--edition=typed-preview"], cwd=temp)
 
     run([str(executable), "test"])
     run([str(executable), "build"])
@@ -949,7 +990,8 @@ def main() -> int:
         f"{len(runnable)} legacy runnable programs, {typed_member_count} typed source members / "
         f"{len(typed_entries)} typed entry runs; {overlay_member_count} v2 overlay source members / "
         f"{len(TYPED_OVERLAY_ROOTS)} materialized typed checks in a {len(overlay_sources)}-module closure; "
-        f"{wide_count} wide parser overlay members / 2 materialized typed checks)"
+        f"{wide_count} wide parser overlay members / 2 materialized typed checks; "
+        f"{len(manifest_entries)} manifest applications checked, run and tested)"
     )
     return 0
 

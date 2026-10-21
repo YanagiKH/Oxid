@@ -25,6 +25,10 @@ impl<'s> QualifiedPathView<'s> {
 #[derive(Clone, Copy, Debug)]
 enum Kind<'s> {
     Project(&'s ProjectSources),
+    Package(
+        &'s ProjectSources,
+        &'s crate::frontend::project::packages::PackageContext<'s>,
+    ),
     Original {
         file: &'s SourceFile,
         ast: &'s ast::Program,
@@ -68,9 +72,48 @@ impl<'s> SourceOwner<'s> {
             kind: Kind::Project(sources),
         }
     }
+    pub fn packaged(sources: &'s crate::frontend::project::packages::PackageSources<'s>) -> Self {
+        Self {
+            kind: Kind::Package(&sources.project, &sources.context),
+        }
+    }
+    pub(super) fn package_root(self, module: ModuleId) -> Result<ModuleId, Box<Diagnostic>> {
+        match self.kind {
+            Kind::Package(_, context) => context.root(module).ok_or_else(|| bad(self.eof())),
+            _ => Ok(ModuleId(0)),
+        }
+    }
+    pub(super) fn package_roots(self) -> usize {
+        match self.kind {
+            Kind::Package(_, context) => context.roots(),
+            _ => 1,
+        }
+    }
+    pub(super) fn dependency_root(
+        self,
+        requester: ModuleId,
+        name: Span,
+        work: &WorkMeter,
+    ) -> Result<Option<ModuleId>, Box<Diagnostic>> {
+        let Kind::Package(_, context) = self.kind else {
+            return Ok(None);
+        };
+        let spelling = self.text(name)?;
+        let dependencies = context.dependencies(requester).ok_or_else(|| bad(name))?;
+        for dependency in dependencies {
+            work.debit(1, name, "package dependency lookup")?;
+            if compare_bytes(&dependency.alias, spelling, work, name)? == Ordering::Equal {
+                return context
+                    .target(dependency.package)
+                    .map(Some)
+                    .ok_or_else(|| bad(name));
+            }
+        }
+        Ok(None)
+    }
     pub(super) fn as_project(self) -> Option<&'s ProjectSources> {
         match self.kind {
-            Kind::Project(p) => Some(p),
+            Kind::Project(p) | Kind::Package(p, _) => Some(p),
             Kind::Original { .. } => None,
         }
     }
@@ -79,20 +122,20 @@ impl<'s> SourceOwner<'s> {
     }
     pub fn flavor(self) -> SyntaxFlavor {
         match self.kind {
-            Kind::Project(p) => p.syntax_flavor(),
+            Kind::Project(p) | Kind::Package(p, _) => p.syntax_flavor(),
             Kind::Original { .. } => SyntaxFlavor::OriginalSingleFile,
         }
     }
     pub fn count(self) -> usize {
         match self.kind {
-            Kind::Project(p) => p.modules().len(),
+            Kind::Project(p) | Kind::Package(p, _) => p.modules().len(),
             Kind::Original { .. } => 1,
         }
     }
     pub fn file(self, module: ModuleId) -> Result<&'s SourceFile, Box<Diagnostic>> {
         match self.kind {
             Kind::Original { file, .. } if module.0 == 0 => Ok(file),
-            Kind::Project(p) => p
+            Kind::Project(p) | Kind::Package(p, _) => p
                 .modules()
                 .get(module.0)
                 .and_then(|h| p.sources().files().get(h.file.0))
@@ -103,7 +146,7 @@ impl<'s> SourceOwner<'s> {
     pub fn ast(self, module: ModuleId) -> Result<&'s ast::Program, Box<Diagnostic>> {
         let result = match self.kind {
             Kind::Original { ast, .. } if module.0 == 0 => Some(ast),
-            Kind::Project(p) => p
+            Kind::Project(p) | Kind::Package(p, _) => p
                 .modules()
                 .get(module.0)
                 .and_then(|h| p.try_file_ast(h.file)),
@@ -120,7 +163,9 @@ impl<'s> SourceOwner<'s> {
             Kind::Original { file: source, .. } if source.span(0, 0).file == file => {
                 Ok(ModuleId(0))
             }
-            Kind::Project(p) if p.modules().get(file.0).is_some_and(|h| h.file == file) => {
+            Kind::Project(p) | Kind::Package(p, _)
+                if p.modules().get(file.0).is_some_and(|h| h.file == file) =>
+            {
                 Ok(ModuleId(file.0))
             }
             _ => Err(bad(self.eof())),
@@ -129,7 +174,7 @@ impl<'s> SourceOwner<'s> {
     pub fn text(self, span: Span) -> Result<&'s str, Box<Diagnostic>> {
         match self.kind {
             Kind::Original { file, .. } => file.try_text(span),
-            Kind::Project(p) => p.try_text(span),
+            Kind::Project(p) | Kind::Package(p, _) => p.try_text(span),
         }
         .ok_or_else(|| bad(self.eof()))
     }
@@ -145,7 +190,9 @@ impl<'s> SourceOwner<'s> {
     pub(super) fn frozen_enum(&self, key: EnumAstKey) -> &'s ast::EnumDecl {
         match &self.kind {
             Kind::Original { ast, .. } => &ast.enums[key.index],
-            Kind::Project(project) => project.try_enum(key).expect("frozen enum association"),
+            Kind::Project(project) | Kind::Package(project, _) => {
+                project.try_enum(key).expect("frozen enum association")
+            }
         }
     }
     /// Internal projection of a span already checked against this immutable
@@ -153,19 +200,19 @@ impl<'s> SourceOwner<'s> {
     pub(super) fn frozen_text(&self, span: Span) -> &'s str {
         match &self.kind {
             Kind::Original { file, .. } => file.text_at(span),
-            Kind::Project(project) => project.sources().text(span),
+            Kind::Project(project) | Kind::Package(project, _) => project.sources().text(span),
         }
     }
     pub fn view(self) -> SourceView<'s> {
         match self.kind {
             Kind::Original { view, .. } => view,
-            Kind::Project(p) => SourceView::Map(p.sources()),
+            Kind::Project(p) | Kind::Package(p, _) => SourceView::Map(p.sources()),
         }
     }
     pub fn eof(self) -> Span {
         let file = match self.kind {
             Kind::Original { file, .. } => file,
-            Kind::Project(p) => p.sources().get(SourceFileId(0)),
+            Kind::Project(p) | Kind::Package(p, _) => p.sources().get(SourceFileId(0)),
         };
         file.span(file.text().len(), file.text().len())
     }
@@ -474,7 +521,7 @@ impl<'s> SourceOwner<'s> {
             Kind::Original { file, ast, .. } if module.0 == 0 => {
                 ast.belongs_to(file).then_some(*ast)
             }
-            Kind::Project(project) => {
+            Kind::Project(project) | Kind::Package(project, _) => {
                 let header = project.modules().get(module.0)?;
                 let ast = project.try_file_ast(header.file)?;
                 let file = project.sources().files().get(header.file.0)?;
@@ -487,7 +534,9 @@ impl<'s> SourceOwner<'s> {
     pub(super) fn try_text_borrowed(&self, span: &Span) -> Option<&'s str> {
         match &self.kind {
             Kind::Original { file, .. } => file.try_text(*span),
-            Kind::Project(project) => project.sources().files().get(span.file.0)?.try_text(*span),
+            Kind::Project(project) | Kind::Package(project, _) => {
+                project.sources().files().get(span.file.0)?.try_text(*span)
+            }
         }
     }
 }

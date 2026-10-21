@@ -1,8 +1,9 @@
 # Typed project workflow validation
 
 The manifest workflow in [RFC 0032](../../rfcs/0032-typed-project-workflow.md)
-adds single-package orchestration around the existing typed compiler. It does
-not complete R1 or certify any v1 release gate. The development workflow and
+adds project orchestration around the existing typed compiler; [RFC 0033](../../rfcs/0033-typed-path-dependencies.md)
+extends it to local dependency sessions. It does not complete R1 or certify any
+v1 release gate. The development workflow and
 its limits are described in [Typed projects](../TYPED_PROJECTS.md).
 
 ## Current source checks
@@ -24,8 +25,10 @@ Import failures and test failures fail the current job.
 semantic and resource assertions against the complete current compiler input
 set. The authenticated predecessor is
 `9ff8ef90a26f003f4616838dfc186fa3bfb6845c`. Admission permits changes only in
-the five CLI, manifest and build orchestration files plus the new
-`src/project_cli.rs`; the other 371 inputs remain byte-identical. Compile-time
+the five CLI, manifest and build orchestration files plus seven explicitly
+named package loader/declaration/OIR source interfaces. The three additions are
+`src/project_cli.rs`, `src/frontend/project/packages.rs`, and its compiler tests.
+All other predecessor inputs remain byte-identical. Compile-time
 include and path directives cannot add inputs through the changed files.
 
 The gate verifies the expected checkout SHA, materialized source bytes, resource
@@ -43,9 +46,29 @@ python3 -B scripts/verify_project_workflow_current.py \
 The output directory must not exist. `--allow-dirty` labels local results as
 worktree evidence; CI does not enable it. `--prepare-only` performs admission
 and assembly with zero compiler executions and cannot report a semantic pass.
-This narrowly scoped gate must be revised when a later language change modifies
-additional compiler inputs; widening its source allowance alone cannot qualify
-new semantics.
+These unchanged assertions cover predecessor single-package behavior and
+resource counts on the changed compiler. The source manifest explicitly records
+that they do not qualify new package semantics. Parser, ownership verification,
+OIR verification, native lowering and runtime inputs remain unchanged. Future
+changes require another explicit scope revision; a wider source allowance alone
+cannot qualify new semantics.
+
+`tests/typed_path_dependencies.rs` and the package loader's compiler tests cover
+the new graph, namespace, visibility, identity, ownership and admission behavior.
+`scripts/verify_typed_package_app.py` separately checks the real three-package
+byte-count application against an independent byte/newline oracle. With
+`--native`, it also edits a dependency, rebuilds, rejects broken source while
+preserving the previous executable, deletes the copied sources and executes a
+deployed ELF with an empty PATH. Commands, input/output bytes, compiler and
+artifact hashes are retained under the selected output directory:
+
+```sh
+python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
+  --output /tmp/oxid-package-application --native
+```
+
+The command uses Linux x86_64 and LLVM 19.1.7. CI runs both Rust compiler profiles;
+this does not establish an optimized Oxid release profile or an incremental cache.
 
 `scripts/verify_current_native.py` runs the existing independent native oracles,
 private LLVM regression groups, checked-HIR import, and expression/stack/stdin

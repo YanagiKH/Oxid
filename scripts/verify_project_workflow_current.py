@@ -24,9 +24,16 @@ BASELINE_SOURCE_SHA = "d33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c
 RETAINED_RUNNER_SHA = "584e8ee937cb2d3ef62d59d3eb69a79bfb6afce23df86de3df305f81afae7c76"
 BINDING = "tests/fixtures/typed_project_source_binding"
 RETAINED = "tests/fixtures/typed_project_source_binding_byte_storage_v1/run.py"
-CHANGED = frozenset(("src/cli.rs", "src/main.rs", "src/frontend/mod.rs",
-                     "src/frontend/driver.rs", "src/frontend/native.rs"))
-ADDED = frozenset(("src/project_cli.rs",))
+ORCHESTRATION_CHANGED = frozenset(("src/cli.rs", "src/main.rs", "src/frontend/mod.rs",
+                                  "src/frontend/driver.rs", "src/frontend/native.rs"))
+PACKAGE_CHANGED = frozenset(("src/frontend/project.rs", "src/frontend/declaration_index.rs",
+                            "src/frontend/declaration_index/sealed.rs",
+                            "src/frontend/declaration_index/source_owner.rs",
+                            "src/frontend/oir/project.rs", "src/frontend/oir/source.rs",
+                            "src/frontend/oir/source/sealed.rs"))
+CHANGED = ORCHESTRATION_CHANGED | PACKAGE_CHANGED
+ADDED = frozenset(("src/project_cli.rs", "src/frontend/project/packages.rs",
+                   "src/frontend/project/packages/tests.rs"))
 INSTRUMENTED = frozenset(("src/frontend/declaration_index.rs", "src/frontend/parser.rs",
                           "src/frontend/source.rs", "src/frontend/oir/mod.rs",
                           "src/frontend/project.rs"))
@@ -80,7 +87,13 @@ def regular(root, name):
 
 
 def capture_sources(repo, baseline):
-    """Allow only R1 orchestration changes; all semantic/resource bodies stay exact."""
+    """Record the reviewed project/package boundary; reject other input changes.
+
+    Package namespace changes are admitted explicitly. The retained assertions
+    below still qualify only the old single-package semantics/resource cases;
+    package graph behavior has separate compiler, CLI and real-application tests.
+    Parser, ownership, OIR verification, lowering and runtime remain unchanged.
+    """
     actual, directories = set(), set()
     for part in ("src", "native"):
         require((repo / part).is_dir() and not (repo / part).is_symlink(), "missing source root")
@@ -99,7 +112,7 @@ def capture_sources(repo, baseline):
     for name, before in baseline.items():
         if name not in CHANGED:
             require(inputs[name] == before, "unchanged semantic/resource input changed: " + name)
-    # These six files need no new compile-time inputs. Retain their exact include
+    # These files need no new compile-time inputs. Retain their exact include
     # and #[path] expressions; existing macro/fixture closure remains unchanged.
     for name in CHANGED | ADDED:
         require(directives(inputs[name]) == directives(baseline.get(name, b"")),
@@ -166,6 +179,9 @@ def current_manifest(inputs, baseline, checkout):
                for n, b in sorted(inputs.items()) if n in baseline and b != baseline[n]]
     return {"schema": "oxid-project-workflow-current-source-v1", "baseline_commit": BASELINE,
             "checkout": checkout, "changes": changes, "additions": sorted(ADDED),
+            "assertion_scope": "retained single-package Unit2 semantics and resources",
+            "package_boundary_inputs": sorted(PACKAGE_CHANGED),
+            "package_semantics_qualified_by_this_gate": False,
             "unchanged_baseline_inputs": len(baseline) - len(changes),
             "files": [identity(n, b) for n, b in sorted(inputs.items())]}
 
@@ -191,6 +207,7 @@ def run(args):
     require(not output.exists(), "output must be new")
     output.mkdir(parents=True)
     report = {"schema": "oxid-project-workflow-current-result-v1", "status": "running",
+              "scope": "retained single-package Unit2 semantics and resources; not package graph qualification",
               "semantic_pass": False, "compiler_executions": 0, "baseline_commit": BASELINE,
               "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "controller": identity("scripts/verify_project_workflow_current.py", Path(__file__).read_bytes())}

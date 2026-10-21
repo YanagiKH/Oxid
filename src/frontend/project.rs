@@ -18,6 +18,7 @@ mod enum_carrier_tests;
 #[path = "project/enum_index_tests.rs"]
 mod enum_index_tests;
 mod filesystem;
+pub(super) mod packages;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

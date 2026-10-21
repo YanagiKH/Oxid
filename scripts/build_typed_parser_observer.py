@@ -26,7 +26,7 @@ SOURCE_FILES = (
     "declaration_index.rs", "declaration_index/enum_views.rs",
     "declaration_index/resource.rs", "declaration_index/sealed.rs",
     "declaration_index/u8_reservation.rs",
-    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs",
+    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs",
     "oir/owned_types.rs", "oir/owned_types/enums.rs",
 )
 WRAPPER_FILES = (

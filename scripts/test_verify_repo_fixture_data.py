@@ -179,6 +179,23 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # The real package application is checked through its manifest. Retain
+        # every historical fixture count below after removing only this addition.
+        application = "apps/byte-count"
+        application_members = (
+            application + "/src/main.ox", application + "/tests/counts.ox",
+            application + "/packages/counts/src/lib.ox", application + "/packages/report/src/lib.ox",
+        )
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS, {application: application_members})
+        self.assertEqual([name for name in language if name in application_members], sorted(application_members))
+        self.assertEqual([row for row in check_inventory if row[0] == application], [(application, True)])
+        self.assertEqual([row for row in run_inventory if row[0] == application], [(application, True)])
+        self.assertFalse(any(name in application_members for name, _ in check_inventory + run_inventory))
+        language = [name for name in language if name not in application_members]
+        check_inventory = [row for row in check_inventory if row[0] != application]
+        run_inventory = [row for row in run_inventory if row[0] != application]
+        typed_members -= len(application_members)
+        typed_entries = [path for path in typed_entries if path != root / application]
         # Explicit RFC0031 runnable successor; preserve every predecessor equation.
         self.assertEqual([name for name in language if name == BYTE_PILOT], [BYTE_PILOT])
         self.assertEqual([row for row in check_inventory if row[0] == BYTE_PILOT], [(BYTE_PILOT, True)])
@@ -359,7 +376,12 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
-        commands = [call.args[0] for call in run.call_args_list]
+        application = verify_repo.ROOT / "apps/byte-count"
+        application_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == application]
+        self.assertEqual([call.args[0] for call in application_calls],
+                         [[str(Path(sys.executable).resolve()), command] for command in ("check", "run", "test")])
+        self.assertTrue(all(call.kwargs.get("input_text") == "" for call in application_calls[1:]))
+        commands = [call.args[0] for call in run.call_args_list if call.kwargs.get("cwd") != application]
         byte_pilot = str(verify_repo.ROOT / BYTE_PILOT)
         self.assertEqual([command[1] for command in commands if byte_pilot in command], ["check", "run"])
         self.assertFalse(any(str(path) in command for path in verify_repo.byte_storage_fixture_data_sources(verify_repo.ROOT)
@@ -423,12 +445,14 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
-        self.assertIn(f"{146 + 1 + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
-                      f"{131 + 1 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
-                      "76 runnable programs", output.getvalue())
+        application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
+        self.assertIn(f"{146 + 1 + application_members + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
+                      f"{131 + 2 + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
+                      "77 runnable programs", output.getvalue())
+        self.assertIn("1 manifest applications checked, run and tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + 1 + len(additional_members)} typed source members / "
-                      "9 typed entry runs", output.getvalue())
+                      f"{25 + 1 + application_members + len(additional_members)} typed source members / "
+                      "10 typed entry runs", output.getvalue())
         self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
                       output.getvalue())

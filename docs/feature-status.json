@@ -1048,33 +1048,37 @@
     },
     {
       "id": "typed-preview-project-workflow",
-      "summary": "Manifest-selected typed check, run, build, test and formatting for a single package",
+      "summary": "Manifest-selected typed project commands with Linux local-path dependency sessions",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "verified-oir-reference and llvm-19.1.7",
-      "target_scope": "Native builds and process tests: Linux x86_64; portable compiler checks are separate. Development sources, not published v0.9.0.",
+      "target_scope": "Local-package checking/result execution: Linux; native builds and process tests: Linux x86_64. Compiler host checks are separate. Development sources, not published v0.9.0.",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
         "rfcs/0032-typed-project-workflow.md",
+        "rfcs/0033-typed-path-dependencies.md",
         "docs/TYPED_PROJECTS.md"
       ],
       "implementation": [
         "src/project_cli.rs",
         "src/main.rs",
         "src/frontend/driver.rs",
-        "src/frontend/native.rs"
+        "src/frontend/native.rs",
+        "src/frontend/project/packages.rs"
       ],
       "tests": [
         "tests/project_workflow.rs",
+        "tests/typed_path_dependencies.rs",
         "tests/edition_boundary.rs",
-        "scripts/test_project_workflow_current.py"
+        "scripts/test_project_workflow_current.py",
+        "scripts/verify_typed_package_app.py"
       ],
       "evidence": [
         "docs/architecture/project-workflow-validation.md"
       ],
-      "limitations": "Single package and existing bounded language only. No typed dependencies, workspace, registry, incremental cache or new native target. Current Unit2 and public regressions do not replace historical private certificates or complete R1/v1 acceptance."
+      "limitations": "Existing bounded language with local path dependencies only. No typed Git/registry resolution, lockfiles, workspace, incremental cache or new native target. Retained single-package Unit2 assertions and package regressions have separate scopes; neither replaces historical private certificates nor completes R1/v1 acceptance."
     },
     {
       "id": "typed-preview-standalone-byte-storage",

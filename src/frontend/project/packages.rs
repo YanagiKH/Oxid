@@ -1,0 +1,443 @@
+//! A bounded package session around the existing source owner and parser.
+//! Manifest interpretation belongs to the CLI. This owner validates the supplied
+//! graph and retains package namespaces without changing any source text or AST ID.
+use super::*;
+use std::path::Component;
+
+pub(crate) const MAX_PACKAGES: usize = 256;
+const MAX_DEPENDENCIES: usize = 1024;
+const MAX_GRAPH_DEPTH: usize = 32;
+
+#[derive(Clone, Debug)]
+pub(crate) struct PackageDependency {
+    pub alias: String,
+    pub package: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PackageSpec {
+    pub root: PathBuf,
+    pub entry: PathBuf,
+    pub dependencies: Vec<PackageDependency>,
+}
+
+/// Extra package state lives only on the package route. Ordinary loader,
+/// declaration-index and observer carriers retain their existing layouts.
+#[derive(Debug)]
+pub(in crate::frontend) struct PackageContext<'a> {
+    specs: &'a [PackageSpec],
+    roots: [usize; MAX_PACKAGES],
+    owners: [usize; 256],
+    modules: usize,
+}
+impl<'a> PackageContext<'a> {
+    pub fn root(&self, module: ModuleId) -> Option<ModuleId> {
+        (module.0 < self.modules).then(|| ModuleId(self.roots[self.owners[module.0]]))
+    }
+    pub fn dependencies(&self, module: ModuleId) -> Option<&'a [PackageDependency]> {
+        (module.0 < self.modules).then(|| self.specs[self.owners[module.0]].dependencies.as_slice())
+    }
+    pub fn target(&self, package: usize) -> Option<ModuleId> {
+        (package < self.specs.len()).then(|| ModuleId(self.roots[package]))
+    }
+    pub fn roots(&self) -> usize {
+        self.specs.len()
+    }
+}
+
+#[derive(Debug)]
+pub(in crate::frontend) struct PackageSources<'a> {
+    pub project: ProjectSources,
+    pub context: PackageContext<'a>,
+}
+
+fn failure(message: impl Into<String>) -> Box<Diagnostic> {
+    Diagnostic::new("E0006", "package", message, None)
+}
+
+fn valid_alias(alias: &str) -> bool {
+    let mut chars = alias.bytes();
+    matches!(chars.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'))
+        && alias.len() <= 64
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        && !matches!(
+            alias,
+            "crate"
+                | "std"
+                | "self"
+                | "super"
+                | "bool"
+                | "i32"
+                | "u8"
+                | "fn"
+                | "struct"
+                | "mod"
+                | "use"
+                | "pub"
+                | "let"
+                | "mut"
+                | "return"
+                | "break"
+                | "continue"
+                | "if"
+                | "while"
+                | "else"
+                | "true"
+                | "false"
+                | "import"
+                | "macro"
+                | "macro_rules"
+                | "const"
+                | "for"
+                | "loop"
+                | "match"
+                | "async"
+                | "await"
+                | "move"
+                | "ref"
+                | "unsafe"
+                | "extern"
+                | "enum"
+                | "trait"
+                | "impl"
+                | "type"
+                | "null"
+                | "and"
+                | "or"
+        )
+}
+
+fn entry_relative<'a>(root: &Path, entry: &'a Path) -> Result<&'a Path, Box<Diagnostic>> {
+    let relative = entry
+        .strip_prefix(root)
+        .map_err(|_| failure("package entry escapes its root"))?;
+    if relative.as_os_str().is_empty()
+        || relative.components().count() > 33
+        || relative
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+        || relative.to_str().is_none_or(|path| path.len() > 4096)
+        || relative
+            .components()
+            .any(|part| part.as_os_str().len() > 255)
+    {
+        return Err(failure(
+            "package entry requires a bounded relative source path without `..`",
+        ));
+    }
+    Ok(relative)
+}
+
+pub(in crate::frontend) fn validate_graph(
+    specs: &[PackageSpec],
+    entry_override: Option<&Path>,
+) -> Result<(), Box<Diagnostic>> {
+    if specs.is_empty() || specs.len() > MAX_PACKAGES {
+        return Err(failure("package count must be between 1 and 256"));
+    }
+    let mut edges = 0usize;
+    let mut path_bytes = 0usize;
+    for (index, spec) in specs.iter().enumerate() {
+        let entry = if index == 0 {
+            entry_override.unwrap_or(&spec.entry)
+        } else {
+            &spec.entry
+        };
+        if !spec.root.is_absolute() || !entry.is_absolute() {
+            return Err(failure("package roots and entries must be absolute paths"));
+        }
+        for path in [&spec.root, entry] {
+            let text = path
+                .to_str()
+                .ok_or_else(|| failure("package paths must be UTF-8"))?;
+            if text.len() > 4096 {
+                return Err(failure("package pathname limit exceeded"));
+            }
+            path_bytes = path_bytes
+                .checked_add(text.len())
+                .ok_or_else(|| failure("package graph size overflow"))?;
+        }
+        if path_bytes > 4 * 1024 * 1024 {
+            return Err(failure("package graph path budget exceeded"));
+        }
+        let canonical = spec.root.canonicalize().map_err(|e| {
+            failure(format!(
+                "cannot open package root {}: {e}",
+                spec.root.display()
+            ))
+        })?;
+        if canonical != spec.root || !canonical.is_dir() {
+            return Err(failure("package roots must be canonical directories"));
+        }
+        if specs[..index]
+            .iter()
+            .any(|previous| previous.root == canonical)
+        {
+            return Err(failure("duplicate canonical package root; shared dependencies must use one package identity"));
+        }
+        let relative = entry_relative(&canonical, entry)?;
+        let mut probe = canonical;
+        for component in relative.components() {
+            probe.push(component);
+            let metadata = std::fs::symlink_metadata(&probe).map_err(|e| {
+                failure(format!(
+                    "cannot open package entry {}: {e}",
+                    probe.display()
+                ))
+            })?;
+            if metadata.file_type().is_symlink() {
+                return Err(failure("package entry path contains a symbolic link"));
+            }
+        }
+        if !probe.is_file() {
+            return Err(failure("package entry must be a regular source file"));
+        }
+        edges = edges
+            .checked_add(spec.dependencies.len())
+            .ok_or_else(|| failure("package dependency count overflow"))?;
+        if edges > MAX_DEPENDENCIES {
+            return Err(failure("package dependency limit exceeded"));
+        }
+        for (ordinal, dep) in spec.dependencies.iter().enumerate() {
+            if !valid_alias(&dep.alias) {
+                return Err(failure("invalid typed dependency alias: expected a non-reserved ASCII identifier of at most 64 bytes"));
+            }
+            if dep.package >= specs.len() {
+                return Err(failure("dependency targets an unknown package"));
+            }
+            if spec.dependencies[..ordinal]
+                .iter()
+                .any(|other| other.alias.eq_ignore_ascii_case(&dep.alias))
+            {
+                return Err(failure(
+                    "dependency aliases collide under ASCII case folding",
+                ));
+            }
+        }
+    }
+    let mut states = [0u8; MAX_PACKAGES];
+    let mut longest_suffix = [0u8; MAX_PACKAGES];
+    let mut stack = [(0usize, 0usize); MAX_GRAPH_DEPTH + 1];
+    let mut height = 1;
+    states[0] = 1;
+    while height != 0 {
+        let (package, next) = stack[height - 1];
+        if next == specs[package].dependencies.len() {
+            // A completed shared dependency may be reached again through a
+            // longer prefix. Its full suffix must still count toward the cap;
+            // first-visit DFS height alone is dependent on edge ordering.
+            let longest = specs[package]
+                .dependencies
+                .iter()
+                .map(|dependency| usize::from(longest_suffix[dependency.package]) + 1)
+                .max()
+                .unwrap_or(0);
+            if longest > MAX_GRAPH_DEPTH {
+                return Err(failure("package dependency depth limit exceeded"));
+            }
+            longest_suffix[package] = longest as u8;
+            states[package] = 2;
+            height -= 1;
+            continue;
+        }
+        stack[height - 1].1 += 1;
+        let target = specs[package].dependencies[next].package;
+        if states[target] == 1 {
+            return Err(failure("package dependency cycle detected"));
+        }
+        if states[target] == 2 {
+            continue;
+        }
+        if height == stack.len() {
+            return Err(failure("package dependency depth limit exceeded"));
+        }
+        states[target] = 1;
+        stack[height] = (target, 0);
+        height += 1;
+    }
+    if states[..specs.len()].contains(&0) {
+        return Err(failure("package graph contains an undeclared package"));
+    }
+    Ok(())
+}
+
+impl<'a> PackageSources<'a> {
+    #[allow(clippy::result_large_err)]
+    pub fn load(
+        specs: &'a [PackageSpec],
+        entry_override: Option<&Path>,
+        limits: ProjectLimits,
+    ) -> Result<Self, LoadFailure> {
+        let mut allocator = Allocator::default();
+        let mut builder = SourceSetBuilder {
+            entry: "",
+            limits,
+            allocator: &mut allocator,
+            mode: parser::SourceMode::ProjectCandidate,
+            arrays: parser::ArraySyntaxPolicy::Enabled,
+            enums: ProjectEnumSyntax::Enabled,
+            project: ProjectSources {
+                sources: SourceMap::new(),
+                programs: Vec::new(),
+                modules: Vec::new(),
+                canonical_root: None,
+                usage: SourceUsage::default(),
+                syntax_flavor: SyntaxFlavor::ProjectSyntax,
+            },
+        };
+        let mut context = PackageContext {
+            specs,
+            roots: [0; MAX_PACKAGES],
+            owners: [0; 256],
+            modules: 0,
+        };
+        let result = (|| {
+            validate_graph(specs, entry_override).map_err(one)?;
+            if !cfg!(target_os = "linux") {
+                return Err(one(failure(
+                    "package source policy is qualified only on Linux",
+                )));
+            }
+            for (package, spec) in specs.iter().enumerate() {
+                let entry = if package == 0 {
+                    entry_override.unwrap_or(&spec.entry)
+                } else {
+                    &spec.entry
+                };
+                builder.entry = entry.to_str().expect("validated UTF-8 entry");
+                let start = builder.project.modules.len();
+                builder.load_package_root(spec)?;
+                let end = builder.project.modules.len();
+                context.roots[package] = start;
+                context.owners[start..end].fill(package);
+                context.modules = end;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => Ok(Self {
+                project: builder.project,
+                context,
+            }),
+            Err(diagnostics) => Err(LoadFailure {
+                sources: builder.project.sources,
+                diagnostics,
+                usage: builder.project.usage,
+                #[cfg(test)]
+                allocator: std::mem::take(builder.allocator),
+            }),
+        }
+    }
+}
+
+impl SourceSetBuilder<'_> {
+    fn load_package_root(&mut self, spec: &PackageSpec) -> Result<(), Errors> {
+        let id = ModuleId(self.project.modules.len());
+        if id.0 >= self.limits.modules.min(256) {
+            return Err(one(resource("module count limit exceeded", None)));
+        }
+        let entry = Path::new(self.entry);
+        let canonical = entry
+            .canonicalize()
+            .map_err(|e| one(io_error(e, self.entry, None)))?;
+        if self
+            .project
+            .modules
+            .iter()
+            .any(|header| header.canonical_path.as_ref() == Some(&canonical))
+        {
+            return Err(one(failure(
+                "package entry source was already loaded by another module",
+            )));
+        }
+        let root_path = canonical
+            .parent()
+            .expect("absolute entry has parent")
+            .to_path_buf();
+        let text = self
+            .read_source(&canonical, self.entry, None)
+            .map_err(one)?;
+        let mut display = String::new();
+        self.allocator
+            .string(&mut display, self.entry.len(), "package entry display")
+            .map_err(|e| one(reserve_error(e, None)))?;
+        display.push_str(self.entry);
+        let program = self.parse_file(display, text, None)?;
+        let at = self.project.sources.get(SourceFileId(id.0)).span(0, 0);
+        // Manifest aliases are separate capabilities, never synthetic AST items.
+        // Reject conflicts before following any ordinary module declaration.
+        for dep in &spec.dependencies {
+            let names = program
+                .functions
+                .iter()
+                .map(|v| v.name)
+                .chain(program.records.iter().map(|v| v.name))
+                .chain(program.enums.iter().map(|v| v.name))
+                .chain(program.modules.iter().map(|v| v.name))
+                .chain(program.imports.iter().map(|v| v.alias));
+            for name in names {
+                if self.project.sources.text(name) == dep.alias {
+                    return Err(one(Diagnostic::new(
+                        "E0201",
+                        "resolve",
+                        "dependency alias conflicts with a package-root binding",
+                        Some(name),
+                    )));
+                }
+            }
+        }
+        let retained = add(
+            self.project.usage.retained_path_bytes,
+            filesystem::path_units(&root_path),
+            Some(at),
+        )
+        .and_then(|n| add(n, filesystem::path_units(&canonical), Some(at)))
+        .map_err(one)?;
+        if retained > self.limits.path_bytes {
+            return Err(one(resource(
+                "retained module path budget exceeded",
+                Some(at),
+            )));
+        }
+        self.project.usage.retained_path_bytes = retained;
+        self.project.canonical_root = Some(root_path);
+        self.reserve_file(Some(at)).map_err(one)?;
+        self.project.programs.push(program);
+        self.project.modules.push(ModuleHeader {
+            file: SourceFileId(id.0),
+            parent: None,
+            declaration: None,
+            public: None,
+            depth: 0,
+            relative_path: String::new(),
+            canonical_path: Some(canonical),
+        });
+        self.project.usage.modules = self.project.modules.len();
+        let mut stack = [Frame {
+            module: id,
+            next: 0,
+        }; 33];
+        let mut height = 1;
+        while height != 0 {
+            let frame = stack[height - 1];
+            if frame.next == self.project.programs[frame.module.0].modules.len() {
+                height -= 1;
+                continue;
+            }
+            stack[height - 1].next += 1;
+            let child = self.load_child(frame.module, frame.next)?;
+            if height == stack.len() {
+                return Err(one(resource("module depth limit exceeded", Some(at))));
+            }
+            stack[height] = Frame {
+                module: child,
+                next: 0,
+            };
+            height += 1;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests;

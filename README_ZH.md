@@ -116,8 +116,8 @@ Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器
 
 開發版本另提供實驗性的 [typed 專案流程](docs/TYPED_PROJECTS.md)：
 執行 `oxid new hello --edition typed-preview`，即可依 manifest 設定使用
-`check`、`run`、`test` 與原生 `build`。目前支援 Linux x86_64、LLVM 19.1.7
-的單一套件，保留 typed preview 的資源限制。
+`check`、`run`、`test` 與原生 `build`，並在 Linux 支援本地相依套件。
+原生執行目前支援 Linux x86_64、LLVM 19.1.7，保留 typed preview 的資源限制。
 
 需要穩定版 Rust 與 C/C++ 編譯器。以下指令適用於 Unix 類 shell：
 

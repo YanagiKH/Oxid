@@ -21,7 +21,8 @@ class CurrentSourceAdmission(unittest.TestCase):
                             "fixture.ox": b"fn main()->i32{return 0;}\n"})
         for name, body in self.before.items():
             self.put(name, body)
-        self.put("src/project_cli.rs", b"// R1 orchestration\n")
+        for name in gate.ADDED:
+            self.put(name, b"// R1 project boundary\n")
 
     def put(self, name, body):
         path = self.root / name
@@ -41,6 +42,8 @@ class CurrentSourceAdmission(unittest.TestCase):
         self.assertEqual(manifest["unchanged_baseline_inputs"], len(self.before) - len(gate.CHANGED))
         self.assertEqual(inputs["src/frontend/typeck.rs"], self.before["src/frontend/typeck.rs"])
         self.assertNotIn("reviewed_source_head", manifest)
+        self.assertFalse(manifest["package_semantics_qualified_by_this_gate"])
+        self.assertEqual(manifest["package_boundary_inputs"], sorted(gate.PACKAGE_CHANGED))
 
     def test_semantic_resource_runtime_manifest_and_fixture_changes_are_rejected(self):
         for name in set(self.before) - gate.CHANGED:

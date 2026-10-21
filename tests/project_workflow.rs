@@ -8,16 +8,6 @@ use std::{
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const PROCESS_HOST: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-const PROCESS_DIAGNOSTICS: bool = cfg!(all(
-    target_pointer_width = "64",
-    any(
-        all(target_os = "linux", target_arch = "x86_64"),
-        all(
-            target_os = "macos",
-            any(target_arch = "x86_64", target_arch = "aarch64")
-        )
-    )
-));
 
 struct Project(PathBuf);
 impl Project {
@@ -391,15 +381,13 @@ fn invalid_options_do_not_create_projects_or_build_artifacts() {
         project.run(&["build", "--experimental-hir-import=absent"]),
         "unsupported",
     );
-    let output = project.run(&["build", "--entry-mode=process", "--entry-mode=result"]);
-    // Invalid arguments retain the original frontend's sticky process intent.
-    // Unqualified terminal ABIs fail silently before rendering diagnostics.
-    if PROCESS_DIAGNOSTICS {
-        assert_eq!(failure(output, "once").status.code(), Some(1));
+    let duplicate = project.run(&["build", "--entry-mode=process", "--entry-mode=result"]);
+    if PROCESS_HOST || cfg!(all(target_os = "macos", target_pointer_width = "64")) {
+        assert_eq!(duplicate.status.code(), Some(1));
+        failure(duplicate, "once");
     } else {
-        assert_eq!(output.status.code(), Some(74), "{output:?}");
-        assert!(output.stdout.is_empty(), "{output:?}");
-        assert!(output.stderr.is_empty(), "{output:?}");
+        assert_eq!(duplicate.status.code(), Some(74));
+        assert!(duplicate.stdout.is_empty() && duplicate.stderr.is_empty());
     }
     project.no_outputs();
 }

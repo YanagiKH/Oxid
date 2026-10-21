@@ -116,8 +116,9 @@ Run only trusted programs and review dependencies. Generated C/C++ process adapt
 
 Development builds also provide an experimental [typed project workflow](docs/TYPED_PROJECTS.md):
 `oxid new hello --edition typed-preview`, followed by manifest-driven
-`check`, `run`, `test`, and native `build`. This currently targets a single package
-on Linux x86_64 with LLVM 19.1.7 and preserves the typed preview's resource limits.
+`check`, `run`, `test`, and native `build`, including local dependency packages
+on Linux. Native execution targets Linux x86_64 with LLVM 19.1.7 and preserves
+the typed preview's resource limits.
 
 Requires stable Rust and a C/C++ compiler. Run these commands in a Unix-like shell:
 

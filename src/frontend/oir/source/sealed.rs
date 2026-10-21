@@ -115,6 +115,36 @@ fn check_project<'s>(
     depth: CheckDepth,
 ) -> Result<Checked<'s>, Vec<Diagnostic>> {
     let sources = SourceOwner::project(project);
+    check_project_owner(project, sources, limits, work, allocator, depth)
+}
+
+pub(in crate::frontend::oir) fn check_package_executable<'s>(
+    package: &'s crate::frontend::project::packages::PackageSources<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
+    match check_project_owner(
+        &package.project,
+        SourceOwner::packaged(package),
+        limits,
+        work,
+        allocator,
+        CheckDepth::Executable,
+    )? {
+        Checked::Executable(checked) => Ok(checked),
+        Checked::Types(_) => Err(vec![*association::bad()]),
+    }
+}
+
+fn check_project_owner<'s>(
+    project: &'s ProjectSources,
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+    depth: CheckDepth,
+) -> Result<Checked<'s>, Vec<Diagnostic>> {
     let route = if sources.owned(work).map_err(|e| vec![*e])? {
         ProjectRoute::Owned
     } else {

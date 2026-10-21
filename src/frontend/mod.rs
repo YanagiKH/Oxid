@@ -21,6 +21,8 @@ mod source;
 mod typeck;
 pub(crate) use driver::build_project;
 pub use driver::dispatch;
+pub(crate) use driver::{process_package_project, PackageCommand};
+pub(crate) use project::packages::{PackageDependency, PackageSpec};
 #[cfg(test)]
 mod owned_syntax_tests;
 
