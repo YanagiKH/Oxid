@@ -3,7 +3,10 @@
 //! Explicit file editions retain the original pure frontend option boundary.
 //! Projects never reinterpret typed sources using the legacy interpreter.
 use crate::{frontend, project_lock, runtime};
+mod package;
 mod workspace;
+
+pub(crate) use package::package_source_plan;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -524,18 +527,45 @@ struct PackageGraph {
     manifests: Vec<runtime::ManifestSnapshot>,
 }
 
+/// Existing project reads retain their behavior. Source packages supply a
+/// bounded reader and a portable directory resolver before dependency reads.
+trait ProjectReader {
+    fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String>;
+    fn package(&mut self, _edges: usize) -> Result<(), String> {
+        Ok(())
+    }
+    fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
+        fs::canonicalize(root.join(source)).map_err(|error| error.to_string())
+    }
+}
+struct RegularProjectReader;
+impl ProjectReader for RegularProjectReader {
+    fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String> {
+        runtime::load_typed_manifest(path)
+    }
+}
+
 fn package_graph(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
 ) -> Result<PackageGraph, String> {
-    struct Graph {
+    package_graph_with(root, snapshot, &mut RegularProjectReader)
+}
+
+fn package_graph_with(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    reader: &mut dyn ProjectReader,
+) -> Result<PackageGraph, String> {
+    struct Graph<'a> {
+        reader: &'a mut dyn ProjectReader,
         packages: Vec<frontend::PackageSpec>,
         manifests: Vec<runtime::ManifestSnapshot>,
         identities: HashMap<PathBuf, usize>,
         active: Vec<PathBuf>,
         edges: usize,
     }
-    impl Graph {
+    impl Graph<'_> {
         fn visit(
             &mut self,
             root: PathBuf,
@@ -591,6 +621,7 @@ fn package_graph(
             } else {
                 entry_path(&root, manifest)?
             };
+            self.reader.package(manifest.dependencies.len())?;
             let identity = self.packages.len();
             self.identities.insert(root.clone(), identity);
             self.packages.push(frontend::PackageSpec {
@@ -630,7 +661,7 @@ fn package_graph(
                 {
                     return Err(format!("dependencies support only local directory paths; unsupported source for `{alias}`"));
                 }
-                let target = fs::canonicalize(root.join(path)).map_err(|error| {
+                let target = self.reader.dependency(&root, &source).map_err(|error| {
                     format!(
                         "dependencies: cannot open local path for `{alias}` ({source}): {error}"
                     )
@@ -661,7 +692,7 @@ fn package_graph(
                     if !metadata.file_type().is_file() {
                         return Err(format!("dependencies: package `{alias}` manifest must be a regular file, not a symbolic link or special file"));
                     }
-                    let child_manifest = runtime::load_typed_manifest(&path).map_err(|error| {
+                    let child_manifest = self.reader.manifest(&path).map_err(|error| {
                         format!("dependencies: cannot load package `{alias}`: {error}")
                     })?;
                     self.visit(target, child_manifest)?
@@ -680,6 +711,7 @@ fn package_graph(
     let canonical_root =
         fs::canonicalize(root).map_err(|error| format!("cannot open project root: {error}"))?;
     let mut graph = Graph {
+        reader,
         packages: Vec::new(),
         manifests: Vec::new(),
         identities: HashMap::new(),

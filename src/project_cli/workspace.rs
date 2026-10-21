@@ -101,6 +101,17 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
         return Ok(None);
     };
     let snapshot = runtime::load_typed_manifest(&root.join("oxid.toml"))?;
+    load_roster(root, &cwd, snapshot, &mut RegularProjectReader).map(Some)
+}
+
+/// Reuse workspace member/default/nesting admission with already retained root
+/// bytes and a caller-supplied bounded manifest reader. No cwd mutation.
+pub(super) fn load_roster(
+    root: PathBuf,
+    cwd: &Path,
+    snapshot: runtime::ManifestSnapshot,
+    reader: &mut dyn ProjectReader,
+) -> Result<Workspace, String> {
     let declaration = snapshot
         .workspace
         .as_ref()
@@ -150,7 +161,7 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
         let member_snapshot = if directory == root {
             snapshot.clone()
         } else {
-            runtime::load_typed_manifest(&directory.join("oxid.toml"))?
+            reader.manifest(&directory.join("oxid.toml"))?
         };
         if member_snapshot.manifest.edition.as_deref() != Some("typed-preview") {
             return Err(format!("workspace member {path} requires explicit typed-preview edition; mixed legacy workspaces are unsupported"));
@@ -214,16 +225,24 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
     if nearest.is_some_and(|directory| directory != root) && current.is_none() {
         return Err("current package is not a declared workspace member".into());
     }
-    Ok(Some(Workspace {
+    Ok(Workspace {
         root,
         snapshot,
         members,
         defaults,
         current,
-    }))
+    })
 }
 
 impl Workspace {
+    pub(super) fn source_members(
+        &self,
+    ) -> impl Iterator<Item = (&Path, &runtime::ManifestSnapshot)> {
+        self.members
+            .iter()
+            .map(|member| (member.root.as_path(), &member.snapshot))
+    }
+
     fn graphs(&self, scope: &[usize]) -> Result<Vec<PackageGraph>, String> {
         let mut graphs = Vec::new();
         let mut nodes = 0usize;

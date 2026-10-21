@@ -21,7 +21,9 @@ mod project;
 mod source;
 mod typeck;
 pub use driver::dispatch;
-pub(crate) use driver::{prepare_package_project, PreparedPackageProject};
+pub(crate) use driver::{
+    prepare_package_project, prepare_package_project_bounded, PreparedPackageProject,
+};
 pub(crate) use driver::{process_package_project, PackageCommand};
 pub(crate) use native::doctor::{run as native_doctor, Report as NativeDoctorReport};
 pub(crate) use project::packages::{PackageDependency, PackageSpec};

@@ -64,29 +64,7 @@ impl PackagePreparationError {
     /// Lock creation needs bounded plain text, while executable commands retain
     /// the complete source-aware frontend diagnostic protocol through report.
     pub(crate) fn message(&self) -> String {
-        struct Bounded(String);
-        impl std::fmt::Write for Bounded {
-            fn write_str(&mut self, text: &str) -> std::fmt::Result {
-                let available = 2048 - self.0.len();
-                let mut end = available.min(text.len());
-                while !text.is_char_boundary(end) {
-                    end -= 1;
-                }
-                self.0.push_str(&text[..end]);
-                if end == text.len() {
-                    Ok(())
-                } else {
-                    Err(std::fmt::Error)
-                }
-            }
-        }
-        let mut out = Bounded(String::with_capacity(2048));
-        if let Some(error) = self.diagnostics.first() {
-            let _ = error.write_human(&self.sources, &mut out);
-        } else {
-            out.0.push_str("package source preparation failed");
-        }
-        out.0
+        preparation_message(&self.sources, &self.diagnostics)
     }
 
     pub(crate) fn report(self, command: PackageCommand<'_>, json: bool, process: bool) -> i32 {
@@ -112,6 +90,32 @@ impl PackagePreparationError {
     }
 }
 
+fn preparation_message(sources: &SourceMap, diagnostics: &[Diagnostic]) -> String {
+    struct Bounded(String);
+    impl std::fmt::Write for Bounded {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            let available = 2048 - self.0.len();
+            let mut end = available.min(text.len());
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            self.0.push_str(&text[..end]);
+            if end == text.len() {
+                Ok(())
+            } else {
+                Err(std::fmt::Error)
+            }
+        }
+    }
+    let mut out = Bounded(String::with_capacity(2048));
+    if let Some(error) = diagnostics.first() {
+        let _ = error.write_human(sources, &mut out);
+    } else {
+        out.0.push_str("package source preparation failed");
+    }
+    out.0
+}
+
 fn package_operation(command: &PackageCommand<'_>) -> Operation {
     match command {
         PackageCommand::Check => Operation::Check,
@@ -127,6 +131,44 @@ pub(crate) fn prepare_package_project<'a>(
     packages: &'a [PackageSpec],
     entry_override: Option<&Path>,
 ) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
+    prepare_package_with_limits(packages, entry_override, ProjectLimits::default())
+}
+
+/// Source packaging shares its remaining retention budget with every session.
+/// Existing project entry points retain their original default limits.
+pub(crate) fn prepare_package_project_bounded<'a>(
+    packages: &'a [PackageSpec],
+    entry_override: Option<&Path>,
+    files: usize,
+    bytes: usize,
+) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
+    if files == 0 {
+        return Err(PackagePreparationError {
+            sources: SourceMap::new(),
+            diagnostics: vec![*Diagnostic::new(
+                "E0400",
+                "package",
+                "source package retained file budget exceeded",
+                None,
+            )],
+        });
+    }
+    prepare_package_with_limits(
+        packages,
+        entry_override,
+        ProjectLimits {
+            modules: files.min(256),
+            source_bytes: bytes.min(ProjectLimits::default().source_bytes),
+            ..ProjectLimits::default()
+        },
+    )
+}
+
+fn prepare_package_with_limits<'a>(
+    packages: &'a [PackageSpec],
+    entry_override: Option<&Path>,
+    limits: ProjectLimits,
+) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
     packages::validate_graph(packages, entry_override).map_err(|error| {
         PackagePreparationError {
             sources: SourceMap::new(),
@@ -138,13 +180,13 @@ pub(crate) fn prepare_package_project<'a>(
             .unwrap_or(&packages[0].entry)
             .to_str()
             .expect("validated UTF-8 entry");
-        let project = ProjectSources::load_typed(entry, ProjectLimits::default())?;
+        let project = ProjectSources::load_typed(entry, limits)?;
         return Ok(PreparedPackageProject {
             sources: PreparedSources::Single(project),
             dependencies: Vec::new(),
         });
     }
-    let sources = PackageSources::load(packages, entry_override, ProjectLimits::default())?;
+    let sources = PackageSources::load(packages, entry_override, limits)?;
     let dependencies = match dependency_fingerprints(&sources, packages.len()) {
         Ok(dependencies) => dependencies,
         Err(error) => {
@@ -343,6 +385,62 @@ impl PreparedPackageProject<'_> {
                 Summary::empty(Operation::Check),
             ),
         }
+    }
+
+    /// Visit only retained source buffers. Canonical package identity is supplied
+    /// separately; no path is reopened to assemble a source package.
+    pub(crate) fn visit_package_sources(
+        &self,
+        root: &PackageSpec,
+        mut visit: impl FnMut(usize, &str, &[u8]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        match &self.sources {
+            PreparedSources::Packages(sources) => {
+                for package in 0..=self.dependencies.len() {
+                    for input in sources
+                        .source_inputs(package)
+                        .map_err(|error| error.message.clone())?
+                    {
+                        let input = input.map_err(|error| error.message.clone())?;
+                        visit(package, input.path, input.bytes)?;
+                    }
+                }
+            }
+            PreparedSources::Single(project) => {
+                for header in project.modules() {
+                    let source = project
+                        .sources()
+                        .files()
+                        .get(header.file.0)
+                        .ok_or("invalid retained source identity")?;
+                    let path = header
+                        .canonical_path
+                        .as_deref()
+                        .unwrap_or_else(|| Path::new(source.path()))
+                        .strip_prefix(&root.root)
+                        .ok()
+                        .and_then(Path::to_str)
+                        .ok_or("retained source must remain inside its package root")?;
+                    visit(0, path, source.text().as_bytes())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Pure checking plus the existing executable entry contract. Libraries
+    /// have no entry; neither branch executes source or invokes native tools.
+    pub(crate) fn source_package_preflight(&self, entry: Option<bool>) -> Result<(), String> {
+        self.checked()
+            .and_then(|checked| {
+                match entry {
+                    None => Ok(()),
+                    Some(true) => checked.process_preflight(),
+                    Some(false) => checked.native_module().map(|_| ()),
+                }
+                .map_err(|error| vec![*error])
+            })
+            .map_err(|errors| preparation_message(self.project().sources(), &errors))
     }
 
     fn project(&self) -> &ProjectSources {
@@ -1301,6 +1399,51 @@ mod tests {
             prepared.checked().unwrap().run().unwrap(),
             oir::Scalar::I32(42)
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn package_source_visitor_keeps_retained_bytes_and_admits_remaining_limits() {
+        let fixture = PreparedFixture::new();
+        let text = "// λ\r\nfn main()->i32{return crate::lib::value();}\r\n";
+        fixture.write("app/src/main.ox", text);
+        fixture.write("lib/src/lib.ox", "pub fn value()->i32{return 17;}");
+        let graph = fixture.pair("src/lib.ox");
+        let error = prepare_package_project_bounded(&graph, None, 0, 1024)
+            .unwrap_err()
+            .message();
+        assert!(error.contains("retained file budget"), "{error}");
+        assert!(prepare_package_project_bounded(&graph, None, 2, text.len() - 1).is_err());
+        assert!(prepare_package_project_bounded(&graph, None, 1, 1024).is_err());
+        let prepared = prepare_package_project_bounded(&graph, None, 2, 1024).unwrap();
+        std::fs::remove_dir_all(fixture.0.join("app")).unwrap();
+        std::fs::remove_dir_all(fixture.0.join("lib")).unwrap();
+        let mut seen = Vec::new();
+        prepared
+            .visit_package_sources(&graph[0], |package, path, bytes| {
+                seen.push((package, path.to_owned(), bytes.to_vec()));
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            seen,
+            vec![
+                (0, "src/main.ox".to_owned(), text.as_bytes().to_vec()),
+                (
+                    1,
+                    "src/lib.ox".to_owned(),
+                    b"pub fn value()->i32{return 17;}".to_vec()
+                ),
+            ]
+        );
+        if cfg!(target_arch = "x86_64") {
+            prepared.source_package_preflight(Some(true)).unwrap();
+        } else {
+            assert!(prepared
+                .source_package_preflight(Some(true))
+                .unwrap_err()
+                .contains("Linux x86_64"));
+        }
     }
 
     #[cfg(target_os = "linux")]

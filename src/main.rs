@@ -1376,7 +1376,11 @@ pub(crate) struct WorkspaceManifest {
 // rules, including inert table-like text inside unrelated multiline values.
 pub(crate) fn workspace_declaration(path: &Path) -> Result<Option<WorkspaceManifest>, String> {
     let bytes = read_typed_regular_file(path, 1024 * 1024, "workspace discovery manifest")?;
-    parse_workspace_text(&String::from_utf8_lossy(&bytes))
+    workspace_declaration_bytes(&bytes)
+}
+
+pub(crate) fn workspace_declaration_bytes(bytes: &[u8]) -> Result<Option<WorkspaceManifest>, String> {
+    parse_workspace_text(&String::from_utf8_lossy(bytes))
 }
 
 fn workspace_array(text: &str) -> Result<Vec<String>, String> {
@@ -1521,11 +1525,24 @@ pub(crate) fn read_typed_regular_file(path: &Path, limit: usize, kind: &str) -> 
 }
 
 pub(crate) fn load_typed_manifest(path: &Path) -> Result<ManifestSnapshot, String> {
-    use sha2::{Digest, Sha256};
     let bytes = read_typed_regular_file(path, 1024 * 1024, "typed manifest")?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
+    parse_typed_manifest_bytes(path, &bytes)
+}
+
+/// The remaining allowance is shared by source-package manifest admission.
+/// Check it before the regular-file reader allocates or retains content.
+pub(crate) fn read_typed_manifest_bytes(path: &Path, remaining: &mut usize) -> Result<std::sync::Arc<[u8]>, String> {
+    let limit = (*remaining).min(1024 * 1024);
+    let bytes = read_typed_regular_file(path, limit, "typed manifest")?;
+    *remaining = remaining.checked_sub(bytes.len()).ok_or("source package manifest byte budget exceeded")?;
+    Ok(bytes.into())
+}
+
+pub(crate) fn parse_typed_manifest_bytes(path: &Path, bytes: &[u8]) -> Result<ManifestSnapshot, String> {
+    use sha2::{Digest, Sha256};
+    let text = std::str::from_utf8(bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
     let manifest = parse_manifest_text(text, path, false)?;
-    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let digest = format!("{:x}", Sha256::digest(bytes));
     let workspace = parse_workspace_text(text)?;
     Ok(ManifestSnapshot { manifest, digest, workspace })
 }
@@ -2899,6 +2916,7 @@ fn help() {
     println!("  oxid new <name> --edition typed-preview (experimental Linux x86_64 workflow)");
     println!("  typed workspaces: check/build/test --workspace; run --package <name-or-member-path>");
     println!("  workspace lock covers every member; use lock --update for reviewed input changes");
+    println!("  oxid package [--frozen] [--output ARCHIVE]; package --verify/--extract ARCHIVE (typed source bundles)");
     println!("  oxid compile <file.ox> [-o app.oxb]");
     println!("  oxid ast <file.ox> [-o app.oxa]");
     println!("  oxid inspect <file.oxb>");

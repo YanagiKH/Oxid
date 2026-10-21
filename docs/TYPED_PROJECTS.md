@@ -125,7 +125,7 @@ and build settings report an error instead of selecting legacy semantics.
 
 Current limits include bounded execution, call-only borrows, the existing
 typed language subset, one native target, and no typed Git/registry dependencies,
-vendoring, packaging, or per-module frontend incrementality. Package graphs are
+vendoring, registry publication, or per-module frontend incrementality. Package graphs are
 bounded to 256 packages, 1,024 dependency edges and depth 32, with the existing
 256-module limit shared by the complete session. Dependencies rebuild from local
 sources each time; the opt-in object cache reuses only native code generation.
@@ -186,3 +186,23 @@ Nested/mixed-edition workspaces, globs and escaping member paths are unsupported
 Explicit file editions keep their standalone routes.
 See [RFC 0035](../rfcs/0035-typed-workspaces.md) for exact selection, lock,
 filesystem and host rules. This workflow remains experimental.
+
+## Source packages
+
+After `oxid lock`, create a source bundle with
+`oxid package --frozen --output application.oxpkg.tar`. A workspace bundle always
+contains every member and dependency. The command checks retained program and
+declared-test sources without executing tests or native tools, and requires a
+matching existing lock. Raw manifests, locks and relative sibling dependency
+layouts remain unchanged. Unloaded assets and caches are outside the bundle.
+
+Use `oxid package --verify application.oxpkg.tar` to check the bounded canonical
+archive. Add `--sha256 HEX` to compare an independently supplied digest.
+`oxid package --extract application.oxpkg.tar --output NEW_DIRECTORY` also checks
+the isolated source closure and lock before publishing a new destination. It
+never replaces an existing directory. Enter the reported project/workspace root
+to run ordinary `check/test/build --frozen`; native builds still need Oxid and
+the supported LLVM SDK.
+
+See [RFC 0038](../rfcs/0038-typed-source-packages.md) for retained-input semantics,
+portable path rules, limits, atomic publication and the JSON contract.

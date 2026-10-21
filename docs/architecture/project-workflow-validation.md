@@ -26,8 +26,9 @@ semantic and resource assertions against the complete current compiler input
 set. The authenticated predecessor is
 `9ff8ef90a26f003f4616838dfc186fa3bfb6845c`. Admission permits changes only in
 the five CLI, manifest and build orchestration files plus seven explicitly
-named package loader/declaration/OIR source interfaces. The eight additions are
-`src/project_cli.rs`, `src/project_cli/workspace.rs`, `src/project_lock.rs`,
+named package loader/declaration/OIR source interfaces. The eleven additions are
+`src/project_cli.rs`, `src/project_cli/workspace.rs`, `src/project_cli/package.rs`,
+`src/project_package.rs`, `src/project_package/archive.rs`, `src/project_lock.rs`,
 `src/doctor_cli.rs`,
 `src/frontend/native_cache.rs`, `src/frontend/native/doctor.rs`,
 `src/frontend/project/packages.rs`, and its compiler tests.
@@ -203,3 +204,24 @@ CI runs this verifier with and without native mode, retaining copied compiler
 binaries, commands, input/output bytes, source snapshots, locks and deployed
 executables. This evidence covers the workspace application workflow; it does
 not establish general native reproducibility or complete a v1 release gate.
+
+## Source-package qualification
+
+[RFC 0038](../../rfcs/0038-typed-source-packages.md) adds explicit retained input
+collection and a canonical bounded ustar format. The new source files are
+admitted by exact path; existing compile-time input and historical assertion
+boundaries remain unchanged. Single-package Unit2 cases provide compatibility
+evidence and do not qualify source-package format or publication semantics.
+
+`tests/typed_package.rs` covers command admission, source/test closures, shared
+workspace locks, stale inputs, relocation, special files and atomic preservation.
+The archive module separately tests bounded inventory/header parsing, exact
+member/EOF checks, path/parent conflicts and short I/O.
+
+`scripts/verify_typed_package_bundle.py` uses Python tarfile, TOML and SHA-256
+implementations to inspect the full archive and compare deterministic bytes. It
+packages the real byte-count application as standalone and workspace layouts,
+deletes their originals, extracts elsewhere and checks frozen offline rebuilding
+with independent byte-count cases. Both compiler profiles run in CI, and native
+evidence is retained separately from interpreter evidence. Source-bundle
+determinism does not establish native-code reproducibility or registry trust.

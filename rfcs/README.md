@@ -98,3 +98,7 @@ compilation and linking on every build.
 [RFC 0037](0037-native-doctor.md) adds native toolchain diagnosis through real
 SDK compilation, fixed-program compilation/link/execution and typed package
 input checks, with bounded temporary probes and versioned diagnostic output.
+
+[RFC 0038](0038-typed-source-packages.md) adds deterministic retained source
+bundles, strict bounded verification, complete local layout relocation and
+atomic creation/extraction with existing typed locks.
