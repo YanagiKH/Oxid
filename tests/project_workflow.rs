@@ -76,6 +76,22 @@ fn failure(output: Output, message: &str) -> Output {
 }
 
 #[test]
+fn incremental_is_a_boolean_build_option_and_rejects_ambiguous_arguments_before_effects() {
+    let project = Project::new();
+    project.typed("");
+    for args in [
+        vec!["build", "--incremental", "--incremental"],
+        vec!["build", "--incremental=true"],
+        vec!["build", "--incremental", "false"],
+        vec!["check", "--incremental"],
+    ] {
+        let result = project.run(&args);
+        assert!(!result.status.success(), "{args:?}: {result:?}");
+        project.no_outputs();
+    }
+}
+
+#[test]
 fn typed_new_records_edition_and_runs_without_repeated_flags() {
     let project = Project::new();
     success(project.run(&["new", "app", "--edition=typed-preview"]));

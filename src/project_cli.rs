@@ -717,6 +717,48 @@ fn lock_snapshot(
     project_lock::expected(&graph.specs, &graph.manifests, &fingerprints)
 }
 
+/// Diagnose only admitted package inputs. No user script, program or test runs,
+/// and an existing typed lock is checked using the same retained source session.
+pub(crate) fn native_doctor_project() -> Result<Option<String>, String> {
+    // A broken nearest manifest is a project error, not permission to silently
+    // select an ancestor or diagnose the directory as having no project.
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    let mut path = None;
+    for directory in cwd.ancestors() {
+        let candidate = directory.join("oxid.toml");
+        match fs::symlink_metadata(&candidate) {
+            Ok(_) => {
+                path = Some(candidate);
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("cannot inspect project manifest: {error}")),
+        }
+    }
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let snapshot = runtime::load_typed_manifest(&path)?;
+    match snapshot.manifest.edition.as_deref() {
+        None | Some("legacy-0.9") => return Ok(None),
+        Some("typed-preview") => {}
+        Some(_) => {
+            return Err("unknown manifest edition; expected legacy-0.9 or typed-preview".into())
+        }
+    }
+    validate_settings(&snapshot.manifest)?;
+    let root = path.parent().expect("manifest parent");
+    let existing = project_lock::read(root, false)?;
+    let graph = package_graph(root, &snapshot)?;
+    let prepared =
+        frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
+    if existing.is_some() {
+        project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
+    }
+    Ok(Some(format!("{} local package(s) admitted; {}. Project sources were parsed, not executed or type checked",
+        graph.specs.len(), if existing.is_some() { "oxid.lock verified against retained inputs" } else { "oxid.lock absent (optional); reproducibility is not locked" })))
+}
+
 fn execute_project(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
@@ -825,7 +867,15 @@ fn build(
 ) -> Result<i32, String> {
     let mut words = options.words.iter().skip(1);
     let mut seen = std::collections::HashSet::new();
+    let mut incremental = false;
     while let Some(word) = words.next() {
+        if word == "--incremental" {
+            if incremental {
+                return Err("--incremental may only be specified once".into());
+            }
+            incremental = true;
+            continue;
+        }
         let (name, inline) = word
             .split_once('=')
             .map_or((word.as_str(), None), |(n, v)| (n, Some(v)));
@@ -860,6 +910,7 @@ fn build(
         frontend::PackageCommand::Compile {
             output: output.to_str().ok_or("project output path is not UTF-8")?,
             managed: true,
+            incremental,
         },
         None,
     )

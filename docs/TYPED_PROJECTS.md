@@ -111,16 +111,25 @@ toolchain errors preserve the previous executable. `compile --output` still
 refuses to overwrite an existing output. Avoid simultaneous source edits during
 a build; filesystem access uses the compiler's existing stable-tree contract.
 
+`oxid build --incremental` optionally reuses an unchanged LLVM program object.
+It still checks the complete source graph, verifies the lock and LLVM IR,
+compiles the C runtime and links with the current SDK. Successful output reports
+`hit`, `miss` or `unavailable`; JSON adds a `build-cache` event. The key includes
+the actual IR, compiler/tool/library bytes and effective environment. Script
+tool wrappers and unidentifiable toolchains use ordinary compilation. See
+[RFC 0036](../rfcs/0036-native-object-reuse.md) for integrity, storage and limits.
+
 `oxid fmt src/main.ox` prints typed formatting; `oxid fmt --check src/main.ox`
 checks it. Directory formatting is not supported. Unsupported project commands
 and build settings report an error instead of selecting legacy semantics.
 
 Current limits include bounded execution, call-only borrows, the existing
 typed language subset, one native target, and no typed Git/registry dependencies,
-workspaces, vendoring, packaging, or incremental build cache. Package graphs are
+workspaces, vendoring, packaging, or per-module frontend incrementality. Package graphs are
 bounded to 256 packages, 1,024 dependency edges and depth 32, with the existing
 256-module limit shared by the complete session. Dependencies rebuild from local
-sources each time. See [RFC 0032](../rfcs/0032-typed-project-workflow.md) and
+sources each time; the opt-in object cache reuses only native code generation.
+See [RFC 0032](../rfcs/0032-typed-project-workflow.md) and
 [RFC 0033](../rfcs/0033-typed-path-dependencies.md) and
 [RFC 0034](../rfcs/0034-typed-local-locking.md) for the contracts and
 [ROADMAP_V2](ROADMAP_V2.md) for the remaining R1 and v1.0 requirements.

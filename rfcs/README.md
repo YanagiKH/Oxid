@@ -86,3 +86,11 @@ with package-local roots, nominal identities and ordinary visibility rules.
 [RFC 0034](0034-typed-local-locking.md) adds a separate typed local lock format,
 locked/offline/frozen project operations and checksums of the actual retained
 dependency sources used for execution.
+
+[RFC 0036](0036-native-object-reuse.md) adds opt-in reuse of native LLVM objects,
+with toolchain/environment identities, immutable cache blobs and fresh runtime
+compilation and linking on every build.
+
+[RFC 0037](0037-native-doctor.md) adds native toolchain diagnosis through real
+SDK compilation, fixed-program compilation/link/execution and typed package
+input checks, with bounded temporary probes and versioned diagnostic output.

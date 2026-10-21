@@ -35,6 +35,9 @@ locked and offline operation. Plain project commands verify an existing lock;
 remain editable; the app manifest and dependency sources are pinned. This typed
 lock format is separate from legacy locking; see
 [the lock contract](../rfcs/0034-typed-local-locking.md).
+`oxid build --incremental` enables [native object reuse](../rfcs/0036-native-object-reuse.md).
+It still validates sources and locks, compiles the runtime and links the executable.
+Ordinary builds remain uncached.
 Run/compile require an original zero-argument scalar main in the root file.
 Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
 `pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),
@@ -54,6 +57,7 @@ currently admits Linux only.
 | `oxid lint` | Run source checks across the project |
 | `oxid fmt [path]` | Rewrite source formatting in a file or project |
 | `oxid doctor` / `oxid diagnose` | Check the manifest, entry point, and project structure |
+| `oxid doctor --native` / `oxid diagnose --native` | Compile, link and execute a fixed native probe; check the LLVM toolchain, SDK, target libraries and typed package inputs. Supports `--message-format=json`. See [native doctor](NATIVE_DOCTOR.md). |
 | `oxid doc` | Write a built-in reference to `docs/API.md`, replacing an existing file |
 | `oxid script <name> [args...]` | Run a manifest script with appended arguments |
 | `oxid clean` | Delete the project's `.oxid` artifacts, caches, and dependency checkouts |

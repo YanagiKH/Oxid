@@ -26,9 +26,10 @@ semantic and resource assertions against the complete current compiler input
 set. The authenticated predecessor is
 `9ff8ef90a26f003f4616838dfc186fa3bfb6845c`. Admission permits changes only in
 the five CLI, manifest and build orchestration files plus seven explicitly
-named package loader/declaration/OIR source interfaces. The four additions are
-`src/project_cli.rs`, `src/project_lock.rs`, `src/frontend/project/packages.rs`,
-and its compiler tests.
+named package loader/declaration/OIR source interfaces. The seven additions are
+`src/project_cli.rs`, `src/project_lock.rs`, `src/doctor_cli.rs`,
+`src/frontend/native_cache.rs`, `src/frontend/native/doctor.rs`,
+`src/frontend/project/packages.rs`, and its compiler tests.
 All other predecessor inputs remain byte-identical. Compile-time
 include and path directives cannot add inputs through the changed files.
 
@@ -90,6 +91,21 @@ python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release
 CI retains this evidence separately from the unlocked application workflow.
 These results qualify local dependency input locking, not reproducible machine
 code, registry resolution or general supply-chain acceptance.
+
+`tests/native_incremental.rs` separately exercises the opt-in native object
+cache described in [RFC 0036](../../rfcs/0036-native-object-reuse.md). Its real
+LLVM tests use process traces to distinguish IR code generation from LLVM
+verification, runtime compilation and linking. The latter three run on every
+build. Cache unit controls cover bounded immutable blobs and failure cases.
+This evidence concerns object reuse; the retained Unit2 assertions do not
+qualify new cache semantics or per-module incremental frontend compilation.
+
+`tests/native_doctor.rs` checks explicit native diagnosis, bounded probe failures,
+process cleanup, project/lock admission and real SDK compilation, linking and
+execution. Doctor probes never run a project program or modify its outputs.
+The command and JSON result contract are documented in
+[Native environment diagnosis](../NATIVE_DOCTOR.md). These checks cover the
+installed preview toolchain; they do not extend the native target matrix.
 
 `scripts/verify_current_native.py` runs the existing independent native oracles,
 private LLVM regression groups, checked-HIR import, and expression/stack/stdin
