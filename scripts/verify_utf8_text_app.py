@@ -163,7 +163,7 @@ class TextOracle(Oracle):
                 _, index = self.command(label + "-" + name, argv, cwd, payload, 0, output, overrides=overrides)
                 indexes.append(index)
             # Two large owners cannot both fit in the shared 16 MiB live heap.
-            _, index = self.command(label + "-memory-refusal", argv, cwd, b"A" * (4 * 1024 * 1024 + 1),
+            _, index = self.command(label + "-memory-refusal", argv, cwd, b"A" * (8 * 1024 * 1024),
                                     71, b"", overrides=overrides)
             indexes.append(index)
         _, index = self.command(label + "-directory-input", argv, cwd, status=74, stdout=b"",
