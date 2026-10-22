@@ -22,7 +22,9 @@ The default legacy `check` does not type-check or enforce ownership. Legacy `com
 `oxid check entry.ox --edition typed-preview` checks the complete explicitly
 declared project without execution. `run` selects bounded reference execution;
 `compile --backend llvm --output ./new-program` selects the Linux x86_64 native
-preview. Each requires one entry source; a manifest build is not a typed build.
+preview. Explicit file commands require one entry source. A manifest declaring
+`edition = "typed-preview"` also enables source-less `check` and `run`, native
+`build`, and explicit-entry `test`; see [typed projects](TYPED_PROJECTS.md).
 Run/compile require an original zero-argument scalar main in the root file.
 Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
 `pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),

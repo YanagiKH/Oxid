@@ -1,5 +1,7 @@
 # Oxid v1.0 發布驗收矩陣（R0 草案）
 
+後續工程進度：已加入 [typed 單套件工作流程](TYPED_PROJECTS.md)，目前仍為 experimental；本頁下方保留 R0 檢查基準。最新技術缺口由 [release-gates-v1.json](release-gates-v1.json) 記錄，驗證範圍見 [project workflow validation](architecture/project-workflow-validation.md)。
+
 > **狀態：方向已採用（使用者已採用 ROADMAP_V2）。本矩陣是 R0 草案，待審查；尚未定案的只有三類：ROADMAP_V2 標為建議的數字（本文標 proposed）、維護與驗收資源（第 5 節）、以及本矩陣本身的整理細節。目前判定：v1.0 未達；G1–G10 全部未達。**
 >
 > 本文件把 [ROADMAP_V2.md](ROADMAP_V2.md)（使用者提供的原文，逐 byte 保留）第三、十四、十五節整理成導航用的驗收矩陣摘要。它不是發布認證，也不改變既有 [ROADMAP.md](ROADMAP.md)、[feature-status.json](feature-status.json)、CI workflow 或任何 pin。

@@ -493,21 +493,7 @@ fn process_file_with_lexical(
             }
         }
     };
-    let executable = match project.syntax_flavor() {
-        SyntaxFlavor::OriginalSingleFile => {
-            let (source, ast) = project
-                .original_file()
-                .expect("original syntax retains one source file");
-            debug_assert!(!ast.tokens.is_empty());
-            oir::check_source(source, ast, project.sources())
-        }
-        SyntaxFlavor::ProjectSyntax => {
-            let limits = IndexLimits::default();
-            let work = WorkMeter::new(limits.work);
-            let mut allocator = Allocator::default();
-            oir::project::check_project_executable(&project, limits, &work, &mut allocator)
-        }
-    };
+    let executable = check_loaded_project(&project);
     if process_run {
         return match executable {
             Ok(verified) => match verified.run_process() {
@@ -524,6 +510,58 @@ fn process_file_with_lexical(
         return process_compile_loaded(&project, json, output, executable);
     }
     process_loaded(&project, json, operation, output, executable)
+}
+
+fn check_loaded_project(
+    project: &ProjectSources,
+) -> Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>> {
+    match project.syntax_flavor() {
+        SyntaxFlavor::OriginalSingleFile => {
+            let (source, ast) = project
+                .original_file()
+                .expect("original syntax retains one source file");
+            debug_assert!(!ast.tokens.is_empty());
+            oir::check_source(source, ast, project.sources())
+        }
+        SyntaxFlavor::ProjectSyntax => {
+            let limits = IndexLimits::default();
+            let work = WorkMeter::new(limits.work);
+            let mut allocator = Allocator::default();
+            oir::project::check_project_executable(project, limits, &work, &mut allocator)
+        }
+    }
+}
+
+/// Manifest builds use the same checked program as explicit file operations.
+/// Only the publication policy differs: a managed artifact can be replaced after
+/// successful compilation. No output directory is touched before verification.
+pub(crate) fn build_project(path: &str, output: &str, json: bool, process: bool) -> i32 {
+    let project = match ProjectSources::load_typed(path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report(
+                &failure.sources,
+                failure.diagnostics,
+                json,
+                Summary::Compile(None),
+            );
+        }
+    };
+    let result = (|| {
+        let verified = check_loaded_project(&project)?;
+        let module = if process {
+            verified.native_process_module()
+        } else {
+            verified.native_module()
+        }
+        .map_err(|error| vec![*error])?;
+        super::native::compile_managed(&module, output).map_err(|error| vec![*error])?;
+        Ok(Summary::Compile(Some(output.to_string())))
+    })();
+    match result {
+        Ok(summary) => report(project.sources(), Vec::new(), json, summary),
+        Err(diagnostics) => report(project.sources(), diagnostics, json, Summary::Compile(None)),
+    }
 }
 
 /// Shared post-load operation path for both original and project source syntax.

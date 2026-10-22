@@ -64,7 +64,10 @@ parser, dynamic values, macro expander, interpreter, or artifact writer.
 
 `--message-format text|json` is available only with typed preview. Unknown
 preview options are rejected. Backend/target/output options are available only for the native compile route; profile requests remain unavailable.
-Manifest edition propagation and typed project builds are not implemented.
+Manifest edition propagation and single-package typed builds are available through
+the experimental [project workflow](../docs/TYPED_PROJECTS.md). Explicitly selected
+file commands retain this specification's original argument and entry defaults.
+Typed dependencies, workspaces and incremental builds remain unimplemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 

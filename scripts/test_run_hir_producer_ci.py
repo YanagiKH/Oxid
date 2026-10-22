@@ -254,9 +254,11 @@ class BuildReceiptControls(unittest.TestCase):
                 self.assertEqual(expected['roster_sha256'], runner.receipt['diagnostic_inputs']['roster_sha256'])
 
     def test_workflow_keeps_exact_head_profiles_and_failure_upload(self):
-        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
+        # Frozen producer receipts are replayed against their exact source revision.
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/historical-qualification.yml").read_text()
         job = workflow.split("  local-hir-producers:\n", 1)[1]
-        self.assertIn("github.event.pull_request.head.sha || github.sha", job)
+        self.assertIn("HIR_PRODUCER_EXPECTED_HEAD: 9ff8ef90a26f003f4616838dfc186fa3bfb6845c", job)
+        self.assertIn("ref: 9ff8ef90a26f003f4616838dfc186fa3bfb6845c", job)
         self.assertIn("scripts/run_hir_producer_ci.py", job)
         self.assertIn("test_qualify_hir_producers_v2.py", job)
         self.assertIn("python3 -O -B -m unittest", job)

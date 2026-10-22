@@ -151,14 +151,10 @@ fn typed_compile_without_backend_and_ast_never_create_artifacts_at_any_option_pl
 }
 
 #[test]
-fn typed_project_and_other_operations_reject_before_any_effects() {
+fn unsupported_typed_operations_reject_before_any_effects() {
     let commands: &[&[&str]] = &[
-        &["build"],
         &["install"],
-        &["test"],
         &["watch", "main.ox"],
-        &["new", "created-project"],
-        &["init", "created-project"],
         &["clean"],
         &["doc"],
         &["doctor"],
@@ -275,9 +271,8 @@ fn typed_check_accepts_global_flag_placements_and_source_separator() {
 }
 
 #[test]
-fn typed_check_requires_exactly_one_source_and_rejects_unknown_options() {
+fn typed_file_check_rejects_extra_sources_and_unknown_options() {
     let arguments: &[&[&str]] = &[
-        &["check", "--edition=typed-preview"],
         &["check", "main.ox", "extra.ox", "--edition=typed-preview"],
         &["check", "main.ox", "--unknown", "--edition=typed-preview"],
         &[
@@ -290,6 +285,23 @@ fn typed_check_requires_exactly_one_source_and_rejects_unknown_options() {
     ];
     for args in arguments {
         Project::new(TYPED_SOURCE).rejected_without_effects(args, "check");
+    }
+}
+
+#[test]
+fn typed_source_less_check_requires_a_project_manifest() {
+    let project = Project::new(TYPED_SOURCE);
+    fs::remove_file(project.0.join("oxid.toml")).unwrap();
+    project.rejected_without_effects(&["check", "--edition=typed-preview"], "source");
+}
+
+#[test]
+fn typed_project_build_rejects_legacy_effects_before_build_directories() {
+    for position in 0..=1 {
+        let project = Project::new(LEGACY_SOURCE);
+        let mut args = vec!["build"];
+        args.splice(position..position, ["--edition", "typed-preview"]);
+        project.rejected_without_effects(&args, "parameter requires an explicit type");
     }
 }
 

@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Run current script tests, with exact source-pinned suites replayed separately.
+
+The delegated modules assert exact historical compiler/workflow identities. They
+remain mandatory, unchanged, in historical-qualification.yml at the revision
+below. Their historical results are not evidence for the current compiler.
+Every other top-level scripts/test_*.py module, including future additions, runs
+here. Import failures and test failures are ordinary failing results.
+"""
+import hashlib
+from pathlib import Path
+import sys
+import unittest
+
+
+HISTORICAL_REVISION = "9ff8ef90a26f003f4616838dfc186fa3bfb6845c"
+# SHA-256 of each complete file from git show HISTORICAL_REVISION:scripts/NAME.py.
+# A changed module cannot be delegated to a checkout that only tests old bytes.
+HISTORICAL_ONLY = {
+    "test_lexer_current_ci": (
+        "ed412ef926631af68d17b6a339598bb34df13ac5b48275b4a264c58f6922931c",
+        "asserts the frozen compiler and CI source descriptors"),
+    "test_lexer_reservation_adapters_current": (
+        "aa06030158d030e1c996f677363f9e29a95d6cfd048ae9967d6248366fc49a98",
+        "adapts observers for the frozen source roster"),
+    "test_lexer_reservation_source_current": (
+        "2a2cfe16518034fd4576aea4c6867311f573befe8f0000a46b15f49bba4500ce",
+        "admits the exact frozen source before its retained lexer controls"),
+    "test_owned_array_native": (
+        "d2a43331c08bf40bbdc55e14d3da6d3a9dcb07179b9704a7a873274b45ab43e8",
+        "authenticates the frozen native suite and scheduling bindings"),
+    "test_package_json_source": (
+        "0add901c9c1542ba81d6579958eb595faf4506013598fbdf01a3524a3190e822",
+        "checks the frozen package-JSON source and accounting bindings"),
+    "test_projected_observer_adapters": (
+        "436407ccb95150a444459b2818e2f908c13f5a34414c36258ced66053c2c669f",
+        "adapts projected-slice observers for the frozen source roster"),
+    "test_published_formatter_source": (
+        "81c46045c946e6a6c9ef1e5defc5072c13bf7d3b3da5f853408ae0f55171a6ba",
+        "admits the exact frozen source before its retained hosted formatter controls"),
+    "test_record_composition_current_contracts": (
+        "60268c1115b22a8f1715acc362c6cf41383563361a3111aebb05e2d4ea5028ac",
+        "reconstructs historical projected inputs after exact frozen-source admission"),
+    "test_record_composition_observer_adapters": (
+        "de16f5a5c3a5436122edae93387eceef4d1848dc40e83b4155f78ae29a094c52",
+        "admits the frozen source before reconstructing composition observer inputs"),
+    "test_record_composition_runtime_view": (
+        "4462a91036c8bb080be53d31a5111d6fde4025da93c1da39f8060af1838a6f2e",
+        "admits the frozen source before retained runtime and parser amendment controls"),
+    "test_typed_project_source_binding": (
+        "52eb836b04aa3b7cf737f77cf0544c52d8f4db967ed9b4d2e2756e7efb707be0",
+        "requires the frozen source identity before its predecessor binding mutation suite"),
+}
+
+
+def selected_modules(directory):
+    """Select by exact module name; no prefix, failure, or exception filtering."""
+    discovered = sorted(Path(directory).glob("test_*.py"))
+    selected = [path for path in discovered if path.stem not in HISTORICAL_ONLY]
+    delegated = [path for path in discovered if path.stem in HISTORICAL_ONLY]
+    return selected, delegated
+
+
+class CurrentTestLoader(unittest.TestLoader):
+    """Filter exact historical files before importing, preserving discovery hooks."""
+
+    def __init__(self, directory):
+        super().__init__()
+        self.directory = Path(directory).resolve()
+
+    def _match_path(self, path, full_path, pattern):
+        candidate = Path(full_path)
+        if (candidate.parent.resolve() == self.directory
+                and candidate.stem in HISTORICAL_ONLY):
+            return False
+        return super()._match_path(path, full_path, pattern)
+
+
+def main():
+    if len(sys.argv) != 1:
+        print("usage: python3 -B scripts/run_current_script_tests.py", file=sys.stderr)
+        return 2
+    directory = Path(__file__).resolve().parent
+    selected, delegated = selected_modules(directory)
+    print(f"Current script modules: {len(selected)}", file=sys.stderr)
+    for name, (expected, _) in HISTORICAL_ONLY.items():
+        path = directory / (name + ".py")
+        try:
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            actual = None
+        if actual != expected:
+            print(
+                f"error: cannot delegate changed or missing historical module {path.name}; "
+                "retain the frozen file and migrate new tests to a current test module",
+                file=sys.stderr,
+            )
+            return 1
+    for path in delegated:
+        print(
+            f"Mandatory historical replay: {path.name} @ {HISTORICAL_REVISION}: "
+            f"{HISTORICAL_ONLY[path.stem][1]}",
+            file=sys.stderr,
+        )
+    if not selected:
+        print("error: no current script test modules discovered", file=sys.stderr)
+        return 1
+
+    loader = CurrentTestLoader(directory)
+    # One standard discovery pass preserves the broad pattern passed into
+    # load_tests hooks, including hooks that discover additional nested suites.
+    suite = loader.discover(
+        str(directory), pattern="test_*.py", top_level_dir=str(directory)
+    )
+    if suite.countTestCases() == 0:
+        print("error: current script modules contain no tests", file=sys.stderr)
+        return 1
+    return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

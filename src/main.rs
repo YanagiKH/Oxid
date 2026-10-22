@@ -114,13 +114,20 @@ struct MacroDef {
 }
 
 #[derive(Clone, Debug, Default)]
-struct ProjectManifest {
-    name: Option<String>,
-    version: Option<String>,
-    entry: Option<String>,
-    scripts: HashMap<String, String>,
-    dependencies: HashMap<String, String>,
-    features: HashMap<String, bool>,
+pub(crate) struct ProjectManifest {
+    pub(crate) name: Option<String>,
+    pub(crate) version: Option<String>,
+    pub(crate) entry: Option<String>,
+    pub(crate) edition: Option<String>,
+    pub(crate) backend: Option<String>,
+    pub(crate) target: Option<String>,
+    pub(crate) profile: Option<String>,
+    pub(crate) entry_mode: Option<String>,
+    pub(crate) scripts: HashMap<String, String>,
+    pub(crate) dependencies: HashMap<String, String>,
+    pub(crate) features: HashMap<String, bool>,
+    pub(crate) tests: HashMap<String, String>,
+    pub(crate) configuration_error: Option<String>,
 }
 
 impl fmt::Debug for Value {
@@ -1138,6 +1145,14 @@ fn watch_file(path: &Path, interp: &mut Interpreter) -> Result<(), String> {
 
 fn parse_manifest_value(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim().trim_end_matches(',').trim();
+    if let Some(literal) = trimmed.strip_prefix('\'') {
+        let end = literal.find('\'').ok_or("unterminated literal manifest string")?;
+        let suffix = literal[end + 1..].trim();
+        if !suffix.is_empty() && !suffix.starts_with('#') {
+            return Err("unexpected text after literal manifest string".to_string());
+        }
+        return Ok(literal[..end].to_string());
+    }
     if !trimmed.starts_with('"') {
         return Ok(trimmed.split('#').next().unwrap_or("").trim().to_string());
     }
@@ -1335,29 +1350,103 @@ fn load_test_fixtures(path: &Path) -> Result<HashSet<String>, String> {
     Ok(fixtures)
 }
 
-fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
+pub(crate) fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("cannot read manifest: {} ({})", path.display(), e))?;
+    parse_manifest_text(&text, path, false)
+}
+
+// Edition discovery must not make unrelated legacy operations depend on the
+// rest of the manifest. Lossy decoding is used only for selection: a selected
+// typed project is subsequently read strictly by load_manifest. Thus invalid
+// bytes elsewhere cannot erase a valid typed edition or trigger a fallback.
+pub(crate) fn manifest_edition(path: &Path) -> Result<Option<String>, String> {
+    let bytes = fs::read(path).map_err(|e| format!("cannot read manifest: {} ({})", path.display(), e))?;
+    Ok(parse_manifest_text(&String::from_utf8_lossy(&bytes), path, true)?.edition)
+}
+
+fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<ProjectManifest, String> {
     let mut manifest = ProjectManifest::default();
     let mut section = String::new();
+    let mut continuation = ManifestValueContinuation::default();
     for raw_line in text.lines() {
+        if edition_only && continuation.active() { continuation.scan(raw_line); continue; }
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') { continue; }
-        if line.starts_with('[') && line.ends_with(']') {
-            section = line.trim_start_matches('[').trim_end_matches(']').to_string();
+        if line.starts_with('[') {
+            let array_table = line.starts_with("[[");
+            let opening = if array_table { 2 } else { 1 };
+            if let Some(end) = manifest_delimiter(&line[opening..], ']').map(|index| index + opening) {
+                let suffix = line[end + 1..].trim();
+                let suffix = if array_table { suffix.strip_prefix(']').unwrap_or(suffix).trim() } else { suffix };
+                if suffix.is_empty() || suffix.starts_with('#') {
+                    let raw = line[opening..end].trim();
+                    section = parse_manifest_key(raw).unwrap_or_else(|_| raw.to_string());
+                    if array_table {
+                        if section == "project" {
+                            return Err("project configuration must use an ordinary [project] table".to_string());
+                        }
+                        section = format!("array:{section}");
+                    }
+                    continue;
+                }
+            }
+        }
+        let Some(equals) = manifest_delimiter(line, '=') else { continue; };
+        let key_raw = line[..equals].trim();
+        let value_raw = &line[equals + 1..];
+        let mut effective_section = section.as_str();
+        let mut effective_key = key_raw;
+        if section.is_empty() {
+            if let Some(dot) = manifest_delimiter(key_raw, '.') {
+                if parse_manifest_key(key_raw[..dot].trim()).as_deref() == Ok("project") {
+                    effective_section = "project";
+                    effective_key = key_raw[dot + 1..].trim();
+                }
+            } else if parse_manifest_key(key_raw).as_deref() == Ok("project") {
+                return Err("inline project tables are unsupported; use an ordinary [project] table".to_string());
+            }
+        }
+        if edition_only && !matches!(effective_section, "" | "project") {
+            continuation.scan(value_raw);
             continue;
         }
-        let Some((key_raw, value_raw)) = line.split_once('=') else { continue; };
-        let key_raw = key_raw.trim();
-        let key = if key_raw.starts_with('"') {
-            parse_manifest_value(key_raw).map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?
-        } else {
-            key_raw.to_string()
-        };
+        let key = parse_manifest_key(effective_key);
+        if edition_only && key.as_deref() != Ok("edition") {
+            continuation.scan(value_raw);
+            continue;
+        }
+        let key = key.map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?;
         let value = parse_manifest_value(value_raw).map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?;
-        match (section.as_str(), key.as_str()) {
+        match (effective_section, key.as_str()) {
             ("project", "name") | ("", "name") => manifest.name = Some(value),
             ("project", "version") | ("", "version") => manifest.version = Some(value),
-            ("project", "entry") | ("build", "entry") | ("", "entry") => manifest.entry = Some(value),
+            ("project", "entry") | ("build", "entry") | ("", "entry") => {
+                if manifest.entry.replace(value).is_some() {
+                    manifest.configuration_error = Some(format!("duplicate entry in {}", path.display()));
+                }
+            }
+            ("project", "edition") | ("", "edition") => {
+                if manifest.edition.replace(value).is_some() {
+                    return Err(format!("duplicate edition in {}", path.display()));
+                }
+            }
+            ("build", "backend" | "target" | "profile" | "entry-mode") => {
+                let field = match key.as_str() {
+                    "backend" => &mut manifest.backend,
+                    "target" => &mut manifest.target,
+                    "profile" => &mut manifest.profile,
+                    "entry-mode" => &mut manifest.entry_mode,
+                    _ => unreachable!(),
+                };
+                if field.replace(value).is_some() {
+                    manifest.configuration_error = Some(format!("duplicate build setting `{}` in {}", key, path.display()));
+                }
+            }
+            ("tests", _) => {
+                if manifest.tests.insert(key.clone(), value).is_some() {
+                    manifest.configuration_error = Some(format!("duplicate test `{}` in {}", key, path.display()));
+                }
+            }
             ("features", _) => {
                 let enabled = matches!(value.as_str(), "true" | "yes" | "on" | "1");
                 manifest.features.insert(key, enabled);
@@ -1775,6 +1864,7 @@ Generated by `oxid new`.
     let manifest = format!(r#"[project]
 name = {}
 version = {}
+edition = "legacy-0.9"
 entry = "src/main.ox"
 
 [scripts]
@@ -2605,7 +2695,8 @@ fn help() {
     println!("  oxid run <file.ox|file.oxb>");
     println!("  oxid script <name> [args...]");
     println!("  oxid check <file.ox> [--edition typed-preview --message-format text|json]");
-    println!("  --edition legacy-0.9 keeps the default legacy route; typed-preview is check-only");
+    println!("  --edition legacy-0.9 keeps legacy behavior; typed-preview enables checked native projects");
+    println!("  oxid new <name> --edition typed-preview (experimental Linux x86_64 workflow)");
     println!("  oxid compile <file.ox> [-o app.oxb]");
     println!("  oxid ast <file.ox> [-o app.oxa]");
     println!("  oxid inspect <file.oxb>");

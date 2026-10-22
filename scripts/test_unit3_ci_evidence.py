@@ -280,7 +280,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual((self.base / evidence.ARCHIVE).read_bytes(), before)
 
     def test_workflow_keeps_compact_independent_and_before_full_preservation(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        # The unchanged Unit3 evidence protocol remains in the historical replay.
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/historical-qualification.yml').read_text()
         start = workflow.index('      - name: Prepare bounded Unit3 diagnostic receipts')
         archive = workflow.index('      - name: Index and preserve Unit3 results')
         upload = workflow.index('      - name: Retain compact Unit3 diagnostic receipts')

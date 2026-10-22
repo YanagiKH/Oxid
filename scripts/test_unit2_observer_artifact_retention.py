@@ -9,7 +9,8 @@ import tempfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
-WORKFLOW = REPO / '.github/workflows/ci.yml'
+# These frozen receipt paths are retained by the historical qualification replay.
+WORKFLOW = REPO / '.github/workflows/historical-qualification.yml'
 PREFIX = '${{ runner.temp }}/typed-project-unit2-results/observer-adapter-controls/'
 PATTERNS = tuple(PREFIX + '*.' + suffix for suffix in ('json', 'stdout', 'stderr'))
 MEMBERS = frozenset(
