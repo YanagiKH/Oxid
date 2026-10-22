@@ -3,7 +3,7 @@ use super::super::{execute, native, verified, *};
 #[cfg(test)]
 use super::lower;
 use super::{diagnostic, resolve, typeck};
-use crate::frontend::{ast, source::SourceFile};
+use crate::frontend::{ast, build_config::NativeSourceNames, source::SourceFile};
 use crate::frontend::{
     declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
     project::budget::Allocator,
@@ -138,6 +138,34 @@ fn lower_array_consumer<'s>(
 }
 
 impl SourceProgram {
+    /// Tests may vary presentation paths while retaining the ordinary owned
+    /// source producer and verifier. No new production witness access exists.
+    #[cfg(test)]
+    pub(in crate::frontend::oir::owned) fn native_source_presentation_fixture(
+        path: &str,
+        text: &str,
+    ) -> super::resource_fixtures::CheckedSource {
+        use crate::frontend::{lexer, parser};
+        let mut sources = SourceMap::new();
+        let id = sources.add(path.to_owned(), text.to_owned());
+        let file = sources.get(id);
+        let ast = parser::parse_with_mode(
+            file,
+            lexer::lex(file).unwrap(),
+            parser::SourceMode::OwnedCandidate,
+        )
+        .unwrap();
+        let typed = typeck::check(resolve::resolve_in_map(file, &ast, &sources).unwrap()).unwrap();
+        let entry = typed.entry().unwrap();
+        let raw = lower::lower(&typed).unwrap();
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        super::resource_fixtures::CheckedSource {
+            sources,
+            witness,
+            entry,
+        }
+    }
+
     pub(in crate::frontend::oir) fn function_count(&self) -> usize {
         self.witness.functions().len()
     }
@@ -158,6 +186,16 @@ impl SourceProgram {
     ) -> Result<String, Box<Diagnostic>> {
         self.require_result_entry_policy(sources)?;
         native::native_module(&self.witness, entry, sources)
+    }
+
+    pub(in crate::frontend::oir) fn native_module_with_source_names(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        names: &NativeSourceNames<'_>,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
+        native::native_module_with_source_names(&self.witness, entry, sources, names)
     }
 
     /// Only fixed signature facts escape; the verified function stays sealed.
@@ -216,6 +254,15 @@ impl SourceProgram {
             sources,
             super::super::plan::MAX_FUEL,
         )
+    }
+
+    pub(in crate::frontend::oir) fn native_process_module_with_source_names(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        names: &NativeSourceNames<'_>,
+    ) -> Result<String, Box<Diagnostic>> {
+        native::native_process_module_with_source_names(&self.witness, entry, sources, names)
     }
 }
 

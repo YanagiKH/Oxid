@@ -102,3 +102,7 @@ input checks, with bounded temporary probes and versioned diagnostic output.
 [RFC 0038](0038-typed-source-packages.md) adds deterministic retained source
 bundles, strict bounded verification, complete local layout relocation and
 atomic creation/extraction with existing typed locks.
+
+[RFC 0039](0039-reproducible-native-builds.md) adds resolved native build settings
+and opt-in project-relative runtime diagnostics for reproducible bounded native
+builds across preserved local source layouts.

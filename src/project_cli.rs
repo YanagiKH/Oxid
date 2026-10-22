@@ -34,6 +34,20 @@ struct Options {
     invalid: bool,
 }
 
+#[derive(Clone, Copy, Default)]
+struct BuildOptions {
+    incremental: bool,
+    reproducible: Option<bool>,
+}
+
+impl BuildOptions {
+    fn resolve(self, manifest: &runtime::ProjectManifest) -> frontend::NativeBuildSettings {
+        frontend::NativeBuildSettings::new(
+            self.reproducible.or(manifest.reproducible).unwrap_or(false),
+        )
+    }
+}
+
 /// The doctor integration can admit the complete workspace without routing a
 /// command, emitting diagnostics, invoking tools or executing user programs.
 pub(crate) fn native_doctor_workspace() -> Result<Option<String>, String> {
@@ -843,7 +857,15 @@ fn project_check_run(
     } else {
         frontend::PackageCommand::Run
     };
-    execute_project(root, snapshot, options, process, command, entry_override)
+    execute_project(
+        root,
+        snapshot,
+        options,
+        process,
+        command,
+        entry_override,
+        None,
+    )
 }
 
 fn lock_snapshot(
@@ -910,6 +932,7 @@ fn execute_project(
     process: bool,
     command: frontend::PackageCommand<'_>,
     entry_override: Option<&str>,
+    native_settings: Option<&frontend::NativeBuildSettings>,
 ) -> Result<i32, String> {
     if options.command() == "run" && process && options.json() {
         // Retain the pure process-option rejection before source loading.
@@ -934,7 +957,16 @@ fn execute_project(
     if existing.is_some() {
         project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
     }
-    Ok(prepared.execute(command, options.json(), process))
+    Ok(match native_settings {
+        Some(settings) => prepared.execute_with_native_settings(
+            command,
+            options.json(),
+            process,
+            settings,
+            &graph.specs[0].root,
+        ),
+        None => prepared.execute(command, options.json(), process),
+    })
 }
 
 fn lock_project(
@@ -1009,7 +1041,8 @@ fn build(
     options: &Options,
     process: bool,
 ) -> Result<i32, String> {
-    let incremental = validate_build_options(options)?;
+    let build_options = validate_build_options(options)?;
+    let settings = build_options.resolve(&snapshot.manifest);
     if snapshot.manifest.kind.as_deref() == Some("lib") {
         return Err(
             "library packages do not produce standalone executables; use check or workspace build"
@@ -1027,22 +1060,33 @@ fn build(
         frontend::PackageCommand::Compile {
             output: output.to_str().ok_or("project output path is not UTF-8")?,
             managed: true,
-            incremental,
+            incremental: build_options.incremental,
         },
         None,
+        Some(&settings),
     )
 }
 
-fn validate_build_options(options: &Options) -> Result<bool, String> {
+fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
     let mut words = options.words.iter().skip(1);
     let mut seen = std::collections::HashSet::new();
-    let mut incremental = false;
+    let mut result = BuildOptions::default();
     while let Some(word) = words.next() {
         if word == "--incremental" {
-            if incremental {
+            if result.incremental {
                 return Err("--incremental may only be specified once".into());
             }
-            incremental = true;
+            result.incremental = true;
+            continue;
+        }
+        if matches!(word.as_str(), "--reproducible" | "--no-reproducible") {
+            if result
+                .reproducible
+                .replace(word == "--reproducible")
+                .is_some()
+            {
+                return Err("select --reproducible or --no-reproducible only once".into());
+            }
             continue;
         }
         let (name, inline) = word
@@ -1068,7 +1112,7 @@ fn validate_build_options(options: &Options) -> Result<bool, String> {
             ));
         }
     }
-    Ok(incremental)
+    Ok(result)
 }
 
 fn test(

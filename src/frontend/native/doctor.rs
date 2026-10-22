@@ -481,7 +481,9 @@ mod supported {
             fs::write(workspace.0.join("runtime.c"), RUNTIME).map_err(|error| error.to_string())?;
             capture(
                 Command::new(clang.as_ref().expect("validated clang"))
-                    .args(runtime_compile_args())
+                    .args(runtime_compile_args(
+                        &super::super::NativeBuildSettings::new(false),
+                    ))
                     .current_dir(&workspace.0),
                 TOOL_TIMEOUT,
             )?;

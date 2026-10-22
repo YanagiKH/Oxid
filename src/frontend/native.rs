@@ -1,5 +1,6 @@
 //! Trusted external LLVM tool boundary with optional verified object reuse.
 //! All language admission happens before this module is entered.
+use super::build_config::NativeBuildSettings;
 use super::diagnostic::Diagnostic;
 use super::native_cache::{self, Environment, Outcome};
 use std::{
@@ -131,11 +132,11 @@ fn validate_version_output(
     Ok(())
 }
 
-fn runtime_compile_args() -> Vec<OsString> {
+fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
     [
         "--no-default-config",
-        &format!("--target={TARGET}"),
-        "-O0",
+        &format!("--target={}", settings.target_triple()),
+        settings.optimization_flag(),
         "-fPIE",
         "-std=c11",
         "-Wall",
@@ -155,17 +156,38 @@ fn runtime_compile_args() -> Vec<OsString> {
 /// on a compile/link failure. This route retains the Linux host restriction;
 /// rename replaces a regular file atomically on that supported filesystem.
 pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
-    managed(module, output, false).map(|_| ())
+    managed(module, output, false, None).map(|_| ())
 }
 
 pub(super) fn compile_managed_incremental(
     module: &str,
     output: &str,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    managed(module, output, true)
+    managed(module, output, true, None)
 }
 
-fn managed(module: &str, output: &str, incremental: bool) -> Result<Outcome, Box<Diagnostic>> {
+pub(super) fn compile_managed_with_settings(
+    module: &str,
+    output: &str,
+    settings: &NativeBuildSettings,
+) -> Result<(), Box<Diagnostic>> {
+    managed(module, output, false, Some(settings)).map(|_| ())
+}
+
+pub(super) fn compile_managed_incremental_with_settings(
+    module: &str,
+    output: &str,
+    settings: &NativeBuildSettings,
+) -> Result<Outcome, Box<Diagnostic>> {
+    managed(module, output, true, Some(settings))
+}
+
+fn managed(
+    module: &str,
+    output: &str,
+    incremental: bool,
+    settings: Option<&NativeBuildSettings>,
+) -> Result<Outcome, Box<Diagnostic>> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(failure("native preview requires a Linux x86_64 build host"));
     }
@@ -233,19 +255,29 @@ fn managed(module: &str, output: &str, incremental: bool) -> Result<Outcome, Box
             .to_str()
             .ok_or_else(|| failure("managed output path must be UTF-8"))?,
         incremental.then_some(build_root),
+        settings,
     )?;
     fs::rename(staged_output, output).map_err(io)?;
     Ok(outcome)
 }
 
 pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
-    compile_inner(module, output, None).map(|_| ())
+    compile_inner(module, output, None, None).map(|_| ())
+}
+
+pub(super) fn compile_with_settings(
+    module: &str,
+    output: &str,
+    settings: &NativeBuildSettings,
+) -> Result<(), Box<Diagnostic>> {
+    compile_inner(module, output, None, Some(settings)).map(|_| ())
 }
 
 fn compile_inner(
     module: &str,
     output: &str,
     cache_root: Option<&Path>,
+    settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(failure("native preview requires a Linux x86_64 build host"));
@@ -272,7 +304,12 @@ fn compile_inner(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
         Err(e) => return Err(io(e)),
     }
-    let environment = cache_root.map(|_| native_cache::environment());
+    // A typed project build uses one captured environment whether or not object
+    // reuse is requested. Historical file entrypoints keep their original path.
+    let environment = (cache_root.is_some() || settings.is_some()).then(native_cache::environment);
+    let settings = settings
+        .copied()
+        .unwrap_or_else(|| NativeBuildSettings::new(false));
     let env_value = |name: &str| {
         environment.as_ref().map_or_else(
             || std::env::var_os(name),
@@ -337,11 +374,11 @@ fn compile_inner(
         &opt,
         args(&["-passes=verify", "-disable-output", "program.ll"]),
     )?;
-    let target = format!("--target={TARGET}");
+    let target = format!("--target={}", settings.target_triple());
     let program_args = args(&[
         "--no-default-config",
         &target,
-        "-O0",
+        settings.optimization_flag(),
         "-fPIE",
         "-c",
         "-x",
@@ -351,15 +388,17 @@ fn compile_inner(
         "program.o",
     ]);
     let key = || {
-        environment.as_ref().and_then(|environment| {
-            native_cache::fingerprint(
-                module,
-                &[&clang, &opt],
-                &program_args,
-                environment,
-                &workspace.0,
-            )
-        })
+        cache_root
+            .and(environment.as_ref())
+            .and_then(|environment| {
+                native_cache::fingerprint(
+                    module,
+                    &[&clang, &opt],
+                    &program_args,
+                    environment,
+                    &workspace.0,
+                )
+            })
     };
     let initial_key = key();
     let mut cache = match (cache_root, initial_key) {
@@ -396,7 +435,7 @@ fn compile_inner(
             }
         }
     }
-    invoke(&clang, runtime_compile_args())?;
+    invoke(&clang, runtime_compile_args(&settings))?;
     let mut link = args(&[
         "--no-default-config",
         &target,

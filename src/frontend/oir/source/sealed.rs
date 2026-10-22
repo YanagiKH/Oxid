@@ -7,6 +7,7 @@ use super::super::{
 use super::association::{self, Declarations};
 use crate::frontend::{
     ast,
+    build_config::NativeSourceNames,
     declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
     project::{budget::Allocator, ProjectSources, SyntaxFlavor},
     source::{SourceFile, SourceView},
@@ -251,6 +252,20 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => program.native_module(self.entry, self.sources),
         }
     }
+
+    pub(in crate::frontend) fn native_module_with_source_names(
+        &self,
+        names: &NativeSourceNames<'_>,
+    ) -> Result<String, Box<Diagnostic>> {
+        match &self.body {
+            CheckedBody::Scalar(program) => {
+                program.native_module_with_source_names(self.entry, self.sources, names)
+            }
+            CheckedBody::Owned(program) => {
+                program.native_module_with_source_names(self.entry, self.sources, names)
+            }
+        }
+    }
     /// A single source-owned signature rule serves both public process consumers.
     fn checked_process_entry(&self) -> Result<(hir::DefId, Span), Box<Diagnostic>> {
         let signature = match self.entry {
@@ -338,6 +353,22 @@ impl CheckedSourceProgram<'_> {
                 program.native_process_module(Some(entry), self.sources)
             }
             CheckedBody::Owned(program) => program.native_process_module(entry, self.sources),
+        }
+    }
+
+    pub(in crate::frontend) fn native_process_module_with_source_names(
+        &self,
+        names: &NativeSourceNames<'_>,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.require_process_host()?;
+        let (entry, _) = self.checked_process_entry()?;
+        match &self.body {
+            CheckedBody::Scalar(program) => {
+                program.native_process_module_with_source_names(Some(entry), self.sources, names)
+            }
+            CheckedBody::Owned(program) => {
+                program.native_process_module_with_source_names(entry, self.sources, names)
+            }
         }
     }
 

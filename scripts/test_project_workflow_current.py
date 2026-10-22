@@ -44,7 +44,9 @@ class CurrentSourceAdmission(unittest.TestCase):
         self.assertNotIn("reviewed_source_head", manifest)
         self.assertFalse(manifest["package_semantics_qualified_by_this_gate"])
         self.assertFalse(manifest["workspace_semantics_qualified_by_this_gate"])
+        self.assertFalse(manifest["native_reproducibility_qualified_by_this_gate"])
         self.assertEqual(manifest["package_boundary_inputs"], sorted(gate.PACKAGE_CHANGED))
+        self.assertEqual(manifest["native_presentation_inputs"], sorted(gate.NATIVE_PRESENTATION_CHANGED))
 
     def test_semantic_resource_runtime_manifest_and_fixture_changes_are_rejected(self):
         for name in set(self.before) - gate.CHANGED:

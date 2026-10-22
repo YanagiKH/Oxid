@@ -131,6 +131,7 @@ pub(super) fn load_roster(
             || snapshot.manifest.backend.is_some()
             || snapshot.manifest.target.is_some()
             || snapshot.manifest.profile.is_some()
+            || snapshot.manifest.reproducible.is_some()
             || snapshot.manifest.entry_mode.is_some()
             || !snapshot.manifest.scripts.is_empty()
             || !snapshot.manifest.features.is_empty())
@@ -379,7 +380,7 @@ impl Workspace {
     pub(super) fn execute(&self, options: &Options) -> Result<i32, String> {
         options.validate_lock_options()?;
         let selected = self.selected(options)?;
-        let incremental = match options.command() {
+        let build_options = match options.command() {
             "build" => validate_build_options(options)?,
             "check" | "run" | "test" | "lock" => {
                 if options.words.len() != 1
@@ -392,13 +393,21 @@ impl Workspace {
                         options.command()
                     ));
                 }
-                false
+                BuildOptions::default()
             }
             command => {
                 return Err(format!(
                     "command `{command}` is unavailable for typed workspaces"
                 ))
             }
+        };
+        let native_settings: Vec<_> = if options.command() == "build" {
+            selected
+                .iter()
+                .map(|&index| build_options.resolve(&self.members[index].snapshot.manifest))
+                .collect()
+        } else {
+            Vec::new()
         };
         if matches!(options.command(), "check" | "test" | "lock") && options.entry_mode.is_some() {
             return Err(format!(
@@ -534,19 +543,23 @@ impl Workspace {
             );
         }
         if options.command() != "check" {
-            for &index in &selected {
+            for (selection, &index) in selected.iter().enumerate() {
                 let slot = scope
                     .iter()
                     .position(|candidate| *candidate == index)
                     .expect("selected session");
                 let member = &self.members[index];
                 let native = options.command() == "build" && !member.library();
-                let status = prepared[slot].workspace_preflight(
-                    options.json(),
-                    process || native && member.process(options),
-                    native,
-                    process,
-                );
+                let status = if native {
+                    prepared[slot].workspace_preflight_with_native_settings(
+                        options.json(),
+                        member.process(options),
+                        &native_settings[selection],
+                        &self.root,
+                    )
+                } else {
+                    prepared[slot].workspace_preflight(options.json(), process, false, process)
+                };
                 if status != 0 {
                     return Ok(status);
                 }
@@ -564,7 +577,7 @@ impl Workspace {
             ));
         }
         let mut failed = 0;
-        for &index in &selected {
+        for (selection, &index) in selected.iter().enumerate() {
             let slot = scope
                 .iter()
                 .position(|candidate| *candidate == index)
@@ -584,12 +597,22 @@ impl Workspace {
                         .to_str()
                         .ok_or("workspace output path must be UTF-8")?,
                     managed: true,
-                    incremental,
+                    incremental: build_options.incremental,
                 }
             } else {
                 frontend::PackageCommand::Check
             };
-            let status = prepared[slot].execute(command, options.json(), member.process(options));
+            let status = if options.command() == "build" && !member.library() {
+                prepared[slot].execute_with_native_settings(
+                    command,
+                    options.json(),
+                    member.process(options),
+                    &native_settings[selection],
+                    &self.root,
+                )
+            } else {
+                prepared[slot].execute(command, options.json(), member.process(options))
+            };
             failed += usize::from(status != 0);
             let state = if status != 0 {
                 "failed"

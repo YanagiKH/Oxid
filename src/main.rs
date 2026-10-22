@@ -123,6 +123,7 @@ pub(crate) struct ProjectManifest {
     pub(crate) backend: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) profile: Option<String>,
+    pub(crate) reproducible: Option<bool>,
     pub(crate) entry_mode: Option<String>,
     pub(crate) scripts: HashMap<String, String>,
     pub(crate) dependencies: HashMap<String, String>,
@@ -1577,6 +1578,9 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     if matches!(namespace.as_str(), "dependencies" | "features") && (array_table || first != raw.len()) {
                         manifest.configuration_error = Some(format!("typed-preview {} require an ordinary [{}] table with string local paths; nested or array tables are unsupported", namespace, namespace));
                     }
+                    if namespace == "build" && (array_table || first != raw.len()) {
+                        manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
+                    }
                     section = parse_manifest_key(raw).unwrap_or_else(|_| raw.to_string());
                     if array_table {
                         if section == "project" {
@@ -1606,11 +1610,15 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     effective_key = key_raw[dot + 1..].trim();
                 } else if matches!(namespace.as_deref(), Ok("dependencies" | "features")) {
                     manifest.configuration_error = Some("typed-preview dependencies and features do not support dotted declarations; use [dependencies] string local paths".to_string());
+                } else if namespace.as_deref() == Ok("build") {
+                    manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
                 }
             } else if parse_manifest_key(key_raw).as_deref() == Ok("project") {
                 return Err("inline project tables are unsupported; use an ordinary [project] table".to_string());
             } else if matches!(parse_manifest_key(key_raw).as_deref(), Ok("dependencies" | "features")) {
                 manifest.configuration_error = Some("typed-preview dependencies and features do not support inline tables; use [dependencies] string local paths".to_string());
+            } else if parse_manifest_key(key_raw).as_deref() == Ok("build") {
+                manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
             }
         }
         if edition_only && !matches!(effective_section, "" | "project") {
@@ -1654,6 +1662,14 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 };
                 if field.replace(value).is_some() {
                     manifest.configuration_error = Some(format!("duplicate build setting `{}` in {}", key, path.display()));
+                }
+            }
+            ("build", "reproducible") => {
+                let boolean = value_raw.split('#').next().unwrap_or("").trim();
+                if !matches!(boolean, "true" | "false") {
+                    manifest.configuration_error = Some("build reproducible requires an unquoted boolean true or false".into());
+                } else if manifest.reproducible.replace(boolean == "true").is_some() {
+                    manifest.configuration_error = Some(format!("duplicate build setting `reproducible` in {}", path.display()));
                 }
             }
             ("tests", _) => {
@@ -2915,6 +2931,7 @@ fn help() {
     println!("  --edition legacy-0.9 keeps legacy behavior; typed-preview enables checked native projects");
     println!("  oxid new <name> --edition typed-preview (experimental Linux x86_64 workflow)");
     println!("  typed workspaces: check/build/test --workspace; run --package <name-or-member-path>");
+    println!("  typed native builds: build --reproducible [--incremental]; --no-reproducible overrides the manifest");
     println!("  workspace lock covers every member; use lock --update for reviewed input changes");
     println!("  oxid package [--frozen] [--output ARCHIVE]; package --verify/--extract ARCHIVE (typed source bundles)");
     println!("  oxid compile <file.ox> [-o app.oxb]");
