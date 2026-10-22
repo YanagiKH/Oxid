@@ -1211,6 +1211,45 @@
         "scripts/verify_owned_enum_app.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "growable-byte-buffers",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Move-only growable byte buffers, checked borrowed byte ranges, scope cleanup and partial binary input/output.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Bounded reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Byte-buffer reference execution on supported compiler hosts; process I/O and native execution on Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "A 16 MiB normalized live heap limit includes allocation headers and the simultaneous growth peak. Lengths are i32 and bytes use explicit conversions. Whole-root call-only loans remain; no escaping views, partial moves, generic containers, text semantics, user destructors, stable ABI or additional native targets. Existing execution and compiler limits apply.",
+      "spec": [
+        "rfcs/0043-growable-byte-buffers.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/experimental_builtins.rs",
+        "src/frontend/oir/owned/byte_buffer.rs",
+        "src/frontend/oir/owned_types/resources.rs",
+        "src/frontend/oir/owned/source/experimental_lower.rs",
+        "src/frontend/oir/owned/execute_resources.rs",
+        "src/frontend/oir/owned/execute_io_delivery.rs",
+        "src/frontend/oir/owned/native_resources.rs",
+        "native/experimental_bytebuf.c",
+        "native/typed_bytebuf.c"
+      ],
+      "tests": [
+        "tests/bytebuf_binary.rs",
+        "src/frontend/oir/owned/byte_buffer/tests.rs",
+        "src/frontend/oir/owned/source/experimental_source_tests.rs",
+        "src/frontend/oir/owned/source/io_delivery_source_tests.rs",
+        "src/frontend/oir/owned/source/resource_native_tests.rs",
+        "scripts/test_bytebuf_runtime.py",
+        "scripts/test_binary_delivery.py",
+        "scripts/verify_byte_reverse_app.py"
+      ],
+      "evidence": []
     }
   ]
 }

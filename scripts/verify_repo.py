@@ -54,6 +54,11 @@ TYPED_MANIFEST_PROJECTS = {
         "apps/frame-filter/packages/codec/src/lib.ox",
         "apps/frame-filter/packages/output/src/lib.ox",
     ),
+    "apps/byte-reverse": (
+        "apps/byte-reverse/app/src/main.ox",
+        "apps/byte-reverse/binary/src/lib.ox",
+        "apps/byte-reverse/reverse/src/lib.ox",
+    ),
     "examples/projects/owned_enum_payload_acceptance/ready": (
         "examples/projects/owned_enum_payload_acceptance/ready/src/main.ox",
         "examples/projects/owned_enum_payload_acceptance/ready/src/flow.ox",
@@ -74,6 +79,7 @@ TYPED_MANIFEST_PROJECTS = {
 # exercise the public interface and their own manifest check covers unused code.
 TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "examples/projects/owned_enum_payload_acceptance/library",
+    "apps/byte-reverse",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
 # Effectful roots are checked here, but run only by dedicated verifiers that

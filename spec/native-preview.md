@@ -81,7 +81,15 @@ projected loans and complete transfer validation. Indexed writes keep
 RHS-before-index snapshots, and guarded access charges fuel before bounds.
 Invalid executed indexes emit the exact reference E0606/oir-owned-run diagnostic,
 including source origin, with empty stdout and exit 1. No element pointer is
-formed before the signed bounds check succeeds. Source I/O is limited to the bounded stdin and stdout operations specified below. Address values, heap containers,
+formed before the signed bounds check succeeds. Source I/O includes the bounded
+stdin/stdout operations specified below and experimental byte-slice
+`read_some`/`write_some` in process entry mode. Move-only
+[growable byte buffers](../rfcs/0043-growable-byte-buffers.md) use private
+allocation identities, checked initialized ranges and scope cleanup. Resource
+modules use guarded execution at O0/O2, with unchanged fuel limits and a 16 MiB
+normalized live heap limit. Runtime compilation and linking remain fresh when
+the verified program object comes from the native cache. Address values,
+generic heap containers,
 indirect calls, module initialization and implicit legacy adapters remain absent.
 Bounded declaration-only modules, direct imports and visibility are resolved before
 emission, as specified by [RFC 0015](../rfcs/0015-bounded-typed-projects.md).

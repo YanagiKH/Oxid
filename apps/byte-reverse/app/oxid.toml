@@ -1,0 +1,13 @@
+[project]
+name = "byte-reverse"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+binary = "../binary"
+reversal = "../reverse"
+
+[build]
+entry-mode = "process"
+reproducible = true

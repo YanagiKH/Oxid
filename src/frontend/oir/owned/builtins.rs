@@ -2,7 +2,7 @@
 //! source provenance nor an executable witness, and do not replace the ordinary
 //! declaration, shape, CFG, or ownership proof.
 use super::*;
-use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+use crate::frontend::builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction};
 
 pub(super) const INPUT_SCRATCH_BYTES: usize = 1024;
 pub(super) const OUTPUT_SCRATCH_BYTES: usize = 1024;
@@ -15,7 +15,26 @@ pub(super) fn descriptor_visits(origin: BuiltinOrigins) -> usize {
     if origin == BuiltinOrigins::None {
         0
     } else {
-        1 + 4 * origin.extra_enums() + 7 * origin.extra_functions()
+        let mut visits =
+            1 + 4 * origin.legacy().extra_enums() + 7 * origin.legacy().extra_functions();
+        for item in experimental::Enumeration::ALL {
+            if origin.experimental().contains(item.item()) {
+                visits += 1 + item.members().len();
+            }
+        }
+        for item in experimental::Function::ALL {
+            if origin.experimental().contains(item.item()) {
+                let signature = item.signature(|_| EnumId(0));
+                visits += 5
+                    + 2 * signature.parameters().len()
+                    + if matches!(signature.result, ValueTy::Owned(_)) {
+                        2
+                    } else {
+                        1
+                    };
+            }
+        }
+        visits
     }
 }
 
@@ -26,6 +45,18 @@ pub(super) struct BuiltinIds {
     inventory: BuiltinOrigins,
 }
 impl BuiltinIds {
+    pub(super) fn experimental_enum(&self, kind: experimental::Enumeration) -> Option<EnumId> {
+        self.enumeration_base
+            .0
+            .checked_add(self.inventory.experimental_enum_rank(kind)?)
+            .map(EnumId)
+    }
+    pub(super) fn experimental_function(&self, kind: experimental::Function) -> Option<hir::DefId> {
+        self.function_base
+            .0
+            .checked_add(self.inventory.experimental_function_rank(kind)?)
+            .map(hir::DefId)
+    }
     pub(super) fn enumeration(&self, kind: BuiltinEnum) -> Option<EnumId> {
         self.enumeration_base
             .0
@@ -93,6 +124,7 @@ pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, Owned
             )?;
         }
     }
+    super::experimental_descriptors::check(raw, &ids)?;
     Ok(ids)
 }
 

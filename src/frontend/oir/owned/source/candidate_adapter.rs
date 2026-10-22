@@ -276,7 +276,10 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
-        OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => {
+        OwnedInstruction::PrepareBorrowRange { .. }
+        | OwnedInstruction::Experimental { .. }
+        | OwnedInstruction::ReadStdin { .. }
+        | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")
         }
         OwnedInstruction::ConstructEnum { .. }
@@ -1102,7 +1105,9 @@ mod candidate_native;
 fn record_id(aggregate: AggregateTy) -> RecordId {
     match aggregate {
         AggregateTy::Record(record) => record,
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => panic!("source aggregate gate"),
+        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
+            panic!("source aggregate gate")
+        }
     }
 }
 

@@ -141,6 +141,8 @@ enum ExprFrame {
     },
     Call(CallFrame),
     Prepare(CallFrame),
+    RangeStart(CallFrame),
+    RangeEnd(CallFrame),
 }
 struct Output {
     raw: RawOwnedFunction,
@@ -560,6 +562,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             OwnedInstruction::PrepareScalar { .. }
                 | OwnedInstruction::PrepareOwned { .. }
                 | OwnedInstruction::PrepareBorrow { .. }
+                | OwnedInstruction::PrepareBorrowRange { .. }
         ) {
             self.counts.preparations = budget::add(self.counts.preparations, 1)?;
         }
@@ -1059,6 +1062,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 frames.push(ExprFrame::Prepare(call), cause)?;
                                 frames.push(ExprFrame::Visit(*id), cause)?;
                             }
+                            source::Argument::BorrowRange { start, .. } => {
+                                frames.push(ExprFrame::RangeStart(call), cause)?;
+                                frames.push(ExprFrame::Visit(*start), cause)?;
+                            }
                             source::Argument::Borrow { span, .. } => {
                                 self.statement(
                                     OwnedInstruction::PrepareBorrow {
@@ -1092,6 +1099,46 @@ impl<'a, 'b> Walk<'a, 'b> {
                         self.preparing = call.parent;
                         self.complete(call.expression)?;
                     }
+                }
+                ExprFrame::RangeStart(call) => {
+                    let source::ExprKind::Call { args, .. } =
+                        &self.view.hir().expressions[call.expression.0].kind
+                    else {
+                        return Err(invariant(cause));
+                    };
+                    let source::Argument::BorrowRange { end, .. } = args[call.next] else {
+                        return Err(invariant(cause));
+                    };
+                    frames.push(ExprFrame::RangeEnd(call), cause)?;
+                    frames.push(ExprFrame::Visit(end), cause)?;
+                }
+                ExprFrame::RangeEnd(mut call) => {
+                    let source::ExprKind::Call { args, .. } =
+                        &self.view.hir().expressions[call.expression.0].kind
+                    else {
+                        return Err(invariant(cause));
+                    };
+                    let source::Argument::BorrowRange {
+                        start, end, span, ..
+                    } = args[call.next]
+                    else {
+                        return Err(invariant(cause));
+                    };
+                    self.statement(
+                        OwnedInstruction::PrepareBorrowRange {
+                            call: call.call,
+                            argument: call.next,
+                            loan: LoanId(call.next_loan),
+                            start: self.operand(start)?,
+                            end: self.operand(end)?,
+                        },
+                        span,
+                        span,
+                        span,
+                    )?;
+                    call.next += 1;
+                    call.next_loan += 1;
+                    frames.push(ExprFrame::Call(call), cause)?;
                 }
                 ExprFrame::Prepare(mut call) => {
                     let expression = &self.view.hir().expressions[call.expression.0];
@@ -1391,6 +1438,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                     )?),
                 },
                 source::Argument::Borrow {
+                    kind, place, span, ..
+                }
+                | source::Argument::BorrowRange {
                     kind, place, span, ..
                 } => {
                     let binding = match place {
@@ -2373,6 +2423,26 @@ pub(super) fn lower_with_limits(
                     typed.index().sources().eof(),
                 )?;
             }
+        }
+    }
+    for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if typed
+            .index()
+            .builtin_set()
+            .experimental()
+            .contains(kind.item())
+        {
+            let function = super::experimental_lower::function(typed.index(), kind)?;
+            bytes = budget::add(
+                bytes,
+                budget::function_bytes(super::experimental_lower::counts(kind))?,
+            )?;
+            budget::append(
+                &mut functions,
+                function,
+                typed.index().function_count(),
+                typed.index().sources().eof(),
+            )?;
         }
     }
     if bytes != expected.raw_bytes {

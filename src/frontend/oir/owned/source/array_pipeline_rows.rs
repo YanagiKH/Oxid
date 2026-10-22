@@ -59,7 +59,7 @@ impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
-            AggregateTy::Enum(_) => unreachable!("enum source gate"),
+            AggregateTy::Enum(_) | AggregateTy::ByteBuf => unreachable!("aggregate source gate"),
             AggregateTy::FixedArray(array) => write!(
                 f,
                 "[\"fixed-array\",{},{}]",
@@ -412,6 +412,9 @@ impl fmt::Display for HirArgument<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             source_hir::Argument::Value(id) => write!(f, "[\"value\",{}]", id.0),
+            source_hir::Argument::BorrowRange { .. } => {
+                unreachable!("call-only ranges are outside this predecessor fixture domain")
+            }
             source_hir::Argument::Borrow {
                 kind,
                 place,
@@ -942,7 +945,10 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
-            I::ReadStdin { .. } | I::WriteStdout { .. } => {
+            I::PrepareBorrowRange { .. }
+            | I::Experimental { .. }
+            | I::ReadStdin { .. }
+            | I::WriteStdout { .. } => {
                 unreachable!("builtin effect source gate")
             }
             I::ConstructEnum { .. }

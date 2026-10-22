@@ -9,6 +9,10 @@ use crate::frontend::{
     project::budget::Allocator,
 };
 
+#[cfg(test)]
+#[path = "experimental_source_tests.rs"]
+mod experimental_source_tests;
+
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct SourceProgram {
     witness: verified::VerifiedOwnedProgram,
@@ -217,6 +221,17 @@ impl SourceProgram {
     }
 
     fn require_result_entry_policy(&self, sources: &SourceMap) -> Result<(), Box<Diagnostic>> {
+        for operation in [
+            crate::frontend::builtin_catalog::experimental::Function::ReadSome,
+            crate::frontend::builtin_catalog::experimental::Function::WriteSome,
+        ] {
+            if let Some(id) = self.witness.experimental_function(operation) {
+                return Err(execute::OwnedRunFailure::BinaryEntry(
+                    self.witness.functions()[id.0].span,
+                )
+                .diagnostic(sources));
+            }
+        }
         if let Some(id) = self.witness.builtin_output_function() {
             return Err(
                 execute::OwnedRunFailure::OutputEntry(self.witness.functions()[id.0].span)

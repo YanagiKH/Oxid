@@ -178,6 +178,32 @@ constructor can exceed the narrower native per-function slot cap and be refused
 before tools/output. Native project builds support Linux x86_64 LLVM19.1.7 at
 O0 and O2.
 
+## Growable byte buffers and partial binary I/O
+
+[Growable byte buffers](../rfcs/0043-growable-byte-buffers.md) add the move-only
+`alloc::bytes::ByteBuf` type, including record fields and enum payloads. Its
+functions create, inspect, reserve, append, extend, resize and truncate initialized
+bytes. Growth reports `GrowStatus`; failure preserves the previous value.
+Lengths remain checked i32 values, byte conversions remain explicit, and the
+normalized live allocation limit is 16 MiB, including allocation headers and
+the old-plus-new growth peak.
+
+Call-only byte views admit `&buffer[start..end]` and
+`&mut buffer[start..end]`, including byte arrays, named record fields and
+explicitly dereferenced parameters. Endpoints evaluate once in source order
+and must satisfy `0 <= start <= end <= len`. Views retain whole-root loans and
+cannot escape, be stored or resize the owner. Resource moves transfer ownership;
+normal scope cleanup releases initialized owners. Replacement validates the
+incoming value before releasing the previous one.
+
+`std::io::read_some` and `write_some` accept byte slices in process entry mode
+on Linux x86_64. They expose partial progress, EOF and immediate errno without
+retrying. Their distinct `ReadSomeStatus` and `WriteSomeStatus` enums preserve
+the existing bounded `ReadStatus`/`WriteStatus` identities. Immediate result
+delivery is admitted before transport; later user failures preserve completed
+external effects. The [byte reversal application](../apps/byte-reverse/README.md)
+shows workspace packages, growth and partial I/O together.
+
 ## Bounded owned record composition
 
 [RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold

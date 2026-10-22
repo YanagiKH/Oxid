@@ -491,7 +491,10 @@ fn count_function(
                 counts.call_arguments = add(counts.call_arguments, args.len(), expression.span)?;
                 for argument in args {
                     visit(work, expression.span)?;
-                    if matches!(argument, Argument::Borrow { .. }) {
+                    if matches!(
+                        argument,
+                        Argument::Borrow { .. } | Argument::BorrowRange { .. }
+                    ) {
                         counts.borrow_arguments = add(counts.borrow_arguments, 1, expression.span)?;
                     }
                 }

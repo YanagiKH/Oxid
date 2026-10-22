@@ -123,6 +123,16 @@ pub(super) fn account_builtin_descriptors(
     limits: Limits,
     program: &mut ProgramCounts,
 ) -> Result<(), OwnedFailure> {
+    if !origin.experimental().is_empty() {
+        program.usage.metadata_bytes = cap(
+            add(
+                program.usage.metadata_bytes,
+                crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes(),
+            )?,
+            limits.bounded().metadata,
+            "ownership metadata",
+        )?;
+    }
     program.usage.work = cap(
         add(program.usage.work, builtins::descriptor_visits(origin))?,
         limits.bounded().work,
@@ -450,7 +460,8 @@ pub(super) fn preflight(
                     }
                     OwnedInstruction::PrepareScalar { .. }
                     | OwnedInstruction::PrepareOwned { .. }
-                    | OwnedInstruction::PrepareBorrow { .. } => {
+                    | OwnedInstruction::PrepareBorrow { .. }
+                    | OwnedInstruction::PrepareBorrowRange { .. } => {
                         c.preparations = add(c.preparations, 1)?
                     }
                     _ => {}

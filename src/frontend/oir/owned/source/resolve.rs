@@ -3,7 +3,7 @@ use super::hir::*;
 use super::resolver_storage::{self as storage, Kind, PaidStorage};
 use crate::frontend::{
     ast,
-    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinSet},
+    builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction, BuiltinSet},
     declaration_index::{
         self as index, Access, DeclarationIndex, Exposure, IndexLimits, NominalExposure, NominalId,
         PreparedTypeName, QualifiedValueEndpoint, QuerySession, SourceOwner, TypeContext,
@@ -19,6 +19,12 @@ use crate::frontend::{
     source::{SourceFile, SourceMap, SourceView, Span},
 };
 use std::collections::HashMap;
+
+/// Canonical resources need the paid source lane even when their minimal
+/// imports introduce no enum (for example only `new` and `len`).
+pub(in crate::frontend::oir) fn requires_paid_source(index: &DeclarationIndex<'_>) -> bool {
+    index.enum_count() != 0 || !index.builtin_set().experimental().is_empty()
+}
 
 /// Construction policy, retained even for array-free inputs. No executable
 /// entrypoint accepts a caller-selected admission policy.
@@ -294,6 +300,29 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 return Err(invalid_signature_identity(anchor));
             }
         }
+        for builtin in experimental::Function::ALL {
+            if !index.builtin_set().experimental().contains(builtin.item()) {
+                continue;
+            }
+            let id = index.experimental_function_id(builtin)?;
+            let anchor = index.experimental_anchor(builtin.item())?;
+            let expected = index.experimental_signature(builtin)?;
+            let actual = self
+                .signatures
+                .get(id.0)
+                .ok_or_else(|| invalid_signature_identity(anchor))?;
+            self.work().debit(
+                (4 + expected.parameters().len()) as u64,
+                anchor,
+                "experimental signature identity",
+            )?;
+            if actual.params != expected.parameters()
+                || actual.result != expected.result
+                || actual.span != anchor
+            {
+                return Err(invalid_signature_identity(anchor));
+            }
+        }
         Ok(())
     }
 }
@@ -555,7 +584,7 @@ fn resolve_index(
     index
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
-    if index.enum_count() != 0 {
+    if requires_paid_source(index) {
         return Err(vec![*error(
             "E0101",
             format_args!("enum source requires fresh paid typing"),
@@ -578,7 +607,7 @@ pub(in crate::frontend::oir) fn type_enum_source<'s>(
         .require_current_source_pipeline()
         .map_err(|error| vec![*error])?;
     let at = index.sources().eof();
-    if index.enum_count() == 0 {
+    if !requires_paid_source(index) {
         return Err(vec![*error(
             "E0500",
             format_args!("fresh enum typing requires enum declarations"),
@@ -1355,6 +1384,7 @@ fn resolve_index_impl(
                 }
                 let payload = variant.value_payload(work).map_err(|error| vec![*error])?;
                 let nominal = match payload {
+                    Some(ValueTy::Owned(AggregateTy::ByteBuf)) => NominalId::ByteBuf,
                     Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
                     Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
                     Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
@@ -1421,6 +1451,45 @@ fn resolve_index_impl(
         )
         .map_err(|error| vec![*error])?;
     }
+    for builtin in experimental::Function::ALL {
+        if !index.builtin_set().experimental().contains(builtin.item()) {
+            continue;
+        }
+        let mut append = || -> Result<(), Box<Diagnostic>> {
+            let anchor = index.experimental_anchor(builtin.item())?;
+            let id = index.experimental_function_id(builtin)?;
+            if id.0 != signatures.len() {
+                return Err(invalid_signature_identity(anchor));
+            }
+            let expected = index.experimental_signature(builtin)?;
+            let paid = paid
+                .as_deref_mut()
+                .ok_or_else(|| invalid_signature_identity(anchor))?;
+            work.debit(
+                (1 + expected.parameters().len()) as u64,
+                anchor,
+                "experimental signature construction",
+            )?;
+            let mut params = paid.reserve(
+                allocator,
+                Kind::Parameters,
+                expected.parameters().len(),
+                anchor,
+            )?;
+            for parameter in expected.parameters() {
+                storage::room(&params, params.capacity(), true, anchor)?;
+                params.push(*parameter);
+            }
+            storage::room(&signatures, signatures.capacity(), true, anchor)?;
+            signatures.push(Signature {
+                params,
+                result: expected.result,
+                span: anchor,
+            });
+            Ok(())
+        };
+        append().map_err(|error| vec![*error])?;
+    }
     if records.iter().any(|record| {
         record
             .fields
@@ -1473,6 +1542,11 @@ fn resolve_index_impl(
             .map(|(ty, p)| {
                 (
                     match *ty {
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf))
+                        | ParameterTy::Reference {
+                            referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
+                            ..
+                        } => Some(NominalId::ByteBuf),
                         ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
                         | ParameterTy::Reference {
                             referent: BorrowedTy::Exact(AggregateTy::Record(r)),
@@ -1488,6 +1562,7 @@ fn resolve_index_impl(
             });
         let result = (
             match signature.result {
+                ValueTy::Owned(AggregateTy::ByteBuf) => Some(NominalId::ByteBuf),
                 ValueTy::Owned(AggregateTy::Record(r)) => Some(NominalId::Record(r)),
                 ValueTy::Owned(AggregateTy::Enum(e)) => Some(NominalId::Enum(e)),
                 _ => None,
@@ -1510,7 +1585,7 @@ fn resolve_index_impl(
                 NominalId::Record(record) => {
                     index.query(work).signature_exposure(DefId(id), record, at)
                 }
-                NominalId::Enum(_) => index
+                NominalId::Enum(_) | NominalId::ByteBuf => index
                     .query(work)
                     .nominal_signature_exposure(DefId(id), nominal, at)
                     .map(|exposure| match exposure {
@@ -2359,7 +2434,35 @@ impl<'a> Resolver<'_, 'a> {
                 place,
                 span,
             } => {
+                if let ast::BorrowPlace::Range {
+                    name,
+                    start,
+                    end,
+                    star,
+                } = *place
+                {
+                    let binding = self.lookup(name)?;
+                    let start = self.expression(start)?;
+                    let end = self.expression(end)?;
+                    return Ok(Argument::BorrowRange {
+                        kind: if *mutable {
+                            BorrowKind::Exclusive
+                        } else {
+                            BorrowKind::Shared
+                        },
+                        place: if star.is_some() {
+                            BorrowPlace::Forwarded(binding)
+                        } else {
+                            BorrowPlace::Owner(binding)
+                        },
+                        span: *span,
+                        name_span: name,
+                        start,
+                        end,
+                    });
+                }
                 let (name_span, star_span) = match place {
+                    ast::BorrowPlace::Range { .. } => unreachable!("range handled"),
                     ast::BorrowPlace::OwnerName(name) => (*name, None),
                     ast::BorrowPlace::ForwardedParameter { name, star_span } => {
                         (*name, Some(*star_span))

@@ -250,6 +250,28 @@ pub(super) fn preflight(
             }
         }
     }
+    for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if typed
+            .index()
+            .builtin_set()
+            .experimental()
+            .contains(kind.item())
+        {
+            let count = super::experimental_lower::counts(kind);
+            raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+            bytes = cap(
+                add(bytes, function_bytes(count)?)?,
+                ceiling,
+                "source raw payload",
+            )?;
+        }
+    }
+    if !typed.index().builtin_set().experimental().is_empty() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::experimental_lower::extra_bytes(),
+        )?);
+    }
     // Status-only imports use the same fixed capacity-check roles for the new
     // enum suffix; conservatively admit the bounded builtin producer envelope.
     if typed.index().builtin_set() != BuiltinOrigins::None {

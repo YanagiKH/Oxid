@@ -2,6 +2,7 @@
 pub(super) mod association;
 mod budget;
 mod builtin_lower;
+mod experimental_lower;
 pub(super) mod hir;
 mod hir_budget;
 pub(super) mod lower;
@@ -33,6 +34,8 @@ mod diagnostic_tests;
 mod budget_tests;
 #[cfg(test)]
 mod lower_tests;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod resource_native_tests;
 
 #[cfg(test)]
 mod reviewer_heldout;

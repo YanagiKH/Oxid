@@ -116,3 +116,6 @@ and bounded containment analysis.
 
 [RFC 0042](0042-byte-record-fields.md) admits byte and byte-array record fields
 through the existing checked layouts, whole-value transfers and projected loans.
+
+[RFC 0043](0043-growable-byte-buffers.md) adds move-only growable byte buffers,
+checked borrowed byte ranges, resource cleanup and partial binary input/output.

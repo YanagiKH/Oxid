@@ -2053,3 +2053,6 @@ fn bounded_stdout_private_allocation_failures_never_freeze_identity() {
             .any(|event| matches!(event, Observation::Frozen { .. })));
     }
 }
+
+#[path = "experimental_tests.rs"]
+mod experimental_tests;
