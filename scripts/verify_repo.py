@@ -59,6 +59,13 @@ TYPED_MANIFEST_PROJECTS = {
         "apps/byte-reverse/binary/src/lib.ox",
         "apps/byte-reverse/reverse/src/lib.ox",
     ),
+    "packages/utf8_text": (
+        "packages/utf8_text/src/lib.ox",
+    ),
+    "apps/utf8-normalize": (
+        "apps/utf8-normalize/app/src/main.ox",
+        "apps/utf8-normalize/contracts/src/main.ox",
+    ),
     "examples/projects/owned_enum_payload_acceptance/ready": (
         "examples/projects/owned_enum_payload_acceptance/ready/src/main.ox",
         "examples/projects/owned_enum_payload_acceptance/ready/src/flow.ox",
@@ -80,6 +87,8 @@ TYPED_MANIFEST_PROJECTS = {
 TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "examples/projects/owned_enum_payload_acceptance/library",
     "apps/byte-reverse",
+    "packages/utf8_text",
+    "apps/utf8-normalize",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
 # Effectful roots are checked here, but run only by dedicated verifiers that

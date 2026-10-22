@@ -23,6 +23,7 @@ The native project workflow adds:
 - Move-only records, fixed scalar arrays and finite nested enum payloads.
 - Byte fields and byte-array fields with checked conversion and borrowing.
 - Growable byte buffers and partial binary input/output on Linux x86_64.
+- An owned UTF-8 text library with validation, scalar appends and safe truncation.
 - Native executables on Linux x86_64 using LLVM/Clang/LLD 19.1.7.
 - Development and optimized release builds with the same runtime checks.
 - A project execution policy for programs that need to keep running.
