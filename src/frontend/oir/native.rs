@@ -69,17 +69,54 @@ enum EntryPolicy {
     #[default]
     Result,
     Process,
+    HostedResult,
+    HostedProcess,
 }
 impl EntryPolicy {
+    fn process(self) -> bool {
+        matches!(self, Self::Process | Self::HostedProcess)
+    }
+    fn hosted(self) -> bool {
+        matches!(self, Self::HostedResult | Self::HostedProcess)
+    }
     fn failure_symbol(self) -> &'static str {
         match self {
-            Self::Result => "__oxid_overflow",
-            Self::Process => "__oxid_process_failure",
+            Self::Result | Self::HostedResult => "__oxid_overflow",
+            Self::Process | Self::HostedProcess => "__oxid_process_failure",
         }
     }
 }
 
 impl VerifiedProgram {
+    pub(in crate::frontend) fn native_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        let policy = match (process, execution.hosted()) {
+            (false, false) => EntryPolicy::Result,
+            (true, false) => EntryPolicy::Process,
+            (false, true) => EntryPolicy::HostedResult,
+            (true, true) => EntryPolicy::HostedProcess,
+        };
+        self.native_module_policy_limits_mode_with_source_names(
+            entry,
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            policy,
+            OutputMode::Default,
+            names,
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
     pub(in crate::frontend) fn native_module(
         &self,
         entry: Option<hir::DefId>,
@@ -289,23 +326,27 @@ impl VerifiedProgram {
         if root.param_count != 0 {
             return Err(reject("native main must have no parameters", Some(root.span)).into());
         }
-        if policy == EntryPolicy::Process && root.result != hir::Ty::I32 {
+        if policy.process() && root.result != hir::Ty::I32 {
             return Err(reject("process main must return i32", Some(root.span)).into());
         }
         // An i8 helper result is valid internally, but has no public result
         // representation. Reject the selected entry before native plan vectors,
         // diagnostics, count/render passes, output allocation, or tools.
-        if policy == EntryPolicy::Result && root.result == hir::Ty::U8 {
+        if !policy.process() && root.result == hir::Ty::U8 {
             return Err(reject("native main must return bool, i32 or ()", Some(root.span)).into());
         }
         // The importer already prepays the complete fixed bank. Recheck the
         // descriptor before entering the new scalar helper or native plans.
         mode.preflight_fixed()?;
-        let bounds = self.admit()?;
-        let guarded = bounds.iter().any(|bound| bound.cyclic);
+        let bounds = if policy.hosted() {
+            self.admit_with_execution(true)?
+        } else {
+            self.admit()?
+        };
+        let guarded = !policy.hosted() && bounds.iter().any(|bound| bound.cyclic);
         // Process diagnostics use the same bounded table even for acyclic
         // bodies. This does not change their ABI or introduce fuel guards.
-        let diagnostics = (guarded || policy == EntryPolicy::Process)
+        let diagnostics = (guarded || policy.process() || policy.hosted())
             .then(|| match names {
                 Some(names) => GuardedDiagnostics::new_policy_with_source_names(
                     &self.program,
@@ -348,7 +389,7 @@ impl VerifiedProgram {
         );
         #[cfg(test)]
         emit_observation::finish_pass(false, &count);
-        if guarded || policy == EntryPolicy::Process {
+        if guarded || policy.process() || policy.hosted() {
             limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
         }
         let mut output = mode.allocate(count.len, policy)?;
@@ -370,6 +411,10 @@ impl VerifiedProgram {
     }
 
     fn admit(&self) -> Result<Vec<Bound>, Box<Diagnostic>> {
+        self.admit_with_execution(false)
+    }
+
+    fn admit_with_execution(&self, hosted: bool) -> Result<Vec<Bound>, Box<Diagnostic>> {
         let functions = &self.program.functions;
         if functions.is_empty() {
             return Ok(Vec::new());
@@ -469,7 +514,7 @@ impl VerifiedProgram {
             // Preserve the old inclusive static bound for every function whose
             // transitive CFG is acyclic. Cyclic costs require a shared runtime
             // guard, while depth/live storage remain statically bounded.
-            if !bound.cyclic {
+            if !bound.cyclic && !hosted {
                 limit(
                     bound.cost.saturating_add(1),
                     MAX_COST,
@@ -879,7 +924,7 @@ impl GuardedDiagnostics {
                 }
             }
         }
-        if policy == EntryPolicy::Process {
+        if policy.process() {
             add(FailureKind::ProcessStatus, program.functions[entry.0].span)?;
         }
         Ok(result)
@@ -1004,7 +1049,7 @@ fn emit(
     out.push_str("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
     // Diagnostics are pre-rendered with the reference renderer. Every UTF-8
     // byte is escaped as LLVM constant data; no source path can become syntax.
-    if out.policy == EntryPolicy::Process {
+    if out.policy.process() {
         out.push_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n");
     }
     if let Some(diagnostics) = diagnostics {
@@ -1424,7 +1469,7 @@ fn emit(
     }
     let result = program.functions[entry.0].result;
     out.push_str("\ndefine i32 @main() {\nentry:\n");
-    if out.policy == EntryPolicy::Process {
+    if out.policy.process() {
         out.push_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n");
     }
     if guarded {
@@ -1441,7 +1486,7 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
-    if out.policy == EntryPolicy::Process {
+    if out.policy.process() {
         let diagnostics = diagnostics.expect("process diagnostics");
         let (id, message) =
             diagnostics.get(FailureKind::ProcessStatus, program.functions[entry.0].span);

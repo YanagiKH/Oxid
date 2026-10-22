@@ -283,6 +283,44 @@ pub(super) fn run_array_observed(
 enum NativeEntryPolicy {
     Result,
     Process,
+    HostedResult,
+    HostedProcess,
+}
+
+impl NativeEntryPolicy {
+    fn process(self) -> bool {
+        matches!(self, Self::Process | Self::HostedProcess)
+    }
+
+    fn hosted(self) -> bool {
+        matches!(self, Self::HostedResult | Self::HostedProcess)
+    }
+}
+
+pub(super) fn native_module_with_execution(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    process: bool,
+    execution: crate::frontend::build_config::ExecutionPolicy,
+    names: Option<&NativeSourceNames<'_>>,
+) -> Result<String, Box<Diagnostic>> {
+    let policy = match (process, execution.hosted()) {
+        (false, false) => NativeEntryPolicy::Result,
+        (true, false) => NativeEntryPolicy::Process,
+        (false, true) => NativeEntryPolicy::HostedResult,
+        (true, true) => NativeEntryPolicy::HostedProcess,
+    };
+    native_module_policy_accounted_with_source_names(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::DEFAULT,
+        policy,
+        &mut Accounting::default(),
+        names,
+    )
 }
 
 pub(super) fn native_process_module_with_fuel(
@@ -419,7 +457,7 @@ fn native_module_policy_accounted_with_source_names(
     }
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
-    if policy != NativeEntryPolicy::Process {
+    if !policy.process() {
         for operation in [
             crate::frontend::builtin_catalog::experimental::Function::ReadSome,
             crate::frontend::builtin_catalog::experimental::Function::WriteSome,
@@ -429,7 +467,7 @@ fn native_module_policy_accounted_with_source_names(
             }
         }
     }
-    if policy != NativeEntryPolicy::Process && witness.builtin_output_function().is_some() {
+    if !policy.process() && witness.builtin_output_function().is_some() {
         return Err(reject("write_stdout requires process entry", None));
     }
     // Entry denial is deliberately before plan construction, diagnostics,
@@ -461,7 +499,7 @@ fn native_module_policy_accounted_with_source_names(
     if !matches!(root.result, ValueTy::Scalar(_)) {
         return Err(reject("native main must return a scalar", Some(root.span)));
     }
-    if policy == NativeEntryPolicy::Process && root.result != ValueTy::Scalar(hir::Ty::I32) {
+    if policy.process() && root.result != ValueTy::Scalar(hir::Ty::I32) {
         return Err(reject("process main must return i32", Some(root.span)));
     }
     if root.result == ValueTy::Scalar(hir::Ty::U8) {
@@ -486,9 +524,8 @@ fn native_module_policy_accounted_with_source_names(
         "admission metadata bytes",
         root.span,
     )?;
-    let guarded = plan.uses_dynamic_resources()
-        || policy == NativeEntryPolicy::Process
-        || bounds.iter().any(|b| b.cyclic);
+    let guarded =
+        plan.uses_dynamic_resources() || policy.process() || bounds.iter().any(|b| b.cyclic);
     let diagnostics = Diagnostics::new_policy_accounted_with_source_names(
         &plan,
         id,
@@ -719,7 +756,8 @@ fn admit_policy_accounted(
             cycle_scratch,
         )?;
         accounting.admission_peak(scratch)?;
-        let cyclic = plan.uses_dynamic_resources()
+        let cyclic = policy.hosted()
+            || plan.uses_dynamic_resources()
             || local_cycle
             || plan.witness().builtin_function() == Some(f.id)
             || plan.witness().builtin_output_function() == Some(f.id)
@@ -798,14 +836,12 @@ fn admit_policy_accounted(
             .expect("cycle member")];
         return Err(reject("native preview does not support recursive call graphs, including unused functions and unchosen branches", Some(f.span)));
     }
-    let fuel_bytes = if plan.uses_dynamic_resources()
-        || policy == NativeEntryPolicy::Process
-        || bounds.iter().any(|b| b.cyclic)
-    {
-        8
-    } else {
-        0
-    };
+    let fuel_bytes =
+        if plan.uses_dynamic_resources() || policy.process() || bounds.iter().any(|b| b.cyclic) {
+            8
+        } else {
+            0
+        };
     let runtime_bytes = add(
         fuel_bytes,
         add(
@@ -1135,7 +1171,7 @@ fn diagnostic_occurrences(
     policy: NativeEntryPolicy,
     mut visit: impl FnMut(FailureKind, Span) -> Result<(), Box<Diagnostic>>,
 ) -> Result<(), Box<Diagnostic>> {
-    if policy == NativeEntryPolicy::Process {
+    if policy.process() {
         visit(
             FailureKind::ProcessStatus,
             plan.witness().functions()[entry.0].span,
@@ -1585,8 +1621,8 @@ fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind
     }
     let (id, len) = diagnostics.get(kind, span);
     let helper = match out.policy {
-        NativeEntryPolicy::Result => "__oxid_overflow",
-        NativeEntryPolicy::Process => "__oxid_process_failure",
+        NativeEntryPolicy::Result | NativeEntryPolicy::HostedResult => "__oxid_overflow",
+        NativeEntryPolicy::Process | NativeEntryPolicy::HostedProcess => "__oxid_process_failure",
     };
     writeln!(
         out,
@@ -1604,6 +1640,13 @@ fn emit_guard_value(
     cost: impl std::fmt::Display,
     span: Span,
 ) {
+    if out.policy.hosted() {
+        // Keep the continuation identity used by phi/call predecessor maps.
+        // Hosted execution removes the counter and failure edge, not the
+        // verified control-flow relationship between adjacent operations.
+        writeln!(out, "  br label %{name}_ok\n{name}_ok:").unwrap();
+        return;
+    }
     writeln!(out, "  %{name}_remaining = load i64, ptr %fuel\n  %{name}_exhausted = icmp ult i64 %{name}_remaining, {cost}\n  br i1 %{name}_exhausted, label %{name}_error, label %{name}_ok\n{name}_error:").unwrap();
     emit_failure(out, diagnostics, FailureKind::Fuel, span);
     writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
@@ -2813,6 +2856,9 @@ fn emit(
     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
     if out.resources {
         out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
+        if out.policy.hosted() {
+            out.write_str("declare i32 @__oxid_bytebuf_operation_hosted(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery_hosted(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
+        }
     }
     if plan.witness().builtin_function().is_some() {
         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
@@ -2822,7 +2868,7 @@ fn emit(
         out.write_str("declare i32 @__oxid_write_stdout_byte(ptr)\n")
             .unwrap();
     }
-    if out.policy == NativeEntryPolicy::Process {
+    if out.policy.process() {
         out.write_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n")
             .unwrap();
     }
@@ -2860,7 +2906,7 @@ fn emit(
         unreachable!("entry gate")
     };
     out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
-    if out.policy == NativeEntryPolicy::Process {
+    if out.policy.process() {
         // Signal safety precedes even the root activation/fuel diagnostic.
         out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();
     }
@@ -2895,7 +2941,7 @@ fn emit(
         emit_failure(out, diagnostics, FailureKind::ResourceDescriptor, root.span);
         out.write_str("resources_complete:\n").unwrap();
     }
-    if out.policy == NativeEntryPolicy::Process {
+    if out.policy.process() {
         // Unsigned comparison rejects negatives without truncating i32 status.
         out.write_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_complete, label %process_status_error\nprocess_status_error:\n").unwrap();
         emit_failure(out, diagnostics, FailureKind::ProcessStatus, root.span);
@@ -3400,7 +3446,7 @@ fn emit_write_stdout(
         .expect("verified output scratch suffix");
     debug_assert_eq!(plan.witness().builtin_output_function(), Some(id));
     debug_assert_eq!(scratch.len(), 1024);
-    debug_assert_eq!(out.policy, NativeEntryPolicy::Process);
+    debug_assert!(out.policy.process());
     let enumeration = plan
         .witness()
         .builtin_output_enumeration()

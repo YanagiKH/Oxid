@@ -214,6 +214,17 @@ impl VerifiedProgram {
     /// Entry identity is carried from resolved source declarations, never guessed
     /// from arbitrary verified-IR origin text. The verifier owns the signature.
     pub(super) fn run(&self, entry: Option<hir::DefId>) -> Result<Scalar, RunFailure> {
+        self.run_with_execution(
+            entry,
+            crate::frontend::build_config::ExecutionPolicy::Bounded,
+        )
+    }
+
+    pub(super) fn run_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, RunFailure> {
         let id = entry.ok_or(RunFailure::Entry(None))?;
         let function = self
             .program
@@ -233,7 +244,11 @@ impl VerifiedProgram {
         if function.result == hir::Ty::U8 {
             return Err(RunFailure::ByteEntry(function.span));
         }
-        execute::run(self, id)
+        if execution.hosted() {
+            execute::run_with_execution(self, id, execution)
+        } else {
+            execute::run(self, id)
+        }
     }
     pub(super) fn function_count(&self) -> usize {
         self.program.functions.len()

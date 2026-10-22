@@ -119,3 +119,7 @@ through the existing checked layouts, whole-value transfers and projected loans.
 
 [RFC 0043](0043-growable-byte-buffers.md) adds move-only growable byte buffers,
 checked borrowed byte ranges, resource cleanup and partial binary input/output.
+
+[Project execution policy](0044-project-execution-policy.md) adds long-running
+typed project execution without a cumulative work budget, independently of the
+selected optimization profile.

@@ -11,7 +11,7 @@ import run_current_script_tests as runner
 RUNNER_SOURCE = Path(runner.__file__).read_bytes()
 FROZEN_SOURCES = {
     name + ".py": (Path(runner.__file__).parent / (name + ".py")).read_bytes()
-    for name in runner.HISTORICAL_ONLY
+    for name in runner.HISTORICAL_ONLY.keys() | runner.PREDECESSOR_ONLY.keys()
 }
 PASSING = """import unittest
 class CurrentTest(unittest.TestCase):
@@ -123,6 +123,21 @@ def load_tests(loader, tests, pattern):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("FAILED", result.stderr)
                 self.assertIn("current", result.stderr)
+
+    def test_predecessor_replay_is_exact_and_does_not_hide_future_modules(self):
+        self.assertEqual(set(runner.PREDECESSOR_ONLY), {"test_byte_buffer_compatibility"})
+        name = "test_byte_buffer_compatibility.py"
+        for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
+            with self.subTest(missing=source is None):
+                result = self.execute({name: source, "test_current.py": PASSING})
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn("cannot delegate", result.stderr)
+                self.assertIn(name, result.stderr)
+        result = self.execute({"test_byte_buffer_compatibility_future.py": PASSING})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Ran 1 test", result.stderr)
+        self.assertIn("Mandatory predecessor replay: " + name, result.stderr)
+        self.assertIn("2e3fe21f76d0027d2b24cb5c7f02ba38ad354809", result.stderr)
 
     def test_empty_or_only_delegated_test_sets_cannot_report_success(self):
         for files in [

@@ -66,7 +66,7 @@ oxid build --profile release
 
 `dev` builds without optimization (`-O0`); `release` enables optimization
 (`-O2`) for both the program and its runtime. Both preserve checked arithmetic,
-bounds checks and the current execution limits. `bounded` is an alias for `dev`.
+bounds checks and the selected execution policy. `bounded` is an alias for `dev`.
 These profiles do not add source-level debugger information.
 
 The command-line profile overrides `[build] profile` in the selected package.
@@ -155,3 +155,21 @@ For complete applications, try [Byte count](../apps/byte-count/README.md) or
 [Frame filter](../apps/frame-filter/README.md), which passes owned records,
 arrays and nested enum values between local packages.
 See the [language reference](../spec/typed-preview.md) for supported syntax.
+
+## Long-running programs
+
+Add this setting to a typed binary's `oxid.toml` to run without a cumulative work budget:
+
+```toml
+[execution]
+policy = "hosted"
+```
+
+It applies to `oxid run`, native builds and declared project tests. Existing
+projects without the setting keep the `bounded` policy. Changing `dev` or
+`release` affects optimization; it does not change the execution policy.
+
+Each workspace binary selects its own policy. Libraries cannot change their
+caller's policy. Both choices retain arithmetic, bounds, ownership, allocation
+and live-memory checks. Current compiler, storage and call-depth limits remain.
+See the [execution policy contract](../rfcs/0044-project-execution-policy.md).

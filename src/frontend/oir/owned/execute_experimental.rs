@@ -342,19 +342,24 @@ impl Machine<'_, '_> {
             }
             _ => {
                 let (place, mut value) = self.buffer_parameter(frame, Access::Write, span)?;
+                // A hosted primitive retains all existing checked cost and
+                // failure rules, using a fresh local admission budget. Its
+                // debit never becomes an accumulated program counter.
+                let mut operation_fuel = self.fuel;
                 let status = match operation {
                     Function::Reserve => {
                         let size = self.experimental_i32(frame, 0, span)?;
-                        self.heap.try_reserve(&mut value, size, &mut self.fuel)
+                        self.heap.try_reserve(&mut value, size, &mut operation_fuel)
                     }
                     Function::Push => {
                         let byte = self.experimental_u8(frame, 0, span)?;
-                        self.heap.try_push(&mut value, byte, &mut self.fuel)
+                        self.heap.try_push(&mut value, byte, &mut operation_fuel)
                     }
                     Function::Resize => {
                         let size = self.experimental_i32(frame, 0, span)?;
                         let byte = self.experimental_u8(frame, 1, span)?;
-                        self.heap.try_resize(&mut value, size, byte, &mut self.fuel)
+                        self.heap
+                            .try_resize(&mut value, size, byte, &mut operation_fuel)
                     }
                     Function::Extend => {
                         match self.byte_region(
@@ -366,7 +371,7 @@ impl Machine<'_, '_> {
                             ByteRegion::Activation { frame, bytes } => self.heap.try_extend(
                                 &mut value,
                                 &self.frames[frame].payload[bytes],
-                                &mut self.fuel,
+                                &mut operation_fuel,
                             ),
                             ByteRegion::Buffer {
                                 value: source,
@@ -377,7 +382,7 @@ impl Machine<'_, '_> {
                                 &source,
                                 start,
                                 end,
-                                &mut self.fuel,
+                                &mut operation_fuel,
                             ),
                         }
                     }
@@ -388,8 +393,11 @@ impl Machine<'_, '_> {
                             .map(|_| byte_buffer::GrowStatus::Ok)
                     }
                     _ => unreachable!("mutable buffer operation"),
+                };
+                if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
+                    self.fuel = operation_fuel;
                 }
-                .map_err(|failure| heap_failure(failure, span))?;
+                let status = status.map_err(|failure| heap_failure(failure, span))?;
                 self.frames[place.frame].payload[place.bytes].copy_from_slice(&value.encoding());
                 if operation == Function::Truncate {
                     OperationValue::Scalar(Scalar::Unit)

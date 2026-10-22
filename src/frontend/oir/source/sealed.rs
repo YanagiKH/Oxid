@@ -253,6 +253,58 @@ impl CheckedSourceProgram<'_> {
         }
     }
 
+    pub(in crate::frontend) fn run_with_execution(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, Box<Diagnostic>> {
+        if !execution.hosted() {
+            return self.run();
+        }
+        match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(self.entry, execution)
+                .map_err(|error| error.diagnostic(self.sources)),
+            CheckedBody::Owned(program) => {
+                program.run_with_execution(self.entry, self.sources, execution)
+            }
+        }
+    }
+
+    pub(in crate::frontend) fn native_module_with_execution(
+        &self,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !execution.hosted() {
+            return match (process, names) {
+                (false, None) => self.native_module(),
+                (true, None) => self.native_process_module(),
+                (false, Some(names)) => self.native_module_with_source_names(names),
+                (true, Some(names)) => self.native_process_module_with_source_names(names),
+            };
+        }
+        if process {
+            self.process_preflight()?;
+        }
+        match &self.body {
+            CheckedBody::Scalar(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
+            CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
+        }
+    }
+
     pub(in crate::frontend) fn native_module_with_source_names(
         &self,
         names: &NativeSourceNames<'_>,
@@ -332,6 +384,38 @@ impl CheckedSourceProgram<'_> {
                 .run(Some(entry))
                 .map_err(|error| error.diagnostic(self.sources))?,
             CheckedBody::Owned(program) => program.run_process(entry, self.sources)?,
+        };
+        match value {
+            Scalar::I32(status @ 0..=255) => Ok(status),
+            _ => Err(Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return a status in 0..255",
+                Some(span),
+            )
+            .into()),
+        }
+    }
+
+    pub(in crate::frontend) fn run_process_with_execution(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<i32, ProcessFailure> {
+        if !execution.hosted() {
+            return self.run_process();
+        }
+        self.require_process_host()?;
+        if !super::super::process::setup() {
+            return Err(ProcessFailure::Setup);
+        }
+        let (entry, span) = self.checked_process_entry()?;
+        let value = match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(Some(entry), execution)
+                .map_err(|error| error.diagnostic(self.sources))?,
+            CheckedBody::Owned(program) => {
+                program.run_process_with_execution(entry, self.sources, execution)?
+            }
         };
         match value {
             Scalar::I32(status @ 0..=255) => Ok(status),

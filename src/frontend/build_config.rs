@@ -31,9 +31,36 @@ impl NativeOptimization {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Execution {
+pub(crate) enum ExecutionPolicy {
     Bounded,
+    Hosted,
 }
+
+impl ExecutionPolicy {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "bounded" => Some(Self::Bounded),
+            "hosted" => Some(Self::Hosted),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn hosted(self) -> bool {
+        matches!(self, Self::Hosted)
+    }
+
+    pub(in crate::frontend) const fn initial_fuel(self, bounded: usize) -> usize {
+        if self.hosted() {
+            HOSTED_FUEL
+        } else {
+            bounded
+        }
+    }
+}
+
+// Only explicit hosted entry points install this marker, after ordinary
+// Limits::bounded admission. It is a mode, never a large finite program budget.
+pub(in crate::frontend) const HOSTED_FUEL: usize = usize::MAX;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SourcePaths {
     Original,
@@ -47,7 +74,7 @@ pub(crate) struct NativeBuildSettings {
     backend: Backend,
     target: Target,
     optimization: NativeOptimization,
-    execution: Execution,
+    execution: ExecutionPolicy,
     source_paths: SourcePaths,
 }
 
@@ -64,7 +91,7 @@ impl NativeBuildSettings {
             backend: Backend::Llvm,
             target: Target::LinuxX86_64Gnu,
             optimization,
-            execution: Execution::Bounded,
+            execution: ExecutionPolicy::Bounded,
             source_paths: if reproducible {
                 SourcePaths::ProjectRelative
             } else {
@@ -80,10 +107,19 @@ impl NativeBuildSettings {
     }
 
     pub(crate) const fn optimization_flag(self) -> &'static str {
-        match (self.backend, self.optimization, self.execution) {
-            (Backend::Llvm, NativeOptimization::O0, Execution::Bounded) => "-O0",
-            (Backend::Llvm, NativeOptimization::O2, Execution::Bounded) => "-O2",
+        match (self.backend, self.optimization) {
+            (Backend::Llvm, NativeOptimization::O0) => "-O0",
+            (Backend::Llvm, NativeOptimization::O2) => "-O2",
         }
+    }
+
+    pub(crate) const fn with_execution(mut self, execution: ExecutionPolicy) -> Self {
+        self.execution = execution;
+        self
+    }
+
+    pub(crate) const fn execution(self) -> ExecutionPolicy {
+        self.execution
     }
 
     pub(crate) const fn reproducible(self) -> bool {

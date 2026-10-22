@@ -125,6 +125,7 @@ pub(crate) struct ProjectManifest {
     pub(crate) profile: Option<String>,
     pub(crate) reproducible: Option<bool>,
     pub(crate) entry_mode: Option<String>,
+    pub(crate) execution_policy: Option<String>,
     pub(crate) scripts: HashMap<String, String>,
     pub(crate) dependencies: HashMap<String, String>,
     pub(crate) features: HashMap<String, bool>,
@@ -1581,6 +1582,9 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     if namespace == "build" && (array_table || first != raw.len()) {
                         manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
                     }
+                    if namespace == "execution" && (array_table || first != raw.len()) {
+                        manifest.configuration_error = Some("typed-preview execution settings require an ordinary [execution] table".into());
+                    }
                     section = parse_manifest_key(raw).unwrap_or_else(|_| raw.to_string());
                     if array_table {
                         if section == "project" {
@@ -1593,7 +1597,7 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             }
         }
         let Some(equals) = manifest_delimiter(line, '=') else {
-            if matches!(section.as_str(), "dependencies" | "features") {
+            if matches!(section.as_str(), "dependencies" | "features" | "execution") {
                 manifest.configuration_error = Some(format!("invalid {} declaration in {}: expected name = value", section, path.display()));
             }
             continue;
@@ -1612,6 +1616,8 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     manifest.configuration_error = Some("typed-preview dependencies and features do not support dotted declarations; use [dependencies] string local paths".to_string());
                 } else if namespace.as_deref() == Ok("build") {
                     manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
+                } else if namespace.as_deref() == Ok("execution") {
+                    manifest.configuration_error = Some("typed-preview execution settings require an ordinary [execution] table".into());
                 }
             } else if parse_manifest_key(key_raw).as_deref() == Ok("project") {
                 return Err("inline project tables are unsupported; use an ordinary [project] table".to_string());
@@ -1619,6 +1625,8 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 manifest.configuration_error = Some("typed-preview dependencies and features do not support inline tables; use [dependencies] string local paths".to_string());
             } else if parse_manifest_key(key_raw).as_deref() == Ok("build") {
                 manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
+            } else if parse_manifest_key(key_raw).as_deref() == Ok("execution") {
+                manifest.configuration_error = Some("typed-preview execution settings require an ordinary [execution] table".into());
             }
         }
         if edition_only && !matches!(effective_section, "" | "project") {
@@ -1671,6 +1679,16 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 } else if manifest.reproducible.replace(boolean == "true").is_some() {
                     manifest.configuration_error = Some(format!("duplicate build setting `reproducible` in {}", path.display()));
                 }
+            }
+            ("execution", "policy") => {
+                if !value_raw.trim_start().starts_with(['"', '\'']) {
+                    manifest.configuration_error = Some("execution policy requires a quoted bounded or hosted name".into());
+                } else if manifest.execution_policy.replace(value).is_some() {
+                    manifest.configuration_error = Some(format!("duplicate execution policy in {}", path.display()));
+                }
+            }
+            ("execution", _) => {
+                manifest.configuration_error = Some(format!("unknown execution setting `{}` in {}", key, path.display()));
             }
             ("tests", _) => {
                 if manifest.tests.insert(key.clone(), value).is_some() {

@@ -63,7 +63,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_byte_buffer_compatibility.py', current)
+        self.assertIn('scripts/verify_hosted_execution_compatibility.py', current)
         self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
 
         replay = block(self.ci, 'historical-qualification', 2)
@@ -75,6 +75,13 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('--archive "$RUNNER_TEMP/historical-script-controller/typed-project-unit2-evidence.zip"', historical)
         self.assertIn('name: historical-script-replay', historical)
         self.assertNotRegex(historical, r'(?m)^    if:|continue-on-error:')
+
+        predecessor = block(self.ci, 'source-policy-predecessor', 2)
+        self.assertIn('ref: 2e3fe21f76d0027d2b24cb5c7f02ba38ad354809', predecessor)
+        self.assertIn('scripts/run_predecessor_script_tests.py', predecessor)
+        self.assertIn('source-policy-replay.py" --repo .', predecessor)
+        self.assertIn('name: byte-buffer-source-policy-predecessor', predecessor)
+        self.assertNotRegex(predecessor, r'(?m)^    if:|continue-on-error:')
 
     def test_historical_provenance_reads_are_authorized_without_event_spoofing(self):
         for workflow in (self.ci, self.release, self.historical):

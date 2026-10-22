@@ -570,10 +570,11 @@ impl Workspace {
                 .iter()
                 .position(|candidate| *candidate == selected[0])
                 .expect("selected session");
-            return Ok(prepared[slot].execute(
+            return Ok(prepared[slot].execute_with_execution(
                 frontend::PackageCommand::Run,
                 options.json(),
                 process,
+                execution_policy(&self.members[selected[0]].snapshot.manifest)?,
             ));
         }
         let mut failed = 0;

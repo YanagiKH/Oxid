@@ -127,9 +127,19 @@ pub(super) fn operation(
             .expect("sealed binary delivery");
         // %result is the caller's preadmitted owner, including ignored and
         // nested-call results. The local owner/layout remains unchanged.
-        writeln!(out, "  %{name}_status = call i32 @__oxid_binary_delivery(i32 {code}, ptr {pointer}, i32 {size}, ptr %fuel, ptr %result, i64 {cost})").unwrap();
+        let helper = if out.policy.hosted() {
+            "__oxid_binary_delivery_hosted"
+        } else {
+            "__oxid_binary_delivery"
+        };
+        writeln!(out, "  %{name}_status = call i32 @{helper}(i32 {code}, ptr {pointer}, i32 {size}, ptr %fuel, ptr %result, i64 {cost})").unwrap();
     } else {
-        writeln!(out, "  %{name}_status = call i32 @__oxid_bytebuf_operation(i32 {code}, ptr {pointer}, i32 {size}, i32 {fill}, ptr {source}, i32 {length}, ptr %fuel, ptr {result})").unwrap();
+        let helper = if out.policy.hosted() {
+            "__oxid_bytebuf_operation_hosted"
+        } else {
+            "__oxid_bytebuf_operation"
+        };
+        writeln!(out, "  %{name}_status = call i32 @{helper}(i32 {code}, ptr {pointer}, i32 {size}, i32 {fill}, ptr {source}, i32 {length}, ptr %fuel, ptr {result})").unwrap();
     }
     status(
         out,

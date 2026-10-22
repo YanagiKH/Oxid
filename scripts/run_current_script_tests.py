@@ -55,12 +55,22 @@ HISTORICAL_ONLY = {
         "requires the frozen source identity before its predecessor binding mutation suite"),
 }
 
+# This complete source-pinned module tests the byte-buffer policy on its exact
+# parent compiler. ci.yml replays it unchanged in a separate required job.
+PREDECESSOR_ONLY = {
+    "test_byte_buffer_compatibility": (
+        "6b0213e3f6ce75d3ea4fed2566d1b4eae0ece002db2c95cdff7dea4c41da669c",
+        "2e3fe21f76d0027d2b24cb5c7f02ba38ad354809",
+        "asserts the complete pre-hosted compiler source identity"),
+}
+
 
 def selected_modules(directory):
     """Select by exact module name; no prefix, failure, or exception filtering."""
     discovered = sorted(Path(directory).glob("test_*.py"))
-    selected = [path for path in discovered if path.stem not in HISTORICAL_ONLY]
-    delegated = [path for path in discovered if path.stem in HISTORICAL_ONLY]
+    pinned = HISTORICAL_ONLY.keys() | PREDECESSOR_ONLY.keys()
+    selected = [path for path in discovered if path.stem not in pinned]
+    delegated = [path for path in discovered if path.stem in pinned]
     return selected, delegated
 
 
@@ -74,7 +84,7 @@ class CurrentTestLoader(unittest.TestLoader):
     def _match_path(self, path, full_path, pattern):
         candidate = Path(full_path)
         if (candidate.parent.resolve() == self.directory
-                and candidate.stem in HISTORICAL_ONLY):
+                and candidate.stem in HISTORICAL_ONLY.keys() | PREDECESSOR_ONLY.keys()):
             return False
         return super()._match_path(path, full_path, pattern)
 
@@ -86,7 +96,8 @@ def main():
     directory = Path(__file__).resolve().parent
     selected, delegated = selected_modules(directory)
     print(f"Current script modules: {len(selected)}", file=sys.stderr)
-    for name, (expected, _) in HISTORICAL_ONLY.items():
+    pinned = {**HISTORICAL_ONLY, **{name: (row[0], row[2]) for name, row in PREDECESSOR_ONLY.items()}}
+    for name, (expected, _) in pinned.items():
         path = directory / (name + ".py")
         try:
             actual = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -100,6 +111,10 @@ def main():
             )
             return 1
     for path in delegated:
+        if path.stem in PREDECESSOR_ONLY:
+            _, revision, reason = PREDECESSOR_ONLY[path.stem]
+            print(f"Mandatory predecessor replay: {path.name} @ {revision}: {reason}", file=sys.stderr)
+            continue
         print(
             f"Mandatory historical replay: {path.name} @ {HISTORICAL_REVISION}: "
             f"{HISTORICAL_ONLY[path.stem][1]}",

@@ -53,7 +53,8 @@ impl BuildOptions {
             self.optimization
                 .or(manifest_optimization)
                 .unwrap_or(frontend::NativeOptimization::O0),
-        ))
+        )
+        .with_execution(execution_policy(manifest)?))
     }
 }
 
@@ -61,6 +62,14 @@ fn parse_profile(profile: &str) -> Result<frontend::NativeOptimization, String> 
     frontend::NativeOptimization::from_profile(profile).ok_or_else(|| {
         format!("unknown build profile `{profile}`; expected bounded, dev or release")
     })
+}
+
+fn execution_policy(
+    manifest: &runtime::ProjectManifest,
+) -> Result<frontend::ExecutionPolicy, String> {
+    let name = manifest.execution_policy.as_deref().unwrap_or("bounded");
+    frontend::ExecutionPolicy::from_name(name)
+        .ok_or_else(|| format!("unknown execution policy `{name}`; expected bounded or hosted"))
 }
 
 /// The doctor integration can admit the complete workspace without routing a
@@ -493,6 +502,7 @@ fn find_manifest(source: Option<&Path>) -> Result<Option<PathBuf>, String> {
 }
 
 fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> {
+    execution_policy(manifest)?;
     if let Some(error) = &manifest.configuration_error {
         return Err(error.clone());
     }
@@ -991,7 +1001,12 @@ fn execute_project(
             settings,
             &graph.specs[0].root,
         ),
-        None => prepared.execute(command, options.json(), process),
+        None => prepared.execute_with_execution(
+            command,
+            options.json(),
+            process,
+            execution_policy(&snapshot.manifest)?,
+        ),
     })
 }
 
