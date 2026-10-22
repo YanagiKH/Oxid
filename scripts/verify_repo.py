@@ -691,6 +691,9 @@ def verify_readmes() -> None:
     for name, document in zip(READMES, documents, strict=True):
         if readme_shape(document) != expected_shape:
             raise RuntimeError(f"{name} does not have the same section/code/image structure as README.md")
+        for image in IMAGES:
+            if image not in document:
+                raise RuntimeError(f"{name} does not reference {image}")
         for sibling in READMES:
             if sibling not in document:
                 raise RuntimeError(f"{name} does not link to {sibling}")

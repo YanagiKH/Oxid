@@ -1,79 +1,158 @@
-<img align="right" width="96" alt="Oxid 標誌" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
+<p align="center">
+  <img width="216" height="200" alt="Oxid logo" src="https://github.com/user-attachments/assets/c1de7268-a168-408c-8790-f5088c50e480" />
+</p>
 
-# Oxid
+<h1 align="center">Oxid</h1>
 
-**以 Rust 為靈感，用來撰寫腳本與命令列工具的程式語言。**
+<p align="center">
+  <strong>用簡潔語法撰寫腳本、自動化工具，串接不同語言。</strong>
+</p>
 
-寫好 `.ox` 檔案，就能用 `oxid` 執行。已發布的實驗版 0.9 將直譯器、
-格式化工具、測試與專案管理功能整合在同一個執行檔中。
+<p align="center">
+  <a href="https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml"><img alt="Repository CI" src="https://github.com/YanagiKH/Oxid/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/YanagiKH/Oxid/releases"><img alt="Release" src="https://img.shields.io/github/v/release/YanagiKH/Oxid?include_prereleases" /></a>
+  <a href="LICENSE"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" /></a>
+</p>
 
-[安裝](docs/INSTALLATION.md) · [快速入門](docs/QUICKSTART.md) · [文件](docs/README.md)
+<p align="center">
+  <a href="README.md">English</a> · <a href="README_ZH.md">繁體中文</a> · <a href="README_JP.md">日本語</a>
+</p>
 
-[English](README.md) · [繁體中文](README_ZH.md) · [日本語](README_JP.md)
+<p align="center">
+  寫一個 <code>.ox</code> 檔案，就能用 <code>oxid</code> 執行，也能將頂層匯入打包成單一 <code>.oxb</code> 檔案。<br />
+  一個執行檔內含直譯器和專案工具；執行 Oxid 程式不需要安裝 Rust。
+</p>
 
-## 馬上試試
-
-從 [Releases](https://github.com/YanagiKH/Oxid/releases) 下載適合你平台的壓縮檔，
-解壓縮後將 `oxid` 或 `oxid.exe` 加入 `PATH`。使用發布版不需要安裝 Rust。
-[安裝指南](docs/INSTALLATION.md)也提供安裝程式與從原始碼建置的步驟。
-
-將以下程式存成 `double.ox`：
+<p align="center"><strong>0.9 · 實驗階段 · 以 Rust 撰寫的直譯器</strong></p>
 
 ```oxid
-fn main() {
+fun double(n) => n * 2;
+
+fun main() {
     for n in [1, 2, 3] {
-        print n * 2;
+        say n |> double;
     }
 }
 ```
 
-執行：
+存成 `double.ox`，執行 `oxid run double.ox`，就會逐行印出 `2`、`4`、`6`。除了 `fun`、`var`、`say`，也可以使用 `fn`、`let`、`print`。
 
-```sh
-oxid run double.ox
-```
+## 馬上試試
 
-程式會逐行印出 `2`、`4`、`6`。
+先[安裝 Oxid](docs/INSTALLATION.md)，再建立專案：
 
-## 建立專案
-
-```sh
+```bash
 oxid new hello
 cd hello
 oxid run src/main.ox
-oxid test
 oxid build
 oxid run .oxid/bin/hello.oxb
+oxid test
 ```
 
-起始程式會印出 `Hello from Oxid`。修改 `src/main.ox` 就能改變程式內容。
-`oxid build` 會產生 `.oxid/bin/hello.oxb`，可用相容版本的 Oxid 執行。
-資料處理與專案工具的用法，請見[快速入門](docs/QUICKSTART.md)。
+兩個執行指令都會印出 `Hello from Oxid`。建置產生的是序列化 AST 檔案，需要相容的 Oxid 執行環境才能執行。
 
-## 開發版本的原生專案
+[快速入門](docs/QUICKSTART.md) · [語法](docs/SYNTAX.md) · [指令參考](docs/COMMANDS.md)
 
-開發中的原始碼也支援具有明確型別與所有權檢查的專案，並可產生原生執行檔。
-這項實驗性工作流程**尚未包含在已發布的 0.9 執行檔中**。
+## 現在可以做什麼
 
-原生建置目前需要 **Linux x86_64**、**LLVM/Clang/LLD 19.1.7**，
-以及系統的 C 開發工具。原生程式目前設有執行步數與資源上限，詳情請見下方指南。
+Oxid 0.9 已提供以下功能。各項指南另有目前行為與限制的說明。
 
-請從[原生專案指南](docs/TYPED_PROJECTS.md)開始，了解建立、檢查、測試與建置專案的方法，
-以及本機依賴、工作區和原始碼套件的用法。
-[位元組計數應用程式](apps/byte-count/README.md)示範如何將完整程式拆分成多個套件。
+### 語法與資料
 
-## 指南與範例
+- **簡潔或熟悉的寫法：** `fun` / `fn`、`var` / `let`、`say` / `print` 等別名可以在同一支程式混用
+- **函式與流程控制：** 單一運算式函式、`if` / `when`、`while` / `loop`、`for … in`、`break`、`continue` 與 `|>` 管線
+- **內建資料型別：** 數值、字串、布林值、null、陣列，以及支援屬性或字串鍵存取的 record
+- **文字與 JSON：** 分割、合併、取代文字，解析與序列化 JSON，並固定 record 的鍵排序
+- **原始碼巨集：** 在解析前展開單行、可帶參數的巨集，並快取預處理結果
+- **延遲執行的 task：** `async` / `work`、`await`、`spawn`、狀態查詢與結果快取；`join_all` 依序執行 task
 
-- [語言語法](docs/SYNTAX.md)與[內建函式](docs/API.md)
-- [模組](docs/MODULES.md)與[腳本依賴](docs/PACKAGES.md)
-- [指令參考](docs/COMMANDS.md)：格式化、測試與專案工具
-- [呼叫其他語言](docs/INTEROP.md)
-- [範例程式](examples/)
+### 執行、打包與相依套件
 
-## 參與開發
+- **直接執行：** 執行 `.ox` 檔案、使用 REPL，或透過 `watch` 在專案檔案變更後重新執行
+- **可攜 AST 產物：** 將頂層匯入打包為 `.oxb`，以 `.oxa` 輸出相同表示，並檢視格式版本、數量與檢查碼
+- **模組載入：** 解析相對路徑與相依套件別名，在產物中保留原始碼位置；函式內的匯入仍需在執行時取得原始檔
+- **相依套件鎖定：** 本機路徑、以完整 commit 鎖定的 HTTPS Git 來源、遞迴解析、`oxid.lock`，以及 locked / offline / frozen 模式
 
-要建置 Oxid 本身，請依照[原始碼安裝步驟](docs/INSTALLATION.md#build-a-checkout)操作。
-提交修改與回報問題，請見[貢獻指南](CONTRIBUTING.md)與
-[Issues](https://github.com/YanagiKH/Oxid/issues)。
+### 專案工具
+
+- **起始專案：** `new` / `init`，以及 HTTP、Discord 專案範本
+- **日常檢查：** 語法檢查、以語法檢查為基礎的 `lint`、原始碼格式化，以及執行專案測試與範例
+- **Manifest 腳本：** 可重複使用的指令，支援引號參數，直接啟動程序而不經 shell
+- **專案檢視：** `doctor`、API 文件產生，以及啟動、解析、打包與執行環境操作的 benchmark 報告
+
+### 檔案、網路與跨語言串接
+
+- **本機 I/O：** 文字檔案、目錄列表、環境變數、時間查詢與 sleep 函式
+- **外部程式：** 啟動程序、取得結束碼或標準輸出，透過程序轉接器呼叫 Python、Java 或 Go
+- **C/C++ 與主程式轉接器：** 四個已連結的原生輔助函式，以及能啟動 Oxid 的 Python、Java、Go、C、C++ 轉接程式產生器
+- **本機 HTTP 與 Discord 邏輯：** 可重複使用的 TCP listener、有逾時限制的 HTTP 函式、路由，以及 Discord 指令與互動分派；gateway 傳輸仍由外部處理
+
+[語法](docs/SYNTAX.md) · [執行環境 API](docs/API.md) · [套件](docs/PACKAGES.md) · [專案工具](docs/COMMANDS.md) · [跨語言串接](docs/INTEROP.md) · [HTTP / Discord](docs/WEB_AND_BOTS.md)
+
+可先執行[範例](examples/)了解用法。外部轉接器仍需要對應的執行環境或工具鏈。`.oxb` 需要相容的 Oxid 執行環境；內容是序列化 AST，並非原生機器碼。
+
+## 使用前先了解
+
+Oxid 0.9 適合實驗與小型工具。`.oxb` 內含序列化 AST，由直譯器執行。Task 採延遲執行，join 時依序執行；網路功能尚無並行排程器或內建 TLS。沿用的 `bootstrap`、`self-host` 指令驗證的是產物序列化往返，並非編譯器重建自身。
+
+長期方向是具備靜態檢查與原生編譯的語言。可選的[實驗性 LLVM 預覽](spec/native-preview.md)已能將受限、非遞迴的 bool／unit／i32 子集編譯成 Linux x86_64 執行檔。完整靜態核心語意、Rust 相容性與原生 AI 訓練仍未提供。請參考[路線圖](docs/ROADMAP.md)與[實作現況](docs/architecture/current-baseline.md)。
+
+可選的[所有權基礎擴充](spec/typed-preview.md#nominal-owned-structs-and-call-only-borrowing)適用於 `--edition typed-preview`，支援僅含純量欄位、只能移動的 struct、整體移動與替換，以及僅限函式呼叫的顯式借用。[Batch 範例](fixtures/owned_source/batch.ox)結合迴圈與回傳擁有值的輔助函式，結果為 816；實際證據與限制見[原始碼驗證紀錄](docs/architecture/owned-source-validation.md)。執行與原生編譯的 `main` 仍須無參數並回傳純量；原生範圍仍限 Linux x86_64、LLVM 19.1.7、O0。既有動態 record 語意不變；儲存參照、堆積配置與析構安全，以及 v1.0 完成，均不在本次範圍內。
+
+實驗性的[型別專案路徑](spec/typed-preview.md#bounded-typed-projects)加入只含宣告的模組、直接匯入與可見性。[三檔案 Batch 範例](fixtures/typed-project-batch/README.md)保留私有欄位，依原始碼推導的結果為 816。載入已宣告子模組目前限 Linux；只使用根檔案的專案語法沒有此探索平台限制。實際驗證範圍見[專案驗證紀錄](docs/architecture/typed-project-unit4-validation.md)。
+
+實驗性的[固定長度純量陣列擴充](spec/typed-preview.md#fixed-scalar-arrays)為明確指定 typed-preview 的 `check`、`run` 與 `compile` 加入只能移動的 bool/i32/unit 陣列、邊界檢查索引、`len()`，以及呼叫期間的整體陣列借用。[三模組範例](fixtures/typed-array-samples/README.md)回傳 5325。語法、平台與更嚴格的原生限制見規格；預設與 legacy 陣列行為不變。
+
+實驗性的[僅限呼叫期間借用的純量切片](spec/typed-preview.md#call-only-borrowed-scalar-slices)讓接受共享 `&[T]` 或獨佔 `&mut [T]` 的輔助函式，透過顯式借用與再借用處理不同長度的完整 bool/i32/unit 固定長度陣列。[三模組切片範例](fixtures/typed-slice-samples/README.md)使用長度 2、3、0，回傳 515。此功能僅限明確指定 typed-preview 的 `check`、`run` 與原生 `compile`，沿用既有的 Linux 模組載入限制，以及 Linux x86_64、LLVM/Clang/LLD 19.1.7、O0 原生限制。範圍語法、子切片及擁有所有權的不定長度值仍未提供；這不代表穩定性或里程碑已完成。
+
+[有界獨立位元組儲存擴充](rfcs/0031-bounded-standalone-byte-storage.md)正在進行目前原始碼的驗證：`[u8; N]` 擁有者、僅限呼叫期間的整體位元組切片、顯式受檢轉換、i32 索引與長度，資源上限不變。[範例](fixtures/typed-byte-storage/README.md)預期回傳 638。仍不支援記錄中的位元組欄位與投影、位元組算術、堆積緩衝區或 I/O 遷移；獨立資源審查與精確提交的託管 CI 是分開的關卡。
+
+實驗性的[型別格式化工具](spec/typed-preview.md#single-file-formatting)支援固定長度陣列語法及 `oxid fmt --edition typed-preview input.ox`（將完整格式化原始碼寫至標準輸出）及 `--check`（需要格式化時回傳結束碼 1）。它會保留註解和既有換行，調整空白與縮排，不載入模組或寫入檔案。預設的舊版格式化行為不變。
+
+只執行可信任的程式，並審查相依套件。產生的 C/C++ 程序轉接器只應接收可信任路徑。私下回報漏洞的方式見[安全政策](SECURITY.md)。
+
+## 從原始碼建置
+
+開發版本另提供實驗性的 [typed 專案流程](docs/TYPED_PROJECTS.md)：
+執行 `oxid new hello --edition typed-preview`，即可依 manifest 設定使用
+`check`、`run`、`test` 與原生 `build`，並在 Linux 支援本地相依套件。
+`oxid lock` 可記錄依賴來源，供專案命令的 `--locked`／`--frozen` 檢查變動。
+原生執行目前支援 Linux x86_64、LLVM 19.1.7，保留 typed preview 的資源限制。
+
+需要穩定版 Rust 與 C/C++ 編譯器。以下指令適用於 Unix 類 shell：
+
+```bash
+git clone https://github.com/YanagiKH/Oxid.git
+cd Oxid
+cargo build --release --locked
+./target/release/oxid run examples/hello.ox
+```
+
+Windows、發行版壓縮檔、Cargo 安裝與 Docker 用法，請見[安裝指南](docs/INSTALLATION.md)。
+
+## 深入了解與參與
+
+[文件](docs/README.md) · [架構](docs/ARCHITECTURE.md) · [貢獻指南](CONTRIBUTING.md) · [問題回報](https://github.com/YanagiKH/Oxid/issues)
+
+圖解：[快速入門](docs/assets/quickstart.svg)、[執行流程](docs/assets/architecture.svg)、[跨語言串接](docs/assets/interop.svg)、[Web / Discord](docs/assets/web-discord.svg)。
+
+歡迎提供附最小可執行範例的 bug 回報、改善錯誤訊息、補測試或修正文件。送出 pull request 前，請依[貢獻指南](CONTRIBUTING.md)執行相關檢查。
 
 採用 [MIT](LICENSE) 或 [Apache-2.0](LICENSE-APACHE) 授權。
+
+實驗性的[陣列欄位切片借用](rfcs/0022-projected-array-slices.md)讓切片輔助函式借用固定長度純量陣列欄位，例如 `bump(&mut batch.samples)`。巢狀欄位路徑及透過整筆記錄參照的明確再借用，仍保留整個擁有者的衝突規則、可見性與僅限呼叫的生命週期。資源上限及原生目標不變。
+
+實驗性的[有界列舉與消耗式比對](spec/typed-preview.md#bounded-nominal-enums-and-consuming-match)加入具名、只能移動的列舉值；變體可不帶資料，或攜帶一個 bool/i32/unit 值，並以陳述式對具名擁有者進行完整比對。明確指定 typed-preview 的 check/run/原生 compile 與格式化支援此契約。[兩檔案掃描器](tests/fixtures/bounded_enum_scanner/main.ox)回傳 115；列舉借用、聚合型承載資料與比對運算式仍不在範圍內。目前原始碼驗證與精確版本的託管 CI 仍是待完成的獨立關卡；這不代表已實現自我託管。
+
+實驗性的[有界標準輸入](spec/typed-preview.md#bounded-stdin-input)僅加入可使用別名的個別 `std::io::read_stdin` 與 `std::io::ReadStatus` 匯入。它將原始位元組填入既有的獨占 i32 切片，回傳 `Eof(n)`、不多讀資料的 `Full`，或保持目的緩衝區不變的 `IoError`；已消耗的輸入無法還原。在 Linux x86_64 上，[128 位元組運算式程式](fixtures/typed-expression-samples/README.md#bounded-stdin-entry)已在本機 28 案例的參考／原生驗證中，以同一個未變更的 ELF 分別回傳 39 和 63。完整的目前原始碼驗證與精確版本的託管 CI 仍是獨立關卡；一般 `std`、字串、其他輸入執行平台及自我託管仍不在此次範圍內。
+
+實驗性的[有界標準輸出與行程入口](spec/typed-preview.md#bounded-stdout-and-process-entry)加入對既有共用 i32 位元組切片的 `write_stdout`，以及明確指定的 `--entry-mode=process`：0..255 直接作為結束狀態，標準輸出不再附加純量或 JSON 結果。[持久化堆疊元件](fixtures/typed-expression-samples/README.md)輸出 80 位元組的 OXS1 成品，由獨立的 Oxid 載入器與外部解碼器驗證；同一個產生器 ELF 可處理結果為 39 與 63 的輸入。目前執行限 Linux x86_64，完整原始碼驗證與託管 CI 仍是獨立關卡；Windows 的 Process Run 暫時以狀態 74 靜默結束，預設模式不變。
+
+另有以 Oxid 撰寫的[有界 typed-preview 詞法元件](fixtures/typed-lexer-samples/README.md)，保留最多 128 個 ASCII 來源位元組的詞元、空白註解與位元組範圍，並與既有 Rust 詞法器比對，以同一個原生 ELF 執行。此元件不切換正式編譯器供應者，也不宣稱支援 Unicode。
+
+另有以 Oxid 撰寫的[有界純量 typed-preview 語法元件](fixtures/typed-parser-samples/README.md)，使用上述詞元介面，解析最多 128 個 ASCII 位元組的純量函式、運算式、呼叫、綁定與控制流程。獨立投影會與既有 Rust 語法器比對完整 AST、位元組範圍與第一個診斷；正式供應者切換及名稱／型別語意檢查仍在範圍之外。
+
+另有以 Oxid 撰寫的[有界純量靜態前端](fixtures/typed-static-samples/README.md)，先完整驗證精確來源與語法器 AST，再對最多 128 個 ASCII 位元組進行名稱解析、型別與流程檢查。它使用既有語法器及獨立的 AST1 消費元件，主機只負責位元組封裝與轉送。本機參考／原生驗證涵蓋 77 組語意比對（29 組完整型別事實、48 組第一個診斷，涵蓋全部 14 種）；產生端的 4 個失敗／範圍外拒絕另行計數。所有限制維持不變。目前原始碼的整合驗證與精確版本的託管 CI 仍待完成；正式供應者切換、編譯器擁有的 TypedProgram／OIR 結果及自我託管不在此元件範圍內。
+
+明確指定的[來源規模詞法供應者](fixtures/typed-streaming-lexer/README.md)會將經驗證、由 Oxid 產生的 ASCII 詞元送入真正的 typed-project 語法器，涵蓋每個載入模組。它保留完整寬度的位元組範圍、精確診斷、來源綁定與逐模組紀錄，並強制與既有 Rust 詞法器比對；失敗時不回退。驗證目標是完整的既有 v2 產生端專案及模組化詞法器本身。預設路由、語意／後端權限與資源上限不變；[驗證](docs/architecture/streaming-lexical-provider.md)與自我託管仍是不同的關卡。
