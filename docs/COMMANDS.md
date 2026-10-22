@@ -51,6 +51,8 @@ oxid build
 | `oxid run` | Run the project's entry point. |
 | `oxid test` | Run tests declared in `oxid.toml`. |
 | `oxid build` | Build `.oxid/bin/NAME` as a native executable. |
+| `oxid build --profile dev` | Build without native optimization; used when no profile is set. |
+| `oxid build --profile release` | Enable native optimization for the program and runtime. |
 | `oxid build --incremental` | Reuse a matching native object when available. |
 | `oxid build --reproducible` | Use stable relative paths in native runtime errors. |
 | `oxid fmt FILE` | Print formatted source without modifying the file. |
@@ -61,6 +63,10 @@ The project's manifest selects typed mode for later commands. `build` preserves
 the previous executable if compilation fails. The executable runs without the
 Oxid compiler or source files. See [native projects](TYPED_PROJECTS.md) for settings
 and supported syntax.
+
+`--profile` overrides the selected package's `[build] profile`. `dev` and
+`bounded` use `-O0`; `release` uses `-O2`. All preserve the current runtime limits
+and write the same executable path. Profiles apply to native project builds.
 
 With the same compiler, tools, SDK, settings and environment, `--reproducible`
 preserves executable bytes when the complete relative source layout is moved.

@@ -27,7 +27,8 @@ when creating the project.
 | `oxid check` | Check the project without running it. |
 | `oxid run` | Run its entry point. |
 | `oxid test` | Run tests declared in `oxid.toml`. |
-| `oxid build` | Build an executable under `.oxid/bin/`. |
+| `oxid build` | Build an executable under `.oxid/bin/` using project settings. |
+| `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
 | `oxid lock` | Record local dependency inputs in `oxid.lock`. |
 | `oxid doctor --native` | Check the native tools, SDK and project configuration. |
@@ -45,7 +46,7 @@ entry = "src/main.ox"
 
 [build]
 backend = "llvm"
-profile = "bounded"
+profile = "dev"
 entry-mode = "process"
 reproducible = true
 
@@ -53,9 +54,31 @@ reproducible = true
 smoke = "tests/smoke.ox"
 ```
 
-A process entry is `fn main() -> i32`; return zero for success. The current
-`bounded` profile uses runtime execution limits and unoptimized native code.
+A process entry is `fn main() -> i32`; return zero for success.
 `reproducible = true` uses project-relative paths in native error messages.
+
+## Build profiles
+
+```sh
+oxid build --profile dev
+oxid build --profile release
+```
+
+`dev` builds without optimization (`-O0`); `release` enables optimization
+(`-O2`) for both the program and its runtime. Both preserve checked arithmetic,
+bounds checks and the current execution limits. `bounded` is an alias for `dev`.
+These profiles do not add source-level debugger information.
+
+The command-line profile overrides `[build] profile` in the selected package.
+Omitting both uses `dev`. A workspace uses each selected member's setting;
+`--profile` overrides every selected member. Dependency settings do not change
+the importing application's profile. All profiles write the same output path,
+so copy an executable elsewhere if you need to keep both builds.
+
+Profiles also work with `--incremental` and `--reproducible`. Switching between
+`dev` and `release` selects a different cached program object. Switching between
+`dev` and `bounded` can reuse the same object.
+[Build profile details](../rfcs/0040-native-build-profiles.md).
 
 ## Local dependencies
 

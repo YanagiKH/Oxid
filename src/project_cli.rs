@@ -30,6 +30,7 @@ struct Options {
     package: Option<String>,
     workspace_option_error: Option<String>,
     lock_option_error: Option<String>,
+    profile_value_missing: bool,
     words: Vec<String>,
     invalid: bool,
 }
@@ -38,14 +39,28 @@ struct Options {
 struct BuildOptions {
     incremental: bool,
     reproducible: Option<bool>,
+    optimization: Option<frontend::NativeOptimization>,
 }
 
 impl BuildOptions {
-    fn resolve(self, manifest: &runtime::ProjectManifest) -> frontend::NativeBuildSettings {
-        frontend::NativeBuildSettings::new(
+    fn resolve(
+        self,
+        manifest: &runtime::ProjectManifest,
+    ) -> Result<frontend::NativeBuildSettings, String> {
+        let manifest_optimization = manifest.profile.as_deref().map(parse_profile).transpose()?;
+        Ok(frontend::NativeBuildSettings::with_optimization(
             self.reproducible.or(manifest.reproducible).unwrap_or(false),
-        )
+            self.optimization
+                .or(manifest_optimization)
+                .unwrap_or(frontend::NativeOptimization::O0),
+        ))
     }
+}
+
+fn parse_profile(profile: &str) -> Result<frontend::NativeOptimization, String> {
+    frontend::NativeOptimization::from_profile(profile).ok_or_else(|| {
+        format!("unknown build profile `{profile}`; expected bounded, dev or release")
+    })
 }
 
 /// The doctor integration can admit the complete workspace without routing a
@@ -69,6 +84,15 @@ impl Options {
                 break;
             }
             let name = args[index].split('=').next().unwrap_or("");
+            // Preserve adjacency before the scan removes global options. A
+            // later word cannot supply a value across an intervening flag.
+            if args[index] == "--profile"
+                && args
+                    .get(index + 1)
+                    .is_none_or(|value| value.is_empty() || value.starts_with('-'))
+            {
+                result.profile_value_missing = true;
+            }
             if matches!(name, "--package" | "-p") {
                 let value = if let Some((_, value)) = args[index].split_once('=') {
                     Some(value.to_owned())
@@ -479,13 +503,15 @@ fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> 
             manifest.target.as_deref(),
             "x86_64-unknown-linux-gnu",
         ),
-        ("profile", manifest.profile.as_deref(), "bounded"),
     ] {
         if value.is_some_and(|value| value != supported) {
             return Err(format!(
                 "typed-preview project {name} supports only `{supported}`"
             ));
         }
+    }
+    if let Some(profile) = &manifest.profile {
+        parse_profile(profile)?;
     }
     if manifest
         .entry_mode
@@ -1042,7 +1068,7 @@ fn build(
     process: bool,
 ) -> Result<i32, String> {
     let build_options = validate_build_options(options)?;
-    let settings = build_options.resolve(&snapshot.manifest);
+    let settings = build_options.resolve(&snapshot.manifest)?;
     if snapshot.manifest.kind.as_deref() == Some("lib") {
         return Err(
             "library packages do not produce standalone executables; use check or workspace build"
@@ -1068,6 +1094,9 @@ fn build(
 }
 
 fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
+    if options.profile_value_missing {
+        return Err("--profile requires bounded, dev or release".into());
+    }
     let mut words = options.words.iter().skip(1);
     let mut seen = std::collections::HashSet::new();
     let mut result = BuildOptions::default();
@@ -1092,10 +1121,20 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
         let (name, inline) = word
             .split_once('=')
             .map_or((word.as_str(), None), |(n, v)| (n, Some(v)));
+        if name == "--profile" {
+            if result.optimization.is_some() {
+                return Err("--profile may only be specified once".into());
+            }
+            let value = inline
+                .or_else(|| words.next().map(String::as_str))
+                .filter(|value| !value.is_empty() && !value.starts_with('-'))
+                .ok_or("--profile requires bounded, dev or release")?;
+            result.optimization = Some(parse_profile(value)?);
+            continue;
+        }
         let supported = match name {
             "--backend" => "llvm",
             "--target" => "x86_64-unknown-linux-gnu",
-            "--profile" => "bounded",
             _ => {
                 return Err(format!(
                     "unsupported option for typed-preview build: {word}"
@@ -1243,11 +1282,11 @@ fn scaffold(options: &Options) -> Result<(), String> {
         fs::create_dir(root.join(directory))
             .map_err(|e| format!("cannot create {directory}: {e}"))?;
     }
-    write("oxid.toml", &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n\n[build]\nbackend = \"llvm\"\nprofile = \"bounded\"\nentry-mode = \"process\"\n\n[tests]\nsmoke = \"tests/smoke.ox\"\n"))?;
+    write("oxid.toml", &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n\n[build]\nbackend = \"llvm\"\nprofile = \"dev\"\nentry-mode = \"process\"\n\n[tests]\nsmoke = \"tests/smoke.ox\"\n"))?;
     write("src/main.ox", "fn main() -> i32 {\n    return 0;\n}\n")?;
     write("tests/smoke.ox", "fn double(value: i32) -> i32 {\n    return value * 2;\n}\n\nfn main() -> i32 {\n    if double(21) == 42 {\n        return 0;\n    } else {\n        return 1;\n    }\n}\n")?;
     write(".gitignore", ".oxid/\n")?;
-    write("README.md", &format!("# {name}\n\nExperimental typed-preview project.\n\nRun `oxid check`, `oxid run`, and `oxid test` from this directory.\n`oxid build` writes `.oxid/bin/{name}` and safely replaces it on successful rebuilds.\nNative builds and process execution currently require Linux x86_64; builds also require LLVM 19.1.7.\nThe bounded execution policy and typed-preview language limits remain in effect.\n"))?;
+    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"new-summary\",\"success\":true,\"path\":{}}}", json_string(&root.to_string_lossy()));
     } else {
@@ -1294,4 +1333,147 @@ fn json_string(value: &str) -> String {
     }
     output.push('"');
     output
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn options(args: &[&str]) -> Options {
+        Options::scan(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn cli_profile_overrides_member_profile_without_changing_source_policy() {
+        for manifest_profile in [None, Some("bounded"), Some("dev"), Some("release")] {
+            let manifest = runtime::ProjectManifest {
+                profile: manifest_profile.map(str::to_owned),
+                reproducible: Some(true),
+                ..Default::default()
+            };
+            let inherited = validate_build_options(&options(&["build"]))
+                .unwrap()
+                .resolve(&manifest)
+                .unwrap();
+            assert_eq!(
+                inherited.optimization_flag(),
+                if manifest_profile == Some("release") {
+                    "-O2"
+                } else {
+                    "-O0"
+                }
+            );
+            assert!(inherited.reproducible());
+            for (profile, flag) in [("bounded", "-O0"), ("dev", "-O0"), ("release", "-O2")] {
+                let inline = format!("--profile={profile}");
+                for args in [
+                    vec!["build", "--profile", profile, "--incremental"],
+                    vec!["build", "--incremental", inline.as_str()],
+                ] {
+                    let selected = validate_build_options(&options(&args)).unwrap();
+                    assert!(selected.incremental);
+                    let settings = selected.resolve(&manifest).unwrap();
+                    assert_eq!(settings.optimization_flag(), flag);
+                    assert!(settings.reproducible());
+                    assert_eq!(settings.target_triple(), "x86_64-unknown-linux-gnu");
+                }
+            }
+            let selected = validate_build_options(&options(&[
+                "build",
+                "--profile=release",
+                "--no-reproducible",
+            ]))
+            .unwrap()
+            .resolve(&manifest)
+            .unwrap();
+            assert_eq!(selected.optimization_flag(), "-O2");
+            assert!(!selected.reproducible());
+        }
+    }
+
+    #[test]
+    fn invalid_or_duplicate_profile_flags_are_not_accepted_as_build_settings() {
+        for (args, diagnostic) in [
+            (vec!["build", "--profile"], "requires"),
+            (vec!["build", "--profile="], "requires"),
+            (vec!["build", "--profile", "--incremental"], "requires"),
+            (
+                vec!["build", "--profile", "--locked", "release"],
+                "requires",
+            ),
+            (
+                vec!["build", "--profile", "--offline", "release"],
+                "requires",
+            ),
+            (
+                vec!["build", "--profile", "--frozen", "release"],
+                "requires",
+            ),
+            (
+                vec!["build", "--profile", "--message-format=json", "release"],
+                "requires",
+            ),
+            (
+                vec!["build", "--profile", "--entry-mode=result", "release"],
+                "requires",
+            ),
+            (
+                vec!["build", "--profile", "--edition=typed-preview", "release"],
+                "requires",
+            ),
+            (vec!["build", "--profile", "", "release"], "requires"),
+            (vec!["build", "--profile", "--", "release"], "requires"),
+            (vec!["build", "--profile=debug"], "unknown build profile"),
+            (vec!["build", "--profile", "O2"], "unknown build profile"),
+            (
+                vec!["build", "--profile=release", "--profile=dev"],
+                "only be specified once",
+            ),
+            (
+                vec!["build", "--profile", "bounded", "--profile", "bounded"],
+                "only be specified once",
+            ),
+            (
+                vec!["build", "--", "--profile=release"],
+                "unsupported option",
+            ),
+        ] {
+            let error = validate_build_options(&options(&args))
+                .err()
+                .expect("refused");
+            assert!(error.contains(diagnostic), "{args:?}: {error}");
+        }
+        for forwarded in [
+            ["script", "ci", "--profile", "--locked", "release"],
+            ["build", "--", "--profile", "--locked", "release"],
+        ] {
+            let scanned = options(&forwarded);
+            assert_eq!(scanned.words, forwarded);
+            assert!(!scanned.profile_value_missing);
+        }
+    }
+
+    #[test]
+    fn cli_profile_cannot_hide_invalid_manifest_configuration() {
+        let build = validate_build_options(&options(&["build", "--profile=release"])).unwrap();
+        for profile in ["bounded", "dev", "release"] {
+            let manifest = runtime::ProjectManifest {
+                profile: Some(profile.into()),
+                ..Default::default()
+            };
+            validate_settings(&manifest).unwrap();
+        }
+        let invalid = runtime::ProjectManifest {
+            profile: Some("fast".into()),
+            ..Default::default()
+        };
+        assert!(validate_settings(&invalid).unwrap_err().contains("profile"));
+        assert!(build.resolve(&invalid).unwrap_err().contains("profile"));
+        let invalid = runtime::ProjectManifest {
+            profile: Some("release".into()),
+            target: Some("aarch64-unknown-linux-gnu".into()),
+            ..Default::default()
+        };
+        assert!(validate_settings(&invalid).unwrap_err().contains("target"));
+    }
 }

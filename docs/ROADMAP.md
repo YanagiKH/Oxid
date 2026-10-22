@@ -21,6 +21,7 @@ The native project workflow adds:
 
 - Explicit types and static ownership checks for the supported language subset.
 - Native executables on Linux x86_64 using LLVM/Clang/LLD 19.1.7.
+- Development and optimized release builds with the same runtime checks.
 - Local package dependencies, workspaces, and shared dependency locks.
 - Project checks, tests, and builds that preserve the previous executable when
   a build fails.
@@ -40,7 +41,7 @@ See the [native project guide](TYPED_PROJECTS.md) and
 |---|---|
 | Language stability | A stable typed edition with documented semantics, compatibility rules, and migration guidance. |
 | Memory and concurrency | General strings and growable containers, borrowing and cleanup, and safe concurrent programs. |
-| Native builds | Windows, macOS, and Linux support on the planned x86_64 and ARM64 targets; optimization profiles, debugging, and reproducibility across supported platforms. |
+| Native builds | Windows, macOS, and Linux support on the planned x86_64 and ARM64 targets; debugging and reproducibility across supported platforms. |
 | Runtime and services | Files, streams, processes, threads, asynchronous I/O, cancellation, HTTPS, and database applications. |
 | Packages and builds | A package registry, multiple dependency versions, vendoring, and incremental builds across modules. |
 | Developer tools | Editor integration, formatting, testing, debugging, documentation, and profiling using the same project settings. |
