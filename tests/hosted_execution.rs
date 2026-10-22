@@ -136,6 +136,8 @@ fn scalar_and_owned_projects_can_continue_after_the_bounded_instruction_limit() 
 fn hosted_growth_preserves_the_live_heap_limit_and_the_original_buffer_on_refusal() {
     let project = Project::new(MEMORY, Some("hosted"), false);
     success(project.command(&["run"]), b"42\n");
+    project.manifest(Some("bounded"), false);
+    success(project.command(&["run"]), b"42\n");
 }
 
 #[test]
@@ -318,7 +320,11 @@ fn native_hosted_and_bounded_policies_keep_distinct_cache_entries_at_both_optimi
                 .env_clear()
                 .output()
                 .unwrap();
-            fuel_failure(&failed);
+            if source == MEMORY {
+                success(failed, b"42\n");
+            } else {
+                fuel_failure(&failed);
+            }
             project.manifest(Some("hosted"), false);
         }
     }
