@@ -1,18 +1,37 @@
 # What Oxid does
 
-Oxid is a small language for scripts, automation, and cross-language tools. A single `oxid` executable can run source, create projects, manage dependencies, and package programs.
+Oxid is a Rust-inspired language for scripts and command-line tools. Use the
+`oxid` command to run programs, create projects, check code, and run tests.
 
-## Two ways to run
+## Run scripts with Oxid 0.9
 
-- `oxid run app.ox` parses and interprets source.
-- `oxid compile app.ox -o app.oxb` packages its module graph as a serialized AST. `oxid run app.oxb` loads it into the same interpreter.
+The published 0.9 release runs `.ox` source files in an interpreter:
 
-An `.oxb` file requires a compatible Oxid runtime. Compilation does not produce a native executable. Import ordering also differs in one known case; see [Modules](MODULES.md).
+```sh
+oxid run app.ox
+```
 
-## Included in 0.9
+Scripts support functions, loops, arrays, records, JSON, files, processes, and
+TCP/HTTP helpers. Projects can use local or commit-pinned Git dependencies.
+Process adapters let scripts call programs written in other languages.
 
-The language has functions, loops, pipelines, arrays, records, JSON, and lazy tasks. Runtime services cover files, processes, TCP/HTTP helpers, and a small set of linked C/C++ functions. Process adapters connect to Python, Java, and Go; package commands resolve local paths and commit-pinned Git dependencies.
+You can also package a script and its imports as an `.oxb` file. It runs with a
+compatible Oxid runtime. See [script packages](COMPILER.md) for the commands and
+import limitations.
 
-Oxid is experimental. The production parser and binary artifact writer are Rust code. The Oxid-authored emitter is a separate textual demonstration; self-hosting commands currently test serialization round-trips. Static ownership checking, native compilation, a concurrent scheduler, and native AI training remain future work.
+Start with the [quickstart](QUICKSTART.md), then browse the
+[language syntax](SYNTAX.md) and [built-in functions](API.md).
 
-Start with the [quickstart](QUICKSTART.md). For technical detail, read the [architecture](ARCHITECTURE.md), [current implementation](architecture/current-baseline.md), and [roadmap](ROADMAP.md).
+## Build native programs with development source
+
+The development version also supports typed projects with static type and
+ownership checks, local dependencies, workspaces, and native executables.
+These experimental features are **not included in the published 0.9 binaries**.
+
+Native builds require Linux x86_64, LLVM/Clang/LLD 19.1.7, and the system C
+development tools. The supported language and execution limits are described in
+the [native project guide](TYPED_PROJECTS.md). A built executable runs without
+the Oxid compiler or source tree on a system with compatible runtime libraries.
+
+Use the [documentation index](README.md) to find a guide, or the
+[roadmap](ROADMAP.md) to see what is available and what is planned.
