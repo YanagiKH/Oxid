@@ -5,11 +5,13 @@ import inspect
 import os
 from pathlib import Path
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
 import verify_byte_buffer_compatibility as gate
 import verify_byte_field_compatibility as predecessor
+import byte_buffer_observer as observer
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -216,6 +218,69 @@ class ByteBufferPublishedAuthority(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "wrong pinned predecessor"):
                     gate.authenticate_policies(repo, parent)
                 (parent / name).write_bytes(body)
+
+
+class ByteBufferObserverBoundary(unittest.TestCase):
+    def test_adapter_is_authenticated_before_executing_captured_python(self):
+        adapter, body = gate.authenticate_observer_adapter(ROOT)
+        self.assertEqual(body, (ROOT / gate.OBSERVER_ADAPTER).read_bytes())
+        self.assertEqual(adapter.descriptor(), observer.descriptor())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / gate.OBSERVER_ADAPTER
+            path.parent.mkdir(parents=True)
+            for changed in (body + b"\n", body.replace(b"import re", b"import os", 1),
+                            b'raise RuntimeError("untrusted code ran")\n'):
+                path.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, "changed pinned ByteBuf observer"):
+                    gate.authenticate_observer_adapter(root)
+
+    def test_materialized_observer_requires_complete_pinned_successor_bytes(self):
+        parent = gate.load("_byte_buffer_observer_test_parent", ROOT / gate.RETAINED)
+        original = (ROOT / parent.U2 / parent.OBSERVER).read_bytes()
+        original = parent.adapt_enum_unit2_observer(parent.adapt_borrowed_unit2_observer(
+            parent.adapt_unit2_observer(original)))
+        derived = observer.adapt(original)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            path = output / "unit2/run/source/src/frontend/oir/unit2_observer.rs"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(derived)
+            gate.verify_current_observer(output, observer, derived)
+            for changed in (original, derived[:-1], derived + b"\n",
+                            derived.replace(b"byte-buffer projection", b"fake-buffer projection")):
+                path.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, "materialized ByteBuf observer"):
+                    gate.verify_current_observer(output, observer, derived)
+            path.write_bytes(original)
+            # Matching a caller-provided body is insufficient without the pinned
+            # complete successor length and hash.
+            with self.assertRaisesRegex(ValueError, "materialized ByteBuf observer"):
+                gate.verify_current_observer(output, observer, original)
+
+    def test_three_rejection_controls_require_exact_listing_and_terminal_success(self):
+        protocol = types.ModuleType("_byte_buffer_control_protocol_test")
+        body = (ROOT / "tests/fixtures/typed_project_unit2_independent/protocol.py").read_bytes()
+        exec(compile(body, "retained-protocol.py", "exec"), protocol.__dict__)
+        listing = "\n".join(name + ": test" for name in observer.CONTROL_NAMES) + "\n\n3 tests, 0 benchmarks\n"
+        execution = ("running 3 tests\n" + "\n".join(
+            "test " + name + " - should panic ... ok" for name in observer.CONTROL_NAMES)
+            + "\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2233 filtered out; finished in 0.01s\n")
+        self.assertEqual(gate.verify_byte_buffer_control_output(protocol, listing, execution, observer),
+                         {"passed": 3, "failed": 0, "ignored": 0, "filtered": 2233})
+        for changed in ("", listing.replace(observer.CONTROL_NAMES[0] + ": test\n", ""),
+                        listing + observer.CONTROL_NAMES[0] + ": test\n",
+                        listing.replace(observer.CONTROL_NAMES[0], observer.CONTROL_NAMES[1]),
+                        listing.replace("3 tests", "0 tests")):
+            with self.subTest(listing=changed), self.assertRaises(ValueError):
+                gate.verify_byte_buffer_control_output(protocol, changed, execution, observer)
+        for changed in ("", execution.replace(" - should panic", "", 1),
+                        execution.replace("... ok", "... FAILED", 1),
+                        execution.replace("3 passed; 0 failed; 0 ignored", "2 passed; 0 failed; 1 ignored"),
+                        execution.replace("running 3 tests", "running 0 tests"),
+                        execution.split("test result:")[0], execution + execution):
+            with self.subTest(execution=changed), self.assertRaises(ValueError):
+                gate.verify_byte_buffer_control_output(protocol, listing, changed, observer)
 
 
 if __name__ == "__main__":

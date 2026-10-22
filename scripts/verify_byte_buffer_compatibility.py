@@ -2,8 +2,9 @@
 """Check scalar/record compatibility after adding growable byte buffers.
 
 Only exact reviewed compiler/runtime inputs may differ from the pinned byte-field
-parent. Historical assertions, observers and comparators remain exact. Buffer,
-cleanup, range and I/O semantics have separate source/native/application gates.
+parent. Historical assertions and comparators remain exact. A separately pinned
+observer successor explicitly rejects ByteBuf; its old observations remain exact.
+Buffer, cleanup, range and I/O semantics have separate source/native/application gates.
 """
 import argparse
 import copy
@@ -18,12 +19,16 @@ import stat
 import subprocess
 import sys
 import tarfile
+import types
 
 BASELINE = "9ff8ef90a26f003f4616838dfc186fa3bfb6845c"
 BASELINE_SOURCE_SHA = "d33ecc4e41975a062790540ba9e9a270d7c6043a31f8f4b9a8d7a044c79530b0"
 RETAINED_RUNNER_SHA = "584e8ee937cb2d3ef62d59d3eb69a79bfb6afce23df86de3df305f81afae7c76"
 BINDING = "tests/fixtures/typed_project_source_binding"
 RETAINED = "tests/fixtures/typed_project_source_binding_byte_storage_v1/run.py"
+OBSERVER_ADAPTER = "scripts/byte_buffer_observer.py"
+OBSERVER_ADAPTER_BYTES = 6120
+OBSERVER_ADAPTER_SHA = "46063f42b5e169b0d7536bedbcbf5df57e9b1c56d19e0c45bffd7e1522bfeccf"
 ORCHESTRATION_CHANGED = frozenset(("src/cli.rs", "src/main.rs", "src/frontend/mod.rs",
                                   "src/frontend/driver.rs", "src/frontend/native.rs"))
 PACKAGE_CHANGED = frozenset(("src/frontend/project.rs", "src/frontend/declaration_index.rs",
@@ -503,6 +508,115 @@ def verify_materialized(output, inputs):
             require(regular(source, name) == body, "materialized current input changed: " + name)
 
 
+def authenticate_observer_adapter(repo):
+    body = regular(repo, OBSERVER_ADAPTER)
+    require(len(body) == OBSERVER_ADAPTER_BYTES and sha(body) == OBSERVER_ADAPTER_SHA,
+            "changed pinned ByteBuf observer adapter")
+    adapter = types.ModuleType("_byte_buffer_observer_successor")
+    adapter.__file__ = str(repo / OBSERVER_ADAPTER)
+    # Execute the authenticated capture, rather than reopening a mutable module
+    # path or accepting a cached Python bytecode file.
+    exec(compile(body, adapter.__file__, "exec"), adapter.__dict__)
+    return adapter, body
+
+
+def prepare_current_observer(original, output, captured, adapter):
+    selected = copy.deepcopy(captured)
+    selected["observer"] = adapter.adapt(captured["observer"])
+    seam = original.prepare_unit2(output, selected)
+    seam["observer_adapter"] = {"predecessor": seam["observer_adapter"],
+                                "successor": adapter.descriptor()}
+    require(regular(Path(seam["resource_package_root"]), adapter.OBSERVER) == selected["observer"],
+            "prepared ByteBuf observer differs from pinned successor")
+    return selected, seam
+
+
+def verify_current_observer(output, adapter, expected):
+    body = regular(output / "unit2/run/source", "src/frontend/oir/unit2_observer.rs")
+    require(body == expected and len(body) == adapter.DERIVED_BYTES and sha(body) == adapter.DERIVED_SHA,
+            "materialized ByteBuf observer differs from pinned successor")
+
+
+def verify_byte_buffer_control_output(protocol, listing, execution, adapter):
+    protocol.rust_listing(listing, list(adapter.CONTROL_NAMES))
+    return protocol.rust_success(execution, [name + " - should panic" for name in adapter.CONTROL_NAMES])
+
+
+def run_byte_buffer_observer_controls(repo, output, captured, seam, original, adapter):
+    """Run three separate rejection controls without changing the old six controls."""
+    run = output / "unit2/run"
+    controls = output / "byte-buffer-observer-controls"
+    require(not controls.exists(), "ByteBuf observer controls output exists")
+    controls.mkdir()
+    protocol_body = regular(Path(seam["resource_package_root"]), "protocol.py")
+    require(protocol_body == captured["historical_bytes"]["protocol.py"],
+            "ByteBuf observer control protocol changed")
+    protocol = types.ModuleType("_byte_buffer_observer_protocol")
+    protocol.__file__ = str(Path(seam["resource_package_root"]) / "protocol.py")
+    exec(compile(protocol_body, protocol.__file__, "exec"), protocol.__dict__)
+    receipts = []
+    for profile in ("debug", "release"):
+        original.assert_unchanged(repo, captured)
+        source = run / "source"
+        assembly_body = (run / "assembly.json").read_bytes()
+        assembly = json.loads(assembly_body)
+        original.check_entries(source, assembly["files"], exact=True)
+        verify_current_observer(output, adapter, captured["observer"])
+        receipt_body = (run / (profile + "-receipt.json")).read_bytes()
+        original_receipt = json.loads(receipt_body)
+        binary = Path(original_receipt["binary"])
+        require(binary.is_absolute() and (run / "target") in binary.parents and not binary.is_symlink(),
+                "ByteBuf observer control binary outside isolated build")
+        require(sha(binary.read_bytes()) == original_receipt["binary_sha256"],
+                "ByteBuf observer control binary changed")
+        commands, streams = [], {}
+        for label, filters in (("list", ["--list", adapter.CONTROL_FILTER]),
+                               ("run", [adapter.CONTROL_FILTER, "--test-threads=1", "--color", "never"])):
+            argv = [str(binary), *filters]
+            started = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            out, err = controls / (profile + "-" + label + ".stdout"), controls / (profile + "-" + label + ".stderr")
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+            env.pop("PYTHONOPTIMIZE", None)
+            status, timed_out = None, False
+            with out.open("xb") as stdout, err.open("xb") as stderr:
+                try:
+                    status = subprocess.run(argv, cwd=source, env=env, stdout=stdout,
+                                            stderr=stderr, timeout=60).returncode
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+            commands.append({"argv": argv, "cwd": str(source), "started_at_utc": started,
+                             "finished_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                             "exit_status": status, "timed_out": timed_out,
+                             "stdout": identity(out.name, out.read_bytes()),
+                             "stderr": identity(err.name, err.read_bytes())})
+            (controls / (profile + "-commands.json")).write_bytes(encoded(commands))
+            require(status == 0 and not timed_out, "ByteBuf observer controls failed; see retained streams")
+            require(sha(binary.read_bytes()) == original_receipt["binary_sha256"],
+                    "ByteBuf observer control binary changed")
+            streams[label] = out.read_text(encoding="utf-8")
+        result = verify_byte_buffer_control_output(protocol, streams["list"], streams["run"], adapter)
+        original.check_entries(source, assembly["files"], exact=True)
+        verify_current_observer(output, adapter, captured["observer"])
+        require((run / "assembly.json").read_bytes() == assembly_body
+                and (run / (profile + "-receipt.json")).read_bytes() == receipt_body,
+                "ByteBuf observer control source binding changed")
+        original.assert_unchanged(repo, captured)
+        record = {"schema": "oxid-byte-buffer-unit2-observer-controls-v1", "profile": profile,
+                  "status": "passed", "tests": list(adapter.CONTROL_NAMES), "result": result,
+                  "source_inputs_sha256": original.CURRENT_SOURCE_SHA, "observer_adapter": adapter.descriptor(),
+                  "original_unit2_receipt": identity(profile + "-receipt.json", receipt_body),
+                  "binary": identity(str(binary), binary.read_bytes()),
+                  "assembly": identity("assembly.json", assembly_body),
+                  "commands": identity(profile + "-commands.json", (controls / (profile + "-commands.json")).read_bytes())}
+        path = controls / (profile + "-receipt.json")
+        path.write_bytes(encoded(record))
+        receipts.append(identity(str(path.relative_to(output)), path.read_bytes()))
+    return {"byte_buffer_observer_adapter_version": adapter.VERSION,
+            "byte_buffer_observer_control_tests_per_profile": 3,
+            "byte_buffer_observer_control_receipts": receipts,
+            "test_function_executions": 2 * (1 + 21 + 6 + 3)}
+
+
 def run(args):
     require(__debug__ and not sys.flags.optimize, "qualification refuses optimized Python")
     repo, output = args.repo.resolve(strict=True), args.output.resolve()
@@ -529,6 +643,7 @@ def run(args):
         predecessor_root = output / "predecessor"
         extract_baseline(repo, predecessor_root, args.fetch_baseline, PREDECESSOR)
         authenticate_policies(repo, predecessor_root)
+        observer_adapter, observer_adapter_body = authenticate_observer_adapter(repo)
         predecessor_inputs = {name: regular(predecessor_root, name)
                               for name in sorted(set(captured["inputs"]) | PARENT_ADDED)}
         inputs = capture_sources(repo, captured["inputs"], predecessor_inputs)
@@ -540,9 +655,10 @@ def run(args):
                       historical_source=identity(BINDING + "/current-source.json", old_source),
                       retained_assertions=identity(RETAINED, original_body),
                       current_input_members=len(inputs), historical_results_apply_to_current=False)
-        seam = original.prepare_unit2(output, captured)
+        selected, seam = prepare_current_observer(original, output, captured, observer_adapter)
+        report["byte_buffer_observer_adapter"] = observer_adapter.descriptor()
+        report["byte_buffer_observer_adapter_controller"] = identity(OBSERVER_ADAPTER, observer_adapter_body)
         (output / "resource-seam.json").write_bytes(encoded(seam))
-        selected = copy.deepcopy(captured)
         # The separate source manifest is the existing compatibility seam. Other
         # historical captures, identities, comparators and expectations stay exact.
         selected["package_bytes"]["current-source.json"] = manifest_raw
@@ -551,6 +667,8 @@ def run(args):
             require(checkout_identity(actual_repo, args.expected_head, args.allow_dirty) == checkout,
                     "checkout changed during qualification")
             authenticate_policies(actual_repo, predecessor_root)
+            require(authenticate_observer_adapter(actual_repo)[1] == observer_adapter_body,
+                    "ByteBuf observer adapter changed during qualification")
             require(capture_sources(actual_repo, captured["inputs"], predecessor_inputs) == inputs,
                     "current source changed during qualification")
             require(manifest_path.read_bytes() == manifest_raw, "current manifest changed")
@@ -574,10 +692,13 @@ def run(args):
         require(completed.returncode == 0, "retained Unit2 gate failed; see runner.stderr and unit2 evidence")
         verified = original.verify_unit2_result(output, selected, seam, args.prepare_only)
         verify_materialized(output, inputs)
+        verify_current_observer(output, observer_adapter, selected["observer"])
         if not args.prepare_only:
             verified.update(original.run_unit2_observer_controls(repo, output, selected, seam))
+            verified.update(run_byte_buffer_observer_controls(repo, output, selected, seam, original, observer_adapter))
             original.verify_unit2_result(output, selected, seam, False)
             verify_materialized(output, inputs)
+            verify_current_observer(output, observer_adapter, selected["observer"])
         unchanged(repo, selected)
         report.update(verified)
         report["status"] = "prepared" if args.prepare_only else "passed"
