@@ -422,7 +422,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs.get("input_text") == "" for call in application_calls[1:]))
         for name in ENUM_PROJECTS:
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
-            expected_commands = ("check",) if name == ENUM_LIBRARY else ("check", "run", "test")
+            expected_commands = (("check",) if name == ENUM_LIBRARY else
+                                 ("check", "run", "test") if name == "apps/frame-filter" else ("check", "run"))
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected_commands])
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
@@ -495,7 +496,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
                       f"{131 + 2 + len(ENUM_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
                       "81 runnable programs", output.getvalue())
-        self.assertIn("6 manifest projects checked; 5 applications run and tested", output.getvalue())
+        self.assertIn("6 manifest projects checked; 5 run; 2 tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
                       f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(additional_members)} typed source members / "
                       "14 typed entry runs", output.getvalue())

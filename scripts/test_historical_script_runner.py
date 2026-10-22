@@ -68,6 +68,7 @@ class GenuineHistoricalEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             loader = runner.HistoricalLoader(root)
             for path, expected in ((root / "test_published_formatter_source.py", False),
+                                   (root / "test_bounded_byte_storage.py", True),
                                    (root / "test_published_formatter_source_extra.py", True),
                                    (root / "test_future.py", True),
                                    (root / "nested/test_published_formatter_source.py", True),

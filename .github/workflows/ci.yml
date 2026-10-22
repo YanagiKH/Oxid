@@ -215,6 +215,9 @@ jobs:
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
               --test owned_enum_payloads --test owned_enum_payload_acceptance -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
+              cargo test --locked "${profile_flags[@]}" --bin oxid \
+              byte_storage_native_source_free_ -- --ignored --test-threads=1
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal \
               -- --ignored --exact
@@ -260,6 +263,8 @@ jobs:
             ${{ runner.temp }}/current-reproducible-native
             ${{ runner.temp }}/current-native-profiles
             ${{ runner.temp }}/current-owned-enum-application
+            ${{ runner.temp }}/current-byte-storage-debug
+            ${{ runner.temp }}/current-byte-storage-release
           if-no-files-found: warn
           retention-days: 14
 

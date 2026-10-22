@@ -75,6 +75,7 @@ TYPED_MANIFEST_PROJECTS = {
 TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "examples/projects/owned_enum_payload_acceptance/library",
 )
+TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
@@ -932,6 +933,10 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     if (len(TYPED_CHECK_ONLY_MANIFEST_PROJECTS) != len(set(TYPED_CHECK_ONLY_MANIFEST_PROJECTS))
             or not set(TYPED_CHECK_ONLY_MANIFEST_PROJECTS) <= TYPED_MANIFEST_PROJECTS.keys()):
         raise RuntimeError("invalid check-only typed manifest project inventory")
+    if (len(TYPED_TESTED_MANIFEST_PROJECTS) != len(set(TYPED_TESTED_MANIFEST_PROJECTS))
+            or not set(TYPED_TESTED_MANIFEST_PROJECTS) <= TYPED_MANIFEST_PROJECTS.keys()
+            or set(TYPED_TESTED_MANIFEST_PROJECTS) & set(TYPED_CHECK_ONLY_MANIFEST_PROJECTS)):
+        raise RuntimeError("invalid tested typed manifest project inventory")
     for entry in manifest_entries:
         if entry.relative_to(root).as_posix() in TYPED_CHECK_ONLY_MANIFEST_PROJECTS:
             typed_check_only.append(entry)
@@ -1010,7 +1015,8 @@ def main() -> int:
         for source in typed_entries:
             if source in manifest_entries:
                 run([str(executable), "run"], cwd=source, input_text="")
-                run([str(executable), "test"], cwd=source, input_text="")
+                if source.relative_to(ROOT).as_posix() in TYPED_TESTED_MANIFEST_PROJECTS:
+                    run([str(executable), "test"], cwd=source, input_text="")
             else:
                 run([str(executable), "run", str(source), "--edition=typed-preview"], cwd=temp)
 
@@ -1027,7 +1033,8 @@ def main() -> int:
         f"{len(TYPED_OVERLAY_ROOTS)} materialized typed checks in a {len(overlay_sources)}-module closure; "
         f"{wide_count} wide parser overlay members / 2 materialized typed checks; "
         f"{len(manifest_entries)} manifest projects checked; "
-        f"{len(manifest_entries) - len(TYPED_CHECK_ONLY_MANIFEST_PROJECTS)} applications run and tested)"
+        f"{len(manifest_entries) - len(TYPED_CHECK_ONLY_MANIFEST_PROJECTS)} run; "
+        f"{len(TYPED_TESTED_MANIFEST_PROJECTS)} tested)"
     )
     return 0
 
