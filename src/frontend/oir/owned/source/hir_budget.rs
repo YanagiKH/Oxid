@@ -766,6 +766,13 @@ fn preflight_hir(
         increment(&mut counts.parameters, 1, anchor)?;
     }
     let mut plan = HirPlan::calculate(counts, at)?;
+    if index.has_owned_enum_payloads(work)? {
+        // New owned-payload roles supplement the frozen scalar banks only for
+        // this feature. They consume the existing ceiling before HIR allocation.
+        let extra = super::owned_enum_resources::fixed_bytes();
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
     if builtin_candidate {
         // Both full identity-check invocations are prepaid, including the
         // no-import private marker. Production no-import work is unaffected.

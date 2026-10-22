@@ -129,9 +129,8 @@ fn byte_storage_source_identical_module_text_keeps_runtime_file_identity() {
 
 #[test]
 fn byte_storage_source_unused_nested_enum_array_payload_keeps_inner_origin() {
-    // Invalid child syntax cannot construct ProjectSources. Parse the authentic
-    // root/outer/inner sources with their exact preorder and retained file IDs;
-    // the public integration control additionally checks Linux loader parity.
+    // Owned enum payloads admit the existing fixed-array grammar. Parse the
+    // authentic root/outer/inner sources with exact preorder and file IDs.
     for n in [0, 1, 1024] {
         let inner = format!("enum E{{V([u8;{n}])}}");
         let mut sources = SourceMap::new();
@@ -164,12 +163,21 @@ fn byte_storage_source_unused_nested_enum_array_payload_keeps_inner_origin() {
                 assert_eq!(ast.modules.len(), 1);
                 assert_eq!(source.text_at(ast.modules[0].name), declared);
             } else {
-                let errors = parsed.unwrap_err();
-                assert_eq!(errors.len(), 1);
+                let (ast, _) = parsed.unwrap();
+                assert!(ast.belongs_to(source));
+                assert!(ast.validate_spans_and_ids(|at| source.try_text(at).is_some()));
+                let payload = ast.enums[0].variants[0].payload.unwrap();
+                assert!(matches!(payload.kind,
+                    ast::ScalarTypeSyntax::Array(ast::FixedArraySyntax {
+                        element: ast::ArrayElementTypeSyntax::U8, length,
+                    }) if usize::from(length) == n));
                 let start = inner.find('[').unwrap();
-                let end = start + 1;
-                let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0100\",\"stage\":\"parse\",\"message\":\"only bool, i32 and () enum payloads are supported\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
-                assert_eq!(errors[0].render_json(&sources), expected);
+                let end = inner.find(']').unwrap() + 1;
+                assert_eq!(
+                    (payload.span.file, payload.span.start, payload.span.end),
+                    (SourceFileId(2), start, end)
+                );
+                assert_eq!(source.text_at(payload.span), format!("[u8;{n}]"));
             }
         }
     }

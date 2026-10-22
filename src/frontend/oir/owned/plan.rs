@@ -192,6 +192,12 @@ impl<'a> ExecutionPlan<'a> {
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
             }
+            OwnedInstruction::ConstructOwnedEnum { destination, .. } => {
+                1 + self.owner_width(f, *destination)
+            }
+            OwnedInstruction::ConsumeOwnedVariant { match_id, .. } => {
+                1 + self.owner_width(f, self.witness.functions()[f.0].matches[match_id.0].source)
+            }
             OwnedInstruction::StorageEnd(o) | OwnedInstruction::Discard(o) => {
                 1 + self.owner_width(f, *o)
             }

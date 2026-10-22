@@ -151,5 +151,7 @@ printed by extraction, then run `oxid build --frozen` to rebuild offline.
 Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 [Package details](../rfcs/0038-typed-source-packages.md).
 
-For a complete application, try [Byte count](../apps/byte-count/README.md).
+For complete applications, try [Byte count](../apps/byte-count/README.md) or
+[Frame filter](../apps/frame-filter/README.md), which passes owned records,
+arrays and nested enum values between local packages.
 See the [language reference](../spec/typed-preview.md) for supported syntax.

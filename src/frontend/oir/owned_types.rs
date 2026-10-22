@@ -11,6 +11,8 @@ use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
 mod enums;
+#[cfg(test)]
+mod owned_enum_tests;
 #[allow(unused_imports)]
 pub(in crate::frontend) use enums::{admit_enum_counts, EnumId, EnumUsage, VariantId};
 #[allow(unused_imports)]
@@ -453,7 +455,27 @@ impl Declarations {
         // Independently inventory both raw slices. The added retained enum
         // facade is charged even when both of its vectors are empty.
         let mut usage = preflight(raw, limits)?;
-        let prepared_enums = EnumDeclarations::prepare(raw_enums, sources, usage)?;
+        let (prepared_enums, owned_payloads) =
+            match EnumDeclarations::prepare(raw_enums, sources, usage) {
+                // Scalar/nullary inputs retain their exact original validation
+                // and allocation path. No unbounded feature scan precedes the
+                // existing independent declaration/member count admission.
+                Ok(prepared) => (prepared, false),
+                Err(EnumDeclarationError::NonScalarPayload(id))
+                    if raw_enums
+                        .get(id.enumeration.0)
+                        .and_then(|enumeration| enumeration.variants.get(id.index))
+                        .is_some_and(|variant| {
+                            matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Owned(_))))
+                        }) =>
+                {
+                    (
+                        EnumDeclarations::prepare_owned(raw_enums, sources, usage)?,
+                        true,
+                    )
+                }
+                Err(error) => return Err(error.into()),
+            };
         let enum_usage = prepared_enums.usage();
         limited_add(
             usage.records,
@@ -473,12 +495,16 @@ impl Declarations {
             limits.table_bytes,
             "declaration table bytes",
         )?;
-        usage.layout_bytes = limited_add(
-            0,
-            enum_usage.layout_bytes,
-            limits.layout_bytes,
-            "declaration layout bytes",
-        )?;
+        usage.layout_bytes = if owned_payloads {
+            0
+        } else {
+            limited_add(
+                0,
+                enum_usage.layout_bytes,
+                limits.layout_bytes,
+                "declaration layout bytes",
+            )?
+        };
         for (index, record) in raw.iter().enumerate() {
             if record.id != RecordId(index) {
                 return Err(DeclarationError::InvalidRecordId(record.id));
@@ -510,6 +536,25 @@ impl Declarations {
                 "declaration layout bytes",
             )?;
         }
+        let (prepared_enums, enum_summaries) = if owned_payloads {
+            let (prepared, summaries) = prepared_enums.with_owned_layouts(
+                &summaries,
+                usage.layout_bytes,
+                limits.layout_bytes,
+                usage.table_bytes,
+                limits.table_bytes,
+                allocator,
+            )?;
+            usage.layout_bytes = limited_add(
+                usage.layout_bytes,
+                prepared.usage().layout_bytes,
+                limits.layout_bytes,
+                "declaration layout bytes",
+            )?;
+            (prepared, summaries)
+        } else {
+            (prepared_enums, Vec::new())
+        };
 
         // All malformed declarations and all size/overflow gates above reject
         // before these output allocations. Flat fields avoid R separate
@@ -522,7 +567,11 @@ impl Declarations {
         if usage.fields != 0 {
             allocator.vector_exact(&mut fields, usage.fields, "checked record fields")?;
         }
-        let enums = prepared_enums.finish_with_allocator(allocator)?;
+        let enums = if owned_payloads {
+            prepared_enums.finish_owned_with_allocator(allocator, &enum_summaries)?
+        } else {
+            prepared_enums.finish_with_allocator(allocator)?
+        };
         for record in raw {
             let field_start = fields.len();
             let mut cursor = LayoutCursor::default();

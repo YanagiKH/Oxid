@@ -673,11 +673,17 @@ impl<'a> Fingerprint<'a> {
                         self.span(variant.span);
                         self.flag(variant.payload.is_some());
                         if let Some(payload) = variant.payload {
-                            self.tag(match payload.kind {
-                                ScalarTypeSyntax::Bool => "bool-payload",
-                                ScalarTypeSyntax::I32 => "i32-payload",
-                                ScalarTypeSyntax::Unit => "unit-payload",
-                            });
+                            match payload.kind {
+                                ScalarTypeSyntax::Bool => self.tag("bool-payload"),
+                                ScalarTypeSyntax::I32 => self.tag("i32-payload"),
+                                ScalarTypeSyntax::Unit => self.tag("unit-payload"),
+                                ScalarTypeSyntax::Name
+                                | ScalarTypeSyntax::Absolute(_)
+                                | ScalarTypeSyntax::Array(_) => {
+                                    self.tag("owned-payload");
+                                    self.ty(payload.value_type());
+                                }
+                            }
                             self.span(payload.span);
                         }
                     }

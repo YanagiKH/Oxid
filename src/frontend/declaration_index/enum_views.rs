@@ -122,12 +122,32 @@ impl<'a> VariantView<'a> {
         self.source_syntax()
             .and_then(|syntax| syntax.payload.map(|payload| payload.span))
     }
+    pub fn has_owned_payload(&self) -> bool {
+        self.source_syntax().is_some_and(|syntax| {
+            syntax.payload.is_some_and(|payload| {
+                matches!(
+                    payload.kind,
+                    ast::ScalarTypeSyntax::Name
+                        | ast::ScalarTypeSyntax::Absolute(_)
+                        | ast::ScalarTypeSyntax::Array(_)
+                )
+            })
+        })
+    }
+    pub fn has_payload(&self) -> bool {
+        self.has_owned_payload() || self.payload().is_some()
+    }
     pub fn payload(&self) -> Option<Ty> {
         match self.source_syntax() {
             Some(syntax) => syntax.payload.map(|payload| match payload.kind {
                 ast::ScalarTypeSyntax::Bool => Ty::Bool,
                 ast::ScalarTypeSyntax::I32 => Ty::I32,
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
+                ast::ScalarTypeSyntax::Name
+                | ast::ScalarTypeSyntax::Absolute(_)
+                | ast::ScalarTypeSyntax::Array(_) => {
+                    panic!("owned enum payload requires value_payload")
+                }
             }),
             None => match self.origin() {
                 DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => {
@@ -136,6 +156,104 @@ impl<'a> VariantView<'a> {
                 _ => unreachable!("checked builtin variant"),
             },
         }
+    }
+    /// Resolve an owned payload in its declaration's module. The consumer's
+    /// scope cannot grant access to a private type or change nominal identity.
+    /// Existing scalar and builtin payloads retain their original query work.
+    pub fn value_payload(&self, work: &WorkMeter) -> Result<Option<ValueTy>, Box<Diagnostic>> {
+        if !self.has_owned_payload() {
+            return Ok(self.payload().map(ValueTy::Scalar));
+        }
+        let payload = self
+            .source_syntax()
+            .and_then(|syntax| syntax.payload)
+            .ok_or_else(|| bad(self.diagnostic_span()))?;
+        let requester = self.index.sources().module_for_file(payload.span.file)?;
+        self.index
+            .query(work)
+            .value_type(requester, payload.value_type(), TypeContext::Value)
+            .map(Some)
+    }
+}
+
+impl QuerySession<'_, '_> {
+    /// A variant's nominal payload must be visible everywhere its enum is.
+    /// Field visibility remains governed by the record's existing access rules.
+    pub fn enum_payload_exposure(
+        &mut self,
+        enumeration: EnumId,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<NominalExposure, Box<Diagnostic>> {
+        self.work.debit(1, at, "enum payload exposure")?;
+        let enumeration = self
+            .tables
+            .enums
+            .get(enumeration.0)
+            .ok_or_else(|| bad(at))?;
+        let declared = self.tables.original(enumeration.original)?;
+        self.requester(ModuleId(declared.owner as usize), at)?;
+        let handle = self.tables.original_for_nominal(nominal, at)?;
+        let original = match self.tables.project_handle(handle)? {
+            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                return Ok(NominalExposure::Allowed);
+            }
+            DeclarationProjection::SourceOriginal(id) => id,
+            _ => return Err(bad(at)),
+        };
+        let payload = self.tables.original(original)?;
+        if payload.domain == NONE
+            || (declared.domain != NONE && self.tables.ancestor(payload.domain, declared.domain)?)
+        {
+            return Ok(NominalExposure::Allowed);
+        }
+        let restrictor = if payload.restrictor != NONE && payload.restrictor != original {
+            Some(self.tables.original(payload.restrictor)?.name.span())
+        } else {
+            None
+        };
+        Ok(NominalExposure::Denied {
+            declaration: payload.name.span(),
+            restrictor,
+        })
+    }
+}
+
+impl DeclarationIndex<'_> {
+    /// Feature selection over immutable source syntax; this is not a type or
+    /// layout proof. Scalar enum compilation retains its original accounting.
+    pub fn has_owned_enum_payloads(&self, work: &WorkMeter) -> Result<bool, Box<Diagnostic>> {
+        let mut inspected = 0u64;
+        for ordinal in 0..self.source_enum_count() {
+            let Some(enumeration) = self.frozen_enum_syntax(EnumId(ordinal)) else {
+                return Err(bad(self.sources().eof()));
+            };
+            for variant in &enumeration.variants {
+                inspected = inspected.checked_add(1).ok_or_else(|| {
+                    diagnostic(
+                        "E0400",
+                        "resolve",
+                        "enum payload inventory overflow",
+                        variant.span,
+                    )
+                })?;
+                if variant.payload.is_some_and(|payload| {
+                    matches!(
+                        payload.kind,
+                        ast::ScalarTypeSyntax::Name
+                            | ast::ScalarTypeSyntax::Absolute(_)
+                            | ast::ScalarTypeSyntax::Array(_)
+                    )
+                }) {
+                    // Scalar-only compilation keeps its historical work. Every
+                    // visited row is charged when this new feature is selected;
+                    // the selector itself is bounded by the admitted AST/index.
+                    work.debit(inspected, variant.span, "owned enum payload inventory")?;
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 }
 /// Exact count of the frozen source prefix and the closed optional suffix.

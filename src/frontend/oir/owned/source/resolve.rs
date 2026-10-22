@@ -353,6 +353,66 @@ fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>
         Ok(ty)
     }
 }
+
+/// Source diagnostics precede raw emission. The independent declaration
+/// verifier still recomputes the complete enum layouts from untrusted OIR.
+fn check_owned_enum_cycles(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<(), Box<Diagnostic>> {
+    use crate::frontend::{oir::owned_types::EnumId, parser::MAX_NESTING};
+    // The source enum grammar has one payload edge per variant. Records cannot
+    // contain enums, so only enum edges can create a new recursive layout.
+    let mut stack = [None; MAX_NESTING];
+    for root in 0..index.source_enum_count() {
+        let mut depth = 1usize;
+        stack[0] = Some((EnumId(root), 0usize));
+        while depth != 0 {
+            let (id, next) = stack[depth - 1].expect("active enum layout frame");
+            let enumeration = index.enum_view(id)?;
+            work.debit(1, enumeration.diagnostic_span(), "enum containment visit")?;
+            if next == enumeration.variant_count() {
+                depth -= 1;
+                stack[depth] = None;
+                continue;
+            }
+            stack[depth - 1] = Some((id, next + 1));
+            let variant = enumeration.variant(VariantId {
+                enumeration: id,
+                index: next,
+            })?;
+            if !variant.has_owned_payload() {
+                continue;
+            }
+            let Some(ValueTy::Owned(AggregateTy::Enum(nested))) = variant.value_payload(work)?
+            else {
+                continue;
+            };
+            let at = variant.payload_span().unwrap_or(variant.diagnostic_span());
+            work.debit(depth as u64, at, "enum containment ancestry")?;
+            if stack[..depth]
+                .iter()
+                .any(|entry| entry.is_some_and(|(id, _)| id == nested))
+            {
+                return Err(error(
+                    "E0202",
+                    format_args!("enum containment must be acyclic"),
+                    at,
+                ));
+            }
+            if depth == MAX_NESTING {
+                return Err(error(
+                    "E0400",
+                    format_args!("enum containment depth limit exceeded"),
+                    at,
+                ));
+            }
+            stack[depth] = Some((nested, 0));
+            depth += 1;
+        }
+    }
+    Ok(())
+}
 #[test]
 fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
     let mut sources = SourceMap::new();
@@ -1295,6 +1355,64 @@ fn resolve_index_impl(
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
+    // Validate every newly admitted payload, including unused declarations.
+    // Scalar/nullary declarations keep their historical path and work charges.
+    if index
+        .has_owned_enum_payloads(work)
+        .map_err(|error| vec![*error])?
+    {
+        for ordinal in 0..index.source_enum_count() {
+            let enumeration = index
+                .enum_view(crate::frontend::oir::owned_types::EnumId(ordinal))
+                .map_err(|error| vec![*error])?;
+            for variant_index in 0..enumeration.variant_count() {
+                let variant = enumeration
+                    .variant(VariantId {
+                        enumeration: enumeration.id(),
+                        index: variant_index,
+                    })
+                    .map_err(|error| vec![*error])?;
+                if !variant.has_owned_payload() {
+                    continue;
+                }
+                let payload = variant.value_payload(work).map_err(|error| vec![*error])?;
+                let nominal = match payload {
+                    Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
+                    Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
+                    Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
+                    _ => return Err(vec![*invalid_signature_identity(variant.diagnostic_span())]),
+                };
+                let at = variant.payload_span().unwrap_or(variant.diagnostic_span());
+                if let NominalExposure::Denied {
+                    declaration,
+                    restrictor,
+                } = index
+                    .query(work)
+                    .enum_payload_exposure(enumeration.id(), nominal, at)
+                    .map_err(|error| vec![*error])?
+                {
+                    let mut failure = secondary(
+                        error(
+                            "E0207",
+                            format_args!("enum payload exposes a less visible type"),
+                            at,
+                        ),
+                        declaration,
+                        format_args!("payload type declared here"),
+                    );
+                    if let Some(restrictor) = restrictor {
+                        failure = secondary(
+                            failure,
+                            restrictor,
+                            format_args!("restrictive module declared here"),
+                        );
+                    }
+                    return Err(vec![*failure]);
+                }
+            }
+        }
+        check_owned_enum_cycles(index, work).map_err(|error| vec![*error])?;
+    }
     // Explicit finite calls keep the canonical input-before-output order without
     // retaining a generic inventory iterator in the source resolver.
     if index
@@ -1853,20 +1971,37 @@ impl<'a> Resolver<'_, 'a> {
                     if let Some(name) = syntax.binding {
                         let enumeration = self.index.enum_view(arms[arm].variant.enumeration)?;
                         let variant = enumeration.variant(arms[arm].variant)?;
-                        let payload = variant.payload().ok_or_else(|| {
-                            error(
-                                "E0500",
-                                format_args!("invalid match payload binding"),
-                                syntax.span,
-                            )
-                        })?;
-                        arms[arm].binding = Some(self.bind(
-                            name,
-                            Some(ValueTy::Scalar(payload)),
-                            false,
-                            BodyBlockId(syntax.body.0),
-                            None,
-                        )?);
+                        if variant.has_owned_payload() {
+                            let payload = variant.value_payload(self.work)?.ok_or_else(|| {
+                                error(
+                                    "E0500",
+                                    format_args!("invalid owned match payload binding"),
+                                    syntax.span,
+                                )
+                            })?;
+                            arms[arm].binding = Some(self.bind(
+                                name,
+                                Some(payload),
+                                false,
+                                BodyBlockId(syntax.body.0),
+                                None,
+                            )?);
+                        } else {
+                            let payload = variant.payload().ok_or_else(|| {
+                                error(
+                                    "E0500",
+                                    format_args!("invalid match payload binding"),
+                                    syntax.span,
+                                )
+                            })?;
+                            arms[arm].binding = Some(self.bind(
+                                name,
+                                Some(ValueTy::Scalar(payload)),
+                                false,
+                                BodyBlockId(syntax.body.0),
+                                None,
+                            )?);
+                        }
                         if self.storage.paid.is_none() {
                             scopes
                                 .last_mut()
@@ -2079,7 +2214,7 @@ impl<'a> Resolver<'_, 'a> {
                             ));
                         }
                         let declared = view.variant(variant)?;
-                        if declared.payload().is_some() != arm.binding.is_some() {
+                        if declared.has_payload() != arm.binding.is_some() {
                             return Err(error(
                                 "E0300",
                                 format_args!(
@@ -2330,31 +2465,48 @@ impl<'a> Resolver<'_, 'a> {
                     QualifiedValueEndpoint::Variant(variant) => {
                         let enumeration = self.index.enum_view(variant.enumeration)?;
                         let declared = enumeration.variant(variant)?;
-                        let payload = match (declared.payload(), args.as_deref()) {
-                            (None, None) => None,
-                            (Some(_), Some([ast::Argument::Value(value)])) => {
-                                Some(self.expression(*value)?)
-                            }
-                            (None, Some(_)) => {
-                                return Err(error(
-                                    "E0300",
-                                    format_args!(
-                                        "nullary enum variant does not accept parentheses"
-                                    ),
-                                    expr.span,
-                                ))
-                            }
-                            (Some(_), _) => {
+                        if declared.has_owned_payload() {
+                            declared.value_payload(self.work)?;
+                            let Some([ast::Argument::Value(value)]) = args.as_deref() else {
                                 return Err(error(
                                     "E0300",
                                     format_args!(
                                         "enum payload variant requires exactly one value argument"
                                     ),
                                     expr.span,
-                                ))
+                                ));
+                            };
+                            ExprKind::ConstructEnum {
+                                variant,
+                                payload: Some(self.expression(*value)?),
                             }
-                        };
-                        ExprKind::ConstructEnum { variant, payload }
+                        } else {
+                            let payload = match (declared.payload(), args.as_deref()) {
+                                (None, None) => None,
+                                (Some(_), Some([ast::Argument::Value(value)])) => {
+                                    Some(self.expression(*value)?)
+                                }
+                                (None, Some(_)) => {
+                                    return Err(error(
+                                        "E0300",
+                                        format_args!(
+                                            "nullary enum variant does not accept parentheses"
+                                        ),
+                                        expr.span,
+                                    ))
+                                }
+                                (Some(_), _) => {
+                                    return Err(error(
+                                        "E0300",
+                                        format_args!(
+                                        "enum payload variant requires exactly one value argument"
+                                    ),
+                                        expr.span,
+                                    ))
+                                }
+                            };
+                            ExprKind::ConstructEnum { variant, payload }
+                        }
                     }
                 }
             }

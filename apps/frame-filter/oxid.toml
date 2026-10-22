@@ -1,0 +1,19 @@
+[project]
+name = "frame-filter"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+backend = "llvm"
+target = "x86_64-unknown-linux-gnu"
+profile = "dev"
+entry-mode = "process"
+reproducible = true
+
+[dependencies]
+codec = "packages/codec"
+output = "packages/output"
+
+[tests]
+codec = "tests/codec.ox"

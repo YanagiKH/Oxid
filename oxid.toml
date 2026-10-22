@@ -47,6 +47,13 @@ discord = true
 # scripts/verify_repo.py. Their binary OXS1 corpus requires no .ox exclusion.
 # Other .ox files under tests/ and examples/ remain runnable language tests.
 [test-fixtures]
+"examples/projects/owned_enum_payload_acceptance/ready/src/main.ox" = true
+"examples/projects/owned_enum_payload_acceptance/ready/src/flow.ox" = true
+"examples/projects/owned_enum_payload_acceptance/failed/src/main.ox" = true
+"examples/projects/owned_enum_payload_acceptance/failed/src/flow.ox" = true
+"examples/projects/owned_enum_payload_acceptance/values/src/main.ox" = true
+"examples/projects/owned_enum_payload_acceptance/library/src/lib.ox" = true
+"examples/projects/owned_enum_payload_acceptance/library/src/model.ox" = true
 "tests/fixtures/bounded_enum_scanner/main.ox" = true
 "tests/fixtures/bounded_enum_scanner/scanner.ox" = true
 "tests/fixtures/fixed_array_source_unit3/contracts-v2/fixtures/bracket-comments-do-not-route/main.ox" = true

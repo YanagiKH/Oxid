@@ -493,6 +493,68 @@ pub(super) fn check_with_conversion_authority(
                     }
                     *prev = Some(site);
                 }
+                OwnedInstruction::ConstructOwnedEnum {
+                    destination,
+                    variant,
+                    payload,
+                } => {
+                    let o = ordinary(f, *destination, s)?;
+                    let source = ordinary(f, *payload, s)?;
+                    if !matches!(o.kind, OwnerKind::Local { .. } | OwnerKind::Temporary)
+                        || source.kind != OwnerKind::Temporary
+                        || destination == payload
+                    {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    let prev = &mut owners[destination.0].initialize;
+                    if prev.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *prev = Some(site);
+                    d.enums()
+                        .check_value_payload(
+                            enumeration(o.aggregate(), s)?,
+                            *variant,
+                            Some(ValueTy::Owned(source.aggregate())),
+                        )
+                        .map_err(DeclarationError::from)?;
+                }
+                OwnedInstruction::ConsumeOwnedVariant {
+                    match_id,
+                    arm,
+                    destination,
+                } => {
+                    let (descriptor, selected) = match_arm(f, *match_id, *arm, s)?;
+                    let s = descriptor.span;
+                    if selected.entry != BlockId(bi)
+                        || si != 0
+                        || b.merge.is_some()
+                        || instruction.span != s
+                        || descriptor.source == *destination
+                        || instruction
+                            .diagnostic_origins
+                            .is_some_and(|o| o.primary != s || o.cause != s)
+                    {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    let target = ordinary(f, *destination, s)?;
+                    if target.kind != (OwnerKind::Local { mutable: false }) {
+                        return Err(bad(Malformed::Binding, s));
+                    }
+                    let sites = &mut owners[destination.0];
+                    if sites.live.is_some() || sites.initialize.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    sites.live = Some(site);
+                    sites.initialize = Some(site);
+                    d.enums()
+                        .check_value_payload(
+                            enumeration(owner(f, descriptor.source, s)?.aggregate(), s)?,
+                            selected.variant,
+                            Some(ValueTy::Owned(target.aggregate())),
+                        )
+                        .map_err(DeclarationError::from)?;
+                }
                 OwnedInstruction::ConstructEnum {
                     destination,
                     variant,
@@ -1173,7 +1235,8 @@ fn check_matches(
             let entry = &f.blocks[selected.entry.0];
             if entry.merge.is_some()
                 || !matches!(entry.statements.first().map(|i| &i.kind),
-                Some(OwnedInstruction::ConsumeVariant { match_id, arm: actual, .. }) if *match_id == MatchId(id) && *actual == arm)
+                Some(OwnedInstruction::ConsumeVariant { match_id, arm: actual, .. }
+                    | OwnedInstruction::ConsumeOwnedVariant { match_id, arm: actual, .. }) if *match_id == MatchId(id) && *actual == arm)
             {
                 return Err(bad(Malformed::CanonicalSite, s));
             }

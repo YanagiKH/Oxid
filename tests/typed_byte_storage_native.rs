@@ -118,14 +118,14 @@ fn byte_storage_native_public_unsupported_target_has_no_artifact_effects() {
 
 #[test]
 fn byte_storage_public_excluded_spellings_fail_before_native_tools() {
-    // Exact baseline b5455ad diagnostics were recorded before these successor
-    // cases ran. Array element acceptance does not widen any of these grammars.
+    // Owned fixed-array payloads are supported. Bare u8 payloads, numeric
+    // suffixes and repetition syntax remain excluded.
     for (source, code, message, selected) in [
         (
-            "enum E{V([u8;0])}fn main()->i32{return 0;}",
+            "enum E{V(u8)}fn main()->i32{return 0;}",
             "E0100",
             "only bool, i32 and () enum payloads are supported",
-            "[",
+            "u8",
         ),
         (
             "fn main()->i32{let a=[1u8];return 0;}",
@@ -324,9 +324,9 @@ fn byte_storage_public_record_reference_projection_stops_at_declaration() {
 }
 
 #[test]
-fn byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser() {
-    // enum_payload_type is byte-identical to b5455ad: '[' is refused before
-    // reading any leaf/length. DFS retains root0, outer1, inner2; no name is used.
+fn byte_storage_public_unused_nested_enum_array_payload_checks_without_effects() {
+    // Admission checks unused declarations in nested modules as well as the
+    // entry module. Source discovery keeps its existing qualified host policy.
     let root = "mod outer;fn main()->i32{return 0;}";
     let outer = "mod inner;";
     for n in [0, 1, 1024] {
@@ -335,21 +335,21 @@ fn byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser() 
         fs::write(case.0.join("outer.ox"), outer).unwrap();
         fs::create_dir(case.0.join("outer")).unwrap();
         fs::write(case.0.join("outer/inner.ox"), &inner).unwrap();
-        let start = inner.find('[').unwrap();
-        let end = start + 1;
-        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0100\",\"stage\":\"parse\",\"message\":\"only bool, i32 and () enum payloads are supported\",\"primary\":{{\"file_id\":2,\"path\":\"outer/inner.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
-        // Portable source parsing checks the exact inner E0100 on every host;
-        // public discovery reaches it only on its qualified Linux host.
-        let (code, stage, expected) = if cfg!(target_os = "linux") {
-            ("E0100", "parse", expected)
-        } else {
-            ("E0005", "source", unqualified_module_diagnostic("outer"))
-        };
-        for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), code, stage);
-            assert_eq!(text.lines().count(), 2);
-            assert_eq!(text.lines().next(), Some(expected.as_str()));
-            assert!(!text.contains("E0701"));
+        for operation in ["check", "run"] {
+            let output = source_command(&case, operation, operation == "check");
+            if cfg!(target_os = "linux") {
+                assert!(output.status.success(), "{output:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+                if operation == "run" {
+                    assert_eq!(output.stdout, b"0\n");
+                }
+            } else {
+                let expected = unqualified_module_diagnostic("outer");
+                let output = source_command(&case, operation, true);
+                let text = diagnostic(output, "E0005", "source");
+                assert_eq!(text.lines().count(), 2);
+                assert_eq!(text.lines().next(), Some(expected.as_str()));
+            }
             assert_eq!(fs::read(case.0.join("existing")).unwrap(), SENTINEL);
             for (path, expected) in [
                 ("main.ox", root),

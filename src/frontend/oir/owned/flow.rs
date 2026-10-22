@@ -148,10 +148,16 @@ impl DenialContext {
                 counterpart = Some(Self::owner(f, *destination)?);
                 DeniedOperation::Construct
             }
-            (OwnedInstruction::ConstructEnum { destination, .. }, InitializationDestination)
+            (OwnedInstruction::ConstructEnum { destination, .. }
+                | OwnedInstruction::ConstructOwnedEnum { destination, .. }, InitializationDestination)
                 if base == AccessBase::Owner(*destination) => DeniedOperation::ConstructEnum,
-            (OwnedInstruction::ConsumeVariant { match_id, .. }, SourceConsume)
+            (OwnedInstruction::ConstructOwnedEnum { payload, .. }, SourceConsume)
+                if base == AccessBase::Owner(*payload) => DeniedOperation::ConstructEnum,
+            (OwnedInstruction::ConsumeVariant { match_id, .. }
+                | OwnedInstruction::ConsumeOwnedVariant { match_id, .. }, SourceConsume)
                 if base == AccessBase::Owner(f.matches.get(match_id.0)?.source) => DeniedOperation::ConsumeVariant,
+            (OwnedInstruction::ConsumeOwnedVariant { destination, .. }, InitializationDestination)
+                if base == AccessBase::Owner(*destination) => DeniedOperation::ConsumeVariant,
             (OwnedInstruction::ConstructArray { destination, .. }, InitializationDestination)
                 if base == AccessBase::Owner(*destination) =>
             {
@@ -373,9 +379,17 @@ fn step(
             next = Dead;
             failure = Violation::Lifetime;
         }
+        OwnedInstruction::ConsumeOwnedVariant { destination, .. } if *destination == owner => {
+            event = true;
+            legal = &[Dead];
+            next = Available;
+            failure = Violation::Lifetime;
+            role = DeniedRole::InitializationDestination;
+        }
         OwnedInstruction::Construct { destination, .. }
         | OwnedInstruction::ConstructArray { destination, .. }
         | OwnedInstruction::ConstructEnum { destination, .. }
+        | OwnedInstruction::ConstructOwnedEnum { destination, .. }
         | OwnedInstruction::ReadStdin { destination, .. }
         | OwnedInstruction::WriteStdout { destination, .. }
         | OwnedInstruction::ConstructComposite { destination, .. }
@@ -389,6 +403,7 @@ fn step(
             role = DeniedRole::InitializationDestination;
         }
         OwnedInstruction::ConsumeVariant { match_id, .. }
+        | OwnedInstruction::ConsumeOwnedVariant { match_id, .. }
             if f.matches[match_id.0].source == owner =>
         {
             event = true;
@@ -414,6 +429,9 @@ fn step(
             role = DeniedRole::ReplacementDestination;
         }
         OwnedInstruction::MoveInitialize { source, .. }
+        | OwnedInstruction::ConstructOwnedEnum {
+            payload: source, ..
+        }
         | OwnedInstruction::Replace { source, .. }
         | OwnedInstruction::Discard(source)
         | OwnedInstruction::PrepareOwned { source, .. }
@@ -892,6 +910,38 @@ fn accesses(
                     )?;
                 }
             }
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
+        }
+        OwnedInstruction::ConstructOwnedEnum {
+            destination,
+            payload,
+            ..
+        } => {
+            visit(
+                AccessBase::Owner(*payload),
+                Access::Consume,
+                DeniedRole::SourceConsume,
+            )?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
+        }
+        OwnedInstruction::ConsumeOwnedVariant {
+            match_id,
+            destination,
+            ..
+        } => {
+            visit(
+                AccessBase::Owner(f.matches[match_id.0].source),
+                Access::Consume,
+                DeniedRole::SourceConsume,
+            )?;
             visit(
                 AccessBase::Owner(*destination),
                 Access::Write,
