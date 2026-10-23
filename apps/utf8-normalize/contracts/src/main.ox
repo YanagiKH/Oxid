@@ -2,6 +2,7 @@ use alloc::bytes::GrowStatus;
 use alloc::bytes::new;
 use alloc::bytes::len;
 use alloc::bytes::try_extend;
+use alloc::bytes::try_reserve;
 use crate::text::Text;
 use crate::text::Validation;
 use crate::text::FromBytes;
@@ -157,7 +158,8 @@ fn check_invalid_append(document: &mut Text) -> i32 {
         AppendStatus::AllocationFailed => { return -19; },
         AppendStatus::MemoryLimit => { return -20; },
     }
-    if byte_len(&*document) != 14 || scalar_count(&*document) != 7 {
+    let expected = [byte(65), byte(194), byte(162), byte(226), byte(130), byte(172), byte(240), byte(159), byte(152), byte(128), byte(0), byte(101), byte(204), byte(129)];
+    if byte_len(&*document) != 14 || scalar_count(&*document) != 7 || !equals_utf8(&*document, &expected) {
         return -21;
     }
     return 0;
@@ -180,7 +182,8 @@ fn check_rejected_truncation(document: &mut Text) -> i32 {
     if truncate(&mut *document, -1) || truncate(&mut *document, 15) || truncate(&mut *document, 13) || truncate(&mut *document, 2) {
         return -26;
     }
-    if byte_len(&*document) != 14 || scalar_count(&*document) != 7 {
+    let expected = [byte(65), byte(194), byte(162), byte(226), byte(130), byte(172), byte(240), byte(159), byte(152), byte(128), byte(0), byte(101), byte(204), byte(129)];
+    if byte_len(&*document) != 14 || scalar_count(&*document) != 7 || !equals_utf8(&*document, &expected) {
         return -27;
     }
     return 0;
@@ -344,6 +347,55 @@ fn check_prefixed_export(document: &Text, expected: &[u8]) -> i32 {
     return 0;
 }
 
+fn check_memory_refusal() -> i32 {
+    let expected = [byte(65), byte(66), byte(67), byte(68), byte(69), byte(70), byte(71), byte(72), byte(73)];
+    let mut document = new_text();
+    let initial = append_utf8(&mut document, &expected[0..8]);
+    match initial {
+        AppendStatus::Ok => {},
+        AppendStatus::InvalidInput(offset) => { return -71; },
+        AppendStatus::CapacityOverflow => { return -71; },
+        AppendStatus::AllocationFailed => { return -71; },
+        AppendStatus::MemoryLimit => { return -71; },
+    }
+    if equals_utf8(&document, &expected[0..8]) {
+        // Leave one byte less than the live memory needed to grow the text.
+        let mut filler = new();
+        if !grew(try_reserve(&mut filler, 16777097)) { return -72; }
+        let refused = append_utf8(&mut document, &expected[8..9]);
+        match refused {
+            AppendStatus::Ok => { return -73; },
+            AppendStatus::InvalidInput(offset) => { return -74; },
+            AppendStatus::CapacityOverflow => { return -74; },
+            AppendStatus::AllocationFailed => { return -74; },
+            AppendStatus::MemoryLimit => {},
+        }
+        if !equals_utf8(&document, &expected[0..8]) || byte_len(&document) != 8 || scalar_count(&document) != 8 { return -75; }
+        let invalid_input = [byte(73), byte(255)];
+        let invalid = append_utf8(&mut document, &invalid_input);
+        match invalid {
+            AppendStatus::Ok => { return -76; },
+            AppendStatus::InvalidInput(offset) => { if offset != 1 { return -77; } },
+            AppendStatus::CapacityOverflow => { return -78; },
+            AppendStatus::AllocationFailed => { return -78; },
+            AppendStatus::MemoryLimit => { return -78; },
+        }
+        let scalar_refusal = append_scalar(&mut document, 73);
+        match scalar_refusal {
+            ScalarAppendStatus::Ok => { return -79; },
+            ScalarAppendStatus::InvalidScalar(value) => { return -80; },
+            ScalarAppendStatus::CapacityOverflow => { return -80; },
+            ScalarAppendStatus::AllocationFailed => { return -80; },
+            ScalarAppendStatus::MemoryLimit => {},
+        }
+        if !equals_utf8(&document, &expected[0..8]) || byte_len(&document) != 8 || scalar_count(&document) != 8 { return -81; }
+    } else {
+        return -83;
+    }
+    if !scalar_appended(&mut document, 73, &expected, 9) { return -82; }
+    return 0;
+}
+
 fn main() -> i32 {
     let empty_result = check_empty();
     if empty_result != 0 { return empty_result; }
@@ -367,5 +419,7 @@ fn main() -> i32 {
     if export_result != 0 { return export_result; }
     let empty_export_result = check_empty_export();
     if empty_export_result != 0 { return empty_export_result; }
+    let memory_result = check_memory_refusal();
+    if memory_result != 0 { return memory_result; }
     return 0;
 }
