@@ -68,7 +68,7 @@ pub(in super::super) fn control_bytes() -> usize {
     size_of::<ControlCarriers>() + byte_buffer::file_helper_control_bytes()
 }
 
-impl Machine<'_, '_> {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn prepare_file_delivery(
         &self,
         frame: usize,

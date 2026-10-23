@@ -1373,6 +1373,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             }
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
+            source::ExprKind::I64(value) => Rvalue::I64(value),
             source::ExprKind::Unit => Rvalue::Unit,
             source::ExprKind::Binding(binding) => match self.location(binding, span)? {
                 BindingLocation::ScalarValue(local) => Rvalue::Copy(Operand { local, span }),
@@ -1385,6 +1386,15 @@ impl<'a, 'b> Walk<'a, 'b> {
                 operand,
                 name_span,
             } => match op {
+                source::ConversionOp::ToU8Checked
+                    if self.view.expression_ty(operand) == ValueTy::Scalar(hir::Ty::I64) =>
+                {
+                    Rvalue::CheckedI64ToU8 {
+                        source_expr,
+                        operand: self.operand(operand)?,
+                        name_span,
+                    }
+                }
                 source::ConversionOp::ToU8Checked => Rvalue::CheckedI32ToU8 {
                     source_expr,
                     operand: self.operand(operand)?,
@@ -1395,15 +1405,34 @@ impl<'a, 'b> Walk<'a, 'b> {
                     operand: self.operand(operand)?,
                     name_span,
                 },
+                source::ConversionOp::ToI64 => Rvalue::WidenI64 {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    name_span,
+                },
+                source::ConversionOp::ToI32Checked => Rvalue::CheckedI64ToI32 {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    name_span,
+                },
             },
             source::ExprKind::Group(inner) => Rvalue::Copy(self.operand(inner)?),
             source::ExprKind::Negate {
                 operand,
                 operator_span,
-            } => Rvalue::CheckedNegateI32 {
-                operand: self.operand(operand)?,
-                operator_span,
-            },
+            } => {
+                if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
+                    Rvalue::CheckedNegateI64 {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                } else {
+                    Rvalue::CheckedNegateI32 {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                }
+            }
             source::ExprKind::Not {
                 operand,
                 operator_span,
@@ -1427,12 +1456,23 @@ impl<'a, 'b> Walk<'a, 'b> {
                 left,
                 right,
                 operator_span,
-            } => Rvalue::CheckedI32 {
-                op,
-                left: self.operand(left)?,
-                right: self.operand(right)?,
-                operator_span,
-            },
+            } => {
+                if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
+                    Rvalue::CheckedI64 {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                } else {
+                    Rvalue::CheckedI32 {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                }
+            }
             source::ExprKind::FieldRead { base, .. } => {
                 let projection = self
                     .view

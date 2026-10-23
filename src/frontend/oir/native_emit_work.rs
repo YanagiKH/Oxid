@@ -102,15 +102,19 @@ pub(in crate::frontend::oir) fn debit(
 fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
     match statement {
         Statement::Assign(assign) => match &assign.value {
-            Rvalue::CheckedI32ToU8 { .. } => (1, true),
-            Rvalue::CheckedNegateI32 { .. } => (1, false),
-            Rvalue::CheckedI32 { op, .. } => match op {
+            Rvalue::CheckedI32ToU8 { .. }
+            | Rvalue::CheckedI64ToU8 { .. }
+            | Rvalue::CheckedI64ToI32 { .. } => (1, true),
+            Rvalue::CheckedNegateI32 { .. } | Rvalue::CheckedNegateI64 { .. } => (1, false),
+            Rvalue::CheckedI32 { op, .. } | Rvalue::CheckedI64 { op, .. } => match op {
                 hir::ArithmeticOp::Add
                 | hir::ArithmeticOp::Subtract
                 | hir::ArithmeticOp::Multiply => (1, false),
                 hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => (2, false),
             },
             Rvalue::U8ToI32 { .. }
+            | Rvalue::WidenI64 { .. }
+            | Rvalue::I64(_)
             | Rvalue::Load(_)
             | Rvalue::NotBool { .. }
             | Rvalue::Bool(_)

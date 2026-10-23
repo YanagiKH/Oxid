@@ -9,6 +9,10 @@ use crate::frontend::build_config::{ExecutionPolicy, HOSTED_FUEL};
 use crate::frontend::options::EntryPolicy;
 use std::mem::size_of;
 
+#[path = "execute_values.rs"]
+mod values;
+use values::StoredValue;
+
 #[path = "execute_experimental.rs"]
 mod experimental;
 pub(super) fn binary_delivery_control_bytes() -> usize {
@@ -198,15 +202,16 @@ struct Resume {
     continuation: BlockId,
     origin: Span,
 }
-struct Frame {
+type Frame = ValueFrame<Scalar>;
+struct ValueFrame<V> {
     function: hir::DefId,
     activation: u64,
     block: BlockId,
     next: usize,
     predecessor: Option<BlockId>,
     merge_pending: bool,
-    slots: Vec<Option<Scalar>>,
-    snapshots: Vec<Option<Scalar>>,
+    slots: Vec<Option<V>>,
+    snapshots: Vec<Option<V>>,
     payload: Vec<u8>,
     owners: Vec<OwnerRuntime>,
     references: Vec<ReferenceHandle>,
@@ -214,7 +219,7 @@ struct Frame {
     calls: Vec<CallRuntime>,
     return_to: Option<Resume>,
 }
-impl Frame {
+impl<V: StoredValue> ValueFrame<V> {
     fn allocate(
         plan: &ExecutionPlan<'_>,
         function: hir::DefId,
@@ -222,6 +227,9 @@ impl Frame {
         return_to: Option<Resume>,
     ) -> Result<Self> {
         let f = &plan.witness().functions()[function.0];
+        if plan.uses_wide_scalars() != V::WIDE {
+            return Err(bad("scalar storage representation", f.span));
+        }
         let u = plan.function(function).usage();
         Ok(Self {
             function,
@@ -243,12 +251,12 @@ impl Frame {
 }
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Event {
+pub(super) enum Event<V = Scalar> {
     Charge(Span, usize),
     Enter(hir::DefId, u64),
-    WriteField(OwnerKey, FieldId, Scalar),
-    ReadIndex(OwnerKey, usize, Scalar),
-    WriteIndex(OwnerKey, usize, Scalar),
+    WriteField(OwnerKey, FieldId, V),
+    ReadIndex(OwnerKey, usize, V),
+    WriteIndex(OwnerKey, usize, V),
     ArrayLength(OwnerKey, usize),
     Transfer(OwnerKey, OwnerKey),
     Acquire(LoanKey, OwnerKey, BorrowKind),
@@ -256,13 +264,14 @@ pub(super) enum Event {
     Return(hir::DefId),
     EnumTagRead(OwnerKey, u32),
     EnumPayloadRead(OwnerKey, usize),
-    EnumBind(OwnerKey, Option<LocalId>, Option<Scalar>),
+    EnumBind(OwnerKey, Option<LocalId>, Option<V>),
 }
 /// A fixed-size active-value snapshot, never the inactive union or its padding.
+type EnumValue = StoredEnumValue<Scalar>;
 #[derive(Clone, Copy)]
-struct EnumValue {
+struct StoredEnumValue<V> {
     tag: u32,
-    payload: Option<Scalar>,
+    payload: Option<V>,
     payload_offset: u8,
 }
 #[derive(Clone, Copy)]
@@ -272,9 +281,10 @@ enum Access {
     Consume,
     Borrow(BorrowKind),
 }
-struct Machine<'p, 'w> {
+type Machine<'p, 'w> = ValueMachine<'p, 'w, Scalar>;
+struct ValueMachine<'p, 'w, V> {
     plan: &'p ExecutionPlan<'w>,
-    frames: Vec<Frame>,
+    frames: Vec<ValueFrame<V>>,
     limits: Limits,
     fuel: usize,
     next_activation: u64,
@@ -284,11 +294,11 @@ struct Machine<'p, 'w> {
     header_bytes: usize,
     heap: byte_buffer::Heap,
     #[cfg(test)]
-    events: Vec<Event>,
+    events: Vec<Event<V>>,
     #[cfg(test)]
     observer: array_observe::Observer,
 }
-impl<'p, 'w> Machine<'p, 'w> {
+impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
     fn function(&self, id: hir::DefId) -> &'w RawOwnedFunction {
         &self.plan.witness().functions()[id.0]
     }
@@ -313,7 +323,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             return Err(plan::AdmissionFailure::new("live expanded cells", Some(span)).into());
         }
         let bytes = plan::add(
-            plan::add(self.header_bytes, size_of::<Scalar>())?,
+            plan::add(self.header_bytes, size_of::<V>())?,
             plan::add(self.live_bytes, u.reference_bytes)?,
         )?;
         if bytes > self.limits.bytes {
@@ -322,7 +332,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         epoch(self.next_activation, span)?;
         Ok(())
     }
-    fn install(&mut self, frame: Frame) {
+    fn install(&mut self, frame: ValueFrame<V>) {
         let u = self.plan.function(frame.function).usage();
         self.live_slots += u.scalar_slots;
         self.live_cells += u.expanded_cells;
@@ -332,7 +342,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         self.record_event(Event::Enter(frame.function, frame.activation));
         self.frames.push(frame);
     }
-    fn read(&self, frame: usize, operand: Operand) -> Result<Scalar> {
+    fn read(&self, frame: usize, operand: Operand) -> Result<V> {
         self.frames
             .get(frame)
             .and_then(|f| f.slots.get(operand.local.0))
@@ -343,9 +353,10 @@ impl<'p, 'w> Machine<'p, 'w> {
         &mut self,
         frame: usize,
         destination: LocalId,
-        value: Scalar,
+        value: impl Into<V>,
         span: Span,
     ) -> Result<()> {
+        let value = value.into();
         let f = self.function(self.frames[frame].function);
         let d = f
             .locals
@@ -531,27 +542,16 @@ impl<'p, 'w> Machine<'p, 'w> {
         Ok((self.leaf_offset(key, field.offset(), ty, span)?, ty))
     }
 
-    fn load_field(&self, key: OwnerKey, field: FieldId, span: Span) -> Result<Scalar> {
+    fn load_field(&self, key: OwnerKey, field: FieldId, span: Span) -> Result<V> {
         let (offset, ty) = self.payload_field(key, field, span)?;
-        decode(&self.frames[key.frame as usize].payload, offset, ty, span)
+        V::decode(&self.frames[key.frame as usize].payload, offset, ty, span)
     }
-    fn store_field(
-        &mut self,
-        key: OwnerKey,
-        field: FieldId,
-        value: Scalar,
-        span: Span,
-    ) -> Result<()> {
+    fn store_field(&mut self, key: OwnerKey, field: FieldId, value: V, span: Span) -> Result<()> {
         let (offset, ty) = self.payload_field(key, field, span)?;
         if ty != value.ty() {
             return Err(bad("field value type", span));
         }
-        encode(
-            &mut self.frames[key.frame as usize].payload,
-            offset,
-            value,
-            span,
-        )
+        value.encode(&mut self.frames[key.frame as usize].payload, offset, span)
     }
     fn aggregate(&self, key: OwnerKey, span: Span) -> Result<AggregateTy> {
         let frame = self
@@ -920,32 +920,21 @@ impl<'p, 'w> Machine<'p, 'w> {
         let extent = self.owner_extent(key, span)?;
         scalar_offset(extent, relative, ty, span)
     }
-    fn load_leaf(&self, key: OwnerKey, leaf: ScalarLeaf, span: Span) -> Result<Scalar> {
+    fn load_leaf(&self, key: OwnerKey, leaf: ScalarLeaf, span: Span) -> Result<V> {
         let offset = self.leaf_offset(key, leaf.offset, leaf.ty, span)?;
-        decode(
+        V::decode(
             &self.frames[key.frame as usize].payload,
             offset,
             leaf.ty,
             span,
         )
     }
-    fn store_leaf(
-        &mut self,
-        key: OwnerKey,
-        leaf: ScalarLeaf,
-        value: Scalar,
-        span: Span,
-    ) -> Result<()> {
+    fn store_leaf(&mut self, key: OwnerKey, leaf: ScalarLeaf, value: V, span: Span) -> Result<()> {
         if leaf.ty != value.ty() {
             return Err(bad("leaf value type", span));
         }
         let offset = self.leaf_offset(key, leaf.offset, leaf.ty, span)?;
-        encode(
-            &mut self.frames[key.frame as usize].payload,
-            offset,
-            value,
-            span,
-        )
+        value.encode(&mut self.frames[key.frame as usize].payload, offset, span)
     }
     fn projection_base(
         &self,
@@ -1047,9 +1036,9 @@ impl<'p, 'w> Machine<'p, 'w> {
         array: FixedArrayTy,
         ordinal: usize,
         span: Span,
-    ) -> Result<Scalar> {
+    ) -> Result<V> {
         let offset = self.array_offset(key, array, ordinal, span)?;
-        decode(
+        V::decode(
             &self.frames[key.frame as usize].payload,
             offset,
             array.element(),
@@ -1061,19 +1050,14 @@ impl<'p, 'w> Machine<'p, 'w> {
         key: OwnerKey,
         array: FixedArrayTy,
         ordinal: usize,
-        value: Scalar,
+        value: V,
         span: Span,
     ) -> Result<()> {
         if value.ty() != array.element() {
             return Err(bad("array element type", span));
         }
         let offset = self.array_offset(key, array, ordinal, span)?;
-        encode(
-            &mut self.frames[key.frame as usize].payload,
-            offset,
-            value,
-            span,
-        )
+        value.encode(&mut self.frames[key.frame as usize].payload, offset, span)
     }
     fn zero_sentinel(&mut self, key: OwnerKey, span: Span) -> Result<()> {
         let extent = self.owner_extent(key, span)?;
@@ -1111,7 +1095,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         key: OwnerKey,
         expected: Option<VariantId>,
         span: Span,
-    ) -> Result<EnumValue> {
+    ) -> Result<StoredEnumValue<V>> {
         let (variant, payload_ty) = self.enum_tag(key, span)?;
         if expected.is_some_and(|expected| expected != variant) {
             return Err(bad("enum tag", span));
@@ -1131,7 +1115,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             #[cfg(test)]
             self.record_event(Event::EnumPayloadRead(key, scalar_size(ty)));
             Some(
-                decode(&self.frames[key.frame as usize].payload, offset, ty, span)
+                V::decode(&self.frames[key.frame as usize].payload, offset, ty, span)
                     .map_err(|_| bad("enum payload", span))?,
             )
         } else if payload_ty.is_none() {
@@ -1139,7 +1123,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         } else {
             return Err(bad("scalar enum payload", span));
         };
-        Ok(EnumValue {
+        Ok(StoredEnumValue {
             tag: variant.index as u32,
             payload,
             payload_offset: payload_offset as u8,
@@ -1149,7 +1133,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         &self,
         frame: usize,
         destination: Option<LocalId>,
-        value: EnumValue,
+        value: StoredEnumValue<V>,
         span: Span,
     ) -> Result<()> {
         match (destination, value.payload) {
@@ -1298,7 +1282,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         span: Span,
     ) -> Result<()> {
         let declarations = self.plan.witness().declarations();
-        for cell in ActiveCells::new(
+        for cell in ValueCells::<V>::new(
             declarations,
             &self.frames[from.frame as usize].payload,
             source.clone(),
@@ -1355,7 +1339,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             let bytes = &mut self.frames[source_frame].payload;
             if source.end <= destination.start {
                 let (before, after) = bytes.split_at_mut(destination.start);
-                copy_active_bytes(
+                copy_active_bytes_for::<V>(
                     declarations,
                     aggregate,
                     &before[source],
@@ -1364,7 +1348,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                 )
             } else if destination.end <= source.start {
                 let (before, after) = bytes.split_at_mut(source.start);
-                copy_active_bytes(
+                copy_active_bytes_for::<V>(
                     declarations,
                     aggregate,
                     &after[..source.len()],
@@ -1376,7 +1360,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
         } else if source_frame < destination_frame {
             let (before, after) = self.frames.split_at_mut(destination_frame);
-            copy_active_bytes(
+            copy_active_bytes_for::<V>(
                 declarations,
                 aggregate,
                 &before[source_frame].payload[source],
@@ -1385,7 +1369,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             )
         } else {
             let (before, after) = self.frames.split_at_mut(source_frame);
-            copy_active_bytes(
+            copy_active_bytes_for::<V>(
                 declarations,
                 aggregate,
                 &after[0].payload[source],
@@ -1671,43 +1655,73 @@ impl<'p, 'w> Machine<'p, 'w> {
                 return Ok(());
             }
         };
-        let value = match assign.value {
-            Rvalue::Bool(v) => Scalar::Bool(v),
-            Rvalue::I32(v) => Scalar::I32(v),
-            Rvalue::U8(v) => Scalar::U8(v),
-            Rvalue::Unit => Scalar::Unit,
-            Rvalue::Copy(v) => self.read(frame, v)?,
-            Rvalue::Load(p) => *self.frames[frame]
+        let value: V = match assign.value {
+            Rvalue::Bool(value) => Scalar::Bool(value).into(),
+            Rvalue::I32(value) => Scalar::I32(value).into(),
+            Rvalue::U8(value) => Scalar::U8(value).into(),
+            Rvalue::Unit => Scalar::Unit.into(),
+            Rvalue::I64(value) => values::checked_wide(value, assign.span)?,
+            Rvalue::Copy(value) => self.read(frame, value)?,
+            Rvalue::Load(place) => *self.frames[frame]
                 .slots
-                .get(f.locals.len() + p.id.0)
-                .ok_or_else(|| bad("scalar place index", p.span))?
+                .get(f.locals.len() + place.id.0)
+                .ok_or_else(|| bad("scalar place index", place.span))?
                 .as_ref()
-                .ok_or_else(|| bad("uninitialized scalar place", p.span))?,
+                .ok_or_else(|| bad("uninitialized scalar place", place.span))?,
             Rvalue::CheckedI32ToU8 {
                 operand, name_span, ..
             } => {
-                let Scalar::I32(value) = self.read(frame, operand)? else {
+                let Some(Scalar::I32(value)) = self.read(frame, operand)?.narrow() else {
                     return Err(bad("narrowing type", operand.span));
                 };
                 Scalar::U8(u8::try_from(value).map_err(|_| RunFailure::ByteRange(name_span))?)
+                    .into()
             }
             Rvalue::U8ToI32 { operand, .. } => {
-                let Scalar::U8(value) = self.read(frame, operand)? else {
+                let Some(Scalar::U8(value)) = self.read(frame, operand)?.narrow() else {
                     return Err(bad("widening type", operand.span));
                 };
-                Scalar::I32(i32::from(value))
+                Scalar::I32(i32::from(value)).into()
+            }
+            Rvalue::WidenI64 { operand, .. } => {
+                let value = match self.read(frame, operand)?.narrow() {
+                    Some(Scalar::I32(value)) => i64::from(value),
+                    Some(Scalar::U8(value)) => i64::from(value),
+                    _ => return Err(bad("i64 widening type", operand.span)),
+                };
+                values::checked_wide(value, assign.span)?
+            }
+            Rvalue::CheckedI64ToI32 {
+                operand, name_span, ..
+            } => {
+                let value = self
+                    .read(frame, operand)?
+                    .wide()
+                    .ok_or_else(|| bad("i64 narrowing type", operand.span))?;
+                Scalar::I32(i32::try_from(value).map_err(|_| RunFailure::I64ToI32Range(name_span))?)
+                    .into()
+            }
+            Rvalue::CheckedI64ToU8 {
+                operand, name_span, ..
+            } => {
+                let value = self
+                    .read(frame, operand)?
+                    .wide()
+                    .ok_or_else(|| bad("i64 narrowing type", operand.span))?;
+                Scalar::U8(u8::try_from(value).map_err(|_| RunFailure::I64ToU8Range(name_span))?)
+                    .into()
             }
             Rvalue::NotBool { operand, .. } => {
-                let Scalar::Bool(v) = self.read(frame, operand)? else {
+                let Some(Scalar::Bool(value)) = self.read(frame, operand)?.narrow() else {
                     return Err(bad("not bool", operand.span));
                 };
-                Scalar::Bool(!v)
+                Scalar::Bool(!value).into()
             }
             Rvalue::CheckedNegateI32 {
                 operand,
                 operator_span,
             } => {
-                let Scalar::I32(value) = self.read(frame, operand)? else {
+                let Some(Scalar::I32(value)) = self.read(frame, operand)?.narrow() else {
                     return Err(bad("negation type", operand.span));
                 };
                 Scalar::I32(
@@ -1715,6 +1729,22 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .checked_neg()
                         .ok_or(RunFailure::Overflow(operator_span))?,
                 )
+                .into()
+            }
+            Rvalue::CheckedNegateI64 {
+                operand,
+                operator_span,
+            } => {
+                let value = self
+                    .read(frame, operand)?
+                    .wide()
+                    .ok_or_else(|| bad("i64 negation type", operand.span))?;
+                values::checked_wide(
+                    value
+                        .checked_neg()
+                        .ok_or(RunFailure::WideOverflow(operator_span))?,
+                    assign.span,
+                )?
             }
             Rvalue::CheckedI32 {
                 op,
@@ -1722,9 +1752,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                 right,
                 operator_span,
             } => {
-                let (Scalar::I32(a), Scalar::I32(b)) =
-                    (self.read(frame, left)?, self.read(frame, right)?)
-                else {
+                let (Some(Scalar::I32(a)), Some(Scalar::I32(b))) = (
+                    self.read(frame, left)?.narrow(),
+                    self.read(frame, right)?.narrow(),
+                ) else {
                     return Err(bad("arithmetic type", assign.span));
                 };
                 if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) && b == 0
@@ -1741,35 +1772,40 @@ impl<'p, 'w> Machine<'p, 'w> {
                     }
                     .ok_or(RunFailure::Overflow(operator_span))?,
                 )
+                .into()
+            }
+            Rvalue::CheckedI64 {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let (Some(a), Some(b)) = (
+                    self.read(frame, left)?.wide(),
+                    self.read(frame, right)?.wide(),
+                ) else {
+                    return Err(bad("i64 arithmetic type", assign.span));
+                };
+                if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) && b == 0
+                {
+                    return Err(RunFailure::WideDivisionByZero(operator_span).into());
+                }
+                let value = match op {
+                    hir::ArithmeticOp::Add => a.checked_add(b),
+                    hir::ArithmeticOp::Subtract => a.checked_sub(b),
+                    hir::ArithmeticOp::Multiply => a.checked_mul(b),
+                    hir::ArithmeticOp::Divide => a.checked_div(b),
+                    hir::ArithmeticOp::Remainder => a.checked_rem(b),
+                }
+                .ok_or(RunFailure::WideOverflow(operator_span))?;
+                values::checked_wide(value, assign.span)?
             }
             Rvalue::CompareScalar {
                 op, left, right, ..
             } => {
-                let value = match (self.read(frame, left)?, self.read(frame, right)?) {
-                    (Scalar::I32(a), Scalar::I32(b)) => match op {
-                        hir::ComparisonOp::Equal => a == b,
-                        hir::ComparisonOp::NotEqual => a != b,
-                        hir::ComparisonOp::Less => a < b,
-                        hir::ComparisonOp::LessEqual => a <= b,
-                        hir::ComparisonOp::Greater => a > b,
-                        hir::ComparisonOp::GreaterEqual => a >= b,
-                    },
-                    (Scalar::U8(a), Scalar::U8(b)) => match op {
-                        hir::ComparisonOp::Equal => a == b,
-                        hir::ComparisonOp::NotEqual => a != b,
-                        hir::ComparisonOp::Less => a < b,
-                        hir::ComparisonOp::LessEqual => a <= b,
-                        hir::ComparisonOp::Greater => a > b,
-                        hir::ComparisonOp::GreaterEqual => a >= b,
-                    },
-                    (Scalar::Bool(a), Scalar::Bool(b)) => match op {
-                        hir::ComparisonOp::Equal => a == b,
-                        hir::ComparisonOp::NotEqual => a != b,
-                        _ => return Err(bad("boolean ordering", assign.span)),
-                    },
-                    _ => return Err(bad("comparison type", assign.span)),
-                };
-                Scalar::Bool(value)
+                let a = self.read(frame, left)?;
+                let b = self.read(frame, right)?;
+                Scalar::Bool(values::comparison(a, b, op, assign.span)?).into()
             }
         };
         self.write(frame, assign.destination, value, assign.span)
@@ -2201,12 +2237,12 @@ impl<'p, 'w> Machine<'p, 'w> {
                     .transpose()?;
                 let declarations = self.plan.witness().declarations().enums();
                 declarations
-                    .check_payload(enumeration, *variant, payload.map(Scalar::ty))
+                    .check_payload(enumeration, *variant, payload.map(StoredValue::ty))
                     .map_err(|_| bad("enum construction type", span))?;
                 let variant = declarations
                     .variant(enumeration, *variant)
                     .map_err(|_| bad("enum tag", span))?;
-                let value = EnumValue {
+                let value = StoredEnumValue {
                     tag: variant.tag(),
                     payload,
                     payload_offset: variant.payload_offset().unwrap_or(0) as u8,
@@ -2357,7 +2393,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                             offset: 0,
                             ty: hir::Ty::Unit,
                         },
-                        Scalar::Unit,
+                        Scalar::Unit.into(),
                         span,
                     )?;
                 }
@@ -2769,9 +2805,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                 end,
             } => {
                 self.prepared(frame, *call, *argument, span)?;
-                let (Scalar::I32(start), Scalar::I32(end)) =
-                    (self.read(frame, *start)?, self.read(frame, *end)?)
-                else {
+                let (Some(Scalar::I32(start)), Some(Scalar::I32(end))) = (
+                    self.read(frame, *start)?.narrow(),
+                    self.read(frame, *end)?.narrow(),
+                ) else {
                     return Err(bad("byte range endpoint type", span));
                 };
                 self.acquire_range(frame, *loan, Some((start, end)), span)?;
@@ -2834,7 +2871,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             }
         }
         // Allocation is after fuel/frame/slot/cell/byte preflight in the dispatcher loop.
-        let mut child = Frame::allocate(
+        let mut child = ValueFrame::<V>::allocate(
             self.plan,
             c.target,
             self.next_activation,
@@ -2954,7 +2991,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                         };
                     if owned_enum {
                         let source_extent = self.owner_extent(key, span)?;
-                        copy_active_bytes(
+                        copy_active_bytes_for::<V>(
                             declarations,
                             record,
                             &self.frames[frame].payload[source_extent],
@@ -2971,7 +3008,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                             let value = self.load_leaf(key, leaf, span)?;
                             let leaf_offset =
                                 scalar_offset(offset..end, leaf.offset, leaf.ty, span)?;
-                            encode(&mut child.payload, leaf_offset, value, span)?;
+                            value.encode(&mut child.payload, leaf_offset, span)?;
                         }
                     }
                     #[cfg(test)]
@@ -3008,7 +3045,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         frame: usize,
         kind: &OwnedTerminatorKind,
         span: Span,
-    ) -> Result<Option<Scalar>> {
+    ) -> Result<Option<V>> {
         let f = self.function(self.frames[frame].function);
         // The fixed P+L+C return charge covers every owner/outgoing-region check.
         if self.frames[frame].loans.iter().any(|l| l.state != 0)
@@ -3095,7 +3132,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             Ok(None)
         }
     }
-    fn execute(&mut self) -> Result<Scalar> {
+    fn execute(&mut self) -> Result<V> {
         loop {
             let frame = self
                 .frames
@@ -3215,7 +3252,7 @@ impl<'p, 'w> Machine<'p, 'w> {
                     then_block,
                     else_block,
                 } => {
-                    let Scalar::Bool(value) = self.read(frame, condition)? else {
+                    let Some(Scalar::Bool(value)) = self.read(frame, condition)?.narrow() else {
                         return Err(bad("branch bool", condition.span));
                     };
                     self.branch(frame, if value { then_block } else { else_block });
@@ -3236,7 +3273,9 @@ impl<'p, 'w> Machine<'p, 'w> {
 /// An enum has one active containment chain. Once that chain reaches a record
 /// or fixed array, the checked static leaf iterator handles its remaining shape.
 /// This retains no expanded value and never reads padding or inactive arms.
-struct ActiveCells<'a> {
+type ActiveCells<'a> = ValueCells<'a, Scalar>;
+struct ValueCells<'a, V> {
+    _value: std::marker::PhantomData<V>,
     declarations: &'a Declarations,
     bytes: &'a [u8],
     extent: std::ops::Range<usize>,
@@ -3245,7 +3284,7 @@ struct ActiveCells<'a> {
     leaf_base: usize,
     span: Span,
 }
-impl<'a> ActiveCells<'a> {
+impl<'a, V: StoredValue> ValueCells<'a, V> {
     fn new(
         declarations: &'a Declarations,
         bytes: &'a [u8],
@@ -3254,6 +3293,7 @@ impl<'a> ActiveCells<'a> {
         span: Span,
     ) -> Self {
         Self {
+            _value: std::marker::PhantomData,
             declarations,
             bytes,
             extent,
@@ -3263,17 +3303,17 @@ impl<'a> ActiveCells<'a> {
             span,
         }
     }
-    fn read(&self, leaf: ScalarLeaf) -> Result<(ScalarLeaf, Scalar)> {
+    fn read(&self, leaf: ScalarLeaf) -> Result<(ScalarLeaf, V)> {
         let offset = scalar_offset(self.extent.clone(), leaf.offset, leaf.ty, self.span)?;
         Ok((
             leaf,
-            decode(self.bytes, offset, leaf.ty, self.span)
+            V::decode(self.bytes, offset, leaf.ty, self.span)
                 .map_err(|_| bad("enum payload", self.span))?,
         ))
     }
 }
-impl Iterator for ActiveCells<'_> {
-    type Item = Result<(ScalarLeaf, Scalar)>;
+impl<V: StoredValue> Iterator for ValueCells<'_, V> {
+    type Item = Result<(ScalarLeaf, V)>;
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(leaves) = &mut self.leaves {
             let mut leaf = leaves.next()?;
@@ -3300,7 +3340,8 @@ impl Iterator for ActiveCells<'_> {
                     };
                     let offset =
                         scalar_offset(self.extent.clone(), relative, hir::Ty::I32, self.span)?;
-                    let Scalar::I32(tag) = decode(self.bytes, offset, hir::Ty::I32, self.span)?
+                    let Some(Scalar::I32(tag)) =
+                        V::decode(self.bytes, offset, hir::Ty::I32, self.span)?.narrow()
                     else {
                         unreachable!()
                     };
@@ -3319,7 +3360,7 @@ impl Iterator for ActiveCells<'_> {
                             .ok_or_else(|| bad("enum payload range", self.span))?;
                         self.pending = Some((payload, offset));
                     }
-                    Ok((leaf, Scalar::I32(tag)))
+                    Ok((leaf, V::from(Scalar::I32(tag))))
                 })();
                 Some(result)
             }
@@ -3341,10 +3382,20 @@ fn copy_active_bytes(
     destination: &mut [u8],
     span: Span,
 ) -> Result<()> {
-    for cell in ActiveCells::new(declarations, source, 0..source.len(), aggregate, span) {
+    copy_active_bytes_for::<Scalar>(declarations, aggregate, source, destination, span)
+}
+
+fn copy_active_bytes_for<V: StoredValue>(
+    declarations: &Declarations,
+    aggregate: AggregateTy,
+    source: &[u8],
+    destination: &mut [u8],
+    span: Span,
+) -> Result<()> {
+    for cell in ValueCells::<V>::new(declarations, source, 0..source.len(), aggregate, span) {
         let (leaf, value) = cell?;
         let offset = scalar_offset(0..destination.len(), leaf.offset, leaf.ty, span)?;
-        encode(destination, offset, value, span)?;
+        value.encode(destination, offset, span)?;
     }
     resources::copy(declarations, aggregate, source, destination, span)?;
     Ok(())
@@ -3352,9 +3403,9 @@ fn copy_active_bytes(
 
 /// Validate every destination byte range before the first write. The snapshot
 /// contains no inactive bytes and encoding cannot inspect them.
-fn enum_offsets(
+fn enum_offsets<V: StoredValue>(
     extent: std::ops::Range<usize>,
-    value: EnumValue,
+    value: StoredEnumValue<V>,
     span: Span,
 ) -> Result<(usize, Option<usize>)> {
     let tag = scalar_offset(extent.clone(), 0, hir::Ty::I32, span)?;
@@ -3371,10 +3422,10 @@ fn enum_offsets(
         .transpose()?;
     Ok((tag, payload))
 }
-fn encode_enum(
+fn encode_enum<V: StoredValue>(
     bytes: &mut [u8],
     extent: std::ops::Range<usize>,
-    value: EnumValue,
+    value: StoredEnumValue<V>,
     span: Span,
 ) -> Result<()> {
     if extent.end > bytes.len() {
@@ -3383,7 +3434,7 @@ fn encode_enum(
     let (tag, payload_offset) = enum_offsets(extent, value, span)?;
     bytes[tag..tag + 4].copy_from_slice(&value.tag.to_le_bytes());
     if let (Some(offset), Some(payload)) = (payload_offset, value.payload) {
-        encode(bytes, offset, payload, span)?;
+        payload.encode(bytes, offset, span)?;
     }
     Ok(())
 }
@@ -3391,6 +3442,7 @@ fn encode_enum(
 fn scalar_size(ty: hir::Ty) -> usize {
     match ty {
         hir::Ty::I32 => 4,
+        hir::Ty::I64 => 8,
         hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
 }
@@ -3410,8 +3462,8 @@ fn scalar_offset(
         .ok_or_else(|| bad("leaf payload range", span))?;
     Ok(offset)
 }
-fn array_index(value: Scalar, array: FixedArrayTy, span: Span) -> Result<usize> {
-    let Scalar::I32(index) = value else {
+fn array_index<V: StoredValue>(value: V, array: FixedArrayTy, span: Span) -> Result<usize> {
+    let Some(Scalar::I32(index)) = value.narrow() else {
         return Err(bad("array index type", span));
     };
     if index < 0 || index >= array.length() as i32 {
@@ -3421,6 +3473,7 @@ fn array_index(value: Scalar, array: FixedArrayTy, span: Span) -> Result<usize> 
 }
 fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar> {
     Ok(match ty {
+        hir::Ty::I64 => return Err(bad("wide payload in narrow execution", span)),
         hir::Ty::U8 => Scalar::U8(
             *bytes
                 .get(offset)
@@ -3482,6 +3535,56 @@ fn encode(bytes: &mut [u8], offset: usize, value: Scalar, span: Span) -> Result<
 }
 pub(super) fn run(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<Scalar> {
     run_limits(witness, entry, Limits::default())
+}
+
+pub(super) fn run_value(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    limits: Limits,
+    execution: ExecutionPolicy,
+) -> Result<RuntimeScalar> {
+    let entry = checked_entry(witness, entry)?;
+    let plan = ExecutionPlan::build(witness)?;
+    execute_value_plan(&plan, entry, limits, EntryPolicy::Result, execution)
+}
+
+fn execute_value_plan(
+    plan: &ExecutionPlan<'_>,
+    entry: hir::DefId,
+    limits: Limits,
+    policy: EntryPolicy,
+    execution: ExecutionPolicy,
+) -> Result<RuntimeScalar> {
+    if plan.uses_wide_scalars() {
+        execute_plan_policy::<RuntimeScalar>(
+            plan,
+            entry,
+            limits,
+            policy,
+            execution,
+            #[cfg(test)]
+            None,
+            #[cfg(test)]
+            None,
+            #[cfg(test)]
+            None,
+        )
+    } else {
+        execute_plan_policy::<Scalar>(
+            plan,
+            entry,
+            limits,
+            policy,
+            execution,
+            #[cfg(test)]
+            None,
+            #[cfg(test)]
+            None,
+            #[cfg(test)]
+            None,
+        )
+        .map(RuntimeScalar::from)
+    }
 }
 pub(super) fn run_with_execution(
     witness: &VerifiedOwnedProgram,
@@ -3644,16 +3747,16 @@ fn execute_plan_inner(
 }
 
 #[allow(clippy::too_many_arguments)] // Execution policy plus unchanged private observation sinks.
-fn execute_plan_policy(
+fn execute_plan_policy<V: StoredValue>(
     plan: &ExecutionPlan<'_>,
     entry: hir::DefId,
     limits: Limits,
     policy: EntryPolicy,
     execution: ExecutionPolicy,
-    #[cfg(test)] events: Option<&mut Vec<Event>>,
+    #[cfg(test)] events: Option<&mut Vec<Event<V>>>,
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
-) -> Result<Scalar> {
+) -> Result<V> {
     // All callers share entry validation. Every sealed Process caller
     // establishes host support and signal policy before reaching this point.
     checked_entry_policy(plan.witness(), Some(entry), policy)?;
@@ -3662,9 +3765,15 @@ fn execute_plan_policy(
             plan.witness().functions()[entry.0].span,
         ));
     }
+    if plan.uses_wide_scalars() != V::WIDE {
+        return Err(bad(
+            "scalar storage representation",
+            plan.witness().functions()[entry.0].span,
+        ));
+    }
     let limits = limits.bounded();
     let f = &plan.witness().functions()[entry.0];
-    let mut machine = Machine {
+    let mut machine = ValueMachine::<V> {
         plan,
         frames: Vec::new(),
         limits,
@@ -3674,7 +3783,7 @@ fn execute_plan_policy(
         live_cells: 0,
         live_bytes: 0,
         header_bytes: plan::add(
-            plan::mul(limits.frames, size_of::<Frame>())?,
+            plan::mul(limits.frames, size_of::<ValueFrame<V>>())?,
             plan::add(
                 if plan.uses_dynamic_resources() {
                     plan::add(size_of::<byte_buffer::Heap>(), resources::control_bytes())?
@@ -3698,7 +3807,8 @@ fn execute_plan_policy(
                     0
                 },
             )?,
-        )?,
+        )
+        .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))?,
         heap: byte_buffer::Heap::for_execution(),
         #[cfg(test)]
         events: Vec::new(),
@@ -3722,7 +3832,7 @@ fn execute_plan_policy(
         )?;
         machine.frames = plan::reserve(limits.frames)
             .map_err(|error| OwnedRunFailure::from(error).at_runtime(f.span))?;
-        let root = Frame::allocate(plan, entry, machine.next_activation, None)
+        let root = ValueFrame::<V>::allocate(plan, entry, machine.next_activation, None)
             .map_err(|error| error.at_runtime(f.span))?;
         machine.install(root);
         machine.execute()
@@ -3760,8 +3870,8 @@ fn execute_plan_policy(
         *events = machine.events;
     }
     if policy == EntryPolicy::Process {
-        match result? {
-            scalar @ Scalar::I32(0..=255) => Ok(scalar),
+        match result?.narrow() {
+            Some(scalar @ Scalar::I32(0..=255)) => Ok(scalar.into()),
             _ => Err(OwnedRunFailure::ProcessResult(f.span)),
         }
     } else {
@@ -3804,19 +3914,11 @@ fn run_process_policy(
     }
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Process)?;
     let plan = ExecutionPlan::build(witness)?;
-    execute_plan_policy(
-        &plan,
-        entry,
-        limits,
-        EntryPolicy::Process,
-        execution,
-        #[cfg(test)]
-        None,
-        #[cfg(test)]
-        None,
-        #[cfg(test)]
-        None,
-    )
+    execute_value_plan(&plan, entry, limits, EntryPolicy::Process, execution)?
+        .narrow()
+        .ok_or(OwnedRunFailure::ProcessResult(
+            witness.functions()[entry.0].span,
+        ))
 }
 #[cfg(test)]
 pub(super) fn run_observed(

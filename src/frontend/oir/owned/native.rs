@@ -8,6 +8,8 @@ use std::mem::size_of;
 
 #[path = "native_experimental.rs"]
 mod experimental;
+#[path = "native_numeric.rs"]
+mod numeric;
 #[path = "native_resources.rs"]
 mod resources;
 
@@ -866,6 +868,10 @@ fn admit_policy_accounted(
                 experimental::ARGUMENT_DELIVERY_BYTES
             } else {
                 0
+            } + if plan.uses_wide_scalars() {
+                experimental::WIDE_DELIVERY_BYTES
+            } else {
+                0
             },
         )?,
     )?;
@@ -1061,6 +1067,10 @@ enum FailureKind {
     ProcessStatus,
     ResourceDescriptor,
     AllocationIdentity,
+    WideOverflow,
+    WideDivisionByZero,
+    I64ToI32Range,
+    I64ToU8Range,
 }
 impl FailureKind {
     fn transient_bytes(self) -> usize {
@@ -1088,6 +1098,10 @@ impl FailureKind {
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::ByteRange => RunFailure::ByteRange(span).diagnostic(sources),
+            Self::WideOverflow => RunFailure::WideOverflow(span).diagnostic(sources),
+            Self::WideDivisionByZero => RunFailure::WideDivisionByZero(span).diagnostic(sources),
+            Self::I64ToI32Range => RunFailure::I64ToI32Range(span).diagnostic(sources),
+            Self::I64ToU8Range => RunFailure::I64ToU8Range(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
             Self::ProcessStatus => Diagnostic::new(
                 "E0600",
@@ -1230,6 +1244,30 @@ fn diagnostic_occurrences(
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::CheckedI64 {
+                                op, operator_span, ..
+                            },
+                        ..
+                    })) => {
+                        visit(FailureKind::WideOverflow, *operator_span)?;
+                        if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) {
+                            visit(FailureKind::WideDivisionByZero, *operator_span)?;
+                        }
+                    }
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedNegateI64 { operator_span, .. },
+                        ..
+                    })) => visit(FailureKind::WideOverflow, *operator_span)?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedI64ToI32 { name_span, .. },
+                        ..
+                    })) => visit(FailureKind::I64ToI32Range, *name_span)?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedI64ToU8 { name_span, .. },
+                        ..
+                    })) => visit(FailureKind::I64ToU8Range, *name_span)?,
                     OwnedInstruction::Experimental { .. } => {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?;
                         visit(
@@ -1671,6 +1709,7 @@ fn ty(t: hir::Ty) -> &'static str {
     match t {
         hir::Ty::Bool => "i1",
         hir::Ty::I32 => "i32",
+        hir::Ty::I64 => "i64",
         hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
@@ -1681,10 +1720,18 @@ fn result_ty(t: ValueTy) -> &'static str {
     }
 }
 fn load_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty) -> String {
+    if t == hir::Ty::I64 {
+        writeln!(out, "  %{name} = load i64, ptr {pointer}, align 8").unwrap();
+        return format!("%{name}");
+    }
     writeln!(out, "  %{name}_wide = load i64, ptr {pointer}, align 8\n  %{name} = trunc i64 %{name}_wide to {}", ty(t)).unwrap();
     format!("%{name}")
 }
 fn store_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty, value: &str) {
+    if t == hir::Ty::I64 {
+        writeln!(out, "  store i64 {value}, ptr {pointer}, align 8").unwrap();
+        return;
+    }
     writeln!(
         out,
         "  %{name}_wide = zext {} {value} to i64\n  store i64 %{name}_wide, ptr {pointer}, align 8",
@@ -1757,12 +1804,14 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
 fn element_stride(element: hir::Ty) -> usize {
     match element {
         hir::Ty::I32 => 4,
+        hir::Ty::I64 => 8,
         hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
 }
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
         hir::Ty::I32 => "i32",
+        hir::Ty::I64 => "i64",
         hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
@@ -2212,13 +2261,17 @@ fn enum_payload_load(
         source,
         declaration.payload_offset().expect("active scalar offset"),
     );
-    let storage = if scalar == hir::Ty::I32 { "i32" } else { "i8" };
+    let storage = match scalar {
+        hir::Ty::I32 => "i32",
+        hir::Ty::I64 => "i64",
+        _ => "i8",
+    };
     writeln!(
         out,
         "  %{name}_active = load {storage}, ptr {pointer}, align 1"
     )
     .unwrap();
-    if scalar != hir::Ty::I32 {
+    if matches!(scalar, hir::Ty::Bool | hir::Ty::Unit) {
         let predicate = if scalar == hir::Ty::Bool { "ule" } else { "eq" };
         let bound = usize::from(scalar == hir::Ty::Bool);
         writeln!(out, "  %{name}_canonical = icmp {predicate} i8 %{name}_active, {bound}\n  br i1 %{name}_canonical, label %{name}_payload_ok, label %{name}_payload_error\n{name}_payload_error:").unwrap();
@@ -2629,7 +2682,11 @@ fn active_transfer_with_intent(
             }
             let cell = format!("{name}_validate{index}");
             let input = field_pointer(out, &cell, source, leaf.offset);
-            let storage = if leaf.ty == hir::Ty::I32 { "i32" } else { "i8" };
+            let storage = match leaf.ty {
+                hir::Ty::I32 => "i32",
+                hir::Ty::I64 => "i64",
+                _ => "i8",
+            };
             writeln!(out, "  %{cell} = load {storage}, ptr {input}, align 1").unwrap();
             if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
                 let predicate = if leaf.ty == hir::Ty::Bool {
@@ -2878,6 +2935,9 @@ fn emit(
     out.resources = plan.uses_dynamic_resources();
     let guarded = storage.guarded();
     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
+    if plan.uses_wide_scalars() {
+        out.write_str("declare i32 @__oxid_print_i64(i64)\ndeclare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)\ndeclare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64)\ndeclare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)\n").unwrap();
+    }
     if out.resources {
         out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
         if out.policy.hosted() {
@@ -2987,6 +3047,7 @@ fn emit(
     match result {
         hir::Ty::Bool => out.write_str("  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n").unwrap(),
         hir::Ty::I32 => out.write_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n").unwrap(),
+        hir::Ty::I64 => out.write_str("  %status = call i32 @__oxid_print_i64(i64 %value)\n").unwrap(),
         hir::Ty::U8 => unreachable!("byte entry rejected before native plan"),
         hir::Ty::Unit => out.write_str("  %status = call i32 @__oxid_print_unit()\n").unwrap(),
     }
@@ -3038,15 +3099,20 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         }
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
-                Rvalue::CheckedI32 { .. } | Rvalue::CheckedNegateI32 { .. } => {
-                    Continuation::Arithmetic
-                }
-                Rvalue::CheckedI32ToU8 { .. } => Continuation::Conversion,
+                Rvalue::CheckedI32 { .. }
+                | Rvalue::CheckedNegateI32 { .. }
+                | Rvalue::CheckedI64 { .. }
+                | Rvalue::CheckedNegateI64 { .. } => Continuation::Arithmetic,
+                Rvalue::CheckedI32ToU8 { .. }
+                | Rvalue::CheckedI64ToI32 { .. }
+                | Rvalue::CheckedI64ToU8 { .. } => Continuation::Conversion,
                 Rvalue::Load(_)
                 | Rvalue::U8ToI32 { .. }
+                | Rvalue::WidenI64 { .. }
                 | Rvalue::NotBool { .. }
                 | Rvalue::Bool(_)
                 | Rvalue::I32(_)
+                | Rvalue::I64(_)
                 | Rvalue::U8(_)
                 | Rvalue::Unit
                 | Rvalue::Copy(_)
@@ -4267,6 +4333,38 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::I64(value) => value.to_string(),
+        Rvalue::WidenI64 { operand, .. } => {
+            let input = f.locals[operand.local.0].ty;
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            numeric::widen(out, name, input, &value)
+        }
+        Rvalue::CheckedI64ToI32 {
+            operand, name_span, ..
+        }
+        | Rvalue::CheckedI64ToU8 {
+            operand, name_span, ..
+        } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            numeric::narrow(out, diagnostics, name, t, &value, name_span)
+        }
+        Rvalue::CheckedNegateI64 {
+            operand,
+            operator_span,
+        } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            numeric::negate(out, diagnostics, name, &value, operator_span)
+        }
+        Rvalue::CheckedI64 {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            numeric::arithmetic(out, diagnostics, name, op, &a, &b, operator_span)
+        }
         Rvalue::Bool(v) => if v { "true" } else { "false" }.to_string(),
         Rvalue::I32(v) => v.to_string(),
         Rvalue::U8(v) => v.to_string(),

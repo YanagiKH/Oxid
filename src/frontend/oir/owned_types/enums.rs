@@ -412,7 +412,7 @@ impl PreparedEnums<'_> {
             let variant_start = variants.len();
             let layout = summaries
                 .get(declaration.id.0)
-                .map_or(Layout { size: 8, align: 4 }, |s| s.layout);
+                .map_or_else(|| scalar_enum_layout(declaration), |s| s.layout);
             for variant in &declaration.variants {
                 variants.push(VariantDecl {
                     id: variant.id,
@@ -479,7 +479,7 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
     match variant.payload {
         None => Ok(None),
         Some(ParameterTy::Value(ValueTy::Scalar(
-            ty @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit),
+            ty @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit | hir::Ty::I64),
         ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
@@ -515,7 +515,7 @@ fn prepare_shapes<'a>(
     limits: Limits,
     owned: bool,
 ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
-    let usage = preflight_counts(
+    let mut usage = preflight_counts(
         raw.iter().map(|declaration| declaration.variants.len()),
         existing,
         limits,
@@ -547,8 +547,35 @@ fn prepare_shapes<'a>(
                 scalar_payload(variant)?;
             }
         }
+        if scalar_enum_layout(declaration).align == 8 {
+            usage.layout_bytes = super::limited_add(
+                usage.layout_bytes,
+                8,
+                limits.bounded().layout_bytes,
+                "declaration layout bytes",
+            )?;
+            super::limited_add(
+                existing.layout_bytes,
+                usage.layout_bytes,
+                limits.bounded().layout_bytes,
+                "declaration layout bytes",
+            )?;
+        }
     }
     Ok(PreparedEnums { raw, usage })
+}
+
+fn scalar_enum_layout(declaration: &RawEnumDecl) -> Layout {
+    if declaration.variants.iter().any(|variant| {
+        matches!(
+            variant.payload,
+            Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::I64)))
+        )
+    }) {
+        Layout { size: 16, align: 8 }
+    } else {
+        Layout { size: 8, align: 4 }
+    }
 }
 
 /// Independent bounded DFS over enum edges. Records cannot contain enums, so

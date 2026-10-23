@@ -108,6 +108,12 @@ pub(super) fn reserve<T>(
 }
 
 impl Parser<'_> {
+    pub(super) fn wide_scalars_enabled(&self) -> bool {
+        self.mode.owned()
+            && self.enums == EnumSyntaxPolicy::Enabled
+            && self.std_imports == StdImportPolicy::Enabled
+    }
+
     pub(super) fn enums_enabled(&self) -> bool {
         self.mode.owned() && self.enums.enabled()
     }
@@ -239,6 +245,10 @@ impl Parser<'_> {
             Kind::Ident if self.source.text_at(start) == "i32" => {
                 self.bump();
                 (ScalarTypeSyntax::I32, start.end)
+            }
+            Kind::Ident if self.wide_scalars_enabled() && self.source.text_at(start) == "i64" => {
+                self.bump();
+                (ScalarTypeSyntax::I64, start.end)
             }
             Kind::Ident if self.source.text_at(start) != "u8" => {
                 let (path, span) = self.item_path("expected enum payload type", true)?;

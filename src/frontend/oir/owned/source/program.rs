@@ -12,6 +12,9 @@ use crate::frontend::{
 #[cfg(test)]
 #[path = "experimental_source_tests.rs"]
 mod experimental_source_tests;
+#[cfg(test)]
+#[path = "i64_source_tests.rs"]
+mod i64_source_tests;
 
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct SourceProgram {
@@ -179,8 +182,20 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<Scalar, Box<Diagnostic>> {
-        self.require_result_entry_policy(sources)?;
-        execute::run(&self.witness, entry).map_err(|error| error.diagnostic(sources))
+        self.run_value(
+            entry,
+            sources,
+            crate::frontend::build_config::ExecutionPolicy::Bounded,
+        )?
+        .narrow()
+        .ok_or_else(|| {
+            Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "this scalar result interface does not support i64",
+                None,
+            )
+        })
     }
 
     pub(in crate::frontend::oir) fn run_with_execution(
@@ -189,8 +204,26 @@ impl SourceProgram {
         sources: &SourceMap,
         execution: crate::frontend::build_config::ExecutionPolicy,
     ) -> Result<Scalar, Box<Diagnostic>> {
+        self.run_value(entry, sources, execution)?
+            .narrow()
+            .ok_or_else(|| {
+                Diagnostic::new(
+                    "E0600",
+                    "oir-run",
+                    "this scalar result interface does not support i64",
+                    None,
+                )
+            })
+    }
+
+    pub(in crate::frontend::oir) fn run_value(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeScalar, Box<Diagnostic>> {
         self.require_result_entry_policy(sources)?;
-        execute::run_with_execution(&self.witness, entry, execution)
+        execute::run_value(&self.witness, entry, execute::Limits::default(), execution)
             .map_err(|error| error.diagnostic(sources))
     }
 

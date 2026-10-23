@@ -52,7 +52,7 @@ pub(in super::super) fn argument_control_bytes(span: Span) -> usize {
     size_of::<ArgumentDeliveryCarriers>() + std::mem::size_of_val(&argument_error_mapper(span))
 }
 
-impl Machine<'_, '_> {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn prepare_binary_delivery(
         &self,
         frame: usize,

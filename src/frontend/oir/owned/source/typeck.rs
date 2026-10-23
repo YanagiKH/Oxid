@@ -2404,6 +2404,7 @@ fn expression_type(
         }
         ExprKind::Bool(_) => scalar(Ty::Bool),
         ExprKind::I32(_) => scalar(Ty::I32),
+        ExprKind::I64(_) => scalar(Ty::I64),
         ExprKind::Unit => scalar(Ty::Unit),
         ExprKind::Binding(binding) => match bindings[binding.0]
             .expect("resolved binding initialized")
@@ -2416,12 +2417,22 @@ fn expression_type(
             )),
         },
         ExprKind::Conversion { op, operand, .. } => {
-            let (input, output) = match op {
-                ConversionOp::ToU8Checked => (Ty::I32, Ty::U8),
-                ConversionOp::ToI32 => (Ty::U8, Ty::I32),
-            };
             let actual = child!(*operand)?;
-            if actual != scalar(input) {
+            let (accepted, input, output) = match op {
+                ConversionOp::ToU8Checked => (
+                    matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::I64)),
+                    Ty::I32,
+                    Ty::U8,
+                ),
+                ConversionOp::ToI32 => (actual == scalar(Ty::U8), Ty::U8, Ty::I32),
+                ConversionOp::ToI64 => (
+                    matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::U8)),
+                    Ty::I32,
+                    Ty::I64,
+                ),
+                ConversionOp::ToI32Checked => (actual == scalar(Ty::I64), Ty::I64, Ty::I32),
+            };
+            if !accepted {
                 return Err(mismatch(
                     program,
                     scalar(input),
@@ -2434,7 +2445,7 @@ fn expression_type(
         ExprKind::Group(inner) => child!(*inner)?,
         ExprKind::Negate { operand, .. } => {
             let actual = child!(*operand)?;
-            if actual != scalar(Ty::I32) {
+            if !matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::I64)) {
                 return Err(mismatch(
                     program,
                     scalar(Ty::I32),
@@ -2442,7 +2453,7 @@ fn expression_type(
                     function.expressions[operand.0].span,
                 ));
             }
-            scalar(Ty::I32)
+            actual
         }
         ExprKind::Not { operand, .. } => {
             let actual = child!(*operand)?;
@@ -2457,21 +2468,30 @@ fn expression_type(
             scalar(Ty::Bool)
         }
         ExprKind::Arithmetic { left, right, .. } | ExprKind::Logical { left, right, .. } => {
+            let actual = child!(*left)?;
             let expected = if matches!(expr.kind, ExprKind::Logical { .. }) {
                 scalar(Ty::Bool)
+            } else if actual == scalar(Ty::I64) {
+                scalar(Ty::I64)
             } else {
                 scalar(Ty::I32)
             };
-            for operand in [left, right] {
-                let actual = child!(*operand)?;
-                if actual != expected {
-                    return Err(mismatch(
-                        program,
-                        expected,
-                        actual,
-                        function.expressions[operand.0].span,
-                    ));
-                }
+            if actual != expected {
+                return Err(mismatch(
+                    program,
+                    expected,
+                    actual,
+                    function.expressions[left.0].span,
+                ));
+            }
+            let actual = child!(*right)?;
+            if actual != expected {
+                return Err(mismatch(
+                    program,
+                    expected,
+                    actual,
+                    function.expressions[right.0].span,
+                ));
             }
             expected
         }
@@ -2481,7 +2501,10 @@ fn expression_type(
             let actual = child!(*left)?;
             let expected = match op {
                 ComparisonOp::Equal | ComparisonOp::NotEqual => {
-                    if !matches!(actual, ValueTy::Scalar(Ty::Bool | Ty::I32 | Ty::U8)) {
+                    if !matches!(
+                        actual,
+                        ValueTy::Scalar(Ty::Bool | Ty::I32 | Ty::U8 | Ty::I64)
+                    ) {
                         return Err(error(
                             "E0300",
                             "equality requires i32 or bool operands",
@@ -2491,7 +2514,7 @@ fn expression_type(
                     actual
                 }
                 _ => {
-                    if !matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::U8)) {
+                    if !matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::U8 | Ty::I64)) {
                         return Err(mismatch(
                             program,
                             scalar(Ty::I32),
@@ -2805,8 +2828,9 @@ fn expression_type(
             for element in elements {
                 program.work().debit(1, expr.span, "array type edge")?;
                 let actual = child!(*element)?;
-                let ValueTy::Scalar(scalar_type @ (Ty::Bool | Ty::I32 | Ty::U8 | Ty::Unit)) =
-                    actual
+                let ValueTy::Scalar(
+                    scalar_type @ (Ty::Bool | Ty::I32 | Ty::U8 | Ty::Unit | Ty::I64),
+                ) = actual
                 else {
                     return Err(error(
                         "E0300",

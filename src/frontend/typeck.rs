@@ -285,6 +285,8 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         let (expected, result) = match op {
                             ConversionOp::ToU8Checked => (Ty::I32, Ty::U8),
                             ConversionOp::ToI32 => (Ty::U8, Ty::I32),
+                            ConversionOp::ToI64 => (Ty::I32, Ty::I64),
+                            ConversionOp::ToI32Checked => (Ty::I64, Ty::I32),
                         };
                         let actual = expressions[operand.0];
                         if actual != expected {

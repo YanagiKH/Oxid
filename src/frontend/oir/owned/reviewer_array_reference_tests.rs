@@ -100,6 +100,7 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
 }
 fn value(ty: hir::Ty, j: usize) -> Scalar {
     match ty {
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(37 * j as i32 - 91),
         hir::Ty::Bool => Scalar::Bool(j.is_multiple_of(2)),
@@ -108,6 +109,7 @@ fn value(ty: hir::Ty, j: usize) -> Scalar {
 }
 fn replacement(ty: hir::Ty) -> Scalar {
     match ty {
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(-123456789),
         hir::Ty::Bool => Scalar::Bool(false),

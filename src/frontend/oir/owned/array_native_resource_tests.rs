@@ -49,6 +49,12 @@ fn scalar_raw(spans: &[Span]) -> RawOwnedProgram {
 
 fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
     match kind {
+        FailureKind::WideOverflow
+        | FailureKind::WideDivisionByZero
+        | FailureKind::I64ToI32Range
+        | FailureKind::I64ToU8Range => {
+            panic!("i64 is outside this retained narrow fixture or observer")
+        }
         FailureKind::AllocationIdentity => {
             execute::OwnedRunFailure::Invariant("allocation identity exhausted", Some(origin))
                 .diagnostic(sources)

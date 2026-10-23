@@ -19,6 +19,8 @@ impl Parser<'_> {
         let op = match self.source.text_at(name.span) {
             "to_u8_checked" => ConversionOp::ToU8Checked,
             "to_i32" => ConversionOp::ToI32,
+            "to_i64" if self.wide_scalars_enabled() => ConversionOp::ToI64,
+            "to_i32_checked" if self.wide_scalars_enabled() => ConversionOp::ToI32Checked,
             _ => return None,
         };
         (tokens.next()?.kind == Kind::LParen).then_some(op)

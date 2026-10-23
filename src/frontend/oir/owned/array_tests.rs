@@ -47,6 +47,7 @@ fn fixture(span: Span, ty: hir::Ty, length: usize) -> RawOwnedProgram {
             }),
     );
     let value = match ty {
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => Rvalue::Bool(true),
         hir::Ty::I32 => Rvalue::I32(7),

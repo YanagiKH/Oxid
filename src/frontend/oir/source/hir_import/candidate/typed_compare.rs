@@ -61,7 +61,7 @@ fn type_code(ty: hir::Ty) -> Result<i32, Failure> {
         hir::Ty::Bool => 1,
         hir::Ty::I32 => 2,
         hir::Ty::Unit => 3,
-        hir::Ty::U8 => return Err(Failure::Shape),
+        hir::Ty::U8 | hir::Ty::I64 => return Err(Failure::Shape),
     })
 }
 

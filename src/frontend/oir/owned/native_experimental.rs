@@ -143,6 +143,33 @@ struct ArgumentControl {
 }
 pub(super) const ARGUMENT_DELIVERY_BYTES: usize = size_of::<ArgumentControl>();
 
+#[allow(dead_code)]
+#[repr(C)]
+struct WidePrintFrame {
+    value: i64,
+    buffer: [u8; 21],
+    index: usize,
+    magnitude: u64,
+    returned_status: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct WideOutputFrame {
+    descriptor: i32,
+    bytes: *const u8,
+    length: usize,
+    written: isize,
+    returned_status: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct WideControl {
+    print: WidePrintFrame,
+    output: WideOutputFrame,
+    main_status: i32,
+}
+pub(super) const WIDE_DELIVERY_BYTES: usize = size_of::<WideControl>();
+
 #[allow(clippy::too_many_arguments)] // Complete preflighted failure labels; no retained state.
 pub(super) fn status(
     out: &mut Emission,

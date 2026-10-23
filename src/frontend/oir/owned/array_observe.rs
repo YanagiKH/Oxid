@@ -185,8 +185,8 @@ impl Observer {
         });
     }
 }
-impl Machine<'_, '_> {
-    pub(super) fn record_event(&mut self, event: Event) {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
+    pub(super) fn record_event(&mut self, event: Event<V>) {
         if self.observer.silent {
             return;
         }
@@ -349,7 +349,7 @@ pub(in super::super) enum FaultKind {
         owner: OwnerPlaceId,
     },
 }
-impl Machine<'_, '_> {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn pending_fault(&mut self, span: Span) -> Option<FaultKind> {
         if !self.observer.collecting() || self.observer.fault_attempted {
             return None;
@@ -423,9 +423,9 @@ impl Machine<'_, '_> {
                 return;
             };
             *value = if value.ty() == hir::Ty::Bool {
-                Scalar::I32(0)
+                Scalar::I32(0).into()
             } else {
-                Scalar::Bool(false)
+                Scalar::Bool(false).into()
             };
             self.observer.fault_applied = true;
             return;
@@ -540,7 +540,7 @@ impl Machine<'_, '_> {
     }
 }
 
-impl Machine<'_, '_> {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn inject_enum_owner(&mut self, frame: usize, kind: FaultKind, span: Span) -> bool {
         let owner = match kind {
             FaultKind::EnumOwnerTag { owner, .. }
