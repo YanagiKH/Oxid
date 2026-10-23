@@ -553,7 +553,7 @@ fn builtin_index_resource_endpoints_and_layouts_are_explicit() {
         size_of::<BuiltinSet>(),size_of::<BuiltinAdmission<'static>>(),size_of::<CandidateOrigin>(),size_of::<DeclarationHandle>(),size_of::<DeclarationProjection>(),size_of::<Result<DeclarationProjection,Box<Diagnostic>>>(),size_of::<Option<DeclarationHandle>>(),size_of::<Result<Option<DeclarationHandle>,Box<Diagnostic>>>(),size_of::<Result<BuiltinItem,Box<Diagnostic>>>(),size_of::<Result<DeclarationOrigin,Box<Diagnostic>>>(),size_of::<Tables<'_>>(),size_of::<DeclarationIndex<'_>>(),size_of::<DeclarationFacts<'_>>(),size_of::<Counts>(),size_of::<IndexPlan>(),size_of::<PreparedTypeName<'_>>(),size_of::<Option<PreparedTypeName<'_>>>(),size_of::<EnumView<'_>>(),size_of::<Option<EnumView<'_>>>(),size_of::<Result<EnumView<'_>,Box<Diagnostic>>>(),size_of::<VariantView<'_>>(),size_of::<Option<VariantView<'_>>>(),size_of::<Result<VariantView<'_>,Box<Diagnostic>>>(),size_of::<EnumVariantCounts<'_>>(),FIXED_SCRATCH);
     assert_eq!(size_of::<EnumView<'_>>(), 16);
     assert_eq!(size_of::<VariantView<'_>>(), 24);
-    const { assert!(FIXED_SCRATCH <= 4096 + FILE_INDEX_CARRIER_GROWTH) };
+    const { assert!(FIXED_SCRATCH <= 4096) };
 }
 
 #[test]
@@ -900,8 +900,8 @@ mod output_layout_feasibility {
             4094
         );
         #[cfg(target_pointer_width = "64")]
-        assert_eq!(FIXED_SCRATCH, 4096 + FILE_INDEX_CARRIER_GROWTH);
-        const { assert!(FIXED_SCRATCH <= 4096 + FILE_INDEX_CARRIER_GROWTH) };
+        assert_eq!(FIXED_SCRATCH, 4096);
+        const { assert!(FIXED_SCRATCH <= 4096) };
 
         macro_rules! layouts {
             ($($ty:ty),+ $(,)?) => {$(report::<$ty>(stringify!($ty));)+};
@@ -1018,10 +1018,7 @@ mod output_layout_feasibility {
         assert_eq!(substituted, 4094);
         assert_eq!(
             FIXED_SCRATCH,
-            substituted
-                + size_of::<BuiltinEnum>()
-                + size_of::<BuiltinFunction>()
-                + FILE_INDEX_CARRIER_GROWTH
+            substituted + size_of::<BuiltinEnum>() + size_of::<BuiltinFunction>()
         );
         let old_transports = size_of::<ExistingAnchorTransports<'static>>();
         let new_transports = size_of::<BorrowedAnchorTransports<'static>>();
@@ -1297,7 +1294,7 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
         size_of::<DeclarationFacts<'static>>(),
         592 + FILE_ADMISSION_CARRIER_GROWTH
     );
-    assert_eq!(FIXED_SCRATCH, 4096 + FILE_INDEX_CARRIER_GROWTH);
+    assert_eq!(FIXED_SCRATCH, 4096);
     for (name, source, old_retained, old_scratch) in [
         ("absent", "fn main()->(){return;}", 488, 4102),
         (
@@ -1315,10 +1312,7 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
             plan.retained,
             old_retained + 8 + FILE_ADMISSION_CARRIER_GROWTH as u64
         );
-        assert_eq!(
-            plan.scratch,
-            old_scratch + 2 + FILE_INDEX_CARRIER_GROWTH as u64
-        );
+        assert_eq!(plan.scratch, old_scratch + 2);
         for (retained, scratch, expected) in [
             (old_retained, plan.scratch, false),
             (plan.retained - 1, plan.scratch, false),

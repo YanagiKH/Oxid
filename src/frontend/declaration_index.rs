@@ -287,7 +287,8 @@ struct Scratch {
 // item handles, counters, ranges and formatter arithmetic; row copies and other
 // association handles are listed separately. Disjoint build/query/format phases are deliberately
 // summed, except the explicitly named u8 reservation/preflight phase overlay
-// on the noncoexisting prepared-name pair. No counter-bank credit is taken.
+// on the noncoexisting prepared-name pair and the collector/query overlay below.
+// No counter-bank credit is taken.
 // Test-only event Vec headers/payloads are excluded.
 // The prior absolute record/callee -> select -> absolute_endpoint -> segments
 // chain has four by-value ItemPathRef handles (20 measured words). Name that
@@ -306,7 +307,20 @@ const PREPARED_OR_RESERVATION: usize = {
 // The table and the independent admission temporary both retain this carrier.
 pub(in crate::frontend) const FILE_ADMISSION_CARRIER_GROWTH: usize =
     size_of::<BuiltinAdmission<'static>>() - 32;
-const FILE_INDEX_CARRIER_GROWTH: usize = 2 * FILE_ADMISSION_CARRIER_GROWTH;
+// For one index, sealed::collect moves its non-Copy admission local into Tables
+// before returning DeclarationFacts. Only that returned owner (or its finished
+// DeclarationIndex) can create a QuerySession. Their complete standalone
+// carriers therefore do not coexist. Tables and its own admission remain fully
+// charged independently; this overlay takes no credit from either carrier.
+const ADMISSION_OR_QUERY_SESSION: usize = {
+    let admission = size_of::<BuiltinAdmission<'static>>();
+    let query = size_of::<QuerySession<'static, 'static>>();
+    if admission > query {
+        admission
+    } else {
+        query
+    }
+};
 const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<IndexPlan>()
     + size_of::<Counts>()
@@ -322,7 +336,6 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // The checked path view and its full associated handle coexist at query sites.
     + size_of::<source_owner::QualifiedPathView<'static>>()
     + size_of::<super::project::QualifiedPathRef>()
-    + size_of::<QuerySession<'static, 'static>>()
     + size_of::<OriginalRow>()
     + size_of::<ModuleRow>()
     + size_of::<FunctionRow>()
@@ -352,9 +365,8 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<Result<NominalId, Box<Diagnostic>>>()
     // The shared nominal helper borrows a handle rather than making a fifth copy.
     + size_of::<&ItemPathRef>()
-    // Added import/identity state is priced in full, even when build/query
-    // phases do not overlap. The admission local is separate from Tables.
-    + size_of::<BuiltinAdmission<'static>>()
+    // Complete collector/query carriers share only their disjoint phase slot.
+    + ADMISSION_OR_QUERY_SESSION
     + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
     + size_of::<Result<Option<DeclarationHandle>, Box<Diagnostic>>>()
     + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
@@ -377,8 +389,7 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<BuiltinEnum>()
     + size_of::<BuiltinFunction>();
 const _: () = {
-    // Two complete admission carriers each grew by one aligned word.
-    assert!(FIXED_SCRATCH <= 4096 + FILE_INDEX_CARRIER_GROWTH);
+    assert!(FIXED_SCRATCH <= 4096);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
     assert!(ITEM_HANDLE_WORDS <= 128);
     // The existing four-Span envelope covers the legacy exposure return and use

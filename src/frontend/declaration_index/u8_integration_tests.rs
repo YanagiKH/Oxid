@@ -282,7 +282,7 @@ fn real_plan_exact_and_one_less_without_quota_growth() {
     };
     let header = std::mem::size_of::<DeclarationIndex<'static>>();
     let retained = 552 + FILE_ADMISSION_CARRIER_GROWTH as u64;
-    let scratch = 4108 + FILE_INDEX_CARRIER_GROWTH as u64;
+    let scratch = 4108;
     let plan =
         IndexPlan::calculate(counts, header, FIXED_SCRATCH, IndexLimits::default(), at).unwrap();
     assert_eq!(

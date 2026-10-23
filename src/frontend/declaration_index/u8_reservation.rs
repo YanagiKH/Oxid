@@ -654,7 +654,7 @@ mod carrier_envelope {
         println!("U8-INDEX-INTEGRATION-1 peak={peak} prepared_pair={pair} fixed={FIXED_SCRATCH}");
         assert_eq!(peak, 912);
         assert!(peak <= pair);
-        assert_eq!(FIXED_SCRATCH, 4096 + FILE_INDEX_CARRIER_GROWTH);
+        assert_eq!(FIXED_SCRATCH, 4096);
     }
 }
 
