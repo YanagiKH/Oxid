@@ -124,12 +124,14 @@ fn owned_u8_source_static_rejections_byte_storage_successor() {
         ("E0300", "type", "equality requires i32 or bool operands")
     );
     assert_eq!(run("struct R{x:u8}fn main()->i32{let n=255;let r=R{x:n.to_u8_checked()};let b=r.x;return b.to_i32();}"), Scalar::I32(255));
+    for expression in ["b+ b", "b-b", "b*b", "b/b", "b%b", "b.to_u8_checked()"] {
+        let text = format!(
+            "struct R {{}} fn main()->(){{let x=1;let b=x.to_u8_checked();{expression};return;}}"
+        );
+        let (sources, raw) = raw_source(&text);
+        assert!(verify_source_raw(raw, &sources).is_ok());
+    }
     for expression in [
-        "b+ b",
-        "b-b",
-        "b*b",
-        "b/b",
-        "b%b",
         "-b",
         "!b",
         "b&&b",
@@ -138,7 +140,6 @@ fn owned_u8_source_static_rejections_byte_storage_successor() {
         "1==b",
         "b<1",
         "1<b",
-        "b.to_u8_checked()",
         "x.to_i32()",
     ] {
         let text = format!(

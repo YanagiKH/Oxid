@@ -2421,7 +2421,7 @@ fn expression_type(
             let actual = child!(*operand)?;
             let (accepted, input, output) = match op {
                 ConversionOp::ToU8Checked => (
-                    matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() && ty != Ty::U8),
+                    matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()),
                     Ty::I32,
                     Ty::U8,
                 ),
@@ -2481,8 +2481,7 @@ fn expression_type(
             let actual = child!(*left)?;
             let expected = if matches!(expr.kind, ExprKind::Logical { .. }) {
                 scalar(Ty::Bool)
-            } else if matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() && ty != Ty::U8)
-            {
+            } else if matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
                 actual
             } else {
                 scalar(Ty::I32)

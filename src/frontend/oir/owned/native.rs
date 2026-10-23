@@ -289,6 +289,8 @@ enum NativeEntryPolicy {
     Process,
     HostedResult,
     HostedProcess,
+    TypedResult,
+    HostedTypedResult,
 }
 
 impl NativeEntryPolicy {
@@ -297,7 +299,10 @@ impl NativeEntryPolicy {
     }
 
     fn hosted(self) -> bool {
-        matches!(self, Self::HostedResult | Self::HostedProcess)
+        matches!(
+            self,
+            Self::HostedResult | Self::HostedProcess | Self::HostedTypedResult
+        )
     }
 }
 
@@ -310,9 +315,9 @@ pub(super) fn native_module_with_execution(
     names: Option<&NativeSourceNames<'_>>,
 ) -> Result<String, Box<Diagnostic>> {
     let policy = match (process, execution.hosted()) {
-        (false, false) => NativeEntryPolicy::Result,
+        (false, false) => NativeEntryPolicy::TypedResult,
         (true, false) => NativeEntryPolicy::Process,
-        (false, true) => NativeEntryPolicy::HostedResult,
+        (false, true) => NativeEntryPolicy::HostedTypedResult,
         (true, true) => NativeEntryPolicy::HostedProcess,
     };
     native_module_policy_accounted_with_source_names(
@@ -506,7 +511,12 @@ fn native_module_policy_accounted_with_source_names(
     if policy.process() && root.result != ValueTy::Scalar(hir::Ty::I32) {
         return Err(reject("process main must return i32", Some(root.span)));
     }
-    if root.result == ValueTy::Scalar(hir::Ty::U8) {
+    if root.result == ValueTy::Scalar(hir::Ty::U8)
+        && matches!(
+            policy,
+            NativeEntryPolicy::Result | NativeEntryPolicy::HostedResult
+        )
+    {
         return Err(reject(
             "native main must return bool, i32 or ()",
             Some(root.span),
@@ -1779,7 +1789,10 @@ fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind
     }
     let (id, len) = diagnostics.get(kind, span);
     let helper = match out.policy {
-        NativeEntryPolicy::Result | NativeEntryPolicy::HostedResult => "__oxid_overflow",
+        NativeEntryPolicy::Result
+        | NativeEntryPolicy::HostedResult
+        | NativeEntryPolicy::TypedResult
+        | NativeEntryPolicy::HostedTypedResult => "__oxid_overflow",
         NativeEntryPolicy::Process | NativeEntryPolicy::HostedProcess => "__oxid_process_failure",
     };
     writeln!(
@@ -3174,7 +3187,7 @@ fn emit(
         hir::Ty::Bool => out.write_str("  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n").unwrap(),
         hir::Ty::I32 => out.write_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n").unwrap(),
         hir::Ty::I64 => out.write_str("  %status = call i32 @__oxid_print_i64(i64 %value)\n").unwrap(),
-        hir::Ty::U8 => unreachable!("byte entry rejected before native plan"),
+        hir::Ty::U8 => out.write_str("  %output_value = zext i8 %value to i32\n  %status = call i32 @__oxid_print_i32(i32 %output_value)\n").unwrap(),
         hir::Ty::I8 | hir::Ty::I16 => {
             writeln!(out, "  %output_value = sext {} %value to i64\n  %status = call i32 @__oxid_print_i64(i64 %output_value)", ty(result)).unwrap();
         }

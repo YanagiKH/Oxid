@@ -460,6 +460,9 @@ impl RuntimeScalar {
     }
     pub(super) fn json(self) -> Option<String> {
         match self {
+            Self::Narrow(Scalar::U8(value)) => {
+                Some(format!("{{\"type\":\"u8\",\"value\":{value}}}"))
+            }
             Self::Narrow(value) => value.json(),
             // Decimal text preserves the complete value in JSON consumers that
             // represent numeric tokens using a 53-bit floating-point mantissa.
@@ -477,6 +480,7 @@ impl RuntimeScalar {
 impl std::fmt::Display for RuntimeScalar {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Narrow(Scalar::U8(value)) => value.fmt(formatter),
             Self::Narrow(value) => value.fmt(formatter),
             Self::I64(value) => value.fmt(formatter),
             Self::I8(value) => value.fmt(formatter),

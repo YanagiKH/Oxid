@@ -352,7 +352,11 @@ impl<'s> SourceOwner<'s> {
                     | ast::ExprKind::FieldRead { .. }
                     | ast::ExprKind::ArrayLiteral { .. }
                     | ast::ExprKind::IndexRead { .. }
-                    | ast::ExprKind::ArrayLength { .. } => owned = true,
+                    | ast::ExprKind::ArrayLength { .. }
+                    | ast::ExprKind::ByteString { .. }
+                    | ast::ExprKind::I64Number { .. }
+                    | ast::ExprKind::IntegerNumber { .. }
+                    | ast::ExprKind::Conversion { .. } => owned = true,
                     ast::ExprKind::Call { args, .. } => {
                         for argument in args {
                             work.preflight(expression.span)?;
@@ -387,7 +391,6 @@ impl<'s> SourceOwner<'s> {
             | ast::TypeSyntaxKind::Name(ast::ItemPath::Absolute(_)) => Ok(true),
             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
                 let text = self.text(name)?;
-                let mut builtin = false;
                 for spelling in ["bool", "i32", "u8"] {
                     work.preflight(name)?;
                     let mut equal = text.len() == spelling.len();
@@ -400,12 +403,11 @@ impl<'s> SourceOwner<'s> {
                             }
                         }
                     }
-                    builtin |= equal;
-                    if builtin {
-                        break;
+                    if equal {
+                        return Ok(spelling == "u8");
                     }
                 }
-                Ok(!builtin)
+                Ok(true)
             }
         }
     }
@@ -424,7 +426,7 @@ mod enum_carrier_tests {
         for (name, owned, predecessor, added) in [
             ("bool", false, 1 + 1 + 4, 0),
             ("i32", false, 1 + 1 + 1 + 3, 0),
-            ("u8", false, 1 + 1 + 1, 1 + 2),
+            ("u8", true, 1 + 1 + 1, 1 + 2),
             ("Zebra", true, 1 + 1 + 1, 1),
         ] {
             let mut sources = SourceMap::new();

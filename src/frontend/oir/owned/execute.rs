@@ -3575,7 +3575,7 @@ pub(super) fn run_value(
     limits: Limits,
     execution: ExecutionPolicy,
 ) -> Result<RuntimeScalar> {
-    let entry = checked_entry(witness, entry)?;
+    let entry = checked_entry_policy(witness, entry, EntryPolicy::Result)?;
     let plan = ExecutionPlan::build(witness)?;
     execute_value_plan(&plan, entry, limits, EntryPolicy::Result, execution)
 }
@@ -3658,7 +3658,12 @@ pub(super) fn run_limits(
     )
 }
 fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<hir::DefId> {
-    checked_entry_policy(witness, entry, EntryPolicy::Result)
+    let entry = checked_entry_policy(witness, entry, EntryPolicy::Result)?;
+    let function = &witness.functions()[entry.0];
+    if function.result == ValueTy::Scalar(hir::Ty::U8) {
+        return Err(RunFailure::ByteEntry(function.span).into());
+    }
+    Ok(entry)
 }
 fn checked_entry_policy(
     witness: &VerifiedOwnedProgram,
@@ -3726,9 +3731,6 @@ fn checked_entry_policy(
     }
     if policy == EntryPolicy::Process && f.result != ValueTy::Scalar(hir::Ty::I32) {
         return Err(OwnedRunFailure::ProcessEntry(f.span));
-    }
-    if f.result == ValueTy::Scalar(hir::Ty::U8) {
-        return Err(RunFailure::Entry(Some(f.span)).into());
     }
     if matches!(f.result, ValueTy::Owned(_)) {
         return Err(OwnedRunFailure::EntryResult(f.span));

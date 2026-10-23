@@ -1148,6 +1148,22 @@ impl Program {
         }
         visit() && ProjectSyntax::new(project_syntax, *std_syntax) == self.project_syntax
     }
+    /// Byte values use the current typed checker. The separate owned-syntax
+    /// predicate retains the narrow parser and observer contract.
+    pub(super) fn uses_byte_scalars(&self, source: &SourceFile) -> bool {
+        let byte_type = |ty: &TypeSyntax| {
+            matches!(ty.kind,
+            TypeSyntaxKind::Name(ItemPath::Unqualified(name)) if source.text_at(name) == "u8")
+        };
+        self.functions.iter().any(|function| {
+            byte_type(&function.result)
+                || function.params.iter().any(|parameter| byte_type(&parameter.ty))
+                || function.blocks.iter().any(|block| block.body.iter().any(|statement|
+                    matches!(&statement.kind, StmtKind::Let { annotation: Some(ty), .. } if byte_type(ty))))
+        }) || self.expressions.iter().any(|expression|
+            matches!(expression.kind, ExprKind::Conversion { op: ConversionOp::ToU8Checked | ConversionOp::ToI32, .. }))
+    }
+
     #[allow(dead_code)] // Used by private qualification until source dispatch activates.
     pub(super) fn uses_owned_syntax(&self, source: &super::source::SourceFile) -> bool {
         let owned_type = |ty: &TypeSyntax| match ty.kind {

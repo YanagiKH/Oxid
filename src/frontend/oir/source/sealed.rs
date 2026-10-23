@@ -41,7 +41,7 @@ pub(in crate::frontend) fn check_source<'s>(
     let (body, entry) = if !ast.enums.is_empty() {
         let (program, entry) = owned::source::check_enum_source(owner)?;
         (CheckedBody::Owned(program), entry)
-    } else if ast.uses_owned_syntax(source) {
+    } else if ast.uses_owned_syntax(source) || ast.uses_byte_scalars(source) {
         let resolved = owned::source::resolve::resolve_sources(owner)?;
         let typed = owned::source::typeck::check(resolved)?;
         let entry = typed.entry();
@@ -250,7 +250,13 @@ impl CheckedSourceProgram<'_> {
     pub(in crate::frontend) fn native_module(&self) -> Result<String, Box<Diagnostic>> {
         match &self.body {
             CheckedBody::Scalar(program) => program.native_module(self.entry, self.sources),
-            CheckedBody::Owned(program) => program.native_module(self.entry, self.sources),
+            CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                false,
+                crate::frontend::build_config::ExecutionPolicy::Bounded,
+                None,
+            ),
         }
     }
 
@@ -329,9 +335,13 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Scalar(program) => {
                 program.native_module_with_source_names(self.entry, self.sources, names)
             }
-            CheckedBody::Owned(program) => {
-                program.native_module_with_source_names(self.entry, self.sources, names)
-            }
+            CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                false,
+                crate::frontend::build_config::ExecutionPolicy::Bounded,
+                Some(names),
+            ),
         }
     }
     /// A single source-owned signature rule serves both public process consumers.
