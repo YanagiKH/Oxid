@@ -11,15 +11,22 @@ void __oxid_arguments_start(int32_t count, char **values) {
 }
 int32_t __oxid_arg_count(void) { return program_arguments.count; }
 
-/* Scan with a local budget, then prepay the copy and canonical return. Even a
- * fuel refusal after a partial scan leaves the destination and result intact. */
-int32_t __oxid_arg_bytes(int32_t index, uint8_t *bytes, int32_t capacity,
-    uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
+static int32_t argument_descriptor(uint8_t *bytes, int32_t capacity,
+    uint64_t *fuel, oxid_binary_result *result) {
     if (capacity < 0) return OXID_BUFFER_BOUNDS;
     if (!fuel || !result || (capacity && !bytes)) return OXID_BUFFER_DESCRIPTOR;
     if (overlaps(bytes, (size_t)capacity, result, sizeof(*result)) ||
         overlaps(bytes, (size_t)capacity, fuel, sizeof(*fuel)) ||
         overlaps(result, sizeof(*result), fuel, sizeof(*fuel))) return OXID_BUFFER_DESCRIPTOR;
+    return 0;
+}
+
+/* Scan with a local budget, then prepay the copy and canonical return. Even a
+ * fuel refusal after a partial scan leaves the destination and result intact. */
+int32_t __oxid_arg_bytes(int32_t index, uint8_t *bytes, int32_t capacity,
+    uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
+    int32_t admission = argument_descriptor(bytes, capacity, fuel, result);
+    if (admission) return admission;
     uint64_t remaining = *fuel;
     oxid_binary_result value = {2, 0};
     const uint8_t *source = NULL;
@@ -51,7 +58,9 @@ int32_t __oxid_arg_bytes(int32_t index, uint8_t *bytes, int32_t capacity,
 }
 int32_t __oxid_arg_bytes_hosted(int32_t index, uint8_t *bytes, int32_t capacity,
     uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
-    if (!fuel) return OXID_BUFFER_DESCRIPTOR;
+    /* Validate the original pointer before replacing only its work budget. */
+    int32_t admission = argument_descriptor(bytes, capacity, fuel, result);
+    if (admission) return admission;
     uint64_t operation_budget = UINT64_MAX;
     return __oxid_arg_bytes(index, bytes, capacity, &operation_budget, result, return_cost);
 }

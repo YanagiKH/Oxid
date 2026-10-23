@@ -97,3 +97,59 @@ fn argument_copy_and_immediate_return_share_one_fuel_admission() {
     assert!(first_delivery.is_some_and(|fuel| fuel > 11));
     assert!(reached_caller_error);
 }
+
+#[test]
+fn argument_copy_requires_its_complete_memory_budget_before_delivery() {
+    let _scope = crate::program_arguments::install(vec!["oxid".into(), "hello".into()]).unwrap();
+    let project = super::project(&format!(
+        "{IMPORTS}fn main()->i32{{let mut bytes=b\"xxxxxx\";arg_bytes(1,&mut bytes);return 0;}}"
+    ));
+    let (program, entry) = check_enum_source(SourceOwner::project(&project)).unwrap();
+    let run = |bytes| {
+        binary_io::testing::capture(Default::default(), || {
+            execute::run_limits(
+                &program.witness,
+                entry,
+                execute::Limits {
+                    frames: 2,
+                    bytes,
+                    ..Default::default()
+                },
+            )
+        })
+    };
+    let (mut low, mut high) = (0, execute::Limits::default().bytes);
+    assert_eq!(run(high).0.unwrap(), Scalar::I32(0));
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if run(middle).0.is_ok() {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    assert!(low > 0);
+    let (accepted, delivered) = run(low);
+    assert_eq!(accepted.unwrap(), Scalar::I32(0));
+    assert_eq!(
+        (
+            delivered.deliveries,
+            delivered.read_calls,
+            delivered.write_calls
+        ),
+        (1, 0, 0)
+    );
+    let (denied, untouched) = run(low - 1);
+    assert_eq!(
+        denied.unwrap_err().diagnostic(project.sources()).code,
+        "E0605"
+    );
+    assert_eq!(
+        (
+            untouched.deliveries,
+            untouched.read_calls,
+            untouched.write_calls
+        ),
+        (0, 0, 0)
+    );
+}

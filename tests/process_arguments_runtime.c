@@ -46,6 +46,21 @@ int main(void) {
     assert(__oxid_arg_bytes(1, (uint8_t *)&result, 1, &fuel, &result, 7) == OXID_BUFFER_DESCRIPTOR);
     assert(__oxid_arg_bytes(1, (uint8_t *)&fuel, 1, &fuel, &result, 7) == OXID_BUFFER_DESCRIPTOR);
     assert(__oxid_arg_bytes(1, bytes, 8, &fuel, (oxid_binary_result *)&fuel, 7) == OXID_BUFFER_DESCRIPTOR);
+    typedef int32_t (*argument_attempt)(int32_t, uint8_t *, int32_t,
+        uint64_t *, oxid_binary_result *, uint64_t);
+    argument_attempt attempts[] = {__oxid_arg_bytes, __oxid_arg_bytes_hosted};
+    for (size_t index = 0; index < sizeof(attempts) / sizeof(attempts[0]); ++index) {
+        argument_attempt attempt = attempts[index];
+        fuel = 17;
+        memset(bytes, 'x', sizeof(bytes));
+        result = (oxid_binary_result){99, 98};
+        assert(attempt(1, bytes, 8, &fuel, (oxid_binary_result *)&fuel, 7) == OXID_BUFFER_DESCRIPTOR);
+        assert(fuel == 17 && !memcmp(bytes, "xxxxxxxx", 8));
+        assert(attempt(1, (uint8_t *)&fuel, 1, &fuel, &result, 7) == OXID_BUFFER_DESCRIPTOR);
+        assert(fuel == 17 && result.tag == 99 && result.value == 98);
+        assert(attempt(1, (uint8_t *)&result, 1, &fuel, &result, 7) == OXID_BUFFER_DESCRIPTOR);
+        assert(fuel == 17 && result.tag == 99 && result.value == 98);
+    }
     assert(!memcmp(normal, "abc", 4) && !memcmp(raw, "\xffx", 3));
     __oxid_arguments_start(-1, arguments);
     assert(__oxid_arg_count() == 0);

@@ -45,18 +45,28 @@ pub(crate) fn count() -> i32 {
 }
 
 pub(crate) fn with_argument<R>(index: i32, use_bytes: impl FnOnce(Option<&[u8]>) -> R) -> R {
-    CURRENT.with(|current| {
-        let current = current.borrow();
-        use_bytes(
-            usize::try_from(index)
-                .ok()
-                .and_then(|index| current.values.get(index))
-                .map(|value| value.as_encoded_bytes()),
-        )
-    })
+    CURRENT.with(lookup_callback(&index, use_bytes))
 }
 
-type CopyResult = Result<(u32, Option<i32>), ()>;
+fn lookup_callback<'a, R>(
+    index: &'a i32,
+    use_bytes: impl FnOnce(Option<&[u8]>) -> R + 'a,
+) -> impl FnOnce(&RefCell<Arguments>) -> R + 'a {
+    move |current| {
+        let current = current.borrow();
+        let index = usize::try_from(*index).ok();
+        let argument = match index {
+            Some(index) => current
+                .values
+                .get(index)
+                .map(|value| value.as_encoded_bytes()),
+            None => None,
+        };
+        use_bytes(argument)
+    }
+}
+
+pub(crate) type CopyResult = Result<(u32, Option<i32>), ()>;
 struct CopyRequest<'a> {
     destination: &'a mut [u8],
     return_cost: usize,
@@ -74,12 +84,9 @@ impl CopyRequest<'_> {
                 Ok(length) => (0, Some(length), bytes.len() + 1, bytes.len()),
             },
         };
-        let remaining = self
-            .fuel
-            .checked_sub(scan)
-            .and_then(|remaining| remaining.checked_sub(copied))
-            .and_then(|remaining| remaining.checked_sub(self.return_cost))
-            .ok_or(())?;
+        let after_scan = self.fuel.checked_sub(scan).ok_or(())?;
+        let after_copy = after_scan.checked_sub(copied).ok_or(())?;
+        let remaining = after_copy.checked_sub(self.return_cost).ok_or(())?;
         // Match the native NUL scan plus copy cost. The CLI already owns these
         // immutable input bytes; no allocation or fallible check follows here.
         *self.fuel = remaining;
@@ -88,6 +95,9 @@ impl CopyRequest<'_> {
         }
         Ok((tag, payload))
     }
+}
+fn copy_callback(request: CopyRequest<'_>) -> impl FnOnce(Option<&[u8]>) -> CopyResult + '_ {
+    move |argument| request.copy(argument)
 }
 pub(crate) fn copy_argument(
     index: i32,
@@ -100,7 +110,7 @@ pub(crate) fn copy_argument(
         return_cost,
         fuel,
     };
-    with_argument(index, |argument| request.copy(argument))
+    with_argument(index, copy_callback(request))
 }
 
 // Complete fixed roles for the installed context, RefCell borrow, two nested
@@ -110,16 +120,81 @@ pub(crate) fn copy_argument(
 struct ControlCarriers {
     context: RefCell<Arguments>,
     borrow: std::cell::Ref<'static, Arguments>,
-    callbacks: [CopyRequest<'static>; 2],
-    argument_views: [Option<&'static [u8]>; 3],
-    statuses: [CopyResult; 3],
-    indices: [i32; 3],
-    lengths_and_costs: [usize; 6],
+    request: CopyRequest<'static>,
+    copy_factory_argument: CopyRequest<'static>,
+    copy_method_receiver: CopyRequest<'static>,
+    lookup_index: i32,
+    converted_index: Result<usize, std::num::TryFromIntError>,
+    optional_index: Option<usize>,
+    selected_lookup_index: usize,
+    lookup_return: Option<&'static OsString>,
+    selected_os_string: &'static OsString,
+    selected_os_str: &'static OsStr,
+    mapped_argument: Option<&'static [u8]>,
+    callback_argument: Option<&'static [u8]>,
+    copy_argument: Option<&'static [u8]>,
+    selected_argument: &'static [u8],
+    converted_length: Result<i32, std::num::TryFromIntError>,
+    selected_length: i32,
+    selection: (u32, Option<i32>, usize, usize),
     tag: u32,
     payload: Option<i32>,
+    scanned: usize,
+    copied: usize,
+    scan_return: Option<usize>,
+    copy_return: Option<usize>,
+    return_debit: Option<usize>,
+    scan_admission: Result<usize, ()>,
+    copy_admission: Result<usize, ()>,
+    admitted_remaining: Result<usize, ()>,
+    after_scan: usize,
+    after_copy: usize,
+    remaining: usize,
+    selected_status: (u32, Option<i32>),
+    copy_method_return: CopyResult,
+    copy_callback_return: CopyResult,
+    lookup_callback_return: CopyResult,
+    current_return: CopyResult,
+    with_argument_return: CopyResult,
+    copy_function_return: CopyResult,
+    unwrapped_argument: &'static [u8],
+    source_prefix: &'static [u8],
+    destination_prefix: &'static mut [u8],
+    count_return: i32,
 }
+
+// Factories and consumers pass these exact opaque closure types. Price their
+// distinct argument/return roles without duplicating an assumed field layout.
+#[allow(dead_code)]
+struct CopyCallbackCarriers<C> {
+    factory_return: C,
+    with_argument_input: C,
+    lookup_input: C,
+}
+#[allow(dead_code)]
+struct LookupCallbackCarriers<C> {
+    factory_return: C,
+    current_input: C,
+}
+fn copy_callback_bytes<C>(_: &C) -> usize {
+    std::mem::size_of::<CopyCallbackCarriers<C>>()
+}
+fn lookup_callback_bytes<C>(_: &C) -> usize {
+    std::mem::size_of::<LookupCallbackCarriers<C>>()
+}
+
 pub(crate) fn control_bytes() -> usize {
-    std::mem::size_of::<ControlCarriers>()
+    let mut destination = [];
+    let mut fuel = 0;
+    let copy = copy_callback(CopyRequest {
+        destination: &mut destination,
+        return_cost: 0,
+        fuel: &mut fuel,
+    });
+    let copy_bytes = copy_callback_bytes(&copy);
+    let index = 0;
+    let lookup = lookup_callback(&index, copy);
+    std::mem::size_of::<ControlCarriers>() + copy_bytes + lookup_callback_bytes(&lookup)
 }
 
 pub(crate) struct Invocation {

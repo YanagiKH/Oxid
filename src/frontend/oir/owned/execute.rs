@@ -3690,7 +3690,10 @@ fn execute_plan_policy(
                 } else {
                     0
                 } + if plan.has_program_arguments() {
-                    crate::program_arguments::control_bytes()
+                    plan::add(
+                        crate::program_arguments::control_bytes(),
+                        experimental::argument_delivery_control_bytes(f.span),
+                    )?
                 } else {
                     0
                 },

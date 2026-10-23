@@ -31,6 +31,9 @@ options, empty strings and non-UTF-8 bytes. An explicit typed source beginning
 with `-` can use `run -- SOURCE -- ARGUMENTS`. Compiler options and source paths
 still require UTF-8. Other commands retain their existing argument grammar.
 
+With explicit `--edition=typed-preview` and no preceding source path, the first
+`--` protects a source operand; use the following `--` for that file's arguments.
+
 In reference execution, argument 0 is the Oxid launcher executable; in a native
 program it is the program executable. User arguments start at 1 in both. An
 embedded executor without an installed argument context has zero arguments.

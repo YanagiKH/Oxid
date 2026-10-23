@@ -106,6 +106,7 @@ struct ArgumentAttemptFrame {
     value: [i32; 2],
     source: *const u8,
     length: u64,
+    admission: i32,
 }
 #[allow(dead_code)]
 #[repr(C)]
@@ -116,14 +117,26 @@ struct ArgumentHostedFrame {
     fuel: *mut u64,
     result: *mut (),
     return_cost: u64,
+    admission: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentValidationFrame {
+    bytes: *mut u8,
+    capacity: i32,
+    fuel: *mut u64,
+    result: *mut (),
+    returned_admission: i32,
 }
 #[allow(dead_code)]
 #[repr(C)]
 struct ArgumentControl {
     context: ArgumentContext,
+    main_inputs: ArgumentContext,
     start: ArgumentStartFrame,
     attempt: ArgumentAttemptFrame,
     hosted_parameters: ArgumentHostedFrame,
+    validation: ArgumentValidationFrame,
     overlaps: FileOverlapFrame,
     hosted_budget: u64,
     count_result: i32,

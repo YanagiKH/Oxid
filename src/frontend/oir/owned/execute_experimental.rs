@@ -8,6 +8,7 @@ use std::ops::Range;
 mod delivery;
 #[path = "execute_file_delivery.rs"]
 mod file_delivery;
+pub(super) use delivery::argument_control_bytes as argument_delivery_control_bytes;
 pub(super) use delivery::control_bytes as binary_delivery_control_bytes;
 pub(super) use file_delivery::control_bytes as file_delivery_control_bytes;
 

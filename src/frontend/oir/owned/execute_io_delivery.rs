@@ -36,6 +36,22 @@ pub(in super::super) fn control_bytes() -> usize {
     size_of::<ControlCarriers>()
 }
 
+#[allow(dead_code)]
+struct ArgumentDeliveryCarriers {
+    index: Result<i32>,
+    selected_index: i32,
+    raw_copy: crate::program_arguments::CopyResult,
+    mapped_copy: Result<(u32, Option<i32>)>,
+    selected_copy: (u32, Option<i32>),
+    operation_fuel: usize,
+}
+fn argument_error_mapper(span: Span) -> impl FnOnce(()) -> OwnedRunFailure {
+    move |_| OwnedRunFailure::from(RunFailure::Fuel(span))
+}
+pub(in super::super) fn argument_control_bytes(span: Span) -> usize {
+    size_of::<ArgumentDeliveryCarriers>() + std::mem::size_of_val(&argument_error_mapper(span))
+}
+
 impl Machine<'_, '_> {
     fn prepare_binary_delivery(
         &self,
@@ -200,8 +216,7 @@ impl Machine<'_, '_> {
             if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
                 self.fuel = operation_fuel;
             }
-            let (tag, payload) =
-                value.map_err(|_| OwnedRunFailure::from(RunFailure::Fuel(span)))?;
+            let (tag, payload) = value.map_err(argument_error_mapper(span))?;
             self.complete_binary_delivery(
                 frame,
                 delivery,
