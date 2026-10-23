@@ -2785,6 +2785,7 @@ fn help() {
     println!("  oxid fmt [path]");
     println!("  oxid test");
     println!("  oxid doctor");
+    println!("  oxid doctor --native [--message-format=json]");
     println!("  oxid doc");
     println!("  oxid bench [--iterations N] [--json report.json]");
     println!("  oxid bootstrap [--check]");

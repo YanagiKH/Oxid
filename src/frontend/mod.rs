@@ -12,6 +12,7 @@ mod hir_protocol;
 mod lexer;
 mod lexical_provider;
 mod native;
+mod native_cache;
 mod oir;
 mod options;
 mod owned_diagnostic;
@@ -22,6 +23,7 @@ mod typeck;
 pub use driver::dispatch;
 pub(crate) use driver::{prepare_package_project, PreparedPackageProject};
 pub(crate) use driver::{process_package_project, PackageCommand};
+pub(crate) use native::doctor::{run as native_doctor, Report as NativeDoctorReport};
 pub(crate) use project::packages::{PackageDependency, PackageSpec};
 #[cfg(test)]
 mod owned_syntax_tests;

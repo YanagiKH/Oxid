@@ -13,7 +13,11 @@ use std::path::Path;
 pub(crate) enum PackageCommand<'a> {
     Check,
     Run,
-    Compile { output: &'a str, managed: bool },
+    Compile {
+        output: &'a str,
+        managed: bool,
+        incremental: bool,
+    },
 }
 
 /// A source checksum has no package identity or manifest semantics. The caller
@@ -286,7 +290,12 @@ impl PreparedPackageProject<'_> {
                 Err(errors) => report_process(project.sources(), &errors),
             };
         }
-        if let PackageCommand::Compile { output, managed } = command {
+        if let PackageCommand::Compile {
+            output,
+            managed,
+            incremental,
+        } = command
+        {
             let result = (|| {
                 let checked = executable?;
                 let module = if process {
@@ -295,7 +304,10 @@ impl PreparedPackageProject<'_> {
                     checked.native_module()
                 }
                 .map_err(|error| vec![*error])?;
-                if managed {
+                if managed && incremental {
+                    super::native::compile_managed_incremental(&module, output)
+                        .map(|outcome| report_cache(outcome, json))
+                } else if managed {
                     super::native::compile_managed(&module, output)
                 } else {
                     super::native::compile(&module, output)
@@ -321,6 +333,18 @@ pub(crate) fn process_package_project(
     json: bool,
     process: bool,
 ) -> i32 {
+    if matches!(
+        command,
+        PackageCommand::Compile {
+            incremental: true,
+            ..
+        }
+    ) {
+        return match prepare_package_project(packages, entry_override) {
+            Ok(prepared) => prepared.execute(command, json, process),
+            Err(error) => error.report(command, json, process),
+        };
+    }
     let operation = match command {
         PackageCommand::Check => Operation::Check,
         PackageCommand::Run => Operation::Run,
@@ -350,6 +374,7 @@ pub(crate) fn process_package_project(
         if let PackageCommand::Compile {
             output,
             managed: true,
+            ..
         } = command
         {
             return build_project(entry, output, json, process);
@@ -402,7 +427,10 @@ pub(crate) fn process_package_project(
             Err(errors) => report_process(project.sources(), &errors),
         };
     }
-    if let PackageCommand::Compile { output, managed } = command {
+    if let PackageCommand::Compile {
+        output, managed, ..
+    } = command
+    {
         let result = (|| {
             let checked = executable?;
             let module = if process {
@@ -425,6 +453,14 @@ pub(crate) fn process_package_project(
         };
     }
     process_loaded(project, json, operation, None, executable)
+}
+
+fn report_cache(outcome: super::native_cache::Outcome, json: bool) {
+    if json {
+        println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"build-cache\",\"stage\":\"native-object\",\"status\":\"{}\"}}", outcome.name());
+    } else {
+        println!("typed-preview native object cache: {}", outcome.name());
+    }
 }
 
 /// None returns an untouched/default or explicitly legacy command to the old CLI.
@@ -1413,7 +1449,8 @@ mod tests {
             prepared.execute(
                 PackageCommand::Compile {
                     output: output.to_str().unwrap(),
-                    managed: true
+                    managed: true,
+                    incremental: false,
                 },
                 false,
                 true

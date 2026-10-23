@@ -1,6 +1,7 @@
-//! Trusted external LLVM tool boundary. No shell, source execution, cache, or
-//! legacy runtime. All language admission happens before this module is entered.
+//! Trusted external LLVM tool boundary with optional verified object reuse.
+//! All language admission happens before this module is entered.
 use super::diagnostic::Diagnostic;
+use super::native_cache::{self, Environment, Outcome};
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -13,6 +14,7 @@ const LLVM_VERSION: &str = "19.1.7";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+pub(crate) mod doctor;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
     Diagnostic::new("E0701", "native-toolchain", message, None)
 }
@@ -56,9 +58,37 @@ fn tool(name: &str) -> PathBuf {
         None => PathBuf::from(format!("{name}-19")),
     }
 }
-fn run(tool: &Path, args: &[&OsStr], cwd: &Path) -> Result<Output, Box<Diagnostic>> {
-    let result = Command::new(tool).args(args).current_dir(cwd)
-        .env_remove("CCC_OVERRIDE_OPTIONS")
+// Preserve argv[0] symlink names: ld.lld is a multi-call driver. Relative
+// selections are resolved before any child changes its working directory.
+fn resolve_tool(path: PathBuf) -> Result<PathBuf, Box<Diagnostic>> {
+    let cwd = std::env::current_dir().map_err(io)?;
+    if path.components().count() > 1 || path.is_absolute() {
+        return Ok(cwd.join(path));
+    }
+    let search = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&search)
+        .map(|dir| cwd.join(dir).join(&path))
+        .find(|candidate| candidate.is_file())
+        .ok_or_else(|| {
+            failure(format!(
+                "cannot find {}; install LLVM {LLVM_VERSION} or set OXID_LLVM_BIN",
+                path.display()
+            ))
+        })
+}
+
+fn run(
+    tool: &Path,
+    args: &[&OsStr],
+    cwd: &Path,
+    environment: Option<&Environment>,
+) -> Result<Output, Box<Diagnostic>> {
+    let mut command = Command::new(tool);
+    command.args(args).current_dir(cwd);
+    if let Some(environment) = environment {
+        command.env_clear().envs(environment.iter().cloned());
+    }
+    let result = command.env_remove("CCC_OVERRIDE_OPTIONS")
         .output().map_err(|e| failure(format!("cannot launch {}: {e}; install LLVM {LLVM_VERSION} and set OXID_LLVM_BIN to its bin directory", tool.display())))?;
     if !result.status.success() {
         // Keep external diagnostics bounded. The renderer escapes control bytes.
@@ -72,9 +102,21 @@ fn run(tool: &Path, args: &[&OsStr], cwd: &Path) -> Result<Output, Box<Diagnosti
     }
     Ok(result)
 }
-fn version(tool: &Path, marker: &str, cwd: &Path) -> Result<(), Box<Diagnostic>> {
-    let output = run(tool, &[OsStr::new("--version")], cwd)?;
-    let text = String::from_utf8_lossy(&output.stdout);
+fn version(
+    tool: &Path,
+    marker: &str,
+    cwd: &Path,
+    environment: Option<&Environment>,
+) -> Result<(), Box<Diagnostic>> {
+    let output = run(tool, &[OsStr::new("--version")], cwd, environment)?;
+    validate_version_output(tool, marker, &output.stdout)
+}
+fn validate_version_output(
+    tool: &Path,
+    marker: &str,
+    stdout: &[u8],
+) -> Result<(), Box<Diagnostic>> {
+    let text = String::from_utf8_lossy(stdout);
     let expected = format!("{marker} {LLVM_VERSION}");
     if !text.lines().any(|line| {
         line.trim()
@@ -89,10 +131,41 @@ fn version(tool: &Path, marker: &str, cwd: &Path) -> Result<(), Box<Diagnostic>>
     Ok(())
 }
 
+fn runtime_compile_args() -> Vec<OsString> {
+    [
+        "--no-default-config",
+        &format!("--target={TARGET}"),
+        "-O0",
+        "-fPIE",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-c",
+        "runtime.c",
+        "-o",
+        "runtime.o",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect()
+}
+
 /// Publish a project-owned native output without destroying the previous build
 /// on a compile/link failure. This route retains the Linux host restriction;
 /// rename replaces a regular file atomically on that supported filesystem.
 pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
+    managed(module, output, false).map(|_| ())
+}
+
+pub(super) fn compile_managed_incremental(
+    module: &str,
+    output: &str,
+) -> Result<Outcome, Box<Diagnostic>> {
+    managed(module, output, true)
+}
+
+fn managed(module: &str, output: &str, incremental: bool) -> Result<Outcome, Box<Diagnostic>> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(failure("native preview requires a Linux x86_64 build host"));
     }
@@ -129,7 +202,18 @@ pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diag
                 ))
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                fs::create_dir(path).map_err(io)?;
+                match fs::create_dir(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        let meta = fs::symlink_metadata(path).map_err(io)?;
+                        if !meta.is_dir() || meta.file_type().is_symlink() {
+                            return Err(failure(
+                                "managed build directories must be real directories",
+                            ));
+                        }
+                    }
+                    Err(error) => return Err(io(error)),
+                }
             }
             Err(error) => return Err(io(error)),
         }
@@ -143,17 +227,26 @@ pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diag
     }
     let stage = Workspace::create(parent)?;
     let staged_output = stage.0.join("program");
-    compile(
+    let outcome = compile_inner(
         module,
         staged_output
             .to_str()
             .ok_or_else(|| failure("managed output path must be UTF-8"))?,
+        incremental.then_some(build_root),
     )?;
     fs::rename(staged_output, output).map_err(io)?;
-    Ok(())
+    Ok(outcome)
 }
 
 pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
+    compile_inner(module, output, None).map(|_| ())
+}
+
+fn compile_inner(
+    module: &str,
+    output: &str,
+    cache_root: Option<&Path>,
+) -> Result<Outcome, Box<Diagnostic>> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Err(failure("native preview requires a Linux x86_64 build host"));
     }
@@ -179,14 +272,29 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
         Err(e) => return Err(io(e)),
     }
+    let environment = cache_root.map(|_| native_cache::environment());
+    let env_value = |name: &str| {
+        environment.as_ref().map_or_else(
+            || std::env::var_os(name),
+            |values| {
+                values
+                    .iter()
+                    .find(|(key, _)| key == name)
+                    .map(|(_, value)| value.clone())
+            },
+        )
+    };
     // Resolve PATH before changing child cwd; preserve argv[0] symlink names
     // (ld.lld is a multi-call driver). Tool installations are trusted inputs.
     let resolve = |path: PathBuf| -> Result<PathBuf, Box<Diagnostic>> {
+        if environment.is_none() {
+            return resolve_tool(path);
+        }
         let cwd = std::env::current_dir().map_err(io)?;
         if path.components().count() > 1 || path.is_absolute() {
             return Ok(cwd.join(path));
         }
-        let search = std::env::var_os("PATH").unwrap_or_default();
+        let search = env_value("PATH").unwrap_or_default();
         std::env::split_paths(&search)
             .map(|dir| cwd.join(dir).join(&path))
             .find(|candidate| candidate.is_file())
@@ -197,12 +305,21 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
                 ))
             })
     };
-    let clang = resolve(tool("clang"))?;
-    let opt = resolve(tool("opt"))?;
-    let lld = resolve(tool("ld.lld"))?;
-    version(&clang, "clang version", &parent)?;
-    version(&opt, "LLVM version", &parent)?;
-    version(&lld, "LLD", &parent)?;
+    let selected = |name| {
+        if environment.is_none() {
+            return tool(name);
+        }
+        env_value("OXID_LLVM_BIN").map_or_else(
+            || PathBuf::from(format!("{name}-19")),
+            |dir| PathBuf::from(dir).join(name),
+        )
+    };
+    let clang = resolve(selected("clang"))?;
+    let opt = resolve(selected("opt"))?;
+    let lld = resolve(selected("ld.lld"))?;
+    version(&clang, "clang version", &parent, environment.as_ref())?;
+    version(&opt, "LLVM version", &parent, environment.as_ref())?;
+    version(&lld, "LLD", &parent, environment.as_ref())?;
     let workspace = Workspace::create(&parent)?;
     fs::write(workspace.0.join("program.ll"), module).map_err(io)?;
     fs::write(workspace.0.join("runtime.c"), RUNTIME).map_err(io)?;
@@ -212,6 +329,7 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
             path,
             &values.iter().map(OsString::as_os_str).collect::<Vec<_>>(),
             &workspace.0,
+            environment.as_ref(),
         )
         .map(|_| ())
     };
@@ -220,38 +338,65 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
         args(&["-passes=verify", "-disable-output", "program.ll"]),
     )?;
     let target = format!("--target={TARGET}");
-    invoke(
-        &clang,
-        args(&[
-            "--no-default-config",
-            &target,
-            "-O0",
-            "-fPIE",
-            "-c",
-            "-x",
-            "ir",
-            "program.ll",
-            "-o",
-            "program.o",
-        ]),
-    )?;
-    invoke(
-        &clang,
-        args(&[
-            "--no-default-config",
-            &target,
-            "-O0",
-            "-fPIE",
-            "-std=c11",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-c",
-            "runtime.c",
-            "-o",
-            "runtime.o",
-        ]),
-    )?;
+    let program_args = args(&[
+        "--no-default-config",
+        &target,
+        "-O0",
+        "-fPIE",
+        "-c",
+        "-x",
+        "ir",
+        "program.ll",
+        "-o",
+        "program.o",
+    ]);
+    let key = || {
+        environment.as_ref().and_then(|environment| {
+            native_cache::fingerprint(
+                module,
+                &[&clang, &opt],
+                &program_args,
+                environment,
+                &workspace.0,
+            )
+        })
+    };
+    let initial_key = key();
+    let mut cache = match (cache_root, initial_key) {
+        (Some(root), Some(key)) => Some(native_cache::Cache::new(root, key).map_err(io)?),
+        _ => None,
+    };
+    let object = workspace.0.join("program.o");
+    let mut hit = cache.as_ref().is_some_and(|cache| cache.restore(&object));
+    if hit && key() != initial_key {
+        fs::remove_file(&object).map_err(io)?;
+        hit = false;
+        cache = None;
+    }
+    let mut outcome = if hit {
+        Outcome::Hit
+    } else if cache.is_some() {
+        Outcome::Miss
+    } else {
+        Outcome::Unavailable
+    };
+    if !hit {
+        invoke(&clang, program_args.clone())?;
+        if let Some(cache) = cache {
+            if key() == initial_key {
+                // Cache storage failure cannot turn a valid build into a failure.
+                if cache
+                    .save(&object, &workspace.0.join("object-cache-stage"))
+                    .is_err()
+                {
+                    outcome = Outcome::Unavailable;
+                }
+            } else {
+                outcome = Outcome::Unavailable;
+            }
+        }
+    }
+    invoke(&clang, runtime_compile_args())?;
     let mut link = args(&[
         "--no-default-config",
         &target,
@@ -271,5 +416,5 @@ pub(super) fn compile(module: &str, output: &str) -> Result<(), Box<Diagnostic>>
     // Atomic no-replace publication on the same filesystem. Unlike rename,
     // hard_link cannot clobber an output created concurrently after preflight.
     fs::hard_link(workspace.0.join("executable"), output).map_err(io)?;
-    Ok(())
+    Ok(outcome)
 }
