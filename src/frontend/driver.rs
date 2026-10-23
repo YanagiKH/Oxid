@@ -1131,26 +1131,7 @@ impl Summary {
         }
     }
 }
-fn report(
-    sources: &SourceMap,
-    mut diagnostics: Vec<Diagnostic>,
-    json: bool,
-    summary: Summary,
-) -> i32 {
-    let summary = if matches!(
-        summary,
-        Summary::Run(Some(oir::RuntimeScalar::Narrow(oir::Scalar::U8(_))))
-    ) {
-        diagnostics.push(*Diagnostic::new(
-            "E0500",
-            "oir-run",
-            "invalid byte entry result",
-            None,
-        ));
-        Summary::Run(None)
-    } else {
-        summary
-    };
+fn report(sources: &SourceMap, diagnostics: Vec<Diagnostic>, json: bool, summary: Summary) -> i32 {
     let success = diagnostics.is_empty();
     for diagnostic in &diagnostics {
         if json {
@@ -1202,14 +1183,12 @@ fn check_summary(errors: usize, functions: Option<usize>) -> String {
 
 #[cfg(test)]
 fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
+    if matches!(result, Some(oir::Scalar::U8(_))) {
+        return run_runtime_summary(errors.max(1), None);
+    }
     run_runtime_summary(errors, result.map(oir::RuntimeScalar::from))
 }
 fn run_runtime_summary(errors: usize, result: Option<oir::RuntimeScalar>) -> String {
-    let errors = if matches!(result, Some(oir::RuntimeScalar::Narrow(oir::Scalar::U8(_)))) {
-        errors.max(1)
-    } else {
-        errors
-    };
     format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":{},\"errors\":{errors},\"result\":{}}}",
         errors == 0, result.filter(|_| errors == 0).and_then(oir::RuntimeScalar::json).unwrap_or_else(|| "null".into()))
 }

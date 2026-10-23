@@ -1147,7 +1147,7 @@
       "evidence": [
         "docs/architecture/bounded-byte-storage-validation.md"
       ],
-      "limitations": "Original standalone evidence covers N=0..1024, move-only values including zero length, i32 indexes/lengths, explicit named-local conversions and whole-owner loans. Record-contained bytes and fixed-array enum payloads have separate current extensions and validation. No byte arithmetic/coercions/literals, heap/subslice/element references, I/O migration or provider expansion. Existing stricter native limits can reject source-legal programs. No stable ABI, memory-safety certification, M2/M3 completion, self-hosting or tensor claim."
+      "limitations": "Original standalone evidence covers N=0..1024, move-only values including zero length, i32 indexes/lengths, named-local conversions and whole-owner loans. Current byte arithmetic, literals, record fields, enum payloads, heap buffers and I/O have separate feature entries and validation. Subslice/element references and implicit coercion remain unavailable; existing native storage limits can reject source-legal programs."
     },
     {
       "id": "owned-enum-payloads",
@@ -1193,7 +1193,7 @@
       "edition": "typed-preview",
       "backend": "Bounded reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Checking and reference execution on supported compiler hosts; native Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
-      "limitations": "Fixed arrays have lengths 0..1024; explicit named-local conversion, exact types and whole-root loans remain. No byte arithmetic/coercions/literals, partial field moves, element borrows, enum/reference record fields, heap buffers or I/O signature changes. Existing stricter native limits can reject source-legal programs; layout is private.",
+      "limitations": "Fixed arrays have lengths 0..1024; explicit named-local conversion, exact types and whole-root loans remain. Current byte arithmetic, literals, enum payloads, heap buffers and I/O have separate feature entries. Partial field moves, element borrows and enum/reference record fields remain unavailable. Existing native storage limits can reject source-legal programs; layout is private.",
       "spec": [
         "rfcs/0042-byte-record-fields.md",
         "spec/typed-preview.md",
@@ -1440,7 +1440,7 @@
       "edition": "typed-preview",
       "backend": "Reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Portable checking; current 64-bit execution targets; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
-      "limitations": "Adds i8, i16, u16, u32, u64 and 64-bit isize/usize. Byte literals and enum payloads are supported; u8 arithmetic and u8 result entries remain unavailable. No i128/u128, floats, implicit conversion or wrapping arithmetic. Indexes and lengths remain i32.",
+      "limitations": "Adds i8, i16, u16, u32, u64 and 64-bit isize/usize. Byte arithmetic and byte result entries are tracked separately. No i128/u128, floats, implicit conversion or wrapping arithmetic. Indexes and lengths remain i32.",
       "spec": [
         "rfcs/0051-checked-integer-widths.md",
         "spec/typed-preview.md"
@@ -1459,6 +1459,38 @@
         "scripts/verify_integer_widths.py",
         "tests/integer_output_runtime.c",
         "scripts/test_integer_output_runtime.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "byte-integer-arithmetic",
+      "classification": "production-path",
+      "summary": "Checked u8 arithmetic, explicit conversions and decimal byte results across files and linked modules.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Byte values remain 0..255; overflow and zero divisors report errors. No implicit conversion, wrapping arithmetic or unsigned negation. Process main, indexes and lengths remain i32. Existing storage, borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0052-byte-integer-arithmetic.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/ast.rs",
+        "src/frontend/declaration_index/source_owner.rs",
+        "src/frontend/oir/source/sealed.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/driver.rs"
+      ],
+      "tests": [
+        "tests/typed_byte_integers.rs",
+        "src/frontend/oir/owned/source/byte_integer_tests.rs",
+        "scripts/verify_byte_integers.py",
+        "scripts/test_byte_integer_oracle.py"
       ],
       "evidence": []
     }

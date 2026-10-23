@@ -182,20 +182,11 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<Scalar, Box<Diagnostic>> {
-        self.run_value(
+        self.run_with_execution(
             entry,
             sources,
             crate::frontend::build_config::ExecutionPolicy::Bounded,
-        )?
-        .narrow()
-        .ok_or_else(|| {
-            Diagnostic::new(
-                "E0600",
-                "oir-run",
-                "this scalar result interface does not support i64",
-                None,
-            )
-        })
+        )
     }
 
     pub(in crate::frontend::oir) fn run_with_execution(
@@ -204,6 +195,16 @@ impl SourceProgram {
         sources: &SourceMap,
         execution: crate::frontend::build_config::ExecutionPolicy,
     ) -> Result<Scalar, Box<Diagnostic>> {
+        // Keep the retained narrow entry interface closed. Current language
+        // results use run_value, including byte results.
+        if entry
+            .and_then(|id| self.witness.functions().get(id.0))
+            .is_some_and(|function| function.result == ValueTy::Scalar(hir::Ty::U8))
+        {
+            self.require_result_entry_policy(sources)?;
+            return execute::run_with_execution(&self.witness, entry, execution)
+                .map_err(|error| error.diagnostic(sources));
+        }
         self.run_value(entry, sources, execution)?
             .narrow()
             .ok_or_else(|| {

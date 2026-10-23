@@ -35,6 +35,9 @@ mod diagnostic_tests;
 mod integer_width_tests;
 
 #[cfg(test)]
+mod byte_integer_tests;
+
+#[cfg(test)]
 mod budget_tests;
 #[cfg(test)]
 mod lower_tests;

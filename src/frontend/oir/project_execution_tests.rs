@@ -46,24 +46,34 @@ fn checked(project: &ProjectSources) -> Result<CheckedSourceProgram<'_>, Vec<Dia
 }
 #[cfg(target_os = "linux")]
 #[test]
-fn u8_project_annotation_only_helpers_stay_scalar() {
+fn u8_project_annotation_only_helpers_use_the_typed_checker() {
     let fixture = Fixture::new(&[
         ("app.ox", "mod child; fn main()->i32{return 4;}"),
         ("child.ox", "pub fn identity(value:u8)->u8{return value;}"),
     ]);
     let project = fixture.load();
     let result = checked(&project).unwrap();
-    assert_eq!(result.route(), ProjectRoute::Scalar);
+    assert_eq!(result.route(), ProjectRoute::Owned);
     assert_eq!(result.run().unwrap(), Scalar::I32(4));
 }
 #[cfg(target_os = "linux")]
 #[test]
-fn u8_project_byte_entry_has_scalar_entry_diagnostic() {
+fn u8_project_byte_entry_has_typed_results_and_a_closed_scalar_adapter() {
     let text = "mod child; fn main()->u8{let n=0;return n.to_u8_checked();}";
     let fixture = Fixture::new(&[("app.ox", text), ("child.ox", "fn f()->(){return;}")]);
     let project = fixture.load();
     let result = checked(&project).unwrap();
-    assert_eq!(result.route(), ProjectRoute::Scalar);
+    assert_eq!(result.route(), ProjectRoute::Owned);
+    assert_eq!(
+        result
+            .run_value(crate::frontend::build_config::ExecutionPolicy::Bounded)
+            .unwrap(),
+        RuntimeScalar::Narrow(Scalar::U8(0))
+    );
+    assert!(result
+        .native_module()
+        .unwrap()
+        .contains("zext i8 %value to i32"));
     let error = result.run().unwrap_err();
     assert_eq!((error.code, error.stage), ("E0600", "oir-run"));
     assert_eq!(

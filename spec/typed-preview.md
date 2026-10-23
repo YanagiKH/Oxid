@@ -119,9 +119,10 @@ implicitly. Overflow, division by zero and failed conversions report errors.
 
 `isize` and `usize` are 64 bits on the current execution targets. Array
 indexes and lengths remain `i32`. Byte literals such as `255u8` and `u8`
-enum payloads are available; byte arithmetic and `main() -> u8` remain
-unavailable. See [integer types and conversions](../rfcs/0051-checked-integer-widths.md)
-for ranges, results and storage rules.
+enum payloads support checked arithmetic and result-mode `main() -> u8`.
+See [integer types and conversions](../rfcs/0051-checked-integer-widths.md)
+and [byte arithmetic](../rfcs/0052-byte-integer-arithmetic.md) for ranges,
+results and storage rules.
 
 ## Fixed scalar arrays
 
@@ -188,8 +189,9 @@ the historical validation claims linked above.
 A u8 scalar is exactly 0..255. Construct one through an explicitly named i32
 local or parameter using `x.to_u8_checked()`; an out-of-range value fails with
 E0610. Widen a named byte with `b.to_i32()`. Decimal literals remain i32 even
-under byte annotations. There is no implicit coercion, u8 arithmetic or scalar
-byte literal syntax. The helper `byte` in the
+under byte annotations. Explicit byte literals use the `u8` suffix; byte
+arithmetic checks overflow and requires `u8` operands. There is no implicit
+coercion. The helper `byte` in the
 [pilot](../fixtures/typed-byte-storage/main.ox) is an ordinary declared function.
 That pilot moves `[0,127,128,255]` through a helper, mutates index1 through an
 exclusive slice, and sums `[0,255,128,255]` through a shared slice to return638.

@@ -56,13 +56,12 @@ Checked conversions are `.to_i8_checked()`, `.to_i16_checked()`,
 `.to_i32_checked()`, `.to_i64_checked()`, `.to_u8_checked()`,
 `.to_u16_checked()`, `.to_u32_checked()`, `.to_u64_checked()`,
 `.to_isize_checked()` and `.to_usize_checked()`. Their receivers may be any
-integer type, except that `u8.to_u8_checked()` remains unavailable. There is
-no implicit conversion. The existing infallible `u8.to_i32()` and
+integer type. There is no implicit conversion. The existing infallible `u8.to_i32()` and
 `i32.to_i64()` / `u8.to_i64()` methods keep their existing inputs.
 
-`255u8` is now a byte literal. Bytes can also be enum payloads. Existing `u8`
-arithmetic and `main() -> u8` restrictions remain: use `.to_i32()` to calculate
-with a byte or return it as a result.
+`255u8` is a byte literal. Bytes can also be enum payloads and result values,
+with the checked arithmetic described in [byte arithmetic](0052-byte-integer-arithmetic.md).
+Use `.to_i32()` when a calculation needs more than 0..255.
 
 ## Collections and results
 
