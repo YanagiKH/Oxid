@@ -1380,6 +1380,11 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 let suffix = if array_table { suffix.strip_prefix(']').unwrap_or(suffix).trim() } else { suffix };
                 if suffix.is_empty() || suffix.starts_with('#') {
                     let raw = line[opening..end].trim();
+                    let first = manifest_delimiter(raw, '.').unwrap_or(raw.len());
+                    let namespace = parse_manifest_key(raw[..first].trim()).unwrap_or_default();
+                    if matches!(namespace.as_str(), "dependencies" | "features") && (array_table || first != raw.len()) {
+                        manifest.configuration_error = Some(format!("typed-preview {} require an ordinary [{}] table with string local paths; nested or array tables are unsupported", namespace, namespace));
+                    }
                     section = parse_manifest_key(raw).unwrap_or_else(|_| raw.to_string());
                     if array_table {
                         if section == "project" {
@@ -1391,19 +1396,29 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 }
             }
         }
-        let Some(equals) = manifest_delimiter(line, '=') else { continue; };
+        let Some(equals) = manifest_delimiter(line, '=') else {
+            if matches!(section.as_str(), "dependencies" | "features") {
+                manifest.configuration_error = Some(format!("invalid {} declaration in {}: expected name = value", section, path.display()));
+            }
+            continue;
+        };
         let key_raw = line[..equals].trim();
         let value_raw = &line[equals + 1..];
         let mut effective_section = section.as_str();
         let mut effective_key = key_raw;
         if section.is_empty() {
             if let Some(dot) = manifest_delimiter(key_raw, '.') {
-                if parse_manifest_key(key_raw[..dot].trim()).as_deref() == Ok("project") {
+                let namespace = parse_manifest_key(key_raw[..dot].trim());
+                if namespace.as_deref() == Ok("project") {
                     effective_section = "project";
                     effective_key = key_raw[dot + 1..].trim();
+                } else if matches!(namespace.as_deref(), Ok("dependencies" | "features")) {
+                    manifest.configuration_error = Some("typed-preview dependencies and features do not support dotted declarations; use [dependencies] string local paths".to_string());
                 }
             } else if parse_manifest_key(key_raw).as_deref() == Ok("project") {
                 return Err("inline project tables are unsupported; use an ordinary [project] table".to_string());
+            } else if matches!(parse_manifest_key(key_raw).as_deref(), Ok("dependencies" | "features")) {
+                manifest.configuration_error = Some("typed-preview dependencies and features do not support inline tables; use [dependencies] string local paths".to_string());
             }
         }
         if edition_only && !matches!(effective_section, "" | "project") {
@@ -1418,7 +1433,11 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
         let key = key.map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?;
         let value = parse_manifest_value(value_raw).map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?;
         match (effective_section, key.as_str()) {
-            ("project", "name") | ("", "name") => manifest.name = Some(value),
+            ("project", "name") | ("", "name") => {
+                if manifest.name.replace(value).is_some() {
+                    manifest.configuration_error = Some(format!("duplicate project name in {}", path.display()));
+                }
+            }
             ("project", "version") | ("", "version") => manifest.version = Some(value),
             ("project", "entry") | ("build", "entry") | ("", "entry") => {
                 if manifest.entry.replace(value).is_some() {
@@ -1453,6 +1472,9 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             }
             ("scripts", _) => { manifest.scripts.insert(key, value); }
             ("dependencies", _) => {
+                if !value_raw.trim_start().starts_with(['"', '\'']) {
+                    manifest.configuration_error = Some(format!("typed-preview dependencies require quoted local paths for `{}`; Git, registry and table specifications are unsupported", key));
+                }
                 if manifest.dependencies.contains_key(&key) {
                     return Err(format!("duplicate dependency `{}` in {}", key, path.display()));
                 }

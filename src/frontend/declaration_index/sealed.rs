@@ -571,7 +571,9 @@ fn collect<'s>(
     }
     c.originals = add(
         add(add(c.functions, c.records, at)?, c.enums, at)?,
-        c.modules - 1,
+        c.modules
+            .checked_sub(sources.package_roots() as u64)
+            .ok_or_else(|| bad(at))?,
         at,
     )?;
     for count in [
@@ -773,8 +775,13 @@ fn collect<'s>(
             }
             _ => (NONE, 0),
         };
-        if (m == 0 && (parent != NONE || depth != 0))
-            || (m > 0 && (parent as usize >= m || depth == 0 || depth > 32))
+        let package_root = sources.package_root(ModuleId(m))?;
+        if (m == package_root.0 && (parent != NONE || depth != 0))
+            || (m != package_root.0
+                && (parent as usize >= m
+                    || depth == 0
+                    || depth > 32
+                    || sources.package_root(ModuleId(parent as usize))? != package_root))
         {
             return Err(bad(at));
         }
@@ -819,7 +826,7 @@ fn collect<'s>(
         c.enums as usize,
         c.originals as usize,
         c.imports as usize,
-        c.modules as usize - 1,
+        c.modules as usize - sources.package_roots(),
     ) {
         return Err(bad(at));
     }
@@ -828,7 +835,14 @@ fn collect<'s>(
     for m in 0..sources.count() {
         work.debit(1, at, "module ancestry")?;
         let row = tables.modules[m];
-        if m > 0 {
+        if row.parent == NONE && m != 0 {
+            while stack_len > 0 {
+                work.debit(1, at, "package subtree close")?;
+                stack_len -= 1;
+                tables.modules[stack[stack_len] as usize].subtree_end = m as u32;
+            }
+        }
+        if row.parent != NONE {
             let parent = row.parent as usize;
             while stack_len > 0 {
                 work.debit(1, at, "module parent edge")?;
@@ -994,6 +1008,9 @@ fn collect<'s>(
         return Err(bad(at));
     }
     for m in 1..tables.modules.len() {
+        if tables.modules[m].parent == NONE {
+            continue;
+        }
         work.debit(1, at, "module domain")?;
         let row = tables.modules[m];
         let parent = tables.modules[row.parent as usize];

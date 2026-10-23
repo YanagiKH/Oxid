@@ -1,6 +1,7 @@
 # RFC 0032: manifest-driven typed project commands
 
-Status: experimental implementation, single package.
+Status: experimental implementation. Local dependency sessions extend this
+contract in [RFC 0033](0033-typed-path-dependencies.md).
 
 ## User outcome
 
@@ -25,11 +26,10 @@ an experimental typed scaffold. `[build]` separates `backend = "llvm"`,
 `entry-mode = "process"` (the typed project default) or `"result"`.
 Unsupported settings fail explicitly. No setting silently selects legacy code.
 
-This increment rejects typed package dependencies. Existing `mod` and
-`use crate::...` declarations still load source modules; downloading a package is
-not a substitute for linking it into the typed declaration graph. Workspace,
-registry, incremental cache and additional target/profile support remain work
-for subsequent increments.
+The initial increment covered a single package. [RFC 0033](0033-typed-path-dependencies.md)
+adds local typed dependencies to the same declaration graph on Linux. Existing
+`mod` declarations load source modules inside each package. Workspace, registry,
+incremental cache and additional target/profile support remain subsequent work.
 
 ## Execution and test contract
 

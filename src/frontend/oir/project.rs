@@ -67,6 +67,15 @@ pub(in crate::frontend) fn check_project_executable<'s>(
     super::source::check_project_executable_candidate(project, limits, work, allocator)
 }
 
+pub(in crate::frontend) fn check_package_executable<'s>(
+    package: &'s crate::frontend::project::packages::PackageSources<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
+    super::source::check_package_executable(package, limits, work, allocator)
+}
+
 /// Historical qualification adapter for the same complete source checker.
 pub(in crate::frontend) fn check_project_executable_candidate<'s>(
     project: &'s ProjectSources,

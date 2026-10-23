@@ -64,10 +64,13 @@ parser, dynamic values, macro expander, interpreter, or artifact writer.
 
 `--message-format text|json` is available only with typed preview. Unknown
 preview options are rejected. Backend/target/output options are available only for the native compile route; profile requests remain unavailable.
-Manifest edition propagation and single-package typed builds are available through
+Manifest edition propagation and local-package typed builds are available through
 the experimental [project workflow](../docs/TYPED_PROJECTS.md). Explicitly selected
 file commands retain this specification's original argument and entry defaults.
-Typed dependencies, workspaces and incremental builds remain unimplemented.
+The Linux project route admits local path dependencies under
+[RFC 0033](../rfcs/0033-typed-path-dependencies.md); it retains package-local roots,
+visibility and nominal identities within one checking session. Typed Git/registry
+dependencies, lockfiles, workspaces and incremental builds remain unimplemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 

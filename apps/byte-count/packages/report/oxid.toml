@@ -1,0 +1,7 @@
+[project]
+name = "byte-count-report"
+version = "0.1.0"
+edition = "typed-preview"
+
+[dependencies]
+counts = "../counts"

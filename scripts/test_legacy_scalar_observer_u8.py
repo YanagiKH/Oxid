@@ -122,7 +122,8 @@ class LiveObserverTests(unittest.TestCase):
 
     def test_missing_each_added_module_fails_actual_rustc(self):
         for kind, builder in [('parser', parser), ('static', static)]:
-            for index, missing in enumerate(['parser/conversions.rs', 'declaration_index/u8_reservation.rs']):
+            for index, missing in enumerate(['parser/conversions.rs', 'declaration_index/u8_reservation.rs',
+                                              'project/packages.rs']):
                 output = self.root / f'{kind}-omit-{index}'
                 with patch.object(builder, 'SOURCE_FILES', tuple(x for x in builder.SOURCE_FILES if x != missing)):
                     with self.assertRaisesRegex(ValueError, 'rustc failed'):

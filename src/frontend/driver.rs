@@ -1,3 +1,4 @@
+use super::project::packages::{self, PackageSources, PackageSpec};
 use super::{
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
@@ -6,6 +7,128 @@ use super::{
     project::{budget::Allocator, ProjectLimits, ProjectSources, SyntaxFlavor},
     source::SourceMap,
 };
+use std::path::Path;
+
+pub(crate) enum PackageCommand<'a> {
+    Check,
+    Run,
+    Compile { output: &'a str, managed: bool },
+}
+
+/// Project commands carry the actual admitted dependency graph into the checked
+/// source pipeline. The explicit single-file router remains independent.
+pub(crate) fn process_package_project(
+    packages: &[PackageSpec],
+    entry_override: Option<&Path>,
+    command: PackageCommand<'_>,
+    json: bool,
+    process: bool,
+) -> i32 {
+    let operation = match command {
+        PackageCommand::Check => Operation::Check,
+        PackageCommand::Run => Operation::Run,
+        PackageCommand::Compile { .. } => Operation::Compile,
+    };
+    let process_run = process && operation == Operation::Run;
+    if process_run && json {
+        return process_option_error("process-mode run does not support --message-format=json");
+    }
+    if let Err(error) = packages::validate_graph(packages, entry_override) {
+        return if process_run {
+            report_process(&SourceMap::new(), &[*error])
+        } else {
+            report(
+                &SourceMap::new(),
+                vec![*error],
+                json,
+                Summary::empty(operation),
+            )
+        };
+    }
+    if packages.len() == 1 && packages[0].dependencies.is_empty() {
+        let entry = entry_override
+            .unwrap_or(&packages[0].entry)
+            .to_str()
+            .expect("validated path");
+        if let PackageCommand::Compile {
+            output,
+            managed: true,
+        } = command
+        {
+            return build_project(entry, output, json, process);
+        }
+        let output = match command {
+            PackageCommand::Compile { output, .. } => Some(output),
+            _ => None,
+        };
+        return process_file(
+            entry,
+            json,
+            operation,
+            output,
+            if process && operation != Operation::Check {
+                EntryPolicy::Process
+            } else {
+                EntryPolicy::Result
+            },
+        );
+    }
+    let package = match PackageSources::load(packages, entry_override, ProjectLimits::default()) {
+        Ok(package) => package,
+        Err(failure) => {
+            return if process_run {
+                report_process(&failure.sources, &failure.diagnostics)
+            } else {
+                report(
+                    &failure.sources,
+                    failure.diagnostics,
+                    json,
+                    Summary::empty(operation),
+                )
+            }
+        }
+    };
+    let limits = IndexLimits::default();
+    let work = WorkMeter::new(limits.work);
+    let executable =
+        oir::project::check_package_executable(&package, limits, &work, &mut Allocator::default());
+    let project = &package.project;
+    if process_run {
+        return match executable {
+            Ok(verified) => match verified.run_process() {
+                Ok(status) => status,
+                Err(oir::ProcessFailure::Setup) => 74,
+                Err(oir::ProcessFailure::Diagnostic(error)) => {
+                    report_process(project.sources(), &[*error])
+                }
+            },
+            Err(errors) => report_process(project.sources(), &errors),
+        };
+    }
+    if let PackageCommand::Compile { output, managed } = command {
+        let result = (|| {
+            let checked = executable?;
+            let module = if process {
+                checked.native_process_module()
+            } else {
+                checked.native_module()
+            }
+            .map_err(|e| vec![*e])?;
+            if managed {
+                super::native::compile_managed(&module, output)
+            } else {
+                super::native::compile(&module, output)
+            }
+            .map_err(|e| vec![*e])?;
+            Ok(Summary::Compile(Some(output.to_owned())))
+        })();
+        return match result {
+            Ok(summary) => report(project.sources(), Vec::new(), json, summary),
+            Err(errors) => report(project.sources(), errors, json, Summary::Compile(None)),
+        };
+    }
+    process_loaded(project, json, operation, None, executable)
+}
 
 /// None returns an untouched/default or explicitly legacy command to the old CLI.
 pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {

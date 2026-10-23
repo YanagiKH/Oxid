@@ -888,9 +888,17 @@ impl Tables<'_> {
         if !(2..=super::parser::MAX_PATH_SEGMENTS).contains(&segments.len()) {
             return Err(bad(self.sources.eof()));
         }
-        let mut owner = ModuleId(0);
+        let mut owner = self.sources.package_root(requester)?;
         for (position, &segment) in segments[1..segments.len() - 1].iter().enumerate() {
             work.debit(1, segment, "absolute path segment")?;
+            // Only a direct edge of the requesting package can select a package
+            // root. Later segments remain ordinary checked public modules.
+            if position == 0 {
+                if let Some(dependency) = self.sources.dependency_root(requester, segment, work)? {
+                    owner = dependency;
+                    continue;
+                }
+            }
             let Some(id) = self.lookup_original(owner, true, segment, work)? else {
                 let mut error =
                     diagnostic("E0205", "resolve", "invalid absolute item path", segment);
@@ -1807,7 +1815,12 @@ impl<'i, 's> QuerySession<'i, 's> {
         let mut names = [CompactSpan::default(); 32];
         let mut count = 0;
         let mut owner = original.owner;
-        while owner != 0 {
+        let package_root = self
+            .tables
+            .sources
+            .package_root(ModuleId(owner as usize))?
+            .0 as u32;
+        while owner != package_root {
             self.work.debit(1, at, "nominal name ancestor")?;
             if count >= 32 {
                 return Err(bad(at));

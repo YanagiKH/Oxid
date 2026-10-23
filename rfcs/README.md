@@ -77,3 +77,8 @@ unsigned comparison and scalar helper transport. Byte aggregates/arithmetic and
 I/O migration remain excluded. Implementation and work/byte resource admission
 remain unqualified; the contract records explicit type-name migration and
 unchanged producer-protocol boundaries.
+
+[RFC 0032](0032-typed-project-workflow.md) defines manifest-selected typed
+project commands and managed native output. [RFC 0033](0033-typed-path-dependencies.md)
+extends that workflow to local dependency packages in one checking session,
+with package-local roots, nominal identities and ordinary visibility rules.

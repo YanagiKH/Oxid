@@ -25,6 +25,9 @@ declared project without execution. `run` selects bounded reference execution;
 preview. Explicit file commands require one entry source. A manifest declaring
 `edition = "typed-preview"` also enables source-less `check` and `run`, native
 `build`, and explicit-entry `test`; see [typed projects](TYPED_PROJECTS.md).
+On Linux these project commands also check local path dependencies in one typed
+session. A dependency alias such as `math` is available through
+`use crate::math::answer;`; each library's `crate::` starts at its own root.
 Run/compile require an original zero-argument scalar main in the root file.
 Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
 `pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),
