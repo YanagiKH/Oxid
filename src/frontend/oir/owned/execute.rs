@@ -5,6 +5,7 @@ use super::{
     verified::VerifiedOwnedProgram,
     *,
 };
+use crate::frontend::build_config::{ExecutionPolicy, HOSTED_FUEL};
 use crate::frontend::options::EntryPolicy;
 use std::mem::size_of;
 
@@ -292,7 +293,9 @@ impl<'p, 'w> Machine<'p, 'w> {
         &self.plan.witness().functions()[id.0]
     }
     fn charge(&mut self, cost: usize, span: Span) -> Result<()> {
-        self.fuel = self.fuel.checked_sub(cost).ok_or(RunFailure::Fuel(span))?;
+        if self.fuel != HOSTED_FUEL {
+            self.fuel = self.fuel.checked_sub(cost).ok_or(RunFailure::Fuel(span))?;
+        }
         #[cfg(test)]
         self.record_event(Event::Charge(span, cost));
         Ok(())
@@ -3463,6 +3466,30 @@ fn encode(bytes: &mut [u8], offset: usize, value: Scalar, span: Span) -> Result<
 pub(super) fn run(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<Scalar> {
     run_limits(witness, entry, Limits::default())
 }
+pub(super) fn run_with_execution(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    execution: ExecutionPolicy,
+) -> Result<Scalar> {
+    if !execution.hosted() {
+        return run(witness, entry);
+    }
+    let entry = checked_entry(witness, entry)?;
+    let plan = ExecutionPlan::build(witness)?;
+    execute_plan_policy(
+        &plan,
+        entry,
+        Limits::default(),
+        EntryPolicy::Result,
+        execution,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+        #[cfg(test)]
+        None,
+    )
+}
 pub(super) fn run_limits(
     witness: &VerifiedOwnedProgram,
     entry: Option<hir::DefId>,
@@ -3571,6 +3598,32 @@ fn execute_plan_inner(
     limits: Limits,
     policy: EntryPolicy,
     #[cfg(test)] events: Option<&mut Vec<Event>>,
+    #[cfg(test)] observation: Option<&mut array_observe::Observer>,
+    #[cfg(test)] remaining_fuel: Option<&mut usize>,
+) -> Result<Scalar> {
+    execute_plan_policy(
+        plan,
+        entry,
+        limits,
+        policy,
+        ExecutionPolicy::Bounded,
+        #[cfg(test)]
+        events,
+        #[cfg(test)]
+        observation,
+        #[cfg(test)]
+        remaining_fuel,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Execution policy plus unchanged private observation sinks.
+fn execute_plan_policy(
+    plan: &ExecutionPlan<'_>,
+    entry: hir::DefId,
+    limits: Limits,
+    policy: EntryPolicy,
+    execution: ExecutionPolicy,
+    #[cfg(test)] events: Option<&mut Vec<Event>>,
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<Scalar> {
@@ -3583,7 +3636,7 @@ fn execute_plan_inner(
         plan,
         frames: Vec::new(),
         limits,
-        fuel: limits.fuel,
+        fuel: execution.initial_fuel(limits.fuel),
         next_activation: 1,
         live_slots: 0,
         live_cells: 0,
@@ -3681,6 +3734,23 @@ pub(super) fn run_process_limits(
     entry: Option<hir::DefId>,
     limits: Limits,
 ) -> Result<Scalar> {
+    run_process_policy(witness, entry, limits, ExecutionPolicy::Bounded)
+}
+
+pub(super) fn run_process_with_execution(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    execution: ExecutionPolicy,
+) -> Result<Scalar> {
+    run_process_policy(witness, entry, Limits::default(), execution)
+}
+
+fn run_process_policy(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    limits: Limits,
+    execution: ExecutionPolicy,
+) -> Result<Scalar> {
     // This host-only check intentionally precedes setup and does not validate
     // the entry, inspect source cells, allocate a plan or debit source fuel.
     if !output::supported_host() {
@@ -3691,11 +3761,12 @@ pub(super) fn run_process_limits(
     }
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Process)?;
     let plan = ExecutionPlan::build(witness)?;
-    execute_plan_inner(
+    execute_plan_policy(
         &plan,
         entry,
         limits,
         EntryPolicy::Process,
+        execution,
         #[cfg(test)]
         None,
         #[cfg(test)]

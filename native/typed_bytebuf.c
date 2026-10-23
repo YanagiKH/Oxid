@@ -109,3 +109,24 @@ int32_t __oxid_bytebuf_view(const oxid_bytebuf *value, int32_t start, int32_t en
     *length = end - start;
     return 0;
 }
+
+/* Hosted execution has no accumulated instruction budget. Each primitive still
+ * uses the same checked cost/extent/delivery admission before any mutation or
+ * transport. Its temporary budget is discarded after this one bounded operation;
+ * it is never installed as a finite program counter. */
+int32_t __oxid_bytebuf_operation_hosted(int32_t operation, void *buffer, int32_t size,
+    int32_t fill, const uint8_t *source, int32_t source_length, uint64_t *fuel,
+    void *result) {
+    if (!fuel) return OXID_BUFFER_DESCRIPTOR;
+    uint64_t operation_budget = UINT64_MAX;
+    return __oxid_bytebuf_operation(operation, buffer, size, fill, source,
+        source_length, &operation_budget, result);
+}
+
+int32_t __oxid_binary_delivery_hosted(int32_t operation, void *bytes, int32_t length,
+    uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
+    if (!fuel) return OXID_BUFFER_DESCRIPTOR;
+    uint64_t operation_budget = UINT64_MAX;
+    return __oxid_binary_delivery(operation, bytes, length, &operation_budget,
+        result, return_cost);
+}

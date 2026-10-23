@@ -1250,6 +1250,41 @@
         "scripts/verify_byte_reverse_app.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "hosted-project-execution",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Long-running typed projects without a fixed execution-work budget.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; process I/O and native execution on Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Opt-in per binary manifest. Existing projects and explicit source-file commands remain bounded by default. Compiler, layout, live-memory and call-depth limits remain; recursive native calls, cancellation and additional native targets are not added.",
+      "spec": [
+        "rfcs/0044-project-execution-policy.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/build_config.rs",
+        "src/project_cli.rs",
+        "src/project_cli/workspace.rs",
+        "src/frontend/driver.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/native.rs",
+        "native/typed_bytebuf.c"
+      ],
+      "tests": [
+        "tests/hosted_execution.rs",
+        "tests/hosted_bytebuf.c",
+        "scripts/test_hosted_bytebuf.py",
+        "scripts/test_hosted_execution_compatibility.py"
+      ],
+      "evidence": []
     }
   ]
 }

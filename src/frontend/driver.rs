@@ -1,6 +1,6 @@
 use super::project::packages::{self, LoadedSourceInput, PackageSources, PackageSpec};
 use super::{
-    build_config::{NativeBuildSettings, NativeSourceNames},
+    build_config::{ExecutionPolicy, NativeBuildSettings, NativeSourceNames},
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
     oir,
@@ -392,11 +392,7 @@ impl PreparedPackageProject<'_> {
         logical_root: &Path,
     ) -> Result<String, Box<Diagnostic>> {
         if !settings.reproducible() {
-            return if process {
-                checked.native_process_module()
-            } else {
-                checked.native_module()
-            };
+            return checked.native_module_with_execution(process, settings.execution(), None);
         }
         if process {
             // Preserve the existing host and checked-entry guards before the
@@ -405,11 +401,7 @@ impl PreparedPackageProject<'_> {
             checked.process_preflight()?;
         }
         let names = self.native_source_names(logical_root)?;
-        if process {
-            checked.native_process_module_with_source_names(&names)
-        } else {
-            checked.native_module_with_source_names(&names)
-        }
+        checked.native_module_with_execution(process, settings.execution(), Some(&names))
     }
 
     /// Native workspace preflight uses the same retained inputs, presentation,
@@ -421,7 +413,7 @@ impl PreparedPackageProject<'_> {
         settings: &NativeBuildSettings,
         logical_root: &Path,
     ) -> i32 {
-        if !settings.reproducible() {
+        if !settings.reproducible() && !settings.execution().hosted() {
             return self.workspace_preflight(json, process, true, false);
         }
         let admitted = self.checked().and_then(|checked| {
@@ -617,6 +609,48 @@ impl PreparedPackageProject<'_> {
         process_loaded(project, json, operation, None, executable)
     }
 
+    pub(crate) fn execute_with_execution(
+        &self,
+        command: PackageCommand<'_>,
+        json: bool,
+        process: bool,
+        execution: ExecutionPolicy,
+    ) -> i32 {
+        if !execution.hosted() || !matches!(command, PackageCommand::Run) {
+            return self.execute(command, json, process);
+        }
+        if process && json {
+            return process_option_error("process-mode run does not support --message-format=json");
+        }
+        if process && !oir::process::setup() {
+            return 74;
+        }
+        let project = self.project();
+        let executable = self.checked();
+        if process {
+            return match executable {
+                Ok(checked) => match checked.run_process_with_execution(execution) {
+                    Ok(status) => status,
+                    Err(oir::ProcessFailure::Setup) => 74,
+                    Err(oir::ProcessFailure::Diagnostic(error)) => {
+                        report_process(project.sources(), &[*error])
+                    }
+                },
+                Err(errors) => report_process(project.sources(), &errors),
+            };
+        }
+        let result = executable.and_then(|checked| {
+            checked
+                .run_with_execution(execution)
+                .map(|value| Summary::Run(Some(value)))
+                .map_err(|error| vec![*error])
+        });
+        match result {
+            Ok(summary) => report(project.sources(), Vec::new(), json, summary),
+            Err(errors) => report(project.sources(), errors, json, Summary::Run(None)),
+        }
+    }
+
     /// Typed project builds consume one resolved plan. Non-native operations
     /// keep their original execution and reporting paths; explicit-file callers
     /// continue using execute and the historical native wrapper entry points.
@@ -634,7 +668,7 @@ impl PreparedPackageProject<'_> {
             incremental,
         } = command
         else {
-            return self.execute(command, json, process);
+            return self.execute_with_execution(command, json, process, settings.execution());
         };
         let result = (|| {
             let checked = self.checked()?;

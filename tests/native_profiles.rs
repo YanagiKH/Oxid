@@ -10,12 +10,17 @@ use std::{
     os::unix::{fs::PermissionsExt, process::CommandExt},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex, MutexGuard,
+    },
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+static FIXTURE_EXECUTION: Mutex<()> = Mutex::new(());
 
 struct Fixture {
+    _execution: MutexGuard<'static, ()>,
     root: PathBuf,
     compiler: PathBuf,
     tools: PathBuf,
@@ -24,6 +29,11 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        // A concurrent child can inherit a compiler copy's writable descriptor
+        // until exec, temporarily blocking another fixture's compiler launch.
+        let execution = FIXTURE_EXECUTION
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let root = std::env::temp_dir().join(format!(
             "oxid-native-profiles-{}-{}",
             std::process::id(),
@@ -55,6 +65,7 @@ impl Fixture {
             root.join("tools-invoked").into_os_string(),
         ));
         let fixture = Self {
+            _execution: execution,
             root,
             compiler,
             tools,

@@ -183,6 +183,38 @@ impl SourceProgram {
         execute::run(&self.witness, entry).map_err(|error| error.diagnostic(sources))
     }
 
+    pub(in crate::frontend::oir) fn run_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
+        execute::run_with_execution(&self.witness, entry, execution)
+            .map_err(|error| error.diagnostic(sources))
+    }
+
+    pub(in crate::frontend::oir) fn native_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !process {
+            self.require_result_entry_policy(sources)?;
+        }
+        native::native_module_with_execution(
+            &self.witness,
+            entry,
+            sources,
+            process,
+            execution,
+            names,
+        )
+    }
+
     pub(in crate::frontend::oir) fn native_module(
         &self,
         entry: Option<hir::DefId>,
@@ -268,6 +300,24 @@ impl SourceProgram {
             entry,
             sources,
             super::super::plan::MAX_FUEL,
+        )
+    }
+
+    pub(in crate::frontend::oir) fn run_process_with_execution(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, crate::frontend::oir::ProcessFailure> {
+        execute::run_process_with_execution(&self.witness, Some(entry), execution).map_err(
+            |error| match error {
+                execute::OwnedRunFailure::ProcessSetup => {
+                    crate::frontend::oir::ProcessFailure::Setup
+                }
+                error => {
+                    crate::frontend::oir::ProcessFailure::Diagnostic(error.diagnostic(sources))
+                }
+            },
         )
     }
 

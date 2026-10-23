@@ -1,4 +1,4 @@
-# Experimental typed checking and bounded reference execution
+# Experimental typed checking and reference execution
 
 Source-integration status: experimental. The ownership source subset uses the
 production `typed-preview` route. See the
@@ -6,7 +6,7 @@ production `typed-preview` route. See the
 for the exact source, compiler, target and validation scope. This describes the
 current repository, not support in an older released binary.
 
-Status: experimental. Checking is non-executing; explicit run is bounded reference execution. A narrower optional [LLVM native compilation preview](native-preview.md) is also available. `typed-preview` is a provisional selector,
+Status: experimental. Checking is non-executing; explicit file runs retain bounded reference execution. Typed projects may select the hosted execution policy below. A narrower optional [LLVM native compilation preview](native-preview.md) is also available. `typed-preview` is a provisional selector,
 not a final language edition or a completed M1/M2 milestone. The scoped design
 and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md),
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
@@ -1605,3 +1605,24 @@ are rejected. Default routing is unchanged and failures have no fallback.
 See the [complete LXI1/LXS1 contract](streaming-lexical-provider.md),
 [actual source component](../fixtures/typed-streaming-lexer/README.md) and
 [qualification boundary](../docs/architecture/streaming-lexical-provider.md).
+
+## Project execution policy
+
+A typed project's `oxid.toml` can select execution independently of its build profile:
+
+```toml
+[execution]
+policy = "hosted"
+```
+
+`hosted` has no cumulative execution-work budget. `bounded` retains the existing
+1,000,000-unit budget and is the default when the setting is absent. These units
+count language operations and byte work rather than processor instructions.
+The fuel schedules and fuel-admission limits elsewhere in this document describe
+bounded execution. Both policies retain type, ownership, arithmetic, bounds,
+allocation, live-storage and compiler-resource checks.
+
+Each workspace binary chooses its own policy; library dependencies cannot change
+the caller's policy. `run`, native `build` and declared project tests use the same
+setting. The `dev`/`release` optimization choice is independent. See the
+[execution policy contract](../rfcs/0044-project-execution-policy.md).

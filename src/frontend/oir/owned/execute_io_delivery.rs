@@ -184,8 +184,12 @@ impl Machine<'_, '_> {
                 .range_mut(&value, start, end)
                 .map_err(|failure| heap_failure(failure, span))?,
         };
-        binary_io::admit_delivery(bytes.len(), delivery.cost, &mut self.fuel)
-            .map_err(|failure| io_failure(failure, span))?;
+        let mut operation_fuel = self.fuel;
+        let admission = binary_io::admit_delivery(bytes.len(), delivery.cost, &mut operation_fuel);
+        if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
+            self.fuel = operation_fuel;
+        }
+        admission.map_err(|failure| io_failure(failure, span))?;
         let value = if operation == Function::ReadSome {
             match binary_io::read_admitted(bytes) {
                 binary_io::ReadStatus::Data(value) => OperationValue::Status {

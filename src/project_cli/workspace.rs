@@ -522,13 +522,24 @@ impl Workspace {
                 .get(name)
                 .ok_or_else(|| format!("unknown declared project test `{name}`"))?;
             let entry = local_source(&member.root, path)?;
+            let execution = execution_policy(&member.snapshot.manifest)?;
             if !member.library() {
-                return Ok(prepared[slot].execute(frontend::PackageCommand::Run, false, true));
+                return Ok(prepared[slot].execute_with_execution(
+                    frontend::PackageCommand::Run,
+                    false,
+                    true,
+                    execution,
+                ));
             }
             let session = frontend::prepare_package_project(&graphs[slot].specs, Some(&entry))
                 .map_err(|error| error.message())?;
             verify_test_dependencies(&prepared[slot], &session)?;
-            return Ok(session.execute(frontend::PackageCommand::Run, false, true));
+            return Ok(session.execute_with_execution(
+                frontend::PackageCommand::Run,
+                false,
+                true,
+                execution,
+            ));
         }
         if options.command() == "test" {
             return self.tests(
@@ -570,10 +581,11 @@ impl Workspace {
                 .iter()
                 .position(|candidate| *candidate == selected[0])
                 .expect("selected session");
-            return Ok(prepared[slot].execute(
+            return Ok(prepared[slot].execute_with_execution(
                 frontend::PackageCommand::Run,
                 options.json(),
                 process,
+                execution_policy(&self.members[selected[0]].snapshot.manifest)?,
             ));
         }
         let mut failed = 0;
