@@ -179,7 +179,7 @@ struct Carriers {
     local_reservations: [LocalReservation; 2],
     local_rows: [LocalDecl; 2],
     operations: [Function; 4],
-    iteration: std::array::IntoIter<Function, 10>,
+    iteration: std::array::IntoIter<Function, 11>,
 }
 pub(super) fn extra_bytes() -> usize {
     std::mem::size_of::<Carriers>()

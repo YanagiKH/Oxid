@@ -43,6 +43,11 @@ unchanged length, and `false` with no mutation otherwise.
 it preserves the text owner and the existing destination prefix. Its return is
 the underlying `GrowStatus`.
 
+`into_bytes(Text) -> ByteBuf` consumes the text and returns its existing byte
+buffer without copying or allocating. The consumed text cannot be used again.
+It uses [`alloc::bytes::take`](0046-owned-buffer-transfer.md) on the private
+field; no borrow escapes the call.
+
 The API exposes no reference to the private buffer and no returned or stored
 borrow. Text can move, occur in existing admitted records/enums, or be borrowed
 using the existing call-only ownership rules. Cleanup uses existing recursive
@@ -54,7 +59,7 @@ ABI.
 
 `apps/utf8-normalize` is a two-binary workspace with a shared external local
 dependency on the text library. The application reads bytes to EOF, validates
-them, changes CRLF and CR to LF in a copied working buffer, and writes all output
+them, changes CRLF and CR to LF in the same owned buffer, and writes all output
 with partial-write and interrupted-call handling. Invalid UTF-8 yields process
 status 65 and no output. Capacity failure is 70, allocation/live-memory refusal
 is 71, and I/O or no-progress writes are 74. Empty input succeeds with no output.

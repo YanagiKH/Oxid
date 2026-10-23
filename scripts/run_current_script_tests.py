@@ -55,13 +55,17 @@ HISTORICAL_ONLY = {
         "requires the frozen source identity before its predecessor binding mutation suite"),
 }
 
-# This complete source-pinned module tests the byte-buffer policy on its exact
-# parent compiler. ci.yml replays it unchanged in a separate required job.
+# These complete source-pinned modules test policies on their exact parent
+# compilers. ci.yml replays them unchanged in separate required jobs.
 PREDECESSOR_ONLY = {
     "test_byte_buffer_compatibility": (
         "6b0213e3f6ce75d3ea4fed2566d1b4eae0ece002db2c95cdff7dea4c41da669c",
         "2e3fe21f76d0027d2b24cb5c7f02ba38ad354809",
         "asserts the complete pre-hosted compiler source identity"),
+    "test_hosted_execution_compatibility": (
+        "67a0aff2a4a77e0b8a202871492841f09f0c164bf27944bd012b35b1f44adaaf",
+        "559a6e6aa0b2ab2022d8fa37546ac62aeac9954e",
+        "asserts the complete compiler source identity before buffer transfer"),
 }
 
 

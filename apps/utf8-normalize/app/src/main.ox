@@ -11,9 +11,7 @@ use std::io::write_some;
 use crate::text::Text;
 use crate::text::FromBytes;
 use crate::text::from_bytes;
-use crate::text::append_to_bytes;
-
-enum Normalized { Ok(ByteBuf), Error(i32) }
+use crate::text::into_bytes;
 
 enum Loaded {
     Ok(ByteBuf), CapacityOverflow, AllocationFailed, MemoryLimit, IoError(i32)
@@ -70,24 +68,11 @@ fn write_all(bytes: &[u8]) -> WrittenAll {
     return WrittenAll::Ok;
 }
 
-
-fn growth_code(status: GrowStatus) -> i32 {
-    match status {
-        GrowStatus::Ok => { return 0; },
-        GrowStatus::CapacityOverflow => { return 70; },
-        GrowStatus::AllocationFailed => { return 71; },
-        GrowStatus::MemoryLimit => { return 71; },
-    }
-}
-
-fn normalize(document: &Text) -> Normalized {
-    let mut input = new();
-    let copied = append_to_bytes(&*document, &mut input);
-    let copy_code = growth_code(copied);
-    if copy_code != 0 { return Normalized::Error(copy_code); }
+fn normalize(document: Text) -> ByteBuf {
+    let mut input = into_bytes(document);
     let length = normalize_bytes(&mut input);
     truncate(&mut input, length);
-    return Normalized::Ok(input);
+    return input;
 }
 
 fn normalize_bytes(input: &mut [u8]) -> i32 {
@@ -114,17 +99,12 @@ fn normalize_bytes(input: &mut [u8]) -> i32 {
 }
 
 fn emit(document: Text) -> i32 {
-    let normalized = normalize(&document);
-    match normalized {
-        Normalized::Error(code) => { return code; },
-        Normalized::Ok(output) => {
-            let written = write_all(&output);
-            match written {
-                WrittenAll::Ok => { return 0; },
-                WrittenAll::Error(code) => { return 74; },
-                WrittenAll::WriteZero => { return 74; },
-            }
-        },
+    let output = normalize(document);
+    let written = write_all(&output);
+    match written {
+        WrittenAll::Ok => { return 0; },
+        WrittenAll::Error(code) => { return 74; },
+        WrittenAll::WriteZero => { return 74; },
     }
 }
 

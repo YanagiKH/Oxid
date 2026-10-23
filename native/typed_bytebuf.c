@@ -56,6 +56,19 @@ int32_t __oxid_bytebuf_operation(int32_t operation, void *buffer, int32_t size,
         if (status) return status;
         *(uint64_t *)result = 0;
         return 0;
+    case 10: { /* take: transfer the allocation and leave an empty source */
+        if (!value) return OXID_BUFFER_DESCRIPTOR;
+        status = oxid_bytebuf_validate(&execution_heap, value);
+        if (status) return status;
+        uintptr_t input_address = (uintptr_t)value;
+        uintptr_t output_address = (uintptr_t)result;
+        uintptr_t distance = input_address < output_address
+            ? output_address - input_address : input_address - output_address;
+        if (distance < sizeof(*value)) return OXID_BUFFER_DESCRIPTOR;
+        *(oxid_bytebuf *)result = *value;
+        *value = (oxid_bytebuf){0, 0, 0};
+        return 0;
+    }
     default:
         return OXID_BUFFER_DESCRIPTOR;
     }

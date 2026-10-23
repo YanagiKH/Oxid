@@ -1,15 +1,52 @@
 """Check independent UTF-8 oracle coverage and lock-refusal controls."""
 import copy
 from pathlib import Path
+import platform
 import shutil
 import tempfile
 import tomllib
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import verify_utf8_text_app as app
 
 
 class Utf8Oracle(unittest.TestCase):
+    @unittest.skipUnless(platform.system() == "Linux", "command capture uses /dev/full")
+    def test_memory_boundary_input_allowance_does_not_expand_other_capture_limits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            default_root, text_root = root / "default", root / "text"
+            default_root.mkdir()
+            text_root.mkdir()
+            default = app.Oracle(default_root, {}, {})
+            text = app.TextOracle(text_root, {}, {})
+
+            def invoke(stdout=b"", stderr=b""):
+                def run(*args, **kwargs):
+                    kwargs["stdout"].write(stdout)
+                    kwargs["stderr"].write(stderr)
+                    return SimpleNamespace(returncode=0)
+                return patch("verify_owned_enum_app.subprocess.run", side_effect=run)
+
+            boundary = b"A" * app.MAX_CAPTURE
+            with invoke():
+                default.command("default-exact", ["mock"], root, boundary, stdout=b"")
+                with self.assertRaisesRegex(ValueError, "capture exceeds bound"):
+                    default.command("default-one-over", ["mock"], root, boundary + b"A")
+                text.command("text-exact", ["mock"], root, boundary + b"A", stdout=b"")
+                with self.assertRaisesRegex(ValueError, "capture exceeds bound"):
+                    text.command("text-one-over", ["mock"], root, boundary + b"AA")
+            with invoke(stdout=boundary):
+                text.command("stdout-exact", ["mock"], root, stdout=boundary)
+            for stream in ("stdout", "stderr"):
+                with self.subTest(stream=stream), invoke(**{stream: boundary + b"A"}):
+                    with self.assertRaisesRegex(ValueError, "capture exceeds bound"):
+                        text.command(stream + "-one-over", ["mock"], root)
+            self.assertEqual([row["status"] for row in text.commands],
+                             ["passed", "failed", "passed", "failed", "failed"])
+
     def test_strict_decoding_precedes_all_output_and_only_changes_line_endings(self):
         self.assertEqual(app.expected(b"\xef\xbb\xbfA\r\nB\rC\n\x00"),
                          (0, b"\xef\xbb\xbfA\nB\nC\n\x00"))

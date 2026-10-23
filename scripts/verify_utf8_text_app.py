@@ -19,7 +19,7 @@ import sys
 import time
 import tomllib
 
-from verify_owned_enum_app import Oracle, ROOT, digest, require, save, tree_hashes
+from verify_owned_enum_app import Oracle, ROOT, MAX_CAPTURE, digest, require, save, tree_hashes
 from verify_typed_package_lock import framed, reference_source_checksum
 
 APP = Path("apps/utf8-normalize")
@@ -147,6 +147,9 @@ def summary(rows, operation, total):
 
 
 class TextOracle(Oracle):
+    def input_capture_limit(self):
+        return MAX_CAPTURE + 1
+
     def no_tools(self):
         return {"OXID_LLVM_BIN": str(self.spy), "OXID_APP_SPY_MARKER": str(self.marker)}
 
@@ -162,8 +165,14 @@ class TextOracle(Oracle):
                 require(status == 0, "Unicode scalar corpus construction failed")
                 _, index = self.command(label + "-" + name, argv, cwd, payload, 0, output, overrides=overrides)
                 indexes.append(index)
-            # Two large owners cannot both fit in the shared 16 MiB live heap.
-            _, index = self.command(label + "-memory-refusal", argv, cwd, b"A" * (8 * 1024 * 1024),
+            # Ownership transfer permits the largest current growth boundary
+            # without allocating a second copy of the validated text.
+            boundary = b"A" * (8 * 1024 * 1024)
+            _, index = self.command(label + "-no-copy-boundary", argv, cwd, boundary,
+                                    0, boundary, overrides=overrides)
+            indexes.append(index)
+            # Growing beyond that capacity still needs staged replacement.
+            _, index = self.command(label + "-memory-refusal", argv, cwd, boundary + b"A",
                                     71, b"", overrides=overrides)
             indexes.append(index)
         _, index = self.command(label + "-directory-input", argv, cwd, status=74, stdout=b"",
@@ -273,6 +282,9 @@ class TextOracle(Oracle):
              "fn main()->i32{let t=new_text();let moved=t;return byte_len(&t);}", "E0310", None),
             ("moved-input", "use alloc::bytes::new;use alloc::bytes::len;use crate::text::from_bytes;"
              "fn main()->i32{let b=new();let moved=from_bytes(b);return len(&b);}", "E0310", None),
+            ("moved-into-bytes", "use crate::text::new_text;use crate::text::into_bytes;"
+             "use crate::text::byte_len;fn main()->i32{let t=new_text();let bytes=into_bytes(t);"
+             "return byte_len(&t);}", "E0310", None),
             ("private-owner", "use crate::text::new_text;fn main()->i32{let t=new_text();"
              "let b=t.bytes;return 0;}", None, "private"),
             ("stale-library", None, "E0001", "lock is out of date"),

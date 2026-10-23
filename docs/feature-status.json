@@ -1287,6 +1287,35 @@
       "evidence": []
     },
     {
+      "id": "owned-buffer-transfer",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Transfer a byte buffer without copying or allocating, leaving an empty reusable source.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; native Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Requires an exclusive ByteBuf borrow and existing whole-root ownership rules. No general partial field moves, escaping references or stable ABI. Compiler, execution and live-memory limits remain.",
+      "spec": [
+        "rfcs/0046-owned-buffer-transfer.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/experimental_builtins.rs",
+        "src/frontend/oir/owned/execute_experimental.rs",
+        "src/frontend/oir/owned/native_experimental.rs",
+        "native/typed_bytebuf.c"
+      ],
+      "tests": [
+        "tests/byte_buffer_transfer.rs",
+        "tests/bytebuf_transfer.c",
+        "scripts/test_bytebuf_transfer.py",
+        "scripts/test_buffer_transfer_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
       "id": "owned-utf8-text",
       "status": "experimental",
       "classification": "production-path",

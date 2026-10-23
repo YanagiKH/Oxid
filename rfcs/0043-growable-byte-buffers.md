@@ -19,6 +19,7 @@ try_push(&mut ByteBuf, byte: u8) -> GrowStatus
 try_extend(&mut ByteBuf, source: &[u8]) -> GrowStatus
 try_resize(&mut ByteBuf, length: i32, fill: u8) -> GrowStatus
 truncate(&mut ByteBuf, length: i32) -> ()
+take(&mut ByteBuf) -> ByteBuf
 ```
 
 `GrowStatus` has `Ok`, `CapacityOverflow`, `AllocationFailed`, and `MemoryLimit`
@@ -31,6 +32,12 @@ initializes every newly exposed byte. Spare capacity is never readable.
 Capacity growth is an implementation choice. There is no implicit clone,
 implicit numeric conversion, byte arithmetic or buffer literal. Existing
 `u8` conversion rules apply to values passed to these functions.
+
+`take` transfers the buffer's allocation, length and capacity to its result and
+leaves the source empty with zero capacity. It neither allocates nor copies
+initialized bytes, and works at the live-memory limit. The source remains
+usable. It requires an exclusive buffer borrow; existing overlap and ownership
+rules apply. See [owned buffer transfer](0046-owned-buffer-transfer.md).
 
 ## Borrowing and ranges
 

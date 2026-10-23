@@ -38,6 +38,7 @@ This appends U+1F44B (the waving hand emoji) and returns its UTF-8 byte length,
 | `validate(&[u8])` | Accept UTF-8 or return the first invalid sequence's byte offset. |
 | `new_text()` | Create empty text. |
 | `from_bytes(ByteBuf)` | Move valid bytes into text; return the original buffer on invalid input. |
+| `into_bytes(Text)` | Consume the text and return its byte buffer without copying or allocating. |
 | `byte_len(&Text)` | Count UTF-8 bytes. |
 | `scalar_count(&Text)` | Count Unicode scalar values, rather than grapheme clusters. |
 | `append_utf8(&mut Text, &[u8])` | Validate the complete input before appending it. |

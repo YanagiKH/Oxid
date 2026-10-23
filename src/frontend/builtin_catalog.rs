@@ -332,6 +332,8 @@ mod compact_inventory_tests {
 
     #[test]
     fn compact_inventory_preserves_legacy_variants_and_all_extension_bits() {
+        assert_eq!(experimental::Item::Take as u8, 14);
+        assert_eq!(experimental::Function::Take as u8, 10);
         assert_eq!(std::mem::size_of::<ExtendedSet>(), 3);
         assert_eq!(std::mem::align_of::<ExtendedSet>(), 1);
         assert_eq!(std::mem::size_of::<BuiltinSet>(), 4);
@@ -371,7 +373,7 @@ mod compact_inventory_tests {
                 assert!(accumulated.experimental().contains(item));
             }
             assert_eq!(accumulated.experimental().enums(), 3);
-            assert_eq!(accumulated.experimental().functions(), 10);
+            assert_eq!(accumulated.experimental().functions(), 11);
         }
     }
 }
