@@ -43,6 +43,11 @@ commands. Workspace lock admission always covers the complete member roster;
 workspace builds check libraries and optionally cache each binary's native
 object. Native doctor validates the full workspace without running member code.
 See [workspace workflows](TYPED_PROJECTS.md#workspaces).
+`oxid package --frozen [--output application.oxpkg.tar]` bundles the complete
+local source closure with its existing lock. `package --verify ARCHIVE` checks
+integrity; `package --extract ARCHIVE --output NEW_DIRECTORY` validates and
+extracts without replacing existing destinations. See
+[source packages](../rfcs/0038-typed-source-packages.md).
 Run/compile require an original zero-argument scalar main in the root file.
 Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
 `pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),

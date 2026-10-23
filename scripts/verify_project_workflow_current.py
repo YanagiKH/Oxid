@@ -32,7 +32,8 @@ PACKAGE_CHANGED = frozenset(("src/frontend/project.rs", "src/frontend/declaratio
                             "src/frontend/oir/project.rs", "src/frontend/oir/source.rs",
                             "src/frontend/oir/source/sealed.rs"))
 CHANGED = ORCHESTRATION_CHANGED | PACKAGE_CHANGED
-ADDED = frozenset(("src/project_cli.rs", "src/project_cli/workspace.rs", "src/project_lock.rs", "src/doctor_cli.rs",
+ADDED = frozenset(("src/project_cli.rs", "src/project_cli/workspace.rs", "src/project_cli/package.rs",
+                   "src/project_package.rs", "src/project_package/archive.rs", "src/project_lock.rs", "src/doctor_cli.rs",
                    "src/frontend/native_cache.rs", "src/frontend/native/doctor.rs", "src/frontend/project/packages.rs",
                    "src/frontend/project/packages/tests.rs"))
 INSTRUMENTED = frozenset(("src/frontend/declaration_index.rs", "src/frontend/parser.rs",

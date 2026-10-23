@@ -47,6 +47,14 @@ pub(crate) struct Existing {
     bytes: Vec<u8>,
 }
 
+impl Existing {
+    /// Exact bytes admitted and verified with this lock; never reopen its path
+    /// to construct a source package after checking a different read.
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 fn framed(hasher: &mut Sha256, bytes: &[u8]) {
     hasher.update((bytes.len() as u64).to_le_bytes());
     hasher.update(bytes);
