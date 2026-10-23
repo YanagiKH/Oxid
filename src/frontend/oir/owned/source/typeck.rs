@@ -2761,6 +2761,12 @@ fn expression_type(
             }
             ValueTy::Owned(AggregateTy::Record(*record))
         }
+        ExprKind::ByteString { bytes } => {
+            program.work().debit(1, expr.span, "byte string type")?;
+            let array = FixedArrayTy::check(Ty::U8, bytes.len())
+                .map_err(|_| error("E0500", "invalid byte string array length", expr.span))?;
+            ValueTy::Owned(AggregateTy::FixedArray(array))
+        }
         ExprKind::ArrayLiteral { elements } => {
             program.work().debit(1, expr.span, "array type literal")?;
             if elements.is_empty() {

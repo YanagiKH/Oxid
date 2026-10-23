@@ -180,7 +180,7 @@ fn call_result(value: CallResult) -> String {
 
 fn rvalue(value: &Rvalue) -> String {
     match value {
-        Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
+        Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } | Rvalue::U8(_) => {
             unreachable!("u8 is outside this predecessor fixture or observation domain")
         }
         Rvalue::Load(place) => object([

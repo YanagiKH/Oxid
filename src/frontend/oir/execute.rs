@@ -354,6 +354,7 @@ fn execute_with_execution(
                 }
             };
             let value = match assign.value {
+                Rvalue::U8(value) => Scalar::U8(value),
                 Rvalue::Load(place) => load(active, place)?,
                 Rvalue::CheckedI32ToU8 {
                     operand, name_span, ..

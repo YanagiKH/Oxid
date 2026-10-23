@@ -422,6 +422,9 @@ fn roles_with_syntax(
     }
     for expression in &program.expressions {
         match &expression.kind {
+            ExprKind::ByteString { .. } => {
+                roles[expression.span.start] |= TIGHT_AFTER;
+            }
             ExprKind::Negate { .. } | ExprKind::Number { negative: true, .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }

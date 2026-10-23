@@ -1287,6 +1287,34 @@
       "evidence": []
     },
     {
+      "id": "byte-string-literals",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Write UTF-8 text and arbitrary binary data as move-only fixed byte arrays.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; native Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "At most 1024 decoded bytes per literal. Existing exact array types, move/borrow rules and execution limits apply. No scalar byte literals, raw strings, general String type or implicit copies.",
+      "spec": [
+        "rfcs/0047-byte-string-literals.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/byte_strings.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/lower.rs"
+      ],
+      "tests": [
+        "tests/byte_strings.rs",
+        "src/frontend/byte_strings.rs",
+        "src/frontend/oir/owned/source/resolver_paid_tests.rs"
+      ],
+      "evidence": []
+    },
+    {
       "id": "owned-buffer-transfer",
       "status": "experimental",
       "classification": "production-path",

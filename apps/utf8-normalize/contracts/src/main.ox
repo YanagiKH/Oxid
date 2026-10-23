@@ -403,7 +403,7 @@ fn check_memory_refusal() -> i32 {
 fn check_into_bytes() -> i32 {
     let empty = into_bytes(new_text());
     if len(&empty) != 0 || capacity(&empty) != 0 { return -84; }
-    let expected = [byte(0), byte(65), byte(194), byte(162), byte(226), byte(130), byte(172), byte(240), byte(159), byte(152), byte(128)];
+    let expected = b"\0A¢€😀";
     let mut owner = new();
     if !grew(try_reserve(&mut owner, 4096)) { return -85; }
     if !grew(try_extend(&mut owner, &expected)) { return -85; }

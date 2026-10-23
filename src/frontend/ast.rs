@@ -117,6 +117,10 @@ pub enum ExprKind {
     ArrayLiteral {
         elements: Vec<ExprId>,
     },
+    ByteString {
+        contents: Span,
+        length: u16,
+    },
     IndexRead {
         /// A named root, optionally followed by a bounded record field path.
         base: Span,
@@ -1023,6 +1027,13 @@ impl Program {
                     elements.len() <= super::parser::MAX_ARRAY_ELEMENTS
                         && elements.iter().all(|element| earlier(*element))
                 }
+                ExprKind::ByteString { contents, length } => {
+                    valid(*contents)
+                        && contents.file == expression.span.file
+                        && contents.start.checked_sub(2) == Some(expression.span.start)
+                        && contents.end.checked_add(1) == Some(expression.span.end)
+                        && usize::from(*length) <= super::byte_strings::MAX_BYTES
+                }
                 ExprKind::IndexRead { base, index } => valid(*base) && earlier(*index),
                 ExprKind::ArrayLength { base } => valid(*base),
                 ExprKind::Group(inner) => earlier(*inner),
@@ -1069,6 +1080,7 @@ impl Program {
                 ExprKind::StructLiteral { .. }
                 | ExprKind::FieldRead { .. }
                 | ExprKind::ArrayLiteral { .. }
+                | ExprKind::ByteString { .. }
                 | ExprKind::IndexRead { .. }
                 | ExprKind::ArrayLength { .. } => true,
                 ExprKind::Call { args, .. } => {

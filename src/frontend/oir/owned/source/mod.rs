@@ -2,6 +2,7 @@
 pub(super) mod association;
 mod budget;
 mod builtin_lower;
+mod byte_string_resources;
 mod experimental_lower;
 pub(super) mod hir;
 mod hir_budget;

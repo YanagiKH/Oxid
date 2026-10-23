@@ -166,6 +166,7 @@ enum Rvalue {
     },
     Bool(bool),
     I32(i32),
+    U8(u8),
     Unit,
     Copy(Operand),
     CompareScalar {

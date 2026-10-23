@@ -63,7 +63,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_buffer_transfer_compatibility.py', current)
+        self.assertIn('scripts/verify_byte_string_compatibility.py', current)
         self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
 
         replay = block(self.ci, 'historical-qualification', 2)
@@ -89,6 +89,13 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('hosted-source-policy-replay.py" --repo .', hosted)
         self.assertIn('name: hosted-source-policy-predecessor', hosted)
         self.assertNotRegex(hosted, r'(?m)^    if:|continue-on-error:')
+
+        transfer = block(self.ci, 'buffer-transfer-source-policy-predecessor', 2)
+        self.assertIn('ref: c45d519127d314f522762c35879c0c485994ea42', transfer)
+        self.assertIn('scripts/run_buffer_transfer_predecessor_tests.py', transfer)
+        self.assertIn('buffer-transfer-source-policy-replay.py" --repo .', transfer)
+        self.assertIn('name: buffer-transfer-source-policy-predecessor', transfer)
+        self.assertNotRegex(transfer, r'(?m)^    if:|continue-on-error:')
 
     def test_historical_provenance_reads_are_authorized_without_event_spoofing(self):
         for workflow in (self.ci, self.release, self.historical):

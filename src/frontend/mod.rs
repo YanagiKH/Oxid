@@ -2,6 +2,7 @@
 mod ast;
 mod build_config;
 mod builtin_catalog;
+mod byte_strings;
 mod declaration_index;
 mod diagnostic;
 mod driver;

@@ -11,11 +11,11 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
-import legacy_scalar_observer_u8 as adapter
+import legacy_scalar_observer_byte_strings as adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-ADDED_SOURCES = ("experimental_builtins.rs", "oir/owned_types/resources.rs")
+ADDED_SOURCES = ("experimental_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs")
 MODES = (("parser", ()), ("static", ()), ("static", ("--resolve-only",)))
 
 # Raw stdout hashes from separately built, unchanged parent158 observers
@@ -68,6 +68,18 @@ class ByteRangeObserverTests(unittest.TestCase):
                                      ("outside_subset", "borrow_argument"))
                     self.assertEqual(value["span"], {"file_id": 0, "start": source.index(argument),
                                                      "end": source.index(argument) + len(argument)})
+                    self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
+
+    def test_byte_strings_are_explicitly_outside_every_legacy_scalar_domain(self):
+        for literal in ('b""', 'b"Hello"', r'b"A\0\xFF"', r'b"\u{1F44B}"'):
+            source = "fn f()->(){let bytes=" + literal + ";return;}"
+            for kind, args in MODES:
+                with self.subTest(literal=literal, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]),
+                                     ("outside_subset", "byte_string"))
+                    self.assertEqual(value["span"], {"file_id": 0, "start": source.index(literal),
+                                                     "end": source.index(literal) + len(literal)})
                     self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
 
     def test_parent_scalar_and_borrow_wire_outputs_remain_byte_identical(self):

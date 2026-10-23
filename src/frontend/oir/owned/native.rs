@@ -3012,6 +3012,7 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
                 | Rvalue::NotBool { .. }
                 | Rvalue::Bool(_)
                 | Rvalue::I32(_)
+                | Rvalue::U8(_)
                 | Rvalue::Unit
                 | Rvalue::Copy(_)
                 | Rvalue::CompareScalar { .. } => Continuation::Unsplit,
@@ -4230,6 +4231,7 @@ fn emit_scalar(
     let value = match assign.value {
         Rvalue::Bool(v) => if v { "true" } else { "false" }.to_string(),
         Rvalue::I32(v) => v.to_string(),
+        Rvalue::U8(v) => v.to_string(),
         Rvalue::Unit => "0".into(),
         Rvalue::Copy(v) => load_operand(out, f, &format!("{name}_value"), v),
         Rvalue::Load(p) => load_slot(

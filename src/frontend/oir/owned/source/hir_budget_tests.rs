@@ -13,7 +13,8 @@ use std::mem::{align_of, size_of};
 fn rfc0030_fixed_successor() -> usize {
     let bytes = super::super::u8_resources::fixed_bytes();
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(bytes, 15_400 + 624 + 712); // association plan/caller plus actual-capacity walk roles
+    // The association plan and caller each gain one HirCounts word.
+    assert_eq!(bytes - 2 * size_of::<usize>(), 15_400 + 624 + 712);
     bytes
 }
 
@@ -712,7 +713,10 @@ fn c3a_complete_fallible_return_envelopes_and_copies_are_prepaid() {
     assert!(size_of::<CursorTemporaries>() >= cursors);
     assert!(size_of::<ScalarReturnEnvelope>() >= scalars);
     assert_eq!(
-        plan.fixed - rfc0030_fixed_successor() - byte_storage_resources::fixed_bytes(),
+        plan.fixed
+            - rfc0030_fixed_successor()
+            - byte_storage_resources::fixed_bytes()
+            - super::super::byte_string_resources::fixed_bytes(),
         size_of::<typeck::TypedOwnedProgram<'_>>()
             + size_of::<PlanReturnEnvelope>()
             + size_of::<CapacityReturnEnvelope>()
@@ -841,6 +845,7 @@ fn c3_t0_passive_controls_add_one_fixed_bank_and_exact_function_outputs() {
         base.fixed
             - rfc0030_fixed_successor()
             - byte_storage_resources::fixed_bytes()
+            - super::super::byte_string_resources::fixed_bytes()
             - legacy_fixed
             - typeck::borrowed_check_carrier_bytes()
             - resolve::denied_type_probe_carrier_bytes()
@@ -1179,7 +1184,15 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
     // Measured 11840 -> 11888: the owned index carrier grows by 24 bytes,
     // and HirCounts.signatures adds 8 to each of three complete observations.
     // The borrowed output-anchor header adds a further 8 to the resolved owner.
-    assert_eq!(observation, (11896, 320, 24, 24));
+    assert_eq!(
+        (
+            observation.0 - 9 * size_of::<usize>(),
+            observation.1,
+            observation.2,
+            observation.3
+        ),
+        (11896, 320, 24, 24)
+    );
     let checker = checker_only_components();
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
     let before_observation = size_of::<typeck::TypedOwnedProgram<'_>>()
@@ -1201,6 +1214,7 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
         base.fixed
             - rfc0030_fixed_successor()
             - byte_storage_resources::fixed_bytes()
+            - super::super::byte_string_resources::fixed_bytes()
             - before_observation,
         observation.0
     );
@@ -1333,14 +1347,27 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
         + size_of::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>();
     let delta = resolve::enum_type_observation_return_bytes() - old_return;
     assert_eq!(
-        plan.fixed - rfc0030_fixed_successor() - byte_storage_resources::fixed_bytes() - old_fixed,
+        plan.fixed
+            - rfc0030_fixed_successor()
+            - byte_storage_resources::fixed_bytes()
+            - super::super::byte_string_resources::fixed_bytes()
+            - old_fixed,
         delta
     );
     #[cfg(target_pointer_width = "64")]
     {
         // The added signature count widens the complete returned facts by 8.
-        assert_eq!(delta, 896);
-        assert_eq!(observation_components(), (11896, 320, 24, 24));
+        assert_eq!(delta - 3 * size_of::<usize>(), 896);
+        let observation = observation_components();
+        assert_eq!(
+            (
+                observation.0 - 9 * size_of::<usize>(),
+                observation.1,
+                observation.2,
+                observation.3
+            ),
+            (11896, 320, 24, 24)
+        );
         assert_eq!(
             checker_only_components(),
             (33448 + 64 * 152, 1928 + 472, 24, 784, 88)

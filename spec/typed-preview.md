@@ -146,8 +146,8 @@ the historical validation claims linked above.
 A u8 scalar is exactly 0..255. Construct one through an explicitly named i32
 local or parameter using `x.to_u8_checked()`; an out-of-range value fails with
 E0610. Widen a named byte with `b.to_i32()`. Decimal literals remain i32 even
-under byte annotations. There is no implicit coercion, u8 arithmetic or byte
-literal syntax. The helper `byte` in the
+under byte annotations. There is no implicit coercion, u8 arithmetic or scalar
+byte literal syntax. The helper `byte` in the
 [pilot](../fixtures/typed-byte-storage/main.ox) is an ordinary declared function.
 That pilot moves `[0,127,128,255]` through a helper, mutates index1 through an
 exclusive slice, and sums `[0,255,128,255]` through a shared slice to return638.
@@ -159,6 +159,27 @@ copy byte snapshots. Exact fixed-array and whole-array slice calls retain
 existing whole-owner loans, explicit reborrows and evaluation/fuel order.
 An indexed byte must first be bound to a local before widening; `a[i].to_i32()`
 is not a supported receiver.
+
+### Byte string literals
+
+`b"Hello, Oxid 👋"` creates a move-only `[u8; 16]`. The adjacent `b` prefix is
+required. Raw Unicode text becomes UTF-8 bytes; the length counts decoded bytes,
+not characters. `b""` infers `[u8; 0]` without an annotation. Each literal is
+limited to 1024 decoded bytes, just like other fixed arrays.
+
+Supported escapes are `\\`, `\"`, `\n`, `\r`, `\t`, `\0`, `\xNN` (exactly two
+ASCII hexadecimal digits), and `\u{H}` (one through six ASCII hexadecimal
+digits naming a Unicode scalar value). Thus `b"\xFF"` is valid binary data,
+while `b"\u{1F44B}"` contains the four UTF-8 bytes for 👋. Raw line breaks,
+unknown escapes, surrogate values and values above U+10FFFF are rejected with
+E0101; exceeding the decoded length limit gives E0400. These errors precede
+native tool execution. Formatting preserves the literal's exact spelling.
+
+Byte strings use existing array moves, indexing, mutable assignments and
+array/slice call borrows. Their inferred type must match exactly. They add no
+implicit integer conversions, copies, character literals or general `String`
+type. Quoted strings without the `b` prefix remain unsupported in this edition.
+See [RFC 0047](../rfcs/0047-byte-string-literals.md).
 
 Record fields also admit `u8` and `[u8; N]`, including unused, nested and
 imported declarations and N=0, under
@@ -736,12 +757,14 @@ product        := unary (("*" | "/" | "%") unary)*
 unary          := ("!" | "-") unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
                 | item_path "(" arguments? ")" | decimal | "-" decimal
+                | byte_string
                 | field_path | item_path "{" field_inits? "}"
                 | variant_path ("(" expression ")")?
                 | array_base "[" expression "]" | array_base "." "len" "(" ")"
 field_path     := name ("." name)+
 array_base     := name | field_path
 decimal        := ASCII_DIGIT+
+byte_string    := "b" '"' byte_string_contents '"'
 field_inits    := name ":" expression ("," name ":" expression)* ","?
 arguments      := argument ("," argument)*
 argument       := expression | borrow_argument

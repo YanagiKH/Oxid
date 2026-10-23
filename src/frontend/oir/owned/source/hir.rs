@@ -118,6 +118,9 @@ pub(super) enum ExprKind {
     ArrayLiteral {
         elements: Vec<ExprId>,
     },
+    ByteString {
+        bytes: Vec<u8>,
+    },
     IndexRead {
         base: BindingId,
         base_span: Span,
