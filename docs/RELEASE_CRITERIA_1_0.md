@@ -6,8 +6,8 @@
 
 - [原生專案流程](TYPED_PROJECTS.md) 支援建立專案、檢查程式、執行、建置、測試與格式化。設定集中於 `oxid.toml`；建置成功才替換執行檔，失敗時保留上次的產物。目前功能仍屬實驗性質。
 - Linux 的 typed 本地路徑依賴已接入單一 compiler session，保留套件自己的 `crate::`、可見性、所有權與型別身分。[Byte count](../apps/byte-count/README.md) 是 fixture 之外的三套件應用；其獨立驗證涵蓋直譯／原生輸出、依賴修改、建置失敗保留產物與移除來源後部署。typed 鎖檔另記錄本機依賴的實際載入來源，支援 locked／offline／frozen 檢查。typed workspace 已加入成員選擇、library 檢查與涵蓋完整依賴圖的共用鎖檔，並設有資源上限；來源封裝已加入完整本地依賴配置、保留輸入驗證與原子解壓；可選的相對路徑 native 建置支援固定工具鏈與保留來源配置下的搬移重建；registry、vendor、逐模組增量建置與更廣泛的產物驗收仍待完成。
-- CI 已配置五個編譯器 host：Linux x86_64、Linux ARM64、Windows x86_64、macOS x86_64、macOS ARM64。各 host 的結果說明 Rust 實作的編譯器在該環境的行為；目前 Oxid native 建置與執行範圍仍限 **Linux x86_64、LLVM 19.1.7、`-O0`、bounded policy**。
-- 現有 native 回歸會分別使用 debug／release 建置的 Rust 編譯器。Oxid 程式本身的正式最佳化 profile、除錯資訊及一般 hosted execution policy 尚待完成。
+- CI 已配置五個編譯器 host：Linux x86_64、Linux ARM64、Windows x86_64、macOS x86_64、macOS ARM64。各 host 的結果說明 Rust 實作的編譯器在該環境的行為；目前 Oxid native 建置與執行範圍仍限 **Linux x86_64、LLVM 19.1.7、`-O0`／`-O2` 與現有執行限制**。
+- `oxid build --profile dev` 使用 `-O0`，`--profile release` 使用 `-O2`，同時套用於程式與 runtime；`bounded` 是 `dev` 的別名。最佳化仍保留既有執行限制；除錯資訊與一般 hosted execution policy 尚待完成。Rust 編譯器自身的 debug／release 建置另行驗證。
 - `build --incremental` 可選用 LLVM object 快取；每次仍檢查來源、驗證鎖檔、編譯 runtime 並重新連結 SDK。這項能力尚不包含逐模組 frontend 增量編譯，亦不代表原生產物已通過可重現性或效能驗收；見 [RFC 0036](../rfcs/0036-native-object-reuse.md)。
 - `build --reproducible` 使用相對於專案／工作區的執行時診斷路徑；驗證獨立比對 clean、快取與搬移建置的原始執行檔。範圍限相同 compiler、LLVM／SDK、設定與環境，見 [RFC 0039](../rfcs/0039-reproducible-native-builds.md)。
 - `doctor --native` 透過實際的工具版本、SDK 編譯、連結與執行探測診斷環境，亦檢查目前 typed 專案與既有鎖檔；見 [native 診斷契約](NATIVE_DOCTOR.md)。
@@ -24,7 +24,7 @@ GPU／分散式訓練、完整 Rust crate／procedural macro 相容、完整 Pyt
 |---|---|---|
 | **G1 語言穩定** | 版本化規格、支援矩陣、相容性／棄用／遷移政策與 conformance tests 相互對應；相容版本維持公開語意與 API，破壞性變更經 edition 或 major policy 處理。 | 未達。`typed-preview` 仍為 experimental；未指定 edition 的舊專案保留 legacy 行為。尚缺完整穩定規格與驗收套件。 |
 | **G2 安全核心** | 一般堆積配置、字串、可成長容器、借用、析構與並行安全契約可用；正向、compile-fail、邊界及組合案例覆蓋資源生命週期。 | 未達。目前以 bounded records、固定陣列、call-only borrowing、slice 與部分 enum／match 為主；一般容器、析構、儲存／回傳參考及並行安全仍不完整。 |
-| **G3 正式原生編譯** | 五平台 native 建置、執行與除錯；可用的 debug/release profile、最佳化正確性、executable／static／shared library、可重現 clean／incremental build，以及一般 hosted execution policy。規模驗收建議採用十萬行有效、非重複填充的多模組專案。 | 未達。現有 native 路徑為 Linux x86_64 的 LLVM `-O0` preview；固定資源限制、其他 targets、正式 profiles、除錯與一般增量建置驗收仍待完成。五個編譯器 host 的 CI 不構成五平台 native 驗收。 |
+| **G3 正式原生編譯** | 五平台 native 建置、執行與除錯；可用的 debug/release profile、最佳化正確性、executable／static／shared library、可重現 clean／incremental build，以及一般 hosted execution policy。規模驗收建議採用十萬行有效、非重複填充的多模組專案。 | 未達。現有 native 專案支援 Linux x86_64 的 LLVM `-O0`／`-O2`；固定資源限制、其他 targets、除錯與一般增量建置驗收仍待完成。五個編譯器 host 的 CI 不構成五平台 native 驗收。 |
 | **G4 完整 Runtime** | typed-native 檔案／二進位串流、程序、執行緒、同步、非同步 I/O、取消與資源釋放具有正式契約；HTTPS／資料庫服務通過負載測試（建議 48 小時）及逾時、取消、斷線、連線耗盡、部分寫入、重啟與正常關閉測試。 | 未達。legacy 的檔案、程序、網路與 lazy task 功能尚未形成完整 typed-native runtime；一般 I/O、真正並行及取消契約仍有缺口。 |
 | **G5 套件與建置** | 同一套設定貫通 `new → build → run → test → package`；typed dependency graph、workspace、多版本依賴、registry、鎖檔、offline/frozen/vendor、完整性驗證與 cache invalidation 可用。fixture 之外的多套件應用須完成修改模組、增量建置、測試與乾淨部署。 | 進行中，未達。experimental 單套件流程已接入 manifest；Linux typed path dependencies 已接入同一 compiler session，驗證範圍依實際結果記錄。bounded workspace 的成員流程、共享鎖定與逐 binary 原生 object reuse 已有 experimental 實作；本地來源封裝已有 experimental 實作；registry、多版本解析及完整增量流程尚未完成。legacy 的套件與 SHA-256 功能只證明其既有範圍。 |
 | **G6 開發工具** | LSP、formatter、test runner、debugger、版本化文件與 profiler 使用一致的專案設定；安裝、編輯、格式化、測試、除錯及效能分析可透過公開工具流程重現。 | 未達。已有 typed 單檔 formatter、manifest 測試流程及編輯器設定；跨檔 LSP、debugger、文件產生與 profiling 尚未形成完整工作流程。 |

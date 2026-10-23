@@ -16,8 +16,19 @@ enum Target {
     LinuxX86_64Gnu,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Optimization {
+pub(crate) enum NativeOptimization {
     O0,
+    O2,
+}
+
+impl NativeOptimization {
+    pub(crate) fn from_profile(profile: &str) -> Option<Self> {
+        match profile {
+            "bounded" | "dev" => Some(Self::O0),
+            "release" => Some(Self::O2),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Execution {
@@ -35,17 +46,24 @@ enum SourcePaths {
 pub(crate) struct NativeBuildSettings {
     backend: Backend,
     target: Target,
-    optimization: Optimization,
+    optimization: NativeOptimization,
     execution: Execution,
     source_paths: SourcePaths,
 }
 
 impl NativeBuildSettings {
     pub(crate) const fn new(reproducible: bool) -> Self {
+        Self::with_optimization(reproducible, NativeOptimization::O0)
+    }
+
+    pub(crate) const fn with_optimization(
+        reproducible: bool,
+        optimization: NativeOptimization,
+    ) -> Self {
         Self {
             backend: Backend::Llvm,
             target: Target::LinuxX86_64Gnu,
-            optimization: Optimization::O0,
+            optimization,
             execution: Execution::Bounded,
             source_paths: if reproducible {
                 SourcePaths::ProjectRelative
@@ -63,7 +81,8 @@ impl NativeBuildSettings {
 
     pub(crate) const fn optimization_flag(self) -> &'static str {
         match (self.backend, self.optimization, self.execution) {
-            (Backend::Llvm, Optimization::O0, Execution::Bounded) => "-O0",
+            (Backend::Llvm, NativeOptimization::O0, Execution::Bounded) => "-O0",
+            (Backend::Llvm, NativeOptimization::O2, Execution::Bounded) => "-O2",
         }
     }
 
@@ -356,6 +375,36 @@ mod tests {
             assert_eq!(settings.target_triple(), "x86_64-unknown-linux-gnu");
             assert_eq!(settings.optimization_flag(), "-O0");
             assert_eq!(settings.reproducible(), reproducible);
+        }
+    }
+
+    #[test]
+    fn native_profiles_change_only_optimization_and_aliases_share_settings() {
+        for reproducible in [false, true] {
+            let original = NativeBuildSettings::new(reproducible);
+            for profile in ["bounded", "dev", "release"] {
+                let settings = NativeBuildSettings::with_optimization(
+                    reproducible,
+                    NativeOptimization::from_profile(profile).unwrap(),
+                );
+                assert_eq!(settings.backend, original.backend);
+                assert_eq!(settings.target, original.target);
+                assert_eq!(settings.execution, original.execution);
+                assert_eq!(settings.source_paths, original.source_paths);
+                if profile == "release" {
+                    assert_ne!(settings, original);
+                    assert_eq!(settings.optimization_flag(), "-O2");
+                } else {
+                    assert_eq!(settings, original);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_profiles_reject_unsupported_optimization_and_execution_names() {
+        for profile in ["", "O0", "O2", "debug", "fast", "hosted", "Release", " dev"] {
+            assert_eq!(NativeOptimization::from_profile(profile), None, "{profile}");
         }
     }
 

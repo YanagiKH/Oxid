@@ -35,7 +35,7 @@
         "General hosted execution without demonstration fuel limits, verified optimization and realistic multi-module clean/incremental builds."
       ],
       "remaining": [
-        "Native compilation is a bounded Linux x86_64 preview using LLVM 19.1.7 at O0; the other native targets, general hosted policy and release/debug support are incomplete."
+        "Native project compilation is a bounded Linux x86_64 preview using LLVM 19.1.7 at O0 or O2; other native targets, source debugging, general hosted execution and full-scale build acceptance remain incomplete."
       ]
     },
     {

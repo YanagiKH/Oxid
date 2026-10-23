@@ -270,7 +270,7 @@
         "docs/architecture/boolean-logic-validation.md",
         "docs/architecture/mutable-locals-validation.md"
       ],
-      "limitations": "Linux x86_64 LLVM 19.1.7 O0 only; explicit toolchain and host C environment required. Whole-call-graph recursion rejection, 32 call depth, 64 user parameters, 256 scalar slots/function, 8192 aggregate/live scalar slots and 4096 blocks remain. Transitively acyclic functions retain a 100000 fuel bound; cyclic modules use shared 1000000 runtime fuel. Scalar-only guarded modules add 16 MiB diagnostic/64 MiB LLVM text bounds. The experimental owned source route, its additional S+O/inventory/byte limits and exact source qualification scope are recorded once by typed-preview-ownership-foundations. No wider arithmetic, cross compilation, stable ABI, general memory-safety certification, sandbox or self-hosting is claimed. Legacy compilation remains independent."
+      "limitations": "Explicit-file compilation uses Linux x86_64 LLVM 19.1.7 at O0; project-native O0/O2 profiles are tracked in typed-preview-project-workflow. An explicit toolchain and host C environment are required. Whole-call-graph recursion rejection, 32 call depth, 64 user parameters, 256 scalar slots/function, 8192 aggregate/live scalar slots and 4096 blocks remain. Transitively acyclic functions retain a 100000 fuel bound; cyclic modules use shared 1000000 runtime fuel. Scalar-only guarded modules add 16 MiB diagnostic/64 MiB LLVM text bounds. The experimental owned source route, its additional S+O/inventory/byte limits and exact source qualification scope are recorded once by typed-preview-ownership-foundations. No wider arithmetic, cross compilation, stable ABI, general memory-safety certification, sandbox or self-hosting is claimed. Legacy compilation remains independent."
     },
     {
       "id": "independent-self-hosting",
@@ -1048,7 +1048,7 @@
     },
     {
       "id": "typed-preview-project-workflow",
-      "summary": "Typed projects and bounded workspaces with shared input locks, retained source bundles, native object reuse and opt-in relocatable builds",
+      "summary": "Typed projects and workspaces with input locks, source bundles, native object caching, relocatable builds and development/release profiles",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1066,7 +1066,8 @@
         "docs/NATIVE_DOCTOR.md",
         "docs/TYPED_PROJECTS.md",
         "rfcs/0038-typed-source-packages.md",
-        "rfcs/0039-reproducible-native-builds.md"
+        "rfcs/0039-reproducible-native-builds.md",
+        "rfcs/0040-native-build-profiles.md"
       ],
       "implementation": [
         "src/project_cli.rs",
@@ -1103,12 +1104,14 @@
         "tests/typed_package.rs",
         "scripts/verify_typed_package_bundle.py",
         "tests/reproducible_native.rs",
-        "scripts/verify_reproducible_native.py"
+        "scripts/verify_reproducible_native.py",
+        "tests/native_profiles.rs",
+        "scripts/verify_native_profiles.py"
       ],
       "evidence": [
         "docs/architecture/project-workflow-validation.md"
       ],
-      "limitations": "Existing bounded language with local path dependencies, typed input locks, bounded workspaces, native object reuse and native diagnosis. Source bundles retain complete local layouts. Opt-in relative native diagnostic paths support relocation with a fixed compiler/toolchain/SDK/environment and preserved relative source layout; no cross-toolchain reproducibility claim. No typed Git/registry resolution, vendor command, registry publication, per-module frontend incrementality or new native target. Workspace v3 locks bind input manifests and imported sources, not artifacts. Unit2 compatibility, default native oracles, and package/lock/workspace/cache/source-bundle/reproducibility regressions have separate scopes; none replaces historical certificates or completes R1/v1 acceptance."
+      "limitations": "Existing bounded language with local path dependencies, typed input locks, bounded workspaces, native object reuse and native diagnosis. Source bundles retain complete local layouts. Opt-in relative native diagnostic paths support relocation with a fixed compiler/toolchain/SDK/environment and preserved relative source layout; no cross-toolchain reproducibility claim. Native project dev/bounded profiles compile program and runtime at O0; release uses O2 with the same execution limits. No typed Git/registry resolution, vendor command, registry publication, per-module frontend incrementality, debugger information or new native target. Workspace v3 locks bind input manifests and imported sources, not artifacts. Compatibility, default-native and explicit profile checks have separate scopes; these experimental features do not complete v1 acceptance."
     },
     {
       "id": "typed-preview-standalone-byte-storage",

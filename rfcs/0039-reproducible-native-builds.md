@@ -4,6 +4,10 @@ Status: experimental implementation extending the bounded Linux x86_64 project
 workflow. LLVM 19.1.7, the compiler, SDK and effective build environment remain
 inputs to the result.
 
+The original implementation below uses O0.
+[Native build profiles](0040-native-build-profiles.md) additionally permit O2;
+reproducibility comparisons keep the chosen optimization profile fixed.
+
 ## Selection and resolved settings
 
 ```sh

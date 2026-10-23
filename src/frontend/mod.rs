@@ -21,7 +21,7 @@ mod parser;
 mod project;
 mod source;
 mod typeck;
-pub(crate) use build_config::NativeBuildSettings;
+pub(crate) use build_config::{NativeBuildSettings, NativeOptimization};
 pub use driver::dispatch;
 pub(crate) use driver::{
     prepare_package_project, prepare_package_project_bounded, PreparedPackageProject,

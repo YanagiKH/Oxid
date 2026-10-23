@@ -46,7 +46,7 @@ jobs:
         run: |
           python3 -B scripts/run_current_script_tests.py
           python3 -B scripts/check_release_gates.py
-      - name: Run unchanged Unit2 semantic and resource assertions on current sources
+      - name: Run retained semantic and resource assertions on current sources
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -206,12 +206,12 @@ jobs:
             if test "$profile" = release; then profile_flags=(--release); fi
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
-              --test typed_native --test typed_process --test reproducible_native
+              --test typed_native --test typed_process --test reproducible_native --test native_profiles
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
-              --test typed_record_composition --test typed_hir_import --test reproducible_native -- --ignored
+              --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal \
               -- --ignored --exact
@@ -230,6 +230,10 @@ jobs:
         run: |
           python3 -B scripts/verify_reproducible_native.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-reproducible-native" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify optimized native builds, cache selection and deployment
+        run: |
+          python3 -B scripts/verify_native_profiles.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-native-profiles" --llvm-bin "$OXID_LLVM_BIN"
       - name: Run current independent native oracles and private LLVM regressions
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -247,6 +251,7 @@ jobs:
             ${{ runner.temp }}/current-workspace-application
             ${{ runner.temp }}/current-package-bundle-application
             ${{ runner.temp }}/current-reproducible-native
+            ${{ runner.temp }}/current-native-profiles
           if-no-files-found: warn
           retention-days: 14
 
