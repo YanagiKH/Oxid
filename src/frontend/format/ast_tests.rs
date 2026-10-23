@@ -369,6 +369,11 @@ impl<'a> Fingerprint<'a> {
                 self.spelling(*digits);
                 self.flag(*negative);
             }
+            ExprKind::ByteString { contents, length } => {
+                self.tag("byte-string");
+                self.spelling(*contents);
+                self.count(usize::from(*length));
+            }
             ExprKind::Unit => self.tag("unit"),
             ExprKind::Name(name) => {
                 self.tag("name");

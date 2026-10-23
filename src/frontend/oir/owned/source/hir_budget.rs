@@ -30,6 +30,13 @@ pub(super) const fn byte_storage_fixed_successor_bytes() -> usize {
     byte_storage_resources::fixed_bytes()
 }
 
+#[cfg(test)]
+pub(super) const fn byte_string_successor_bytes(functions: usize) -> usize {
+    super::byte_string_resources::fixed_bytes()
+        + super::byte_string_resources::inherited_fixed_growth()
+        + functions * super::byte_string_resources::inherited_function_growth()
+}
+
 // Same numeric ceiling, separate from AST/index/raw admission. Future dynamic
 // projection capacities spend the remainder of this allowance, not a second cap.
 pub(super) const MAX_HIR_BYTES: usize = super::budget::MAX_RAW_BYTES;
@@ -64,6 +71,7 @@ pub(super) struct HirCounts {
     pub(super) field_initializers: usize,
     pub(super) array_literals: usize,
     pub(super) array_entries: usize,
+    pub(super) byte_string_bytes: usize,
     pub(super) matches: usize,
     pub(super) match_arms: usize,
     pub(super) scope_marks: usize,
@@ -173,6 +181,7 @@ pub(super) const VECTOR_RETURN_ENVELOPE_BYTES: usize = {
         )* };
     }
     measure_carriers!(
+        u8,
         Record,
         Field,
         FieldId,
@@ -284,6 +293,7 @@ impl HirPlan {
         charge::<Argument>(&mut resolved, c.call_arguments, at)?;
         charge::<FieldInit>(&mut resolved, c.field_initializers, at)?;
         charge::<ExprId>(&mut resolved, c.array_entries, at)?;
+        charge::<u8>(&mut resolved, c.byte_string_bytes, at)?;
         // Match's Vec header is already inside Stmt, never charged twice.
         charge::<MatchArm>(&mut resolved, c.match_arms, at)?;
 
@@ -510,6 +520,7 @@ impl HirPlan {
         // RFC0031 separately pays both complete byte-record guard roles.
         // Historical banks and the global ceiling are unchanged.
         increment(&mut fixed, byte_storage_resources::fixed_bytes(), at)?;
+        increment(&mut fixed, super::byte_string_resources::fixed_bytes(), at)?;
         // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
         // owner, source view and all top-level Vec headers. Do not add them again.
         // These whole measured models include each embedded Result/Option
@@ -1020,6 +1031,10 @@ fn count_expression(
                     visit(work, elements.len(), at)?;
                     increment(&mut c.array_literals, 1, at)?;
                     increment(&mut c.array_entries, elements.len(), at)?;
+                }
+                ast::ExprKind::ByteString { length, .. } => {
+                    increment(&mut c.array_literals, 1, at)?;
+                    increment(&mut c.byte_string_bytes, usize::from(*length), at)?;
                 }
                 _ => {}
             }

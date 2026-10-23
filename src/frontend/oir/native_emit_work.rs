@@ -115,6 +115,7 @@ fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
             | Rvalue::NotBool { .. }
             | Rvalue::Bool(_)
             | Rvalue::I32(_)
+            | Rvalue::U8(_)
             | Rvalue::Unit
             | Rvalue::Copy(_)
             | Rvalue::CompareScalar { .. } => (0, false),

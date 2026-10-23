@@ -1665,6 +1665,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         let value = match assign.value {
             Rvalue::Bool(v) => Scalar::Bool(v),
             Rvalue::I32(v) => Scalar::I32(v),
+            Rvalue::U8(v) => Scalar::U8(v),
             Rvalue::Unit => Scalar::Unit,
             Rvalue::Copy(v) => self.read(frame, v)?,
             Rvalue::Load(p) => *self.frames[frame]

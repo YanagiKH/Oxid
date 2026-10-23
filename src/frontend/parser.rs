@@ -1737,6 +1737,37 @@ impl Parser<'_> {
                 }
                 ExprKind::Number { digits, negative }
             }
+            Some(PrimaryStart::Name)
+                if self.arrays_enabled()
+                    && self.source.text_at(token.span) == "b"
+                    && self.tokens.get(self.cursor + 1).is_some_and(|next| {
+                        next.kind == Kind::String && token.span.end == next.span.start
+                    }) =>
+            {
+                self.bump();
+                let quoted = self.bump().span;
+                end = quoted.end;
+                let contents = self.source.span(quoted.start + 1, quoted.end - 1);
+                let length = super::byte_strings::length(self.source.text_at(contents)).map_err(
+                    |failure| {
+                        let too_long = failure.reason == super::byte_strings::Reason::Length;
+                        self.diagnostic(
+                            if too_long { "E0400" } else { "E0101" },
+                            "parse",
+                            failure.reason.message(),
+                            Some(if too_long {
+                                self.source.span(token.span.start, end)
+                            } else {
+                                self.source.span(
+                                    contents.start + failure.range.start,
+                                    contents.start + failure.range.end,
+                                )
+                            }),
+                        )
+                    },
+                )?;
+                ExprKind::ByteString { contents, length }
+            }
             Some(PrimaryStart::Name) => {
                 let qualified = if self.enum_qualified_ahead() {
                     Some(self.enum_path()?)

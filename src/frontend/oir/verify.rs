@@ -96,6 +96,7 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::U8(_) => hir::Ty::U8,
         Rvalue::Load(value) => place_in(places, value, sources)?,
         Rvalue::CheckedI32ToU8 {
             operand: value,
@@ -471,7 +472,7 @@ pub(super) fn scalar_statement_uses(
                 visit(ScalarUse::Operand(left))?;
                 visit(ScalarUse::Operand(right))
             }
-            Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => Ok(()),
+            Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::U8(_) | Rvalue::Unit => Ok(()),
         },
     }
 }

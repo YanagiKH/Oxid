@@ -131,6 +131,7 @@ impl<'src> ResolvedOwnedProgram<'src> {
                     ExprKind::Call { args, .. } => inventory.vector(args)?,
                     ExprKind::StructLiteral { fields, .. } => inventory.vector(fields)?,
                     ExprKind::ArrayLiteral { elements } => inventory.vector(elements)?,
+                    ExprKind::ByteString { bytes } => inventory.vector(bytes)?,
                     _ => (),
                 }
             }
@@ -2590,6 +2591,63 @@ impl<'a> Resolver<'_, 'a> {
                         }
                     }
                 }
+            }
+            ast::ExprKind::ByteString { contents, length } => {
+                let input = self.text(*contents);
+                let debit = crate::frontend::byte_strings::resolve_work(input.len(), *length)
+                    .ok_or_else(|| {
+                        error(
+                            "E0400",
+                            format_args!("byte string work overflow"),
+                            expr.span,
+                        )
+                    })?;
+                self.work.debit(debit, expr.span, "byte string resolve")?;
+                let actual = crate::frontend::byte_strings::length(input).map_err(|_| {
+                    error(
+                        "E0500",
+                        format_args!("invalid byte string syntax owner"),
+                        expr.span,
+                    )
+                })?;
+                if actual != *length {
+                    return Err(error(
+                        "E0500",
+                        format_args!("byte string length differs from syntax owner"),
+                        expr.span,
+                    ));
+                }
+                let mut bytes = if let Some(paid) = self.storage.paid.as_deref_mut() {
+                    paid.reserve(
+                        self.allocator,
+                        Kind::ByteStrings,
+                        usize::from(*length),
+                        expr.span,
+                    )?
+                } else {
+                    let mut bytes = Vec::new();
+                    self.allocator
+                        .vector_exact(&mut bytes, usize::from(*length), "byte string HIR bytes")
+                        .map_err(|failure| array_reserve_error(failure, expr.span))?;
+                    bytes
+                };
+                for byte in crate::frontend::byte_strings::Decoder::new(input) {
+                    let byte = byte.map_err(|_| {
+                        error(
+                            "E0500",
+                            format_args!("invalid byte string syntax owner"),
+                            expr.span,
+                        )
+                    })?;
+                    storage::room(
+                        &bytes,
+                        bytes.capacity(),
+                        self.storage.paid.is_some(),
+                        expr.span,
+                    )?;
+                    bytes.push(byte);
+                }
+                ExprKind::ByteString { bytes }
             }
             ast::ExprKind::ArrayLiteral { elements } => {
                 self.work.debit(1, expr.span, "array resolve literal")?;

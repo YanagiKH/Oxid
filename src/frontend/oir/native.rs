@@ -592,6 +592,7 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
         }
         Rvalue::Bool(_) => destination == Some(hir::Ty::Bool),
         Rvalue::I32(_) => destination == Some(hir::Ty::I32),
+        Rvalue::U8(_) => destination == Some(hir::Ty::U8),
         Rvalue::Unit => destination == Some(hir::Ty::Unit),
         Rvalue::Copy(operand) => destination.is_some() && destination == local(operand.local),
         Rvalue::Load(place) => {

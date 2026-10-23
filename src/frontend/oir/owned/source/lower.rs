@@ -696,6 +696,61 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
+                        source::ExprKind::ByteString { bytes } => {
+                            let span = expression.span;
+                            let ValueTy::Owned(AggregateTy::FixedArray(array)) =
+                                self.view.expression_ty(id)
+                            else {
+                                return Err(invariant(span));
+                            };
+                            require(
+                                array.length() == bytes.len() && array.element() == hir::Ty::U8,
+                                span,
+                            )?;
+                            budget::cap(bytes.len(), 1024, "byte string length")?;
+                            let owner = self.owner(
+                                AggregateTy::FixedArray(array),
+                                OwnerKind::Temporary,
+                                span,
+                            )?;
+                            self.statement(
+                                OwnedInstruction::StorageLive(owner),
+                                span,
+                                span,
+                                cause,
+                            )?;
+                            self.counts.constructed_elements =
+                                budget::add(self.counts.constructed_elements, bytes.len())?;
+                            self.check_counts()?;
+                            let mut values = if self.output.is_some() {
+                                budget::reserve_array_operands(bytes.len())?
+                            } else {
+                                Vec::new()
+                            };
+                            for &byte in bytes {
+                                let local = self.local(hir::Ty::U8, LocalKind::Temporary, span)?;
+                                self.scalar_assign(local, Rvalue::U8(byte), span, cause)?;
+                                if self.output.is_some() {
+                                    budget::append(
+                                        &mut values,
+                                        Operand { local, span },
+                                        bytes.len(),
+                                        span,
+                                    )?;
+                                }
+                            }
+                            self.statement(
+                                OwnedInstruction::ConstructArray {
+                                    destination: owner,
+                                    elements: values,
+                                },
+                                span,
+                                span,
+                                cause,
+                            )?;
+                            self.set_owned(id, owner);
+                            self.complete(id)?;
+                        }
                         source::ExprKind::ArrayLiteral { .. } => frames.push(
                             ExprFrame::ArrayLiteral {
                                 expression: id,

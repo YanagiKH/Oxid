@@ -823,6 +823,7 @@ fn expression_kind(
         | ast::ExprKind::StructLiteral { .. }
         | ast::ExprKind::FieldRead { .. }
         | ast::ExprKind::ArrayLiteral { .. }
+        | ast::ExprKind::ByteString { .. }
         | ast::ExprKind::IndexRead { .. }
         | ast::ExprKind::ArrayLength { .. } => return Err(Failure::Shape),
     })

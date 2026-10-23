@@ -689,6 +689,7 @@ impl<'a> Resolver<'_, 'a> {
                 ));
             }
             ast::ExprKind::ArrayLiteral { .. }
+            | ast::ExprKind::ByteString { .. }
             | ast::ExprKind::IndexRead { .. }
             | ast::ExprKind::ArrayLength { .. } => {
                 return Err(Diagnostic::new(

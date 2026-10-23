@@ -13,25 +13,27 @@ text = "../../packages/utf8_text"
 
 ```rust
 use crate::text::new_text;
-use crate::text::append_scalar;
+use crate::text::append_utf8;
 use crate::text::byte_len;
-use crate::text::ScalarAppendStatus;
+use crate::text::AppendStatus;
 
 fn main() -> i32 {
     let mut greeting = new_text();
-    let status = append_scalar(&mut greeting, 128075);
+    let bytes = b"Hello, Oxid 👋";
+    let status = append_utf8(&mut greeting, &bytes);
     match status {
-        ScalarAppendStatus::Ok => { return byte_len(&greeting); },
-        ScalarAppendStatus::InvalidScalar(value) => { return -1; },
-        ScalarAppendStatus::CapacityOverflow => { return -2; },
-        ScalarAppendStatus::AllocationFailed => { return -3; },
-        ScalarAppendStatus::MemoryLimit => { return -4; },
+        AppendStatus::Ok => { return byte_len(&greeting); },
+        AppendStatus::InvalidInput(offset) => { return -1; },
+        AppendStatus::CapacityOverflow => { return -2; },
+        AppendStatus::AllocationFailed => { return -3; },
+        AppendStatus::MemoryLimit => { return -4; },
     }
 }
 ```
 
-This appends U+1F44B (the waving hand emoji) and returns its UTF-8 byte length,
-4. Other match arms handle invalid scalar values and allocation errors.
+This appends the greeting and returns its UTF-8 byte length, 16. A `b"..."`
+literal produces a fixed byte array; `&bytes` borrows it for the call. Other
+match arms handle invalid UTF-8 and allocation errors.
 
 | Function | Behavior |
 | --- | --- |

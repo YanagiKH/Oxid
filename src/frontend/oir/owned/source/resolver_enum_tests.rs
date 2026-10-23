@@ -442,8 +442,9 @@ fn bounded_enum_resolver_actual_changed_carrier_layouts() {
         enum_expression_carrier_bytes(),
         enum_match_carrier_bytes()
     );
-    assert_eq!(storage::KINDS, 18);
-    assert_eq!(storage::RETAINED_KINDS, 13);
+    assert_eq!(storage::KINDS - 1, 18);
+    assert_eq!(storage::RETAINED_KINDS - 1, 13);
+    assert_eq!(storage::WIDTHS[Kind::ByteStrings as usize], size_of::<u8>());
     assert_eq!(
         storage::WIDTHS[Kind::MatchArms as usize],
         size_of::<MatchArm>()

@@ -172,7 +172,7 @@ impl<'s> Visitor<'s> {
                         self.span(right.span)?;
                         self.span(*operator_span)?;
                     }
-                    Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => (),
+                    Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::U8(_) | Rvalue::Unit => (),
                 }
             }
             Statement::Initialize { place, value, span } => {

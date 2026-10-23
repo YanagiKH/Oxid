@@ -379,6 +379,7 @@ impl fmt::Display for Expression<'_> {
                 write!(f, "[\"record-literal\",{},{}]", record.0, fields.len())
             }
             E::ArrayLiteral { elements } => write!(f, "[\"array-literal\",{}]", elements.len()),
+            E::ByteString { bytes } => write!(f, "[\"byte-string\",{bytes:?}]"),
             E::IndexRead {
                 base,
                 base_span,
@@ -838,7 +839,7 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
+            Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } | Rvalue::U8(_) => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
             Rvalue::Load(place) => write!(f, "[\"load\",{}]", PlaceRow(*place)),

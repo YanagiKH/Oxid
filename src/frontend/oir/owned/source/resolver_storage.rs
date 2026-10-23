@@ -19,8 +19,20 @@ use crate::frontend::{
 };
 use std::{cmp::Ordering, mem::size_of};
 
-pub(super) const KINDS: usize = 18;
-pub(super) const RETAINED_KINDS: usize = 13;
+pub(super) const KINDS: usize = 19;
+pub(super) const RETAINED_KINDS: usize = 14;
+
+/// Keep predecessor accounting fixtures exact while requiring the new kind to
+/// remain absent in those fixtures. This projection never accepts byte data.
+#[cfg(test)]
+pub(super) fn predecessor_values<const N: usize>(values: &[usize]) -> [usize; N] {
+    assert!(N == 13 || N == 18);
+    assert_eq!(values.len(), N + 1);
+    let inserted = Kind::ByteStrings as usize;
+    assert_eq!(inserted, 13);
+    assert_eq!(values[inserted], 0);
+    std::array::from_fn(|index| values[index + usize::from(index >= inserted)])
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
@@ -38,6 +50,7 @@ pub(super) enum Kind {
     FieldInitializers,
     ArrayEntries,
     MatchArms,
+    ByteStrings,
     Names,
     Exits,
     Marks,
@@ -60,6 +73,7 @@ impl Kind {
             Self::FieldInitializers => "paid HIR field initializers",
             Self::ArrayEntries => "paid HIR array entries",
             Self::MatchArms => "paid HIR match arms",
+            Self::ByteStrings => "paid HIR byte string data",
             Self::Names => "paid HIR scope names",
             Self::Exits => "paid HIR scope exits",
             Self::Marks => "paid HIR scope marks",
@@ -82,6 +96,7 @@ pub(super) const WIDTHS: [usize; KINDS] = [
     size_of::<FieldInit>(),
     size_of::<ExprId>(),
     size_of::<MatchArm>(),
+    size_of::<u8>(),
     size_of::<ScopeName>(),
     size_of::<usize>(),
     size_of::<usize>(),
@@ -103,6 +118,7 @@ fn limits(c: HirCounts) -> [usize; KINDS] {
         c.field_initializers,
         c.array_entries,
         c.match_arms,
+        c.byte_string_bytes,
         c.bindings,
         c.bindings,
         c.scope_marks,
@@ -296,6 +312,9 @@ pub(super) fn inventory_parts(
                 }
                 ExprKind::ArrayLiteral { elements } => {
                     inventory.vector(Kind::ArrayEntries, elements, work, expression.span)?
+                }
+                ExprKind::ByteString { bytes } => {
+                    inventory.vector(Kind::ByteStrings, bytes, work, expression.span)?
                 }
                 _ => (),
             }
