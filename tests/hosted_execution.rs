@@ -158,6 +158,16 @@ fn library_execution_settings_cannot_change_the_calling_binary_policy() {
     let mut root = fs::read_to_string(&root_manifest).unwrap();
     root.push_str("[dependencies]\nmath = \"library\"\n");
     fs::write(&root_manifest, &root).unwrap();
+    if !cfg!(target_os = "linux") {
+        let refused = project.command(&["run"]);
+        assert_eq!(refused.status.code(), Some(1), "{refused:?}");
+        assert!(refused.stdout.is_empty(), "{refused:?}");
+        assert!(
+            String::from_utf8_lossy(&refused.stderr).contains("E0006"),
+            "{refused:?}"
+        );
+        return;
+    }
     fuel_failure(&project.command(&["run"]));
     fs::write(&library, manifest.replace("\"hosted\"", "\"bounded\"")).unwrap();
     root.push_str("[execution]\npolicy = \"hosted\"\n");
@@ -228,9 +238,10 @@ fn invalid_execution_settings_fail_before_source_tools_and_artifact_replacement(
         "execution.policy = \"hosted\"\n",
         "execution = { policy = \"hosted\" }\n",
     ] {
-        let project = Project::new("invalid source", None, false);
+        let project = Project::new("fn main()->i32{return 0;}", None, false);
         let path = project.0.join("oxid.toml");
-        let original = fs::read_to_string(&path).unwrap();
+        let mut original = fs::read_to_string(&path).unwrap();
+        original.push_str("[tests]\nsmoke = \"src/main.ox\"\n");
         // Root dotted/inline declarations must actually be at the root.
         fs::write(&path, format!("{settings}{original}")).unwrap();
         fs::create_dir_all(project.0.join(".oxid/bin")).unwrap();
@@ -258,6 +269,136 @@ fn invalid_execution_settings_fail_before_source_tools_and_artifact_replacement(
             assert_eq!(fs::read(&artifact).unwrap(), b"previous executable");
         }
     }
+}
+
+#[test]
+fn malformed_execution_tables_and_values_cannot_inherit_build_settings() {
+    for settings in [
+        "[execution\npolicy = \"hosted\"\n",
+        "[execution # missing bracket\npolicy = \"hosted\"\n",
+        "[execution] trailing\npolicy = \"hosted\"\n",
+        "[execution]]\npolicy = \"hosted\"\n",
+        "[execution extra]\npolicy = \"hosted\"\n",
+        "[\"execution\"] trailing\npolicy = \"hosted\"\n",
+        "[\"execution]\npolicy = \"hosted\"\n",
+        "['execution]\npolicy = \"hosted\"\n",
+        "[\"execution] # comment\npolicy = \"hosted\"\n",
+        "['execution] # comment\npolicy = \"hosted\"\n",
+        "[\"execu\\u0074ion] # comment\npolicy = \"hosted\"\n",
+        "[\"execution']\npolicy = \"hosted\"\n",
+        "[[[execution]]]\npolicy = \"hosted\"\n",
+        "[execution]\npolicy = \"hosted\",\n",
+        "[execution]\npolicy = 'hosted',\n",
+        "[execution]\npolicy = \"hosted\", # invalid comma\n",
+        "[execution]\n[execution]\n",
+        "[metadata]\nmatrix = [\n[execution]\npolicy = \"hosted\"\n",
+    ] {
+        let project = Project::new("fn main()->i32{return 0;}", None, false);
+        let manifest = project.0.join("oxid.toml");
+        let original = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!("{original}{settings}[tests]\nsmoke = \"src/main.ox\"\n"),
+        )
+        .unwrap();
+        fs::create_dir_all(project.0.join(".oxid/bin")).unwrap();
+        let artifact = project.0.join(".oxid/bin/app");
+        fs::write(&artifact, b"previous executable").unwrap();
+        for command in ["check", "run", "test", "build"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .arg(command)
+                .current_dir(&project.0)
+                .env("OXID_LLVM_BIN", project.0.join("absent-llvm"))
+                .env("PATH", project.0.join("absent-path"))
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1), "{settings:?}: {output:?}");
+            assert!(output.stdout.is_empty(), "{output:?}");
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                error.contains("E0001")
+                    && (error.contains("execution") || error.contains("manifest")),
+                "{settings:?}: {output:?}"
+            );
+            assert_eq!(fs::read(&artifact).unwrap(), b"previous executable");
+        }
+    }
+}
+
+#[test]
+fn quoted_execution_names_and_comments_remain_valid() {
+    for settings in [
+        "[execution] # table comment,\npolicy = \"hosted\" # value comment,\n",
+        "['execution']\n'policy' = 'hosted' # comment,\n",
+        "[\"execu\\u0074ion\"]\n\"policy\" = \"hos\\u0074ed\"\n",
+        "[metadata]\nmatrix = [\n[1, 2],\n[3, 4],\n]\n[execution]\npolicy = \"hosted\"\n",
+        "[metadata]\nmatrix = [\n[],\n[\"[execution]\", \"# a comment in data\"],\n]\n[execution]\npolicy = \"hosted\"\n",
+    ] {
+        let project = Project::new(SCALAR, None, false);
+        let path = project.0.join("oxid.toml");
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(path, original + settings).unwrap();
+        success(project.command(&["run"]), b"200000\n");
+    }
+}
+
+#[test]
+#[cfg(all(
+    target_os = "linux",
+    target_arch = "x86_64",
+    target_pointer_width = "64"
+))]
+fn workspace_declared_tests_use_the_owning_binary_or_library_execution_policy() {
+    let project = Project::new("fn main()->i32{return 0;}", None, false);
+    fs::write(
+        project.0.join("oxid.toml"),
+        "[workspace]\nedition = \"typed-preview\"\nmembers = [\"app\", \"library\"]\n",
+    )
+    .unwrap();
+    for (member, library) in [("app", false), ("library", true)] {
+        let root = project.0.join(member);
+        fs::create_dir_all(root.join("src")).unwrap();
+        let entry = if library { "src/lib.ox" } else { "src/main.ox" };
+        fs::write(
+            root.join(entry),
+            if library {
+                "pub fn value()->i32{return 1;}"
+            } else {
+                "fn main()->i32{return 0;}"
+            },
+        )
+        .unwrap();
+        fs::write(
+            root.join("src/long.ox"),
+            "fn main()->i32{let mut i=0;while i<200000{i=i+1;}return 0;}",
+        )
+        .unwrap();
+        fs::write(root.join("oxid.toml"), format!("[project]\nname = \"{member}\"\nedition = \"typed-preview\"\nkind = \"{}\"\nentry = \"{entry}\"\n[tests]\nlong = \"src/long.ox\"\n[execution]\npolicy = \"hosted\"\n", if library { "lib" } else { "bin" })).unwrap();
+    }
+    let hosted = project.command(&["test", "--workspace", "--message-format=json"]);
+    assert_eq!(hosted.status.code(), Some(0), "{hosted:?}");
+    assert!(hosted.stderr.is_empty(), "{hosted:?}");
+    let body = String::from_utf8(hosted.stdout).unwrap();
+    assert_eq!(body.matches("\"kind\":\"test-result\"").count(), 2);
+    assert!(body.contains("\"failed\":0"), "{body}");
+    for member in ["app", "library"] {
+        let path = project.0.join(member).join("oxid.toml");
+        fs::write(
+            &path,
+            fs::read_to_string(&path)
+                .unwrap()
+                .replace("\"hosted\"", "\"bounded\""),
+        )
+        .unwrap();
+    }
+    let bounded = project.command(&["test", "--workspace", "--message-format=json"]);
+    assert_eq!(bounded.status.code(), Some(1), "{bounded:?}");
+    assert!(bounded.stderr.is_empty(), "{bounded:?}");
+    let body = String::from_utf8(bounded.stdout).unwrap();
+    assert!(
+        body.contains("E0601") && body.contains("\"failed\":2"),
+        "{body}"
+    );
 }
 
 #[test]

@@ -37,9 +37,9 @@ HOSTED_INPUTS = {
     'src/frontend/oir/owned/native_experimental.rs': (9193, '14b5768837a659c26dc7a7f6f939d7602960600ee42da266592b79bcee9d39ee'),
     'src/frontend/oir/owned/source/program.rs': (35825, 'f03db6132dbabbd00ec068ff9f7b94813445c024f709279b9265693baa31f563'),
     'src/frontend/oir/source/sealed.rs': (21921, '055398c15d4065b4881d578e5655bdc9044b9475a435751c5b4424b8e7012fa6'),
-    'src/main.rs': (153610, 'fd5ec3bb5d2506170086b14cdc9d73a8f6987cfb85b4f6ee530f48ff3e81253f'),
+    'src/main.rs': (155447, 'c60a8359c3c1addd2d36b02495f230c9c92bd70a213550a445791f7473c11dc1'),
     'src/project_cli.rs': (56005, '53557b73df3ed591ada0f589fd62a7a805c7c40c9069bf5e5c1e1e0fcdd3db97'),
-    'src/project_cli/workspace.rs': (31486, 'a0de074356bbe52d06cb7bbe5cd7df75597171abdc708f0147b7b05668161141'),
+    'src/project_cli/workspace.rs': (31790, '938e288b48fd975669dcb58084d05b2e37b75981bff7a78e290d4b4d75697cd8'),
 }
 
 

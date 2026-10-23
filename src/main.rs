@@ -1147,7 +1147,12 @@ fn watch_file(path: &Path, interp: &mut Interpreter) -> Result<(), String> {
 }
 
 fn parse_manifest_value(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim().trim_end_matches(',').trim();
+    parse_manifest_value_policy(raw, true)
+}
+
+fn parse_manifest_value_policy(raw: &str, legacy_comma: bool) -> Result<String, String> {
+    let trimmed = raw.trim();
+    let trimmed = if legacy_comma { trimmed.trim_end_matches(',').trim() } else { trimmed };
     if let Some(literal) = trimmed.strip_prefix('\'') {
         let end = literal.find('\'').ok_or("unterminated literal manifest string")?;
         let suffix = literal[end + 1..].trim();
@@ -1244,7 +1249,7 @@ fn parse_manifest_key(raw: &str) -> Result<String, String> {
     Ok(raw.to_string())
 }
 
-fn is_test_fixture_section(line: &str) -> Result<bool, String> {
+fn parse_manifest_section(line: &str) -> Result<(bool, Vec<String>), String> {
     let array = line.starts_with("[[");
     let opening = if array { 2 } else { 1 };
     let closing = manifest_delimiter(&line[opening..], ']').ok_or("missing closing bracket")? + opening;
@@ -1266,6 +1271,11 @@ fn is_test_fixture_section(line: &str) -> Result<bool, String> {
         let Some(dot) = dot else { break; };
         remaining = &remaining[dot + 1..];
     }
+    Ok((array, names))
+}
+
+fn is_test_fixture_section(line: &str) -> Result<bool, String> {
+    let (array, names) = parse_manifest_section(line)?;
     if names[0] != "test-fixtures" { return Ok(false); }
     if array || names.len() != 1 { return Err("test-fixtures must be one ordinary table".to_string()); }
     Ok(true)
@@ -1543,7 +1553,7 @@ pub(crate) fn read_typed_manifest_bytes(path: &Path, remaining: &mut usize) -> R
 pub(crate) fn parse_typed_manifest_bytes(path: &Path, bytes: &[u8]) -> Result<ManifestSnapshot, String> {
     use sha2::{Digest, Sha256};
     let text = std::str::from_utf8(bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
-    let manifest = parse_manifest_text(text, path, false)?;
+    let manifest = parse_manifest_text_policy(text, path, false, true)?;
     let digest = format!("{:x}", Sha256::digest(bytes));
     let workspace = parse_workspace_text(text)?;
     Ok(ManifestSnapshot { manifest, digest, workspace })
@@ -1559,14 +1569,33 @@ pub(crate) fn manifest_edition(path: &Path) -> Result<Option<String>, String> {
 }
 
 fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<ProjectManifest, String> {
+    parse_manifest_text_policy(text, path, edition_only, false)
+}
+
+fn parse_manifest_text_policy(text: &str, path: &Path, edition_only: bool, strict_execution: bool) -> Result<ProjectManifest, String> {
     let mut manifest = ProjectManifest::default();
     let mut section = String::new();
     let mut continuation = ManifestValueContinuation::default();
+    let mut execution_table = false;
     for raw_line in text.lines() {
-        if edition_only && continuation.active() { continuation.scan(raw_line); continue; }
+        if (edition_only || strict_execution) && continuation.active() { continuation.scan(raw_line); continue; }
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') { continue; }
         if line.starts_with('[') {
+            if strict_execution {
+                // Validate syntax before interpreting a namespace. Otherwise a
+                // broken quoted header can inherit the preceding section.
+                let (array, names) = parse_manifest_section(line)
+                    .map_err(|error| format!("invalid manifest section in {}: {}", path.display(), error))?;
+                if names[0] == "execution" {
+                    if array || names.len() != 1 || execution_table {
+                        return Err("execution settings require one ordinary [execution] table".into());
+                    }
+                    execution_table = true;
+                    section = "execution".into();
+                    continue;
+                }
+            }
             let array_table = line.starts_with("[[");
             let opening = if array_table { 2 } else { 1 };
             if let Some(end) = manifest_delimiter(&line[opening..], ']').map(|index| index + opening) {
@@ -1639,7 +1668,14 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             continue;
         }
         let key = key.map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?;
-        let value = parse_manifest_value(value_raw).map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?;
+        let value = if strict_execution && effective_section == "execution" {
+            parse_manifest_value_policy(value_raw, false)
+                .map_err(|error| format!("invalid execution value in {}: {}", path.display(), error))?
+        } else {
+            parse_manifest_value(value_raw)
+                .map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?
+        };
+        if strict_execution { continuation.scan(value_raw); }
         match (effective_section, key.as_str()) {
             ("project", "name") | ("", "name") => {
                 if manifest.name.replace(value).is_some() {
@@ -1712,6 +1748,7 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             _ => {}
         }
     }
+    if strict_execution && continuation.active() { return Err("unterminated manifest value".into()); }
     Ok(manifest)
 }
 
