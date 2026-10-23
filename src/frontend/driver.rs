@@ -1175,10 +1175,17 @@ fn report(
             }
         }
         Summary::Run(result) => {
-            if json {
-                println!("{}", run_summary(diagnostics.len(), result));
+            use std::io::Write;
+            let mut output = std::io::stdout().lock();
+            let written = if json {
+                writeln!(output, "{}", run_summary(diagnostics.len(), result))
             } else if let Some(result) = result.filter(|_| success) {
-                println!("{result}");
+                writeln!(output, "{result}")
+            } else {
+                Ok(())
+            };
+            if written.and_then(|()| output.flush()).is_err() {
+                return 74;
             }
         }
     }

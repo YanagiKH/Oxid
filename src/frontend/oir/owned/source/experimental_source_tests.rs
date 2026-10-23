@@ -476,3 +476,79 @@ fn main()->i32{let mut b=new();return hold(&b,grow(&mut b));}",
         assert!(errors.iter().all(|error| error.code != "E0500"), "{text}: {errors:?}");
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn file_source_exact_memory_boundary_refuses_before_truncation() {
+    use std::os::unix::ffi::OsStrExt;
+    let target = std::env::temp_dir().join(format!(
+        "oxid-file-memory-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let literal = target
+        .as_os_str()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("\\x{byte:02X}"))
+        .collect::<String>();
+    let project = project(&format!(
+        r#"
+use std::fs::OpenResult; use std::fs::create;
+fn main()->i32{{let path=b"{literal}";let result=create(&path);
+match result{{OpenResult::Opened(file)=>{{return 7;}},OpenResult::Error(code)=>{{return -1;}},
+OpenResult::MemoryLimit=>{{return -2;}},OpenResult::AllocationFailed=>{{return -3;}},}}}}
+"#
+    ));
+    let (program, entry) = check_enum_source(SourceOwner::project(&project)).unwrap();
+    let probe = |bytes| {
+        std::fs::write(&target, b"untouched").unwrap();
+        let (result, ledger) = byte_buffer::testing::capture(Default::default(), || {
+            execute::run_limits(
+                &program.witness,
+                entry,
+                execute::Limits {
+                    frames: 2,
+                    bytes,
+                    ..Default::default()
+                },
+            )
+        });
+        assert_eq!(ledger.after_cleanup.live_bytes, 0);
+        assert_eq!(
+            ledger.after_cleanup.allocations,
+            ledger.after_cleanup.releases
+        );
+        match result {
+            Ok(value) => {
+                assert_eq!(value, Scalar::I32(7));
+                assert!(std::fs::read(&target).unwrap().is_empty());
+                true
+            }
+            Err(error) => {
+                let diagnostic = error.diagnostic(project.sources());
+                assert_eq!(
+                    (diagnostic.code, diagnostic.stage),
+                    ("E0605", "oir-owned-run")
+                );
+                assert_eq!(ledger.after_cleanup.allocations, 0);
+                assert_eq!(std::fs::read(&target).unwrap(), b"untouched");
+                false
+            }
+        }
+    };
+    let (mut lower, mut upper) = (0, 1024 * 1024);
+    assert!(probe(upper));
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        if probe(middle) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    assert!(lower > 0);
+    assert!(!probe(lower - 1));
+    assert!(probe(lower));
+    std::fs::remove_file(target).unwrap();
+}

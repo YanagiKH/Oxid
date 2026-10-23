@@ -16,6 +16,7 @@ const TARGET: &str = "x86_64-unknown-linux-gnu";
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
 const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
 const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
+const FILE_CORE: &str = include_str!("../../native/experimental_files.c");
 const BYTEBUF_HEADER: &str = include_str!("../../native/experimental_bytebuf.h");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
@@ -368,6 +369,7 @@ fn compile_inner(
         // embedded in the compiler; the linked program needs no checkout.
         fs::write(workspace.0.join("experimental_bytebuf.h"), BYTEBUF_HEADER).map_err(io)?;
         fs::write(workspace.0.join("experimental_bytebuf.c"), BYTEBUF_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_files.c"), FILE_CORE).map_err(io)?;
         fs::write(workspace.0.join("typed_bytebuf.c"), BYTEBUF_RUNTIME).map_err(io)?;
         fs::write(
             workspace.0.join("runtime.c"),

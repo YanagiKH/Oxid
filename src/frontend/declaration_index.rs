@@ -303,6 +303,10 @@ const PREPARED_OR_RESERVATION: usize = {
         pair
     }
 };
+// The table and the independent admission temporary both retain this carrier.
+pub(in crate::frontend) const FILE_ADMISSION_CARRIER_GROWTH: usize =
+    size_of::<BuiltinAdmission<'static>>() - 32;
+const FILE_INDEX_CARRIER_GROWTH: usize = 2 * FILE_ADMISSION_CARRIER_GROWTH;
 const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<IndexPlan>()
     + size_of::<Counts>()
@@ -373,7 +377,8 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<BuiltinEnum>()
     + size_of::<BuiltinFunction>();
 const _: () = {
-    assert!(FIXED_SCRATCH <= 4096);
+    // Two complete admission carriers each grew by one aligned word.
+    assert!(FIXED_SCRATCH <= 4096 + FILE_INDEX_CARRIER_GROWTH);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
     assert!(ITEM_HANDLE_WORDS <= 128);
     // The existing four-Span envelope covers the legacy exposure return and use
@@ -473,7 +478,12 @@ impl<'s> Tables<'s> {
                 .map(|rank| set.extra_enums() + rank)
                 .ok_or_else(|| bad(self.sources.eof()))
         } else {
-            Ok(set.extra_enums() + set.extra_functions())
+            Ok(set.extra_enums()
+                + set.extra_functions()
+                + usize::from(
+                    item == experimental::Item::File
+                        && set.experimental().contains(experimental::Item::ByteBuf),
+                ))
         }
     }
     fn builtin_handle(&self, item: BuiltinItem) -> Result<DeclarationHandle, Box<Diagnostic>> {
@@ -583,6 +593,8 @@ impl<'s> Tables<'s> {
             DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => {
                 if item == experimental::Item::ByteBuf {
                     Ok(NominalId::ByteBuf)
+                } else if item == experimental::Item::File {
+                    Ok(NominalId::File)
                 } else {
                     item.enumeration()
                         .and_then(|item| self.builtins.set().experimental_enum_rank(item))
@@ -694,6 +706,9 @@ impl<'s> Tables<'s> {
         {
             return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
         }
+        if nominal == NominalId::File {
+            return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::File));
+        }
         if nominal == NominalId::ByteBuf {
             return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::ByteBuf));
         }
@@ -708,7 +723,7 @@ impl<'s> Tables<'s> {
             }
         }
         let original = match nominal {
-            NominalId::ByteBuf => None,
+            NominalId::ByteBuf | NominalId::File => None,
             NominalId::Record(id) => self.records.get(id.0).map(|row| row.original),
             NominalId::Enum(id) => self.enums.get(id.0).map(|row| row.original),
         }
@@ -1314,6 +1329,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 .map(|nominal| {
                     ValueTy::Owned(match nominal {
                         NominalId::ByteBuf => AggregateTy::ByteBuf,
+                        NominalId::File => AggregateTy::File,
                         NominalId::Record(record) => AggregateTy::Record(record),
                         NominalId::Enum(enumeration) => AggregateTy::Enum(enumeration),
                     })
@@ -1359,6 +1375,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 let aggregate = match nominal {
                     NominalId::Record(record) => AggregateTy::Record(record),
                     NominalId::ByteBuf => AggregateTy::ByteBuf,
+                    NominalId::File => AggregateTy::File,
                     NominalId::Enum(_) => return Err(bad(ty.span)),
                 };
                 (mutable, BorrowedTy::Exact(aggregate))
@@ -1404,7 +1421,9 @@ impl<'i, 's> QuerySession<'i, 's> {
     ) -> Result<RecordId, Box<Diagnostic>> {
         match self.lookup_nominal_type(requester, &path, context, NominalTypeFilter::Records)? {
             NominalId::Record(record) => Ok(record),
-            NominalId::Enum(_) | NominalId::ByteBuf => Err(bad(self.tables.sources.eof())),
+            NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => {
+                Err(bad(self.tables.sources.eof()))
+            }
         }
     }
     pub fn nominal_type(
@@ -1446,7 +1465,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                     item.function().is_none()
                         && (filter == NominalTypeFilter::Values
                             || (filter == NominalTypeFilter::References
-                                && item == experimental::Item::ByteBuf))
+                                && matches!(
+                                    item,
+                                    experimental::Item::ByteBuf | experimental::Item::File
+                                )))
                 }
             };
             if accepted {
@@ -1460,12 +1482,13 @@ impl<'i, 's> QuerySession<'i, 's> {
                     },
                     origin: at,
                     kind: match nominal {
-                        NominalId::ByteBuf => "resource",
+                        NominalId::ByteBuf | NominalId::File => "resource",
                         NominalId::Record(_) => "record",
                         NominalId::Enum(_) => "enum",
                     },
                     id: match nominal {
                         NominalId::ByteBuf => 0,
+                        NominalId::File => 1,
                         NominalId::Record(id) => id.0,
                         NominalId::Enum(id) => id.0,
                     },
@@ -1604,7 +1627,9 @@ impl<'i, 's> QuerySession<'i, 's> {
                 }
                 match self.tables.nominal_handle(original)? {
                     NominalId::Enum(enumeration) => enumeration,
-                    NominalId::Record(_) | NominalId::ByteBuf => return Err(bad(prefix)),
+                    NominalId::Record(_) | NominalId::ByteBuf | NominalId::File => {
+                        return Err(bad(prefix))
+                    }
                 }
             }
             ast::PathRoot::Crate => match self
@@ -1614,7 +1639,9 @@ impl<'i, 's> QuerySession<'i, 's> {
                 AbsolutePrefix::Enumeration(original) => {
                     match self.tables.nominal_original(original)? {
                         NominalId::Enum(enumeration) => enumeration,
-                        NominalId::Record(_) | NominalId::ByteBuf => return Err(bad(member)),
+                        NominalId::Record(_) | NominalId::ByteBuf | NominalId::File => {
+                            return Err(bad(member))
+                        }
                     }
                 }
                 AbsolutePrefix::Module(owner) => {
@@ -1891,6 +1918,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     ordinal: match nominal {
                         NominalId::Enum(id) => id.0,
                         NominalId::ByteBuf => 0,
+                        NominalId::File => 1,
                         _ => unreachable!("checked builtin nominal"),
                     },
                     total: prefix + item.name().len(),
@@ -1953,6 +1981,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             terminal,
             ordinal: match nominal {
                 NominalId::ByteBuf => 0,
+                NominalId::File => 1,
                 NominalId::Record(id) => id.0,
                 NominalId::Enum(id) => id.0,
             },

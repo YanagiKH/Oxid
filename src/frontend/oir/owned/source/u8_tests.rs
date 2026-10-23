@@ -524,6 +524,8 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
             169_210
                 + super::hir_budget::byte_storage_fixed_successor_bytes()
                 + super::hir_budget::byte_string_successor_bytes(1)
+                + super::hir_budget::file_index_successor_bytes()
+                + super::hir_budget::file_projection_successor_bytes()
         );
         assert_eq!(extra, 2_028);
         assert_eq!(
@@ -531,6 +533,8 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
             171_238
                 + super::hir_budget::byte_storage_fixed_successor_bytes()
                 + super::hir_budget::byte_string_successor_bytes(1)
+                + super::hir_budget::file_index_successor_bytes()
+                + super::hir_budget::file_projection_successor_bytes()
         );
     }
     for (limit, succeeds) in [

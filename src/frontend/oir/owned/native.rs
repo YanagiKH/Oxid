@@ -537,6 +537,14 @@ fn native_module_policy_accounted_with_source_names(
         accounting,
         names,
     )?;
+    let emitter_transient = add(
+        EMITTER_TRANSIENT_BYTES,
+        if plan.uses_dynamic_resources() {
+            resources::control_bytes(&plan)
+        } else {
+            0
+        },
+    )?;
     let emission_metadata = add(
         add(
             add(
@@ -548,9 +556,9 @@ fn native_module_policy_accounted_with_source_names(
                 accounting.metrics.message_header_bytes,
             )?,
         )?,
-        EMITTER_TRANSIENT_BYTES,
+        emitter_transient,
     )?;
-    accounting.metrics.emitter_transient_bound = EMITTER_TRANSIENT_BYTES;
+    accounting.metrics.emitter_transient_bound = emitter_transient;
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(emission_metadata);
     limit(
         emission_metadata,
@@ -848,6 +856,10 @@ fn admit_policy_accounted(
             if plan.uses_dynamic_resources() { 64 } else { 0 },
             if plan.has_binary_delivery() {
                 experimental::BINARY_DELIVERY_BYTES
+            } else {
+                0
+            } + if plan.has_file_delivery() {
+                experimental::FILE_DELIVERY_BYTES
             } else {
                 0
             },
@@ -1728,7 +1740,12 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
             .unwrap();
             format!("%{name}_length")
         }
-        BorrowedTy::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf) => {
+        BorrowedTy::Exact(
+            AggregateTy::Record(_)
+            | AggregateTy::Enum(_)
+            | AggregateTy::ByteBuf
+            | AggregateTy::File,
+        ) => {
             unreachable!("verified indexed base")
         }
     }
@@ -1940,7 +1957,9 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
             {
                 // The sealed binary adapter already commits the status to
                 // the caller; its immediate return emits no transfer tree.
-                if plan.binary_delivery_cost(f.id).is_none() {
+                if plan.binary_delivery_cost(f.id).is_none()
+                    && plan.file_delivery_cost(f.id).is_none()
+                {
                     cells = add(
                         cells,
                         transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
@@ -2010,7 +2029,8 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
             if matches!(
                 block.terminator.as_ref().expect("verified terminator").kind,
                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
-            ) {
+            ) && plan.file_delivery_cost(function.id).is_none()
+            {
                 for owner in &function.owners {
                     if resources::contains(plan, owner.aggregate()) {
                         cells = add(
@@ -2592,7 +2612,7 @@ fn active_transfer_with_intent(
         enum_transfer_with_intent(out, plan, name, enumeration, source, intent, failure);
         return;
     }
-    if aggregate != AggregateTy::ByteBuf {
+    if !matches!(aggregate, AggregateTy::ByteBuf | AggregateTy::File) {
         for (index, leaf) in plan
             .witness()
             .declarations()
@@ -2710,7 +2730,7 @@ fn transfer(
     let record = match aggregate {
         AggregateTy::Record(record) => record,
         AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
-        AggregateTy::ByteBuf => {
+        AggregateTy::ByteBuf | AggregateTy::File => {
             resources::leaves(
                 out,
                 plan,
@@ -2794,7 +2814,7 @@ fn transfer_leaves(
         kind,
         failure,
     );
-    if aggregate == AggregateTy::ByteBuf {
+    if matches!(aggregate, AggregateTy::ByteBuf | AggregateTy::File) {
         return;
     }
     let leaves = plan
@@ -2855,9 +2875,9 @@ fn emit(
     let guarded = storage.guarded();
     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
     if out.resources {
-        out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
+        out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
         if out.policy.hosted() {
-            out.write_str("declare i32 @__oxid_bytebuf_operation_hosted(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery_hosted(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
+            out.write_str("declare i32 @__oxid_file_delivery_hosted(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_bytebuf_operation_hosted(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery_hosted(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
         }
     }
     if plan.witness().builtin_function().is_some() {
@@ -2868,7 +2888,7 @@ fn emit(
         out.write_str("declare i32 @__oxid_write_stdout_byte(ptr)\n")
             .unwrap();
     }
-    if out.policy.process() {
+    if out.policy.process() || plan.has_file_delivery() {
         out.write_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n")
             .unwrap();
     }
@@ -2906,7 +2926,7 @@ fn emit(
         unreachable!("entry gate")
     };
     out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
-    if out.policy.process() {
+    if out.policy.process() || plan.has_file_delivery() {
         // Signal safety precedes even the root activation/fuel diagnostic.
         out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();
     }
@@ -3301,7 +3321,10 @@ fn emit_function(
             return;
         }
         let term = block.terminator.as_ref().expect("verified terminator");
-        if guarded && plan.binary_delivery_cost(id).is_none() {
+        if guarded
+            && plan.binary_delivery_cost(id).is_none()
+            && plan.file_delivery_cost(id).is_none()
+        {
             emit_guard(
                 out,
                 diagnostics,
@@ -4434,7 +4457,7 @@ fn emit_terminator(
             writeln!(out, "  ret {t} {value}").unwrap();
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
-            if plan.binary_delivery_cost(id).is_some() {
+            if plan.binary_delivery_cost(id).is_some() || plan.file_delivery_cost(id).is_some() {
                 // The canonical operation prepaid this exact return cost and
                 // already delivered into %result. It owns no resource leaves.
                 out.write_str("  ret void\n").unwrap();

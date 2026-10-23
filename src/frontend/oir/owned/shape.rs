@@ -106,17 +106,19 @@ fn same_aggregate(
 fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
-            Err(bad(Malformed::Type, s))
-        }
+        AggregateTy::FixedArray(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
 fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
     match aggregate {
         AggregateTy::FixedArray(array) => Ok(array),
-        AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
-            Err(bad(Malformed::Type, s))
-        }
+        AggregateTy::Record(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
 fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
@@ -199,8 +201,37 @@ pub(super) fn signatures(
         .builtins
         .experimental()
         .contains(crate::frontend::builtin_catalog::experimental::Item::ByteBuf);
-    if d.has_resource_declarations() && !resource_authority {
+    let file_authority = raw
+        .builtins
+        .experimental()
+        .contains(crate::frontend::builtin_catalog::experimental::Item::File);
+    let permitted = |value| match value {
+        ValueTy::Owned(AggregateTy::ByteBuf) => resource_authority,
+        ValueTy::Owned(AggregateTy::File) => file_authority,
+        _ => true,
+    };
+    if d.has_resource_declarations() && !resource_authority && !file_authority {
         return Err(DeclarationError::TypeMismatch.into());
+    }
+    // A catalog for one resource class cannot authorize a different class in
+    // otherwise ordinary nominal declarations. Inspect direct leaves only.
+    for record in &raw.records {
+        for field in &record.fields {
+            if let ParameterTy::Value(value) = field.ty {
+                if !permitted(value) {
+                    return Err(bad(Malformed::Type, field.span));
+                }
+            }
+        }
+    }
+    for enumeration in &raw.enums {
+        for variant in &enumeration.variants {
+            if let Some(ParameterTy::Value(value)) = variant.payload {
+                if !permitted(value) {
+                    return Err(bad(Malformed::Type, variant.span));
+                }
+            }
+        }
     }
     for (index, f) in raw.functions.iter().enumerate() {
         span(sources, f.span)?;
@@ -208,11 +239,9 @@ pub(super) fn signatures(
             return Err(bad(Malformed::Id, f.span));
         }
         d.check_value_type(f.result)?;
-        if !resource_authority
-            && (f.result == ValueTy::Owned(AggregateTy::ByteBuf)
-                || f.loans
-                    .iter()
-                    .any(|loan| loan.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf)))
+        if !permitted(f.result) || f.loans.iter().any(|loan| {
+            matches!(loan.referent(), BorrowedTy::Exact(aggregate) if !permitted(ValueTy::Owned(aggregate)))
+        })
         {
             return Err(bad(Malformed::Type, f.span));
         }
@@ -258,7 +287,7 @@ pub(super) fn signatures(
         for (id, o) in f.owners.iter().enumerate() {
             span(sources, o.span)?;
             d.check_aggregate_type(o.aggregate())?;
-            if o.aggregate() == AggregateTy::ByteBuf && !resource_authority {
+            if !permitted(ValueTy::Owned(o.aggregate())) {
                 return Err(bad(Malformed::Type, o.span));
             }
             match o.kind {
@@ -290,7 +319,8 @@ pub(super) fn signatures(
         for (id, r) in f.references.iter().enumerate() {
             span(sources, r.span)?;
             d.check_borrowed_type(r.referent())?;
-            if r.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf) && !resource_authority {
+            if matches!(r.referent(), BorrowedTy::Exact(aggregate) if !permitted(ValueTy::Owned(aggregate)))
+            {
                 return Err(bad(Malformed::Type, r.span));
             }
             if !matches!(f.parameters.get(r.position),Some(ParameterBinding::Reference(p)) if p.0==id)
@@ -432,6 +462,7 @@ pub(super) fn check_with_conversion_authority(
                     BorrowedTy::Exact(AggregateTy::FixedArray(array))
                 }
                 ValueTy::Owned(AggregateTy::ByteBuf) => BorrowedTy::Exact(AggregateTy::ByteBuf),
+                ValueTy::Owned(AggregateTy::File) => BorrowedTy::Exact(AggregateTy::File),
                 _ => return Err(bad(Malformed::Type, l.span)),
             }
         };

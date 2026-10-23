@@ -206,10 +206,11 @@ mod tests {
             .into_iter()
             .map(|item| {
                 format!(
-                    "use {}::{}::{};\n",
+                    "use {}::{}::{} as item_{};\n",
                     item.path()[0],
                     item.path()[1],
-                    item.name()
+                    item.name(),
+                    item as u8
                 )
             })
             .collect();
@@ -249,9 +250,7 @@ mod tests {
                             index,
                         },
                         span,
-                        payload: item
-                            .payload(index)
-                            .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty))),
+                        payload: item.value_payload(index).map(ParameterTy::Value),
                     })
                     .collect(),
             });

@@ -6,7 +6,10 @@ use std::ops::Range;
 
 #[path = "execute_io_delivery.rs"]
 mod delivery;
+#[path = "execute_file_delivery.rs"]
+mod file_delivery;
 pub(super) use delivery::control_bytes as binary_delivery_control_bytes;
+pub(super) use file_delivery::control_bytes as file_delivery_control_bytes;
 
 pub(super) enum ByteRegion {
     Activation {
@@ -231,17 +234,19 @@ impl Machine<'_, '_> {
                             .variants(enumeration)
                             .map_err(|_| bad("buffer result enum", span))?;
                         for variant in variants {
-                            let value = EnumValue {
-                                tag: variant.tag(),
-                                payload: variant.payload().map(|_| Scalar::I32(0)),
-                                payload_offset: variant.payload_offset().unwrap_or(0) as u8,
+                            let offset = variant.payload_offset().unwrap_or(0);
+                            let length = match variant.value_payload() {
+                                None => 0,
+                                Some(ValueTy::Scalar(hir::Ty::I32)) => 4,
+                                Some(ValueTy::Owned(AggregateTy::File)) => 16,
+                                _ => return Err(bad("status payload type", span)),
                             };
-                            enum_offsets(bytes.clone(), value, span)?;
-                            if variant.payload().is_some()
-                                && (variant.payload() != Some(hir::Ty::I32)
-                                    || variant.payload_offset() != Some(4))
+                            if bytes.len() < 4
+                                || offset
+                                    .checked_add(length)
+                                    .is_none_or(|end| end > bytes.len())
                             {
-                                return Err(bad("buffer status layout", span));
+                                return Err(bad("status payload extent", span));
                             }
                         }
                     }

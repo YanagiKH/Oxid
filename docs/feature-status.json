@@ -1367,6 +1367,37 @@
         "scripts/verify_utf8_text_app.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "native-files",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Move-only file handles with partial binary reads and writes, fsync and automatic close.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native builds.",
+      "limitations": "Raw Linux byte paths of at most 4095 bytes. Blocking single OS attempts, caller-directed retries, shared normalized live-memory and existing ownership limits. No seek, directories, async, deadlines, cancellation or additional native targets.",
+      "spec": [
+        "rfcs/0048-native-file-io.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/experimental_builtins.rs",
+        "src/frontend/oir/owned/file_resources.rs",
+        "src/frontend/oir/owned/execute_file_delivery.rs",
+        "native/experimental_files.c"
+      ],
+      "tests": [
+        "tests/native_files.rs",
+        "src/frontend/oir/owned/file_resource_tests.rs",
+        "tests/native_files_runtime.c",
+        "scripts/test_native_files_runtime.py",
+        "scripts/verify_native_files.py",
+        "tests/fixtures/native_files/copy.ox.in"
+      ],
+      "evidence": []
     }
   ]
 }

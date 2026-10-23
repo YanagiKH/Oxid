@@ -401,7 +401,7 @@ fn enum_carrier_path_state_shifts_exact_scratch_admission_before_reservation() {
 #[test]
 fn measured_flat_rows_and_fixed_state() {
     println!("OriginalRow={} FunctionRow={} RecordRow={} FieldRow={} ModuleRow={} ImportRow={} AliasCell={} SeenCell={} Index={} Facts={} Plan={} Counts={} Scratch={} Fixed={}",size_of::<OriginalRow>(),size_of::<FunctionRow>(),size_of::<RecordRow>(),size_of::<FieldRow>(),size_of::<ModuleRow>(),size_of::<ImportRow>(),size_of::<AliasCell>(),size_of::<SeenCell>(),size_of::<DeclarationIndex<'_>>(),size_of::<DeclarationFacts<'_>>(),size_of::<IndexPlan>(),size_of::<Counts>(),size_of::<Scratch>(),FIXED_SCRATCH);
-    const { assert!(FIXED_SCRATCH <= 4096) };
+    const { assert!(FIXED_SCRATCH <= 4096 + FILE_INDEX_CARRIER_GROWTH) };
 }
 
 #[cfg(target_os = "linux")]

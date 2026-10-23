@@ -1386,6 +1386,7 @@ fn resolve_index_impl(
                 let payload = variant.value_payload(work).map_err(|error| vec![*error])?;
                 let nominal = match payload {
                     Some(ValueTy::Owned(AggregateTy::ByteBuf)) => NominalId::ByteBuf,
+                    Some(ValueTy::Owned(AggregateTy::File)) => NominalId::File,
                     Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
                     Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
                     Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
@@ -1543,6 +1544,11 @@ fn resolve_index_impl(
             .map(|(ty, p)| {
                 (
                     match *ty {
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::File))
+                        | ParameterTy::Reference {
+                            referent: BorrowedTy::Exact(AggregateTy::File),
+                            ..
+                        } => Some(NominalId::File),
                         ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf))
                         | ParameterTy::Reference {
                             referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
@@ -1564,6 +1570,7 @@ fn resolve_index_impl(
         let result = (
             match signature.result {
                 ValueTy::Owned(AggregateTy::ByteBuf) => Some(NominalId::ByteBuf),
+                ValueTy::Owned(AggregateTy::File) => Some(NominalId::File),
                 ValueTy::Owned(AggregateTy::Record(r)) => Some(NominalId::Record(r)),
                 ValueTy::Owned(AggregateTy::Enum(e)) => Some(NominalId::Enum(e)),
                 _ => None,
@@ -1586,7 +1593,7 @@ fn resolve_index_impl(
                 NominalId::Record(record) => {
                     index.query(work).signature_exposure(DefId(id), record, at)
                 }
-                NominalId::Enum(_) | NominalId::ByteBuf => index
+                NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => index
                     .query(work)
                     .nominal_signature_exposure(DefId(id), nominal, at)
                     .map(|exposure| match exposure {

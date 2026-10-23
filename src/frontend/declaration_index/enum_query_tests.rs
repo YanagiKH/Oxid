@@ -602,7 +602,7 @@ fn enum_query_actual_fixed_and_prepared_name_carriers_are_measured() {
     use std::mem::align_of;
     println!("enum-query-layout Prefix={}/{} Endpoint={}/{} NominalExposure={}/{} LegacyExposure={}/{} NominalId={}/{} Prepared={}/{} OptionalPrepared={}/{} Fixed={}",size_of::<AbsolutePrefix>(),align_of::<AbsolutePrefix>(),size_of::<QualifiedValueEndpoint>(),align_of::<QualifiedValueEndpoint>(),size_of::<NominalExposure>(),align_of::<NominalExposure>(),size_of::<Exposure>(),align_of::<Exposure>(),size_of::<NominalId>(),align_of::<NominalId>(),size_of::<PreparedTypeName<'_>>(),align_of::<PreparedTypeName<'_>>(),size_of::<Option<PreparedTypeName<'_>>>(),align_of::<Option<PreparedTypeName<'_>>>(),FIXED_SCRATCH);
     const { assert!(FIXED_SCRATCH > 3968) };
-    const { assert!(FIXED_SCRATCH <= 4096) };
+    const { assert!(FIXED_SCRATCH <= 4096 + FILE_INDEX_CARRIER_GROWTH) };
     #[cfg(target_pointer_width = "64")]
     assert_eq!(size_of::<PreparedTypeName<'_>>(), 464);
 }

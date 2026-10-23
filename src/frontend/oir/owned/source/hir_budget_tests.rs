@@ -988,7 +988,7 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
     assert_eq!(
         components,
         (
-            33448 + 64 * 152,
+            33448 + 64 * 152 + file_projection_successor_bytes(),
             1920 + size_of::<&mut type_storage::TypedObserved>() + 472,
             24,
             784,
@@ -1191,7 +1191,12 @@ fn c3_t1_observation_price_has_independent_fixed_and_mixed_source_slopes() {
             observation.2,
             observation.3
         ),
-        (11896, 320, 24, 24)
+        (
+            11896 + crate::frontend::declaration_index::FILE_ADMISSION_CARRIER_GROWTH,
+            320,
+            24,
+            24
+        )
     );
     let checker = checker_only_components();
     let base = HirPlan::calculate(HirCounts::default(), at).unwrap();
@@ -1366,11 +1371,22 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
                 observation.2,
                 observation.3
             ),
-            (11896, 320, 24, 24)
+            (
+                11896 + crate::frontend::declaration_index::FILE_ADMISSION_CARRIER_GROWTH,
+                320,
+                24,
+                24
+            )
         );
         assert_eq!(
             checker_only_components(),
-            (33448 + 64 * 152, 1928 + 472, 24, 784, 88)
+            (
+                33448 + 64 * 152 + file_projection_successor_bytes(),
+                1928 + 472,
+                24,
+                784,
+                88
+            )
         );
         // Independently measured embedded banks, rather than substituting a
         // changed aggregate outcome for the preceding member composition.

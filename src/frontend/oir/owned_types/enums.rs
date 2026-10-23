@@ -121,6 +121,7 @@ enum PayloadSlot {
     Enum(u32),
     Array(super::FixedArrayTy),
     ByteBuf,
+    File,
     AlignedScalar(hir::Ty),
     AlignedRecord(u32),
     AlignedEnum(u32),
@@ -139,15 +140,17 @@ impl PayloadSlot {
             }
             ValueTy::Owned(AggregateTy::FixedArray(array)) => Self::Array(array),
             ValueTy::Owned(AggregateTy::ByteBuf) => Self::ByteBuf,
+            ValueTy::Owned(AggregateTy::File) => Self::File,
         };
         match alignment {
-            4 if !matches!(payload, Self::ByteBuf) => Ok(payload),
+            4 if !matches!(payload, Self::ByteBuf | Self::File) => Ok(payload),
             8 => Ok(match payload {
                 Self::Scalar(ty) => Self::AlignedScalar(ty),
                 Self::Record(id) => Self::AlignedRecord(id),
                 Self::Enum(id) => Self::AlignedEnum(id),
                 Self::Array(array) => Self::AlignedArray(array),
                 Self::ByteBuf => Self::ByteBuf,
+                Self::File => Self::File,
                 _ => unreachable!("fresh compact payload"),
             }),
             _ => Err(DeclarationError::LayoutOverflow),
@@ -167,6 +170,7 @@ impl PayloadSlot {
                 ValueTy::Owned(AggregateTy::FixedArray(array))
             }
             Self::ByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
+            Self::File => ValueTy::Owned(AggregateTy::File),
         }
     }
     fn offset(self) -> usize {
@@ -638,6 +642,11 @@ fn owned_summaries(
                     Some(ValueTy::Owned(AggregateTy::FixedArray(array))) => ContainmentSummary {
                         layout: array.layout()?,
                         width: array.length().max(1),
+                        depth: 0,
+                    },
+                    Some(ValueTy::Owned(AggregateTy::File)) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 2,
                         depth: 0,
                     },
                     Some(ValueTy::Owned(AggregateTy::ByteBuf)) => ContainmentSummary {

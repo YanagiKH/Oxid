@@ -18,10 +18,7 @@ pub(super) fn check(raw: &RawOwnedProgram, ids: &builtins::BuiltinIds) -> Result
                     index,
                 })
                 || variant.span != declaration.span
-                || variant.payload
-                    != kind
-                        .payload(index)
-                        .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty)))
+                || variant.payload != kind.value_payload(index).map(ParameterTy::Value)
             {
                 return Err(bad());
             }

@@ -581,9 +581,10 @@ impl<'p, 'w> Machine<'p, 'w> {
     fn array_type(&self, key: OwnerKey, span: Span) -> Result<FixedArrayTy> {
         match self.aggregate(key, span)? {
             AggregateTy::FixedArray(array) => Ok(array),
-            AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
-                Err(bad("array aggregate type", span))
-            }
+            AggregateTy::Record(_)
+            | AggregateTy::Enum(_)
+            | AggregateTy::ByteBuf
+            | AggregateTy::File => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -646,7 +647,11 @@ impl<'p, 'w> Machine<'p, 'w> {
                 .ok_or_else(|| bad("view loan descriptor", span))?;
             if !descriptor.projection.is_empty() {
                 let (
-                    ValueTy::Owned(aggregate @ (AggregateTy::FixedArray(_) | AggregateTy::ByteBuf)),
+                    ValueTy::Owned(
+                        aggregate @ (AggregateTy::FixedArray(_)
+                        | AggregateTy::ByteBuf
+                        | AggregateTy::File),
+                    ),
                     offset,
                 ) = self
                     .plan
@@ -1511,7 +1516,11 @@ impl<'p, 'w> Machine<'p, 'w> {
             .aggregate();
         if !descriptor.projection.is_empty() {
             let (
-                ValueTy::Owned(projected @ (AggregateTy::FixedArray(_) | AggregateTy::ByteBuf)),
+                ValueTy::Owned(
+                    projected @ (AggregateTy::FixedArray(_)
+                    | AggregateTy::ByteBuf
+                    | AggregateTy::File),
+                ),
                 relative,
             ) = self
                 .plan
@@ -3138,6 +3147,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                 } = statement.kind
                 {
                     use crate::frontend::builtin_catalog::experimental::Function;
+                    if operation.is_file() {
+                        self.file_delivery(frame, operation, destination, span)?;
+                        continue;
+                    }
                     if matches!(operation, Function::ReadSome | Function::WriteSome) {
                         self.binary_delivery(frame, operation, destination, span)?;
                         // The canonical frame has completed its prepaid return.
@@ -3275,7 +3288,7 @@ impl Iterator for ActiveCells<'_> {
             })),
             // Resource identities are never scalar cells. A separate checked
             // traversal validates and transfers their allocation obligations.
-            ValueTy::Owned(AggregateTy::ByteBuf) => None,
+            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                 let result = (|| {
                     let leaf = ScalarLeaf {
@@ -3514,6 +3527,16 @@ fn checked_entry_policy(
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
+    for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if operation.is_file()
+            && witness.experimental_function(operation).is_some()
+            && !input::supported_host()
+        {
+            return Err(OwnedRunFailure::BinaryHost(
+                witness.functions()[witness.experimental_function(operation).unwrap().0].span,
+            ));
+        }
+    }
     for operation in [
         crate::frontend::builtin_catalog::experimental::Function::ReadSome,
         crate::frontend::builtin_catalog::experimental::Function::WriteSome,
@@ -3631,6 +3654,11 @@ fn execute_plan_policy(
     // All callers share entry validation. Every sealed Process caller
     // establishes host support and signal policy before reaching this point.
     checked_entry_policy(plan.witness(), Some(entry), policy)?;
+    if plan.has_file_delivery() && !process::setup() {
+        return Err(OwnedRunFailure::BinaryHost(
+            plan.witness().functions()[entry.0].span,
+        ));
+    }
     let limits = limits.bounded();
     let f = &plan.witness().functions()[entry.0];
     let mut machine = Machine {
@@ -3646,12 +3674,16 @@ fn execute_plan_policy(
             plan::mul(limits.frames, size_of::<Frame>())?,
             plan::add(
                 if plan.uses_dynamic_resources() {
-                    size_of::<byte_buffer::Heap>()
+                    plan::add(size_of::<byte_buffer::Heap>(), resources::control_bytes())?
                 } else {
                     0
                 },
                 if plan.has_binary_delivery() {
                     binary_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_file_delivery() {
+                    experimental::file_delivery_control_bytes()
                 } else {
                     0
                 },
@@ -3861,9 +3893,10 @@ fn stage_stdout(source: &[u8], staged: &mut [u8]) -> bool {
 fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
-            Err(bad("unsupported aggregate carrier", span))
-        }
+        AggregateTy::FixedArray(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File => Err(bad("unsupported aggregate carrier", span)),
     }
 }
 

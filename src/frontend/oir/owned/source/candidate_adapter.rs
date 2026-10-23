@@ -1105,7 +1105,10 @@ mod candidate_native;
 fn record_id(aggregate: AggregateTy) -> RecordId {
     match aggregate {
         AggregateTy::Record(record) => record,
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf => {
+        AggregateTy::FixedArray(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File => {
             panic!("source aggregate gate")
         }
     }

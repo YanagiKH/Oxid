@@ -280,20 +280,23 @@ fn real_plan_exact_and_one_less_without_quota_growth() {
         records: 1,
         ..Counts::default()
     };
+    let header = std::mem::size_of::<DeclarationIndex<'static>>();
+    let retained = 552 + FILE_ADMISSION_CARRIER_GROWTH as u64;
+    let scratch = 4108 + FILE_INDEX_CARRIER_GROWTH as u64;
     let plan =
-        IndexPlan::calculate(counts, 376, FIXED_SCRATCH, IndexLimits::default(), at).unwrap();
+        IndexPlan::calculate(counts, header, FIXED_SCRATCH, IndexLimits::default(), at).unwrap();
     assert_eq!(
         (plan.retained, plan.scratch, plan.build_work),
-        (552, 4108, 196)
+        (retained, scratch, 196)
     );
     for (work, ok) in [(184, false), (195, false), (196, true)] {
         let limits = IndexLimits {
-            retained: 552,
-            scratch: 4108,
+            retained,
+            scratch,
             work,
         };
         assert_eq!(
-            IndexPlan::calculate(counts, 376, FIXED_SCRATCH, limits, at).is_ok(),
+            IndexPlan::calculate(counts, header, FIXED_SCRATCH, limits, at).is_ok(),
             ok
         );
     }
