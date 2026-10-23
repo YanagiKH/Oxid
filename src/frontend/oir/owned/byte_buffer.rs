@@ -9,6 +9,13 @@ use std::{
     slice,
 };
 
+#[path = "file_resources.rs"]
+mod files;
+pub(super) use files::{FileAccess, FileDescriptor, OpenValue};
+pub(super) const fn file_helper_control_bytes() -> usize {
+    files::helper_control_bytes()
+}
+
 pub(super) const LIMIT: u64 = 16 * 1024 * 1024;
 pub(super) const ALLOCATION_CHARGE: u64 = 32;
 
@@ -464,7 +471,12 @@ impl Heap {
         // once. Copy its links and size before deallocating its entire block.
         unsafe {
             let header = node.as_ref();
-            let capacity = header.capacity;
+            let capacity = if header.capacity == files::FILE_NODE {
+                let _ = files::close_node(header);
+                0
+            } else {
+                header.capacity
+            };
             if header.previous.is_null() {
                 self.head = header.next;
             } else {

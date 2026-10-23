@@ -9,14 +9,14 @@ use super::*;
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub(super) struct BuiltinAdmission<'s> {
-    anchors: [u32; 7],
+    anchors: [u32; 8],
     experimental: super::super::builtin_catalog::experimental::Inventory,
     source: std::marker::PhantomData<&'s Span>,
 }
 impl<'s> BuiltinAdmission<'s> {
     fn none() -> Self {
         Self {
-            anchors: [NONE; 7],
+            anchors: [NONE; 8],
             experimental: Default::default(),
             source: std::marker::PhantomData,
         }
@@ -55,6 +55,15 @@ impl<'s> BuiltinAdmission<'s> {
             }
             BuiltinItem::Experimental(item) => {
                 self.experimental = self.experimental.admit(item);
+                if let Some(enumeration) = item
+                    .function()
+                    .and_then(experimental::Function::result_enum)
+                {
+                    let dependency = 4 + enumeration.item().family();
+                    if self.anchors[dependency] == NONE {
+                        self.anchors[dependency] = import;
+                    }
+                }
                 4 + item.family()
             }
         };
@@ -162,7 +171,8 @@ fn current_builtin_endpoint(
     let at = view.span();
     if view.root() == ast::PathRoot::Std
         && segments.len() == 3
-        && sources.text(segments[0])? == "alloc"
+        && (sources.text(segments[0])? == "alloc"
+            || (sources.text(segments[0])? == "std" && sources.text(segments[1])? == "fs"))
     {
         return experimental_endpoint(sources, segments, work, at);
     }
@@ -636,6 +646,12 @@ fn collect<'s>(
                         .set()
                         .experimental()
                         .contains(experimental::Item::ByteBuf),
+                )
+                + usize::from(
+                    builtins
+                        .set()
+                        .experimental()
+                        .contains(experimental::Item::File),
                 ),
         ),
         (c.functions, builtins.set().extra_functions()),

@@ -3,6 +3,7 @@
 #include "experimental_bytebuf.c"
 
 static oxid_byte_heap execution_heap;
+#include "experimental_files.c"
 void __oxid_bytebuf_start(void) { oxid_heap_init(&execution_heap); }
 void __oxid_bytebuf_cleanup(void) { oxid_heap_cleanup(&execution_heap); }
 int32_t __oxid_bytebuf_finish(void) {

@@ -301,6 +301,7 @@ impl Label for Box<Diagnostic> {
 #[allow(clippy::large_enum_variant)] // Both bounded formatter frames are preaccounted; no heap allocation.
 enum TypeName<'a> {
     ByteBuf,
+    File,
     Scalar(Ty),
     Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
@@ -309,6 +310,7 @@ impl std::fmt::Display for TypeName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ByteBuf => write!(f, "alloc::bytes::ByteBuf"),
+            Self::File => write!(f, "std::fs::File"),
             Self::Scalar(ty) => write!(f, "{ty}"),
             Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
@@ -323,6 +325,7 @@ fn type_name<'a>(
     match ty {
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
         ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
+        ValueTy::Owned(AggregateTy::File) => Ok(TypeName::File),
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
@@ -1281,7 +1284,7 @@ pub(super) mod semantic_carriers {
         slice, vec,
     };
 
-    type ArrayProjection = (Option<Projection>, AccessBase, Ty);
+    type ArrayProjection = (Option<Projection>, AccessBase, Option<Ty>);
     type FrameState = (BodyBlockId, usize, FlowSummary, Option<LoopId>);
     type CallComparison =
         Enumerate<Zip<vec::IntoIter<(ParameterTy, Span)>, slice::Iter<'static, ParameterTy>>>;
@@ -1289,7 +1292,9 @@ pub(super) mod semantic_carriers {
 
     // One nonrecursive bank: array projection can enclose field projection, but
     // neither helper types a child, and each path is cached before a later child.
-    pub(in crate::frontend::oir::owned::source) struct ProjectionSemanticCarriers {
+    macro_rules! projection_carrier_model {
+        ($name:ident, $array:ty, $element:ty, $($extra:tt)*) => {
+    pub(in crate::frontend::oir::owned::source) struct $name {
         programs: [&'static ResolvedOwnedProgram<'static>; 2],
         functions: [&'static Function; 2],
         binding_inputs: [BindingId; 2],
@@ -1333,14 +1338,15 @@ pub(super) mod semantic_carriers {
         field_span: Span,
         array_base: AccessBase,
         constructed_option: Option<Projection>,
-        constructed_array: ArrayProjection,
-        array_return: Result<ArrayProjection, Box<Diagnostic>>,
+        constructed_array: $array,
+        array_return: Result<$array, Box<Diagnostic>>,
         // FieldRead/FieldAssign are mutually exclusive roles of this type.
         direct_field_caller: Projection,
-        array_caller_tuple: ArrayProjection,
+        array_caller_tuple: $array,
         caller_projection: Option<Projection>,
         caller_access: AccessBase,
-        caller_element: Ty,
+        caller_element: $element,
+        $($extra)*
         borrow_conversion: Result<Projection, Box<Diagnostic>>,
         borrow_receiver: Projection,
         borrow_row: BorrowProjection,
@@ -1362,6 +1368,25 @@ pub(super) mod semantic_carriers {
         whole_array_caller_base: AccessBase,
         whole_array_caller_ty: Ty,
     }
+        };
+    }
+    projection_carrier_model!(ProjectionSemanticCarriers, ArrayProjection, Option<Ty>, indexed_element: Ty,);
+    // Exact predecessor role types, retained only to explain the physical
+    // successor. Runtime/source admission uses the complete current model.
+    #[cfg(test)]
+    type PreFileArrayProjection = (Option<Projection>, AccessBase, Ty);
+    #[cfg(test)]
+    projection_carrier_model!(
+        PreFileProjectionSemanticCarriers,
+        PreFileArrayProjection,
+        Ty,
+    );
+    #[cfg(test)]
+    pub(in crate::frontend::oir::owned::source) const fn file_projection_successor_bytes() -> usize
+    {
+        size_of::<ProjectionSemanticCarriers>() - size_of::<PreFileProjectionSemanticCarriers>()
+    }
+
     // Closure invocation values are separate from their opaque object captures.
     // Sort's argument/key result belongs only to BodyFrameSemanticCarriers.
     pub(in crate::frontend::oir::owned::source) struct PredicateInvocationCarriers {
@@ -1730,7 +1755,7 @@ pub(super) mod semantic_carriers {
             resumed_statement: &'static Stmt, resumed_arms: &'static Vec<MatchArm>,
             statement_scrutinee: BindingId, statement_arms: &'static Vec<MatchArm>,
         );
-        roles!(ProjectionSemanticCarriers, 60, true;
+        roles!(ProjectionSemanticCarriers, 61, true;
             programs: [&'static ResolvedOwnedProgram<'static>; 2],
             functions: [&'static Function; 2],
             binding_inputs: [BindingId; 2],
@@ -1778,7 +1803,8 @@ pub(super) mod semantic_carriers {
             array_caller_tuple: ArrayProjection,
             caller_projection: Option<Projection>,
             caller_access: AccessBase,
-            caller_element: Ty,
+            caller_element: Option<Ty>,
+            indexed_element: Ty,
             borrow_conversion: Result<Projection, Box<Diagnostic>>,
             borrow_receiver: Projection,
             borrow_row: BorrowProjection,
@@ -2167,7 +2193,7 @@ fn projected_array_access(
     bindings: &[Option<ParameterTy>],
     borrow: bool,
     paid: Option<&mut BodyPaid<'_>>,
-) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
+) -> Result<(Option<Projection>, AccessBase, Option<Ty>), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
     let start = ast
@@ -2181,20 +2207,21 @@ fn projected_array_access(
         .span;
     let Some(first) = identifiers.next() else {
         let (base, ty) = array_access(function, binding, access_span, bindings)?;
-        return Ok((None, base, ty));
+        return Ok((None, base, Some(ty)));
     };
     let mut field_span = first.span;
     field_span.end = base_span.end;
     let projection = projection(program, function, binding, root, field_span, bindings, paid)?;
     let element =
         match program.records()[projection.field.record.0].fields[projection.field.index].ty {
-            ValueTy::Owned(AggregateTy::FixedArray(array)) => array.element(),
-            ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Ty::U8,
+            ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.element()),
+            ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(Ty::U8),
+            ValueTy::Owned(AggregateTy::File) if borrow => None,
             _ => {
                 return Err(error(
                     "E0305",
                     if borrow {
-                        "projected borrowing requires a fixed scalar array field or ByteBuf"
+                        "projected borrowing requires a fixed scalar array, ByteBuf or File field"
                     } else {
                         "indexed access requires a fixed scalar array field"
                     },
@@ -2615,11 +2642,13 @@ fn expression_type(
                             // A projected fixed array is admitted only as a scalar slice.
                             // It cannot silently add exact-array or record field borrowing.
                             ParameterTy::Reference {
-                                referent: if projected_type == ValueTy::Owned(AggregateTy::ByteBuf)
-                                {
-                                    BorrowedTy::Exact(AggregateTy::ByteBuf)
-                                } else {
-                                    BorrowedTy::ScalarSlice(element)
+                                referent: match projected_type {
+                                    ValueTy::Owned(
+                                        resource @ (AggregateTy::ByteBuf | AggregateTy::File),
+                                    ) => BorrowedTy::Exact(resource),
+                                    _ => BorrowedTy::ScalarSlice(
+                                        element.expect("array borrowing has an element"),
+                                    ),
                                 },
                                 kind: *kind,
                             }
@@ -2822,6 +2851,7 @@ fn expression_type(
                 paid.as_deref_mut(),
             )?;
             projections[id.0] = projection;
+            let element = element.expect("indexed access has an element");
             if actual != scalar(Ty::I32) {
                 return Err(mismatch(
                     program,
@@ -3613,6 +3643,7 @@ fn check_body(
                     paid.as_deref_mut(),
                 )?;
                 statement_projections[block.0][index] = projection;
+                let element = element.expect("indexed access has an element");
                 let index = element_index;
                 let index_ty = expressions[index.0].expect("typed store index");
                 if index_ty != ValueTy::Scalar(Ty::I32) {

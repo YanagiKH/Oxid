@@ -37,6 +37,22 @@ pub(super) const fn byte_string_successor_bytes(functions: usize) -> usize {
         + functions * super::byte_string_resources::inherited_function_growth()
 }
 
+/// Existing complete index-bearing carriers grow with the File admission word.
+/// Production size_of models already pay these bytes; this only explains the
+/// migration from immutable predecessor test endpoints, without charging twice.
+#[cfg(test)]
+pub(super) const fn file_index_successor_bytes() -> usize {
+    // Main typed owner (1), fresh observation (1), enum pipeline net (1),
+    // source returns (2), typecheck arguments/returns (4), program carriers (3),
+    // and source enum facade returns (2).
+    (1 + 1 + 1 + 2 + 4 + 3 + 2) * crate::frontend::declaration_index::FILE_ADMISSION_CARRIER_GROWTH
+}
+
+#[cfg(test)]
+pub(super) const fn file_projection_successor_bytes() -> usize {
+    typeck::semantic_carriers::file_projection_successor_bytes()
+}
+
 // Same numeric ceiling, separate from AST/index/raw admission. Future dynamic
 // projection capacities spend the remainder of this allowance, not a second cap.
 pub(super) const MAX_HIR_BYTES: usize = super::budget::MAX_RAW_BYTES;

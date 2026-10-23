@@ -63,7 +63,12 @@ static void unlink_node(oxid_byte_heap *heap, oxid_allocation *node) {
     if (node->previous) node->previous->next = node->next;
     else heap->head = node->next;
     if (node->next) node->next->previous = node->previous;
-    heap->ledger.live_bytes -= (uint64_t)node->capacity + OXID_BYTEBUF_HEADER;
+    uint32_t capacity = node->capacity;
+    if (capacity == UINT32_MAX) {
+        if (node->initialized != UINT32_MAX) (void)close((int)node->initialized);
+        capacity = 0;
+    }
+    heap->ledger.live_bytes -= (uint64_t)capacity + OXID_BYTEBUF_HEADER;
     --heap->ledger.live_allocations;
     ++heap->ledger.releases;
     free(node);

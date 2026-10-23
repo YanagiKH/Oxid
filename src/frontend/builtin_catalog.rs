@@ -25,8 +25,8 @@ pub(super) enum BuiltinSet {
     ReadStdinWriteStdout,
     Extended(ExtendedSet),
 }
-/// Existing inventories retain their variants. Three byte-aligned payload bytes
-/// fit the frozen enclosing raw-program carrier; both fields remain sealed.
+/// Existing inventories retain their variants. The byte-aligned extension keeps
+/// its dependency-complete identity behind the same sealed constructors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ExtendedSet {
     legacy: u8,
@@ -334,9 +334,9 @@ mod compact_inventory_tests {
     fn compact_inventory_preserves_legacy_variants_and_all_extension_bits() {
         assert_eq!(experimental::Item::Take as u8, 14);
         assert_eq!(experimental::Function::Take as u8, 10);
-        assert_eq!(std::mem::size_of::<ExtendedSet>(), 3);
+        assert_eq!(std::mem::size_of::<ExtendedSet>(), 3 + 1);
         assert_eq!(std::mem::align_of::<ExtendedSet>(), 1);
-        assert_eq!(std::mem::size_of::<BuiltinSet>(), 4);
+        assert_eq!(std::mem::size_of::<BuiltinSet>(), 4 + 1);
         assert_eq!(std::mem::align_of::<BuiltinSet>(), 1);
         let legacy = [
             BuiltinSet::None,
@@ -372,8 +372,8 @@ mod compact_inventory_tests {
             for item in experimental::Item::ALL {
                 assert!(accumulated.experimental().contains(item));
             }
-            assert_eq!(accumulated.experimental().enums(), 3);
-            assert_eq!(accumulated.experimental().functions(), 11);
+            assert_eq!(accumulated.experimental().enums(), 5);
+            assert_eq!(accumulated.experimental().functions(), 17);
         }
     }
 }

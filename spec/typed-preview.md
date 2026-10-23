@@ -231,6 +231,25 @@ delivery is admitted before transport; later user failures preserve completed
 external effects. The [byte reversal application](../apps/byte-reverse/README.md)
 shows workspace packages, growth and partial I/O together.
 
+## Native files
+
+On Linux x86_64, `std::fs::open_read` and `create` return an `OpenResult`:
+`Opened(File)`, `Error(errno)`, `MemoryLimit` or `AllocationFailed`. A `File`
+is move-only and closes automatically when its owner leaves scope.
+
+`std::fs::read_some(&mut file, &mut bytes)` and
+`std::fs::write_some(&mut file, &bytes)` use the existing partial I/O status
+enums from `std::io`. They expose partial progress, EOF and immediate errors;
+callers choose how to continue. `sync_all` and `close` return `FileStatus::Ok`
+or `FileStatus::Error(errno)`. Closing an already closed handle succeeds;
+other operations on it return `Error(9)`.
+
+Paths are byte slices of at most 4095 bytes. NUL is rejected before opening or
+truncating a file. `create` truncates an existing file. Both entry modes support
+files, with signal setup before source effects. See
+[native file ownership and I/O](../rfcs/0048-native-file-io.md) for the API and
+error contracts.
+
 ## Bounded owned record composition
 
 [RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold

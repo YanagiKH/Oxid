@@ -1,6 +1,33 @@
 //! Native resource operations derived from the immutable execution witness.
 use super::*;
 
+fn tag_refusal() -> impl FnMut(usize) -> Result<usize, DeclarationError> {
+    |_| Err(DeclarationError::TypeMismatch)
+}
+
+#[allow(dead_code)]
+struct EmitterWalkCarriers {
+    action: Action<'static>,
+    enumeration_index: usize,
+    descriptor_cells: usize,
+    emission_names: [String; 4],
+    descriptor_kind: ResourceKind,
+    enumeration_next: Option<(usize, Result<ResourceLeaf, DeclarationError>)>,
+    enumeration_item: (usize, Result<ResourceLeaf, DeclarationError>),
+}
+
+pub(super) fn control_bytes(plan: &ExecutionPlan<'_>) -> usize {
+    let declarations = plan.witness().declarations();
+    let aggregate = AggregateTy::ByteBuf;
+    // Use the real enclosing closure capture shape and real zero-sized reader.
+    let walk = || declarations.resource_leaves(aggregate, tag_refusal());
+    let reader = tag_refusal();
+    resource_walk_control_bytes(&reader)
+        + enumerated_resource_walk_bytes(&reader)
+        + std::mem::size_of_val(&walk)
+        + size_of::<EmitterWalkCarriers>()
+}
+
 pub(super) fn contains(plan: &ExecutionPlan<'_>, aggregate: AggregateTy) -> bool {
     plan.witness()
         .declarations()
@@ -34,21 +61,30 @@ pub(super) fn leaves(
     let declarations = plan.witness().declarations();
     let walk = || {
         declarations
-            .resource_leaves(aggregate, |_| Err(DeclarationError::TypeMismatch))
+            .resource_leaves(aggregate, tag_refusal())
             .expect("verified static resource leaves")
     };
     // Validate every descriptor before moving or releasing any leaf. There is
     // no allocation, byte-work charge, or external effect after this admission.
     for (index, leaf) in walk().enumerate() {
         let leaf = leaf.expect("enum alternatives handled by the enclosing emitter");
-        for _ in 0..3 {
+        let descriptor_cells = match leaf.kind {
+            ResourceKind::ByteBuf => 3,
+            ResourceKind::File => 2,
+        };
+        for _ in 0..descriptor_cells {
             if !out.expand(kind) {
                 return;
             }
         }
         let cell = format!("{name}_resource{index}");
         let input = field_pointer(out, &cell, source, leaf.offset);
-        writeln!(out, "  %{cell}_status = call i32 @__oxid_bytebuf_valid(ptr {input})\n  %{cell}_valid = icmp eq i32 %{cell}_status, 0\n  br i1 %{cell}_valid, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+        let valid = if leaf.kind == ResourceKind::File {
+            "__oxid_file_valid"
+        } else {
+            "__oxid_bytebuf_valid"
+        };
+        writeln!(out, "  %{cell}_status = call i32 @{valid}(ptr {input})\n  %{cell}_valid = icmp eq i32 %{cell}_status, 0\n  br i1 %{cell}_valid, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
         emit_failure(out, failure.0, FailureKind::ResourceDescriptor, failure.1);
         writeln!(out, "{cell}_ok:").unwrap();
     }
@@ -61,14 +97,24 @@ pub(super) fn leaves(
         let input = format!("%{cell}_ptr");
         match action {
             Action::Release => {
-                writeln!(out, "  call void @__oxid_bytebuf_drop(ptr {input})").unwrap()
+                let drop = if leaf.kind == ResourceKind::File {
+                    "__oxid_file_drop"
+                } else {
+                    "__oxid_bytebuf_drop"
+                };
+                writeln!(out, "  call void @{drop}(ptr {input})").unwrap()
             }
             Action::Move(destination) => {
                 let output = field_pointer(out, &format!("{cell}_out"), destination, leaf.offset);
                 // A descriptor is a resource, not a ScalarLeaf or scalar value.
                 // The old bytes become empty while the destination acquires the
                 // single obligation. The payload allocation is never copied.
-                writeln!(out, "  %{cell}_descriptor = load {{ i64, i32, i32 }}, ptr {input}, align 8\n  store {{ i64, i32, i32 }} %{cell}_descriptor, ptr {output}, align 8\n  store {{ i64, i32, i32 }} zeroinitializer, ptr {input}, align 8").unwrap();
+                let carrier = if leaf.kind == ResourceKind::File {
+                    "{ i64, i64 }"
+                } else {
+                    "{ i64, i32, i32 }"
+                };
+                writeln!(out, "  %{cell}_descriptor = load {carrier}, ptr {input}, align 8\n  store {carrier} %{cell}_descriptor, ptr {output}, align 8\n  store {carrier} zeroinitializer, ptr {input}, align 8").unwrap();
             }
             Action::Validate => unreachable!(),
         }

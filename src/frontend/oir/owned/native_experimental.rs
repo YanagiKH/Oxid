@@ -7,6 +7,79 @@ use crate::frontend::builtin_catalog::experimental::Function;
 // owner/activation cells, heap allocations or ordinary-program layout changes.
 pub(super) const BINARY_DELIVERY_BYTES: usize = 16;
 
+// Conservative named C call roles for the one active synchronous file attempt.
+// The caller's result and resource payload storage are already paid separately.
+#[allow(dead_code)]
+#[repr(C)]
+struct FileOpenFrame {
+    heap: *mut (),
+    bytes: *const u8,
+    length: i32,
+    create: i32,
+    result: *mut (),
+    path: [u8; 4096],
+    node: *mut (),
+    flags: i32,
+    descriptor: i32,
+    error: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct FileAttemptFrame {
+    operation: i32,
+    file: *mut (),
+    bytes: *mut u8,
+    length: i32,
+    fuel: *mut u64,
+    result: *mut (),
+    return_cost: u64,
+    result_size: usize,
+    node: *mut (),
+    work: u64,
+    status: i32,
+    status_pointer: *mut (),
+    close_error: i32,
+    syscall_count: isize,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct FileLocateFrame {
+    heap: *mut (),
+    value: *const (),
+    found: *mut (),
+    cursor: *mut (),
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct FileCloseFrame {
+    heap: *mut (),
+    value: *mut (),
+    error: *mut i32,
+    node: *mut (),
+    status: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct FileOverlapFrame {
+    left: *const (),
+    left_size: usize,
+    right: *const (),
+    right_size: usize,
+    left_address: usize,
+    right_address: usize,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct FileControl {
+    locate: FileLocateFrame,
+    close: FileCloseFrame,
+    overlaps: FileOverlapFrame,
+    open: FileOpenFrame,
+    attempt: FileAttemptFrame,
+    hosted_budget: u64,
+}
+pub(super) const FILE_DELIVERY_BYTES: usize = size_of::<FileControl>();
+
 #[allow(clippy::too_many_arguments)] // Complete preflighted failure labels; no retained state.
 pub(super) fn status(
     out: &mut Emission,
@@ -49,6 +122,10 @@ pub(super) fn operation(
     out: &mut Emission,
 ) {
     let f = &storage.execution().witness().functions()[storage.id().0];
+    if operation.is_file() {
+        file_operation(storage, name, operation, diagnostics, span, out);
+        return;
+    }
     let pointer = if operation == Function::New {
         "null".to_owned()
     } else {
@@ -120,6 +197,7 @@ pub(super) fn operation(
         Function::ReadSome => 8,
         Function::WriteSome => 9,
         Function::Take => 10,
+        _ => unreachable!("file primitive emitted separately"),
     };
     if matches!(operation, Function::ReadSome | Function::WriteSome) {
         let cost = storage
@@ -160,10 +238,15 @@ pub(super) fn resource_borrow(
 ) -> bool {
     let declaration = &f.loans[loan.0];
     if declaration.projection.is_empty() {
-        indexed_base(f, declaration.authority) == BorrowedTy::Exact(AggregateTy::ByteBuf)
+        matches!(
+            indexed_base(f, declaration.authority),
+            BorrowedTy::Exact(AggregateTy::ByteBuf | AggregateTy::File)
+        )
     } else {
-        projection(plan, f, declaration.authority, &declaration.projection).0
-            == ValueTy::Owned(AggregateTy::ByteBuf)
+        matches!(
+            projection(plan, f, declaration.authority, &declaration.projection).0,
+            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File)
+        )
     }
 }
 #[allow(clippy::too_many_arguments)] // Closed loan, endpoint operands and existing emission context.
@@ -193,6 +276,15 @@ pub(super) fn borrow(
             BorrowedTy::Exact(aggregate),
         )
     };
+    if actual == BorrowedTy::Exact(AggregateTy::File) {
+        writeln!(
+            out,
+            "  store ptr {pointer}, ptr %r{}, align 8",
+            storage.loan_slot(loan)
+        )
+        .unwrap();
+        return;
+    }
     let (start, end) = range.map_or_else(
         || ("0".to_owned(), "0".to_owned()),
         |(start, end)| {
@@ -234,4 +326,70 @@ pub(super) fn borrow(
     writeln!(out, "  %{name}_start_ok = icmp sge i32 {start}, 0\n  %{name}_ordered = icmp sle i32 {start}, {end}\n  %{name}_end_ok = icmp sle i32 {end}, {length}\n  %{name}_prefix_ok = and i1 %{name}_start_ok, %{name}_ordered\n  %{name}_range_ok = and i1 %{name}_prefix_ok, %{name}_end_ok\n  br i1 %{name}_range_ok, label %{name}_bounds_ok, label %{name}_bounds_error\n{name}_bounds_error:").unwrap();
     emit_failure(out, diagnostics, FailureKind::Bounds, span);
     writeln!(out, "{name}_bounds_ok:\n  %{name}_start64 = zext i32 {start} to i64\n  %{name}_pointer = getelementptr i8, ptr {pointer}, i64 %{name}_start64\n  %{name}_range_length = sub i32 {end}, {start}\n  store ptr %{name}_pointer, ptr %r{}, align 8\n  store i32 %{name}_range_length, ptr %ll{}, align 4", storage.loan_slot(loan), loan.0).unwrap();
+}
+
+fn file_operation(
+    storage: &NativeFunctionStorage<'_, '_>,
+    name: &str,
+    operation: Function,
+    diagnostics: &Diagnostics,
+    span: Span,
+    out: &mut Emission,
+) {
+    let f = &storage.execution().witness().functions()[storage.id().0];
+    let code = match operation {
+        Function::OpenRead => 0,
+        Function::Create => 1,
+        Function::FileReadSome => 2,
+        Function::FileWriteSome => 3,
+        Function::SyncAll => 4,
+        Function::Close => 5,
+        _ => unreachable!("closed file primitive"),
+    };
+    let file = if code < 2 {
+        "null".to_owned()
+    } else {
+        base_pointer(
+            out,
+            &format!("{name}_file"),
+            AccessBase::Parameter(ReferenceParamId(0)),
+        )
+    };
+    let (bytes, length) = if code < 4 {
+        let parameter = ReferenceParamId(usize::from(code >= 2));
+        (
+            base_pointer(
+                out,
+                &format!("{name}_bytes"),
+                AccessBase::Parameter(parameter),
+            ),
+            index_length(
+                out,
+                f,
+                &format!("{name}_extent"),
+                AccessBase::Parameter(parameter),
+            ),
+        )
+    } else {
+        ("null".to_owned(), "0".to_owned())
+    };
+    let cost = storage
+        .execution()
+        .file_delivery_cost(f.id)
+        .expect("sealed file return");
+    let helper = if out.policy.hosted() {
+        "__oxid_file_delivery_hosted"
+    } else {
+        "__oxid_file_delivery"
+    };
+    writeln!(out, "  %{name}_status = call i32 @{helper}(i32 {code}, ptr {file}, ptr {bytes}, i32 {length}, ptr %fuel, ptr %result, i64 {cost})").unwrap();
+    status(
+        out,
+        diagnostics,
+        name,
+        &format!("%{name}_status"),
+        "file_ok",
+        span,
+        true,
+    );
 }

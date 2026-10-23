@@ -6,13 +6,14 @@ pub(in crate::frontend) enum NominalId {
     Record(RecordId),
     Enum(EnumId),
     ByteBuf,
+    File,
 }
 #[cfg(test)]
 impl NominalId {
     pub(super) fn legacy_record(self) -> RecordId {
         match self {
             Self::Record(record) => record,
-            Self::Enum(_) | Self::ByteBuf => {
+            Self::Enum(_) | Self::ByteBuf | Self::File => {
                 panic!("legacy index observation excludes enum projection")
             }
         }
@@ -126,6 +127,12 @@ impl<'a> VariantView<'a> {
             .and_then(|syntax| syntax.payload.map(|payload| payload.span))
     }
     pub fn has_owned_payload(&self) -> bool {
+        if let DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) = self.origin() {
+            return item
+                .enumeration()
+                .and_then(|kind| kind.value_payload(self.id.index))
+                .is_some_and(|payload| matches!(payload, ValueTy::Owned(_)));
+        }
         self.source_syntax().is_some_and(|syntax| {
             syntax.payload.is_some_and(|payload| {
                 matches!(
@@ -162,6 +169,11 @@ impl<'a> VariantView<'a> {
     /// scope cannot grant access to a private type or change nominal identity.
     /// Existing scalar and builtin payloads retain their original query work.
     pub fn value_payload(&self, work: &WorkMeter) -> Result<Option<ValueTy>, Box<Diagnostic>> {
+        if let DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) = self.origin() {
+            return Ok(item
+                .enumeration()
+                .and_then(|kind| kind.value_payload(self.id.index)));
+        }
         if !self.has_owned_payload() {
             return Ok(self.payload().map(ValueTy::Scalar));
         }
@@ -223,6 +235,14 @@ impl DeclarationIndex<'_> {
     /// Feature selection over immutable source syntax; this is not a type or
     /// layout proof. Scalar enum compilation retains its original accounting.
     pub fn has_owned_enum_payloads(&self, work: &WorkMeter) -> Result<bool, Box<Diagnostic>> {
+        if self
+            .builtin_set()
+            .experimental()
+            .contains(experimental::Item::OpenResult)
+        {
+            work.debit(1, self.sources().eof(), "file result payload inventory")?;
+            return Ok(true);
+        }
         let mut inspected = 0u64;
         for ordinal in 0..self.source_enum_count() {
             let Some(enumeration) = self.frozen_enum_syntax(EnumId(ordinal)) else {

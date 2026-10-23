@@ -5,6 +5,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend::oir) enum ResourceKind {
     ByteBuf,
+    File,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +19,57 @@ pub(in crate::frontend::oir) struct ResourceLeaves<'a, F> {
     read_tag: F,
     stack: [Option<(ValueTy, usize, usize)>; MAX_CONTAINMENT_DEPTH + 1],
     length: usize,
+}
+
+type WalkStack = [Option<(ValueTy, usize, usize)>; MAX_CONTAINMENT_DEPTH + 1];
+
+/// Complete synchronous factory/iterator transports. This is a conservative
+/// sum of sequential roles, shared by validation, transfer, and release. It is
+/// a logical request envelope, not a bound on native stack use or process RSS.
+#[allow(dead_code)]
+struct WalkCarriers<F> {
+    factory_stack: WalkStack,
+    factory_reader: F,
+    factory_aggregate: AggregateTy,
+    constructed: ResourceLeaves<'static, F>,
+    factory_result: Result<ResourceLeaves<'static, F>, DeclarationError>,
+    caller_walker: ResourceLeaves<'static, F>,
+    into_iterator: ResourceLeaves<'static, F>,
+    iterator_receiver: *mut ResourceLeaves<'static, F>,
+    advance_return: Result<Option<ResourceLeaf>, DeclarationError>,
+    next_return: Option<Result<ResourceLeaf, DeclarationError>>,
+    caller_option: Option<Result<ResourceLeaf, DeclarationError>>,
+    caller_result: Result<ResourceLeaf, DeclarationError>,
+    leaf: ResourceLeaf,
+    kind: ResourceKind,
+    position: usize,
+    selected_stack_entry: (ValueTy, usize, usize),
+    fields_return: Result<&'static [FieldDecl], DeclarationError>,
+    field_option: Option<&'static FieldDecl>,
+    selected_field: &'static FieldDecl,
+    variant_return: Result<&'static enums::VariantDecl, EnumDeclarationError>,
+    selected_variant: &'static enums::VariantDecl,
+    checked_offsets: [Option<usize>; 2],
+    offset_returns: [Result<usize, DeclarationError>; 2],
+    selected_offsets: [usize; 2],
+    push_return: Result<(), DeclarationError>,
+    tag_input: usize,
+    tag_return: Result<usize, DeclarationError>,
+    selected_tag: usize,
+    optional_payload: Option<ValueTy>,
+    selected_payload: ValueTy,
+}
+
+pub(in crate::frontend::oir) fn resource_walk_control_bytes<F>(_: &F) -> usize {
+    size_of::<WalkCarriers<F>>()
+}
+
+pub(in crate::frontend::oir) fn enumerated_resource_walk_bytes<F>(_: &F) -> usize
+where
+    F: FnMut(usize) -> Result<usize, DeclarationError>,
+{
+    // Enumerate embeds the entire walker, rather than only an index word.
+    size_of::<std::iter::Enumerate<ResourceLeaves<'static, F>>>()
 }
 
 #[repr(u8)]
@@ -152,7 +204,8 @@ pub(super) fn summaries(
                 }
                 Some(ty) => {
                     let top = stack[length - 1].as_mut().unwrap();
-                    top.contains |= ty == ValueTy::Owned(AggregateTy::ByteBuf);
+                    top.contains |=
+                        matches!(ty, ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File));
                     top.next += 1;
                 }
             }
@@ -169,7 +222,7 @@ impl Declarations {
     ) -> Result<bool, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
         match aggregate {
-            AggregateTy::ByteBuf => return Ok(true),
+            AggregateTy::ByteBuf | AggregateTy::File => return Ok(true),
             AggregateTy::FixedArray(_) => return Ok(false),
             _ => {}
         }
@@ -230,6 +283,13 @@ where
             let (ty, offset, next) = self.stack[position].expect("checked traversal stack");
             match ty {
                 ValueTy::Scalar(_) | ValueTy::Owned(AggregateTy::FixedArray(_)) => self.length -= 1,
+                ValueTy::Owned(AggregateTy::File) => {
+                    self.length -= 1;
+                    return Ok(Some(ResourceLeaf {
+                        offset,
+                        kind: ResourceKind::File,
+                    }));
+                }
                 ValueTy::Owned(AggregateTy::ByteBuf) => {
                     self.length -= 1;
                     return Ok(Some(ResourceLeaf {

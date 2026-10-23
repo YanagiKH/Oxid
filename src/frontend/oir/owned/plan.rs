@@ -213,6 +213,27 @@ impl<'a> ExecutionPlan<'a> {
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
+    pub(super) fn file_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        Function::ALL
+            .into_iter()
+            .filter(|operation| operation.is_file())
+            .any(|operation| self.witness.experimental_function(operation) == Some(function))
+            .then(|| {
+                let term = self.witness.functions()[function.0].blocks[0]
+                    .terminator
+                    .as_ref()
+                    .expect("sealed file return");
+                self.terminator_cost(function, &term.kind)
+            })
+    }
+    pub(super) fn has_file_delivery(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        Function::ALL
+            .into_iter()
+            .filter(|operation| operation.is_file())
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
@@ -283,10 +304,12 @@ impl<'a> ExecutionPlan<'a> {
         let mut largest_frame = 0;
         // Complete ALL metadata-length and activation-cost preflights before any allocation.
         for f in functions {
-            dynamic_resources |= f
-                .references
-                .iter()
-                .any(|reference| reference.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf));
+            dynamic_resources |= f.references.iter().any(|reference| {
+                matches!(
+                    reference.referent(),
+                    BorrowedTy::Exact(AggregateTy::ByteBuf | AggregateTy::File)
+                )
+            });
             metadata_bytes = add(metadata_bytes, mul(f.owners.len(), size_of::<usize>())?)?;
             metadata_bytes = add(metadata_bytes, mul(f.calls.len(), size_of::<CallPlan>())?)?;
             for c in &f.calls {
@@ -327,7 +350,8 @@ impl<'a> ExecutionPlan<'a> {
             let mut owner_offsets = reserve(f.owners.len())?;
             let mut next = 0;
             for owner in &f.owners {
-                dynamic_resources |= owner.aggregate() == AggregateTy::ByteBuf;
+                dynamic_resources |=
+                    matches!(owner.aggregate(), AggregateTy::ByteBuf | AggregateTy::File);
                 let layout = witness
                     .declarations()
                     .aggregate_layout(owner.aggregate())

@@ -818,8 +818,11 @@ mod output_layout_feasibility {
         public_anchor_return: Result<Span, Box<Diagnostic>>,
     }
 
-    fn same_layout<T, U>() {
-        assert_eq!(size_of::<T>(), size_of::<U>());
+    fn admission_successor_layout<T, U>() {
+        assert_eq!(
+            size_of::<T>() + FILE_ADMISSION_CARRIER_GROWTH,
+            size_of::<U>()
+        );
         assert_eq!(align_of::<T>(), align_of::<U>());
     }
     fn report<T>(name: &str) {
@@ -865,23 +868,23 @@ mod output_layout_feasibility {
         assert_eq!(size_of::<BaselineIndex<'static>>(), 368);
         assert_eq!(size_of::<BaselineFacts<'static>>(), 584);
         assert_eq!(size_of::<FamilySpanState>(), 28);
-        same_layout::<BorrowedTables<'static>, Tables<'static>>();
-        same_layout::<BorrowedIndex<'static>, DeclarationIndex<'static>>();
-        same_layout::<BorrowedFacts<'static>, DeclarationFacts<'static>>();
-        same_layout::<BorrowedAdmission<'static>, BuiltinAdmission<'static>>();
-        same_layout::<
+        admission_successor_layout::<BorrowedTables<'static>, Tables<'static>>();
+        admission_successor_layout::<BorrowedIndex<'static>, DeclarationIndex<'static>>();
+        admission_successor_layout::<BorrowedFacts<'static>, DeclarationFacts<'static>>();
+        admission_successor_layout::<BorrowedAdmission<'static>, BuiltinAdmission<'static>>();
+        admission_successor_layout::<
             Result<BorrowedTables<'static>, Box<Diagnostic>>,
             Result<Tables<'static>, Box<Diagnostic>>,
         >();
-        same_layout::<
+        admission_successor_layout::<
             Result<BorrowedIndex<'static>, Box<Diagnostic>>,
             Result<DeclarationIndex<'static>, Box<Diagnostic>>,
         >();
-        same_layout::<
+        admission_successor_layout::<
             Result<BorrowedFacts<'static>, Box<Diagnostic>>,
             Result<DeclarationFacts<'static>, Box<Diagnostic>>,
         >();
-        same_layout::<
+        admission_successor_layout::<
             Result<BorrowedIndex<'static>, Vec<Diagnostic>>,
             Result<DeclarationIndex<'static>, Vec<Diagnostic>>,
         >();
@@ -994,10 +997,10 @@ mod output_layout_feasibility {
 
     #[test]
     fn bounded_stdout_borrowed_anchor_enclosing_layout_feasibility() {
-        same_layout::<BorrowedTables<'static>, Tables<'static>>();
-        same_layout::<BorrowedIndex<'static>, DeclarationIndex<'static>>();
-        same_layout::<BorrowedFacts<'static>, DeclarationFacts<'static>>();
-        same_layout::<
+        admission_successor_layout::<BorrowedTables<'static>, Tables<'static>>();
+        admission_successor_layout::<BorrowedIndex<'static>, DeclarationIndex<'static>>();
+        admission_successor_layout::<BorrowedFacts<'static>, DeclarationFacts<'static>>();
+        admission_successor_layout::<
             Result<BorrowedFacts<'static>, Box<Diagnostic>>,
             Result<DeclarationFacts<'static>, Box<Diagnostic>>,
         >();
@@ -1283,8 +1286,14 @@ mod output_layout_feasibility {
 // the old endpoint evidence is relabeled as a successor execution.
 #[test]
 fn bounded_stdout_retained_header_predecessor_endpoints() {
-    assert_eq!(size_of::<DeclarationIndex<'static>>(), 376);
-    assert_eq!(size_of::<DeclarationFacts<'static>>(), 592);
+    assert_eq!(
+        size_of::<DeclarationIndex<'static>>(),
+        376 + FILE_ADMISSION_CARRIER_GROWTH
+    );
+    assert_eq!(
+        size_of::<DeclarationFacts<'static>>(),
+        592 + FILE_ADMISSION_CARRIER_GROWTH
+    );
     assert_eq!(FIXED_SCRATCH, 4096);
     for (name, source, old_retained, old_scratch) in [
         ("absent", "fn main()->(){return;}", 488, 4102),
@@ -1299,7 +1308,10 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
         let project = fixture.load();
         let facts = collect(&project, &WorkMeter::default(), &mut Allocator::default());
         let plan = facts.plan();
-        assert_eq!(plan.retained, old_retained + 8);
+        assert_eq!(
+            plan.retained,
+            old_retained + 8 + FILE_ADMISSION_CARRIER_GROWTH as u64
+        );
         assert_eq!(plan.scratch, old_scratch + 2);
         for (retained, scratch, expected) in [
             (old_retained, plan.scratch, false),
