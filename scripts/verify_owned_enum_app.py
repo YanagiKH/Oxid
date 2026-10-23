@@ -123,6 +123,9 @@ class Oracle:
             path.write_text('#!/bin/sh\nprintf invoked > "$OXID_APP_SPY_MARKER"\nexit 91\n')
             path.chmod(0o755)
 
+    def input_capture_limit(self):
+        return MAX_CAPTURE
+
     def command(self, label, argv, cwd, payload=b"", status=0, stdout=None, stderr=b"",
                 overrides=None, closed_stdin=False, directory_stdin=False, full_stdout=False):
         folder = self.output / "commands" / f"{len(self.commands):04d}-{label}"
@@ -154,7 +157,8 @@ class Oracle:
             for stream in ("stdin", "stdout", "stderr"):
                 path = folder / (stream + ".bin")
                 row[stream + "_bytes"], row[stream + "_sha256"] = path.stat().st_size, digest(path)
-                require(path.stat().st_size <= MAX_CAPTURE, "capture exceeds bound")
+                limit = self.input_capture_limit() if stream == "stdin" else MAX_CAPTURE
+                require(path.stat().st_size <= limit, "capture exceeds bound")
             result.stdout = (folder / "stdout.bin").read_bytes()
             result.stderr = (folder / "stderr.bin").read_bytes()
             require(result.returncode == status and (stdout is None or result.stdout == stdout)

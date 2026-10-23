@@ -327,6 +327,26 @@ impl Machine<'_, '_> {
         let result = self.prepare_experimental_result(frame, destination, span)?;
         let value = match operation {
             Function::New => OperationValue::EmptyBuffer,
+            Function::Take => {
+                let bytes = match &result {
+                    ResultPlace::Owner { bytes, .. }
+                        if self.function(self.frames[frame].function).result
+                            == ValueTy::Owned(AggregateTy::ByteBuf)
+                            && bytes.len() == 16 =>
+                    {
+                        bytes.clone()
+                    }
+                    _ => return Err(bad("buffer transfer result", span)),
+                };
+                let (place, value) = self.buffer_parameter(frame, Access::Write, span)?;
+                let encoding = value.encoding();
+                // All source/result admission precedes the transfer. The
+                // existing allocation stays registered under its old identity.
+                self.frames[place.frame].payload[place.bytes].fill(0);
+                self.commit_experimental_result(frame, result, OperationValue::EmptyBuffer);
+                self.frames[frame].payload[bytes].copy_from_slice(&encoding);
+                return Ok(());
+            }
             Function::ReadSome | Function::WriteSome => {
                 return Err(bad("binary operation requires prepared delivery", span));
             }

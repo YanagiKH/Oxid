@@ -1,6 +1,9 @@
+use alloc::bytes::ByteBuf;
 use alloc::bytes::GrowStatus;
 use alloc::bytes::new;
 use alloc::bytes::len;
+use alloc::bytes::capacity;
+use alloc::bytes::try_push;
 use alloc::bytes::try_extend;
 use alloc::bytes::try_reserve;
 use crate::text::Text;
@@ -19,6 +22,7 @@ use crate::text::ScalarAppendStatus;
 use crate::text::append_scalar;
 use crate::text::equals_utf8;
 use crate::text::append_to_bytes;
+use crate::text::into_bytes;
 
 fn byte(value: i32) -> u8 {
     return value.to_u8_checked();
@@ -396,6 +400,57 @@ fn check_memory_refusal() -> i32 {
     return 0;
 }
 
+fn check_into_bytes() -> i32 {
+    let empty = into_bytes(new_text());
+    if len(&empty) != 0 || capacity(&empty) != 0 { return -84; }
+    let expected = [byte(0), byte(65), byte(194), byte(162), byte(226), byte(130), byte(172), byte(240), byte(159), byte(152), byte(128)];
+    let mut owner = new();
+    if !grew(try_reserve(&mut owner, 4096)) { return -85; }
+    if !grew(try_extend(&mut owner, &expected)) { return -85; }
+    let original_capacity = capacity(&owner);
+    let converted = from_bytes(owner);
+    match converted {
+        FromBytes::Invalid(rejected) => { return -86; },
+        FromBytes::Ok(document) => {
+            let output = into_bytes(document);
+            if !equal_bytes(&output, &expected) || capacity(&output) != original_capacity { return -87; }
+        },
+    }
+    return 0;
+}
+
+enum Exported { Ok(ByteBuf), Refused }
+
+fn export_at_memory_limit(document: Text) -> Exported {
+    let mut filler = new();
+    if !grew(try_reserve(&mut filler, 16777144)) { return Exported::Refused; }
+    let output = into_bytes(document);
+    return Exported::Ok(output);
+}
+
+fn check_into_bytes_at_memory_limit() -> i32 {
+    let expected = [byte(65), byte(66), byte(67), byte(68), byte(69), byte(70), byte(71), byte(72), byte(73)];
+    let mut document = new_text();
+    let initialized = append_utf8(&mut document, &expected[0..8]);
+    match initialized {
+        AppendStatus::Ok => {},
+        AppendStatus::InvalidInput(offset) => { return -88; },
+        AppendStatus::CapacityOverflow => { return -88; },
+        AppendStatus::AllocationFailed => { return -88; },
+        AppendStatus::MemoryLimit => { return -88; },
+    }
+    let exported = export_at_memory_limit(document);
+    match exported {
+        Exported::Refused => { return -89; },
+        Exported::Ok(bytes) => {
+            let mut output = bytes;
+            if capacity(&output) != 8 || !equal_bytes(&output, &expected[0..8]) { return -90; }
+            if !grew(try_push(&mut output, byte(73))) || !equal_bytes(&output, &expected) { return -91; }
+        },
+    }
+    return 0;
+}
+
 fn main() -> i32 {
     let empty_result = check_empty();
     if empty_result != 0 { return empty_result; }
@@ -421,5 +476,9 @@ fn main() -> i32 {
     if empty_export_result != 0 { return empty_export_result; }
     let memory_result = check_memory_refusal();
     if memory_result != 0 { return memory_result; }
+    let into_bytes_result = check_into_bytes();
+    if into_bytes_result != 0 { return into_bytes_result; }
+    let full_heap_result = check_into_bytes_at_memory_limit();
+    if full_heap_result != 0 { return full_heap_result; }
     return 0;
 }

@@ -188,6 +188,12 @@ Lengths remain checked i32 values, byte conversions remain explicit, and the
 normalized live allocation limit is 16 MiB, including allocation headers and
 the old-plus-new growth peak.
 
+[`alloc::bytes::take(&mut ByteBuf) -> ByteBuf`](../rfcs/0046-owned-buffer-transfer.md)
+transfers the buffer's allocation, length and capacity to its result, leaving
+the source empty and reusable. It does not copy bytes or allocate, even when
+the live-memory limit is reached. It requires an exclusive borrow and retains
+the existing rules for overlapping borrows and whole-value moves.
+
 Call-only byte views admit `&buffer[start..end]` and
 `&mut buffer[start..end]`, including byte arrays, named record fields and
 explicitly dereferenced parameters. Endpoints evaluate once in source order

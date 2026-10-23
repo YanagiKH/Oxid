@@ -26,8 +26,9 @@ cd app
 oxid run --frozen < input.txt > output.txt
 ```
 
-The application reads and validates all input before writing. Memory use grows
-with the input and remains subject to the runtime memory limit. An output
+The application reads and validates all input before writing, then changes line
+endings in the same byte buffer. Memory use grows with the input and remains
+subject to the runtime memory limit. An output
 error can leave a partial result; check the exit status before using the file.
 
 | Exit status | Meaning |

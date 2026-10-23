@@ -3,6 +3,7 @@ use alloc::bytes::GrowStatus;
 use alloc::bytes::new as new_bytes;
 use alloc::bytes::len as bytes_len;
 use alloc::bytes::try_extend;
+use alloc::bytes::take;
 use alloc::bytes::truncate as truncate_bytes;
 
 pub struct Text {
@@ -262,4 +263,9 @@ pub fn truncate(text: &mut Text, length: i32) -> bool {
 // Append initialized bytes without exposing or moving the private owner.
 pub fn append_to_bytes(text: &Text, output: &mut ByteBuf) -> GrowStatus {
     return try_extend(&mut *output, &*text.bytes);
+}
+
+pub fn into_bytes(input: Text) -> ByteBuf {
+    let mut document = input;
+    return take(&mut document.bytes);
 }

@@ -119,6 +119,7 @@ pub(super) fn operation(
         Function::Truncate => 7,
         Function::ReadSome => 8,
         Function::WriteSome => 9,
+        Function::Take => 10,
     };
     if matches!(operation, Function::ReadSome | Function::WriteSome) {
         let cost = storage
