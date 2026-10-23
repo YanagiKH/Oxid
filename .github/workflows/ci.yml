@@ -65,6 +65,8 @@ jobs:
             --output "$RUNNER_TEMP/current-package-interpreter"
           python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-lock-interpreter"
+          python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-workspace-interpreter"
       - name: Retain current source qualification
         if: always()
         uses: actions/upload-artifact@v4
@@ -89,6 +91,14 @@ jobs:
         with:
           name: current-package-lock-interpreter
           path: ${{ runner.temp }}/current-package-lock-interpreter
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Retain current workspace interpreter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-workspace-interpreter
+          path: ${{ runner.temp }}/current-workspace-interpreter
           if-no-files-found: warn
           retention-days: 14
       - name: Verify current source installation
@@ -185,10 +195,10 @@ jobs:
             profile_flags=()
             if test "$profile" = release; then profile_flags=(--release); fi
             cargo test --locked "${profile_flags[@]}" \
-              --test project_workflow --test typed_path_dependencies --test typed_package_lock --test native_incremental --test native_doctor \
+              --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test native_incremental --test native_doctor \
               --test typed_native --test typed_process
             cargo test --locked "${profile_flags[@]}" \
-              --test project_workflow --test typed_path_dependencies --test typed_package_lock --test native_incremental --test native_doctor \
+              --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import -- --ignored
@@ -199,6 +209,8 @@ jobs:
             --output "$RUNNER_TEMP/current-package-application" --native
           python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-lock-application" --native
+          python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-workspace-application" --native
       - name: Run current independent native oracles and private LLVM regressions
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -213,6 +225,7 @@ jobs:
             ${{ runner.temp }}/current-native
             ${{ runner.temp }}/current-package-application
             ${{ runner.temp }}/current-package-lock-application
+            ${{ runner.temp }}/current-workspace-application
           if-no-files-found: warn
           retention-days: 14
 

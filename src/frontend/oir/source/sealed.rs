@@ -299,6 +299,13 @@ impl CheckedSourceProgram<'_> {
         }
     }
 
+    /// Admit workspace process entries before any selected test can execute.
+    /// This reuses the runtime signature rule without running source or tools.
+    pub(in crate::frontend) fn process_preflight(&self) -> Result<(), Box<Diagnostic>> {
+        self.require_process_host()?;
+        self.checked_process_entry().map(|_| ())
+    }
+
     pub(in crate::frontend) fn run_process(&self) -> Result<i32, ProcessFailure> {
         self.require_process_host()?;
         if !super::super::process::setup() {

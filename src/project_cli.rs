@@ -3,6 +3,7 @@
 //! Explicit file editions retain the original pure frontend option boundary.
 //! Projects never reinterpret typed sources using the legacy interpreter.
 use crate::{frontend, project_lock, runtime};
+mod workspace;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -22,9 +23,20 @@ struct Options {
     offline: bool,
     frozen: bool,
     update: bool,
+    workspace: bool,
+    package: Option<String>,
+    workspace_option_error: Option<String>,
     lock_option_error: Option<String>,
     words: Vec<String>,
     invalid: bool,
+}
+
+/// The doctor integration can admit the complete workspace without routing a
+/// command, emitting diagnostics, invoking tools or executing user programs.
+pub(crate) fn native_doctor_workspace() -> Result<Option<String>, String> {
+    workspace::discover()?
+        .map(|workspace| workspace.validate_for_doctor())
+        .transpose()
 }
 
 impl Options {
@@ -40,11 +52,33 @@ impl Options {
                 break;
             }
             let name = args[index].split('=').next().unwrap_or("");
+            if matches!(name, "--package" | "-p") {
+                let value = if let Some((_, value)) = args[index].split_once('=') {
+                    Some(value.to_owned())
+                } else if let Some(value) =
+                    args.get(index + 1).filter(|value| !value.starts_with('-'))
+                {
+                    index += 1;
+                    Some(value.clone())
+                } else {
+                    None
+                };
+                if result.package.is_some() || value.as_deref().is_none_or(str::is_empty) {
+                    result.workspace_option_error = Some(
+                        "--package requires one member name or path and may only be specified once"
+                            .into(),
+                    );
+                }
+                result.package = value;
+                index += 1;
+                continue;
+            }
             let flag = match name {
                 "--locked" => Some(&mut result.locked),
                 "--offline" => Some(&mut result.offline),
                 "--frozen" => Some(&mut result.frozen),
                 "--update" => Some(&mut result.update),
+                "--workspace" => Some(&mut result.workspace),
                 _ => None,
             };
             if let Some(flag) = flag {
@@ -132,6 +166,20 @@ impl Options {
         }
         Ok(())
     }
+
+    fn has_workspace_options(&self) -> bool {
+        self.workspace || self.package.is_some() || self.workspace_option_error.is_some()
+    }
+
+    fn validate_workspace_options(&self) -> Result<(), String> {
+        if let Some(error) = &self.workspace_option_error {
+            return Err(error.clone());
+        }
+        if self.workspace && self.package.is_some() {
+            return Err("--workspace and --package are mutually exclusive".into());
+        }
+        Ok(())
+    }
 }
 
 /// Returns `None` only when the original file/legacy router owns this request.
@@ -143,7 +191,8 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             || options.words.len() != 1
             || options.edition.as_deref() != Some("typed-preview")
             || options.entry_mode.as_deref() != Some("process")
-            || options.json())
+            || options.json()
+            || options.has_workspace_options())
     {
         return Some(report_error(
             &options,
@@ -185,6 +234,13 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         if let Err(error) = options.validate_lock_options() {
             return Some(report_error(&options, &error, false));
         }
+        if options.has_workspace_options() {
+            return Some(report_error(
+                &options,
+                "workspace selection is unavailable for new/init",
+                false,
+            ));
+        }
         return Some(match scaffold(&options) {
             Ok(()) => 0,
             Err(error) => report_error(&options, &error, false),
@@ -198,6 +254,35 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     } else {
         None
     };
+    match workspace::discover() {
+        Ok(Some(workspace)) => {
+            let process = workspace.process_run(&options);
+            let result = if location.is_some() {
+                Err("workspace file operations require an explicit --edition; use source-less project commands for member graphs".into())
+            } else {
+                workspace.execute(&options)
+            };
+            return Some(match result {
+                Ok(code) => code,
+                Err(error) => report_error(&options, &error, process),
+            });
+        }
+        Err(error) => {
+            return Some(report_error(
+                &options,
+                &error,
+                options.entry_mode.as_deref() != Some("result"),
+            ))
+        }
+        Ok(None) => {}
+    }
+    if options.has_workspace_options() {
+        return Some(report_error(
+            &options,
+            "workspace selection requires an enclosing typed workspace",
+            false,
+        ));
+    }
     let manifest_path = match find_manifest(location.as_deref()) {
         Ok(path) => path,
         Err(error) => return Some(report_error(&options, &error, false)),
@@ -395,6 +480,13 @@ fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> 
     if !manifest.features.is_empty() {
         return Err("typed-preview project features are not implemented".into());
     }
+    if manifest
+        .kind
+        .as_deref()
+        .is_some_and(|kind| !matches!(kind, "bin" | "lib"))
+    {
+        return Err("project kind must be `bin` or `lib`".into());
+    }
     Ok(())
 }
 
@@ -413,6 +505,9 @@ fn local_source(root: &Path, value: &str) -> Result<PathBuf, String> {
 fn entry_path(root: &Path, manifest: &runtime::ProjectManifest) -> Result<PathBuf, String> {
     if let Some(entry) = manifest.entry.as_deref() {
         return local_source(root, entry);
+    }
+    if manifest.kind.as_deref() == Some("lib") {
+        return local_source(root, "src/lib.ox");
     }
     for path in ["src/main.ox", "main.ox"] {
         if root.join(path).is_file() {
@@ -466,6 +561,12 @@ fn package_graph(
             }
             let manifest = &snapshot.manifest;
             let dependency = !self.packages.is_empty();
+            if dependency && manifest.kind.as_deref() == Some("bin") {
+                return Err(format!(
+                    "binary package {} cannot be imported as a library dependency",
+                    root.display()
+                ));
+            }
             if dependency && manifest.edition.as_deref() != Some("typed-preview") {
                 return Err(format!(
                     "dependency {} requires explicit edition = \"typed-preview\"; found {}",
@@ -676,6 +777,14 @@ fn project_check_run(
     options: &Options,
     process: bool,
 ) -> Result<i32, String> {
+    if options.command() == "run"
+        && options.project_test.is_none()
+        && snapshot.manifest.kind.as_deref() == Some("lib")
+    {
+        return Err(
+            "library packages cannot run as executables; use check or declared tests".into(),
+        );
+    }
     if options.words.len() != 1 && !(options.words.len() == 2 && options.words[1] == "--") {
         return Err(format!(
             "unsupported options for typed-preview project {}",
@@ -720,6 +829,9 @@ fn lock_snapshot(
 /// Diagnose only admitted package inputs. No user script, program or test runs,
 /// and an existing typed lock is checked using the same retained source session.
 pub(crate) fn native_doctor_project() -> Result<Option<String>, String> {
+    if let Some(workspace) = native_doctor_workspace()? {
+        return Ok(Some(workspace));
+    }
     // A broken nearest manifest is a project error, not permission to silently
     // select an ancestor or diagnose the directory as having no project.
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
@@ -865,6 +977,31 @@ fn build(
     options: &Options,
     process: bool,
 ) -> Result<i32, String> {
+    let incremental = validate_build_options(options)?;
+    if snapshot.manifest.kind.as_deref() == Some("lib") {
+        return Err(
+            "library packages do not produce standalone executables; use check or workspace build"
+                .into(),
+        );
+    }
+    let name = snapshot.manifest.name.as_deref().unwrap_or("app");
+    validate_name(name)?;
+    let output = root.join(".oxid/bin").join(name);
+    execute_project(
+        root,
+        snapshot,
+        options,
+        process,
+        frontend::PackageCommand::Compile {
+            output: output.to_str().ok_or("project output path is not UTF-8")?,
+            managed: true,
+            incremental,
+        },
+        None,
+    )
+}
+
+fn validate_build_options(options: &Options) -> Result<bool, String> {
     let mut words = options.words.iter().skip(1);
     let mut seen = std::collections::HashSet::new();
     let mut incremental = false;
@@ -899,21 +1036,7 @@ fn build(
             ));
         }
     }
-    let name = snapshot.manifest.name.as_deref().unwrap_or("app");
-    validate_name(name)?;
-    let output = root.join(".oxid/bin").join(name);
-    execute_project(
-        root,
-        snapshot,
-        options,
-        process,
-        frontend::PackageCommand::Compile {
-            output: output.to_str().ok_or("project output path is not UTF-8")?,
-            managed: true,
-            incremental,
-        },
-        None,
-    )
+    Ok(incremental)
 }
 
 fn test(

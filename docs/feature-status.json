@@ -1048,7 +1048,7 @@
     },
     {
       "id": "typed-preview-project-workflow",
-      "summary": "Manifest-selected typed projects with Linux path dependencies, input locks and opt-in native object reuse",
+      "summary": "Typed projects and bounded workspaces with local dependencies, shared input locks and opt-in native object reuse",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1060,6 +1060,7 @@
         "rfcs/0032-typed-project-workflow.md",
         "rfcs/0033-typed-path-dependencies.md",
         "rfcs/0034-typed-local-locking.md",
+        "rfcs/0035-typed-workspaces.md",
         "rfcs/0036-native-object-reuse.md",
         "rfcs/0037-native-doctor.md",
         "docs/NATIVE_DOCTOR.md",
@@ -1067,6 +1068,7 @@
       ],
       "implementation": [
         "src/project_cli.rs",
+        "src/project_cli/workspace.rs",
         "src/project_lock.rs",
         "src/main.rs",
         "src/frontend/driver.rs",
@@ -1080,6 +1082,8 @@
         "tests/project_workflow.rs",
         "tests/typed_path_dependencies.rs",
         "tests/typed_package_lock.rs",
+        "tests/typed_workspace.rs",
+        "scripts/verify_typed_workspace_app.py",
         "tests/edition_boundary.rs",
         "scripts/test_project_workflow_current.py",
         "scripts/verify_typed_package_app.py",
@@ -1090,7 +1094,7 @@
       "evidence": [
         "docs/architecture/project-workflow-validation.md"
       ],
-      "limitations": "Existing bounded language with local path dependencies and typed input locks, plus opt-in native object reuse and bounded native toolchain diagnosis. No typed Git/registry resolution, workspace, vendor, per-module frontend incrementality or new native target. Locks bind dependency inputs, not reproducible native artifacts. Retained single-package Unit2 assertions and package/lock/cache regressions have separate scopes; neither replaces historical private certificates nor completes R1/v1 acceptance."
+      "limitations": "Existing bounded language with local path dependencies, typed input locks, bounded workspace selection/library checks, opt-in native object reuse and bounded native toolchain diagnosis. No typed Git/registry resolution, vendor, archive packaging, per-module frontend incrementality or new native target. Workspace v3 locks bind all member manifests and imported source inputs, not reproducible artifacts. Retained single-package Unit2 assertions and package/lock/workspace/cache regressions have separate scopes; neither replaces historical private certificates nor completes R1/v1 acceptance."
     },
     {
       "id": "typed-preview-standalone-byte-storage",

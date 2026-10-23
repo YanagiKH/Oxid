@@ -1,5 +1,11 @@
 # Native environment diagnosis
 
+Inside a typed workspace, the project check admits every member and dependency
+session and verifies an existing shared workspace lock, regardless of the
+current member directory. It reports parsing and lock admission separately
+from typechecking or executing source, which doctor never performs. Workspace
+source/manifest limits and ownership checks apply to this diagnosis too.
+
 Run `oxid doctor --native` from any directory to diagnose the currently supported
 bounded native target: Linux x86_64, `x86_64-unknown-linux-gnu`, LLVM **19.1.7**.
 `oxid diagnose --native` is an alias. `--message-format=json` produces one JSON
