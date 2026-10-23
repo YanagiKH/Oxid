@@ -194,7 +194,7 @@ class BufferTransferPolicyAuthority(unittest.TestCase):
         for name in ("extract_baseline", "checkout_identity", "verify_materialized", "prepare_current_observer",
                      "verify_current_observer", "run_byte_buffer_observer_controls"):
             self.assertIs(getattr(gate, name), getattr(gate.library, name))
-        self.assertEqual(len(gate.TRANSFER_CHANGED), 6)
+        self.assertEqual(len(gate.TRANSFER_CHANGED), 7)
         self.assertEqual(set(gate.TRANSFER_INPUTS), gate.TRANSFER_CHANGED)
         self.assertEqual(gate.PARENT_ADDED, gate.library.PARENT_ADDED)
 

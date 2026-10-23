@@ -21,8 +21,9 @@ PREDECESSOR = "559a6e6aa0b2ab2022d8fa37546ac62aeac9954e"
 PREDECESSOR_POLICY = "scripts/verify_hosted_execution_compatibility.py"
 PREDECESSOR_POLICY_SHA = "841e030099e6430d516ab18edacfc893f2b42bf4fb1de0cae9d15cd209c052f1"
 PREDECESSOR_POLICY_BYTES = 18134
-TRANSFER_CHANGED = frozenset(('native/typed_bytebuf.c', 'src/frontend/declaration_index/experimental_tests.rs', 'src/frontend/experimental_builtins.rs', 'src/frontend/oir/owned/execute_experimental.rs', 'src/frontend/oir/owned/native_experimental.rs', 'src/frontend/oir/owned/source/experimental_lower.rs'))
+TRANSFER_CHANGED = frozenset(('native/typed_bytebuf.c', 'src/frontend/builtin_catalog.rs', 'src/frontend/declaration_index/experimental_tests.rs', 'src/frontend/experimental_builtins.rs', 'src/frontend/oir/owned/execute_experimental.rs', 'src/frontend/oir/owned/native_experimental.rs', 'src/frontend/oir/owned/source/experimental_lower.rs'))
 TRANSFER_INPUTS = {
+    'src/frontend/builtin_catalog.rs': (14011, 'ad3271e9141d61e4f4679a906f68975cab572f1bc65bf807116d68111381b610'),
     'native/typed_bytebuf.c': (6494, '615155a9d00bee1c8e7ded6ea8030a8c6315609771bcde7a67186d9c7b5cbb2f'),
     'src/frontend/declaration_index/experimental_tests.rs': (2983, '6062b1836b801219beb2ec888d6392a27ac2cc06a5bc9970fe26d17defd4fb05'),
     'src/frontend/experimental_builtins.rs': (11983, '97dfdadb531e40c537fe2d292cc0e4bb2317e2035e9e4b74b4a13a27e537cdbd'),
