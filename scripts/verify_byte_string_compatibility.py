@@ -38,7 +38,7 @@ LITERAL_INPUTS = {
     'src/frontend/oir/owned/native.rs': (211877, 'e74ed552d4cf6a49674abf0e3d28934d8f014fb13ef77d26f14dde7ef2d5825e'),
     'src/frontend/oir/owned/source/array_pipeline_rows.rs': (53681, '9146012bf6a4111562d4d0ae5699273ebf5f73945bbed71e17aa553de46943a0'),
     'src/frontend/oir/owned/source/byte_storage_resources.rs': (10205, '55bb5afbaca5070a38859c0a7852a9a646d0ec9784d34f5888ec392d76db9609'),
-    'src/frontend/oir/owned/source/byte_string_resources.rs': (7751, '464658c43bde36a7fb6101910a5ba899ea581ac0de426a7be76e8dcf99c942ba'),
+    'src/frontend/oir/owned/source/byte_string_resources.rs': (8065, '9b3c7398bd14957473660edc5964cae0a811957d3fbd64288e226cbf00df5a24'),
     'src/frontend/oir/owned/source/candidate_adapter.rs': (42051, '656570320b1b3ed5d344ffc9d343473b10b77293946c84d2f024a05f246a2e6c'),
     'src/frontend/oir/owned/source/hir.rs': (6243, '235634c1043860e1a27d19a2c91ca4d1a4283ad67a90744dfc6a3af7ea479320'),
     'src/frontend/oir/owned/source/hir_budget.rs': (56084, 'baeba9dc2e9873602d2d9916d61ccee6e429d1da5b02112621dc566a740c2f93'),
