@@ -43,7 +43,25 @@ fn u8_standalone_value_and_parameter_byte_storage_successor() {
             payload: Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8))),
         }],
     };
-    assert!(Declarations::check_combined(&[], &[enumeration], &sources).is_err());
+    let combined = Declarations::check_combined(&[], &[enumeration], &sources).unwrap();
+    assert_eq!(
+        combined.enums().enumeration(EnumId(0)).unwrap().layout(),
+        Layout { size: 8, align: 4 }
+    );
+    assert_eq!(
+        combined
+            .enums()
+            .variant(
+                EnumId(0),
+                VariantId {
+                    enumeration: EnumId(0),
+                    index: 0
+                }
+            )
+            .unwrap()
+            .value_payload(),
+        Some(ValueTy::Scalar(hir::Ty::U8))
+    );
 }
 
 #[test]

@@ -359,6 +359,10 @@ fn execute_with_execution(
                 | Rvalue::CheckedI64ToI32 { .. }
                 | Rvalue::CheckedI64ToU8 { .. }
                 | Rvalue::CheckedNegateI64 { .. }
+                | Rvalue::Integer { .. }
+                | Rvalue::CheckedInteger { .. }
+                | Rvalue::CheckedNegateInteger { .. }
+                | Rvalue::CheckedIntegerCast { .. }
                 | Rvalue::CheckedI64 { .. } => {
                     return Err(internal(FailureKind::TypeMismatch, Some(assign.span)));
                 }

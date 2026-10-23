@@ -130,6 +130,7 @@ pub(super) struct ExecutionPlan<'a> {
     metadata_bytes: u32,
     dynamic_resources: bool,
     wide_scalars: bool,
+    integer_extension: bool,
 }
 const _: () = assert!(
     size_of::<ExecutionPlan<'_>>()
@@ -138,6 +139,9 @@ const _: () = assert!(
 impl<'a> ExecutionPlan<'a> {
     pub(super) fn uses_wide_scalars(&self) -> bool {
         self.wide_scalars
+    }
+    pub(super) fn uses_integer_extension(&self) -> bool {
+        self.integer_extension
     }
     pub(super) fn uses_dynamic_resources(&self) -> bool {
         self.dynamic_resources
@@ -308,10 +312,38 @@ impl<'a> ExecutionPlan<'a> {
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
         let functions = witness.functions();
+        let wide_type = |ty: hir::Ty| ty == hir::Ty::I64 || ty.extended_integer().is_some();
         let wide_scalars = functions.iter().any(|function| {
-            function.result == ValueTy::Scalar(hir::Ty::I64)
-                || function.locals.iter().any(|local| local.ty == hir::Ty::I64)
-                || function.places.iter().any(|place| place.ty == hir::Ty::I64)
+            matches!(function.result, ValueTy::Scalar(ty) if wide_type(ty))
+                || function.locals.iter().any(|local| wide_type(local.ty))
+                || function.places.iter().any(|place| wide_type(place.ty))
+        });
+        let integer_extension = functions.iter().any(|function| {
+            matches!(function.result, ValueTy::Scalar(ty) if ty.extended_integer().is_some())
+                || function
+                    .locals
+                    .iter()
+                    .any(|local| local.ty.extended_integer().is_some())
+                || function
+                    .places
+                    .iter()
+                    .any(|place| place.ty.extended_integer().is_some())
+                || function
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.statements)
+                    .any(|statement| {
+                        matches!(
+                            statement.kind,
+                            OwnedInstruction::Scalar(Statement::Assign(Assign {
+                                value: Rvalue::Integer { .. }
+                                    | Rvalue::CheckedInteger { .. }
+                                    | Rvalue::CheckedNegateInteger { .. }
+                                    | Rvalue::CheckedIntegerCast { .. },
+                                ..
+                            }))
+                        )
+                    })
         });
         let scalar_bytes = if wide_scalars {
             size_of::<Option<RuntimeScalar>>()
@@ -436,6 +468,7 @@ impl<'a> ExecutionPlan<'a> {
                 .map_err(|_| AdmissionFailure::new("owned plan bytes", None))?,
             dynamic_resources,
             wide_scalars,
+            integer_extension,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
         for f in functions {

@@ -148,6 +148,9 @@ impl<'s> Visitor<'s> {
                     }
                     | Rvalue::CheckedI64ToU8 {
                         operand, name_span, ..
+                    }
+                    | Rvalue::CheckedIntegerCast {
+                        operand, name_span, ..
                     } => {
                         self.has_conversions = true;
                         self.span(operand.span)?;
@@ -162,6 +165,10 @@ impl<'s> Visitor<'s> {
                         operator_span,
                     }
                     | Rvalue::CheckedNegateI64 {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::CheckedNegateInteger {
                         operand,
                         operator_span,
                     } => {
@@ -186,6 +193,12 @@ impl<'s> Visitor<'s> {
                         right,
                         operator_span,
                         ..
+                    }
+                    | Rvalue::CheckedInteger {
+                        left,
+                        right,
+                        operator_span,
+                        ..
                     } => {
                         self.span(left.span)?;
                         self.span(right.span)?;
@@ -194,6 +207,7 @@ impl<'s> Visitor<'s> {
                     Rvalue::Bool(_)
                     | Rvalue::I32(_)
                     | Rvalue::I64(_)
+                    | Rvalue::Integer { .. }
                     | Rvalue::U8(_)
                     | Rvalue::Unit => (),
                 }
@@ -294,6 +308,20 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
             name_span,
             source_expr,
         ),
+        Rvalue::CheckedIntegerCast {
+            operand,
+            target,
+            name_span,
+            source_expr,
+        } => {
+            let operation = match target {
+                hir::Ty::U8 => ast::ConversionOp::ToU8Checked,
+                hir::Ty::I32 => ast::ConversionOp::ToI32Checked,
+                hir::Ty::I64 => ast::ConversionOp::ToIntegerChecked(ast::IntegerTypeSyntax::I64),
+                ty => ast::ConversionOp::ToIntegerChecked(ty.extended_integer().ok_or_else(bad)?),
+            };
+            (operation, operand, name_span, source_expr)
+        }
         _ => return Ok(()),
     };
     macro_rules! inspect {
@@ -344,6 +372,7 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
         ast::ConversionOp::ToI32 => "to_i32",
         ast::ConversionOp::ToI64 => "to_i64",
         ast::ConversionOp::ToI32Checked => "to_i32_checked",
+        ast::ConversionOp::ToIntegerChecked(kind) => kind.checked_conversion(),
     };
     if !inspect!(name.len() == expected.len()) {
         return Err(bad());

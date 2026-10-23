@@ -270,7 +270,7 @@ fn i32_contexts_remain_strict_without_numeric_coercion() {
             "type",
             "id()",
         ),
-        ("fn main() -> u32 { return 1; }", "E0202", "resolve", "u32"),
+        ("fn main() -> u32 { return 1; }", "E0300", "type", "1"),
         ("fn main() -> i64 { return 1; }", "E0300", "type", "1"),
     ] {
         reject(source, code, stage, origin);

@@ -104,9 +104,14 @@ fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
         Statement::Assign(assign) => match &assign.value {
             Rvalue::CheckedI32ToU8 { .. }
             | Rvalue::CheckedI64ToU8 { .. }
-            | Rvalue::CheckedI64ToI32 { .. } => (1, true),
-            Rvalue::CheckedNegateI32 { .. } | Rvalue::CheckedNegateI64 { .. } => (1, false),
-            Rvalue::CheckedI32 { op, .. } | Rvalue::CheckedI64 { op, .. } => match op {
+            | Rvalue::CheckedI64ToI32 { .. }
+            | Rvalue::CheckedIntegerCast { .. } => (1, true),
+            Rvalue::CheckedNegateI32 { .. }
+            | Rvalue::CheckedNegateI64 { .. }
+            | Rvalue::CheckedNegateInteger { .. } => (1, false),
+            Rvalue::CheckedI32 { op, .. }
+            | Rvalue::CheckedI64 { op, .. }
+            | Rvalue::CheckedInteger { op, .. } => match op {
                 hir::ArithmeticOp::Add
                 | hir::ArithmeticOp::Subtract
                 | hir::ArithmeticOp::Multiply => (1, false),
@@ -115,6 +120,7 @@ fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
             Rvalue::U8ToI32 { .. }
             | Rvalue::WidenI64 { .. }
             | Rvalue::I64(_)
+            | Rvalue::Integer { .. }
             | Rvalue::Load(_)
             | Rvalue::NotBool { .. }
             | Rvalue::Bool(_)

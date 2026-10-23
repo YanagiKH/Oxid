@@ -1255,6 +1255,15 @@ fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
                 1,
             );
             let inactive = match payload {
+                Some(
+                    hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize,
+                ) => panic!("integer width is outside this retained narrow fixture or observer"),
                 Some(hir::Ty::I64) => {
                     panic!("i64 is outside this retained narrow fixture or observer")
                 }

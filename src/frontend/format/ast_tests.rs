@@ -207,6 +207,7 @@ impl<'a> Fingerprint<'a> {
             ArrayElementTypeSyntax::Bool => "bool-element",
             ArrayElementTypeSyntax::I32 => "i32-element",
             ArrayElementTypeSyntax::I64 => "i64-element",
+            ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
             ArrayElementTypeSyntax::U8 => "u8-element",
             ArrayElementTypeSyntax::Unit => "unit-element",
         });
@@ -233,6 +234,7 @@ impl<'a> Fingerprint<'a> {
                     ArrayElementTypeSyntax::Bool => "bool",
                     ArrayElementTypeSyntax::I32 => "i32",
                     ArrayElementTypeSyntax::I64 => "i64",
+                    ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
                     ArrayElementTypeSyntax::U8 => "u8",
                     ArrayElementTypeSyntax::Unit => "unit",
                 });
@@ -312,6 +314,7 @@ impl<'a> Fingerprint<'a> {
                     ConversionOp::ToI32 => "to-i32",
                     ConversionOp::ToI64 => "to-i64",
                     ConversionOp::ToI32Checked => "to-i32-checked",
+                    ConversionOp::ToIntegerChecked(kind) => kind.checked_conversion(),
                 });
                 self.spelling(*name_span);
                 self.expression(*operand);
@@ -375,6 +378,16 @@ impl<'a> Fingerprint<'a> {
             }
             ExprKind::I64Number { digits, negative } => {
                 self.tag("number-i64");
+                self.spelling(*digits);
+                self.flag(*negative);
+            }
+            ExprKind::IntegerNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                self.tag("integer-number");
+                self.tag(kind.spelling());
                 self.spelling(*digits);
                 self.flag(*negative);
             }
@@ -703,6 +716,10 @@ impl<'a> Fingerprint<'a> {
                                 ScalarTypeSyntax::Bool => self.tag("bool-payload"),
                                 ScalarTypeSyntax::I32 => self.tag("i32-payload"),
                                 ScalarTypeSyntax::I64 => self.tag("i64-payload"),
+                                ScalarTypeSyntax::Integer(kind) => {
+                                    self.tag("integer-payload");
+                                    self.tag(kind.spelling());
+                                }
                                 ScalarTypeSyntax::Unit => self.tag("unit-payload"),
                                 ScalarTypeSyntax::Name
                                 | ScalarTypeSyntax::Absolute(_)
@@ -894,7 +911,10 @@ fn normalization_ignores_arena_storage_order_but_retains_edges() {
     program.expressions.reverse();
     for expression in &mut program.expressions {
         match &mut expression.kind {
-            ExprKind::Bool(_) | ExprKind::Number { .. } | ExprKind::I64Number { .. } => {}
+            ExprKind::Bool(_)
+            | ExprKind::Number { .. }
+            | ExprKind::I64Number { .. }
+            | ExprKind::IntegerNumber { .. } => {}
             ExprKind::Call { args, .. } => {
                 for argument in args {
                     let Argument::Value(id) = argument else {

@@ -73,6 +73,10 @@ pub(super) enum ExprKind {
     Bool(bool),
     I32(i32),
     I64(i64),
+    Integer {
+        bits: u64,
+        ty: Ty,
+    },
     Unit,
     Binding(BindingId),
     Group(ExprId),

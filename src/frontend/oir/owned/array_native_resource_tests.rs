@@ -85,6 +85,7 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
             execute::OwnedRunFailure::Invariant("resource descriptor", Some(origin))
                 .diagnostic(sources)
         }
+        _ => panic!("integer width is outside this retained narrow fixture or observer"),
     }
     .render_human(sources)
 }

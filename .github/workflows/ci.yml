@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_i64_compatibility.py \
+          python3 -B scripts/verify_integer_widths_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -62,6 +62,8 @@ jobs:
           python3 scripts/verify_i32_arithmetic.py target/debug/oxid target/release/oxid
           python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-i64-reference" --reference-only
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-reference" --reference-only
           python3 scripts/verify_repo.py target/release/oxid
           python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-interpreter"
@@ -81,6 +83,7 @@ jobs:
           path: |
             ${{ runner.temp }}/current-project-unit2
             ${{ runner.temp }}/current-i64-reference
+            ${{ runner.temp }}/current-integer-widths-reference
             !${{ runner.temp }}/current-project-unit2/**/target/**
           if-no-files-found: warn
           retention-days: 14
@@ -317,13 +320,13 @@ jobs:
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 -- --ignored
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
@@ -342,6 +345,8 @@ jobs:
         run: |
           python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-i64-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-application" --native
           python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
@@ -379,6 +384,7 @@ jobs:
           python3 -B scripts/test_native_files_runtime.py
           python3 -B scripts/test_process_arguments_runtime.py
           python3 -B scripts/test_i64_output_runtime.py
+          python3 -B scripts/test_integer_output_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_binary_delivery.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_hosted_bytebuf.py
@@ -386,6 +392,7 @@ jobs:
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_files_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_process_arguments_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_i64_output_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer_output_runtime.py
       - name: Verify source-free file copies larger than the process memory limit
         run: |
           python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
@@ -403,6 +410,7 @@ jobs:
           path: |
             ${{ runner.temp }}/current-native
             ${{ runner.temp }}/current-i64-native
+            ${{ runner.temp }}/current-integer-widths-native
             ${{ runner.temp }}/current-package-application
             ${{ runner.temp }}/current-package-lock-application
             ${{ runner.temp }}/current-workspace-application

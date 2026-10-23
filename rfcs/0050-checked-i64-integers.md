@@ -68,7 +68,9 @@ overflow or floating-point formatting.
 An `i64` scalar occupies eight bytes aligned to eight in owned storage; an enum
 with an `i64` payload has a sixteen-byte layout aligned to eight. Reference
 programs using `i64` select sixteen-byte tagged scalar cells and snapshots.
-Programs without it retain the existing eight-byte cells and layouts. Admission
+Programs using only `bool`, `i32`, `u8` and `()` retain eight-byte cells;
+[additional integer types](0051-checked-integer-widths.md) use the wider cells.
+Admission
 charges the selected cells, complete control carriers and native output storage
 before execution; widening does not enlarge an existing bounded memory limit.
 Hosted execution retains storage admission without cumulative work fuel.

@@ -21,6 +21,30 @@ impl Parser<'_> {
             "to_i32" => ConversionOp::ToI32,
             "to_i64" if self.wide_scalars_enabled() => ConversionOp::ToI64,
             "to_i32_checked" if self.wide_scalars_enabled() => ConversionOp::ToI32Checked,
+            "to_i8_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I8)
+            }
+            "to_i64_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I64)
+            }
+            "to_i16_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I16)
+            }
+            "to_u16_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U16)
+            }
+            "to_u32_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U32)
+            }
+            "to_u64_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U64)
+            }
+            "to_isize_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::Isize)
+            }
+            "to_usize_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::Usize)
+            }
             _ => return None,
         };
         (tokens.next()?.kind == Kind::LParen).then_some(op)

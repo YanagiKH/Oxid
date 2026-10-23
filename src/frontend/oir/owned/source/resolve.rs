@@ -491,6 +491,53 @@ fn decimal_i64(digits: &str, negative: bool, span: Span) -> Result<i64, Box<Diag
     Ok(value)
 }
 
+fn decimal_integer(
+    digits: &str,
+    negative: bool,
+    kind: ast::IntegerTypeSyntax,
+    span: Span,
+) -> Result<u64, Box<Diagnostic>> {
+    let range = || {
+        error(
+            "E0203",
+            format_args!("decimal literal is outside the {} range", kind.spelling()),
+            span,
+        )
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(error(
+            "E0500",
+            format_args!("invalid integer literal source"),
+            span,
+        ));
+    }
+    if negative && !kind.signed() {
+        return Err(range());
+    }
+    let mut magnitude = 0u64;
+    for byte in digits.bytes() {
+        magnitude = magnitude
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u64::from(byte - b'0')))
+            .ok_or_else(range)?;
+    }
+    let bound = if kind.signed() {
+        (1u64 << (kind.bits() - 1)) - u64::from(!negative)
+    } else if kind.bits() == 64 {
+        u64::MAX
+    } else {
+        (1u64 << kind.bits()) - 1
+    };
+    if magnitude > bound {
+        return Err(range());
+    }
+    Ok(if negative {
+        0u64.wrapping_sub(magnitude)
+    } else {
+        magnitude
+    })
+}
+
 #[cfg(test)]
 pub(super) fn resolve<'src>(
     source: &'src SourceFile,
@@ -2844,6 +2891,14 @@ impl<'a> Resolver<'_, 'a> {
             ast::ExprKind::I64Number { digits, negative } => {
                 ExprKind::I64(decimal_i64(self.text(*digits), *negative, expr.span)?)
             }
+            ast::ExprKind::IntegerNumber {
+                digits,
+                negative,
+                kind,
+            } => ExprKind::Integer {
+                bits: decimal_integer(self.text(*digits), *negative, *kind, expr.span)?,
+                ty: Ty::from_extended_integer(*kind),
+            },
             ast::ExprKind::Unit => ExprKind::Unit,
             ast::ExprKind::Name(span) => {
                 let name = self.text(*span);

@@ -110,6 +110,15 @@ fn frames(program: &SourceProgram, sources: &SourceMap) -> String {
 
 fn scalar_type(ty: hir::Ty) -> String {
     json_string(match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
         hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => "bool",
@@ -181,6 +190,12 @@ fn call_result(value: CallResult) -> String {
 
 fn rvalue(value: &Rvalue) -> String {
     match value {
+        Rvalue::Integer { .. }
+        | Rvalue::CheckedInteger { .. }
+        | Rvalue::CheckedNegateInteger { .. }
+        | Rvalue::CheckedIntegerCast { .. } => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
         Rvalue::I64(_)
         | Rvalue::WidenI64 { .. }
         | Rvalue::CheckedI64ToI32 { .. }

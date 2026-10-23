@@ -16,7 +16,7 @@ pub(super) use source::{
 
 use super::{
     diagnostic::Diagnostic,
-    hir,
+    hir::{self, Ty},
     source::{SourceMap, Span},
     typeck,
 };
@@ -207,6 +207,26 @@ enum Rvalue {
         right: Operand,
         operator_span: Span,
     },
+    Integer {
+        ty: Ty,
+        bits: u64,
+    },
+    CheckedInteger {
+        op: hir::ArithmeticOp,
+        left: Operand,
+        right: Operand,
+        operator_span: Span,
+    },
+    CheckedNegateInteger {
+        operand: Operand,
+        operator_span: Span,
+    },
+    CheckedIntegerCast {
+        operand: Operand,
+        target: Ty,
+        name_span: Span,
+        source_expr: crate::frontend::ast::ExprId,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Terminator {
@@ -377,6 +397,13 @@ impl std::fmt::Display for Scalar {
 pub(super) enum RuntimeScalar {
     Narrow(Scalar),
     I64(i64),
+    I8(i8),
+    I16(i16),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    Isize(i64),
+    Usize(u64),
 }
 impl From<Scalar> for RuntimeScalar {
     fn from(value: Scalar) -> Self {
@@ -384,10 +411,51 @@ impl From<Scalar> for RuntimeScalar {
     }
 }
 impl RuntimeScalar {
+    pub(super) fn integer(self) -> Option<(Ty, u64)> {
+        Some(match self {
+            Self::Narrow(Scalar::I32(value)) => (Ty::I32, value as i64 as u64),
+            Self::Narrow(Scalar::U8(value)) => (Ty::U8, u64::from(value)),
+            Self::I64(value) => (Ty::I64, value as u64),
+            Self::I8(value) => (Ty::I8, value as i64 as u64),
+            Self::I16(value) => (Ty::I16, value as i64 as u64),
+            Self::U16(value) => (Ty::U16, u64::from(value)),
+            Self::U32(value) => (Ty::U32, u64::from(value)),
+            Self::U64(value) => (Ty::U64, value),
+            Self::Isize(value) => (Ty::Isize, value as u64),
+            Self::Usize(value) => (Ty::Usize, value),
+            Self::Narrow(Scalar::Bool(_) | Scalar::Unit) => return None,
+        })
+    }
+    pub(super) fn from_integer(ty: Ty, bits: u64) -> Option<Self> {
+        match ty {
+            Ty::I8 => i8::try_from(bits as i64).ok().map(Self::I8),
+            Ty::I16 => i16::try_from(bits as i64).ok().map(Self::I16),
+            Ty::I32 => i32::try_from(bits as i64)
+                .ok()
+                .map(|value| Self::Narrow(Scalar::I32(value))),
+            Ty::I64 => Some(Self::I64(bits as i64)),
+            Ty::U8 => u8::try_from(bits)
+                .ok()
+                .map(|value| Self::Narrow(Scalar::U8(value))),
+            Ty::U16 => u16::try_from(bits).ok().map(Self::U16),
+            Ty::U32 => u32::try_from(bits).ok().map(Self::U32),
+            Ty::U64 => Some(Self::U64(bits)),
+            Ty::Isize => Some(Self::Isize(bits as i64)),
+            Ty::Usize => Some(Self::Usize(bits)),
+            Ty::Bool | Ty::Unit => None,
+        }
+    }
     pub(super) fn narrow(self) -> Option<Scalar> {
         match self {
             Self::Narrow(value) => Some(value),
-            Self::I64(_) => None,
+            Self::I64(_)
+            | Self::I8(_)
+            | Self::I16(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Isize(_)
+            | Self::Usize(_) => None,
         }
     }
     pub(super) fn json(self) -> Option<String> {
@@ -396,6 +464,13 @@ impl RuntimeScalar {
             // Decimal text preserves the complete value in JSON consumers that
             // represent numeric tokens using a 53-bit floating-point mantissa.
             Self::I64(value) => Some(format!("{{\"type\":\"i64\",\"value\":\"{value}\"}}")),
+            Self::I8(value) => Some(format!("{{\"type\":\"i8\",\"value\":{value}}}")),
+            Self::I16(value) => Some(format!("{{\"type\":\"i16\",\"value\":{value}}}")),
+            Self::U16(value) => Some(format!("{{\"type\":\"u16\",\"value\":{value}}}")),
+            Self::U32(value) => Some(format!("{{\"type\":\"u32\",\"value\":{value}}}")),
+            Self::U64(value) => Some(format!("{{\"type\":\"u64\",\"value\":\"{value}\"}}")),
+            Self::Isize(value) => Some(format!("{{\"type\":\"isize\",\"value\":\"{value}\"}}")),
+            Self::Usize(value) => Some(format!("{{\"type\":\"usize\",\"value\":\"{value}\"}}")),
         }
     }
 }
@@ -404,6 +479,13 @@ impl std::fmt::Display for RuntimeScalar {
         match self {
             Self::Narrow(value) => value.fmt(formatter),
             Self::I64(value) => value.fmt(formatter),
+            Self::I8(value) => value.fmt(formatter),
+            Self::I16(value) => value.fmt(formatter),
+            Self::U16(value) => value.fmt(formatter),
+            Self::U32(value) => value.fmt(formatter),
+            Self::U64(value) => value.fmt(formatter),
+            Self::Isize(value) => value.fmt(formatter),
+            Self::Usize(value) => value.fmt(formatter),
         }
     }
 }
@@ -421,6 +503,9 @@ pub(super) enum RunFailure {
     WideDivisionByZero(Span),
     I64ToI32Range(Span),
     I64ToU8Range(Span),
+    IntegerOverflow { ty: Ty, span: Span },
+    IntegerDivisionByZero { ty: Ty, span: Span },
+    IntegerRange { input: Ty, target: Ty, span: Span },
     Internal(OirFailure),
 }
 impl RunFailure {
@@ -443,6 +528,23 @@ impl RunFailure {
             Self::WideDivisionByZero(span) => ("E0607", "checked i64 division by zero", Some(span)),
             Self::I64ToI32Range(span) => ("E0610", "checked i64 to i32 conversion out of range", Some(span)),
             Self::I64ToU8Range(span) => ("E0610", "checked i64 to u8 conversion out of range", Some(span)),
+            Self::IntegerOverflow { ty, span } => return Diagnostic::new(
+                "E0604", "oir-run", format!("checked {ty} arithmetic overflow"),
+                Some(span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::IntegerDivisionByZero { ty, span } => return Diagnostic::new(
+                "E0607", "oir-run", format!("checked {ty} division by zero"),
+                Some(span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::IntegerRange { input, target, span } => {
+                // Primitive names are at most five bytes. A fixed reservation
+                // keeps formatting inside the existing diagnostic envelope.
+                use std::fmt::Write;
+                let mut message = String::with_capacity(64);
+                write!(&mut message, "checked {input} to {target} conversion out of range").unwrap();
+                return Diagnostic::new("E0610", "oir-run", message,
+                    Some(span).filter(|span| sources.is_valid_span(*span)));
+            }
             Self::Internal(ref error) => return error.diagnostic(sources),
         };
         Diagnostic::new(

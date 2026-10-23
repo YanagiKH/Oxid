@@ -39,6 +39,91 @@ pub enum ConversionOp {
     ToI32,
     ToI64,
     ToI32Checked,
+    ToIntegerChecked(IntegerTypeSyntax),
+}
+/// Integer spellings added after the retained i32/u8/i64 source contracts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IntegerTypeSyntax {
+    I8,
+    U8,
+    I16,
+    I32,
+    I64,
+    U16,
+    U32,
+    U64,
+    Isize,
+    Usize,
+}
+impl IntegerTypeSyntax {
+    pub const ADDITIONAL_LITERAL_SUFFIXES: [Self; 8] = [
+        Self::I8,
+        Self::U8,
+        Self::I16,
+        Self::U16,
+        Self::U32,
+        Self::U64,
+        Self::Isize,
+        Self::Usize,
+    ];
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::U8 => "u8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::Isize => "isize",
+            Self::Usize => "usize",
+        }
+    }
+    pub fn from_spelling(text: &str) -> Option<Self> {
+        match text {
+            "i8" => Some(Self::I8),
+            "u8" => Some(Self::U8),
+            "i16" => Some(Self::I16),
+            "i32" => Some(Self::I32),
+            "i64" => Some(Self::I64),
+            "u16" => Some(Self::U16),
+            "u32" => Some(Self::U32),
+            "u64" => Some(Self::U64),
+            "isize" => Some(Self::Isize),
+            "usize" => Some(Self::Usize),
+            _ => None,
+        }
+    }
+    pub const fn bits(self) -> u8 {
+        match self {
+            Self::I8 | Self::U8 => 8,
+            Self::I16 | Self::U16 => 16,
+            Self::I32 | Self::U32 => 32,
+            Self::I64 | Self::U64 | Self::Isize | Self::Usize => 64,
+        }
+    }
+    pub const fn signed(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize
+        )
+    }
+    pub const fn checked_conversion(self) -> &'static str {
+        match self {
+            Self::I8 => "to_i8_checked",
+            Self::U8 => "to_u8_checked",
+            Self::I16 => "to_i16_checked",
+            Self::I32 => "to_i32_checked",
+            Self::I64 => "to_i64_checked",
+            Self::U16 => "to_u16_checked",
+            Self::U32 => "to_u32_checked",
+            Self::U64 => "to_u64_checked",
+            Self::Isize => "to_isize_checked",
+            Self::Usize => "to_usize_checked",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithmeticOp {
@@ -98,6 +183,11 @@ pub enum ExprKind {
     I64Number {
         digits: Span,
         negative: bool,
+    },
+    IntegerNumber {
+        digits: Span,
+        negative: bool,
+        kind: IntegerTypeSyntax,
     },
     Unit,
     Name(Span),
@@ -159,6 +249,7 @@ pub enum ScalarTypeSyntax {
     Absolute(u32),
     Array(FixedArraySyntax),
     I64,
+    Integer(IntegerTypeSyntax),
 }
 /// Scalar elements in the existing fixed-array grammar.
 #[derive(Clone, Copy, Debug)]
@@ -168,6 +259,7 @@ pub enum ArrayElementTypeSyntax {
     U8,
     Unit,
     I64,
+    Integer(IntegerTypeSyntax),
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FixedArraySyntax {
@@ -226,6 +318,7 @@ impl EnumPayloadSyntax {
                 ScalarTypeSyntax::Bool
                 | ScalarTypeSyntax::I32
                 | ScalarTypeSyntax::I64
+                | ScalarTypeSyntax::Integer(_)
                 | ScalarTypeSyntax::Name => TypeSyntaxKind::Name(ItemPath::Unqualified(self.span)),
                 ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
                 ScalarTypeSyntax::Absolute(id) => {
@@ -937,9 +1030,9 @@ impl Program {
                     ..
                 } => earlier(*left) && earlier(*right) && valid(*operator_span),
                 ExprKind::Bool(_) | ExprKind::Unit => true,
-                ExprKind::Number { digits, .. } | ExprKind::I64Number { digits, .. } => {
-                    valid(*digits)
-                }
+                ExprKind::Number { digits, .. }
+                | ExprKind::I64Number { digits, .. }
+                | ExprKind::IntegerNumber { digits, .. } => valid(*digits),
                 ExprKind::Name(name) => valid(*name),
                 ExprKind::Call { callee, args } => {
                     path_valid(*callee, &mut valid)
@@ -1095,8 +1188,12 @@ impl Program {
                 | ExprKind::IndexRead { .. }
                 | ExprKind::ArrayLength { .. }
                 | ExprKind::I64Number { .. }
+                | ExprKind::IntegerNumber { .. }
                 | ExprKind::Conversion {
-                    op: ConversionOp::ToI64 | ConversionOp::ToI32Checked,
+                    op:
+                        ConversionOp::ToI64
+                        | ConversionOp::ToI32Checked
+                        | ConversionOp::ToIntegerChecked(_),
                     ..
                 } => true,
                 ExprKind::Call { args, .. } => {

@@ -1374,6 +1374,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::I64(value) => Rvalue::I64(value),
+            source::ExprKind::Integer { bits, ty } => Rvalue::Integer { bits, ty },
             source::ExprKind::Unit => Rvalue::Unit,
             source::ExprKind::Binding(binding) => match self.location(binding, span)? {
                 BindingLocation::ScalarValue(local) => Rvalue::Copy(Operand { local, span }),
@@ -1395,6 +1396,16 @@ impl<'a, 'b> Walk<'a, 'b> {
                         name_span,
                     }
                 }
+                source::ConversionOp::ToU8Checked
+                    if self.view.expression_ty(operand) != ValueTy::Scalar(hir::Ty::I32) =>
+                {
+                    Rvalue::CheckedIntegerCast {
+                        source_expr,
+                        operand: self.operand(operand)?,
+                        target: hir::Ty::U8,
+                        name_span,
+                    }
+                }
                 source::ConversionOp::ToU8Checked => Rvalue::CheckedI32ToU8 {
                     source_expr,
                     operand: self.operand(operand)?,
@@ -1410,9 +1421,25 @@ impl<'a, 'b> Walk<'a, 'b> {
                     operand: self.operand(operand)?,
                     name_span,
                 },
-                source::ConversionOp::ToI32Checked => Rvalue::CheckedI64ToI32 {
+                source::ConversionOp::ToI32Checked
+                    if self.view.expression_ty(operand) == ValueTy::Scalar(hir::Ty::I64) =>
+                {
+                    Rvalue::CheckedI64ToI32 {
+                        source_expr,
+                        operand: self.operand(operand)?,
+                        name_span,
+                    }
+                }
+                source::ConversionOp::ToI32Checked => Rvalue::CheckedIntegerCast {
                     source_expr,
                     operand: self.operand(operand)?,
+                    target: hir::Ty::I32,
+                    name_span,
+                },
+                source::ConversionOp::ToIntegerChecked(kind) => Rvalue::CheckedIntegerCast {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    target: hir::Ty::from_extended_integer(kind),
                     name_span,
                 },
             },
@@ -1426,8 +1453,13 @@ impl<'a, 'b> Walk<'a, 'b> {
                         operand: self.operand(operand)?,
                         operator_span,
                     }
-                } else {
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I32) {
                     Rvalue::CheckedNegateI32 {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                } else {
+                    Rvalue::CheckedNegateInteger {
                         operand: self.operand(operand)?,
                         operator_span,
                     }
@@ -1464,8 +1496,15 @@ impl<'a, 'b> Walk<'a, 'b> {
                         right: self.operand(right)?,
                         operator_span,
                     }
-                } else {
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I32) {
                     Rvalue::CheckedI32 {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                } else {
+                    Rvalue::CheckedInteger {
                         op,
                         left: self.operand(left)?,
                         right: self.operand(right)?,

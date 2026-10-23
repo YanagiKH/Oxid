@@ -9,7 +9,32 @@ pub(super) enum Reason {
     WorkLimit,
     ReservedU8,
     ReservedI64,
+    ReservedI8,
+    ReservedI16,
+    ReservedU16,
+    ReservedU32,
+    ReservedU64,
+    ReservedIsize,
+    ReservedUsize,
 }
+impl Reason {
+    fn integer_name(text: &str) -> Option<Self> {
+        // A fixed keyword selector is covered by the caller's binding visit.
+        // It never scans an identifier beyond the five-byte keyword extent.
+        Some(match text {
+            "i8" => Self::ReservedI8,
+            "i16" => Self::ReservedI16,
+            "u16" => Self::ReservedU16,
+            "u32" => Self::ReservedU32,
+            "u64" => Self::ReservedU64,
+            "isize" => Self::ReservedIsize,
+            "usize" => Self::ReservedUsize,
+            _ => return None,
+        })
+    }
+}
+
+const _: () = assert!(std::mem::size_of::<Reason>() == 1);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Failure {
     reason: Reason,
@@ -29,6 +54,13 @@ impl Failure {
             Reason::WorkLimit=>diagnostic("E0400","resolve-project","declaration index work limit exceeded",self.at),
             Reason::ReservedU8=>diagnostic("E0208","resolve","type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias",self.at),
             Reason::ReservedI64=>diagnostic("E0208","resolve","type name i64 is reserved for the signed 64-bit primitive; rename the type or import alias",self.at),
+            Reason::ReservedI8=>diagnostic("E0208","resolve","type name i8 is reserved for an integer primitive; rename the type or import alias",self.at),
+            Reason::ReservedI16=>diagnostic("E0208","resolve","type name i16 is reserved for an integer primitive; rename the type or import alias",self.at),
+            Reason::ReservedU16=>diagnostic("E0208","resolve","type name u16 is reserved for an integer primitive; rename the type or import alias",self.at),
+            Reason::ReservedU32=>diagnostic("E0208","resolve","type name u32 is reserved for an integer primitive; rename the type or import alias",self.at),
+            Reason::ReservedU64=>diagnostic("E0208","resolve","type name u64 is reserved for an integer primitive; rename the type or import alias",self.at),
+            Reason::ReservedIsize=>diagnostic("E0208","resolve","type name isize is reserved for an integer primitive; rename the type or import alias",self.at),
+            Reason::ReservedUsize=>diagnostic("E0208","resolve","type name usize is reserved for an integer primitive; rename the type or import alias",self.at),
         }
     }
 }
@@ -193,6 +225,16 @@ fn core(tables: &Tables<'_>, work: &WorkMeter, eof: &Span) -> Result<(), Failure
                             at: *at,
                         });
                     }
+                    if candidate {
+                        if let Some(reason) = Reason::integer_name(
+                            f.tables
+                                .sources
+                                .try_text_borrowed(at)
+                                .ok_or_else(|| Failure::bad(f.eof))?,
+                        ) {
+                            return Err(Failure { reason, at: *at });
+                        }
+                    }
                 }
             }
             f.item += 1;
@@ -315,6 +357,7 @@ mod layout_tests {
                 Reason::WorkLimit=>resource("declaration index work limit exceeded",at),
                 Reason::ReservedU8=>diagnostic("E0208","resolve","type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias",at),
                 Reason::ReservedI64=>diagnostic("E0208","resolve","type name i64 is reserved for the signed 64-bit primitive; rename the type or import alias",at),
+                Reason::ReservedI8 | Reason::ReservedI16 | Reason::ReservedU16 | Reason::ReservedU32 | Reason::ReservedU64 | Reason::ReservedIsize | Reason::ReservedUsize => panic!("extended primitive outside retained diagnostic comparison"),
             };
             assert_eq!(format!("{old:?}"), format!("{new:?}"));
             assert_eq!(old.message.capacity(), new.message.capacity());
@@ -346,6 +389,7 @@ mod layout_tests {
                 Reason::WorkLimit=>resource("declaration index work limit exceeded",at),
                 Reason::ReservedU8=>diagnostic("E0208","resolve","type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias",at),
                 Reason::ReservedI64=>diagnostic("E0208","resolve","type name i64 is reserved for the signed 64-bit primitive; rename the type or import alias",at),
+                Reason::ReservedI8 | Reason::ReservedI16 | Reason::ReservedU16 | Reason::ReservedU32 | Reason::ReservedU64 | Reason::ReservedIsize | Reason::ReservedUsize => panic!("extended primitive outside retained diagnostic comparison"),
             }
                     })
                 });
@@ -536,8 +580,17 @@ mod carrier_envelope {
             "checked access closure capture and result",
             (&Span, Failure)
         );
-        let core =
-            frame + body + failure_closure + maximum(maximum(maximum(origin, ast), text), compare);
+        let integer_keyword = role!(
+            "fixed integer keyword request/result/tag",
+            (&str, Option<Reason>, Reason)
+        );
+        let core = frame
+            + body
+            + failure_closure
+            + maximum(
+                maximum(maximum(origin, ast), text),
+                maximum(compare, integer_keyword),
+            );
 
         let layouts = owned_diagnostic::u8_error_phase_layouts();
         let dispatch = role!(

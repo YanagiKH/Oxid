@@ -109,10 +109,25 @@ Indexes and lengths remain `i32`. Result-mode `main() -> i64` prints decimal
 text; JSON results use a decimal string to preserve all bits. See the
 [complete integer contract](../rfcs/0050-checked-i64-integers.md).
 
+## More integer widths
+
+Use `i8`, `i16`, `u16`, `u32`, `u64`, `isize` or `usize` for smaller signed
+values or larger unsigned values. Suffix literals explicitly, such as
+`-128i8`, `65535u16` and `18446744073709551615u64`. Named values convert with
+methods such as `value.to_u64_checked()`; mixed arithmetic never converts
+implicitly. Overflow, division by zero and failed conversions report errors.
+
+`isize` and `usize` are 64 bits on the current execution targets. Array
+indexes and lengths remain `i32`. Byte literals such as `255u8` and `u8`
+enum payloads are available; byte arithmetic and `main() -> u8` remain
+unavailable. See [integer types and conversions](../rfcs/0051-checked-integer-widths.md)
+for ranges, results and storage rules.
+
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept
-move-only `[bool; N]`, `[i32; N]` and `[(); N]` values for decimal lengths 0..1024.
+move-only scalar arrays, including `[bool; N]`, `[(); N]` and arrays of the
+supported integer types, for decimal lengths 0..1024.
 Nonempty literals infer one exact scalar element type and their element count:
 
 ```text
