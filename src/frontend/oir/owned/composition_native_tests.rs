@@ -196,13 +196,18 @@ fn native_composition_lazy_nested_copy_is_padding_free_and_stops_at_output_cap()
     assert_eq!(cells, 4098);
     assert!(visits < 20);
     let mut count = Emission::count(512);
+    let diagnostics = Diagnostics {
+        messages: vec![],
+        ids: vec![],
+    };
+    let failure = (&diagnostics, witness.functions()[0].span);
     transfer(
         &mut count,
         &plan,
         "copy",
         AggregateTy::Record(RecordId(0)),
-        "%source",
-        "%destination",
+        ("%source", "%destination"),
+        failure,
     );
     assert!(count.exceeded);
     assert!(count.expansions < 10);
@@ -216,8 +221,8 @@ fn native_composition_lazy_nested_copy_is_padding_free_and_stops_at_output_cap()
         &plan,
         "copy",
         AggregateTy::Record(RecordId(0)),
-        "%source",
-        "%destination",
+        ("%source", "%destination"),
+        failure,
     );
     assert_eq!(out.expansions, 4098);
     assert_eq!(out.field_visits, 4098);

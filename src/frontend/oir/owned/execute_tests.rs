@@ -233,6 +233,7 @@ fn stopped_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>, fuel: usize) -> Machine<
         live_cells: 0,
         live_bytes: 0,
         header_bytes: limits.frames * size_of::<Frame>(),
+        heap: byte_buffer::Heap::default(),
         events: vec![],
         observer: array_observe::Observer::default(),
     };

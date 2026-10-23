@@ -442,6 +442,23 @@ fn roles_with_syntax(
             } => {
                 for argument in args {
                     if let Argument::Borrow {
+                        place: BorrowPlace::Range { name, star, .. },
+                        ..
+                    } = argument
+                    {
+                        if let Some(star) = star {
+                            roles[*star as usize] |= TIGHT_AFTER;
+                        }
+                        let end = program
+                            .tokens
+                            .partition_point(|token| token.span.end <= name.end);
+                        let receiver = program
+                            .tokens
+                            .get(end.saturating_sub(1))
+                            .ok_or_else(|| invariant("missing range receiver"))?;
+                        roles[receiver.span.start] |= TIGHT_AFTER;
+                    }
+                    if let Argument::Borrow {
                         place: BorrowPlace::ForwardedParameter { star_span, .. },
                         ..
                     } = argument

@@ -6,6 +6,11 @@ use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
 use std::fmt::Write;
 use std::mem::size_of;
 
+#[path = "native_experimental.rs"]
+mod experimental;
+#[path = "native_resources.rs"]
+mod resources;
+
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_SLOTS: usize = 256;
@@ -414,7 +419,17 @@ fn native_module_policy_accounted_with_source_names(
     }
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
-    if policy == NativeEntryPolicy::Result && witness.builtin_output_function().is_some() {
+    if policy != NativeEntryPolicy::Process {
+        for operation in [
+            crate::frontend::builtin_catalog::experimental::Function::ReadSome,
+            crate::frontend::builtin_catalog::experimental::Function::WriteSome,
+        ] {
+            if witness.experimental_function(operation).is_some() {
+                return Err(reject("binary I/O requires process entry", None));
+            }
+        }
+    }
+    if policy != NativeEntryPolicy::Process && witness.builtin_output_function().is_some() {
         return Err(reject("write_stdout requires process entry", None));
     }
     // Entry denial is deliberately before plan construction, diagnostics,
@@ -471,7 +486,9 @@ fn native_module_policy_accounted_with_source_names(
         "admission metadata bytes",
         root.span,
     )?;
-    let guarded = policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic);
+    let guarded = plan.uses_dynamic_resources()
+        || policy == NativeEntryPolicy::Process
+        || bounds.iter().any(|b| b.cyclic);
     let diagnostics = Diagnostics::new_policy_accounted_with_source_names(
         &plan,
         id,
@@ -702,7 +719,8 @@ fn admit_policy_accounted(
             cycle_scratch,
         )?;
         accounting.admission_peak(scratch)?;
-        let cyclic = local_cycle
+        let cyclic = plan.uses_dynamic_resources()
+            || local_cycle
             || plan.witness().builtin_function() == Some(f.id)
             || plan.witness().builtin_output_function() == Some(f.id)
             || f.blocks.iter().any(|b| {
@@ -780,20 +798,34 @@ fn admit_policy_accounted(
             .expect("cycle member")];
         return Err(reject("native preview does not support recursive call graphs, including unused functions and unchosen branches", Some(f.span)));
     }
-    let fuel_bytes = if policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic) {
+    let fuel_bytes = if plan.uses_dynamic_resources()
+        || policy == NativeEntryPolicy::Process
+        || bounds.iter().any(|b| b.cyclic)
+    {
         8
     } else {
         0
     };
+    let runtime_bytes = add(
+        fuel_bytes,
+        add(
+            if plan.uses_dynamic_resources() { 64 } else { 0 },
+            if plan.has_binary_delivery() {
+                experimental::BINARY_DELIVERY_BYTES
+            } else {
+                0
+            },
+        )?,
+    )?;
     limit(
-        add(bytes, fuel_bytes)?,
+        add(bytes, runtime_bytes)?,
         limits.bytes,
         "aggregate storage bytes",
         origin,
     )?;
     for (f, bound) in functions.iter().zip(&bounds) {
         limit(
-            add(bound.bytes, fuel_bytes)?,
+            add(bound.bytes, runtime_bytes)?,
             limits.live_bytes,
             "live storage bytes",
             f.span,
@@ -873,6 +905,7 @@ struct Emission {
     maximum: usize,
     exceeded: bool,
     policy: NativeEntryPolicy,
+    resources: bool,
     call_scratch_peak: usize,
     expansions: usize,
     expansion_kinds: [usize; 3],
@@ -908,6 +941,7 @@ impl Emission {
             maximum,
             exceeded: false,
             policy: NativeEntryPolicy::Result,
+            resources: false,
             call_scratch_peak: 0,
             expansions: 0,
             expansion_kinds: [0; 3],
@@ -973,10 +1007,14 @@ enum FailureKind {
     InputCapacity,
     OutputCapacity,
     ProcessStatus,
+    ResourceDescriptor,
+    AllocationIdentity,
 }
 impl FailureKind {
     fn transient_bytes(self) -> usize {
         match self {
+            Self::ResourceDescriptor => size_of::<Diagnostic>() + "internal compiler error: owned execution invariant resource descriptor".len(),
+            Self::AllocationIdentity => size_of::<Diagnostic>() + "internal compiler error: owned execution invariant allocation identity exhausted".len(),
             Self::InputCapacity => size_of::<Diagnostic>() + INPUT_CAPACITY_INVARIANT.len(),
             Self::OutputCapacity => size_of::<Diagnostic>() + OUTPUT_CAPACITY_INVARIANT.len(),
             _ => DIAGNOSTIC_TRANSIENT_BYTES,
@@ -984,6 +1022,16 @@ impl FailureKind {
     }
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
         match self {
+            Self::AllocationIdentity | Self::ResourceDescriptor => Diagnostic::new(
+                "E0500",
+                "oir-owned-run",
+                if self == Self::AllocationIdentity {
+                    "internal compiler error: owned execution invariant allocation identity exhausted"
+                } else {
+                    "internal compiler error: owned execution invariant resource descriptor"
+                },
+                Some(span).filter(|span| sources.is_valid_span(*span)),
+            ),
             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
@@ -1097,6 +1145,11 @@ fn diagnostic_occurrences(
         visit(FailureKind::Fuel, plan.witness().functions()[entry.0].span)?;
     }
     for f in plan.witness().functions() {
+        if plan.uses_dynamic_resources() {
+            visit(FailureKind::ResourceDescriptor, f.span)?;
+            visit(FailureKind::EnumTag, f.span)?;
+            visit(FailureKind::EnumPayload, f.span)?;
+        }
         for parameter in &f.parameters {
             if let ParameterBinding::Owned(owner) = parameter {
                 if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) {
@@ -1112,10 +1165,34 @@ fn diagnostic_occurrences(
                 }
             }
             for statement in &b.statements {
+                if plan.uses_dynamic_resources() {
+                    let span = plan::instruction_span(statement);
+                    visit(FailureKind::ResourceDescriptor, span)?;
+                    visit(FailureKind::EnumTag, span)?;
+                    visit(FailureKind::EnumPayload, span)?;
+                    if let OwnedInstruction::ConsumeOwnedVariant { match_id, .. } = statement.kind {
+                        visit(FailureKind::ResourceDescriptor, f.matches[match_id.0].span)?;
+                    }
+                }
                 if guarded {
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::Experimental { .. } => {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                        visit(
+                            FailureKind::AllocationIdentity,
+                            plan::instruction_span(statement),
+                        )?;
+                    }
+                    OwnedInstruction::PrepareBorrowRange { .. } => {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?
+                    }
+                    OwnedInstruction::PrepareBorrow { loan, .. }
+                        if experimental::resource_borrow(plan, f, *loan) =>
+                    {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?
+                    }
                     OwnedInstruction::ReadStdin { .. } => visit(
                         FailureKind::InputCapacity,
                         plan::instruction_span(statement),
@@ -1181,6 +1258,11 @@ fn diagnostic_occurrences(
                 )?;
             }
             let term = b.terminator.as_ref().expect("verified terminator");
+            if plan.uses_dynamic_resources() {
+                visit(FailureKind::ResourceDescriptor, term.span)?;
+                visit(FailureKind::EnumTag, term.span)?;
+                visit(FailureKind::EnumPayload, term.span)?;
+            }
             match term.kind {
                 OwnedTerminatorKind::MatchDispatch { match_id, .. } => {
                     visit(FailureKind::EnumTag, f.matches[match_id.0].span)?
@@ -1497,6 +1579,10 @@ impl Diagnostics {
     }
 }
 fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind, span: Span) {
+    if out.resources {
+        out.write_str("  call void @__oxid_bytebuf_cleanup()\n")
+            .unwrap();
+    }
     let (id, len) = diagnostics.get(kind, span);
     let helper = match out.policy {
         NativeEntryPolicy::Result => "__oxid_overflow",
@@ -1599,7 +1685,7 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
             .unwrap();
             format!("%{name}_length")
         }
-        BorrowedTy::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => {
+        BorrowedTy::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::ByteBuf) => {
             unreachable!("verified indexed base")
         }
     }
@@ -1786,7 +1872,13 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                     }
                     OwnedInstruction::Construct { destination, .. }
                     | OwnedInstruction::ConstructComposite { destination, .. }
-                    | OwnedInstruction::ConstructArray { destination, .. } => Some(destination),
+                    | OwnedInstruction::ConstructArray { destination, .. } => {
+                        // Construction writes each logical leaf once. Resource
+                        // sources have a separate complete preflight below;
+                        // this is not a whole-owner checked move.
+                        cells = add(cells, plan.owner_width(f.id, destination))?;
+                        None
+                    }
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
                     | OwnedInstruction::PrepareOwned { source, .. } => Some(source),
@@ -1803,10 +1895,87 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
             if let OwnedTerminatorKind::ReturnOwned(owner) =
                 block.terminator.as_ref().expect("verified terminator").kind
             {
-                cells = add(
-                    cells,
-                    transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
-                )?;
+                // The sealed binary adapter already commits the status to
+                // the caller; its immediate return emits no transfer tree.
+                if plan.binary_delivery_cost(f.id).is_none() {
+                    cells = add(
+                        cells,
+                        transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
+                    )?;
+                }
+            }
+        }
+    }
+    // Resource preflight and release add no user fuel. All of their generated
+    // tag/leaf checks still belong to the native text expansion inventory.
+    for function in plan.witness().functions() {
+        for block in &function.blocks {
+            for statement in &block.statements {
+                match &statement.kind {
+                    OwnedInstruction::Replace { source, .. } => {
+                        let aggregate = function.owners[source.0].aggregate();
+                        if resources::contains(plan, aggregate) {
+                            cells = add(
+                                cells,
+                                active_transfer_inventory(plan, aggregate, false, &mut visits)?,
+                            )?;
+                        }
+                    }
+                    OwnedInstruction::ConstructComposite {
+                        destination,
+                        fields,
+                    } if resources::contains(plan, function.owners[destination.0].aggregate()) => {
+                        for (_, value) in fields {
+                            if let FieldInitializer::Owned(source) = value {
+                                cells = add(
+                                    cells,
+                                    active_transfer_inventory(
+                                        plan,
+                                        function.owners[source.0].aggregate(),
+                                        false,
+                                        &mut visits,
+                                    )?,
+                                )?;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                let owner = match statement.kind {
+                    OwnedInstruction::StorageEnd(owner) => Some(owner),
+                    OwnedInstruction::Replace { destination, .. } => Some(destination),
+                    OwnedInstruction::Discard(owner)
+                        if !matches!(
+                            function.owners[owner.0].aggregate(),
+                            AggregateTy::Enum(_)
+                        ) =>
+                    {
+                        Some(owner)
+                    }
+                    _ => None,
+                };
+                if let Some(owner) = owner {
+                    let aggregate = function.owners[owner.0].aggregate();
+                    if resources::contains(plan, aggregate) {
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(plan, aggregate, false, &mut visits)?,
+                        )?;
+                    }
+                }
+            }
+            if matches!(
+                block.terminator.as_ref().expect("verified terminator").kind,
+                OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
+            ) {
+                for owner in &function.owners {
+                    if resources::contains(plan, owner.aggregate()) {
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(plan, owner.aggregate(), false, &mut visits)?,
+                        )?;
+                    }
+                }
             }
         }
     }
@@ -1828,7 +1997,7 @@ fn transfer_expansions_counted(
     visits: &mut usize,
 ) -> Result<usize, Box<Diagnostic>> {
     let aggregate = plan.witness().functions()[id.0].owners[owner.0].aggregate();
-    if matches!(aggregate, AggregateTy::Enum(_)) {
+    if matches!(aggregate, AggregateTy::Enum(_)) || resources::contains(plan, aggregate) {
         active_transfer_inventory(plan, aggregate, true, visits)
     } else {
         Ok(plan.owner_width(id, owner))
@@ -1937,7 +2106,16 @@ fn transfer_checked(
             Some(pointers.1),
             failure,
         ),
-        _ => transfer(out, plan, name, aggregate, pointers.0, pointers.1),
+        _ if resources::contains(plan, aggregate) => active_transfer(
+            out,
+            plan,
+            name,
+            aggregate,
+            pointers.0,
+            Some(pointers.1),
+            failure,
+        ),
+        _ => transfer(out, plan, name, aggregate, pointers, failure),
     }
 }
 
@@ -2012,6 +2190,28 @@ fn enum_payload_store(
 /// A switch validates the tag before reaching any case's active payload read.
 /// No destination byte is touched until all runtime checks for that case pass.
 /// With no destination this is explicit available-value discard validation.
+#[derive(Clone, Copy)]
+enum TransferIntent<'a> {
+    Move(&'a str),
+    Validate,
+    Release,
+}
+impl<'a> TransferIntent<'a> {
+    fn destination(self) -> Option<&'a str> {
+        match self {
+            Self::Move(destination) => Some(destination),
+            _ => None,
+        }
+    }
+    fn child<'b>(self, destination: Option<&'b str>) -> TransferIntent<'b> {
+        match self {
+            Self::Move(_) => TransferIntent::Move(destination.expect("move destination")),
+            Self::Validate => TransferIntent::Validate,
+            Self::Release => TransferIntent::Release,
+        }
+    }
+}
+
 fn enum_transfer(
     out: &mut Emission,
     plan: &ExecutionPlan<'_>,
@@ -2021,6 +2221,27 @@ fn enum_transfer(
     destination: Option<&str>,
     failure: (&Diagnostics, Span),
 ) {
+    enum_transfer_with_intent(
+        out,
+        plan,
+        name,
+        enumeration,
+        source,
+        destination.map_or(TransferIntent::Release, TransferIntent::Move),
+        failure,
+    );
+}
+
+fn enum_transfer_with_intent(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    enumeration: EnumId,
+    source: &str,
+    intent: TransferIntent<'_>,
+    failure: (&Diagnostics, Span),
+) {
+    let destination = intent.destination();
     if out.exceeded {
         return;
     }
@@ -2034,7 +2255,7 @@ fn enum_transfer(
         .iter()
         .any(|variant| matches!(variant.value_payload(), Some(ValueTy::Owned(_))))
     {
-        owned_enum_transfer(out, plan, name, enumeration, source, destination, failure);
+        owned_enum_transfer(out, plan, name, enumeration, source, intent, failure);
         return;
     }
     out.ordinary_visits += 1;
@@ -2181,9 +2402,10 @@ fn owned_enum_transfer(
     name: &str,
     enumeration: EnumId,
     source: &str,
-    destination: Option<&str>,
+    intent: TransferIntent<'_>,
     failure: (&Diagnostics, Span),
 ) {
+    let destination = intent.destination();
     let first = EnumTransferFrame {
         enumeration,
         relative: 0,
@@ -2259,13 +2481,13 @@ fn owned_enum_transfer(
                 let target = output.as_ref().map(|output| {
                     field_pointer(out, &format!("{case}_active_out"), output, offset)
                 });
-                active_transfer(
+                active_transfer_with_intent(
                     out,
                     plan,
                     &case,
                     aggregate,
                     &active,
-                    target.as_deref(),
+                    intent.child(target.as_deref()),
                     failure,
                 );
                 if let Some(output) = &output {
@@ -2302,36 +2524,72 @@ fn active_transfer(
     destination: Option<&str>,
     failure: (&Diagnostics, Span),
 ) {
+    active_transfer_with_intent(
+        out,
+        plan,
+        name,
+        aggregate,
+        source,
+        destination.map_or(TransferIntent::Release, TransferIntent::Move),
+        failure,
+    );
+}
+
+fn active_transfer_with_intent(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    name: &str,
+    aggregate: AggregateTy,
+    source: &str,
+    intent: TransferIntent<'_>,
+    failure: (&Diagnostics, Span),
+) {
+    let destination = intent.destination();
     if let AggregateTy::Enum(enumeration) = aggregate {
-        enum_transfer(out, plan, name, enumeration, source, destination, failure);
+        enum_transfer_with_intent(out, plan, name, enumeration, source, intent, failure);
         return;
     }
-    for (index, leaf) in plan
-        .witness()
-        .declarations()
-        .leaves(aggregate)
-        .expect("verified payload leaves")
-        .enumerate()
-    {
-        if !out.expand(Expansion::Transfer) {
-            return;
-        }
-        let cell = format!("{name}_validate{index}");
-        let input = field_pointer(out, &cell, source, leaf.offset);
-        let storage = if leaf.ty == hir::Ty::I32 { "i32" } else { "i8" };
-        writeln!(out, "  %{cell} = load {storage}, ptr {input}, align 1").unwrap();
-        if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
-            let predicate = if leaf.ty == hir::Ty::Bool {
-                "ule"
-            } else {
-                "eq"
-            };
-            let bound = usize::from(leaf.ty == hir::Ty::Bool);
-            writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
-            emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
-            writeln!(out, "{cell}_ok:").unwrap();
+    if aggregate != AggregateTy::ByteBuf {
+        for (index, leaf) in plan
+            .witness()
+            .declarations()
+            .leaves(aggregate)
+            .expect("verified payload leaves")
+            .enumerate()
+        {
+            if !out.expand(Expansion::Transfer) {
+                return;
+            }
+            let cell = format!("{name}_validate{index}");
+            let input = field_pointer(out, &cell, source, leaf.offset);
+            let storage = if leaf.ty == hir::Ty::I32 { "i32" } else { "i8" };
+            writeln!(out, "  %{cell} = load {storage}, ptr {input}, align 1").unwrap();
+            if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
+                let predicate = if leaf.ty == hir::Ty::Bool {
+                    "ule"
+                } else {
+                    "eq"
+                };
+                let bound = usize::from(leaf.ty == hir::Ty::Bool);
+                writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+                emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+                writeln!(out, "{cell}_ok:").unwrap();
+            }
         }
     }
+    resources::leaves(
+        out,
+        plan,
+        &format!("{name}_admit"),
+        aggregate,
+        source,
+        match intent {
+            TransferIntent::Release => resources::Action::Release,
+            _ => resources::Action::Validate,
+        },
+        Expansion::Transfer,
+        failure,
+    );
     if let Some(destination) = destination {
         transfer_leaves(
             out,
@@ -2340,6 +2598,7 @@ fn active_transfer(
             aggregate,
             (source, destination),
             Expansion::Transfer,
+            failure,
         );
     }
 }
@@ -2397,9 +2656,10 @@ fn transfer(
     plan: &ExecutionPlan<'_>,
     name: &str,
     aggregate: AggregateTy,
-    source: &str,
-    destination: &str,
+    pointers: (&str, &str),
+    failure: (&Diagnostics, Span),
 ) {
+    let (source, destination) = pointers;
     if out.exceeded {
         return;
     }
@@ -2407,6 +2667,19 @@ fn transfer(
     let record = match aggregate {
         AggregateTy::Record(record) => record,
         AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
+        AggregateTy::ByteBuf => {
+            resources::leaves(
+                out,
+                plan,
+                name,
+                aggregate,
+                source,
+                resources::Action::Move(destination),
+                Expansion::Transfer,
+                failure,
+            );
+            return;
+        }
         AggregateTy::FixedArray(array) => {
             if array.length() == 0 {
                 if !out.expand(Expansion::Transfer) {
@@ -2451,11 +2724,13 @@ fn transfer(
         aggregate,
         (source, destination),
         Expansion::Transfer,
+        failure,
     );
 }
 
 /// The declaration iterator stores at most one frame per admitted containment
 /// level. It yields initialized scalar/sentinel cells, never record padding.
+#[allow(clippy::too_many_arguments)]
 fn transfer_leaves(
     out: &mut Emission,
     plan: &ExecutionPlan<'_>,
@@ -2463,8 +2738,22 @@ fn transfer_leaves(
     aggregate: AggregateTy,
     pointers: (&str, &str),
     kind: Expansion,
+    failure: (&Diagnostics, Span),
 ) {
     let (source, destination) = pointers;
+    resources::leaves(
+        out,
+        plan,
+        &format!("{name}_owned"),
+        aggregate,
+        source,
+        resources::Action::Move(destination),
+        kind,
+        failure,
+    );
+    if aggregate == AggregateTy::ByteBuf {
+        return;
+    }
     let leaves = plan
         .witness()
         .declarations()
@@ -2519,8 +2808,12 @@ fn emit(
     out: &mut Emission,
 ) {
     let plan = storage.execution();
+    out.resources = plan.uses_dynamic_resources();
     let guarded = storage.guarded();
     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
+    if out.resources {
+        out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
+    }
     if plan.witness().builtin_function().is_some() {
         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
             .unwrap();
@@ -2571,6 +2864,10 @@ fn emit(
         // Signal safety precedes even the root activation/fuel diagnostic.
         out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();
     }
+    if out.resources {
+        out.write_str("  call void @__oxid_bytebuf_start()\n")
+            .unwrap();
+    }
     if storage.wrapper_fuel_bytes() != 0 {
         writeln!(
             out,
@@ -2593,6 +2890,11 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
+    if out.resources {
+        out.write_str("  %resource_status = call i32 @__oxid_bytebuf_finish()\n  %resources_released = icmp eq i32 %resource_status, 0\n  br i1 %resources_released, label %resources_complete, label %resources_error\nresources_error:\n").unwrap();
+        emit_failure(out, diagnostics, FailureKind::ResourceDescriptor, root.span);
+        out.write_str("resources_complete:\n").unwrap();
+    }
     if out.policy == NativeEntryPolicy::Process {
         // Unsigned comparison rejects negatives without truncating i32 status.
         out.write_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_complete, label %process_status_error\nprocess_status_error:\n").unwrap();
@@ -2636,6 +2938,8 @@ impl Continuation {
 /// Exhaustive classification shared by operation emission and phi predecessors.
 fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
     match instruction {
+        OwnedInstruction::PrepareBorrowRange { .. } => Continuation::Bounds,
+        OwnedInstruction::Experimental { .. } => Continuation::Unsplit,
         OwnedInstruction::ReadStdin { .. } => Continuation::Input,
         OwnedInstruction::WriteStdout { .. } => Continuation::Output,
         OwnedInstruction::ConsumeVariant { .. }
@@ -2764,8 +3068,9 @@ fn emit_function(
     if storage.owner_bytes() != 0 {
         writeln!(
             out,
-            "  %owners = alloca [{} x i8], align 4",
-            storage.owner_bytes()
+            "  %owners = alloca [{} x i8], align {}",
+            storage.owner_bytes(),
+            storage.owner_alignment()
         )
         .unwrap();
     }
@@ -2847,6 +3152,7 @@ fn emit_function(
             storage.owner_offset(OwnerPlaceId(i))
         )
         .unwrap();
+        resources::initialize(out, plan, f.owners[i].aggregate(), &format!("%o{i}"));
     }
     for i in 0..storage.reference_slots() {
         if out.exceeded {
@@ -2948,7 +3254,7 @@ fn emit_function(
             return;
         }
         let term = block.terminator.as_ref().expect("verified terminator");
-        if guarded {
+        if guarded && plan.binary_delivery_cost(id).is_none() {
             emit_guard(
                 out,
                 diagnostics,
@@ -3195,6 +3501,18 @@ fn emit_statement(
     out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     match &statement.kind {
+        OwnedInstruction::Experimental {
+            operation,
+            destination,
+        } => experimental::operation(
+            storage,
+            name,
+            *operation,
+            *destination,
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
         OwnedInstruction::ReadStdin {
             buffer,
             destination,
@@ -3367,7 +3685,17 @@ fn emit_statement(
             writeln!(out, "  br label %{name}_enum_ok\n{name}_enum_ok:").unwrap();
         }
         OwnedInstruction::Discard(owner) => {
-            if let AggregateTy::Enum(enumeration) = f.owners[owner.0].aggregate() {
+            let aggregate = f.owners[owner.0].aggregate();
+            if resources::contains(plan, aggregate) {
+                resources::drop_owner(
+                    out,
+                    plan,
+                    name,
+                    aggregate,
+                    &format!("%o{}", owner.0),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            } else if let AggregateTy::Enum(enumeration) = aggregate {
                 enum_transfer(
                     out,
                     plan,
@@ -3521,6 +3849,21 @@ fn emit_statement(
             destination,
             fields,
         } => {
+            if resources::contains(plan, f.owners[destination.0].aggregate()) {
+                for (index, (_, value)) in fields.iter().enumerate() {
+                    if let FieldInitializer::Owned(source) = value {
+                        active_transfer_with_intent(
+                            out,
+                            plan,
+                            &format!("{name}_incoming{index}"),
+                            f.owners[source.0].aggregate(),
+                            &format!("%o{}", source.0),
+                            TransferIntent::Validate,
+                            (diagnostics, plan::instruction_span(statement)),
+                        );
+                    }
+                }
+            }
             if fields.is_empty() {
                 if !out.expand(Expansion::Construct) {
                     return;
@@ -3567,6 +3910,7 @@ fn emit_statement(
                             f.owners[source.0].aggregate(),
                             (&format!("%o{}", source.0), &ptr),
                             Expansion::Construct,
+                            (diagnostics, plan::instruction_span(statement)),
                         );
                     }
                 }
@@ -3615,6 +3959,27 @@ fn emit_statement(
             destination,
             source,
         } => {
+            if matches!(statement.kind, OwnedInstruction::Replace { .. }) {
+                if resources::contains(plan, f.owners[destination.0].aggregate()) {
+                    active_transfer_with_intent(
+                        out,
+                        plan,
+                        &format!("{name}_incoming"),
+                        f.owners[source.0].aggregate(),
+                        &format!("%o{}", source.0),
+                        TransferIntent::Validate,
+                        (diagnostics, plan::instruction_span(statement)),
+                    );
+                }
+                resources::drop_owner(
+                    out,
+                    plan,
+                    &format!("{name}_old"),
+                    f.owners[destination.0].aggregate(),
+                    &format!("%o{}", destination.0),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
             transfer_checked(
                 out,
                 plan,
@@ -3699,7 +4064,30 @@ fn emit_statement(
                 (diagnostics, plan::instruction_span(statement)),
             );
         }
+        OwnedInstruction::PrepareBorrowRange {
+            loan, start, end, ..
+        } => experimental::borrow(
+            storage,
+            name,
+            *loan,
+            Some((*start, *end)),
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
         OwnedInstruction::PrepareBorrow { loan, .. } => {
+            if experimental::resource_borrow(plan, f, *loan) {
+                experimental::borrow(
+                    storage,
+                    name,
+                    *loan,
+                    None,
+                    diagnostics,
+                    plan::instruction_span(statement),
+                    out,
+                );
+                return;
+            }
             let declaration = &f.loans[loan.0];
             let base = base_pointer(out, name, declaration.authority);
             if out.exceeded {
@@ -3740,9 +4128,25 @@ fn emit_statement(
         }
         // The witness proves these logical transitions. Backing storage remains
         // allocated throughout the activation, including suspended staging.
-        OwnedInstruction::StorageLive(_)
-        | OwnedInstruction::StorageEnd(_)
-        | OwnedInstruction::OpenCall(_) => {}
+        OwnedInstruction::StorageLive(owner) => {
+            resources::initialize(
+                out,
+                plan,
+                f.owners[owner.0].aggregate(),
+                &format!("%o{}", owner.0),
+            );
+        }
+        OwnedInstruction::StorageEnd(owner) => {
+            resources::drop_owner(
+                out,
+                plan,
+                name,
+                f.owners[owner.0].aggregate(),
+                &format!("%o{}", owner.0),
+                (diagnostics, plan::instruction_span(statement)),
+            );
+        }
+        OwnedInstruction::OpenCall(_) => {}
     }
 }
 fn emit_scalar(
@@ -3978,9 +4382,16 @@ fn emit_terminator(
         OwnedTerminatorKind::ReturnScalar(value) => {
             let t = ty(f.locals[value.local.0].ty);
             let value = load_operand(out, f, &format!("{name}_value"), *value);
+            resources::drop_frame(out, plan, f, name, (diagnostics, term.span));
             writeln!(out, "  ret {t} {value}").unwrap();
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
+            if plan.binary_delivery_cost(id).is_some() {
+                // The canonical operation prepaid this exact return cost and
+                // already delivered into %result. It owns no resource leaves.
+                out.write_str("  ret void\n").unwrap();
+                return;
+            }
             transfer_checked(
                 out,
                 plan,
@@ -3989,6 +4400,7 @@ fn emit_terminator(
                 (&format!("%o{}", owner.0), "%result"),
                 (diagnostics, term.span),
             );
+            resources::drop_frame(out, plan, f, name, (diagnostics, term.span));
             out.write_str("  ret void\n").unwrap();
         }
         OwnedTerminatorKind::Invoke { call, continuation } => {

@@ -20,7 +20,9 @@ mod enum_tests;
 mod tests;
 use super::{
     ast,
-    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet, DeclarationOrigin},
+    builtin_catalog::{
+        experimental, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet, DeclarationOrigin,
+    },
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
     oir::owned_types::{
@@ -389,7 +391,17 @@ enum AbsolutePrefix {
     Enumeration(u32), // The visible enum original, not a module/record ordinal.
 }
 
-impl Tables<'_> {
+impl<'s> Tables<'s> {
+    fn builtin_anchor(&self, import: u32) -> Result<&'s Span, Box<Diagnostic>> {
+        let import = self.import(import)?;
+        let view = self.sources.import_path(QualifiedPathRef {
+            file: import.span.file,
+            path: import.path,
+        })?;
+        view.segments()
+            .last()
+            .ok_or_else(|| bad(self.sources.eof()))
+    }
     fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         if let Some(origin) = self.candidate_source_origin.span() {
             return Err(diagnostic(
@@ -448,6 +460,22 @@ impl Tables<'_> {
             Err(bad(self.sources.eof()))
         }
     }
+    fn experimental_rank(&self, item: experimental::Item) -> Result<usize, Box<Diagnostic>> {
+        let set = self.builtins.set();
+        if !set.experimental().contains(item) {
+            return Err(bad(self.sources.eof()));
+        }
+        if let Some(enumeration) = item.enumeration() {
+            set.experimental_enum_rank(enumeration)
+                .ok_or_else(|| bad(self.sources.eof()))
+        } else if let Some(function) = item.function() {
+            set.experimental_function_rank(function)
+                .map(|rank| set.extra_enums() + rank)
+                .ok_or_else(|| bad(self.sources.eof()))
+        } else {
+            Ok(set.extra_enums() + set.extra_functions())
+        }
+    }
     fn builtin_handle(&self, item: BuiltinItem) -> Result<DeclarationHandle, Box<Diagnostic>> {
         let extra = match item {
             BuiltinItem::Enum(item) if self.builtins.set().contains_enum(item) => match item {
@@ -467,6 +495,7 @@ impl Tables<'_> {
                         ),
                     }
             }
+            BuiltinItem::Experimental(item) => self.experimental_rank(item)?,
             _ => return Err(bad(self.sources.eof())),
         };
         let target = self
@@ -528,6 +557,15 @@ impl Tables<'_> {
                 BuiltinFunction::WriteStdout,
             )));
         }
+        for item in experimental::Item::ALL {
+            if self.builtins.set().experimental().contains(item)
+                && handle == self.builtin_handle(BuiltinItem::Experimental(item))?
+            {
+                return Ok(DeclarationProjection::Builtin(BuiltinItem::Experimental(
+                    item,
+                )));
+            }
+        }
         Err(bad(self.sources.eof()))
     }
     fn nominal_handle(&self, handle: DeclarationHandle) -> Result<NominalId, Box<Diagnostic>> {
@@ -542,6 +580,16 @@ impl Tables<'_> {
                         }
                     },
             ))),
+            DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => {
+                if item == experimental::Item::ByteBuf {
+                    Ok(NominalId::ByteBuf)
+                } else {
+                    item.enumeration()
+                        .and_then(|item| self.builtins.set().experimental_enum_rank(item))
+                        .map(|rank| NominalId::Enum(EnumId(self.enums.len() + rank)))
+                        .ok_or_else(|| bad(self.sources.eof()))
+                }
+            }
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -573,6 +621,11 @@ impl Tables<'_> {
                         ),
                     },
             )),
+            DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => item
+                .function()
+                .and_then(|item| self.builtins.set().experimental_function_rank(item))
+                .map(|rank| DefId(self.functions.len() + rank))
+                .ok_or_else(|| bad(self.sources.eof())),
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -641,7 +694,21 @@ impl Tables<'_> {
         {
             return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
         }
+        if nominal == NominalId::ByteBuf {
+            return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::ByteBuf));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self
+                .builtins
+                .set()
+                .experimental_enum_rank(item)
+                .is_some_and(|rank| nominal == NominalId::Enum(EnumId(self.enums.len() + rank)))
+            {
+                return self.builtin_handle(BuiltinItem::Experimental(item.item()));
+            }
+        }
         let original = match nominal {
+            NominalId::ByteBuf => None,
             NominalId::Record(id) => self.records.get(id.0).map(|row| row.original),
             NominalId::Enum(id) => self.enums.get(id.0).map(|row| row.original),
         }
@@ -943,7 +1010,7 @@ impl Tables<'_> {
             let item = match self
                 .project_handle(self.original_for_nominal(NominalId::Enum(enumeration), member)?)?
             {
-                DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => item,
+                DeclarationProjection::Builtin(item) if item.variant_count() != 0 => item,
                 _ => return Err(bad(member)),
             };
             let spelling = self.sources.text(member)?;
@@ -1074,6 +1141,12 @@ pub(super) enum TypeContext {
     Value,
     Reference,
     Constructor,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NominalTypeFilter {
+    Records,
+    References,
+    Values,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Access {
@@ -1236,10 +1309,11 @@ impl<'i, 's> QuerySession<'i, 's> {
                         path,
                     },
                     context,
-                    false,
+                    NominalTypeFilter::Values,
                 )
                 .map(|nominal| {
                     ValueTy::Owned(match nominal {
+                        NominalId::ByteBuf => AggregateTy::ByteBuf,
                         NominalId::Record(record) => AggregateTy::Record(record),
                         NominalId::Enum(enumeration) => AggregateTy::Enum(enumeration),
                     })
@@ -1273,15 +1347,21 @@ impl<'i, 's> QuerySession<'i, 's> {
     ) -> Result<ParameterTy, Box<Diagnostic>> {
         let (mutable, referent) = match ty.kind {
             ast::TypeSyntaxKind::Reference { mutable, referent } => {
-                let record = self.record_type(
+                let nominal = self.lookup_nominal_type(
                     requester,
-                    ItemPathRef {
+                    &ItemPathRef {
                         file: ty.span.file,
                         path: referent,
                     },
                     TypeContext::Reference,
+                    NominalTypeFilter::References,
                 )?;
-                (mutable, BorrowedTy::Exact(AggregateTy::Record(record)))
+                let aggregate = match nominal {
+                    NominalId::Record(record) => AggregateTy::Record(record),
+                    NominalId::ByteBuf => AggregateTy::ByteBuf,
+                    NominalId::Enum(_) => return Err(bad(ty.span)),
+                };
+                (mutable, BorrowedTy::Exact(aggregate))
             }
             ast::TypeSyntaxKind::ArrayReference { mutable, array } => (
                 mutable,
@@ -1322,9 +1402,9 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<RecordId, Box<Diagnostic>> {
-        match self.lookup_nominal_type(requester, &path, context, true)? {
+        match self.lookup_nominal_type(requester, &path, context, NominalTypeFilter::Records)? {
             NominalId::Record(record) => Ok(record),
-            NominalId::Enum(_) => Err(bad(self.tables.sources.eof())),
+            NominalId::Enum(_) | NominalId::ByteBuf => Err(bad(self.tables.sources.eof())),
         }
     }
     pub fn nominal_type(
@@ -1333,20 +1413,20 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<NominalId, Box<Diagnostic>> {
-        self.lookup_nominal_type(requester, &path, context, false)
+        self.lookup_nominal_type(requester, &path, context, NominalTypeFilter::Values)
     }
     fn lookup_nominal_type(
         &mut self,
         requester: ModuleId,
         path: &ItemPathRef,
         context: TypeContext,
-        records_only: bool,
+        filter: NominalTypeFilter,
     ) -> Result<NominalId, Box<Diagnostic>> {
         let at = self.tables.sources.path_span(*path)?;
         self.work.debit(
             1,
             at,
-            if records_only || self.tables.enums.is_empty() {
+            if filter != NominalTypeFilter::Values || self.tables.enums.is_empty() {
                 "query record type"
             } else {
                 "query nominal type"
@@ -1356,10 +1436,18 @@ impl<'i, 's> QuerySession<'i, 's> {
             let accepted = match self.tables.project_handle(id)? {
                 DeclarationProjection::SourceOriginal(original) => {
                     let kind = self.tables.original(original)?.flags & KIND_MASK;
-                    kind == RECORD || (!records_only && kind == ENUM)
+                    kind == RECORD || (filter == NominalTypeFilter::Values && kind == ENUM)
                 }
-                DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => !records_only,
+                DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                    filter == NominalTypeFilter::Values
+                }
                 DeclarationProjection::Builtin(BuiltinItem::Function(_)) => false,
+                DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => {
+                    item.function().is_none()
+                        && (filter == NominalTypeFilter::Values
+                            || (filter == NominalTypeFilter::References
+                                && item == experimental::Item::ByteBuf))
+                }
             };
             if accepted {
                 let nominal = self.tables.nominal_handle(id)?;
@@ -1372,10 +1460,12 @@ impl<'i, 's> QuerySession<'i, 's> {
                     },
                     origin: at,
                     kind: match nominal {
+                        NominalId::ByteBuf => "resource",
                         NominalId::Record(_) => "record",
                         NominalId::Enum(_) => "enum",
                     },
                     id: match nominal {
+                        NominalId::ByteBuf => 0,
                         NominalId::Record(id) => id.0,
                         NominalId::Enum(id) => id.0,
                     },
@@ -1514,7 +1604,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 }
                 match self.tables.nominal_handle(original)? {
                     NominalId::Enum(enumeration) => enumeration,
-                    NominalId::Record(_) => return Err(bad(prefix)),
+                    NominalId::Record(_) | NominalId::ByteBuf => return Err(bad(prefix)),
                 }
             }
             ast::PathRoot::Crate => match self
@@ -1524,7 +1614,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                 AbsolutePrefix::Enumeration(original) => {
                     match self.tables.nominal_original(original)? {
                         NominalId::Enum(enumeration) => enumeration,
-                        NominalId::Record(_) => return Err(bad(member)),
+                        NominalId::Record(_) | NominalId::ByteBuf => return Err(bad(member)),
                     }
                 }
                 AbsolutePrefix::Module(owner) => {
@@ -1751,11 +1841,8 @@ impl<'i, 's> QuerySession<'i, 's> {
         let f = self.tables.original(function.original)?;
         self.requester(ModuleId(f.owner as usize), at)?;
         let original = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
-                return Ok(NominalExposure::Allowed)
-            }
+            DeclarationProjection::Builtin(_) => return Ok(NominalExposure::Allowed),
             DeclarationProjection::SourceOriginal(id) => id,
-            _ => return Err(bad(at)),
         };
         let r = self.tables.original(original)?;
         let allowed =
@@ -1789,9 +1876,13 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.work.debit(1, at, "nominal format preparation")?;
         let handle = self.tables.original_for_nominal(nominal, at)?;
         let id = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => {
-                self.work
-                    .debit((9 + item.name().len()) as u64, at, "nominal display bytes")?;
+            DeclarationProjection::Builtin(item) => {
+                let prefix = if item.path()[0] == "alloc" { 14 } else { 9 };
+                self.work.debit(
+                    (prefix + item.name().len()) as u64,
+                    at,
+                    "nominal display bytes",
+                )?;
                 return Ok(PreparedTypeName {
                     names: [CompactSpan::default(); 32],
                     sources: self.tables.sources,
@@ -1799,16 +1890,16 @@ impl<'i, 's> QuerySession<'i, 's> {
                     terminal: item.name(),
                     ordinal: match nominal {
                         NominalId::Enum(id) => id.0,
-                        _ => unreachable!("checked builtin enum"),
+                        NominalId::ByteBuf => 0,
+                        _ => unreachable!("checked builtin nominal"),
                     },
-                    total: 9 + item.name().len(),
+                    total: prefix + item.name().len(),
                     original: false,
                     is_enum: true,
                     builtin: true,
                 });
             }
             DeclarationProjection::SourceOriginal(id) => id,
-            _ => return Err(bad(at)),
         };
         let original = self.tables.original(id)?;
         let terminal = self.tables.sources.text(original.name.span())?;
@@ -1861,6 +1952,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             count,
             terminal,
             ordinal: match nominal {
+                NominalId::ByteBuf => 0,
                 NominalId::Record(id) => id.0,
                 NominalId::Enum(id) => id.0,
             },
@@ -1887,7 +1979,19 @@ pub(super) struct PreparedTypeName<'s> {
 impl fmt::Display for PreparedTypeName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.builtin {
-            return write!(f, "std::io::{}", self.terminal);
+            return write!(
+                f,
+                "{}::{}",
+                if experimental::Item::ALL
+                    .into_iter()
+                    .any(|item| item.name() == self.terminal && item.path()[0] == "alloc")
+                {
+                    "alloc::bytes"
+                } else {
+                    "std::io"
+                },
+                self.terminal
+            );
         }
         if self.original {
             return write!(f, "{}", owned_diagnostic::name(self.terminal));

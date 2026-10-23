@@ -76,6 +76,7 @@ fn byte_storage_views_rederive_whole_owner_identity_before_offsets() {
             live_cells: 0,
             live_bytes: 0,
             header_bytes: 0,
+            heap: byte_buffer::Heap::default(),
             events: Vec::new(),
             observer: array_observe::Observer::default(),
         };
@@ -297,6 +298,7 @@ fn byte_storage_dynamic_reborrows_preserve_root_view_and_parent_permissions() {
                 live_cells: 0,
                 live_bytes: 0,
                 header_bytes: 0,
+                heap: byte_buffer::Heap::default(),
                 events: Vec::new(),
                 observer: array_observe::Observer::default(),
             };
@@ -601,6 +603,7 @@ fn byte_record_late_bool_failure_preserves_entire_enum_destination_and_owner_sta
         header_bytes: 0,
         events: Vec::new(),
         observer: array_observe::Observer::default(),
+        heap: byte_buffer::Heap::default(),
     };
     machine.install(Frame::allocate(&plan, entry, 1, None).unwrap());
     for statement in &f.blocks[0].statements {
@@ -680,6 +683,7 @@ fn byte_record_failed_narrowing_preserves_existing_fields_and_generation() {
                 header_bytes: 0,
                 events: Vec::new(),
                 observer: array_observe::Observer::default(),
+                heap: byte_buffer::Heap::default(),
             };
             machine.install(Frame::allocate(&plan, entry, 1, None).unwrap());
             let mut rejected = false;
@@ -716,4 +720,85 @@ fn byte_record_failed_narrowing_preserves_existing_fields_and_generation() {
             assert!(rejected);
         });
     }
+}
+
+#[test]
+fn byte_array_range_views_rederive_nominal_authority_and_exact_staged_extent() {
+    let text = "fn count(p:&[u8])->i32{return p.len();}
+fn main()->i32{let n=7;let b=n.to_u8_checked();let a=[b,b,b,b];let other=[b,b,b,b,b];return count(&a[1..3]);}";
+
+    source::byte_storage_tests::with_raw(text, |_, typed, raw| {
+        let entry = typed.entry().unwrap();
+        let witness =
+            verified::verify_associated(source::association::associate(raw, typed).unwrap())
+                .unwrap();
+        assert_eq!(run(&witness, Some(entry)).unwrap(), Scalar::I32(2));
+        let plan = ExecutionPlan::build(&witness).unwrap();
+        let function = &witness.functions()[entry.0];
+        let span = function.span;
+        let mut machine = Machine {
+            plan: &plan,
+            frames: Vec::new(),
+            limits: Limits::default(),
+            fuel: plan::MAX_FUEL,
+            next_activation: 1,
+            live_slots: 0,
+            live_cells: 0,
+            live_bytes: 0,
+            header_bytes: 0,
+            heap: byte_buffer::Heap::default(),
+            events: Vec::new(),
+            observer: array_observe::Observer::default(),
+        };
+        machine.install(Frame::allocate(&plan, entry, 1, None).unwrap());
+        for statement in &function.blocks[0].statements {
+            machine
+                .statement(0, &statement.kind, statement.span)
+                .unwrap();
+        }
+        let handle = machine.handle(0, LoanId(0), span).unwrap();
+        let expected = AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::U8, 2).unwrap());
+        assert_eq!(handle.view.offset, 1);
+        assert_eq!(machine.checked_handle_view(handle, span), Ok(expected));
+        for offset in [0, 2, u64::MAX] {
+            let mut forged = handle;
+            forged.view.offset = offset;
+            assert!(machine.validate_handle(forged, Access::Read, span).is_err());
+            assert_eq!(
+                machine.checked_handle_view(forged, span),
+                Err(bad("view root type", span))
+            );
+        }
+        for length in [0, 1, 3, 4] {
+            let mut forged = handle;
+            forged.view.aggregate = Some(
+                AggregateSlot::try_from_aggregate(AggregateTy::FixedArray(
+                    FixedArrayTy::check(hir::Ty::U8, length).unwrap(),
+                ))
+                .unwrap(),
+            );
+            assert_eq!(
+                machine.checked_handle_view(forged, span),
+                Err(bad("view root type", span))
+            );
+        }
+        let other = function
+            .owners
+            .iter()
+            .enumerate()
+            .find(|(_, owner)| {
+                owner.aggregate()
+                    == AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::U8, 5).unwrap())
+                    && matches!(owner.kind, OwnerKind::Local { .. })
+            })
+            .map(|(id, _)| machine.owner_key(0, OwnerPlaceId(id), span).unwrap())
+            .unwrap();
+        let mut forged = handle;
+        forged.root = other;
+        machine.frames[0].loans[0].root = other;
+        assert_eq!(
+            machine.checked_handle_view(forged, span),
+            Err(bad("view root type", span))
+        );
+    });
 }

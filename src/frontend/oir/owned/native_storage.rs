@@ -139,7 +139,10 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
             execution,
             id,
             scalar_slots: add(p.usage.scalar_slots, p.usage.arguments)?,
-            owner_bytes: align(p.usage.payload_bytes, 4)?,
+            owner_bytes: align(
+                p.usage.payload_bytes,
+                native_owner_alignment(execution.witness.declarations(), f),
+            )?,
             reference_slots: add(p.usage.references, p.usage.loans)?,
             slice_slots: add(slices, loans)?,
         })
@@ -201,7 +204,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 require(range.is_none())?;
             }
         }
-        require(end == u.payload_bytes && align(end, 4)? == self.owner_bytes)?;
+        require(end == u.payload_bytes && align(end, self.owner_alignment())? == self.owner_bytes)?;
         let (mut arguments, mut owned, mut borrowed) = (0, 0, 0);
         for (call, cp) in f.calls.iter().zip(&p.calls) {
             require(
@@ -342,6 +345,9 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     }
     pub(in super::super) fn owner_bytes(&self) -> usize {
         self.owner_bytes
+    }
+    pub(in super::super) fn owner_alignment(&self) -> usize {
+        native_owner_alignment(self.execution.witness.declarations(), self.raw())
     }
     pub(in super::super) fn reference_slots(&self) -> usize {
         self.reference_slots

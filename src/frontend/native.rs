@@ -14,6 +14,9 @@ use std::{
 const LLVM_VERSION: &str = "19.1.7";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
+const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
+const BYTEBUF_HEADER: &str = include_str!("../../native/experimental_bytebuf.h");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
@@ -360,6 +363,18 @@ fn compile_inner(
     let workspace = Workspace::create(&parent)?;
     fs::write(workspace.0.join("program.ll"), module).map_err(io)?;
     fs::write(workspace.0.join("runtime.c"), RUNTIME).map_err(io)?;
+    if module.contains("declare void @__oxid_bytebuf_start()") {
+        // The sealed emitter selects the runtime. The complete source is
+        // embedded in the compiler; the linked program needs no checkout.
+        fs::write(workspace.0.join("experimental_bytebuf.h"), BYTEBUF_HEADER).map_err(io)?;
+        fs::write(workspace.0.join("experimental_bytebuf.c"), BYTEBUF_CORE).map_err(io)?;
+        fs::write(workspace.0.join("typed_bytebuf.c"), BYTEBUF_RUNTIME).map_err(io)?;
+        fs::write(
+            workspace.0.join("runtime.c"),
+            format!("{RUNTIME}\n#include \"typed_bytebuf.c\"\n"),
+        )
+        .map_err(io)?;
+    }
     let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
     let invoke = |path: &Path, values: Vec<OsString>| {
         run(

@@ -187,6 +187,15 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
+                OwnedInstruction::PrepareBorrowRange { start, end, .. } => {
+                    visitor.span(start.span)?;
+                    visitor.span(end.span)?;
+                }
+                OwnedInstruction::Experimental { .. } => {
+                    if matches!(source, FunctionSource::Original(..)) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::WriteStdout { .. } => {
                     if builtin != Some(BuiltinFunction::WriteStdout) {
                         return Err(bad());
@@ -513,6 +522,26 @@ fn check_impl(
                         != index
                             .builtin_function_anchor(function_kind)
                             .map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
+            }
+        }
+        for kind in crate::frontend::builtin_catalog::experimental::Enumeration::ALL {
+            if let Some(id) = ids.experimental_enum(kind) {
+                if id != index.experimental_enum_id(kind).map_err(|_| bad())?
+                    || raw.enums.get(id.0).ok_or_else(bad)?.span
+                        != index.experimental_anchor(kind.item()).map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
+            }
+        }
+        for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+            if let Some(id) = ids.experimental_function(kind) {
+                if id != index.experimental_function_id(kind).map_err(|_| bad())?
+                    || raw.functions.get(id.0).ok_or_else(bad)?.span
+                        != index.experimental_anchor(kind.item()).map_err(|_| bad())?
                 {
                     return Err(bad());
                 }

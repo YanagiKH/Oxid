@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_byte_field_compatibility.py \
+          python3 -B scripts/verify_byte_buffer_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -208,19 +208,22 @@ jobs:
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields -- --ignored
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
               byte_storage_native_source_free_ -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-fields-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid byte_record_ \
+              -- --ignored --test-threads=1
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-buffers-$profile" \
+              cargo test --locked "${profile_flags[@]}" --bin oxid bytebuf_native_ \
               -- --ignored --test-threads=1
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal \
@@ -248,6 +251,16 @@ jobs:
         run: |
           python3 -B scripts/verify_owned_enum_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-owned-enum-application" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify growable buffers, binary I/O and source-free byte reversal
+        run: |
+          python3 -B scripts/verify_byte_reverse_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-reverse-application" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Check buffer runtime components at O0 and O2 with memory checking
+        run: |
+          python3 -B scripts/test_bytebuf_runtime.py
+          python3 -B scripts/test_binary_delivery.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_binary_delivery.py
       - name: Run current independent native oracles and private LLVM regressions
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -271,6 +284,9 @@ jobs:
             ${{ runner.temp }}/current-byte-storage-release
             ${{ runner.temp }}/current-byte-fields-debug
             ${{ runner.temp }}/current-byte-fields-release
+            ${{ runner.temp }}/current-byte-buffers-debug
+            ${{ runner.temp }}/current-byte-buffers-release
+            ${{ runner.temp }}/current-byte-reverse-application
           if-no-files-found: warn
           retention-days: 14
 

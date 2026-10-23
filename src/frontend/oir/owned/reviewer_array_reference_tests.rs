@@ -1300,7 +1300,7 @@ fn reference_fixture(
     let (other_ty, other_n) = match other {
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
-        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
+        AggregateTy::Enum(_) | AggregateTy::ByteBuf => unreachable!("aggregate executable gate"),
     };
     let f = &mut raw.functions[0];
     f.calls.truncate(1);
@@ -1320,7 +1320,7 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
-        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
+        AggregateTy::Enum(_) | AggregateTy::ByteBuf => unreachable!("aggregate executable gate"),
         AggregateTy::FixedArray(_) => OwnedInstruction::ConstructArray {
             destination: OwnerPlaceId(1),
             elements: vec![op(4, base); other_n],

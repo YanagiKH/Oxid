@@ -44,7 +44,7 @@ class ManifestApplications(unittest.TestCase):
                     verify_repo.manifest_project_members(self.members, self.root, required=True)
 
     def test_new_enum_projects_cannot_hide_missing_members_or_neighbors(self):
-        projects = ("apps/frame-filter",
+        projects = ("apps/frame-filter", "apps/byte-reverse",
                     "examples/projects/owned_enum_payload_acceptance/ready",
                     "examples/projects/owned_enum_payload_acceptance/failed",
                     "examples/projects/owned_enum_payload_acceptance/values",

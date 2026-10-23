@@ -5,13 +5,16 @@ use super::*;
 pub(in crate::frontend) enum NominalId {
     Record(RecordId),
     Enum(EnumId),
+    ByteBuf,
 }
 #[cfg(test)]
 impl NominalId {
     pub(super) fn legacy_record(self) -> RecordId {
         match self {
             Self::Record(record) => record,
-            Self::Enum(_) => panic!("legacy index observation excludes enum projection"),
+            Self::Enum(_) | Self::ByteBuf => {
+                panic!("legacy index observation excludes enum projection")
+            }
         }
     }
 }
@@ -92,7 +95,7 @@ impl<'a> VariantView<'a> {
         match self.source_syntax() {
             Some(syntax) => self.index.sources().frozen_text(syntax.name),
             None => match self.origin() {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item
+                DeclarationOrigin::Builtin(item) => item
                     .member_name(self.id.index)
                     .expect("checked builtin variant"),
                 _ => unreachable!("checked builtin variant"),
@@ -150,9 +153,7 @@ impl<'a> VariantView<'a> {
                 }
             }),
             None => match self.origin() {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => {
-                    item.member_payload(self.id.index)
-                }
+                DeclarationOrigin::Builtin(item) => item.member_payload(self.id.index),
                 _ => unreachable!("checked builtin variant"),
             },
         }
@@ -195,11 +196,10 @@ impl QuerySession<'_, '_> {
         self.requester(ModuleId(declared.owner as usize), at)?;
         let handle = self.tables.original_for_nominal(nominal, at)?;
         let original = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+            DeclarationProjection::Builtin(_) => {
                 return Ok(NominalExposure::Allowed);
             }
             DeclarationProjection::SourceOriginal(id) => id,
-            _ => return Err(bad(at)),
         };
         let payload = self.tables.original(original)?;
         if payload.domain == NONE

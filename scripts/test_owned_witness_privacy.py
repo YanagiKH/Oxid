@@ -124,7 +124,9 @@ class PrivacyCheckoutTests(unittest.TestCase):
             # RFC0030's importer work-bound controls read these existing frozen
             # sources independently; no new fixture or dynamic include shape.
             u8_boundary_source_reads = 2  # rich-source.txt and source-255.txt
-            self.assertEqual(count, predecessor_include_sites + u8_boundary_source_reads)
+            byte_buffer_runtime_reads = 3  # runtime adapter, implementation and header
+            self.assertEqual(count, predecessor_include_sites + u8_boundary_source_reads
+                             + byte_buffer_runtime_reads)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

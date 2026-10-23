@@ -251,7 +251,24 @@ fn admit(total: usize, extra: usize, limit: usize, at: Span) -> Result<usize, Bo
 }
 impl HirPlan {
     fn calculate(c: HirCounts, at: Span) -> Result<Self, Box<Diagnostic>> {
-        if c.signatures < c.functions || c.signatures - c.functions > 2 {
+        Self::calculate_with_experimental(c, at, 0)
+    }
+
+    /// Only fresh index preflight supplies the admitted experimental suffix.
+    /// Count-only callers retain the original two-function builtin boundary.
+    /// Both entries price every actual signature through the same sizing body.
+    fn calculate_with_experimental(
+        c: HirCounts,
+        at: Span,
+        experimental_functions: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        if experimental_functions
+            > crate::frontend::builtin_catalog::experimental::Function::ALL.len()
+            || c.signatures
+                .checked_sub(c.functions)
+                .and_then(|suffix| suffix.checked_sub(experimental_functions))
+                .is_none_or(|legacy_suffix| legacy_suffix > 2)
+        {
             return Err(invalid(at));
         }
         let mut resolved = 0;
@@ -692,7 +709,7 @@ pub(super) fn preflight_current_hir(
     work: &WorkMeter,
 ) -> Result<Option<HirPlan>, Box<Diagnostic>> {
     index.require_current_source_pipeline()?;
-    if index.enum_count() == 0 {
+    if !resolve::requires_paid_source(index) {
         return Ok(None);
     }
     preflight_hir(index, work, false)
@@ -765,7 +782,26 @@ fn preflight_hir(
         increment(&mut counts.signatures, 1, anchor)?;
         increment(&mut counts.parameters, 1, anchor)?;
     }
-    let mut plan = HirPlan::calculate(counts, at)?;
+    for builtin in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if index.builtin_set().experimental().contains(builtin.item()) {
+            let anchor = index.experimental_anchor(builtin.item())?;
+            let signature = index.experimental_signature(builtin)?;
+            visit(work, 1 + signature.parameters().len(), anchor)?;
+            increment(&mut counts.signatures, 1, anchor)?;
+            increment(&mut counts.parameters, signature.parameters().len(), anchor)?;
+        }
+    }
+    let experimental_functions = index.builtin_set().experimental().functions();
+    let mut plan = if experimental_functions == 0 {
+        HirPlan::calculate(counts, at)?
+    } else {
+        HirPlan::calculate_with_experimental(counts, at, experimental_functions)?
+    };
+    if !index.builtin_set().experimental().is_empty() {
+        let extra = crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes();
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
     if index.has_owned_enum_payloads(work)? {
         // New owned-payload roles supplement the frozen scalar banks only for
         // this feature. They consume the existing ceiling before HIR allocation.
@@ -1007,9 +1043,13 @@ fn count_expression(
                 ast::ExprKind::Call { args, .. }
                 | ast::ExprKind::QualifiedValue {
                     args: Some(args), ..
-                } => match args.get(next) {
-                    Some(ast::Argument::Value(value)) => Some(*value),
-                    Some(ast::Argument::Borrow { .. }) => continue,
+                } => match args.get(next / 2) {
+                    Some(ast::Argument::Value(value)) if next % 2 == 0 => Some(*value),
+                    Some(ast::Argument::Borrow {
+                        place: ast::BorrowPlace::Range { start, end, .. },
+                        ..
+                    }) => Some(if next % 2 == 0 { *start } else { *end }),
+                    Some(_) => continue,
                     None => None,
                 },
                 ast::ExprKind::StructLiteral { fields, .. } => {
@@ -1168,5 +1208,139 @@ impl<'a> CapacityExcess<'a> {
     }
     pub(super) fn finish(self) -> usize {
         self.bytes
+    }
+}
+
+#[cfg(test)]
+mod experimental_suffix_tests {
+    use super::*;
+    use crate::frontend::{
+        declaration_index::{collect_originals, IndexLimits, SourceOwner},
+        project::{ProjectLimits, ProjectSources},
+    };
+
+    #[test]
+    fn bytebuf_hir_suffix_requires_the_actual_admitted_catalog() {
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                std::fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
+        let fixture = Fixture(
+            std::env::temp_dir().join(format!("oxid-admitted-hir-suffix-{}", std::process::id())),
+        );
+        std::fs::create_dir(&fixture.0).unwrap();
+        let path = fixture.0.join("main.ox");
+        for (imports, experimental, legacy, parameters) in [
+            ("", 0, 0, 0),
+            ("use alloc::bytes::ByteBuf;", 0, 0, 0),
+            ("use alloc::bytes::new;", 1, 0, 0),
+            (
+                "use alloc::bytes::new;use alloc::bytes::len;use alloc::bytes::try_reserve;",
+                3,
+                0,
+                3,
+            ),
+            (
+                "use alloc::bytes::new;use alloc::bytes::len;use alloc::bytes::capacity;
+                 use alloc::bytes::try_reserve;use alloc::bytes::try_push;
+                 use alloc::bytes::try_extend;use alloc::bytes::try_resize;
+                 use alloc::bytes::truncate;use std::io::read_some;use std::io::write_some;
+                 use std::io::read_stdin;use std::io::write_stdout;",
+                10,
+                2,
+                17,
+            ),
+        ] {
+            std::fs::write(
+                &path,
+                format!("{imports} enum Marker{{End}} fn main()->i32{{return 0;}}"),
+            )
+            .unwrap();
+            let project =
+                ProjectSources::load_typed(path.to_str().unwrap(), ProjectLimits::default())
+                    .unwrap();
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let index = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &work,
+                &mut allocator,
+            )
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
+            assert_eq!(index.builtin_set().experimental().functions(), experimental);
+            let at = index.sources().eof();
+            let plan = preflight_current_hir(&index, &work).unwrap().unwrap();
+            assert_eq!(plan.counts.functions, 1);
+            assert_eq!(plan.counts.signatures, 1 + experimental + legacy);
+            assert_eq!(plan.counts.parameters, parameters);
+            let base = HirPlan::calculate_with_experimental(plan.counts, at, experimental).unwrap();
+            let ordinary = HirPlan::calculate(
+                HirCounts {
+                    signatures: 1,
+                    parameters: 0,
+                    ..plan.counts
+                },
+                at,
+            )
+            .unwrap();
+            assert_eq!(
+                base.resolved - ordinary.resolved,
+                (experimental + legacy) * size_of::<Signature>()
+                    + parameters * size_of::<ParameterTy>()
+            );
+            assert_eq!(base.typed, ordinary.typed);
+            assert_eq!(base.staging, ordinary.staging);
+            assert_eq!(base.typeck_scratch, ordinary.typeck_scratch);
+            assert_eq!(
+                base.resolver_scratch - ordinary.resolver_scratch,
+                (experimental + legacy)
+                    * (size_of::<Vec<ParameterTy>>()
+                        + resolve::builtin_signature_carrier_bytes()
+                        + size_of::<BuiltinPreflightCarriers>())
+            );
+            assert_eq!(
+                HirPlan::calculate(plan.counts, at).is_err(),
+                experimental + legacy > 2
+            );
+            let too_many = HirCounts {
+                signatures: plan.counts.functions + experimental + 3,
+                ..plan.counts
+            };
+            assert_eq!(
+                HirPlan::calculate_with_experimental(too_many, at, experimental)
+                    .unwrap_err()
+                    .code,
+                "E0500"
+            );
+            if experimental != 0 {
+                let missing = HirCounts {
+                    signatures: plan.counts.functions + experimental - 1,
+                    ..plan.counts
+                };
+                assert_eq!(
+                    HirPlan::calculate_with_experimental(missing, at, experimental)
+                        .unwrap_err()
+                        .code,
+                    "E0500"
+                );
+            }
+            assert!(HirPlan::calculate_with_experimental(
+                plan.counts,
+                at,
+                crate::frontend::builtin_catalog::experimental::Function::ALL.len() + 1
+            )
+            .is_err());
+            let remaining = MAX_HIR_BYTES - plan.total;
+            assert_eq!(plan.with_dynamic(remaining, at).unwrap(), MAX_HIR_BYTES);
+            assert_eq!(
+                plan.with_dynamic(remaining + 1, at).unwrap_err().code,
+                "E0400"
+            );
+        }
     }
 }

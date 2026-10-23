@@ -127,9 +127,17 @@ impl FunctionPlan {
 pub(super) struct ExecutionPlan<'a> {
     witness: &'a VerifiedOwnedProgram,
     functions: Vec<FunctionPlan>,
-    metadata_bytes: usize,
+    metadata_bytes: u32,
+    dynamic_resources: bool,
 }
+const _: () = assert!(
+    size_of::<ExecutionPlan<'_>>()
+        == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
+);
 impl<'a> ExecutionPlan<'a> {
+    pub(super) fn uses_dynamic_resources(&self) -> bool {
+        self.dynamic_resources
+    }
     pub fn build(witness: &'a VerifiedOwnedProgram) -> Result<Self, AdmissionFailure> {
         Self::build_with_limit(witness, MAX_PLAN_BYTES)
     }
@@ -152,7 +160,7 @@ impl<'a> ExecutionPlan<'a> {
         &self.functions
     }
     pub fn metadata_bytes(&self) -> usize {
-        self.metadata_bytes
+        self.metadata_bytes as usize
     }
     /// Scratch never extends a language owner's nominal extent. It exists only
     /// in the independently verified canonical input activation.
@@ -184,10 +192,32 @@ impl<'a> ExecutionPlan<'a> {
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
     }
+    /// Only the sealed one-block binary primitives may prepay their immediate
+    /// return. Ordinary source wrappers keep their ordinary return checks.
+    pub(super) fn binary_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ReadSome, Function::WriteSome]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation) == Some(function))
+            .then(|| {
+                let terminator = self.witness.functions()[function.0].blocks[0]
+                    .terminator
+                    .as_ref()
+                    .expect("sealed binary return");
+                self.terminator_cost(function, &terminator.kind)
+            })
+    }
+    pub(super) fn has_binary_delivery(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ReadSome, Function::WriteSome]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
             // The consumer charges the validated capacity and each I/O attempt.
+            OwnedInstruction::Experimental { .. } => 4,
             OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
@@ -247,10 +277,16 @@ impl<'a> ExecutionPlan<'a> {
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
         let functions = witness.functions();
+        let mut dynamic_resources = witness.has_experimental_operations()
+            || witness.declarations().has_resource_declarations();
         let mut metadata_bytes = mul(functions.len(), size_of::<FunctionPlan>())?;
         let mut largest_frame = 0;
         // Complete ALL metadata-length and activation-cost preflights before any allocation.
         for f in functions {
+            dynamic_resources |= f
+                .references
+                .iter()
+                .any(|reference| reference.referent() == BorrowedTy::Exact(AggregateTy::ByteBuf));
             metadata_bytes = add(metadata_bytes, mul(f.owners.len(), size_of::<usize>())?)?;
             metadata_bytes = add(metadata_bytes, mul(f.calls.len(), size_of::<CallPlan>())?)?;
             for c in &f.calls {
@@ -291,6 +327,7 @@ impl<'a> ExecutionPlan<'a> {
             let mut owner_offsets = reserve(f.owners.len())?;
             let mut next = 0;
             for owner in &f.owners {
+                dynamic_resources |= owner.aggregate() == AggregateTy::ByteBuf;
                 let layout = witness
                     .declarations()
                     .aggregate_layout(owner.aggregate())
@@ -349,7 +386,11 @@ impl<'a> ExecutionPlan<'a> {
         let result = Self {
             witness,
             functions: plans,
-            metadata_bytes,
+            // The independently checked production ceiling is 32 MiB. Packing
+            // this total and the cached policy keeps the original facade size.
+            metadata_bytes: u32::try_from(metadata_bytes)
+                .map_err(|_| AdmissionFailure::new("owned plan bytes", None))?,
+            dynamic_resources,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
         for f in functions {
@@ -453,7 +494,7 @@ fn frame_usage(
             mul(add(u.scalar_slots, u.arguments)?, 8)?,
             mul(add(u.references, u.loans)?, 8)?,
         )?,
-        align(u.payload_bytes, 4)?,
+        align(u.payload_bytes, native_owner_alignment(declarations, f))?,
     )?;
     // Slice descriptors add native-only i32 length slots. The reference consumer
     // derives length from validated whole-owner provenance and stores no sidecar.
@@ -469,6 +510,20 @@ fn frame_usage(
         .count();
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
     Ok(u)
+}
+
+pub(super) fn native_owner_alignment(declarations: &Declarations, f: &RawOwnedFunction) -> usize {
+    f.owners
+        .iter()
+        .map(|owner| {
+            declarations
+                .aggregate_layout(owner.aggregate())
+                .expect("verified owner layout")
+                .align()
+        })
+        .max()
+        .unwrap_or(4)
+        .max(4)
 }
 
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {

@@ -82,6 +82,7 @@ pub(super) fn inventory(inventory: BuiltinOrigins) -> (SourceMap, RawOwnedProgra
     )];
     // Independently authored finite case inventory: no catalog/rank helper.
     let (read_enum, read_function, write_enum, write_function) = match inventory {
+        BuiltinOrigins::Extended(_) => unreachable!("legacy fixture inventory"),
         BuiltinOrigins::None => (false, false, false, false),
         BuiltinOrigins::ReadStatus => (true, false, false, false),
         BuiltinOrigins::ReadStdin => (true, true, false, false),

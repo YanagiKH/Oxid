@@ -115,7 +115,7 @@ impl TypedOwnedProgram<'_> {
         if self.admission() == SourceAdmission::BuiltinPipeline {
             return Some(self.program.type_storage_cell().get());
         }
-        if self.index().enum_count() != 0 {
+        if super::resolve::requires_paid_source(self.index()) {
             return Some(self.program.type_storage_cell().get());
         }
         None
@@ -300,6 +300,7 @@ impl Label for Box<Diagnostic> {
 }
 #[allow(clippy::large_enum_variant)] // Both bounded formatter frames are preaccounted; no heap allocation.
 enum TypeName<'a> {
+    ByteBuf,
     Scalar(Ty),
     Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
@@ -307,6 +308,7 @@ enum TypeName<'a> {
 impl std::fmt::Display for TypeName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ByteBuf => write!(f, "alloc::bytes::ByteBuf"),
             Self::Scalar(ty) => write!(f, "{ty}"),
             Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
@@ -320,6 +322,7 @@ fn type_name<'a>(
 ) -> Result<TypeName<'a>, Box<Diagnostic>> {
     match ty {
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
+        ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
@@ -380,7 +383,7 @@ pub(in crate::frontend::oir) fn check(
             None,
         )]);
     }
-    if program.index().enum_count() != 0 {
+    if super::resolve::requires_paid_source(program.index()) {
         return Err(vec![*diagnostic(
             "E0500",
             "type",
@@ -778,7 +781,9 @@ pub(super) fn finish_enum_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    if program.admission() != SourceAdmission::Executable || program.index().enum_count() == 0 {
+    if program.admission() != SourceAdmission::Executable
+        || !super::resolve::requires_paid_source(program.index())
+    {
         return Err(vec![*paid_state(program.index().sources().eof())]);
     }
     program
@@ -993,7 +998,7 @@ fn check_bodies(
     mut paid: Option<&mut ProgramPaid<'_, '_>>,
 ) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
     let enum_types = match program.admission() {
-        SourceAdmission::Executable => program.index().enum_count() != 0,
+        SourceAdmission::Executable => super::resolve::requires_paid_source(program.index()),
         #[cfg(test)]
         SourceAdmission::ObserveEnumTypes
         | SourceAdmission::EnumPipeline
@@ -2181,21 +2186,24 @@ fn projected_array_access(
     let mut field_span = first.span;
     field_span.end = base_span.end;
     let projection = projection(program, function, binding, root, field_span, bindings, paid)?;
-    let ValueTy::Owned(AggregateTy::FixedArray(array)) =
-        program.records()[projection.field.record.0].fields[projection.field.index].ty
-    else {
-        return Err(error(
-            "E0305",
-            if borrow {
-                "projected borrowing requires a fixed scalar array field"
-            } else {
-                "indexed access requires a fixed scalar array field"
-            },
-            base_span,
-        ));
-    };
+    let element =
+        match program.records()[projection.field.record.0].fields[projection.field.index].ty {
+            ValueTy::Owned(AggregateTy::FixedArray(array)) => array.element(),
+            ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Ty::U8,
+            _ => {
+                return Err(error(
+                    "E0305",
+                    if borrow {
+                        "projected borrowing requires a fixed scalar array field or ByteBuf"
+                    } else {
+                        "indexed access requires a fixed scalar array field"
+                    },
+                    base_span,
+                ))
+            }
+        };
     let base = projection.base;
-    Ok((Some(projection), base, array.element()))
+    Ok((Some(projection), base, element))
 }
 
 fn array_access(
@@ -2208,10 +2216,15 @@ fn array_access(
         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
             Ok((AccessBase::Owner(binding), array.element()))
         }
-        ParameterTy::Reference { referent, kind } if referent.element().is_some() => Ok((
-            AccessBase::Reference { binding, kind },
-            referent.element().expect("array or slice"),
-        )),
+        ParameterTy::Reference { referent, kind }
+            if referent.element().is_some()
+                && referent != BorrowedTy::Exact(AggregateTy::ByteBuf) =>
+        {
+            Ok((
+                AccessBase::Reference { binding, kind },
+                referent.element().expect("array or slice"),
+            ))
+        }
         _ => Err(error(
             "E0305",
             "array access requires an array binding",
@@ -2512,7 +2525,36 @@ fn expression_type(
                         span,
                         name_span,
                         ..
+                    }
+                    | Argument::BorrowRange {
+                        kind,
+                        place,
+                        span,
+                        name_span,
+                        ..
                     } => {
+                        if let Argument::BorrowRange { start, end, .. } = arg {
+                            for endpoint in [*start, *end] {
+                                let actual = expression_type(
+                                    program,
+                                    function,
+                                    endpoint,
+                                    bindings,
+                                    expressions,
+                                    projections,
+                                    borrow_projections,
+                                    paid.as_deref_mut(),
+                                )?;
+                                if actual != ValueTy::Scalar(Ty::I32) {
+                                    return Err(mismatch(
+                                        program,
+                                        ValueTy::Scalar(Ty::I32),
+                                        actual,
+                                        function.expressions[endpoint.0].span,
+                                    ));
+                                }
+                            }
+                        }
                         let whole = borrow_type(function, *kind, *place, *span, bindings)?;
                         let actual = if program.text(*name_span).contains('.') {
                             let binding = match place {
@@ -2562,6 +2604,9 @@ fn expression_type(
                                     )
                                 })?;
                             }
+                            let projected_type = program.records()[projection.field.record.0]
+                                .fields[projection.field.index]
+                                .ty;
                             borrow_projections.push(BorrowProjection {
                                 expression: id,
                                 argument,
@@ -2570,11 +2615,37 @@ fn expression_type(
                             // A projected fixed array is admitted only as a scalar slice.
                             // It cannot silently add exact-array or record field borrowing.
                             ParameterTy::Reference {
-                                referent: BorrowedTy::ScalarSlice(element),
+                                referent: if projected_type == ValueTy::Owned(AggregateTy::ByteBuf)
+                                {
+                                    BorrowedTy::Exact(AggregateTy::ByteBuf)
+                                } else {
+                                    BorrowedTy::ScalarSlice(element)
+                                },
                                 kind: *kind,
                             }
                         } else {
                             whole
+                        };
+                        let actual = if matches!(arg, Argument::BorrowRange { .. }) {
+                            match actual {
+                                ParameterTy::Reference { referent, kind }
+                                    if referent.element() == Some(Ty::U8) =>
+                                {
+                                    ParameterTy::Reference {
+                                        referent: BorrowedTy::ScalarSlice(Ty::U8),
+                                        kind,
+                                    }
+                                }
+                                _ => {
+                                    return Err(error(
+                                        "E0300",
+                                        "byte subranges require a byte buffer or byte slice",
+                                        *span,
+                                    ))
+                                }
+                            }
+                        } else {
+                            actual
                         };
                         (actual, *span)
                     }
@@ -2627,7 +2698,9 @@ fn expression_type(
                     .owned_secondary(called.span, "function declared here"));
                 }
                 #[cfg(test)]
-                if let Argument::Borrow { place, .. } = args[_position] {
+                if let Argument::Borrow { place, .. } | Argument::BorrowRange { place, .. } =
+                    args[_position]
+                {
                     let binding = match place {
                         BorrowPlace::Owner(binding) | BorrowPlace::Forwarded(binding) => binding,
                     };
@@ -4358,7 +4431,10 @@ mod typed_inventory {
                 let ExprKind::Call { args, .. } = &expression.kind else {
                     return Err(invalid(origin));
                 };
-                if !matches!(args.get(entry.argument), Some(Argument::Borrow { .. })) {
+                if !matches!(
+                    args.get(entry.argument),
+                    Some(Argument::Borrow { .. } | Argument::BorrowRange { .. })
+                ) {
                     return Err(invalid(origin));
                 }
                 projection(
