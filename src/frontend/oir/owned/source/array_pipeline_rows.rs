@@ -44,6 +44,7 @@ struct ScalarType(hir::Ty);
 impl fmt::Display for ScalarType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Json(match self.0 {
+            hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
             hir::Ty::U8 => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
@@ -317,6 +318,9 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            source_hir::ExprKind::I64(_) => {
+                panic!("i64 is outside this retained narrow fixture or observer")
+            }
             source_hir::ExprKind::Conversion { .. } => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
@@ -841,6 +845,14 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            Rvalue::I64(_)
+            | Rvalue::WidenI64 { .. }
+            | Rvalue::CheckedI64ToI32 { .. }
+            | Rvalue::CheckedI64ToU8 { .. }
+            | Rvalue::CheckedNegateI64 { .. }
+            | Rvalue::CheckedI64 { .. } => {
+                panic!("i64 is outside this retained narrow fixture or observer")
+            }
             Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } | Rvalue::U8(_) => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }

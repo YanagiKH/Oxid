@@ -1255,6 +1255,9 @@ fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
                 1,
             );
             let inactive = match payload {
+                Some(hir::Ty::I64) => {
+                    panic!("i64 is outside this retained narrow fixture or observer")
+                }
                 Some(hir::Ty::U8) => {
                     unreachable!("u8 is outside this predecessor fixture or observation domain")
                 }

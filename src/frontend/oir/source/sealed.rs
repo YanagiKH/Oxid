@@ -238,6 +238,7 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => program.function_count(),
         }
     }
+    #[cfg(test)]
     pub(in crate::frontend) fn run(&self) -> Result<Scalar, Box<Diagnostic>> {
         match &self.body {
             CheckedBody::Scalar(program) => program
@@ -253,6 +254,8 @@ impl CheckedSourceProgram<'_> {
         }
     }
 
+    #[cfg(test)]
+    #[allow(dead_code)] // Retained narrow facade for private predecessor consumers.
     pub(in crate::frontend) fn run_with_execution(
         &self,
         execution: crate::frontend::build_config::ExecutionPolicy,
@@ -267,6 +270,19 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => {
                 program.run_with_execution(self.entry, self.sources, execution)
             }
+        }
+    }
+
+    pub(in crate::frontend) fn run_value(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeScalar, Box<Diagnostic>> {
+        match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(self.entry, execution)
+                .map(RuntimeScalar::from)
+                .map_err(|error| error.diagnostic(self.sources)),
+            CheckedBody::Owned(program) => program.run_value(self.entry, self.sources, execution),
         }
     }
 

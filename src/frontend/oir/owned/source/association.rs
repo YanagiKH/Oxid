@@ -227,7 +227,11 @@ fn function(
                         && matches!(
                             statement,
                             Statement::Assign(Assign {
-                                value: Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. },
+                                value: Rvalue::CheckedI32ToU8 { .. }
+                                    | Rvalue::U8ToI32 { .. }
+                                    | Rvalue::WidenI64 { .. }
+                                    | Rvalue::CheckedI64ToI32 { .. }
+                                    | Rvalue::CheckedI64ToU8 { .. },
                                 ..
                             })
                         )

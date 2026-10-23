@@ -122,6 +122,12 @@ impl Parser<'_> {
                 self.bump();
                 ArrayElementTypeSyntax::U8
             }
+            Kind::Ident
+                if self.wide_scalars_enabled() && self.source.text_at(token.span) == "i64" =>
+            {
+                self.bump();
+                ArrayElementTypeSyntax::I64
+            }
             Kind::LParen if self.next_kind() == Kind::RParen => {
                 self.bump();
                 self.bump();

@@ -1398,6 +1398,37 @@
         "tests/fixtures/native_files/copy.ox.in"
       ],
       "evidence": []
+    },
+    {
+      "id": "checked-i64-integers",
+      "classification": "production-path",
+      "summary": "Exact signed 64-bit values with checked arithmetic, explicit conversions, records, arrays and enum payloads.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Decimal i64-suffixed literals; no implicit conversion. Indexes, lengths and process status remain i32. No additional integer widths or floating point.",
+      "spec": [
+        "rfcs/0050-checked-i64-integers.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "src/frontend/oir/owned/native_numeric.rs",
+        "native/typed_preview.c"
+      ],
+      "tests": [
+        "tests/typed_i64.rs",
+        "src/frontend/oir/owned/source/i64_source_tests.rs",
+        "scripts/verify_i64.py",
+        "tests/i64_output_runtime.c",
+        "scripts/test_i64_output_runtime.py"
+      ],
+      "evidence": []
     }
   ]
 }

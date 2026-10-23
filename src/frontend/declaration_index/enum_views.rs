@@ -152,6 +152,7 @@ impl<'a> VariantView<'a> {
             Some(syntax) => syntax.payload.map(|payload| match payload.kind {
                 ast::ScalarTypeSyntax::Bool => Ty::Bool,
                 ast::ScalarTypeSyntax::I32 => Ty::I32,
+                ast::ScalarTypeSyntax::I64 => Ty::I64,
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
                 ast::ScalarTypeSyntax::Name
                 | ast::ScalarTypeSyntax::Absolute(_)

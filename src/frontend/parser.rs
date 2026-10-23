@@ -1707,13 +1707,21 @@ impl Parser<'_> {
                         ));
                     }
                 }
-                let digits = self.bump().span;
-                end = digits.end;
+                let literal = self.bump().span;
+                end = literal.end;
+                let wide =
+                    self.wide_scalars_enabled() && self.source.text_at(literal).ends_with("i64");
+                let digits = if wide {
+                    self.source.span(literal.start, literal.end - 3)
+                } else {
+                    literal
+                };
                 if !self
                     .source
                     .text_at(digits)
                     .bytes()
                     .all(|byte| byte.is_ascii_digit())
+                    || self.source.text_at(digits).is_empty()
                 {
                     // The unchanged lexer retains a numeric candidate as one
                     // token. Still blame the excluded postfix punctuation for
@@ -1735,7 +1743,11 @@ impl Parser<'_> {
                         Some(self.source.span(token.span.start, end)),
                     ));
                 }
-                ExprKind::Number { digits, negative }
+                if wide {
+                    ExprKind::I64Number { digits, negative }
+                } else {
+                    ExprKind::Number { digits, negative }
+                }
             }
             Some(PrimaryStart::Name)
                 if self.arrays_enabled()

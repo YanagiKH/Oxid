@@ -84,6 +84,9 @@ fn verifier_enforces_the_complete_closed_comparison_type_table() {
                 for (i, ty) in [left_ty, right_ty].into_iter().enumerate() {
                     f.locals[i].ty = ty;
                     f.blocks[0].statements[i].assignment_mut().value = match ty {
+                        hir::Ty::I64 => {
+                            panic!("i64 is outside this retained narrow fixture or observer")
+                        }
                         Ty::I32 => Rvalue::I32(if i == 0 { -1 } else { 0 }),
                         Ty::Bool => Rvalue::Bool(i != 0),
                         Ty::Unit => Rvalue::Unit,

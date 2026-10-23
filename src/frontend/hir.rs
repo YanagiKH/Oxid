@@ -19,6 +19,7 @@ pub enum Ty {
     I32,
     U8,
     Unit,
+    I64,
 }
 impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -27,6 +28,7 @@ impl std::fmt::Display for Ty {
             Self::I32 => "i32",
             Self::U8 => "u8",
             Self::Unit => "()",
+            Self::I64 => "i64",
         })
     }
 }
@@ -708,6 +710,14 @@ impl<'a> Resolver<'_, 'a> {
                 ))
             }
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
+            ast::ExprKind::I64Number { .. } => {
+                return Err(Diagnostic::new(
+                    "E0101",
+                    "resolve",
+                    "i64 requires the owned typed source path",
+                    Some(expr.span),
+                ))
+            }
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
             }

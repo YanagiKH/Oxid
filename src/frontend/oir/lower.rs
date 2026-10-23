@@ -403,6 +403,9 @@ fn lower_expression(
                         name_span,
                         source_expr,
                     } => Some(match op {
+                        hir::ConversionOp::ToI64 | hir::ConversionOp::ToI32Checked => {
+                            return Err(failure(FailureKind::TypeMismatch, expr.span))
+                        }
                         hir::ConversionOp::ToU8Checked => Rvalue::CheckedI32ToU8 {
                             operand: operand(*inner),
                             name_span: *name_span,

@@ -641,7 +641,7 @@ impl PreparedPackageProject<'_> {
         }
         let result = executable.and_then(|checked| {
             checked
-                .run_with_execution(execution)
+                .run_value(execution)
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error])
         });
@@ -1003,7 +1003,7 @@ fn process_import(request: &options::ImportOptions) -> i32 {
         }
         match oir::import_checked(&project, &observation[..length], request.operation)? {
             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
-            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value.into()))),
             oir::Imported::Emitted(module) => {
                 let output = request
                     .output
@@ -1095,7 +1095,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
         };
         match oir::import_produced(&project, observation.as_bytes(), request.operation)? {
             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
-            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value.into()))),
             oir::Imported::Emitted(module) => {
                 let output = request
                     .output
@@ -1119,7 +1119,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
 
 enum Summary {
     Check(Option<usize>),
-    Run(Option<oir::Scalar>),
+    Run(Option<oir::RuntimeScalar>),
     Compile(Option<String>),
 }
 impl Summary {
@@ -1137,7 +1137,10 @@ fn report(
     json: bool,
     summary: Summary,
 ) -> i32 {
-    let summary = if matches!(summary, Summary::Run(Some(oir::Scalar::U8(_)))) {
+    let summary = if matches!(
+        summary,
+        Summary::Run(Some(oir::RuntimeScalar::Narrow(oir::Scalar::U8(_))))
+    ) {
         diagnostics.push(*Diagnostic::new(
             "E0500",
             "oir-run",
@@ -1178,7 +1181,7 @@ fn report(
             use std::io::Write;
             let mut output = std::io::stdout().lock();
             let written = if json {
-                writeln!(output, "{}", run_summary(diagnostics.len(), result))
+                writeln!(output, "{}", run_runtime_summary(diagnostics.len(), result))
             } else if let Some(result) = result.filter(|_| success) {
                 writeln!(output, "{result}")
             } else {
@@ -1197,14 +1200,18 @@ fn check_summary(errors: usize, functions: Option<usize>) -> String {
         functions.filter(|_| errors == 0).map_or("null".to_string(), |n| n.to_string()))
 }
 
+#[cfg(test)]
 fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
-    let errors = if matches!(result, Some(oir::Scalar::U8(_))) {
+    run_runtime_summary(errors, result.map(oir::RuntimeScalar::from))
+}
+fn run_runtime_summary(errors: usize, result: Option<oir::RuntimeScalar>) -> String {
+    let errors = if matches!(result, Some(oir::RuntimeScalar::Narrow(oir::Scalar::U8(_)))) {
         errors.max(1)
     } else {
         errors
     };
     format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":{},\"errors\":{errors},\"result\":{}}}",
-        errors == 0, result.filter(|_| errors == 0).and_then(oir::Scalar::json).unwrap_or_else(|| "null".into()))
+        errors == 0, result.filter(|_| errors == 0).and_then(oir::RuntimeScalar::json).unwrap_or_else(|| "null".into()))
 }
 
 fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
@@ -1421,7 +1428,7 @@ fn process_loaded(
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
-                .run()
+                .run_value(crate::frontend::build_config::ExecutionPolicy::Bounded)
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error]),
         }

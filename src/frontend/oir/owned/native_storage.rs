@@ -273,7 +273,12 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         // independently reconciled, without replacing their admission policy.
         let scalar = add(u.scalar_slots, arguments)?;
         let mut expanded = add(scalar, cells)?;
-        let mut reference_bytes = add(mul(scalar, size_of::<Option<Scalar>>())?, end)?;
+        let scalar_bytes = if self.execution.uses_wide_scalars() {
+            size_of::<Option<RuntimeScalar>>()
+        } else {
+            size_of::<Option<Scalar>>()
+        };
+        let mut reference_bytes = add(mul(scalar, scalar_bytes)?, end)?;
         for (count, width, bytes) in [
             (f.owners.len(), 4, size_of::<OwnerRuntime>()),
             (f.references.len(), 10, size_of::<ReferenceHandle>()),

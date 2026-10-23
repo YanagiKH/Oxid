@@ -425,7 +425,9 @@ fn roles_with_syntax(
             ExprKind::ByteString { .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
-            ExprKind::Negate { .. } | ExprKind::Number { negative: true, .. } => {
+            ExprKind::Negate { .. }
+            | ExprKind::Number { negative: true, .. }
+            | ExprKind::I64Number { negative: true, .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
             ExprKind::IndexRead { base, .. } => {

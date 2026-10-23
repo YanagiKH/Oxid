@@ -555,6 +555,12 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
     scalar_resource::record_closure(&local);
     let destination = local(assignment.destination);
     let valid = match assignment.value {
+        Rvalue::I64(_)
+        | Rvalue::WidenI64 { .. }
+        | Rvalue::CheckedI64ToI32 { .. }
+        | Rvalue::CheckedI64ToU8 { .. }
+        | Rvalue::CheckedNegateI64 { .. }
+        | Rvalue::CheckedI64 { .. } => false,
         Rvalue::CheckedI32ToU8 { operand, .. } => {
             local(operand.local) == Some(hir::Ty::I32) && destination == Some(hir::Ty::U8)
         }
@@ -966,6 +972,7 @@ fn ty(ty: hir::Ty) -> &'static str {
         hir::Ty::Bool => "i1",
         hir::Ty::Unit | hir::Ty::U8 => "i8",
         hir::Ty::I32 => "i32",
+        hir::Ty::I64 => "i64",
     }
 }
 fn write_u8_checks(out: &mut Emission, n: usize, operand: usize) {
@@ -1501,7 +1508,9 @@ fn emit(
         ),
         hir::Ty::I32 => out.push_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n"),
         hir::Ty::Unit => out.push_str("  %status = call i32 @__oxid_print_unit()\n"),
-        hir::Ty::U8 => unreachable!("byte entry rejected before native admission"),
+        hir::Ty::U8 | hir::Ty::I64 => {
+            unreachable!("entry rejected before closed scalar native admission")
+        }
     }
     out.push_str("  ret i32 %status\n}\n");
 }

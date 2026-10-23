@@ -37,6 +37,8 @@ pub struct BodyBlockId(pub usize);
 pub enum ConversionOp {
     ToU8Checked,
     ToI32,
+    ToI64,
+    ToI32Checked,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithmeticOp {
@@ -90,6 +92,10 @@ pub enum ExprKind {
     Bool(bool),
     /// Exact decimal digits, separate literal-only sign, and full origin on Expr.
     Number {
+        digits: Span,
+        negative: bool,
+    },
+    I64Number {
         digits: Span,
         negative: bool,
     },
@@ -152,6 +158,7 @@ pub enum ScalarTypeSyntax {
     /// Compact index into the existing bounded qualified-path table.
     Absolute(u32),
     Array(FixedArraySyntax),
+    I64,
 }
 /// Scalar elements in the existing fixed-array grammar.
 #[derive(Clone, Copy, Debug)]
@@ -160,6 +167,7 @@ pub enum ArrayElementTypeSyntax {
     I32,
     U8,
     Unit,
+    I64,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FixedArraySyntax {
@@ -215,9 +223,10 @@ impl EnumPayloadSyntax {
         TypeSyntax {
             span: self.span,
             kind: match self.kind {
-                ScalarTypeSyntax::Bool | ScalarTypeSyntax::I32 | ScalarTypeSyntax::Name => {
-                    TypeSyntaxKind::Name(ItemPath::Unqualified(self.span))
-                }
+                ScalarTypeSyntax::Bool
+                | ScalarTypeSyntax::I32
+                | ScalarTypeSyntax::I64
+                | ScalarTypeSyntax::Name => TypeSyntaxKind::Name(ItemPath::Unqualified(self.span)),
                 ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
                 ScalarTypeSyntax::Absolute(id) => {
                     TypeSyntaxKind::Name(ItemPath::Absolute(PathId(id as usize)))
@@ -928,7 +937,9 @@ impl Program {
                     ..
                 } => earlier(*left) && earlier(*right) && valid(*operator_span),
                 ExprKind::Bool(_) | ExprKind::Unit => true,
-                ExprKind::Number { digits, .. } => valid(*digits),
+                ExprKind::Number { digits, .. } | ExprKind::I64Number { digits, .. } => {
+                    valid(*digits)
+                }
                 ExprKind::Name(name) => valid(*name),
                 ExprKind::Call { callee, args } => {
                     path_valid(*callee, &mut valid)
@@ -1082,7 +1093,12 @@ impl Program {
                 | ExprKind::ArrayLiteral { .. }
                 | ExprKind::ByteString { .. }
                 | ExprKind::IndexRead { .. }
-                | ExprKind::ArrayLength { .. } => true,
+                | ExprKind::ArrayLength { .. }
+                | ExprKind::I64Number { .. }
+                | ExprKind::Conversion {
+                    op: ConversionOp::ToI64 | ConversionOp::ToI32Checked,
+                    ..
+                } => true,
                 ExprKind::Call { args, .. } => {
                     args.iter().any(|a| matches!(a, Argument::Borrow { .. }))
                 }

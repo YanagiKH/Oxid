@@ -8,6 +8,7 @@ pub(super) enum Reason {
     CountOverflow,
     WorkLimit,
     ReservedU8,
+    ReservedI64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Failure {
@@ -27,6 +28,7 @@ impl Failure {
             Reason::CountOverflow=>diagnostic("E0400","resolve-project","declaration index count overflow",self.at),
             Reason::WorkLimit=>diagnostic("E0400","resolve-project","declaration index work limit exceeded",self.at),
             Reason::ReservedU8=>diagnostic("E0208","resolve","type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias",self.at),
+            Reason::ReservedI64=>diagnostic("E0208","resolve","type name i64 is reserved for the signed 64-bit primitive; rename the type or import alias",self.at),
         }
     }
 }
@@ -61,6 +63,24 @@ fn equals_u8(text: &str, work: &WorkMeter, at: &Span) -> Result<bool, Failure> {
         i += 1;
     }
     Ok(bytes.len() == 2)
+}
+fn equals_i64(text: &str, work: &WorkMeter, at: &Span) -> Result<bool, Failure> {
+    // The caller's binding visit covers this fixed prefix test. Existing type
+    // names outside the new primitive's prefix keep their prior query work.
+    if text.len() != 3 || text.as_bytes()[0] != b'i' {
+        return Ok(false);
+    }
+    debit(work, at, "comparison")?;
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < 3 && i < bytes.len() {
+        debit(work, at, "compared byte")?;
+        if bytes[i] != b"i64"[i] {
+            return Ok(false);
+        }
+        i += 1;
+    }
+    Ok(bytes.len() == 3)
 }
 struct Frame<'a, 's> {
     tables: &'a Tables<'s>,
@@ -155,6 +175,21 @@ fn core(tables: &Tables<'_>, work: &WorkMeter, eof: &Span) -> Result<(), Failure
                     {
                         return Err(Failure {
                             reason: Reason::ReservedU8,
+                            at: *at,
+                        });
+                    }
+                    if candidate
+                        && equals_i64(
+                            f.tables
+                                .sources
+                                .try_text_borrowed(at)
+                                .ok_or_else(|| Failure::bad(f.eof))?,
+                            f.work,
+                            at,
+                        )?
+                    {
+                        return Err(Failure {
+                            reason: Reason::ReservedI64,
                             at: *at,
                         });
                     }
@@ -279,6 +314,7 @@ mod layout_tests {
                 Reason::BadIdentity=>bad(at),Reason::CountOverflow=>overflow(at),
                 Reason::WorkLimit=>resource("declaration index work limit exceeded",at),
                 Reason::ReservedU8=>diagnostic("E0208","resolve","type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias",at),
+                Reason::ReservedI64=>diagnostic("E0208","resolve","type name i64 is reserved for the signed 64-bit primitive; rename the type or import alias",at),
             };
             assert_eq!(format!("{old:?}"), format!("{new:?}"));
             assert_eq!(old.message.capacity(), new.message.capacity());
@@ -309,6 +345,7 @@ mod layout_tests {
                 Reason::BadIdentity=>bad(at),Reason::CountOverflow=>overflow(at),
                 Reason::WorkLimit=>resource("declaration index work limit exceeded",at),
                 Reason::ReservedU8=>diagnostic("E0208","resolve","type name u8 is reserved for the unsigned-byte primitive; rename the type or import alias",at),
+                Reason::ReservedI64=>diagnostic("E0208","resolve","type name i64 is reserved for the signed 64-bit primitive; rename the type or import alias",at),
             }
                     })
                 });

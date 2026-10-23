@@ -181,6 +181,32 @@ enum Rvalue {
         right: Operand,
         operator_span: Span,
     },
+    I64(i64),
+    WidenI64 {
+        operand: Operand,
+        name_span: Span,
+        source_expr: crate::frontend::ast::ExprId,
+    },
+    CheckedI64ToI32 {
+        operand: Operand,
+        name_span: Span,
+        source_expr: crate::frontend::ast::ExprId,
+    },
+    CheckedI64ToU8 {
+        operand: Operand,
+        name_span: Span,
+        source_expr: crate::frontend::ast::ExprId,
+    },
+    CheckedNegateI64 {
+        operand: Operand,
+        operator_span: Span,
+    },
+    CheckedI64 {
+        op: hir::ArithmeticOp,
+        left: Operand,
+        right: Operand,
+        operator_span: Span,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Terminator {
@@ -344,6 +370,43 @@ impl std::fmt::Display for Scalar {
         }
     }
 }
+
+/// Typed results may carry a full-width integer; the closed scalar ABI retains
+/// its original representation for existing programs and private wire formats.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RuntimeScalar {
+    Narrow(Scalar),
+    I64(i64),
+}
+impl From<Scalar> for RuntimeScalar {
+    fn from(value: Scalar) -> Self {
+        Self::Narrow(value)
+    }
+}
+impl RuntimeScalar {
+    pub(super) fn narrow(self) -> Option<Scalar> {
+        match self {
+            Self::Narrow(value) => Some(value),
+            Self::I64(_) => None,
+        }
+    }
+    pub(super) fn json(self) -> Option<String> {
+        match self {
+            Self::Narrow(value) => value.json(),
+            // Decimal text preserves the complete value in JSON consumers that
+            // represent numeric tokens using a 53-bit floating-point mantissa.
+            Self::I64(value) => Some(format!("{{\"type\":\"i64\",\"value\":\"{value}\"}}")),
+        }
+    }
+}
+impl std::fmt::Display for RuntimeScalar {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Narrow(value) => value.fmt(formatter),
+            Self::I64(value) => value.fmt(formatter),
+        }
+    }
+}
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum RunFailure {
     Entry(Option<Span>),
@@ -354,6 +417,10 @@ pub(super) enum RunFailure {
     Overflow(Span),
     DivisionByZero(Span),
     ByteRange(Span),
+    WideOverflow(Span),
+    WideDivisionByZero(Span),
+    I64ToI32Range(Span),
+    I64ToU8Range(Span),
     Internal(OirFailure),
 }
 impl RunFailure {
@@ -372,6 +439,10 @@ impl RunFailure {
             Self::Overflow(span) => ("E0604", "checked i32 arithmetic overflow", Some(span)),
             Self::DivisionByZero(span) => ("E0607", "checked i32 division by zero", Some(span)),
             Self::ByteRange(span) => ("E0610", "checked i32 to u8 conversion out of range", Some(span)),
+            Self::WideOverflow(span) => ("E0604", "checked i64 arithmetic overflow", Some(span)),
+            Self::WideDivisionByZero(span) => ("E0607", "checked i64 division by zero", Some(span)),
+            Self::I64ToI32Range(span) => ("E0610", "checked i64 to i32 conversion out of range", Some(span)),
+            Self::I64ToU8Range(span) => ("E0610", "checked i64 to u8 conversion out of range", Some(span)),
             Self::Internal(ref error) => return error.diagnostic(sources),
         };
         Diagnostic::new(

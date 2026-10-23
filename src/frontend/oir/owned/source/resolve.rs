@@ -480,6 +480,16 @@ fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diag
     }
     Ok(value)
 }
+fn decimal_i64(digits: &str, negative: bool, span: Span) -> Result<i64, Box<Diagnostic>> {
+    let mut value = 0i64;
+    for byte in digits.bytes() {
+        let digit = i64::from(byte - b'0');
+        value = value.checked_mul(10).and_then(|value| {
+            if negative { value.checked_sub(digit) } else { value.checked_add(digit) }
+        }).ok_or_else(|| error("E0203", format_args!("decimal literal is outside the i64 range [-9223372036854775808, 9223372036854775807]"), span))?;
+    }
+    Ok(value)
+}
 
 #[cfg(test)]
 pub(super) fn resolve<'src>(
@@ -2830,6 +2840,9 @@ impl<'a> Resolver<'_, 'a> {
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
+            }
+            ast::ExprKind::I64Number { digits, negative } => {
+                ExprKind::I64(decimal_i64(self.text(*digits), *negative, expr.span)?)
             }
             ast::ExprKind::Unit => ExprKind::Unit,
             ast::ExprKind::Name(span) => {

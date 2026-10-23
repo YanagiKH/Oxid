@@ -44,7 +44,7 @@ impl FixedArrayTy {
     ) -> Result<Self, DeclarationError> {
         if !matches!(
             element,
-            hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit
+            hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit | hir::Ty::I64
         ) {
             return Err(DeclarationError::TypeMismatch);
         }
@@ -148,7 +148,11 @@ impl BorrowedSlot {
                 BorrowedSlotRepr::FixedArray(array)
             }
             BorrowedTy::ScalarSlice(
-                element @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit),
+                element @ (hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64),
             ) => BorrowedSlotRepr::ScalarSlice(element),
         }))
     }
@@ -325,6 +329,7 @@ impl Layout {
         match ty {
             hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => Self { size: 1, align: 1 },
             hir::Ty::I32 => Self { size: 4, align: 4 },
+            hir::Ty::I64 => Self { size: 8, align: 8 },
         }
     }
 }
@@ -815,9 +820,9 @@ impl Declarations {
         match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
-            BorrowedTy::ScalarSlice(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit) => {
-                Ok(())
-            }
+            BorrowedTy::ScalarSlice(
+                hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit | hir::Ty::I64,
+            ) => Ok(()),
         }
     }
     pub(super) fn same_borrowed_type(
@@ -1238,7 +1243,7 @@ where
             fields = limited_add(fields, 1, limits.fields, "field declarations")?;
             if !matches!(
                 ty,
-                hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit
+                hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit | hir::Ty::I64
             ) {
                 return Err(DeclarationError::TypeMismatch);
             }

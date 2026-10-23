@@ -139,6 +139,15 @@ impl<'s> Visitor<'s> {
                     }
                     | Rvalue::U8ToI32 {
                         operand, name_span, ..
+                    }
+                    | Rvalue::WidenI64 {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedI64ToI32 {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedI64ToU8 {
+                        operand, name_span, ..
                     } => {
                         self.has_conversions = true;
                         self.span(operand.span)?;
@@ -149,6 +158,10 @@ impl<'s> Visitor<'s> {
                         operator_span,
                     }
                     | Rvalue::NotBool {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::CheckedNegateI64 {
                         operand,
                         operator_span,
                     } => {
@@ -167,12 +180,22 @@ impl<'s> Visitor<'s> {
                         right,
                         operator_span,
                         ..
+                    }
+                    | Rvalue::CheckedI64 {
+                        left,
+                        right,
+                        operator_span,
+                        ..
                     } => {
                         self.span(left.span)?;
                         self.span(right.span)?;
                         self.span(*operator_span)?;
                     }
-                    Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::U8(_) | Rvalue::Unit => (),
+                    Rvalue::Bool(_)
+                    | Rvalue::I32(_)
+                    | Rvalue::I64(_)
+                    | Rvalue::U8(_)
+                    | Rvalue::Unit => (),
                 }
             }
             Statement::Initialize { place, value, span } => {
@@ -240,6 +263,11 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
             operand,
             name_span,
             source_expr,
+        }
+        | Rvalue::CheckedI64ToU8 {
+            operand,
+            name_span,
+            source_expr,
         } => (
             ast::ConversionOp::ToU8Checked,
             operand,
@@ -251,6 +279,21 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
             name_span,
             source_expr,
         } => (ast::ConversionOp::ToI32, operand, name_span, source_expr),
+        Rvalue::WidenI64 {
+            operand,
+            name_span,
+            source_expr,
+        } => (ast::ConversionOp::ToI64, operand, name_span, source_expr),
+        Rvalue::CheckedI64ToI32 {
+            operand,
+            name_span,
+            source_expr,
+        } => (
+            ast::ConversionOp::ToI32Checked,
+            operand,
+            name_span,
+            source_expr,
+        ),
         _ => return Ok(()),
     };
     macro_rules! inspect {
@@ -299,6 +342,8 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
     let expected = match operation {
         ast::ConversionOp::ToU8Checked => "to_u8_checked",
         ast::ConversionOp::ToI32 => "to_i32",
+        ast::ConversionOp::ToI64 => "to_i64",
+        ast::ConversionOp::ToI32Checked => "to_i32_checked",
     };
     if !inspect!(name.len() == expected.len()) {
         return Err(bad());

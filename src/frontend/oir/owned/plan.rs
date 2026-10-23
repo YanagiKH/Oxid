@@ -129,12 +129,16 @@ pub(super) struct ExecutionPlan<'a> {
     functions: Vec<FunctionPlan>,
     metadata_bytes: u32,
     dynamic_resources: bool,
+    wide_scalars: bool,
 }
 const _: () = assert!(
     size_of::<ExecutionPlan<'_>>()
         == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
 );
 impl<'a> ExecutionPlan<'a> {
+    pub(super) fn uses_wide_scalars(&self) -> bool {
+        self.wide_scalars
+    }
     pub(super) fn uses_dynamic_resources(&self) -> bool {
         self.dynamic_resources
     }
@@ -304,6 +308,16 @@ impl<'a> ExecutionPlan<'a> {
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
         let functions = witness.functions();
+        let wide_scalars = functions.iter().any(|function| {
+            function.result == ValueTy::Scalar(hir::Ty::I64)
+                || function.locals.iter().any(|local| local.ty == hir::Ty::I64)
+                || function.places.iter().any(|place| place.ty == hir::Ty::I64)
+        });
+        let scalar_bytes = if wide_scalars {
+            size_of::<Option<RuntimeScalar>>()
+        } else {
+            size_of::<Option<Scalar>>()
+        };
         let mut dynamic_resources = witness.has_experimental_operations()
             || witness.declarations().has_resource_declarations();
         let mut metadata_bytes = mul(functions.len(), size_of::<FunctionPlan>())?;
@@ -330,11 +344,11 @@ impl<'a> ExecutionPlan<'a> {
                     )?;
                 }
             }
-            largest_frame = largest_frame.max(usage(witness, f)?.expanded_cells);
+            largest_frame = largest_frame.max(usage(witness, f, scalar_bytes)?.expanded_cells);
         }
         // Conservative maxima preflight all operation-cost additions before reservation.
         for f in functions {
-            let u = usage(witness, f)?;
+            let u = usage(witness, f, scalar_bytes)?;
             add(
                 add(add(add(1, mul(2, u.owner_cells)?)?, u.loans)?, u.calls)?,
                 u.references,
@@ -352,7 +366,7 @@ impl<'a> ExecutionPlan<'a> {
         }
         let mut plans = reserve(functions.len())?;
         for f in functions {
-            let current_usage = usage(witness, f)?;
+            let current_usage = usage(witness, f, scalar_bytes)?;
             let mut owner_offsets = reserve(f.owners.len())?;
             let mut next = 0;
             for owner in &f.owners {
@@ -421,6 +435,7 @@ impl<'a> ExecutionPlan<'a> {
             metadata_bytes: u32::try_from(metadata_bytes)
                 .map_err(|_| AdmissionFailure::new("owned plan bytes", None))?,
             dynamic_resources,
+            wide_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
         for f in functions {
@@ -461,6 +476,7 @@ fn width(witness: &VerifiedOwnedProgram, f: &RawOwnedFunction, o: OwnerPlaceId) 
 fn usage(
     witness: &VerifiedOwnedProgram,
     f: &RawOwnedFunction,
+    scalar_bytes: usize,
 ) -> Result<FrameUsage, AdmissionFailure> {
     let mut scratch_bytes = 0;
     if witness.builtin_function() == Some(f.id) {
@@ -469,7 +485,7 @@ fn usage(
     if witness.builtin_output_function() == Some(f.id) {
         scratch_bytes = add(scratch_bytes, builtins::OUTPUT_SCRATCH_BYTES)?;
     }
-    frame_usage(witness.declarations(), f, scratch_bytes)
+    frame_usage(witness.declarations(), f, scratch_bytes, scalar_bytes)
 }
 
 /// Physical accounting over declarations established by the plan's witness.
@@ -477,6 +493,7 @@ fn frame_usage(
     declarations: &Declarations,
     f: &RawOwnedFunction,
     scratch_bytes: usize,
+    scalar_bytes: usize,
 ) -> Result<FrameUsage, AdmissionFailure> {
     let mut u = FrameUsage {
         scalar_slots: add(f.locals.len(), f.places.len())?,
@@ -504,10 +521,7 @@ fn frame_usage(
     u.payload_bytes = add(u.payload_bytes, scratch_bytes)?;
     u.expanded_cells = add(add(u.scalar_slots, u.arguments)?, u.owner_cells)?;
     u.reference_bytes = add(
-        mul(
-            add(u.scalar_slots, u.arguments)?,
-            size_of::<Option<Scalar>>(),
-        )?,
+        mul(add(u.scalar_slots, u.arguments)?, scalar_bytes)?,
         u.payload_bytes,
     )?;
     for (count, cells, bytes) in [

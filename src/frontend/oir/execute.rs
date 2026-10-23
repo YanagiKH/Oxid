@@ -354,6 +354,14 @@ fn execute_with_execution(
                 }
             };
             let value = match assign.value {
+                Rvalue::I64(_)
+                | Rvalue::WidenI64 { .. }
+                | Rvalue::CheckedI64ToI32 { .. }
+                | Rvalue::CheckedI64ToU8 { .. }
+                | Rvalue::CheckedNegateI64 { .. }
+                | Rvalue::CheckedI64 { .. } => {
+                    return Err(internal(FailureKind::TypeMismatch, Some(assign.span)));
+                }
                 Rvalue::U8(value) => Scalar::U8(value),
                 Rvalue::Load(place) => load(active, place)?,
                 Rvalue::CheckedI32ToU8 {

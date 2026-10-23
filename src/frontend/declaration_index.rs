@@ -1327,6 +1327,12 @@ impl<'i, 's> QuerySession<'i, 's> {
                     if compare_bytes(spelling, "u8", self.work, name)? == Ordering::Equal {
                         return Ok(ValueTy::Scalar(Ty::U8));
                     }
+                    if spelling.len() == 3
+                        && spelling.as_bytes()[0] == b'i'
+                        && compare_bytes(spelling, "i64", self.work, name)? == Ordering::Equal
+                    {
+                        return Ok(ValueTy::Scalar(Ty::I64));
+                    }
                 }
                 self.lookup_nominal_type(
                     requester,
@@ -1363,6 +1369,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             ast::ArrayElementTypeSyntax::I32 => Ty::I32,
             ast::ArrayElementTypeSyntax::U8 => Ty::U8,
             ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
+            ast::ArrayElementTypeSyntax::I64 => Ty::I64,
         };
         FixedArrayTy::check(element, usize::from(array.length)).map_err(|_| bad(at))
     }
@@ -1406,6 +1413,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     ast::ArrayElementTypeSyntax::I32 => Ty::I32,
                     ast::ArrayElementTypeSyntax::U8 => Ty::U8,
                     ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
+                    ast::ArrayElementTypeSyntax::I64 => Ty::I64,
                 };
                 (mutable, BorrowedTy::ScalarSlice(element))
             }

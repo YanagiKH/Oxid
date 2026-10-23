@@ -83,6 +83,32 @@ Typed Git and registry dependencies remain unimplemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 
+## 64-bit signed integers
+
+Use `i64` when a signed value needs more than 32 bits:
+
+```text
+fn main() -> i64 {
+    let bytes = 9007199254740993i64;
+    return bytes + 1i64;
+}
+```
+
+The result is exactly `9007199254740994`. Literals need the `i64` suffix;
+unsuffixed literals remain `i32`, with no implicit conversion. Named `i32`
+and `u8` values support `.to_i64()`. Use `.to_i32_checked()` or
+`.to_u8_checked()` to narrow an `i64`; out-of-range values report E0610.
+
+Arithmetic and comparisons require operands of the same type. Arithmetic
+overflow reports E0604; division or remainder by zero reports E0607. Division
+truncates toward zero. The minimum value divided by −1, its remainder by −1,
+and negating the minimum value also report overflow.
+
+`i64` works in record fields, enum payloads, fixed arrays and borrowed slices.
+Indexes and lengths remain `i32`. Result-mode `main() -> i64` prints decimal
+text; JSON results use a decimal string to preserve all bits. See the
+[complete integer contract](../rfcs/0050-checked-i64-integers.md).
+
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept

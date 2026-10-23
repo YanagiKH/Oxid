@@ -56,7 +56,7 @@ fn io_failure(failure: binary_io::Failure, span: Span) -> OwnedRunFailure {
         binary_io::Failure::Host => OwnedRunFailure::BinaryHost(span),
     }
 }
-impl Machine<'_, '_> {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn buffer_at(
         &self,
         root: OwnerKey,
@@ -269,7 +269,7 @@ impl Machine<'_, '_> {
     ) {
         match (place, value) {
             (ResultPlace::Scalar(local), OperationValue::Scalar(value)) => {
-                self.frames[frame].slots[local.0] = Some(value)
+                self.frames[frame].slots[local.0] = Some(value.into())
             }
             (
                 ResultPlace::Owner {
@@ -306,6 +306,11 @@ impl Machine<'_, '_> {
                 span,
             },
         )
+        .and_then(|value| {
+            value
+                .narrow()
+                .ok_or_else(|| bad("builtin scalar type", span))
+        })
     }
     fn experimental_i32(&self, frame: usize, local: usize, span: Span) -> Result<i32> {
         match self.experimental_scalar(frame, local, span)? {
@@ -443,7 +448,7 @@ impl Machine<'_, '_> {
     }
 }
 
-impl Machine<'_, '_> {
+impl<V: StoredValue> ValueMachine<'_, '_, V> {
     pub(super) fn stage_byte_view(
         &self,
         frame: usize,
@@ -525,7 +530,7 @@ impl Machine<'_, '_> {
         else {
             return Err(bad("dynamic byte view", span));
         };
-        let Scalar::I32(index) = self.read(frame, operand)? else {
+        let Some(Scalar::I32(index)) = self.read(frame, operand)?.narrow() else {
             return Err(bad("byte index type", span));
         };
         if index < 0 || index >= end - start {
@@ -537,7 +542,11 @@ impl Machine<'_, '_> {
             .map_err(|failure| heap_failure(failure, span))?[index as usize];
         self.write(frame, destination, Scalar::U8(byte), span)?;
         #[cfg(test)]
-        self.record_event(Event::ReadIndex(root, index as usize, Scalar::U8(byte)));
+        self.record_event(Event::ReadIndex(
+            root,
+            index as usize,
+            Scalar::U8(byte).into(),
+        ));
         let _ = root;
         Ok(())
     }
@@ -558,10 +567,10 @@ impl Machine<'_, '_> {
         else {
             return Err(bad("dynamic byte view", span));
         };
-        let Scalar::U8(byte) = self.read(frame, value)? else {
+        let Some(Scalar::U8(byte)) = self.read(frame, value)?.narrow() else {
             return Err(bad("byte value type", span));
         };
-        let Scalar::I32(index) = self.read(frame, operand)? else {
+        let Some(Scalar::I32(index)) = self.read(frame, operand)?.narrow() else {
             return Err(bad("byte index type", span));
         };
         if index < 0 || index >= end - start {
@@ -571,7 +580,11 @@ impl Machine<'_, '_> {
             .range_mut(&descriptor, start, end)
             .map_err(|failure| heap_failure(failure, span))?[index as usize] = byte;
         #[cfg(test)]
-        self.record_event(Event::WriteIndex(root, index as usize, Scalar::U8(byte)));
+        self.record_event(Event::WriteIndex(
+            root,
+            index as usize,
+            Scalar::U8(byte).into(),
+        ));
         let _ = root;
         Ok(())
     }
