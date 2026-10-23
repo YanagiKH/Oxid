@@ -7,18 +7,27 @@ use std::{
     os::unix::fs::{symlink, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex, MutexGuard,
+    },
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+static FIXTURE_EXECUTION: Mutex<()> = Mutex::new(());
 
 struct Fixture {
+    _execution: MutexGuard<'static, ()>,
     root: PathBuf,
     compiler: PathBuf,
     tools: PathBuf,
 }
 impl Fixture {
     fn new() -> Self {
+        // Keep copied compiler descriptors out of concurrent fixture children.
+        let execution = FIXTURE_EXECUTION
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let root = std::env::temp_dir().join(format!(
             "oxid-reproducible-{}-{}-目錄",
             std::process::id(),
@@ -28,6 +37,7 @@ impl Fixture {
         let compiler = root.join("oxid");
         fs::copy(env!("CARGO_BIN_EXE_oxid"), &compiler).unwrap();
         let fixture = Self {
+            _execution: execution,
             tools: root.join("tools"),
             root,
             compiler,
