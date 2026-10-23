@@ -10,13 +10,18 @@ use std::{
     os::unix::fs::{symlink, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex, MutexGuard,
+    },
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+static FIXTURE_EXECUTION: Mutex<()> = Mutex::new(());
 const HEADER: usize = 88;
 
 struct Fixture {
+    _execution: MutexGuard<'static, ()>,
     root: PathBuf,
     compiler: PathBuf,
     app: PathBuf,
@@ -27,6 +32,10 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        // Keep copied compiler descriptors out of concurrent fixture children.
+        let execution = FIXTURE_EXECUTION
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         assert!(
             Path::new("/usr/bin/strace").is_file(),
             "install strace for native cache acceptance"
@@ -90,6 +99,7 @@ impl Fixture {
             .collect();
         environment.push(("OXID_LLVM_BIN".into(), tools.clone().into_os_string()));
         Self {
+            _execution: execution,
             root,
             compiler,
             app,
