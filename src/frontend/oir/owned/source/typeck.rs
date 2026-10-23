@@ -182,7 +182,6 @@ impl TypedOwnedProgram<'_> {
         }
         Ok(inventory.finish())
     }
-    #[cfg(test)]
     pub(super) fn work(&self) -> &crate::frontend::declaration_index::WorkMeter {
         self.program.work()
     }
@@ -2319,25 +2318,46 @@ fn expression_type(
                 .debit(1, expr.span, "enum constructor type")?;
             let enumeration = program.index().enum_view(variant.enumeration)?;
             let declared = enumeration.variant(*variant)?;
-            match (*payload, declared.payload()) {
-                (None, None) => {}
-                (Some(payload), Some(expected)) => {
-                    let actual = child!(payload)?;
-                    if actual != scalar(expected) {
-                        return Err(mismatch(
-                            program,
-                            scalar(expected),
-                            actual,
-                            function.expressions[payload.0].span,
-                        ));
-                    }
-                }
-                _ => {
+            if declared.has_owned_payload() {
+                let (Some(payload), Some(expected)) =
+                    (*payload, declared.value_payload(program.work())?)
+                else {
                     return Err(error(
                         "E0300",
                         "enum constructor payload shape differs from declaration",
                         expr.span,
-                    ))
+                    ));
+                };
+                let actual = child!(payload)?;
+                if actual != expected {
+                    return Err(mismatch(
+                        program,
+                        expected,
+                        actual,
+                        function.expressions[payload.0].span,
+                    ));
+                }
+            } else {
+                match (*payload, declared.payload()) {
+                    (None, None) => {}
+                    (Some(payload), Some(expected)) => {
+                        let actual = child!(payload)?;
+                        if actual != scalar(expected) {
+                            return Err(mismatch(
+                                program,
+                                scalar(expected),
+                                actual,
+                                function.expressions[payload.0].span,
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(error(
+                            "E0300",
+                            "enum constructor payload shape differs from declaration",
+                            expr.span,
+                        ))
+                    }
                 }
             }
             ValueTy::Owned(AggregateTy::Enum(variant.enumeration))
@@ -2907,6 +2927,29 @@ fn check_enum_match(
         }
         *word |= bit;
         let variant = declared.variant(arm.variant)?;
+        if variant.has_owned_payload() {
+            let (Some(payload), Some(binding)) =
+                (variant.value_payload(program.work())?, arm.binding)
+            else {
+                return Err(error(
+                    "E0300",
+                    "match arm payload binding differs from declaration",
+                    arm.span,
+                ));
+            };
+            let declaration = function
+                .bindings
+                .get(binding.0)
+                .ok_or_else(|| paid_state(arm.span))?;
+            if declaration.scope != arm.body
+                || declaration.parameter_position.is_some()
+                || declaration.mutable
+                || declaration.annotation != Some(payload)
+            {
+                return Err(paid_state(arm.span));
+            }
+            continue;
+        }
         match (variant.payload(), arm.binding) {
             (None, None) => {}
             (Some(payload), Some(binding)) => {
@@ -2951,6 +2994,24 @@ fn initialize_enum_arm(
             .bindings
             .get(binding.0)
             .ok_or_else(|| paid_state(arm.span))?;
+        if let Some(ValueTy::Owned(payload)) = declaration.annotation {
+            let slot = bindings
+                .get_mut(binding.0)
+                .ok_or_else(|| paid_state(arm.span))?;
+            if slot.is_some() {
+                return Err(paid_state(arm.span));
+            }
+            *slot = Some(ParameterTy::Value(ValueTy::Owned(payload)));
+            #[cfg(test)]
+            program
+                .work()
+                .observe(crate::frontend::declaration_index::Observation::Binding {
+                    function: function.id,
+                    origin: declaration.span,
+                    ty: ParameterTy::Value(ValueTy::Owned(payload)),
+                });
+            return Ok(());
+        }
         let Some(ValueTy::Scalar(payload)) = declaration.annotation else {
             return Err(paid_state(arm.span));
         };

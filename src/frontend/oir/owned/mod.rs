@@ -205,10 +205,22 @@ enum OwnedInstruction {
         variant: VariantId,
         payload: Option<Operand>,
     },
+    ConstructOwnedEnum {
+        destination: OwnerPlaceId,
+        variant: VariantId,
+        payload: OwnerPlaceId,
+    },
     ConsumeVariant {
         match_id: MatchId,
         arm: usize,
         destination: Option<LocalId>,
+    },
+    // First instruction of a guarded arm. Atomically starts and initializes a
+    // distinct immutable binding; no separate StorageLive is permitted.
+    ConsumeOwnedVariant {
+        match_id: MatchId,
+        arm: usize,
+        destination: OwnerPlaceId,
     },
     ConstructComposite {
         destination: OwnerPlaceId,
@@ -504,6 +516,8 @@ mod negation_raw_tests;
 
 #[cfg(test)]
 mod enum_layout_tests;
+#[cfg(test)]
+mod owned_enum_tests;
 
 #[cfg(test)]
 mod enum_admission_tests;

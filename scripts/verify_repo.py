@@ -48,7 +48,34 @@ TYPED_MANIFEST_PROJECTS = {
         "apps/byte-count/packages/counts/src/lib.ox",
         "apps/byte-count/packages/report/src/lib.ox",
     ),
+    "apps/frame-filter": (
+        "apps/frame-filter/src/main.ox",
+        "apps/frame-filter/tests/codec.ox",
+        "apps/frame-filter/packages/codec/src/lib.ox",
+        "apps/frame-filter/packages/output/src/lib.ox",
+    ),
+    "examples/projects/owned_enum_payload_acceptance/ready": (
+        "examples/projects/owned_enum_payload_acceptance/ready/src/main.ox",
+        "examples/projects/owned_enum_payload_acceptance/ready/src/flow.ox",
+    ),
+    "examples/projects/owned_enum_payload_acceptance/failed": (
+        "examples/projects/owned_enum_payload_acceptance/failed/src/main.ox",
+        "examples/projects/owned_enum_payload_acceptance/failed/src/flow.ox",
+    ),
+    "examples/projects/owned_enum_payload_acceptance/values": (
+        "examples/projects/owned_enum_payload_acceptance/values/src/main.ox",
+    ),
+    "examples/projects/owned_enum_payload_acceptance/library": (
+        "examples/projects/owned_enum_payload_acceptance/library/src/lib.ox",
+        "examples/projects/owned_enum_payload_acceptance/library/src/model.ox",
+    ),
 }
+# Library roots have no executable entry point; their dependent applications
+# exercise the public interface and their own manifest check covers unused code.
+TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
+    "examples/projects/owned_enum_payload_acceptance/library",
+)
+TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
@@ -903,7 +930,18 @@ def source_plan(sources: list[Path], root: Path = ROOT) -> tuple[list[tuple[Path
     if manifest_members & (typed_members | fixture_data | overlay_members | wide_members):
         raise RuntimeError("typed manifest application overlaps another source category")
     typed_members.update(manifest_members)
-    typed_entries.extend(manifest_entries)
+    if (len(TYPED_CHECK_ONLY_MANIFEST_PROJECTS) != len(set(TYPED_CHECK_ONLY_MANIFEST_PROJECTS))
+            or not set(TYPED_CHECK_ONLY_MANIFEST_PROJECTS) <= TYPED_MANIFEST_PROJECTS.keys()):
+        raise RuntimeError("invalid check-only typed manifest project inventory")
+    if (len(TYPED_TESTED_MANIFEST_PROJECTS) != len(set(TYPED_TESTED_MANIFEST_PROJECTS))
+            or not set(TYPED_TESTED_MANIFEST_PROJECTS) <= TYPED_MANIFEST_PROJECTS.keys()
+            or set(TYPED_TESTED_MANIFEST_PROJECTS) & set(TYPED_CHECK_ONLY_MANIFEST_PROJECTS)):
+        raise RuntimeError("invalid tested typed manifest project inventory")
+    for entry in manifest_entries:
+        if entry.relative_to(root).as_posix() in TYPED_CHECK_ONLY_MANIFEST_PROJECTS:
+            typed_check_only.append(entry)
+        else:
+            typed_entries.append(entry)
     legacy = [(source, False) for source in sources
               if source not in typed_members | fixture_data | overlay_members | wide_members]
     return legacy + [(source, True) for source in typed_entries + typed_check_only], typed_entries, len(typed_members)
@@ -921,6 +959,8 @@ def verify_test_fixture_registration(root: Path = ROOT) -> None:
     # Typed projects below the legacy test search roots run only through their
     # explicit typed root. Never exclude neighboring files or whole directories.
     expected.update(member for members in TYPED_PROJECTS.values() for member in members
+                    if Path(member).parts[0] in ("tests", "examples"))
+    expected.update(member for members in TYPED_MANIFEST_PROJECTS.values() for member in members
                     if Path(member).parts[0] in ("tests", "examples"))
     if (not isinstance(configured, dict) or set(configured) != expected
             or any(value is not True for value in configured.values())):
@@ -975,7 +1015,8 @@ def main() -> int:
         for source in typed_entries:
             if source in manifest_entries:
                 run([str(executable), "run"], cwd=source, input_text="")
-                run([str(executable), "test"], cwd=source, input_text="")
+                if source.relative_to(ROOT).as_posix() in TYPED_TESTED_MANIFEST_PROJECTS:
+                    run([str(executable), "test"], cwd=source, input_text="")
             else:
                 run([str(executable), "run", str(source), "--edition=typed-preview"], cwd=temp)
 
@@ -991,7 +1032,9 @@ def main() -> int:
         f"{len(typed_entries)} typed entry runs; {overlay_member_count} v2 overlay source members / "
         f"{len(TYPED_OVERLAY_ROOTS)} materialized typed checks in a {len(overlay_sources)}-module closure; "
         f"{wide_count} wide parser overlay members / 2 materialized typed checks; "
-        f"{len(manifest_entries)} manifest applications checked, run and tested)"
+        f"{len(manifest_entries)} manifest projects checked; "
+        f"{len(manifest_entries) - len(TYPED_CHECK_ONLY_MANIFEST_PROJECTS)} run; "
+        f"{len(TYPED_TESTED_MANIFEST_PROJECTS)} tested)"
     )
     return 0
 

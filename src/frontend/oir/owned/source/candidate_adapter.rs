@@ -279,7 +279,10 @@ fn instruction(value: &OwnedInstruction) -> String {
         OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")
         }
-        OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
+        OwnedInstruction::ConstructEnum { .. }
+        | OwnedInstruction::ConsumeVariant { .. }
+        | OwnedInstruction::ConstructOwnedEnum { .. }
+        | OwnedInstruction::ConsumeOwnedVariant { .. } => {
             unreachable!("enum source gate")
         }
         // This frozen scalar-record observer is not the composition qualification path.

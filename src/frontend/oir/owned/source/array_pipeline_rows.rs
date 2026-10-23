@@ -945,7 +945,10 @@ impl fmt::Display for Instruction<'_> {
             I::ReadStdin { .. } | I::WriteStdout { .. } => {
                 unreachable!("builtin effect source gate")
             }
-            I::ConstructEnum { .. } | I::ConsumeVariant { .. } => unreachable!("enum source gate"),
+            I::ConstructEnum { .. }
+            | I::ConsumeVariant { .. }
+            | I::ConstructOwnedEnum { .. }
+            | I::ConsumeOwnedVariant { .. } => unreachable!("enum source gate"),
             I::ConstructComposite {
                 destination,
                 fields,

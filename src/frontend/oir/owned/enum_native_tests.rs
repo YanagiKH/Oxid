@@ -3,6 +3,107 @@
 use super::*;
 use crate::frontend::oir::owned::enum_consumer_fixtures as e;
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires LLVM 19.1.7; executes emitted fault controls with O0 and O2"]
+fn owned_enum_native_late_invalid_leaf_preserves_destination_at_both_optimizations() {
+    use crate::frontend::build_config::{NativeBuildSettings, NativeOptimization};
+    let scratch = Scratch::new();
+    for (site, source, destination, bytes, corrupt_offset, first_offset, prefix, failure_label) in [
+        (
+            0,
+            1,
+            2,
+            16,
+            8,
+            8,
+            "f0_b0_i7_owned",
+            "f0_b0_i7_owned_variant0_validate1_error",
+        ),
+        (
+            1,
+            2,
+            3,
+            16,
+            12,
+            8,
+            "f0_b0_i9",
+            "f0_b0_i9_nested1_variant0_validate1_error",
+        ),
+        (
+            2,
+            3,
+            4,
+            12,
+            12,
+            4,
+            "f0_b1_i0",
+            "f0_b1_i0_owned_variant0_validate1_error",
+        ),
+    ] {
+        let (sources, raw, spans) = execute::owned_enum_payload_tests::late_leaf_fixture(site == 2);
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let module = native_module(&witness, Some(hir::DefId(0)), &sources).unwrap();
+        let needle = format!("  %{prefix}_tag = load i32, ptr %o{source}, align 1\n");
+        let marker = format!("{failure_label}:\n");
+        assert_eq!(module.matches(&marker).count(), 1);
+        let mut observe = String::new();
+        for byte in 0..bytes {
+            observe.push_str(&format!("  %observed_ptr{byte} = getelementptr i8, ptr %o{destination}, i64 {byte}\n  %observed_byte{byte} = load volatile i8, ptr %observed_ptr{byte}, align 1\n  %observed_value{byte} = zext i8 %observed_byte{byte} to i32\n  %observed_print{byte} = call i32 @__oxid_print_i32(i32 %observed_value{byte})\n"));
+        }
+        let observed = module.replacen(&marker, &format!("{marker}{observe}"), 1);
+        for optimization in [NativeOptimization::O0, NativeOptimization::O2] {
+            for (control, corrupt_byte, partial_copy) in [
+                ("valid", 1, false),
+                ("late-fault", 2, false),
+                ("partial-copy-control", 2, true),
+            ] {
+                let mut insert = String::new();
+                for byte in 0..bytes {
+                    insert.push_str(&format!("  %seed_ptr{byte} = getelementptr i8, ptr %o{destination}, i64 {byte}\n  store i8 165, ptr %seed_ptr{byte}, align 1\n"));
+                }
+                insert.push_str(&format!("  %corrupt_ptr = getelementptr i8, ptr %o{source}, i64 {corrupt_offset}\n  store i8 {corrupt_byte}, ptr %corrupt_ptr, align 1\n"));
+                if partial_copy {
+                    // Deliberately simulate copying the valid first i32 leaf
+                    // before the later bool is checked. The byte observer must
+                    // distinguish this mutant from the untouched destination.
+                    insert.push_str(&format!("  %partial_ptr = getelementptr i8, ptr %o{destination}, i64 {first_offset}\n  store i32 42, ptr %partial_ptr, align 1\n"));
+                }
+                let harness = before(&observed, &needle, &insert);
+                let path = scratch.0.join(format!(
+                    "owned-enum-late-leaf-{site}-{optimization:?}-{control}"
+                ));
+                crate::frontend::native::compile_with_settings(
+                    &harness,
+                    path.to_str().unwrap(),
+                    &NativeBuildSettings::with_optimization(false, optimization),
+                )
+                .unwrap();
+                let output = scratch.run(&path, &[]);
+                if corrupt_byte == 1 {
+                    assert_result(output, b"42\n", b"", 0);
+                } else {
+                    let mut expected_bytes = vec![165; bytes];
+                    if partial_copy {
+                        expected_bytes[first_offset..first_offset + 4]
+                            .copy_from_slice(&[42, 0, 0, 0]);
+                    }
+                    let expected = expected_bytes
+                        .iter()
+                        .map(|byte| format!("{byte}\n"))
+                        .collect::<String>();
+                    assert_result(
+                        output,
+                        expected.as_bytes(),
+                        invariant("enum payload", spans[site], &sources).as_bytes(),
+                        1,
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn checked(raw: RawOwnedProgram, sources: &SourceMap, guarded: bool) -> VerifiedOwnedProgram {
     let mut raw = raw;
     if guarded {

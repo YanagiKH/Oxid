@@ -722,6 +722,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                                     payload: Some(child),
                                     ..
                                 } => {
+                                    if matches!(self.view.expression_ty(*child), ValueTy::Owned(_))
+                                    {
+                                        frames.push(ExprFrame::StageField(*child), cause)?;
+                                    }
                                     frames.push(ExprFrame::Visit(*child), cause)?;
                                 }
                                 source::ExprKind::Group(inner)
@@ -1137,6 +1141,40 @@ impl<'a, 'b> Walk<'a, 'b> {
             match expression.kind {
                 source::ExprKind::ConstructEnum { variant, payload } => {
                     require(record == AggregateTy::Enum(variant.enumeration), span)?;
+                    if let Some(child) = payload.filter(|child| {
+                        matches!(self.view.expression_ty(*child), ValueTy::Owned(_))
+                    }) {
+                        // StageField normalizes every owned child to a complete
+                        // temporary, including a call result through groups.
+                        let EvaluatedValue::Owned(payload) = self.value(child)? else {
+                            return Err(invariant(span));
+                        };
+                        let destination = self.owner(record, OwnerKind::Temporary, span)?;
+                        self.statement(
+                            OwnedInstruction::StorageLive(destination),
+                            span,
+                            span,
+                            cause,
+                        )?;
+                        self.statement(
+                            OwnedInstruction::ConstructOwnedEnum {
+                                destination,
+                                variant,
+                                payload,
+                            },
+                            span,
+                            span,
+                            cause,
+                        )?;
+                        self.end_value(
+                            payload,
+                            span,
+                            self.view.hir().expressions[child.0].span,
+                            cause,
+                        )?;
+                        self.set_owned(id, destination);
+                        return Ok(());
+                    }
                     // Complete the scalar child before the enum lifetime begins.
                     let payload = payload.map(|child| self.operand(child)).transpose()?;
                     let destination = self.owner(record, OwnerKind::Temporary, span)?;
@@ -1545,7 +1583,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                         Some(BlockId(budget::add(cursor.entry_base.0, cursor.next)?)),
                         match_span,
                     )?;
-                    let destination = if let Some(binding) = arm.binding {
+                    if let Some(binding) = arm.binding.filter(|binding| {
+                        matches!(
+                            self.view.binding_ty(*binding),
+                            ParameterTy::Value(ValueTy::Owned(_))
+                        )
+                    }) {
                         let declaration = &f.bindings[binding.0];
                         require(
                             !declaration.mutable
@@ -1553,25 +1596,62 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 && declaration.scope == arm.body,
                             match_span,
                         )?;
-                        let BindingLocation::ScalarValue(local) =
-                            self.location(binding, match_span)?
+                        let ParameterTy::Value(ValueTy::Owned(aggregate)) =
+                            self.view.binding_ty(binding)
                         else {
                             return Err(invariant(match_span));
                         };
-                        Some(local)
+                        let destination = self.owner(
+                            aggregate,
+                            OwnerKind::Local { mutable: false },
+                            declaration.span,
+                        )?;
+                        if let Some(out) = &mut self.output {
+                            require(out.bindings[binding.0].is_none(), match_span)?;
+                            out.bindings[binding.0] = Some(BindingLocation::Owner(destination));
+                        }
+                        // This selected arm starts and initializes its one owner
+                        // atomically. No independent StorageLive can expose it.
+                        self.statement(
+                            OwnedInstruction::ConsumeOwnedVariant {
+                                match_id: cursor.match_id,
+                                arm: cursor.next,
+                                destination,
+                            },
+                            match_span,
+                            match_span,
+                            match_span,
+                        )?;
+                        self.register(destination, match_span)?;
                     } else {
-                        None
-                    };
-                    self.statement(
-                        OwnedInstruction::ConsumeVariant {
-                            match_id: cursor.match_id,
-                            arm: cursor.next,
-                            destination,
-                        },
-                        match_span,
-                        match_span,
-                        match_span,
-                    )?;
+                        let destination = if let Some(binding) = arm.binding {
+                            let declaration = &f.bindings[binding.0];
+                            require(
+                                !declaration.mutable
+                                    && declaration.parameter_position.is_none()
+                                    && declaration.scope == arm.body,
+                                match_span,
+                            )?;
+                            let BindingLocation::ScalarValue(local) =
+                                self.location(binding, match_span)?
+                            else {
+                                return Err(invariant(match_span));
+                            };
+                            Some(local)
+                        } else {
+                            None
+                        };
+                        self.statement(
+                            OwnedInstruction::ConsumeVariant {
+                                match_id: cursor.match_id,
+                                arm: cursor.next,
+                                destination,
+                            },
+                            match_span,
+                            match_span,
+                            match_span,
+                        )?;
+                    }
                     cursor.next = budget::add(cursor.next, 1)?;
                     // Only this one sibling continuation is retained. The
                     // ordinary Finish restores arm-local lexical ownership.
@@ -2126,9 +2206,22 @@ pub(super) fn lower_with_limits(
                 &mut variants,
                 RawVariantDecl {
                     id,
-                    payload: variant
-                        .payload()
-                        .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty))),
+                    payload: if variant.has_owned_payload() {
+                        variant
+                            .value_payload(typed.work())
+                            .map_err(|error| {
+                                if error.code == "E0400" {
+                                    OwnedFailure::resource("enum payload type query work")
+                                } else {
+                                    invariant(variant.diagnostic_span())
+                                }
+                            })?
+                            .map(ParameterTy::Value)
+                    } else {
+                        variant
+                            .payload()
+                            .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty)))
+                    },
                     span: variant.diagnostic_span(),
                 },
                 enumeration.variant_count(),

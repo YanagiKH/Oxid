@@ -106,3 +106,10 @@ atomic creation/extraction with existing typed locks.
 [RFC 0039](0039-reproducible-native-builds.md) adds resolved native build settings
 and opt-in project-relative runtime diagnostics for reproducible bounded native
 builds across preserved local source layouts.
+
+[RFC 0040](0040-native-build-profiles.md) defines development and optimized
+release native builds with the same language checks and execution limits.
+
+[RFC 0041](0041-owned-enum-payloads.md) extends consuming enum matches to
+finite record, fixed-array and nested enum payloads, with whole-value ownership
+and bounded containment analysis.

@@ -71,6 +71,7 @@ def load_tests(loader, tests, pattern):
 
     def test_only_the_exact_source_pinned_modules_are_delegated_without_importing(self):
         approved = {
+            "test_bounded_byte_storage",
             "test_lexer_current_ci", "test_lexer_reservation_adapters_current",
             "test_lexer_reservation_source_current",
             "test_owned_array_native", "test_package_json_source",
@@ -97,6 +98,19 @@ def load_tests(loader, tests, pattern):
                 self.assertIn(name, result.stderr)
                 self.assertIn("cannot delegate", result.stderr)
                 self.assertIn("current test module", result.stderr)
+
+    def test_byte_registry_delegation_is_exact_and_refuses_changed_or_missing_source(self):
+        name = "test_bounded_byte_storage.py"
+        for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
+            with self.subTest(missing=source is None):
+                result = self.execute({name: source, "test_current.py": PASSING})
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn("cannot delegate", result.stderr)
+                self.assertIn(name, result.stderr)
+        result = self.execute({"test_bounded_byte_storage_extra.py": PASSING, "test_current.py": PASSING})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Ran 2 tests", result.stderr)
+        self.assertIn("test_bounded_byte_storage_extra.CurrentTest.test_passes", result.stderr)
 
     def test_current_assertion_and_import_failures_are_never_suppressed(self):
         for failing in [
