@@ -13,14 +13,65 @@ use super::{
     source::{SourceFile, SourceView, Span},
 };
 use std::collections::HashMap;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Ty {
     Bool,
     I32,
     U8,
     Unit,
     I64,
+    I8,
+    I16,
+    U16,
+    U32,
+    U64,
+    Isize,
+    Usize,
 }
+impl Ty {
+    pub const fn from_extended_integer(kind: ast::IntegerTypeSyntax) -> Self {
+        match kind {
+            ast::IntegerTypeSyntax::I8 => Self::I8,
+            ast::IntegerTypeSyntax::U8 => Self::U8,
+            ast::IntegerTypeSyntax::I16 => Self::I16,
+            ast::IntegerTypeSyntax::I32 => Self::I32,
+            ast::IntegerTypeSyntax::I64 => Self::I64,
+            ast::IntegerTypeSyntax::U16 => Self::U16,
+            ast::IntegerTypeSyntax::U32 => Self::U32,
+            ast::IntegerTypeSyntax::U64 => Self::U64,
+            ast::IntegerTypeSyntax::Isize => Self::Isize,
+            ast::IntegerTypeSyntax::Usize => Self::Usize,
+        }
+    }
+    pub const fn extended_integer(self) -> Option<ast::IntegerTypeSyntax> {
+        match self {
+            Self::I8 => Some(ast::IntegerTypeSyntax::I8),
+            Self::I16 => Some(ast::IntegerTypeSyntax::I16),
+            Self::U16 => Some(ast::IntegerTypeSyntax::U16),
+            Self::U32 => Some(ast::IntegerTypeSyntax::U32),
+            Self::U64 => Some(ast::IntegerTypeSyntax::U64),
+            Self::Isize => Some(ast::IntegerTypeSyntax::Isize),
+            Self::Usize => Some(ast::IntegerTypeSyntax::Usize),
+            _ => None,
+        }
+    }
+    pub const fn integer_bits(self) -> Option<u8> {
+        match self {
+            Self::I8 | Self::U8 => Some(8),
+            Self::I16 | Self::U16 => Some(16),
+            Self::I32 | Self::U32 => Some(32),
+            Self::I64 | Self::U64 | Self::Isize | Self::Usize => Some(64),
+            Self::Bool | Self::Unit => None,
+        }
+    }
+    pub const fn signed_integer(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize
+        )
+    }
+}
+const _: () = assert!(std::mem::size_of::<Ty>() == 1);
 impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -29,6 +80,13 @@ impl std::fmt::Display for Ty {
             Self::U8 => "u8",
             Self::Unit => "()",
             Self::I64 => "i64",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::Isize => "isize",
+            Self::Usize => "usize",
         })
     }
 }
@@ -715,6 +773,14 @@ impl<'a> Resolver<'_, 'a> {
                     "E0101",
                     "resolve",
                     "i64 requires the owned typed source path",
+                    Some(expr.span),
+                ))
+            }
+            ast::ExprKind::IntegerNumber { .. } => {
+                return Err(Diagnostic::new(
+                    "E0101",
+                    "resolve",
+                    "integer width requires the owned typed source path",
                     Some(expr.span),
                 ))
             }

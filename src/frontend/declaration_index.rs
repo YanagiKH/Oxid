@@ -1333,6 +1333,16 @@ impl<'i, 's> QuerySession<'i, 's> {
                     {
                         return Ok(ValueTy::Scalar(Ty::I64));
                     }
+                    if let Some(kind) = ast::IntegerTypeSyntax::from_spelling(spelling) {
+                        // The fixed keyword selector does not scan an arbitrary
+                        // identifier. Only its successful new primitive query
+                        // introduces additional metered comparison work.
+                        if compare_bytes(spelling, kind.spelling(), self.work, name)?
+                            == Ordering::Equal
+                        {
+                            return Ok(ValueTy::Scalar(Ty::from_extended_integer(kind)));
+                        }
+                    }
                 }
                 self.lookup_nominal_type(
                     requester,
@@ -1370,6 +1380,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             ast::ArrayElementTypeSyntax::U8 => Ty::U8,
             ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
             ast::ArrayElementTypeSyntax::I64 => Ty::I64,
+            ast::ArrayElementTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
         };
         FixedArrayTy::check(element, usize::from(array.length)).map_err(|_| bad(at))
     }
@@ -1414,6 +1425,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     ast::ArrayElementTypeSyntax::U8 => Ty::U8,
                     ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
                     ast::ArrayElementTypeSyntax::I64 => Ty::I64,
+                    ast::ArrayElementTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
                 };
                 (mutable, BorrowedTy::ScalarSlice(element))
             }

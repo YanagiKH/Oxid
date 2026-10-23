@@ -118,28 +118,14 @@ fn byte_storage_native_public_unsupported_target_has_no_artifact_effects() {
 
 #[test]
 fn byte_storage_public_excluded_spellings_fail_before_native_tools() {
-    // Owned fixed-array payloads are supported. Bare u8 payloads, numeric
-    // suffixes and repetition syntax remain excluded.
-    for (source, code, message, selected) in [
-        (
-            "enum E{V(u8)}fn main()->i32{return 0;}",
-            "E0100",
-            "only bool, i32 and () enum payloads are supported",
-            "u8",
-        ),
-        (
-            "fn main()->i32{let a=[1u8];return 0;}",
-            "E0101",
-            "unsupported numeric spelling; expected ASCII decimal literal digits",
-            "1u8",
-        ),
-        (
-            "fn f(b:u8)->i32{let a=[b;2];return 0;}",
-            "E0101",
-            "unsupported typed-preview construct `;`",
-            ";",
-        ),
-    ] {
+    // Byte enum payloads and suffixes are admitted; array repetition remains
+    // excluded and must fail before tool discovery or output replacement.
+    for (source, code, message, selected) in [(
+        "fn f(b:u8)->i32{let a=[b;2];return 0;}",
+        "E0101",
+        "unsupported typed-preview construct `;`",
+        ";",
+    )] {
         let case = Case::new(source);
         let start = source.find(selected).unwrap();
         let end = start + selected.len();

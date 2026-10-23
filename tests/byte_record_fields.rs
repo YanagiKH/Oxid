@@ -106,7 +106,6 @@ fn byte_records_move_mutate_project_and_return_in_interpreter() {
 fn byte_record_restrictions_and_whole_root_loans_are_preserved() {
     for (source, code) in [
         ("enum E{None}struct R{value:E}fn main()->i32{return 0;}", "E0300"),
-        ("enum E{Value(u8)}fn main()->i32{return 0;}", "E0100"),
         ("struct R{bytes:&[u8]}fn main()->i32{return 0;}", "E0101"),
         ("struct R{bytes:[u8;1025]}fn main()->i32{return 0;}", "E0400"),
         ("struct R{value:u8}fn main()->i32{let r=R{value:1};return 0;}", "E0300"),

@@ -96,6 +96,53 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::Integer { ty, bits } => {
+            if RuntimeScalar::from_integer(ty, bits).is_none() {
+                return Err(failure(FailureKind::TypeMismatch, assign.span));
+            }
+            ty
+        }
+        Rvalue::CheckedInteger {
+            left,
+            right,
+            operator_span,
+            ..
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, left, sources)?;
+            if ty.integer_bits().is_none() {
+                return Err(failure(FailureKind::TypeMismatch, left.span));
+            }
+            same_type(operand_in(locals, right, sources)?, ty, right.span)?;
+            ty
+        }
+        Rvalue::CheckedNegateInteger {
+            operand,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, operand, sources)?;
+            if !ty.signed_integer() {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            ty
+        }
+        Rvalue::CheckedIntegerCast {
+            operand,
+            target,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            if operand_in(locals, operand, sources)?
+                .integer_bits()
+                .is_none()
+                || target.integer_bits().is_none()
+            {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            target
+        }
         Rvalue::I64(_) => hir::Ty::I64,
         Rvalue::WidenI64 {
             operand: value,
@@ -223,10 +270,7 @@ pub(super) fn scalar_statement_shape(
             let left_ty = operand_in(locals, left, sources)?;
             let expected = match op {
                 hir::ComparisonOp::Equal | hir::ComparisonOp::NotEqual => {
-                    if !matches!(
-                        left_ty,
-                        hir::Ty::I32 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I64
-                    ) {
+                    if left_ty != hir::Ty::Bool && left_ty.integer_bits().is_none() {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -235,7 +279,7 @@ pub(super) fn scalar_statement_shape(
                 | hir::ComparisonOp::LessEqual
                 | hir::ComparisonOp::Greater
                 | hir::ComparisonOp::GreaterEqual => {
-                    if !matches!(left_ty, hir::Ty::I32 | hir::Ty::U8 | hir::Ty::I64) {
+                    if left_ty.integer_bits().is_none() {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -350,7 +394,7 @@ fn verify_impl(
     // forward calls and recursion. Parameter types live in this single table.
     for (index, function) in program.functions.iter().enumerate() {
         span(sources, function.span)?;
-        if function.result == hir::Ty::I64 {
+        if function.result == hir::Ty::I64 || function.result.extended_integer().is_some() {
             return Err(failure(FailureKind::TypeMismatch, function.span));
         }
         if function.id != hir::DefId(index) {
@@ -363,7 +407,7 @@ fn verify_impl(
         }
         for (index, decl) in function.locals.iter().enumerate() {
             span(sources, decl.span)?;
-            if decl.ty == hir::Ty::I64 {
+            if decl.ty == hir::Ty::I64 || decl.ty.extended_integer().is_some() {
                 return Err(failure(FailureKind::TypeMismatch, decl.span));
             }
             if (index < function.param_count) != (decl.kind == LocalKind::Parameter) {
@@ -372,7 +416,7 @@ fn verify_impl(
         }
         for decl in &function.places {
             span(sources, decl.span)?;
-            if decl.ty == hir::Ty::I64 {
+            if decl.ty == hir::Ty::I64 || decl.ty.extended_integer().is_some() {
                 return Err(failure(FailureKind::TypeMismatch, decl.span));
             }
         }
@@ -406,6 +450,17 @@ fn verify_impl(
                 }
             }
             for statement in &block.statements {
+                if statement.as_assignment().is_some_and(|assign| {
+                    matches!(
+                        assign.value,
+                        Rvalue::Integer { .. }
+                            | Rvalue::CheckedInteger { .. }
+                            | Rvalue::CheckedNegateInteger { .. }
+                            | Rvalue::CheckedIntegerCast { .. }
+                    )
+                }) {
+                    return Err(failure(FailureKind::TypeMismatch, statement.span()));
+                }
                 if !authenticated
                     && statement.as_assignment().is_some_and(|assign| {
                         matches!(
@@ -548,16 +603,22 @@ pub(super) fn scalar_statement_uses(
             | Rvalue::CheckedI64ToU8 { operand: value, .. }
             | Rvalue::NotBool { operand: value, .. }
             | Rvalue::CheckedNegateI32 { operand: value, .. }
+            | Rvalue::CheckedNegateInteger { operand: value, .. }
+            | Rvalue::CheckedIntegerCast { operand: value, .. }
             | Rvalue::CheckedNegateI64 { operand: value, .. } => visit(ScalarUse::Operand(value)),
             Rvalue::CheckedI32 { left, right, .. }
             | Rvalue::CheckedI64 { left, right, .. }
+            | Rvalue::CheckedInteger { left, right, .. }
             | Rvalue::CompareScalar { left, right, .. } => {
                 visit(ScalarUse::Operand(left))?;
                 visit(ScalarUse::Operand(right))
             }
-            Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::I64(_) | Rvalue::U8(_) | Rvalue::Unit => {
-                Ok(())
-            }
+            Rvalue::Bool(_)
+            | Rvalue::I32(_)
+            | Rvalue::I64(_)
+            | Rvalue::Integer { .. }
+            | Rvalue::U8(_)
+            | Rvalue::Unit => Ok(()),
         },
     }
 }

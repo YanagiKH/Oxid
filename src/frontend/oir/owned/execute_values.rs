@@ -7,6 +7,8 @@ pub(super) trait StoredValue: Copy + std::fmt::Debug + Eq + From<Scalar> {
     fn narrow(self) -> Option<Scalar>;
     fn wide(self) -> Option<i64>;
     fn from_wide(value: i64) -> Option<Self>;
+    fn integer(self) -> Option<(hir::Ty, u64)>;
+    fn from_integer(ty: hir::Ty, bits: u64) -> Option<Self>;
     fn ty(self) -> hir::Ty;
     fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Self>;
     fn encode(self, bytes: &mut [u8], offset: usize, span: Span) -> Result<()>;
@@ -22,6 +24,20 @@ impl StoredValue for Scalar {
     }
     fn from_wide(_: i64) -> Option<Self> {
         None
+    }
+    fn integer(self) -> Option<(hir::Ty, u64)> {
+        match self {
+            Self::I32(value) => Some((hir::Ty::I32, value as i64 as u64)),
+            Self::U8(value) => Some((hir::Ty::U8, u64::from(value))),
+            Self::Bool(_) | Self::Unit => None,
+        }
+    }
+    fn from_integer(ty: hir::Ty, bits: u64) -> Option<Self> {
+        match ty {
+            hir::Ty::I32 => i32::try_from(bits as i64).ok().map(Self::I32),
+            hir::Ty::U8 => u8::try_from(bits).ok().map(Self::U8),
+            _ => None,
+        }
     }
     fn ty(self) -> hir::Ty {
         Scalar::ty(self)
@@ -49,13 +65,44 @@ impl StoredValue for RuntimeScalar {
     fn from_wide(value: i64) -> Option<Self> {
         Some(Self::I64(value))
     }
+    fn integer(self) -> Option<(hir::Ty, u64)> {
+        RuntimeScalar::integer(self)
+    }
+    fn from_integer(ty: hir::Ty, bits: u64) -> Option<Self> {
+        RuntimeScalar::from_integer(ty, bits)
+    }
     fn ty(self) -> hir::Ty {
         match self {
             Self::Narrow(value) => value.ty(),
             Self::I64(_) => hir::Ty::I64,
+            Self::I8(_) => hir::Ty::I8,
+            Self::I16(_) => hir::Ty::I16,
+            Self::U16(_) => hir::Ty::U16,
+            Self::U32(_) => hir::Ty::U32,
+            Self::U64(_) => hir::Ty::U64,
+            Self::Isize(_) => hir::Ty::Isize,
+            Self::Usize(_) => hir::Ty::Usize,
         }
     }
     fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Self> {
+        if ty.extended_integer().is_some() {
+            let width = scalar_size(ty);
+            let selected = offset
+                .checked_add(width)
+                .and_then(|end| bytes.get(offset..end))
+                .ok_or_else(|| bad("payload range", span))?;
+            let mut encoded = [0u8; 8];
+            encoded[..width].copy_from_slice(selected);
+            let raw = u64::from_le_bytes(encoded);
+            let bits = if ty.signed_integer() {
+                let shift = 64 - width * 8;
+                (((raw << shift) as i64) >> shift) as u64
+            } else {
+                raw
+            };
+            return RuntimeScalar::from_integer(ty, bits)
+                .ok_or_else(|| bad("integer payload", span));
+        }
         if ty != hir::Ty::I64 {
             return decode(bytes, offset, ty, span).map(Self::Narrow);
         }
@@ -80,6 +127,23 @@ impl StoredValue for RuntimeScalar {
                 selected.copy_from_slice(&value.to_le_bytes());
                 Ok(())
             }
+            value @ (Self::I8(_)
+            | Self::I16(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Isize(_)
+            | Self::Usize(_)) => {
+                let (ty, bits) =
+                    RuntimeScalar::integer(value).ok_or_else(|| bad("integer payload", span))?;
+                let width = scalar_size(ty);
+                let selected = offset
+                    .checked_add(width)
+                    .and_then(|end| bytes.get_mut(offset..end))
+                    .ok_or_else(|| bad("payload range", span))?;
+                selected.copy_from_slice(&bits.to_le_bytes()[..width]);
+                Ok(())
+            }
         }
     }
 }
@@ -94,6 +158,9 @@ pub(super) fn comparison<V: StoredValue>(
     op: hir::ComparisonOp,
     span: Span,
 ) -> Result<bool> {
+    if left.ty().extended_integer().is_some() {
+        return integers::comparison(left, right, op, span);
+    }
     let ordering = match (left.wide(), right.wide()) {
         (Some(a), Some(b)) => a.cmp(&b),
         (None, None) => match (left.narrow(), right.narrow()) {

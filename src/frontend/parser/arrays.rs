@@ -128,6 +128,16 @@ impl Parser<'_> {
                 self.bump();
                 ArrayElementTypeSyntax::I64
             }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && IntegerTypeSyntax::from_spelling(self.source.text_at(token.span))
+                        .is_some() =>
+            {
+                let kind =
+                    IntegerTypeSyntax::from_spelling(self.source.text_at(token.span)).unwrap();
+                self.bump();
+                ArrayElementTypeSyntax::Integer(kind)
+            }
             Kind::LParen if self.next_kind() == Kind::RParen => {
                 self.bump();
                 self.bump();

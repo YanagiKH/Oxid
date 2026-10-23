@@ -250,6 +250,14 @@ impl Parser<'_> {
                 self.bump();
                 (ScalarTypeSyntax::I64, start.end)
             }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && IntegerTypeSyntax::from_spelling(self.source.text_at(start)).is_some() =>
+            {
+                let kind = IntegerTypeSyntax::from_spelling(self.source.text_at(start)).unwrap();
+                self.bump();
+                (ScalarTypeSyntax::Integer(kind), start.end)
+            }
             Kind::Ident if self.source.text_at(start) != "u8" => {
                 let (path, span) = self.item_path("expected enum payload type", true)?;
                 let kind = match path {

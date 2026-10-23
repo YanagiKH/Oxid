@@ -560,6 +560,10 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
         | Rvalue::CheckedI64ToI32 { .. }
         | Rvalue::CheckedI64ToU8 { .. }
         | Rvalue::CheckedNegateI64 { .. }
+        | Rvalue::Integer { .. }
+        | Rvalue::CheckedInteger { .. }
+        | Rvalue::CheckedNegateInteger { .. }
+        | Rvalue::CheckedIntegerCast { .. }
         | Rvalue::CheckedI64 { .. } => false,
         Rvalue::CheckedI32ToU8 { operand, .. } => {
             local(operand.local) == Some(hir::Ty::I32) && destination == Some(hir::Ty::U8)
@@ -970,9 +974,10 @@ fn emit_guard(
 fn ty(ty: hir::Ty) -> &'static str {
     match ty {
         hir::Ty::Bool => "i1",
-        hir::Ty::Unit | hir::Ty::U8 => "i8",
-        hir::Ty::I32 => "i32",
-        hir::Ty::I64 => "i64",
+        hir::Ty::Unit | hir::Ty::U8 | hir::Ty::I8 => "i8",
+        hir::Ty::I16 | hir::Ty::U16 => "i16",
+        hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
     }
 }
 fn write_u8_checks(out: &mut Emission, n: usize, operand: usize) {
@@ -1508,7 +1513,15 @@ fn emit(
         ),
         hir::Ty::I32 => out.push_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n"),
         hir::Ty::Unit => out.push_str("  %status = call i32 @__oxid_print_unit()\n"),
-        hir::Ty::U8 | hir::Ty::I64 => {
+        hir::Ty::U8
+        | hir::Ty::I64
+        | hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize => {
             unreachable!("entry rejected before closed scalar native admission")
         }
     }

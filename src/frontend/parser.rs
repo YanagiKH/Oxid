@@ -1711,8 +1711,18 @@ impl Parser<'_> {
                 end = literal.end;
                 let wide =
                     self.wide_scalars_enabled() && self.source.text_at(literal).ends_with("i64");
+                let integer = if self.wide_scalars_enabled() {
+                    IntegerTypeSyntax::ADDITIONAL_LITERAL_SUFFIXES
+                        .into_iter()
+                        .find(|kind| self.source.text_at(literal).ends_with(kind.spelling()))
+                } else {
+                    None
+                };
                 let digits = if wide {
                     self.source.span(literal.start, literal.end - 3)
+                } else if let Some(kind) = integer {
+                    self.source
+                        .span(literal.start, literal.end - kind.spelling().len())
                 } else {
                     literal
                 };
@@ -1745,6 +1755,12 @@ impl Parser<'_> {
                 }
                 if wide {
                     ExprKind::I64Number { digits, negative }
+                } else if let Some(kind) = integer {
+                    ExprKind::IntegerNumber {
+                        digits,
+                        negative,
+                        kind,
+                    }
                 } else {
                     ExprKind::Number { digits, negative }
                 }

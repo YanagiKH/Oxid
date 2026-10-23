@@ -44,7 +44,18 @@ impl FixedArrayTy {
     ) -> Result<Self, DeclarationError> {
         if !matches!(
             element,
-            hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit | hir::Ty::I64
+            hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
         ) {
             return Err(DeclarationError::TypeMismatch);
         }
@@ -152,7 +163,14 @@ impl BorrowedSlot {
                 | hir::Ty::I32
                 | hir::Ty::U8
                 | hir::Ty::Unit
-                | hir::Ty::I64),
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize),
             ) => BorrowedSlotRepr::ScalarSlice(element),
         }))
     }
@@ -327,9 +345,12 @@ impl Layout {
     }
     fn scalar(ty: hir::Ty) -> Self {
         match ty {
-            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => Self { size: 1, align: 1 },
-            hir::Ty::I32 => Self { size: 4, align: 4 },
-            hir::Ty::I64 => Self { size: 8, align: 8 },
+            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => Self { size: 1, align: 1 },
+            hir::Ty::I16 | hir::Ty::U16 => Self { size: 2, align: 2 },
+            hir::Ty::I32 | hir::Ty::U32 => Self { size: 4, align: 4 },
+            hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => {
+                Self { size: 8, align: 8 }
+            }
         }
     }
 }
@@ -821,7 +842,18 @@ impl Declarations {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
             BorrowedTy::ScalarSlice(
-                hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit | hir::Ty::I64,
+                hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize,
             ) => Ok(()),
         }
     }
@@ -1243,7 +1275,18 @@ where
             fields = limited_add(fields, 1, limits.fields, "field declarations")?;
             if !matches!(
                 ty,
-                hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit | hir::Ty::I64
+                hir::Ty::Bool
+                    | hir::Ty::I32
+                    | hir::Ty::U8
+                    | hir::Ty::Unit
+                    | hir::Ty::I64
+                    | hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize
             ) {
                 return Err(DeclarationError::TypeMismatch);
             }

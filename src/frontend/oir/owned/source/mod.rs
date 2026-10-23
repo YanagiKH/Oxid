@@ -32,6 +32,9 @@ pub(super) fn raw_verification_diagnostic(
 mod diagnostic_tests;
 
 #[cfg(test)]
+mod integer_width_tests;
+
+#[cfg(test)]
 mod budget_tests;
 #[cfg(test)]
 mod lower_tests;

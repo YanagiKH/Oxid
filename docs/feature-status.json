@@ -1409,7 +1409,7 @@
       "edition": "typed-preview",
       "backend": "Reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Portable checking; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
-      "limitations": "Decimal i64-suffixed literals; no implicit conversion. Indexes, lengths and process status remain i32. No additional integer widths or floating point.",
+      "limitations": "Decimal i64-suffixed literals; no implicit conversion. Indexes, lengths and process status remain i32. Additional integer widths are tracked separately; floating point is unavailable.",
       "spec": [
         "rfcs/0050-checked-i64-integers.md",
         "spec/typed-preview.md"
@@ -1427,6 +1427,38 @@
         "scripts/verify_i64.py",
         "tests/i64_output_runtime.c",
         "scripts/test_i64_output_runtime.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "checked-integer-widths",
+      "classification": "production-path",
+      "summary": "Exact signed and unsigned integers with explicit checked conversions and aligned record, array and enum storage.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking; current 64-bit execution targets; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Adds i8, i16, u16, u32, u64 and 64-bit isize/usize. Byte literals and enum payloads are supported; u8 arithmetic and u8 result entries remain unavailable. No i128/u128, floats, implicit conversion or wrapping arithmetic. Indexes and lengths remain i32.",
+      "spec": [
+        "rfcs/0051-checked-integer-widths.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/execute_integers.rs",
+        "src/frontend/oir/owned/native_integers.rs",
+        "native/typed_preview.c"
+      ],
+      "tests": [
+        "tests/typed_integer_widths.rs",
+        "src/frontend/oir/owned/source/integer_width_tests.rs",
+        "scripts/verify_integer_widths.py",
+        "tests/integer_output_runtime.c",
+        "scripts/test_integer_output_runtime.py"
       ],
       "evidence": []
     }

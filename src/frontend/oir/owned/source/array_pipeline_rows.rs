@@ -44,6 +44,15 @@ struct ScalarType(hir::Ty);
 impl fmt::Display for ScalarType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Json(match self.0 {
+            hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
             hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
             hir::Ty::U8 => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
@@ -318,6 +327,9 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            source_hir::ExprKind::Integer { .. } => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
             source_hir::ExprKind::I64(_) => {
                 panic!("i64 is outside this retained narrow fixture or observer")
             }
@@ -845,6 +857,12 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            Rvalue::Integer { .. }
+            | Rvalue::CheckedInteger { .. }
+            | Rvalue::CheckedNegateInteger { .. }
+            | Rvalue::CheckedIntegerCast { .. } => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
             Rvalue::I64(_)
             | Rvalue::WidenI64 { .. }
             | Rvalue::CheckedI64ToI32 { .. }

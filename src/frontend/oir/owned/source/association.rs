@@ -231,7 +231,8 @@ fn function(
                                     | Rvalue::U8ToI32 { .. }
                                     | Rvalue::WidenI64 { .. }
                                     | Rvalue::CheckedI64ToI32 { .. }
-                                    | Rvalue::CheckedI64ToU8 { .. },
+                                    | Rvalue::CheckedI64ToU8 { .. }
+                                    | Rvalue::CheckedIntegerCast { .. },
                                 ..
                             })
                         )

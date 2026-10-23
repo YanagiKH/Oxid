@@ -737,7 +737,9 @@ fn expression_kind(
     argument: &mut usize,
 ) -> Result<hir::ExprKind, Failure> {
     Ok(match kind {
-        ast::ExprKind::I64Number { .. } => return Err(Failure::Shape),
+        ast::ExprKind::I64Number { .. } | ast::ExprKind::IntegerNumber { .. } => {
+            return Err(Failure::Shape)
+        }
         ast::ExprKind::Number { .. } => hir::ExprKind::I32(mapping.resolution(reference)?),
         ast::ExprKind::Bool(value) => hir::ExprKind::Bool(*value),
         ast::ExprKind::Unit => hir::ExprKind::Unit,

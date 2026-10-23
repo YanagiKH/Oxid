@@ -33,11 +33,7 @@ fn byte_storage_source_unused_nested_and_empty_record_fields_are_admitted() {
     let errors = check("enum E { V(u8) } fn main()->i32{return 0;}").unwrap_err();
     assert_eq!(
         (errors[0].code, errors[0].stage, errors[0].message.as_str()),
-        (
-            "E0100",
-            "parse",
-            "only bool, i32 and () enum payloads are supported"
-        )
+        ("E0101", "resolve", "enum source requires fresh paid typing")
     );
 }
 

@@ -235,6 +235,15 @@ impl Core {
 
     fn value(self, index: usize) -> Scalar {
         match self.ty {
+            hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
             hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
             hir::Ty::U8 => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
@@ -254,6 +263,15 @@ impl Core {
 
     fn replacement(self) -> Scalar {
         match self.ty {
+            hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
             hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
             hir::Ty::U8 => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
@@ -583,6 +601,15 @@ struct Transfer {
 impl Transfer {
     fn seed(self, i: usize) -> Scalar {
         match self.ty {
+            hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
             hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
             hir::Ty::U8 => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")

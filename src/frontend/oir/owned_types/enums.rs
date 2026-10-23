@@ -479,7 +479,18 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
     match variant.payload {
         None => Ok(None),
         Some(ParameterTy::Value(ValueTy::Scalar(
-            ty @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit | hir::Ty::I64),
+            ty @ (hir::Ty::Bool
+            | hir::Ty::I32
+            | hir::Ty::Unit
+            | hir::Ty::I64
+            | hir::Ty::U8
+            | hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize),
         ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
@@ -488,8 +499,7 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
 fn value_payload(variant: &RawVariantDecl) -> Result<Option<ValueTy>, EnumDeclarationError> {
     match variant.payload {
         None => Ok(None),
-        Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)))
-        | Some(ParameterTy::Reference { .. }) => {
+        Some(ParameterTy::Reference { .. }) => {
             Err(EnumDeclarationError::NonScalarPayload(variant.id))
         }
         Some(ParameterTy::Value(ty)) => {
@@ -567,10 +577,7 @@ fn prepare_shapes<'a>(
 
 fn scalar_enum_layout(declaration: &RawEnumDecl) -> Layout {
     if declaration.variants.iter().any(|variant| {
-        matches!(
-            variant.payload,
-            Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::I64)))
-        )
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.integer_bits() == Some(64))
     }) {
         Layout { size: 16, align: 8 }
     } else {
