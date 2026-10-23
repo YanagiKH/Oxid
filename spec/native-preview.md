@@ -74,7 +74,10 @@ explicit call-only shared/exclusive loans and reborrows through its sealed
 witness. Fixed scalar arrays also support complete construction/transfers,
 checked signed indexing and `len()` under [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).
 Their private positive storage includes initialized zero-length sentinels; no
-array ABI, element references or heap allocation is exposed. Indexed writes keep
+array ABI, element references or heap allocation is exposed. Record-contained
+u8 scalars and byte arrays use the same rules under
+[byte record fields](../rfcs/0042-byte-record-fields.md), including whole-root
+projected loans and complete transfer validation. Indexed writes keep
 RHS-before-index snapshots, and guarded access charges fuel before bounds.
 Invalid executed indexes emit the exact reference E0606/oir-owned-run diagnostic,
 including source origin, with empty stdout and exit 1. No element pointer is

@@ -869,14 +869,6 @@ fn check_nominal_span(sources: &SourceMap, span: Span) -> Result<(), Declaration
 
 fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
     match field.ty {
-        ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)) => {
-            Err(DeclarationError::NonScalarField(field.id))
-        }
-        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)))
-            if array.element() == hir::Ty::U8 =>
-        {
-            Err(DeclarationError::NonScalarField(field.id))
-        }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_))) => {
             Err(DeclarationError::NonScalarField(field.id))
         }
@@ -900,15 +892,11 @@ fn value_summary(
     summaries: &[ContainmentSummary],
 ) -> Result<ContainmentSummary, DeclarationError> {
     Ok(match ty {
-        ValueTy::Scalar(hir::Ty::U8) => return Err(DeclarationError::TypeMismatch),
         ValueTy::Scalar(ty) => ContainmentSummary {
             layout: Layout::scalar(ty),
             width: 1,
             depth: 0,
         },
-        ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == hir::Ty::U8 => {
-            return Err(DeclarationError::TypeMismatch)
-        }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
             layout: array.layout()?,
             width: array.length().max(1),
@@ -1148,7 +1136,10 @@ where
                 "fields per record",
             )?;
             fields = limited_add(fields, 1, limits.fields, "field declarations")?;
-            if !matches!(ty, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) {
+            if !matches!(
+                ty,
+                hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit
+            ) {
                 return Err(DeclarationError::TypeMismatch);
             }
             cursor.push(Layout::scalar(ty))?;
