@@ -196,7 +196,7 @@ impl<'a> ExecutionPlan<'a> {
     /// return. Ordinary source wrappers keep their ordinary return checks.
     pub(super) fn binary_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
         use crate::frontend::builtin_catalog::experimental::Function;
-        [Function::ReadSome, Function::WriteSome]
+        [Function::ReadSome, Function::WriteSome, Function::ArgBytes]
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation) == Some(function))
             .then(|| {
@@ -209,7 +209,7 @@ impl<'a> ExecutionPlan<'a> {
     }
     pub(super) fn has_binary_delivery(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;
-        [Function::ReadSome, Function::WriteSome]
+        [Function::ReadSome, Function::WriteSome, Function::ArgBytes]
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
@@ -226,6 +226,12 @@ impl<'a> ExecutionPlan<'a> {
                     .expect("sealed file return");
                 self.terminator_cost(function, &term.kind)
             })
+    }
+    pub(super) fn has_program_arguments(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ArgCount, Function::ArgBytes]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
     }
     pub(super) fn has_file_delivery(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;

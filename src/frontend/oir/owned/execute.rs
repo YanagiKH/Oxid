@@ -3151,7 +3151,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                         self.file_delivery(frame, operation, destination, span)?;
                         continue;
                     }
-                    if matches!(operation, Function::ReadSome | Function::WriteSome) {
+                    if matches!(
+                        operation,
+                        Function::ReadSome | Function::WriteSome | Function::ArgBytes
+                    ) {
                         self.binary_delivery(frame, operation, destination, span)?;
                         // The canonical frame has completed its prepaid return.
                         continue;
@@ -3528,7 +3531,7 @@ fn checked_entry_policy(
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
     for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
-        if operation.is_file()
+        if (operation.is_file() || operation.is_arguments())
             && witness.experimental_function(operation).is_some()
             && !input::supported_host()
         {
@@ -3684,6 +3687,10 @@ fn execute_plan_policy(
                     0
                 } + if plan.has_file_delivery() {
                     experimental::file_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_program_arguments() {
+                    crate::program_arguments::control_bytes()
                 } else {
                     0
                 },

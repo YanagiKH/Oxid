@@ -332,6 +332,9 @@ impl Machine<'_, '_> {
         let result = self.prepare_experimental_result(frame, destination, span)?;
         let value = match operation {
             Function::New => OperationValue::EmptyBuffer,
+            Function::ArgCount => {
+                OperationValue::Scalar(Scalar::I32(crate::program_arguments::count()))
+            }
             Function::Take => {
                 let bytes = match &result {
                     ResultPlace::Owner { bytes, .. }
@@ -352,7 +355,7 @@ impl Machine<'_, '_> {
                 self.frames[frame].payload[bytes].copy_from_slice(&encoding);
                 return Ok(());
             }
-            Function::ReadSome | Function::WriteSome => {
+            Function::ReadSome | Function::WriteSome | Function::ArgBytes => {
                 return Err(bad("binary operation requires prepared delivery", span));
             }
             Function::Len | Function::Capacity => {

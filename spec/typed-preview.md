@@ -42,10 +42,11 @@ and `--option=value` work for edition and message format. These two options may
 appear before the command, between the command and source, or after the source.
 Duplicate, missing, empty, or unknown values fail; they are never ignored.
 
-`--` ends option recognition. For typed checking/running it must follow `check` or `run`, and all
-later words are literal operands; exactly one source path is required. A typed
-option written after `--` is an operand, not an edition selection. With no new
-options, legacy arguments, including any separator, are forwarded unchanged.
+`--` ends option recognition. Checking requires exactly one source path.
+For `run`, a separator after the source starts literal program arguments; use
+`run -- SOURCE -- ARGUMENTS` when protecting a dash-prefixed source path.
+A typed option after the program separator is an argument, not an edition
+selection. Legacy commands retain their existing separator behavior.
 
 There is one deliberate process-argument boundary: all arguments after
 `script <name>` belong to that manifest script, so edition-like words there are
@@ -249,6 +250,19 @@ truncating a file. `create` truncates an existing file. Both entry modes support
 files, with signal setup before source effects. See
 [native file ownership and I/O](../rfcs/0048-native-file-io.md) for the API and
 error contracts.
+
+## Program arguments
+
+On Linux x86_64, `std::env::arg_count()` includes the executable at index 0.
+`std::env::arg_bytes(index, &mut bytes)` returns `ArgStatus::Copied(length)`,
+`TooSmall(required)`, `Missing` or `TooLong`. It preserves raw OS bytes and
+empty arguments. Only a successful copy modifies the destination's prefix;
+all other statuses leave it unchanged. User arguments start at index 1 in
+both reference and native execution.
+
+Pass them with `oxid run -- ARGUMENTS`, or `oxid run SOURCE --edition=typed-preview
+-- ARGUMENTS`. Native executables accept arguments directly. See the
+[program argument contract](../rfcs/0049-program-arguments.md).
 
 ## Bounded owned record composition
 

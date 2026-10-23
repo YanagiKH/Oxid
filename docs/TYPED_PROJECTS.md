@@ -175,3 +175,16 @@ Each workspace binary selects its own policy. Libraries cannot change their
 caller's policy. Both choices retain arithmetic, bounds, ownership, allocation
 and live-memory checks. Current compiler, storage and call-depth limits remain.
 See the [execution policy contract](../rfcs/0044-project-execution-policy.md).
+
+## Program arguments
+
+```sh
+oxid run -- input.bin output.bin
+.oxid/bin/application input.bin output.bin
+```
+
+Import `arg_count`, `arg_bytes` and `ArgStatus` from `std::env` to read them.
+Index 0 is the executable name; user arguments start at 1. `arg_bytes` copies
+raw bytes into a mutable byte slice and reports the required length when that
+slice is too short. Arguments after `--` are literal program input.
+See the [argument API](../rfcs/0049-program-arguments.md) for status handling.
