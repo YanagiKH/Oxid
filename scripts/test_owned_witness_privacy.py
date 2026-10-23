@@ -126,8 +126,10 @@ class PrivacyCheckoutTests(unittest.TestCase):
             u8_boundary_source_reads = 2  # rich-source.txt and source-255.txt
             byte_buffer_runtime_reads = 3  # runtime adapter, implementation and header
             native_file_runtime_reads = 1  # experimental_files.c
+            program_argument_runtime_reads = 1  # experimental_arguments.c
             self.assertEqual(count, predecessor_include_sites + u8_boundary_source_reads
-                             + byte_buffer_runtime_reads + native_file_runtime_reads)
+                             + byte_buffer_runtime_reads + native_file_runtime_reads
+                             + program_argument_runtime_reads)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:

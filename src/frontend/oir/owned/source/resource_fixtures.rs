@@ -211,3 +211,45 @@ pub(in crate::frontend::oir::owned) fn checked_arrays(text: &str) -> CheckedSour
         entry,
     }
 }
+
+/// Keep the loaded project beside the witness produced by its paid source index.
+pub(in crate::frontend::oir::owned) struct CheckedProject {
+    pub project: crate::frontend::project::ProjectSources,
+    pub witness: verified::VerifiedOwnedProgram,
+    pub entry: hir::DefId,
+}
+
+pub(in crate::frontend::oir::owned) fn checked_enum_project(text: &str) -> CheckedProject {
+    use crate::frontend::declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter};
+    use crate::frontend::project::{ProjectLimits, ProjectSources};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "oxid-enum-resources-{}-{}.ox",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&path, text).unwrap();
+    let project = ProjectSources::load_typed(path.to_str().unwrap(), ProjectLimits::default());
+    std::fs::remove_file(path).unwrap();
+    let project = project.unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = crate::frontend::project::budget::Allocator::default();
+    let facts = index::collect_originals(
+        SourceOwner::project(&project),
+        IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap();
+    let index = facts.finish(&work, &mut allocator).unwrap();
+    let typed = resolve::type_enum_source(&index, &work, &mut allocator).unwrap();
+    let entry = typed.entry().unwrap();
+    let associated = super::association::lower_and_associate(&typed).unwrap();
+    let witness = verified::verify_associated(associated).unwrap();
+    CheckedProject {
+        project,
+        witness,
+        entry,
+    }
+}

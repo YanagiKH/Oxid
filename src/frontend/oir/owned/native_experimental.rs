@@ -80,6 +80,69 @@ struct FileControl {
 }
 pub(super) const FILE_DELIVERY_BYTES: usize = size_of::<FileControl>();
 
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentContext {
+    count: i32,
+    values: *const (),
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentStartFrame {
+    count: i32,
+    values: *const (),
+    assigned: ArgumentContext,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentAttemptFrame {
+    index: i32,
+    bytes: *mut u8,
+    capacity: i32,
+    fuel: *mut u64,
+    result: *mut (),
+    return_cost: u64,
+    remaining: u64,
+    value: [i32; 2],
+    source: *const u8,
+    length: u64,
+    admission: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentHostedFrame {
+    index: i32,
+    bytes: *mut u8,
+    capacity: i32,
+    fuel: *mut u64,
+    result: *mut (),
+    return_cost: u64,
+    admission: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentValidationFrame {
+    bytes: *mut u8,
+    capacity: i32,
+    fuel: *mut u64,
+    result: *mut (),
+    returned_admission: i32,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ArgumentControl {
+    context: ArgumentContext,
+    main_inputs: ArgumentContext,
+    start: ArgumentStartFrame,
+    attempt: ArgumentAttemptFrame,
+    hosted_parameters: ArgumentHostedFrame,
+    validation: ArgumentValidationFrame,
+    overlaps: FileOverlapFrame,
+    hosted_budget: u64,
+    count_result: i32,
+}
+pub(super) const ARGUMENT_DELIVERY_BYTES: usize = size_of::<ArgumentControl>();
+
 #[allow(clippy::too_many_arguments)] // Complete preflighted failure labels; no retained state.
 pub(super) fn status(
     out: &mut Emission,
@@ -124,6 +187,18 @@ pub(super) fn operation(
     let f = &storage.execution().witness().functions()[storage.id().0];
     if operation.is_file() {
         file_operation(storage, name, operation, diagnostics, span, out);
+        return;
+    }
+    if operation.is_arguments() {
+        argument_operation(
+            storage,
+            name,
+            operation,
+            destination,
+            diagnostics,
+            span,
+            out,
+        );
         return;
     }
     let pointer = if operation == Function::New {
@@ -226,6 +301,65 @@ pub(super) fn operation(
         name,
         &format!("%{name}_status"),
         "operation_ok",
+        span,
+        true,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn argument_operation(
+    storage: &NativeFunctionStorage<'_, '_>,
+    name: &str,
+    operation: Function,
+    destination: CallResult,
+    diagnostics: &Diagnostics,
+    span: Span,
+    out: &mut Emission,
+) {
+    if operation == Function::ArgCount {
+        let CallResult::Scalar(local) = destination else {
+            unreachable!("argument count scalar")
+        };
+        writeln!(out, "  %{name}_count = call i32 @__oxid_arg_count()\n  store i32 %{name}_count, ptr %s{}, align 4", local.0).unwrap();
+        return;
+    }
+    let f = &storage.execution().witness().functions()[storage.id().0];
+    let index = load_operand(
+        out,
+        f,
+        &format!("{name}_index"),
+        Operand {
+            local: LocalId(0),
+            span,
+        },
+    );
+    let bytes = base_pointer(
+        out,
+        &format!("{name}_bytes"),
+        AccessBase::Parameter(ReferenceParamId(0)),
+    );
+    let capacity = index_length(
+        out,
+        f,
+        &format!("{name}_capacity"),
+        AccessBase::Parameter(ReferenceParamId(0)),
+    );
+    let cost = storage
+        .execution()
+        .binary_delivery_cost(f.id)
+        .expect("sealed argument delivery");
+    let helper = if out.policy.hosted() {
+        "__oxid_arg_bytes_hosted"
+    } else {
+        "__oxid_arg_bytes"
+    };
+    writeln!(out, "  %{name}_status = call i32 @{helper}(i32 {index}, ptr {bytes}, i32 {capacity}, ptr %fuel, ptr %result, i64 {cost})").unwrap();
+    status(
+        out,
+        diagnostics,
+        name,
+        &format!("%{name}_status"),
+        "arguments_ok",
         span,
         true,
     );

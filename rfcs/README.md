@@ -123,3 +123,6 @@ checked borrowed byte ranges, resource cleanup and partial binary input/output.
 [Project execution policy](0044-project-execution-policy.md) adds long-running
 typed project execution without a cumulative work budget, independently of the
 selected optimization profile.
+
+[Program arguments](0049-program-arguments.md) lets typed programs receive
+literal OS arguments through `std::env::arg_count` and `arg_bytes`.

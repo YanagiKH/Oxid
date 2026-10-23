@@ -36,6 +36,22 @@ pub(in super::super) fn control_bytes() -> usize {
     size_of::<ControlCarriers>()
 }
 
+#[allow(dead_code)]
+struct ArgumentDeliveryCarriers {
+    index: Result<i32>,
+    selected_index: i32,
+    raw_copy: crate::program_arguments::CopyResult,
+    mapped_copy: Result<(u32, Option<i32>)>,
+    selected_copy: (u32, Option<i32>),
+    operation_fuel: usize,
+}
+fn argument_error_mapper(span: Span) -> impl FnOnce(()) -> OwnedRunFailure {
+    move |_| OwnedRunFailure::from(RunFailure::Fuel(span))
+}
+pub(in super::super) fn argument_control_bytes(span: Span) -> usize {
+    size_of::<ArgumentDeliveryCarriers>() + std::mem::size_of_val(&argument_error_mapper(span))
+}
+
 impl Machine<'_, '_> {
     fn prepare_binary_delivery(
         &self,
@@ -165,10 +181,15 @@ impl Machine<'_, '_> {
         #[cfg(test)]
         self.inject_binary_delivery(frame, span)?;
         let delivery = self.prepare_binary_delivery(frame, operation, destination, span)?;
+        let argument_index = if operation == Function::ArgBytes {
+            self.experimental_i32(frame, 0, span)?
+        } else {
+            0
+        };
         let region = self.byte_region(
             frame,
             AccessBase::Parameter(ReferenceParamId(0)),
-            if operation == Function::ReadSome {
+            if matches!(operation, Function::ReadSome | Function::ArgBytes) {
                 Access::Write
             } else {
                 Access::Read
@@ -185,6 +206,25 @@ impl Machine<'_, '_> {
                 .map_err(|failure| heap_failure(failure, span))?,
         };
         let mut operation_fuel = self.fuel;
+        if operation == Function::ArgBytes {
+            let value = crate::program_arguments::copy_argument(
+                argument_index,
+                bytes,
+                delivery.cost,
+                &mut operation_fuel,
+            );
+            if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
+                self.fuel = operation_fuel;
+            }
+            let (tag, payload) = value.map_err(argument_error_mapper(span))?;
+            self.complete_binary_delivery(
+                frame,
+                delivery,
+                OperationValue::Status { tag, payload },
+                span,
+            );
+            return Ok(());
+        }
         let admission = binary_io::admit_delivery(bytes.len(), delivery.cost, &mut operation_fuel);
         if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
             self.fuel = operation_fuel;

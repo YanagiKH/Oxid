@@ -8,6 +8,8 @@ use crate::frontend::project::{ProjectLimits, ProjectSources};
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[path = "io_delivery_source_tests.rs"]
 mod io_delivery;
+#[path = "process_arguments_tests.rs"]
+mod process_arguments;
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 fn project(text: &str) -> ProjectSources {

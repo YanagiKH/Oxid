@@ -9,14 +9,14 @@ use super::*;
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub(super) struct BuiltinAdmission<'s> {
-    anchors: [u32; 8],
+    anchors: [u32; 9],
     experimental: super::super::builtin_catalog::experimental::Inventory,
     source: std::marker::PhantomData<&'s Span>,
 }
 impl<'s> BuiltinAdmission<'s> {
     fn none() -> Self {
         Self {
-            anchors: [NONE; 8],
+            anchors: [NONE; 9],
             experimental: Default::default(),
             source: std::marker::PhantomData,
         }
@@ -172,7 +172,8 @@ fn current_builtin_endpoint(
     if view.root() == ast::PathRoot::Std
         && segments.len() == 3
         && (sources.text(segments[0])? == "alloc"
-            || (sources.text(segments[0])? == "std" && sources.text(segments[1])? == "fs"))
+            || (sources.text(segments[0])? == "std"
+                && matches!(sources.text(segments[1])?, "fs" | "env")))
     {
         return experimental_endpoint(sources, segments, work, at);
     }

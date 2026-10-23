@@ -29,9 +29,12 @@ pub(in crate::frontend) enum Item {
     FileWriteSome,
     SyncAll,
     Close,
+    ArgStatus,
+    ArgCount,
+    ArgBytes,
 }
 impl Item {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 27] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -56,6 +59,9 @@ impl Item {
         Self::FileWriteSome,
         Self::SyncAll,
         Self::Close,
+        Self::ArgStatus,
+        Self::ArgCount,
+        Self::ArgBytes,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -83,6 +89,9 @@ impl Item {
             Self::FileWriteSome => "write_some",
             Self::SyncAll => "sync_all",
             Self::Close => "close",
+            Self::ArgStatus => "ArgStatus",
+            Self::ArgCount => "arg_count",
+            Self::ArgBytes => "arg_bytes",
         }
     }
     pub fn family(self) -> usize {
@@ -98,6 +107,7 @@ impl Item {
             | Self::FileWriteSome
             | Self::SyncAll
             | Self::Close => 3,
+            Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
             _ => 0,
         }
     }
@@ -105,6 +115,7 @@ impl Item {
         match self.family() {
             0 => ["alloc", "bytes", self.name()],
             3 => ["std", "fs", self.name()],
+            4 => ["std", "env", self.name()],
             _ => ["std", "io", self.name()],
         }
     }
@@ -127,6 +138,8 @@ impl Item {
             Self::FileWriteSome => Function::FileWriteSome,
             Self::SyncAll => Function::SyncAll,
             Self::Close => Function::Close,
+            Self::ArgCount => Function::ArgCount,
+            Self::ArgBytes => Function::ArgBytes,
 
             _ => return None,
         })
@@ -138,6 +151,7 @@ impl Item {
             Self::WriteSomeStatus => Some(Enumeration::Write),
             Self::OpenResult => Some(Enumeration::Open),
             Self::FileStatus => Some(Enumeration::File),
+            Self::ArgStatus => Some(Enumeration::Arguments),
             _ => None,
         }
     }
@@ -150,9 +164,17 @@ pub(in crate::frontend) enum Enumeration {
     Write,
     Open,
     File,
+    Arguments,
 }
 impl Enumeration {
-    pub const ALL: [Self; 5] = [Self::Grow, Self::Read, Self::Write, Self::Open, Self::File];
+    pub const ALL: [Self; 6] = [
+        Self::Grow,
+        Self::Read,
+        Self::Write,
+        Self::Open,
+        Self::File,
+        Self::Arguments,
+    ];
     pub fn item(self) -> Item {
         match self {
             Self::Grow => Item::GrowStatus,
@@ -160,6 +182,7 @@ impl Enumeration {
             Self::Write => Item::WriteSomeStatus,
             Self::Open => Item::OpenResult,
             Self::File => Item::FileStatus,
+            Self::Arguments => Item::ArgStatus,
         }
     }
     pub fn members(self) -> &'static [&'static str] {
@@ -169,6 +192,7 @@ impl Enumeration {
             Self::Write => &["Written", "Error"],
             Self::Open => &["Opened", "Error", "MemoryLimit", "AllocationFailed"],
             Self::File => &["Ok", "Error"],
+            Self::Arguments => &["Copied", "TooSmall", "Missing", "TooLong"],
         }
     }
     pub fn payload(self, member: usize) -> Option<Ty> {
@@ -176,6 +200,7 @@ impl Enumeration {
             (Self::Read, 0 | 2) | (Self::Write, 0 | 1) | (Self::Open | Self::File, 1) => {
                 Some(Ty::I32)
             }
+            (Self::Arguments, 0 | 1) => Some(Ty::I32),
             _ => None,
         }
     }
@@ -207,12 +232,17 @@ pub(in crate::frontend) enum Function {
     FileWriteSome,
     SyncAll,
     Close,
+    ArgCount,
+    ArgBytes,
 }
 impl Function {
     pub fn is_file(self) -> bool {
         self.item().family() == 3
     }
-    pub const ALL: [Self; 17] = [
+    pub fn is_arguments(self) -> bool {
+        self.item().family() == 4
+    }
+    pub const ALL: [Self; 19] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -230,6 +260,8 @@ impl Function {
         Self::FileWriteSome,
         Self::SyncAll,
         Self::Close,
+        Self::ArgCount,
+        Self::ArgBytes,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -250,6 +282,8 @@ impl Function {
             Self::FileWriteSome => Item::FileWriteSome,
             Self::SyncAll => Item::SyncAll,
             Self::Close => Item::Close,
+            Self::ArgCount => Item::ArgCount,
+            Self::ArgBytes => Item::ArgBytes,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -259,6 +293,7 @@ impl Function {
             Self::WriteSome | Self::FileWriteSome => Some(Enumeration::Write),
             Self::OpenRead | Self::Create => Some(Enumeration::Open),
             Self::SyncAll | Self::Close => Some(Enumeration::File),
+            Self::ArgBytes => Some(Enumeration::Arguments),
             _ => None,
         }
     }
@@ -284,7 +319,7 @@ impl Function {
         };
         let scalar = |ty| ParameterTy::Value(ValueTy::Scalar(ty));
         let (parameters, count) = match self {
-            New => ([unit; 3], 0),
+            New | ArgCount => ([unit; 3], 0),
             Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
             Reserve | Truncate => ([exclusive, scalar(Ty::I32), unit], 2),
@@ -296,10 +331,11 @@ impl Function {
             FileReadSome => ([file, bytes(BorrowKind::Exclusive), unit], 2),
             FileWriteSome => ([file, bytes(BorrowKind::Shared), unit], 2),
             SyncAll | Close => ([file, unit, unit], 1),
+            ArgBytes => ([scalar(Ty::I32), bytes(BorrowKind::Exclusive), unit], 2),
         };
         let result = match self {
             New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
-            Len | Capacity => ValueTy::Scalar(Ty::I32),
+            Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
             Truncate => ValueTy::Scalar(Ty::Unit),
             _ => ValueTy::Owned(AggregateTy::Enum(enumeration(
                 self.result_enum().expect("enum result"),
@@ -328,10 +364,23 @@ impl Signature {
 /// each actual iterator are included in compiler_carrier_bytes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(transparent)]
-pub(in crate::frontend) struct Inventory([u8; 3]);
+pub(in crate::frontend) struct Inventory([u8; 4]);
 impl Inventory {
     fn bits(self) -> u32 {
-        u32::from_le_bytes([self.0[0], self.0[1], self.0[2], 0])
+        u32::from_le_bytes(self.0)
+    }
+    // Nine legacy states need four bits; all 27 extension identities fit in
+    // the remaining 28. Only dependency-complete inventories reach this path.
+    pub(super) fn pack(self, legacy: u8) -> [u8; 4] {
+        const {
+            assert!(Item::ALL.len() <= 28);
+        }
+        debug_assert!(legacy < 9);
+        ((self.bits() << 4) | u32::from(legacy)).to_le_bytes()
+    }
+    pub(super) fn unpack(packed: [u8; 4]) -> (Self, u8) {
+        let bits = u32::from_le_bytes(packed);
+        (Self((bits >> 4).to_le_bytes()), (bits & 15) as u8)
     }
     pub fn contains(self, item: Item) -> bool {
         self.bits() & (1 << item as u8) != 0
@@ -348,11 +397,11 @@ impl Inventory {
             bits |= 1 << Item::File as u8;
         }
         let bytes = bits.to_le_bytes();
-        Self([bytes[0], bytes[1], bytes[2]])
+        Self(bytes)
     }
     pub fn union(self, other: Self) -> Self {
         let bytes = (self.bits() | other.bits()).to_le_bytes();
-        Self([bytes[0], bytes[1], bytes[2]])
+        Self(bytes)
     }
     pub fn is_empty(self) -> bool {
         self.bits() == 0
@@ -397,19 +446,28 @@ impl Inventory {
 struct CompilerCarriers {
     signatures: [Signature; 4],
     signature_results: [Result<Signature, Box<crate::frontend::diagnostic::Diagnostic>>; 4],
-    item_iterations: [std::array::IntoIter<Item, 24>; 4],
-    enumeration_iterations: [std::array::IntoIter<Enumeration, 5>; 4],
-    function_iterations: [std::array::IntoIter<Function, 17>; 4],
+    item_iterations: [std::array::IntoIter<Item, 27>; 4],
+    enumeration_iterations: [std::array::IntoIter<Enumeration, 6>; 4],
+    function_iterations: [std::array::IntoIter<Function, 19>; 4],
     path_iterations: [std::iter::Zip<
         std::array::IntoIter<&'static str, 3>,
         std::slice::Iter<'static, crate::frontend::source::Span>,
     >; 2],
     ranks: [Option<usize>; 8],
-    anchors: [crate::frontend::source::Span; 8],
+    anchors: [crate::frontend::source::Span; 9],
     parameters: [ParameterTy; 6],
     file_parameter: ParameterTy,
     bit_conversions: [BitConversionCarriers; 3],
     inventory: [Inventory; 8],
+    packed_conversions: [PackedInventoryCarriers; 2],
+}
+#[allow(dead_code)]
+struct PackedInventoryCarriers {
+    inventory: Inventory,
+    encoded: [u8; 4],
+    returned: (Inventory, u8),
+    words: [u32; 3],
+    legacy: u8,
 }
 /// Independent complete conversion roles for bits(), admit(), and union().
 /// Iterator growth cannot pay for these new u32 and four-byte transports.
@@ -454,11 +512,11 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (5, 17));
+        assert_eq!((all.enums(), all.functions()), (6, 19));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }
-        assert_eq!(std::mem::size_of::<Inventory>(), 3);
+        assert_eq!(std::mem::size_of::<Inventory>(), 4);
         assert_eq!(std::mem::align_of::<Inventory>(), 1);
     }
 }

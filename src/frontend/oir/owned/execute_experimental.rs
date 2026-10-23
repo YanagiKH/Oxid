@@ -8,6 +8,7 @@ use std::ops::Range;
 mod delivery;
 #[path = "execute_file_delivery.rs"]
 mod file_delivery;
+pub(super) use delivery::argument_control_bytes as argument_delivery_control_bytes;
 pub(super) use delivery::control_bytes as binary_delivery_control_bytes;
 pub(super) use file_delivery::control_bytes as file_delivery_control_bytes;
 
@@ -332,6 +333,9 @@ impl Machine<'_, '_> {
         let result = self.prepare_experimental_result(frame, destination, span)?;
         let value = match operation {
             Function::New => OperationValue::EmptyBuffer,
+            Function::ArgCount => {
+                OperationValue::Scalar(Scalar::I32(crate::program_arguments::count()))
+            }
             Function::Take => {
                 let bytes = match &result {
                     ResultPlace::Owner { bytes, .. }
@@ -352,7 +356,7 @@ impl Machine<'_, '_> {
                 self.frames[frame].payload[bytes].copy_from_slice(&encoding);
                 return Ok(());
             }
-            Function::ReadSome | Function::WriteSome => {
+            Function::ReadSome | Function::WriteSome | Function::ArgBytes => {
                 return Err(bad("binary operation requires prepared delivery", span));
             }
             Function::Len | Function::Capacity => {

@@ -862,6 +862,10 @@ fn admit_policy_accounted(
                 experimental::FILE_DELIVERY_BYTES
             } else {
                 0
+            } + if plan.has_program_arguments() {
+                experimental::ARGUMENT_DELIVERY_BYTES
+            } else {
+                0
             },
         )?,
     )?;
@@ -2884,6 +2888,13 @@ fn emit(
         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
             .unwrap();
     }
+    if plan.has_program_arguments() {
+        out.write_str("declare void @__oxid_arguments_start(i32, ptr)\ndeclare i32 @__oxid_arg_count()\ndeclare i32 @__oxid_arg_bytes(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
+        if out.policy.hosted() {
+            out.write_str("declare i32 @__oxid_arg_bytes_hosted(i32, ptr, i32, ptr, ptr, i64)\n")
+                .unwrap();
+        }
+    }
     if plan.witness().builtin_output_function().is_some() {
         out.write_str("declare i32 @__oxid_write_stdout_byte(ptr)\n")
             .unwrap();
@@ -2925,7 +2936,11 @@ fn emit(
     let ValueTy::Scalar(result) = root.result else {
         unreachable!("entry gate")
     };
-    out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
+    if plan.has_program_arguments() {
+        out.write_str("\ndefine i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @__oxid_arguments_start(i32 %argc, ptr %argv)\n").unwrap();
+    } else {
+        out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
+    }
     if out.policy.process() || plan.has_file_delivery() {
         // Signal safety precedes even the root activation/fuel diagnostic.
         out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();

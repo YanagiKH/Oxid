@@ -3,7 +3,7 @@ use crate::frontend::builtin_catalog::experimental::{Enumeration, Function};
 
 #[test]
 fn experimental_catalog_import_identity_and_legacy_separation() {
-    let source = "use std::io::ReadStatus; use std::io::WriteStatus; use std::io::read_stdin; use std::io::write_stdout; use alloc::bytes::ByteBuf; use alloc::bytes::GrowStatus; use alloc::bytes::new; use alloc::bytes::len; use alloc::bytes::capacity; use alloc::bytes::try_reserve; use alloc::bytes::try_push; use alloc::bytes::try_extend; use alloc::bytes::try_resize; use alloc::bytes::truncate; use std::io::ReadSomeStatus; use std::io::WriteSomeStatus; use std::io::read_some; use std::io::write_some; use alloc::bytes::take; use std::fs::File; use std::fs::OpenResult; use std::fs::FileStatus; use std::fs::open_read; use std::fs::create; use std::fs::read_some as file_read; use std::fs::write_some as file_write; use std::fs::sync_all; use std::fs::close; fn main()->(){return;}";
+    let source = "use std::io::ReadStatus; use std::io::WriteStatus; use std::io::read_stdin; use std::io::write_stdout; use alloc::bytes::ByteBuf; use alloc::bytes::GrowStatus; use alloc::bytes::new; use alloc::bytes::len; use alloc::bytes::capacity; use alloc::bytes::try_reserve; use alloc::bytes::try_push; use alloc::bytes::try_extend; use alloc::bytes::try_resize; use alloc::bytes::truncate; use std::io::ReadSomeStatus; use std::io::WriteSomeStatus; use std::io::read_some; use std::io::write_some; use alloc::bytes::take; use std::fs::File; use std::fs::OpenResult; use std::fs::FileStatus; use std::fs::open_read; use std::fs::create; use std::fs::read_some as file_read; use std::fs::write_some as file_write; use std::fs::sync_all; use std::fs::close; use std::env::ArgStatus; use std::env::arg_count; use std::env::arg_bytes; fn main()->(){return;}";
     let fixture = Fixture::new(&[("main.ox", source)]);
     let project = fixture.load_current();
     let work = WorkMeter::default();
@@ -17,7 +17,7 @@ fn experimental_catalog_import_identity_and_legacy_separation() {
     .unwrap()
     .finish(&work, &mut allocator)
     .unwrap();
-    assert_eq!((index.enum_count(), index.function_count()), (7, 20));
+    assert_eq!((index.enum_count(), index.function_count()), (8, 22));
     assert_eq!(
         index.builtin_enum_id(BuiltinEnum::ReadStatus).unwrap(),
         EnumId(0)
