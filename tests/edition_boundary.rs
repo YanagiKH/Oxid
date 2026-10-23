@@ -159,7 +159,6 @@ fn unsupported_typed_operations_reject_before_any_effects() {
         &["doc"],
         &["doctor"],
         &["diagnose"],
-        &["lock"],
         &["fetch"],
         &["update"],
         &["list"],

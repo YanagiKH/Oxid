@@ -117,6 +117,7 @@ Oxid 0.9 は実験や小さなツール向けです。`.oxb` にはシリアラ�
 開発版では実験的な [typed プロジェクト操作](docs/TYPED_PROJECTS.md)も利用できます。
 `oxid new hello --edition typed-preview` で作成し、manifest の設定に従って
 `check`、`run`、`test`、ネイティブ `build` を実行でき、Linux ではローカル依存パッケージも利用できます。
+`oxid lock` で依存ソースを固定し、プロジェクト操作の `--locked`／`--frozen` で変更を検出できます。
 ネイティブ実行は Linux x86_64 と LLVM 19.1.7 が対象で、typed preview のリソース制限は維持されます。
 
 安定版 Rust と C/C++ コンパイラが必要です。以下は Unix 系シェルで実行します。

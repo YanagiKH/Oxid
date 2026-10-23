@@ -1355,6 +1355,50 @@ pub(crate) fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
     parse_manifest_text(&text, path, false)
 }
 
+/// The typed project route parses and fingerprints the same bounded bytes.
+/// Legacy consumers retain their existing manifest reader and format.
+#[derive(Clone, Debug)]
+pub(crate) struct ManifestSnapshot {
+    pub(crate) manifest: ProjectManifest,
+    pub(crate) digest: String,
+}
+
+pub(crate) fn read_typed_regular_file(path: &Path, limit: usize, kind: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let describe = |error| format!("cannot read {} {}: {}", kind, path.display(), error);
+    let metadata = fs::symlink_metadata(path).map_err(describe)?;
+    if !metadata.file_type().is_file() {
+        return Err(format!("{} must be a regular file, not a symbolic link or special file: {}", kind, path.display()));
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(describe)?;
+    let metadata = file.metadata().map_err(describe)?;
+    if !metadata.is_file() || metadata.len() > limit as u64 {
+        return Err(format!("{} must be a regular file of at most {} bytes: {}", kind, limit, path.display()));
+    }
+    let mut bytes = Vec::new();
+    file.take(limit as u64 + 1).read_to_end(&mut bytes).map_err(describe)?;
+    if bytes.len() > limit {
+        return Err(format!("{} exceeds the {} byte limit", kind, limit));
+    }
+    Ok(bytes)
+}
+
+pub(crate) fn load_typed_manifest(path: &Path) -> Result<ManifestSnapshot, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = read_typed_regular_file(path, 1024 * 1024, "typed manifest")?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
+    let manifest = parse_manifest_text(text, path, false)?;
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    Ok(ManifestSnapshot { manifest, digest })
+}
+
 // Edition discovery must not make unrelated legacy operations depend on the
 // rest of the manifest. Lossy decoding is used only for selection: a selected
 // typed project is subsequently read strictly by load_manifest. Thus invalid

@@ -28,7 +28,9 @@ Unsupported settings fail explicitly. No setting silently selects legacy code.
 
 The initial increment covered a single package. [RFC 0033](0033-typed-path-dependencies.md)
 adds local typed dependencies to the same declaration graph on Linux. Existing
-`mod` declarations load source modules inside each package. Workspace, registry,
+`mod` declarations load source modules inside each package.
+[RFC 0034](0034-typed-local-locking.md) adds typed local dependency input locks.
+Workspace, registry,
 incremental cache and additional target/profile support remain subsequent work.
 
 ## Execution and test contract

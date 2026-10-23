@@ -70,6 +70,30 @@ guidance to use these project commands; explicit `--edition` file operations
 retain their original standalone contract. Tests retain the declaring project's
 dependency graph while replacing only the application entry file.
 
+Create a lock when the current dependency inputs are ready to record:
+
+```sh
+oxid lock --offline
+oxid check --locked
+oxid test --frozen
+oxid build --frozen
+```
+
+The typed lock records each local package, alias edge, manifest and loaded
+dependency source closure. `--locked` requires a matching lock; `--frozen` also
+requires offline operation. All dependencies are local in this implementation.
+An ordinary project command verifies a lock when present, and does not create
+one when absent. The application and test sources remain editable; manifests
+and dependency sources require `oxid lock --update` after an intentional change.
+Update cannot be combined with locked, offline or frozen mode. Incompatible
+legacy, unknown or malformed locks are rejected without overwriting them.
+
+Moving an unchanged relative directory layout preserves the lock. Unloaded
+files such as a README are outside its source checksum. The compiler verifies
+and executes the same retained dependency source bytes; native artifacts still
+depend on the compiler and SDK. See [RFC 0034](../rfcs/0034-typed-local-locking.md)
+for the exact lock format and scope.
+
 [Byte count](../apps/byte-count/README.md) is a three-package application outside
 the compiler fixtures. It checks shared dependency identity, reads binary stdin,
 and builds an executable that can be deployed without its source tree.
@@ -93,9 +117,10 @@ and build settings report an error instead of selecting legacy semantics.
 
 Current limits include bounded execution, call-only borrows, the existing
 typed language subset, one native target, and no typed Git/registry dependencies,
-lockfiles, workspaces, packaging, or incremental build cache. Package graphs are
+workspaces, vendoring, packaging, or incremental build cache. Package graphs are
 bounded to 256 packages, 1,024 dependency edges and depth 32, with the existing
 256-module limit shared by the complete session. Dependencies rebuild from local
 sources each time. See [RFC 0032](../rfcs/0032-typed-project-workflow.md) and
-[RFC 0033](../rfcs/0033-typed-path-dependencies.md) for the contracts and
+[RFC 0033](../rfcs/0033-typed-path-dependencies.md) and
+[RFC 0034](../rfcs/0034-typed-local-locking.md) for the contracts and
 [ROADMAP_V2](ROADMAP_V2.md) for the remaining R1 and v1.0 requirements.

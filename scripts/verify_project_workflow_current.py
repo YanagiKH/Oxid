@@ -32,7 +32,7 @@ PACKAGE_CHANGED = frozenset(("src/frontend/project.rs", "src/frontend/declaratio
                             "src/frontend/oir/project.rs", "src/frontend/oir/source.rs",
                             "src/frontend/oir/source/sealed.rs"))
 CHANGED = ORCHESTRATION_CHANGED | PACKAGE_CHANGED
-ADDED = frozenset(("src/project_cli.rs", "src/frontend/project/packages.rs",
+ADDED = frozenset(("src/project_cli.rs", "src/project_lock.rs", "src/frontend/project/packages.rs",
                    "src/frontend/project/packages/tests.rs"))
 INSTRUMENTED = frozenset(("src/frontend/declaration_index.rs", "src/frontend/parser.rs",
                           "src/frontend/source.rs", "src/frontend/oir/mod.rs",
@@ -89,7 +89,7 @@ def regular(root, name):
 def capture_sources(repo, baseline):
     """Record the reviewed project/package boundary; reject other input changes.
 
-    Package namespace changes are admitted explicitly. The retained assertions
+    Package namespace and lock orchestration changes are admitted explicitly. The retained assertions
     below still qualify only the old single-package semantics/resource cases;
     package graph behavior has separate compiler, CLI and real-application tests.
     Parser, ownership, OIR verification, lowering and runtime remain unchanged.

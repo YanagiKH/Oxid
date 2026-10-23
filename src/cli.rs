@@ -9,6 +9,7 @@ mod runtime {
 
 mod frontend;
 mod project_cli;
+mod project_lock;
 
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();

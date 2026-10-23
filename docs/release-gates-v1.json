@@ -59,7 +59,7 @@
         "Multi-version dependencies, registry publishing, lockfiles, offline/frozen/vendor builds, integrity and supply-chain verification."
       ],
       "remaining": [
-        "Manifest-selected check/run/build/test and Linux local-path dependency sessions are experimental; workspaces, typed lockfiles, packaging and registry/version resolution remain incomplete."
+        "Manifest-selected check/run/build/test, Linux local-path dependency sessions and typed dependency input locks are experimental; workspaces, vendoring, packaging, registry/version resolution and reproducible native artifacts remain incomplete."
       ]
     },
     {

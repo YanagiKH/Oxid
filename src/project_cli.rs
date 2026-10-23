@@ -2,7 +2,7 @@
 //!
 //! Explicit file editions retain the original pure frontend option boundary.
 //! Projects never reinterpret typed sources using the legacy interpreter.
-use crate::{frontend, runtime};
+use crate::{frontend, project_lock, runtime};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -18,6 +18,11 @@ struct Options {
     format: Option<String>,
     project_test: Option<String>,
     project_test_seen: bool,
+    locked: bool,
+    offline: bool,
+    frozen: bool,
+    update: bool,
+    lock_option_error: Option<String>,
     words: Vec<String>,
     invalid: bool,
 }
@@ -35,6 +40,22 @@ impl Options {
                 break;
             }
             let name = args[index].split('=').next().unwrap_or("");
+            let flag = match name {
+                "--locked" => Some(&mut result.locked),
+                "--offline" => Some(&mut result.offline),
+                "--frozen" => Some(&mut result.frozen),
+                "--update" => Some(&mut result.update),
+                _ => None,
+            };
+            if let Some(flag) = flag {
+                if *flag || args[index].contains('=') {
+                    result.lock_option_error =
+                        Some(format!("{name} is a flag and may only be specified once"));
+                }
+                *flag = true;
+                index += 1;
+                continue;
+            }
             let slot = match name {
                 "--edition" => &mut result.edition,
                 "--entry-mode" => &mut result.entry_mode,
@@ -85,6 +106,32 @@ impl Options {
     fn command(&self) -> &str {
         self.words.first().map_or("", String::as_str)
     }
+
+    fn requires_lock(&self) -> bool {
+        self.locked || self.frozen
+    }
+
+    fn has_lock_options(&self) -> bool {
+        self.locked || self.offline || self.frozen || self.update
+    }
+
+    fn validate_lock_options(&self) -> Result<(), String> {
+        if let Some(error) = &self.lock_option_error {
+            return Err(error.clone());
+        }
+        if self.update && (self.command() != "lock" || self.locked || self.offline || self.frozen) {
+            return Err("--update is valid only for `oxid lock` and conflicts with --locked, --offline and --frozen".into());
+        }
+        if self.has_lock_options()
+            && !matches!(self.command(), "lock" | "check" | "run" | "build" | "test")
+        {
+            return Err(
+                "locking options require a typed project lock, check, run, build or test command"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
 }
 
 /// Returns `None` only when the original file/legacy router owns this request.
@@ -126,7 +173,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     }
     let operands = operands(&options.words);
     let explicit = options.edition.is_some();
-    let project_operation = matches!(command, "build" | "test" | "new" | "init")
+    let project_operation = matches!(command, "lock" | "build" | "test" | "new" | "init")
         || (matches!(command, "check" | "run") && operands.is_empty());
     if explicit && !project_operation {
         return None;
@@ -134,6 +181,9 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     if matches!(command, "new" | "init") {
         if !explicit {
             return None;
+        }
+        if let Err(error) = options.validate_lock_options() {
+            return Some(report_error(&options, &error, false));
         }
         return Some(match scaffold(&options) {
             Ok(()) => 0,
@@ -183,7 +233,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             Err(error) => return Some(report_error(&options, &error, false)),
         }
     }
-    let manifest = match runtime::load_manifest(&manifest_path) {
+    let snapshot = match runtime::load_typed_manifest(&manifest_path) {
         Ok(manifest) => manifest,
         Err(error) => {
             return Some(report_error(
@@ -193,6 +243,14 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             ));
         }
     };
+    let manifest = &snapshot.manifest;
+    if !explicit && manifest.edition.as_deref() != Some("typed-preview") {
+        return Some(report_error(
+            &options,
+            "manifest edition changed during typed selection; retry the command",
+            options.entry_mode.as_deref() != Some("result"),
+        ));
+    }
     let edition = options
         .edition
         .as_deref()
@@ -217,13 +275,17 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         .or(manifest.entry_mode.as_deref())
         .unwrap_or("process")
         == "process";
-    if let Err(error) = validate_settings(&manifest) {
+    if let Err(error) = validate_settings(manifest) {
+        return Some(report_error(&options, &error, process));
+    }
+    if let Err(error) = options.validate_lock_options() {
         return Some(report_error(&options, &error, process));
     }
     let root = manifest_path.parent().expect("manifest has a parent");
     let result = match command {
-        "build" => build(root, &manifest, &options, process),
-        "test" => test(root, &manifest, &options),
+        "lock" => lock_project(root, &snapshot, &options),
+        "build" => build(root, &snapshot, &options, process),
+        "test" => test(root, &snapshot, &options),
         "check" | "run" if operands.is_empty() => {
             if options
                 .words
@@ -231,28 +293,14 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
                 .any(|v| v.starts_with("--experimental-"))
             {
                 Err("experimental provider options are unsupported for project commands".into())
-            } else if !manifest.dependencies.is_empty() || options.project_test.is_some() {
-                project_check_run(root, &manifest, &options, process)
             } else {
-                match entry_path(root, &manifest) {
-                    Ok(entry) => {
-                        let Some(entry) = entry.to_str() else {
-                            return Some(report_error(
-                                &options,
-                                "project entry path is not UTF-8",
-                                process,
-                            ));
-                        };
-                        args.push(entry.to_owned());
-                        inherit(args, &options, process, command);
-                        return frontend::dispatch(args);
-                    }
-                    Err(error) => Err(error),
-                }
+                project_check_run(root, &snapshot, &options, process)
             }
         }
         "check" | "run" | "compile" | "fmt" => {
-            if !manifest.dependencies.is_empty() {
+            if options.has_lock_options() {
+                Err("locking options require a source-less project command".into())
+            } else if !manifest.dependencies.is_empty() {
                 Err("package dependencies require a source-less project command: use `oxid check`, `oxid run`, `oxid build` or `oxid test`".into())
             } else if command == "fmt"
                 && operands
@@ -376,13 +424,18 @@ fn entry_path(root: &Path, manifest: &runtime::ProjectManifest) -> Result<PathBu
 
 /// Canonical package directories own identities; aliases are local graph edges.
 /// Admission reads manifests only and never invokes the legacy resolver.
+struct PackageGraph {
+    specs: Vec<frontend::PackageSpec>,
+    manifests: Vec<runtime::ManifestSnapshot>,
+}
+
 fn package_graph(
     root: &Path,
-    manifest: &runtime::ProjectManifest,
-    entry_override: Option<&Path>,
-) -> Result<Vec<frontend::PackageSpec>, String> {
+    snapshot: &runtime::ManifestSnapshot,
+) -> Result<PackageGraph, String> {
     struct Graph {
         packages: Vec<frontend::PackageSpec>,
+        manifests: Vec<runtime::ManifestSnapshot>,
         identities: HashMap<PathBuf, usize>,
         active: Vec<PathBuf>,
         edges: usize,
@@ -391,8 +444,7 @@ fn package_graph(
         fn visit(
             &mut self,
             root: PathBuf,
-            manifest: runtime::ProjectManifest,
-            entry_override: Option<&Path>,
+            snapshot: runtime::ManifestSnapshot,
         ) -> Result<usize, String> {
             if self.active.contains(&root) {
                 let mut chain: Vec<_> = self
@@ -412,6 +464,7 @@ fn package_graph(
             if self.packages.len() >= 256 || self.active.len() > 32 {
                 return Err("dependencies exceed the 256-package or 32-level graph limit".into());
             }
+            let manifest = &snapshot.manifest;
             let dependency = !self.packages.is_empty();
             if dependency && manifest.edition.as_deref() != Some("typed-preview") {
                 return Err(format!(
@@ -430,14 +483,12 @@ fn package_graph(
                 validate_name(name)
                     .map_err(|error| format!("package {}: {error}", root.display()))?;
             }
-            validate_settings(&manifest)
+            validate_settings(manifest)
                 .map_err(|error| format!("package {}: {error}", root.display()))?;
-            let entry = if let Some(entry) = entry_override {
-                entry.to_owned()
-            } else if dependency {
+            let entry = if dependency {
                 local_source(&root, manifest.entry.as_deref().unwrap_or("src/lib.ox"))?
             } else {
-                entry_path(&root, &manifest)?
+                entry_path(&root, manifest)?
             };
             let identity = self.packages.len();
             self.identities.insert(root.clone(), identity);
@@ -447,7 +498,8 @@ fn package_graph(
                 dependencies: Vec::new(),
             });
             self.active.push(root.clone());
-            let mut dependencies: Vec<_> = manifest.dependencies.into_iter().collect();
+            let mut dependencies: Vec<_> = manifest.dependencies.clone().into_iter().collect();
+            self.manifests.push(snapshot);
             dependencies.sort_by(|a, b| a.0.cmp(&b.0));
             self.edges = self
                 .edges
@@ -508,10 +560,10 @@ fn package_graph(
                     if !metadata.file_type().is_file() {
                         return Err(format!("dependencies: package `{alias}` manifest must be a regular file, not a symbolic link or special file"));
                     }
-                    let child_manifest = runtime::load_manifest(&path).map_err(|error| {
+                    let child_manifest = runtime::load_typed_manifest(&path).map_err(|error| {
                         format!("dependencies: cannot load package `{alias}`: {error}")
                     })?;
-                    self.visit(target, child_manifest, None)?
+                    self.visit(target, child_manifest)?
                 };
                 self.packages[identity]
                     .dependencies
@@ -526,21 +578,14 @@ fn package_graph(
     }
     let canonical_root =
         fs::canonicalize(root).map_err(|error| format!("cannot open project root: {error}"))?;
-    let entry_override = entry_override
-        .map(|entry| {
-            entry
-                .strip_prefix(root)
-                .map(|relative| canonical_root.join(relative))
-                .map_err(|_| "project test entry escapes its package root")
-        })
-        .transpose()?;
     let mut graph = Graph {
         packages: Vec::new(),
+        manifests: Vec::new(),
         identities: HashMap::new(),
         active: Vec::new(),
         edges: 0,
     };
-    graph.visit(canonical_root, manifest.clone(), entry_override.as_deref())?;
+    graph.visit(canonical_root, snapshot.clone())?;
     fn longest_path(
         package: usize,
         graph: &[frontend::PackageSpec],
@@ -561,10 +606,13 @@ fn package_graph(
     if longest_path(0, &graph.packages, &mut vec![None; graph.packages.len()]) > 32 {
         return Err("dependencies exceed the 32-level graph path limit".into());
     }
-    Ok(graph.packages)
+    Ok(PackageGraph {
+        specs: graph.packages,
+        manifests: graph.manifests,
+    })
 }
 
-fn validate_alias(alias: &str) -> Result<(), String> {
+pub(crate) fn validate_alias(alias: &str) -> Result<(), String> {
     let mut bytes = alias.bytes();
     if alias.len() > 64
         || !bytes
@@ -624,7 +672,7 @@ fn validate_alias(alias: &str) -> Result<(), String> {
 
 fn project_check_run(
     root: &Path,
-    manifest: &runtime::ProjectManifest,
+    snapshot: &runtime::ManifestSnapshot,
     options: &Options,
     process: bool,
 ) -> Result<i32, String> {
@@ -641,26 +689,105 @@ fn project_check_run(
         .project_test
         .as_ref()
         .map(|name| {
-            let path = manifest
+            snapshot
+                .manifest
                 .tests
                 .get(name)
-                .ok_or_else(|| format!("unknown declared project test `{name}`"))?;
-            local_source(root, path)
+                .map(String::as_str)
+                .ok_or_else(|| format!("unknown declared project test `{name}`"))
         })
         .transpose()?;
-    let graph = package_graph(root, manifest, entry_override.as_deref())?;
     let command = if options.command() == "check" {
         frontend::PackageCommand::Check
     } else {
         frontend::PackageCommand::Run
     };
-    Ok(frontend::process_package_project(
-        &graph,
-        None,
-        command,
-        options.json(),
-        process,
-    ))
+    execute_project(root, snapshot, options, process, command, entry_override)
+}
+
+fn lock_snapshot(
+    graph: &PackageGraph,
+    prepared: &frontend::PreparedPackageProject<'_>,
+) -> Result<project_lock::Snapshot, String> {
+    let fingerprints = prepared
+        .dependency_fingerprints()
+        .iter()
+        .map(|fingerprint| (fingerprint.package, fingerprint.checksum.clone()))
+        .collect::<Vec<_>>();
+    project_lock::expected(&graph.specs, &graph.manifests, &fingerprints)
+}
+
+fn execute_project(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    options: &Options,
+    process: bool,
+    command: frontend::PackageCommand<'_>,
+    entry_override: Option<&str>,
+) -> Result<i32, String> {
+    if options.command() == "run" && process && options.json() {
+        // Retain the pure process-option rejection before source loading.
+        return Ok(frontend::process_package_project(
+            &[],
+            None,
+            command,
+            true,
+            true,
+        ));
+    }
+    let existing = project_lock::read(root, options.requires_lock())?;
+    let graph = package_graph(root, snapshot)?;
+    let entry_override = entry_override
+        .map(|entry| local_source(&graph.specs[0].root, entry))
+        .transpose()?;
+    let prepared = match frontend::prepare_package_project(&graph.specs, entry_override.as_deref())
+    {
+        Ok(prepared) => prepared,
+        Err(error) => return Ok(error.report(command, options.json(), process)),
+    };
+    if existing.is_some() {
+        project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
+    }
+    Ok(prepared.execute(command, options.json(), process))
+}
+
+fn lock_project(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    options: &Options,
+) -> Result<i32, String> {
+    if options.words.len() != 1 || options.entry_mode.is_some() {
+        return Err(
+            "typed-preview lock accepts edition, message-format and locking options only".into(),
+        );
+    }
+    let existing = project_lock::read(root, options.requires_lock())?;
+    let graph = package_graph(root, snapshot)?;
+    let prepared =
+        frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
+    let expected = lock_snapshot(&graph, &prepared)?;
+    let changed = project_lock::publish(root, &expected, existing.as_ref(), options.update)?;
+    let message = if options.json() {
+        format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"lock-summary\",\"success\":true,\"changed\":{changed}}}\n")
+    } else {
+        format!(
+            "typed lock {}\n",
+            if changed {
+                if existing.is_some() {
+                    "updated"
+                } else {
+                    "created"
+                }
+            } else {
+                "verified"
+            }
+        )
+    };
+    io::stdout()
+        .lock()
+        .write_all(message.as_bytes())
+        .map_err(|error| format!("cannot report typed lock: {error}"))?;
+    Ok(0)
 }
 
 fn inherit(args: &mut Vec<String>, options: &Options, process: bool, command: &str) {
@@ -692,7 +819,7 @@ fn inherit(args: &mut Vec<String>, options: &Options, process: bool, command: &s
 
 fn build(
     root: &Path,
-    manifest: &runtime::ProjectManifest,
+    snapshot: &runtime::ManifestSnapshot,
     options: &Options,
     process: bool,
 ) -> Result<i32, String> {
@@ -722,38 +849,30 @@ fn build(
             ));
         }
     }
-    let name = manifest.name.as_deref().unwrap_or("app");
+    let name = snapshot.manifest.name.as_deref().unwrap_or("app");
     validate_name(name)?;
-    let entry = entry_path(root, manifest)?;
     let output = root.join(".oxid/bin").join(name);
-    if !manifest.dependencies.is_empty() {
-        let graph = package_graph(root, manifest, None)?;
-        return Ok(frontend::process_package_project(
-            &graph,
-            None,
-            frontend::PackageCommand::Compile {
-                output: output.to_str().ok_or("project output path is not UTF-8")?,
-                managed: true,
-            },
-            options.json(),
-            process,
-        ));
-    }
-    Ok(frontend::build_project(
-        entry.to_str().ok_or("project entry path is not UTF-8")?,
-        output.to_str().ok_or("project output path is not UTF-8")?,
-        options.json(),
+    execute_project(
+        root,
+        snapshot,
+        options,
         process,
-    ))
+        frontend::PackageCommand::Compile {
+            output: output.to_str().ok_or("project output path is not UTF-8")?,
+            managed: true,
+        },
+        None,
+    )
 }
 
 fn test(
     root: &Path,
-    manifest: &runtime::ProjectManifest,
+    snapshot: &runtime::ManifestSnapshot,
     options: &Options,
 ) -> Result<i32, String> {
+    let manifest = &snapshot.manifest;
     if options.words.len() != 1 || options.entry_mode.is_some() {
-        return Err("typed-preview test accepts only edition and message-format options; test entries always use process mode".into());
+        return Err("typed-preview test accepts edition, message-format and locking options; test entries always use process mode".into());
     }
     if manifest.tests.is_empty() {
         return Err(
@@ -771,16 +890,33 @@ fn test(
         .collect::<Result<Vec<_>, _>>()?;
     // Admit every package manifest before starting any declared user test.
     // Each child repeats admission and compiles its own entry in one session.
-    if !manifest.dependencies.is_empty() {
-        package_graph(root, manifest, Some(&entries[0].1))?;
+    let existing = project_lock::read(root, options.requires_lock())?;
+    let graph = package_graph(root, snapshot)?;
+    if existing.is_some() {
+        let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].0])?;
+        let prepared = frontend::prepare_package_project(&graph.specs, Some(&test_entry))
+            .map_err(|error| error.message())?;
+        project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
     }
     let mut passed = 0;
     for (name, _) in &entries {
-        let output = Command::new(&executable)
+        let mut child = Command::new(&executable);
+        child
             .current_dir(root)
             .args(["run", "--edition=typed-preview", "--entry-mode=process"])
             .arg(format!("--project-test={name}"))
-            .stdin(Stdio::null())
+            .stdin(Stdio::null());
+        if options.frozen {
+            child.arg("--frozen");
+        } else {
+            if options.locked || existing.is_some() {
+                child.arg("--locked");
+            }
+            if options.offline {
+                child.arg("--offline");
+            }
+        }
+        let output = child
             .output()
             .map_err(|e| format!("cannot run test {name:?}: {e}"))?;
         let success = output.status.success();

@@ -51,6 +51,14 @@ pub(in crate::frontend) struct PackageSources<'a> {
     pub context: PackageContext<'a>,
 }
 
+/// Borrowed input from an already loaded package. Paths are canonical source
+/// paths relative to that package's canonical root; bytes are never reopened.
+#[derive(Clone, Copy, Debug, Default)]
+pub(in crate::frontend) struct LoadedSourceInput<'s> {
+    pub path: &'s str,
+    pub bytes: &'s [u8],
+}
+
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
     Diagnostic::new("E0006", "package", message, None)
 }
@@ -262,6 +270,61 @@ pub(in crate::frontend) fn validate_graph(
 }
 
 impl<'a> PackageSources<'a> {
+    pub fn source_inputs(
+        &self,
+        package: usize,
+    ) -> Result<
+        impl ExactSizeIterator<Item = Result<LoadedSourceInput<'_>, Box<Diagnostic>>> + '_,
+        Box<Diagnostic>,
+    > {
+        let spec = self
+            .context
+            .specs
+            .get(package)
+            .ok_or_else(|| failure("invalid loaded package identity"))?;
+        let start = self.context.roots[package];
+        let end = if package + 1 < self.context.specs.len() {
+            self.context.roots[package + 1]
+        } else {
+            self.context.modules
+        };
+        if start >= end
+            || end > self.project.modules.len()
+            || end > self.context.owners.len()
+            || self.context.owners[start..end]
+                .iter()
+                .any(|&owner| owner != package)
+        {
+            return Err(failure("invalid loaded package source range"));
+        }
+        Ok((start..end).map(move |module| {
+            let header = &self.project.modules[module];
+            let path = header
+                .canonical_path
+                .as_ref()
+                .and_then(|path| path.strip_prefix(&spec.root).ok())
+                .and_then(Path::to_str)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| {
+                    failure("loaded source identity must be relative to its package root and UTF-8")
+                })?;
+            let source = self
+                .project
+                .sources
+                .files()
+                .get(header.file.0)
+                .ok_or_else(|| failure("invalid loaded package source identity"))?;
+            Ok(LoadedSourceInput {
+                path,
+                bytes: source.text().as_bytes(),
+            })
+        }))
+    }
+
+    pub fn into_source_map(self) -> SourceMap {
+        self.project.sources
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn load(
         specs: &'a [PackageSpec],
