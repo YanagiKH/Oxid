@@ -243,6 +243,7 @@ jobs:
     container: debian:trixie-slim
     env:
       OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
     steps:
       - name: Install pinned LLVM and host tools
         run: |
