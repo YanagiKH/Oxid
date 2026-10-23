@@ -35,6 +35,7 @@ PROBES = [
         fn inspect(w: &SourceProgram, sources: &SourceMap) {
             let _ = w.function_count();
             let _ = w.run(None, sources);
+            let _ = w.run_value(None, sources, crate::frontend::build_config::ExecutionPolicy::Bounded);
         }
     """),
     ("source-facade-cannot-be-forged", False, ("E0451",), """
@@ -70,7 +71,19 @@ PROBES = [
     """),
     ("raw-program-cannot-enter-checked-source", False, ("E0308",), """
         fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
-            let _ = crate::frontend::oir::CheckedSourceProgram::run(raw);
+            let _ = crate::frontend::oir::CheckedSourceProgram::run_value(
+                raw, crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("checked-source-immutable-value-method", True, (), """
+        fn inspect(w: &crate::frontend::oir::CheckedSourceProgram<'_>) {
+            let _ = w.run_value(crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("raw-program-cannot-enter-source-value-facade", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = SourceProgram::run_value(raw, None, sources,
+                crate::frontend::build_config::ExecutionPolicy::Bounded);
         }
     """),
     ("denial-context-immutable-inspection", True, (), """

@@ -214,10 +214,13 @@ fn overflow_division_and_narrowing_report_the_actual_operator() {
 
 const COMPOSITE: &str = "enum Value{Large(i64),Empty}
 struct Packet{tag:u8,value:i64,tail:i32,values:[i64;2]}
+enum Envelope{Packet(Packet),Error(i64),Empty}
 fn pass(value:Value)->Value{return value;}
+fn forward(value:Envelope)->Envelope{return value;}
 fn bump(values:&mut[i64])->(){values[0]=values[0]+1i64;return;}
 fn select(value:Value)->i64{match value{Value::Large(number)=>{return number;},Value::Empty=>{return 0i64;},}}
-fn main()->i64{let narrow=255;let byte=narrow.to_u8_checked();let mut packet=Packet{tag:byte,value:-9223372036854775808i64,tail:17,values:[9007199254740993i64,7i64]};bump(&mut packet.values);let tag=packet.tag;if tag.to_i32()!=255||packet.tail!=17{return 0i64;}let selected=select(pass(Value::Large(packet.value)));if selected!=-9223372036854775808i64{return 0i64;}return packet.values[0]+packet.values[1];}";
+fn total(value:Envelope)->i64{match value{Envelope::Packet(packet)=>{return packet.values[0]+packet.values[1];},Envelope::Error(number)=>{return number;},Envelope::Empty=>{return 0i64;},}}
+fn main()->i64{let narrow=255;let byte=narrow.to_u8_checked();let mut packet=Packet{tag:byte,value:-9223372036854775808i64,tail:17,values:[9007199254740993i64,7i64]};bump(&mut packet.values);let tag=packet.tag;if tag.to_i32()!=255||packet.tail!=17{return 0i64;}let empty=select(pass(Value::Empty));if empty!=0i64{return 0i64;}let selected=select(pass(Value::Large(packet.value)));if selected!=-9223372036854775808i64{return 0i64;}return total(forward(Envelope::Packet(packet)));}";
 
 #[test]
 fn aligned_fields_array_loans_and_enum_moves_preserve_all_bits() {

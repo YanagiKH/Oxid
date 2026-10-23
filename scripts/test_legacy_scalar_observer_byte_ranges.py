@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
-import legacy_scalar_observer_byte_strings as adapter
+import legacy_scalar_observer_i64 as adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +87,18 @@ class ByteRangeObserverTests(unittest.TestCase):
             for (kind, args), digest in zip(MODES, expected):
                 with self.subTest(source=source, kind=kind, args=args):
                     self.assertEqual(hashlib.sha256(self.observe(kind, source, args)).hexdigest(), digest)
+
+    def test_i64_literals_are_explicitly_outside_every_legacy_scalar_domain(self):
+        for literal in ('0i64', '9223372036854775807i64', '-9223372036854775808i64'):
+            source = "fn f()->i64{return " + literal + ";}"
+            for kind, args in MODES:
+                with self.subTest(literal=literal, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]),
+                                     ("outside_subset", "i64_literal"))
+                    self.assertEqual(value["span"], {"file_id": 0, "start": source.index(literal),
+                                                     "end": source.index(literal) + len(literal)})
+                    self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
 
     def test_new_modules_are_exact_copies_and_wrapper_pins_are_unchanged(self):
         for kind, builder in (("parser", parser), ("static", static)):
