@@ -1285,6 +1285,31 @@
         "scripts/test_hosted_execution_compatibility.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "owned-utf8-text",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "A reusable owned UTF-8 text library with strict validation, scalar appends and boundary-safe truncation.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Ordinary Oxid local packages using reference execution or LLVM native builds at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; UTF-8 filter process and native application checks on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "A local library over ByteBuf, without new compiler types or intrinsics. No general String syntax, returned references, Unicode normalization, grapheme segmentation or stable ABI. Allocations share the current runtime memory limit.",
+      "spec": [
+        "rfcs/0045-owned-utf8-text.md"
+      ],
+      "implementation": [
+        "packages/utf8_text/src/lib.ox",
+        "apps/utf8-normalize/app/src/main.ox"
+      ],
+      "tests": [
+        "apps/utf8-normalize/contracts/src/main.ox",
+        "scripts/test_utf8_text_app.py",
+        "scripts/verify_utf8_text_app.py"
+      ],
+      "evidence": []
     }
   ]
 }

@@ -154,6 +154,8 @@ Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 For complete applications, try [Byte count](../apps/byte-count/README.md) or
 [Frame filter](../apps/frame-filter/README.md), which passes owned records,
 arrays and nested enum values between local packages.
+Try [UTF-8 normalize](../apps/utf8-normalize/README.md) to validate and transform
+text using a shared [owned UTF-8 library](../packages/utf8_text/README.md).
 See the [language reference](../spec/typed-preview.md) for supported syntax.
 
 ## Long-running programs
