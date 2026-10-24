@@ -1,37 +1,43 @@
-# Compiler and OXBC artifacts
+# Script packages: .oxb and .oxa
 
-Oxid can run source directly or package it as a serialized AST. Both paths execute in the interpreter; `compile` does not generate native machine code.
+The Oxid 0.9 script workflow can bundle a program into an `.oxb` file. The file
+contains a serialized syntax tree and runs with a compatible Oxid runtime.
+For native executables in the development version, use the
+[native project guide](TYPED_PROJECTS.md).
 
-```bash
+## Package a script
+
+```sh
 oxid run app.ox
 oxid compile app.ox -o app.oxb
-oxid ast app.ox -o app.oxa
 oxid inspect app.oxb
 oxid run app.oxb
 ```
 
-`oxid compile` resolves top-level imports relative to each module, preprocesses source, parses every module with its own source name, orders dependencies deterministically, and serializes the combined program. `oxid ast` writes the same versioned representation with an `.oxa` extension for workflows that want to identify serialized AST explicitly.
+`compile` includes top-level imports and retains source locations for error
+messages. `inspect` displays the artifact's versions, module count, and checksum.
+Copy the `.oxb` file to another machine with a compatible Oxid runtime to run it.
 
-## OXBC 1.0
+`oxid ast app.ox -o app.oxa` writes the same representation using an extension
+that identifies a serialized syntax tree.
 
-An artifact starts with the `OXBC` magic followed by:
+## Build a script project
 
-- artifact format major and minor versions (`1.0`);
-- serialized AST version (`1`);
-- module count;
-- payload length;
-- a deterministic FNV-1a payload checksum;
-- the encoded program, including source ranges.
+Run `oxid build` from a script project to package the entry point declared in
+`oxid.toml`. The output is `.oxid/bin/<project>.oxb`; a build report is stored
+under `.oxid/`.
 
-The reader rejects bad magic, unsupported versions, truncated or trailing data, checksum mismatches, excessive payloads, excessive AST depth, and excessive collection sizes. Major, minor, and AST versions must match the runtime currently; compatibility is explicit rather than silently guessed.
+See the [quickstart](QUICKSTART.md) for creating and building a project.
 
-OXBC is not native machine code. Oxid 0.9 decodes the serialized AST and executes it in the runtime. The versioned container bounds payload size and gives future formats an explicit migration point. The FNV checksum detects accidental changes; it is not a cryptographic signature or proof that an artifact is trustworthy.
+## Compatibility and imports
 
-`oxid build` resolves dependencies, compiles the manifest entry to `.oxid/bin/<project>.oxb`, and records a build report under `.oxid/`.
+An `.oxb` file requires the Oxid runtime, including on a machine where the
+source is absent. The runtime rejects unsupported versions, damaged files, and
+files that exceed its format limits. The checksum detects accidental corruption;
+it does not authenticate the author or make a program trustworthy.
 
-
-Import initialization order can differ between source and packaged execution. See the [known module-ordering limitation](MODULES.md#initialization-order).
-
-Imports nested inside functions remain runtime AST operations and may need source
-files beside the artifact. Packaging is not a guarantee that every runtime import
-has been bundled. See the [module contract](../spec/legacy-modules.md).
+Import initialization order can differ between source and packaged execution;
+see the [module ordering limitation](MODULES.md#initialization-order). Imports
+inside functions may still need source files at runtime. See the
+[script module reference](../spec/legacy-modules.md) before distributing a program
+that uses them.

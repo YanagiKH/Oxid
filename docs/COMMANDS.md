@@ -1,125 +1,115 @@
 # Oxid commands
 
-Run `oxid --version` to check the installed version, or `oxid help` for built-in help. Commands below describe the 0.9 toolchain.
+Run `oxid --version` to see your installed version. Use `oxid help` for the
+complete command list.
 
-## Run and package
+## Script projects
 
-| Command | What it does |
-|---|---|
-| `oxid run <file.ox\|file.oxb\|file.oxa>` | Execute source or load and interpret an artifact |
-| `oxid <existing-file>` | Shorthand for `run` |
-| `oxid check <file>` | Parse source or validate an artifact without executing it |
-| `oxid compile <file.ox> [-o output.oxb]` | Package the module graph as OXBC 1.0 serialized AST |
-| `oxid ast <file.ox> [-o output.oxa]` | Write the same artifact representation with an `.oxa` extension |
-| `oxid inspect <artifact>` | Print versions, counts, and checksum |
-| `oxid repl` | Start the interactive interpreter |
-| `oxid watch <file.ox>` | Rerun after project files change |
+The published 0.9 binaries use the interpreter. Start with:
 
-The default legacy `check` does not type-check or enforce ownership. Legacy `compile` does not emit native machine code. See [artifact format](COMPILER.md) and [module ordering](MODULES.md).
-
-## Experimental typed commands
-
-`oxid check entry.ox --edition typed-preview` checks the complete explicitly
-declared project without execution. `run` selects bounded reference execution;
-`compile --backend llvm --output ./new-program` selects the Linux x86_64 native
-preview. Explicit file commands require one entry source. A manifest declaring
-`edition = "typed-preview"` also enables source-less `check` and `run`, native
-`build`, and explicit-entry `test`; see [typed projects](TYPED_PROJECTS.md).
-On Linux these project commands also check local path dependencies in one typed
-session. A dependency alias such as `math` is available through
-`use crate::math::answer;`; each library's `crate::` starts at its own root.
-`oxid lock [--offline]` records the local graph's dependency inputs. Project
-`check/run/build/test --locked` require matching inputs, and `--frozen` combines
-locked and offline operation. Plain project commands verify an existing lock;
-`oxid lock --update` accepts intentional changes. Application/test source bodies
-remain editable; the app manifest and dependency sources are pinned. This typed
-lock format is separate from legacy locking; see
-[the lock contract](../rfcs/0034-typed-local-locking.md).
-`oxid build --incremental` enables [native object reuse](../rfcs/0036-native-object-reuse.md).
-It still validates sources and locks, compiles the runtime and links the executable.
-Ordinary builds remain uncached.
-`oxid build --reproducible` selects stable relative paths in embedded runtime
-diagnostics; `--no-reproducible` overrides a manifest's boolean default.
-See [the native reproducibility contract](../rfcs/0039-reproducible-native-builds.md)
-for the preserved-layout and toolchain requirements.
-Typed workspaces add --workspace and --package / -p selection to source-less
-commands. Workspace lock admission always covers the complete member roster;
-workspace builds check libraries and optionally cache each binary's native
-object. Native doctor validates the full workspace without running member code.
-See [workspace workflows](TYPED_PROJECTS.md#workspaces).
-`oxid package --frozen [--output application.oxpkg.tar]` bundles the complete
-local source closure with its existing lock. `package --verify ARCHIVE` checks
-integrity; `package --extract ARCHIVE --output NEW_DIRECTORY` validates and
-extracts without replacing existing destinations. See
-[source packages](../rfcs/0038-typed-source-packages.md).
-Run/compile require an original zero-argument scalar main in the root file.
-Declared modules use `mod name;`, direct imports use `use crate::m::item;`, and
-`pub` controls module/item/field visibility. See [typed preview](../spec/typed-preview.md),
-[native preview](../spec/native-preview.md) and the
-[three-file example](../fixtures/typed-project-batch/README.md) for limits and
-reproduction. Module-free syntax has no discovery host gate; child loading
-currently admits Linux only.
-
-## Create and maintain a project
-
-| Command | What it does |
-|---|---|
-| `oxid new <name>` / `oxid init <name>` | Create a new directory and project scaffold; the directory must not exist |
-| `oxid web new <name>` / `oxid discord new <name>` | Create an HTTP or Discord starter project |
-| `oxid build [--offline\|--locked\|--frozen]` | Resolve dependencies and write `.oxid/bin/<project>.oxb` |
-| `oxid test` | Recursively execute `.ox` files under `tests/` and `examples/`, except explicitly registered source-data fixtures |
-| `oxid lint` | Run source checks across the project |
-| `oxid fmt [path]` | Rewrite source formatting in a file or project |
-| `oxid doctor` / `oxid diagnose` | Check the manifest, entry point, and project structure |
-| `oxid doctor --native` / `oxid diagnose --native` | Compile, link and execute a fixed native probe; check the LLVM toolchain, SDK, target libraries and typed package inputs. Supports `--message-format=json`. See [native doctor](NATIVE_DOCTOR.md). |
-| `oxid doc` | Write a built-in reference to `docs/API.md`, replacing an existing file |
-| `oxid script <name> [args...]` | Run a manifest script with appended arguments |
-| `oxid clean` | Delete the project's `.oxid` artifacts, caches, and dependency checkouts |
-
-`lint` currently runs syntax checks, not a separate static-analysis engine. Manifest scripts launch an executable and argument vector without a shell; see [Scripts](SCRIPTS.md).
-
-### Source-data fixtures
-
-Compiler inputs that are data rather than executable language tests can be
-registered by exact path in the current project's `oxid.toml`:
-
-```toml
-[test-fixtures]
-"tests/fixtures/parser/invalid-input.ox" = true
+```sh
+oxid new hello
+cd hello
+oxid run src/main.ox
 ```
 
-Paths are relative to that manifest's directory and must name existing `.ox`
-files beneath `tests/` or `examples/`. Directories, globs, parent traversal,
-absolute paths, symlinks, duplicate entries and values other than `true` are
-rejected before any tests execute. Unlisted files, including neighboring files
-in the same fixture directory, remain runnable. Without this section, recursive
-discovery is unchanged. Explicit `run` and `check` commands are unaffected, and
-a fixture-only project still reports that no runnable tests were found.
+| Command | What it does |
+|---|---|
+| `oxid run FILE` | Run source or an `.oxb` package. |
+| `oxid check FILE` | Check syntax without running the script. |
+| `oxid test` | Run project tests and examples. |
+| `oxid build` | Package the project as `.oxid/bin/NAME.oxb`. |
+| `oxid compile FILE -o app.oxb` | Package one entry point and its imports. |
+| `oxid inspect app.oxb` | Show package versions, module counts and checksum. |
+| `oxid fmt [PATH]` | Format script files in place. |
+| `oxid lint [PATH]` | Run syntax-based checks. |
+| `oxid repl` | Open the interactive interpreter. |
+| `oxid watch FILE` | Rerun when source files change. |
 
-In this repository, `scripts/verify_repo.py` requires these entries to match the
-validated frozen source-data inventory exactly. Registration does not establish
-compiler correctness or replace the dedicated tests for those inputs.
+An `.oxb` package runs with a compatible Oxid runtime. Script `check` and `lint`
+check syntax; they do not enforce static types or ownership.
 
-## Manage dependencies
+## Native projects
 
-- `oxid add <name> <path-or-pinned-git-source>`
-- `oxid remove <name>` / `oxid list`
-- `oxid lock [--offline|--locked]`
-- `oxid fetch [--offline|--locked]`
-- `oxid update`
-- `oxid install [--offline|--locked|--frozen]`
+Development builds also support typed native projects. They require Linux
+x86_64; native builds need LLVM, Clang and LLD 19.1.7 and system C development
+tools. This workflow is not included in the published 0.9 binaries.
 
-See [Packages](PACKAGES.md) for source rules, lockfile changes, and offline behavior. `install` resolves dependencies and builds the project; it does not install a global executable.
+```sh
+oxid new hello --edition typed-preview
+cd hello
+oxid check
+oxid run
+oxid test
+oxid build
+./.oxid/bin/hello
+```
 
-## Measure and inspect
+| Command | What it does |
+|---|---|
+| `oxid check` | Check types, ownership, modules and local dependencies. |
+| `oxid run` | Run the project's entry point. |
+| `oxid test` | Run tests declared in `oxid.toml`. |
+| `oxid build` | Build `.oxid/bin/NAME` as a native executable. |
+| `oxid build --incremental` | Reuse a matching native object when available. |
+| `oxid build --reproducible` | Use stable relative paths in native runtime errors. |
+| `oxid fmt FILE` | Print formatted source without modifying the file. |
+| `oxid fmt --check FILE` | Report whether formatting changes are needed. |
+| `oxid doctor --native` | Check the native tools, SDK and project inputs. |
 
-- `oxid bench [--iterations N] [--json report.json]` measures Oxid's internal workloads.
-- `oxid frontend` prints provider declarations; it does not select compiler providers.
-- `oxid module`, `oxid syntax`, and `oxid interop` print reference information.
-- `oxid bridge <python|java|go|c|cpp|all> [output]` generates host process adapters.
+The project's manifest selects typed mode for later commands. `build` preserves
+the previous executable if compilation fails. The executable runs without the
+Oxid compiler or source files. See [native projects](TYPED_PROJECTS.md) for settings
+and supported syntax.
 
-## Legacy bootstrap aliases
+With the same compiler, tools, SDK, settings and environment, `--reproducible`
+preserves executable bytes when the complete relative source layout is moved.
+It overrides the manifest's boolean `reproducible` setting;
+`--no-reproducible` explicitly disables it.
 
-`oxid bootstrap`, `oxid self-compile`, `oxid emit`, and `oxid self-host` all run the same [artifact round-trip check](BOOTSTRAP.md). They do not rebuild the compiler.
+## Dependencies and workspaces
 
-Each accepts `--check`. Without that flag, the command writes artifacts and a manifest under `.oxid/bootstrap/`. With it, the command skips those output writes; source preprocessing may still use its cache. See [self-hosting status](SELF_HOSTING.md) for the exact checks.
+`oxid lock` records dependency inputs. Normal project commands verify an existing
+lock. Add `--locked` to require one, `--offline` to avoid fetching, or `--frozen`
+for both. Use `oxid lock --update` after intentional changes to typed dependency
+inputs.
+
+Script projects support [local and pinned Git dependencies](PACKAGES.md). Typed
+projects currently support local path dependencies. Add a path under
+`[dependencies]` in `oxid.toml`.
+
+Typed workspaces share one lockfile. `--workspace` selects all members;
+`--package NAME` or `-p PATH` selects one:
+
+```sh
+oxid check --workspace
+oxid run --package client
+oxid test --workspace
+oxid build --workspace --frozen
+```
+
+## Share native-project sources
+
+```sh
+oxid lock
+oxid package --frozen --output application.oxpkg.tar
+oxid package --verify application.oxpkg.tar
+oxid package --extract application.oxpkg.tar --output restored
+```
+
+Source packages include local dependencies, tests and a matching lock. Extraction
+requires a new destination directory. Add `--sha256 HEX` to verify or extract to
+compare a separately supplied archive hash.
+
+## More tools
+
+| Command | Guide |
+|---|---|
+| `oxid script NAME [ARGS...]` | [Manifest scripts](SCRIPTS.md) |
+| `oxid add NAME PATH`, `oxid remove NAME` | [Script dependencies](PACKAGES.md) |
+| `oxid fetch`, `oxid update`, `oxid list` | [Package workflow](PACKAGE_WORKFLOW.md) |
+| `oxid bridge LANGUAGE` | [Calling other languages](INTEROP.md) |
+| `oxid web new NAME`, `oxid discord new NAME` | [HTTP and Discord helpers](WEB_AND_BOTS.md) |
+| `oxid doctor`, `oxid doc`, `oxid bench` | [Project tools](TOOLS.md) |
+
+For a short introduction, follow the [quickstart](QUICKSTART.md).
