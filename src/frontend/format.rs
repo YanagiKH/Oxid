@@ -431,6 +431,22 @@ fn roles_with_syntax(
             .ok_or_else(|| invariant("missing generic parameter delimiter"))?;
         roles[close.span.start] |= TIGHT_BEFORE;
     }
+    for call in program.generic_calls() {
+        let first = program
+            .tokens
+            .partition_point(|token| token.span.start < call.span.start);
+        for token in program.tokens[first..]
+            .iter()
+            .take_while(|token| token.span.end <= call.span.end)
+        {
+            match token.kind {
+                Kind::Colon | Kind::Less | Kind::Greater => {
+                    roles[token.span.start] |= TIGHT_BEFORE | TIGHT_AFTER
+                }
+                _ => (),
+            }
+        }
+    }
     if syntax.candidate() {
         // Preserve the unchanged two-token arrow; do not skip raw trivia.
         for pair in program.tokens.windows(2) {

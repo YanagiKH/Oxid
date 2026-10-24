@@ -378,6 +378,17 @@ pub struct GenericHeader {
     pub parameters: Vec<GenericParam>,
 }
 #[derive(Debug, PartialEq, Eq)]
+pub struct GenericArguments {
+    pub callee: Span,
+    pub arguments: Vec<TypeSyntax>,
+    pub span: Span,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct GenericSyntax {
+    pub headers: Vec<GenericHeader>,
+    pub calls: Vec<GenericArguments>,
+}
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructDecl {
     pub public: Option<Span>,
     pub name: Span,
@@ -615,6 +626,9 @@ impl std::fmt::Debug for Program {
         if !self.generic_headers().is_empty() {
             out.field("generic_headers", &self.generic_headers());
         }
+        if !self.generic_calls().is_empty() {
+            out.field("generic_calls", &self.generic_calls());
+        }
         out.field("source", &self.source);
         out.field("project_syntax", &self.project_syntax);
         out.finish()
@@ -637,7 +651,7 @@ impl Program {
         imports: Vec<ImportDecl>,
     ) -> Self {
         let mut project_syntax =
-            !modules.is_empty() || !imports.is_empty() || !source.generic_headers().is_empty();
+            !modules.is_empty() || !imports.is_empty() || source.has_generics();
         let mut std_import_syntax = false;
         // Both private summaries are derived during bounded AST construction.
         // The index never needs an unmetered path/import scan to read them.
@@ -677,6 +691,7 @@ impl Program {
             && self.path_segments == other.path_segments
             && self.imports == other.imports
             && self.generic_headers() == other.generic_headers()
+            && self.generic_calls() == other.generic_calls()
             && self.project_syntax == other.project_syntax
     }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
@@ -753,9 +768,8 @@ impl Program {
         if !visit() {
             return false;
         }
-        let mut project_syntax = !self.modules.is_empty()
-            || !self.imports.is_empty()
-            || !self.generic_headers().is_empty();
+        let mut project_syntax =
+            !self.modules.is_empty() || !self.imports.is_empty() || self.has_generics();
         let path_valid = |path: ItemPath, valid: &mut dyn FnMut(Span) -> bool| match path {
             ItemPath::Unqualified(span) => valid(span),
             ItemPath::Absolute(id) => {
@@ -799,6 +813,20 @@ impl Program {
                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
                 }
         };
+        for call in self.generic_calls() {
+            if !visit()
+                || !valid(call.callee)
+                || !valid(call.span)
+                || call.arguments.is_empty()
+                || call.arguments.len() > super::parser::MAX_PARAMS
+                || call
+                    .arguments
+                    .iter()
+                    .any(|ty| !visit() || !type_valid(*ty, &mut valid))
+            {
+                return false;
+            }
+        }
         let mut std_paths = 0usize;
         let mut std_imports = 0usize;
         let mut path_end = 0;

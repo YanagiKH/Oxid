@@ -196,8 +196,10 @@ fixed arrays and byte buffers. Passing an owned value transfers ownership.
 Use `T: Copy` when the function needs to read the same scalar value more than
 once. `Copy` does not provide arithmetic or comparison operators.
 
-Type arguments are inferred from arguments; a parameter used only in the result
-cannot be inferred. Generic structs, generic enums and user-defined traits are
+Type arguments are inferred from arguments. You can also specify every type
+parameter in declaration order, for example `identity::<Number>(Number { value: 42 })`.
+Use explicit type arguments when a parameter cannot be inferred from the inputs.
+Type names at a call resolve in the caller's module. Generic structs, generic enums and user-defined traits are
 not available yet. Generic functions work with `check`, `run`, tests and native
 builds. Recursive calls require the `hosted` execution policy for native builds.
 

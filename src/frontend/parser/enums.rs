@@ -168,6 +168,10 @@ impl Parser<'_> {
                 .tokens
                 .get(index + 1)
                 .is_some_and(|next| next.kind == Kind::Colon && colon.span.end == next.span.start)
+            && !self.tokens[index + 2..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Less)
     }
     fn enum_error(&self, message: &'static str) -> Box<Diagnostic> {
         self.diagnostic("E0100", "parse", message, Some(self.peek().span))
@@ -334,7 +338,7 @@ impl Parser<'_> {
                 .expect(Kind::Ident, "expected path segment after `::`")?
                 .span;
             self.path_segment(&mut length, segment)?;
-            if !self.double_colon() {
+            if !self.double_colon() || self.type_arguments_ahead() {
                 break segment.end;
             }
         };

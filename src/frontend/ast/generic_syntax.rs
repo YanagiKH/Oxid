@@ -16,7 +16,20 @@ impl Program {
     }
 
     pub(in crate::frontend) fn has_generics(&self) -> bool {
-        !self.generic_headers().is_empty()
+        self.source.has_generics()
+    }
+
+    pub(in crate::frontend) fn generic_calls(&self) -> &[GenericArguments] {
+        self.source.generic_calls()
+    }
+
+    pub(in crate::frontend) fn generic_arguments(&self, callee: Span) -> Option<&[TypeSyntax]> {
+        self.generic_calls()
+            .binary_search_by_key(&callee.start, |call| call.callee.start)
+            .ok()
+            .and_then(|id| self.generic_calls().get(id))
+            .filter(|call| call.callee.file == callee.file)
+            .map(|call| call.arguments.as_slice())
     }
 
     /// Generic functions can use the original single-file owned producer.
@@ -46,11 +59,10 @@ impl Program {
         if !self.has_generics() {
             return self.generic_headers().is_empty();
         }
-        if self.generic_headers().is_empty()
-            || self
-                .generic_headers()
-                .windows(2)
-                .any(|pair| pair[0].declaration.start >= pair[1].declaration.start)
+        if self
+            .generic_headers()
+            .windows(2)
+            .any(|pair| pair[0].declaration.start >= pair[1].declaration.start)
         {
             return false;
         }
