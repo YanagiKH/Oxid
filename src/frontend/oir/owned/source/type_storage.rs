@@ -335,13 +335,6 @@ fn add(left: usize, right: usize, at: Span) -> Result<usize, Box<Diagnostic>> {
 fn visit(work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
     work.debit(1, at, "typed storage preparation")
 }
-fn contained_value(value: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
-    if matches!(value, ValueTy::Owned(AggregateTy::Enum(_))) {
-        Err(invalid(at))
-    } else {
-        Ok(())
-    }
-}
 fn ordinary_parameter(value: &ParameterTy, at: Span) -> Result<(), Box<Diagnostic>> {
     match value {
         ParameterTy::Value(_) => Ok(()),
@@ -615,7 +608,8 @@ pub(super) fn prepare<'hir>(
         record_fields = add(record_fields, record.fields.len(), record.span)?;
         for field in &record.fields {
             visit(work, field.span)?;
-            contained_value(&field.ty, field.span)?;
+            // Field rows have the same storage for every owned type. The
+            // source and raw declaration passes validate nominal containment.
         }
     }
     if record_fields > source.counts.record_fields {

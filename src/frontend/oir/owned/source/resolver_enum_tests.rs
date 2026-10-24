@@ -528,7 +528,7 @@ fn bounded_enum_resolver_single_file_signature_privacy_uses_nominal_index() {
             "E",
         ),
         ("enum E{V} pub fn expose()->E{return E::V;}", "E0207", "E"),
-        ("enum E{V} struct R{value:E}", "E0300", "value:E"),
+        ("enum E{V} pub struct R{pub value:E}", "E0207", "value"),
     ] {
         with_index(source, |index| {
             let mut allocator = Allocator::default();

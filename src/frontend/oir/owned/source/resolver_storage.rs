@@ -249,13 +249,6 @@ impl ResolverInventory {
         Ok(())
     }
 }
-fn inventory_field_value(ty: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
-    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
-        Err(invalid(at))
-    } else {
-        Ok(())
-    }
-}
 /// No copied rows, auxiliary tables, recursion or heap allocation on success.
 /// Charge before every vector/row inspected, and retain only scalar totals.
 pub(super) fn inventory_parts(
@@ -273,7 +266,8 @@ pub(super) fn inventory_parts(
         inventory.vector(Kind::Fields, &record.fields, work, record.span)?;
         for field in &record.fields {
             work.debit(1, field.span, "paid resolver inventory row")?;
-            inventory_field_value(&field.ty, field.span)?;
+            // This pass counts storage only. Resolution and the independent
+            // joint layout pass validate each field's nominal type.
         }
     }
     for signature in signatures {

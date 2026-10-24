@@ -1,6 +1,7 @@
 //! Source output inventory only; neither a declaration nor an executable witness.
 use super::super::{budget as raw_budget, *};
 use super::{lower, typeck::TypedOwnedProgram};
+use crate::frontend::project::budget::Allocator;
 use std::mem::size_of;
 
 pub(super) const MAX_RAW_BYTES: usize = 64 * 1024 * 1024;
@@ -182,7 +183,29 @@ pub(super) fn preflight(
     guard_event(GuardEvent::DeclarationAdmission);
     let mut declarations =
         admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
-    declarations.layout_bytes = if typed
+    declarations.layout_bytes = if super::record_enum_layouts::needed(typed.records()) {
+        super::record_enum_layouts::inventory(
+            typed.index(),
+            typed.records(),
+            typed.work(),
+            &mut Allocator::default(),
+        )
+        .map_err(|error| {
+            let span = error
+                .primary
+                .unwrap_or_else(|| typed.index().sources().eof());
+            at(
+                if error.code == "E0400" {
+                    OwnedFailure::resource("record and enum source layout inventory")
+                } else {
+                    OwnedFailure::malformed(Malformed::CanonicalSite, span)
+                },
+                span,
+            )
+        })?
+        .0
+        .layout_bytes
+    } else if typed
         .records()
         .iter()
         .all(|r| r.fields.iter().all(|f| matches!(f.ty, ValueTy::Scalar(_))))

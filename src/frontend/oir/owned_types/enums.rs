@@ -1,6 +1,6 @@
 //! Checked sum declarations, integrated by the combined declaration facade.
 //! Finite owned alternatives use independently checked maximum-alternative
-//! layouts. Stored enum fields and enum borrows remain excluded. The facade
+//! layouts. Enum fields use joint nominal layouts; enum borrows stay excluded. The facade
 //! recomputes record and enum inventory before retained allocation.
 
 use super::{
@@ -96,7 +96,7 @@ impl EnumDecl {
         Layout {
             // Layout admission caps size at 1 MiB. A private high bit retains
             // alignment without enlarging this frozen declaration carrier.
-            size: (self.size & 0x3fff_ffff) as usize,
+            size: (self.size & 0x001f_ffff) as usize,
             align: if self.size & 0x4000_0000 != 0 {
                 16
             } else if self.size & 0x8000_0000 != 0 {
@@ -108,6 +108,10 @@ impl EnumDecl {
     }
     pub(in crate::frontend::oir) fn width(&self) -> usize {
         self.width as usize
+    }
+
+    pub(in crate::frontend::oir) fn has_enum_record_nesting(&self) -> bool {
+        self.size & 0x0020_0000 != 0
     }
 }
 
@@ -249,6 +253,20 @@ pub(in crate::frontend::oir) struct EnumDeclarations {
 }
 
 impl EnumDeclarations {
+    pub(super) fn mark_joint_shapes(&mut self, shapes: &[u8]) -> Result<(), DeclarationError> {
+        if shapes.len() != self.enums.len()
+            || shapes.iter().any(|shape| shape & !6 != 0 || shape & 2 == 0)
+        {
+            return Err(DeclarationError::TypeMismatch);
+        }
+        for (declaration, shape) in self.enums.iter_mut().zip(shapes) {
+            if shape & 4 != 0 {
+                declaration.size |= 0x0020_0000;
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::frontend::oir) fn check(
         raw: &[RawEnumDecl],
         sources: &SourceMap,
@@ -375,6 +393,26 @@ pub(in crate::frontend::oir) struct PreparedEnums<'a> {
 impl PreparedEnums<'_> {
     pub(in crate::frontend::oir) fn usage(&self) -> EnumUsage {
         self.usage
+    }
+
+    pub(super) fn with_joint_layouts(
+        mut self,
+        summaries: &[super::ContainmentSummary],
+        limit: usize,
+    ) -> Result<Self, EnumDeclarationError> {
+        if summaries.len() != self.raw.len() {
+            return Err(DeclarationError::TypeMismatch.into());
+        }
+        self.usage.layout_bytes = 0;
+        for summary in summaries {
+            self.usage.layout_bytes = super::limited_add(
+                self.usage.layout_bytes,
+                summary.layout.size,
+                limit,
+                "declaration layout bytes",
+            )?;
+        }
+        Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]

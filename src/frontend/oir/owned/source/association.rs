@@ -664,6 +664,11 @@ fn check_impl(
     }
     visitor.dimension(raw.records.len(), index.record_count())?;
     visitor.dimension(raw.functions.len(), index.function_count())?;
+    // New enum fields require exact source types even in nongeneric, unused
+    // records. Compare the entire field table: checking only the raw enum case
+    // would let a changed raw scalar or record type evade authentication.
+    let check_field_types = index.has_generic_instances()
+        || typed.is_some_and(|program| super::record_enum_layouts::needed(program.records()));
     for (ordinal, declaration) in raw.records.iter().enumerate() {
         let id = RecordId(ordinal);
         let (key, module) = index.record(id).map_err(|_| bad())?;
@@ -685,7 +690,7 @@ fn check_impl(
             {
                 return Err(bad());
             }
-            if index.has_generic_instances() {
+            if check_field_types {
                 let typed = typed.ok_or_else(bad)?;
                 if field.ty
                     != index.instantiated_record_field(

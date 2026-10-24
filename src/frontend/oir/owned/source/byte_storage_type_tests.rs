@@ -144,23 +144,23 @@ fn byte_storage_new_fence_format_backing_and_failure_roles_are_bounded() {
     let mut sources = SourceMap::new();
     let file = sources.add("byte-error.ox".into(), "field".into());
     let span = sources.get(file).span(0, 5);
-    // Byte fields now pass this gate; the independent enum-field fence stays.
+    // Byte and declared enum fields pass; invalid nominal identities stay closed.
     let ty = ValueTy::Owned(AggregateTy::Enum(
         crate::frontend::oir::owned_types::EnumId(0),
     ));
-    let literal = format_args!("enum values cannot be record fields");
+    let literal = format_args!("invalid resolved enum field identity");
     // The new branch passes a static literal: there is no interpolated
     // argument array or source-sized name backing to add to fmt::Arguments.
     assert_eq!(
         literal.as_str(),
-        Some("enum values cannot be record fields")
+        Some("invalid resolved enum field identity")
     );
     let (error, metrics) =
-        owned_diagnostic::measure_formatting(|| record_field_type(ty, span).unwrap_err());
+        owned_diagnostic::measure_formatting(|| record_field_type(ty, span, 0).unwrap_err());
     assert_eq!(metrics.allocations, 1);
     assert_eq!(
         metrics.copied_bytes,
-        "enum values cannot be record fields".len()
+        "invalid resolved enum field identity".len()
     );
     assert_eq!(metrics.displayed_names, 0);
     assert_eq!(
@@ -173,13 +173,13 @@ fn byte_storage_new_fence_format_backing_and_failure_roles_are_bounded() {
     for fail_after in [0, 1] {
         let (error, metrics) = owned_diagnostic::measure_formatting(|| {
             owned_diagnostic::fail_allocation_after(fail_after, || {
-                record_field_type(ty, span).unwrap_err()
+                record_field_type(ty, span, 0).unwrap_err()
             })
         });
         assert_eq!(metrics.allocations, 1);
         assert_eq!(error.primary, Some(span));
         assert_eq!(error.stage, "resolve");
-        assert_eq!(error.code, if fail_after == 0 { "E0400" } else { "E0300" });
+        assert_eq!(error.code, if fail_after == 0 { "E0400" } else { "E0500" });
     }
     macro_rules! role {
         ($label:literal,$ty:ty) => {

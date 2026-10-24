@@ -1943,6 +1943,62 @@ impl<'i, 's> QuerySession<'i, 's> {
             restrictor,
         })
     }
+    /// A field's nominal type must be visible throughout the intersection of
+    /// the record's visibility and the field's own visibility.
+    pub fn record_field_exposure(
+        &mut self,
+        field: FieldId,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<NominalExposure, Box<Diagnostic>> {
+        self.work.debit(1, at, "record field exposure")?;
+        let record = self
+            .tables
+            .records
+            .get(field.record.0)
+            .ok_or_else(|| bad(at))?;
+        if field.index >= record.field_len as usize {
+            return Err(bad(at));
+        }
+        let declared = self.tables.original(record.original)?;
+        self.requester(ModuleId(declared.owner as usize), at)?;
+        let member = self
+            .tables
+            .fields
+            .get(record.field_start as usize + field.index)
+            .ok_or_else(|| bad(at))?;
+        let domain = if declared.domain == NONE {
+            member.domain
+        } else if member.domain == NONE {
+            declared.domain
+        } else if self.tables.ancestor(declared.domain, member.domain)? {
+            member.domain
+        } else if self.tables.ancestor(member.domain, declared.domain)? {
+            declared.domain
+        } else {
+            return Err(bad(at));
+        };
+        let handle = self.tables.original_for_nominal(nominal, at)?;
+        let original = match self.tables.project_handle(handle)? {
+            DeclarationProjection::Builtin(_) => return Ok(NominalExposure::Allowed),
+            DeclarationProjection::SourceOriginal(id) => id,
+        };
+        let target = self.tables.original(original)?;
+        if target.domain == NONE
+            || (domain != NONE && self.tables.ancestor(target.domain, domain)?)
+        {
+            return Ok(NominalExposure::Allowed);
+        }
+        let restrictor = if target.restrictor != NONE && target.restrictor != original {
+            Some(self.tables.original(target.restrictor)?.name.span())
+        } else {
+            None
+        };
+        Ok(NominalExposure::Denied {
+            declaration: target.name.span(),
+            restrictor,
+        })
+    }
     pub fn prepare_type_name(
         &mut self,
         record: RecordId,

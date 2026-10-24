@@ -42,8 +42,8 @@ pub(super) enum Action<'a> {
     Release,
 }
 
-/// Records cannot contain enum fields. The enclosing tag-directed emitter
-/// handles enum alternatives before entering this static resource-leaf walk.
+/// Only aggregates without enum fields use this static walk. Enum alternatives
+/// and records with tagged descendants use their enclosing active transfer.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn leaves(
     out: &mut Emission,

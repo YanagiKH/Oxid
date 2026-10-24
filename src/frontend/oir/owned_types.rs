@@ -10,6 +10,7 @@ use super::{hir, SourceMap, Span};
 use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
+mod composition;
 mod enums;
 mod resources;
 #[allow(unused_imports)]
@@ -295,8 +296,8 @@ pub(super) struct RawRecordDecl {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RawFieldDecl {
     pub(super) id: FieldId,
-    // Raw input can express unsupported fields so validation, not a trusted
-    // producer, is responsible for excluding enums and references.
+    // Raw input can express unsupported fields. Validation excludes references
+    // and checks every owned nominal against the complete declaration graph.
     pub(super) ty: ParameterTy,
     pub(super) span: Span,
 }
@@ -408,19 +409,23 @@ pub(super) struct RecordDecl {
     field_start: usize,
     field_end: usize,
     layout: Layout,
-    // Width is at most 1 MiB and a record has at most 1,024 fields.
-    // These two checked counts fit in the original word on 32/64-bit hosts.
+    // Width minus one needs 20 bits and the owned-field count needs 11 bits.
+    // Bit31 records enum nesting; all fit the original word on 32/64-bit hosts.
     width_and_owned_fields: usize,
 }
 impl RecordDecl {
-    const WIDTH_BITS: u32 = 21;
+    const WIDTH_BITS: u32 = 20;
 
     fn width(&self) -> usize {
-        self.width_and_owned_fields & ((1usize << Self::WIDTH_BITS) - 1)
+        (self.width_and_owned_fields & ((1usize << Self::WIDTH_BITS) - 1)) + 1
     }
 
     pub(super) fn owned_field_count(&self) -> usize {
-        self.width_and_owned_fields >> Self::WIDTH_BITS
+        (self.width_and_owned_fields >> Self::WIDTH_BITS) & 0x7ff
+    }
+
+    pub(super) fn has_enum_record_nesting(&self) -> bool {
+        self.width_and_owned_fields & (1usize << 31) != 0
     }
 
     pub(super) fn id(&self) -> RecordId {
@@ -593,6 +598,7 @@ impl Declarations {
             )?
         };
         let mut resource_declarations = false;
+        let mut enum_record_fields = false;
         for (index, record) in raw.iter().enumerate() {
             if record.id != RecordId(index) {
                 return Err(DeclarationError::InvalidRecordId(record.id));
@@ -608,7 +614,8 @@ impl Declarations {
                     return Err(DeclarationError::InvalidFieldId(field.id));
                 }
                 check_span(sources, field.span)?;
-                let ty = value_field(field)?;
+                let ty = value_field_with_enums(field, raw_enums.len())?;
+                enum_record_fields |= matches!(ty, ValueTy::Owned(AggregateTy::Enum(_)));
                 resource_declarations |=
                     matches!(ty, ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File));
                 if let ValueTy::Owned(AggregateTy::Record(id)) = ty {
@@ -617,6 +624,16 @@ impl Declarations {
                     }
                 }
             }
+        }
+        if enum_record_fields {
+            return Self::check_joint_records(
+                raw,
+                raw_enums,
+                prepared_enums,
+                usage,
+                limits,
+                allocator,
+            );
         }
         let summaries = containment_summaries(raw, limits)?;
         for summary in &summaries {
@@ -707,7 +724,7 @@ impl Declarations {
                 field_start,
                 field_end: fields.len(),
                 layout: cursor.finish()?,
-                width_and_owned_fields: summaries[record.id.0].width
+                width_and_owned_fields: (summaries[record.id.0].width - 1)
                     | (owned_fields << RecordDecl::WIDTH_BITS),
             });
         }
@@ -724,6 +741,105 @@ impl Declarations {
             },
         };
         if resource_declarations {
+            let (presence, bytes) = resources::summaries(&result, limits.table_bytes, allocator)?;
+            result.storage.table_bytes =
+                u32::try_from(bytes).map_err(|_| DeclarationError::LayoutOverflow)?;
+            result.storage.resources = presence;
+        }
+        Ok(result)
+    }
+
+    /// New mixed layouts have their own traversal and pending summary owner.
+    /// The preceding record-only declaration path keeps its allocation order.
+    fn check_joint_records(
+        raw: &[RawRecordDecl],
+        raw_enums: &[RawEnumDecl],
+        prepared: PreparedEnums<'_>,
+        mut usage: DeclarationUsage,
+        limits: Limits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, DeclarationError> {
+        let layouts = composition::layouts(raw, raw_enums, usage.table_bytes, limits, allocator)?;
+        let prepared = prepared.with_joint_layouts(layouts.enums(), limits.layout_bytes)?;
+        usage.layout_bytes = prepared.usage().layout_bytes;
+        for record in layouts.records() {
+            usage.layout_bytes = limited_add(
+                usage.layout_bytes,
+                record.layout.size,
+                limits.layout_bytes,
+                "declaration layout bytes",
+            )?;
+        }
+        let resources = raw.iter().flat_map(|record| &record.fields).any(|field| {
+            matches!(
+                field.ty,
+                ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File))
+            )
+        }) || raw_enums
+            .iter()
+            .flat_map(|enumeration| &enumeration.variants)
+            .any(|variant| {
+                matches!(
+                    variant.payload,
+                    Some(ParameterTy::Value(ValueTy::Owned(
+                        AggregateTy::ByteBuf | AggregateTy::File
+                    )))
+                )
+            });
+        if resources {
+            limited_add(
+                usage.table_bytes,
+                raw.len() + raw_enums.len(),
+                limits.table_bytes,
+                "resource containment summary bytes",
+            )?;
+        }
+        let mut records = Vec::new();
+        allocator.vector_exact(&mut records, usage.records, "checked record declarations")?;
+        let mut fields = Vec::new();
+        allocator.vector_exact(&mut fields, usage.fields, "checked record fields")?;
+        let mut enums = prepared.finish_owned_with_allocator(allocator, layouts.enums())?;
+        enums.mark_joint_shapes(layouts.enum_shapes())?;
+        for record in raw {
+            let field_start = fields.len();
+            let mut cursor = LayoutCursor::default();
+            let mut owned_fields = 0usize;
+            for field in &record.fields {
+                let ty = value_field_with_enums(field, raw_enums.len())?;
+                let summary = composition::value_summary(ty, layouts.records(), layouts.enums())?;
+                let offset = cursor.push(summary.layout)?;
+                owned_fields += usize::from(matches!(ty, ValueTy::Owned(_)));
+                fields.push(FieldDecl {
+                    id: field.id,
+                    ty,
+                    span: field.span,
+                    offset,
+                });
+            }
+            records.push(RecordDecl {
+                id: record.id,
+                span: record.span,
+                field_start,
+                field_end: fields.len(),
+                layout: cursor.finish()?,
+                width_and_owned_fields: (layouts.records()[record.id.0].width - 1)
+                    | (owned_fields << RecordDecl::WIDTH_BITS)
+                    | (usize::from(layouts.record_has_enum_nesting(record.id)) << 31),
+            });
+        }
+        let mut result = Self {
+            records,
+            fields,
+            enums,
+            storage: DeclarationStorage {
+                table_bytes: u32::try_from(usage.table_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                layout_bytes: u32::try_from(usage.layout_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                resources: Vec::new(),
+            },
+        };
+        if resources {
             let (presence, bytes) = resources::summaries(&result, limits.table_bytes, allocator)?;
             result.storage.table_bytes =
                 u32::try_from(bytes).map_err(|_| DeclarationError::LayoutOverflow)?;
@@ -763,10 +879,12 @@ impl Declarations {
         aggregate: AggregateTy,
     ) -> Result<ScalarLeaves<'_>, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
-        if matches!(
-            aggregate,
-            AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File
-        ) {
+        if self.has_enum_record_nesting(aggregate)?
+            || matches!(
+                aggregate,
+                AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File
+            )
+        {
             return Err(DeclarationError::TypeMismatch);
         }
         let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
@@ -851,6 +969,24 @@ impl Declarations {
             AggregateTy::FixedArray(array) => {
                 FixedArrayTy::check(array.element(), array.length())?;
                 Ok(array.length().max(1))
+            }
+        }
+    }
+
+    pub(super) fn has_enum_record_nesting(
+        &self,
+        ty: AggregateTy,
+    ) -> Result<bool, DeclarationError> {
+        match ty {
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::has_enum_record_nesting),
+            AggregateTy::Enum(id) => self
+                .enums
+                .enumeration(id)
+                .map(|enumeration| enumeration.has_enum_record_nesting())
+                .map_err(Into::into),
+            _ => {
+                self.check_aggregate_type(ty)?;
+                Ok(false)
             }
         }
     }
@@ -1037,6 +1173,18 @@ fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
         }
         ParameterTy::Value(ty) => Ok(ty),
         _ => Err(DeclarationError::NonScalarField(field.id)),
+    }
+}
+
+fn value_field_with_enums(
+    field: &RawFieldDecl,
+    enum_count: usize,
+) -> Result<ValueTy, DeclarationError> {
+    match field.ty {
+        ParameterTy::Value(value @ ValueTy::Owned(AggregateTy::Enum(id))) if id.0 < enum_count => {
+            Ok(value)
+        }
+        _ => value_field(field),
     }
 }
 
@@ -1279,6 +1427,47 @@ where
         )?;
     }
     Ok(total)
+}
+
+/// Source layout inventory only. No source spans or nominal identities are
+/// authenticated here and no checked declaration or execution witness escapes.
+pub(super) fn admit_joint_value_layouts(
+    records: &[RawRecordDecl],
+    enums: &[RawEnumDecl],
+    allocator: &mut Allocator,
+) -> Result<(DeclarationUsage, usize), DeclarationError> {
+    let mut usage = preflight(records, Limits::DEFAULT)?;
+    let enum_usage = admit_enum_counts(
+        enums.iter().map(|enumeration| enumeration.variants.len()),
+        usage,
+    )
+    .map_err(DeclarationError::from)?;
+    let table_bytes = limited_add(
+        usage.table_bytes,
+        enum_usage.table_bytes,
+        Limits::DEFAULT.table_bytes,
+        "declaration table bytes",
+    )?;
+    let layouts = composition::layouts(records, enums, table_bytes, Limits::DEFAULT, allocator)?;
+    usage.layout_bytes = 0;
+    for summary in layouts.records() {
+        usage.layout_bytes = limited_add(
+            usage.layout_bytes,
+            summary.layout.size,
+            Limits::DEFAULT.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    let mut enum_bytes = 0;
+    for summary in layouts.enums() {
+        enum_bytes = limited_add(
+            enum_bytes,
+            summary.layout.size,
+            Limits::DEFAULT.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    Ok((usage, enum_bytes))
 }
 
 /// Count scalar layouts without building declarations. The private cursor is

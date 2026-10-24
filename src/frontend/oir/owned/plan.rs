@@ -138,6 +138,9 @@ const _: () = assert!(
         == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
 );
 impl<'a> ExecutionPlan<'a> {
+    pub(super) fn uses_enum_record_nesting(&self) -> bool {
+        self.integer_extension & 16 != 0
+    }
     pub(super) fn uses_wide_scalars(&self) -> bool {
         self.wide_scalars
     }
@@ -532,7 +535,14 @@ impl<'a> ExecutionPlan<'a> {
             integer_extension: u8::from(integer_extension)
                 | (u8::from(bitwise) << 1)
                 | (u8::from(floats) << 2)
-                | (u8::from(characters) << 3),
+                | (u8::from(characters) << 3)
+                | (u8::from(
+                    witness
+                        .declarations()
+                        .records()
+                        .iter()
+                        .any(|record| record.has_enum_record_nesting()),
+                ) << 4),
             quad_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.

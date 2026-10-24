@@ -6,9 +6,11 @@ mod source_resources;
 
 #[test]
 fn record_pattern_runtime_preflights_every_destination_before_any_payload_copy() {
-    let checked = super::super::source::resource_fixtures::checked_enum_project(
-        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;struct Pair{first:ByteBuf,second:ByteBuf}fn main()->i32{let pair=Pair{first:make(40u8),second:make(2u8)};let Pair{first:a,second:b}=pair;return len(&a)+len(&b);}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}"
-    );
+    for source in [
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;struct Pair{first:ByteBuf,second:ByteBuf}fn main()->i32{let pair=Pair{first:make(40u8),second:make(2u8)};let Pair{first:a,second:b}=pair;return len(&a)+len(&b);}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}",
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;enum Option<T>{None,Some(T)}struct Pair{first:Option<ByteBuf>,second:Option<ByteBuf>}fn main()->i32{let pair=Pair{first:Option::<ByteBuf>::Some(make(40u8)),second:Option::<ByteBuf>::Some(make(2u8))};let Pair{first:a,second:b}=pair;match a{Option::None=>{return 0;},Option::Some(value)=>{return len(&value);},}}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}",
+    ] {
+    let checked = super::super::source::resource_fixtures::checked_enum_project(source);
     assert_eq!(checked.entry, hir::DefId(0));
     let plan = ExecutionPlan::build(&checked.witness).unwrap();
     for mutation in 0..4 {
@@ -78,6 +80,7 @@ fn record_pattern_runtime_preflights_every_destination_before_any_payload_copy()
             machine.heap.ledger().allocations,
             machine.heap.ledger().releases
         );
+    }
     }
 }
 

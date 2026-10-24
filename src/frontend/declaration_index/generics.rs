@@ -103,6 +103,7 @@ impl Storage {
 enum ExposureOwner {
     Function(DefId),
     Enumeration(EnumId),
+    Field(FieldId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -263,7 +264,7 @@ impl Plan {
                     parameter.name,
                 )?;
             }
-            nominals.record(
+            let value = nominals.record(
                 index,
                 work,
                 &mut storage,
@@ -273,6 +274,39 @@ impl Plan {
                 declaration.name,
                 0,
             )?;
+            let Value::Record(application) = value else {
+                return Err(bad(declaration.name));
+            };
+            for (position, (field, value)) in declaration
+                .fields
+                .iter()
+                .zip(&nominals.records[application].fields)
+                .enumerate()
+            {
+                if matches!(
+                    value,
+                    Value::Record(_)
+                        | Value::Enumeration(_)
+                        | Value::Concrete(ValueTy::Owned(
+                            AggregateTy::Record(_)
+                                | AggregateTy::Enum(_)
+                                | AggregateTy::ByteBuf
+                                | AggregateTy::File
+                        ))
+                ) {
+                    nominals.exposure(
+                        index,
+                        work,
+                        ExposureOwner::Field(FieldId {
+                            record,
+                            index: position,
+                        }),
+                        *value,
+                        field.ty.span,
+                        0,
+                    )?;
+                }
+            }
         }
         for id in 0..index.template_enum_count() {
             let enumeration = EnumId(id);

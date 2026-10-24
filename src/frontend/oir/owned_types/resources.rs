@@ -488,10 +488,20 @@ mod tests {
         assert!(invalid.next().is_none());
     }
     #[test]
-    fn bytebuf_containment_keeps_enum_and_reference_record_fields_closed() {
+    fn bytebuf_containment_accepts_declared_enums_and_keeps_reference_fields_closed() {
         let (sources, span) = source();
+        let mut valid = record(0, &[hir::Ty::Unit], span);
+        valid.fields[0].ty = ParameterTy::Value(owned(AggregateTy::Enum(EnumId(0))));
+        let enums = [enumeration(0, &[None], span)];
+        let checked = Declarations::check_combined(&[valid], &enums, &sources).unwrap();
+        assert!(checked
+            .has_enum_record_nesting(AggregateTy::Record(RecordId(0)))
+            .unwrap());
+        assert!(!checked
+            .contains_resources(AggregateTy::Record(RecordId(0)))
+            .unwrap());
         for ty in [
-            ParameterTy::Value(owned(AggregateTy::Enum(EnumId(0)))),
+            ParameterTy::Value(owned(AggregateTy::Enum(EnumId(1)))),
             ParameterTy::Reference {
                 referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
                 kind: BorrowKind::Shared,
