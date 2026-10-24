@@ -1743,6 +1743,94 @@ impl Parser<'_> {
         self.heights.push(height);
         Ok(id)
     }
+    fn float_literal(
+        &mut self,
+        literal: super::source::Span,
+        negative: bool,
+        end: &mut usize,
+    ) -> Result<Option<ExprKind>, Box<Diagnostic>> {
+        if !self.wide_scalars_enabled() {
+            return Ok(None);
+        }
+        let mut candidate = literal;
+        let first = self.source.text_at(candidate);
+        if first.contains(".to_") {
+            return Ok(None);
+        }
+        // Pointer-sized integer suffixes end in `e`; select every existing
+        // integer spelling before looking for a scientific exponent sign.
+        if first.ends_with("i64")
+            || first.ends_with("i32")
+            || IntegerTypeSyntax::ADDITIONAL_LITERAL_SUFFIXES
+                .into_iter()
+                .any(|kind| first.ends_with(kind.spelling()))
+        {
+            return Ok(None);
+        }
+        if first.ends_with(['e', 'E'])
+            && matches!(self.peek().kind, Kind::Plus | Kind::Minus)
+            && self.peek().span.start == literal.end
+        {
+            let sign = self.bump();
+            if self.peek().kind != Kind::Number || self.peek().span.start != sign.span.end {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "expected decimal exponent digits",
+                    Some(sign.span),
+                ));
+            }
+            candidate = self.source.span(literal.start, self.bump().span.end);
+            *end = candidate.end;
+        }
+        let text = self.source.text_at(candidate);
+        let kind = if text.ends_with("f32") {
+            Some(FloatTypeSyntax::F32)
+        } else if text.ends_with("f64") {
+            Some(FloatTypeSyntax::F64)
+        } else {
+            None
+        };
+        if kind.is_none() && !text.bytes().any(|b| matches!(b, b'.' | b'e' | b'E')) {
+            return Ok(None);
+        }
+        let digits = self.source.span(
+            candidate.start,
+            candidate.end - if kind.is_some() { 3 } else { 0 },
+        );
+        let value = self.source.text_at(digits).as_bytes();
+        let mut cursor = 0;
+        while value.get(cursor).is_some_and(u8::is_ascii_digit) {
+            cursor += 1;
+        }
+        let valid_integer = cursor != 0;
+        if value.get(cursor) == Some(&b'.') {
+            cursor += 1;
+            while value.get(cursor).is_some_and(u8::is_ascii_digit) {
+                cursor += 1;
+            }
+        }
+        let mut valid_exponent = true;
+        if value.get(cursor).is_some_and(|b| matches!(b, b'e' | b'E')) {
+            cursor += 1;
+            if value.get(cursor).is_some_and(|b| matches!(b, b'+' | b'-')) {
+                cursor += 1;
+            }
+            let start = cursor;
+            while value.get(cursor).is_some_and(u8::is_ascii_digit) {
+                cursor += 1;
+            }
+            valid_exponent = cursor > start;
+        }
+        if !valid_integer || !valid_exponent || cursor != value.len() {
+            return Err(self.diagnostic("E0101", "parse", "unsupported floating-point literal; expected decimal digits and an optional exponent", Some(candidate)));
+        }
+        Ok(Some(ExprKind::FloatNumber {
+            digits,
+            negative,
+            kind: kind.unwrap_or(FloatTypeSyntax::F64),
+        }))
+    }
     fn primary(
         &mut self,
         depth: usize,
@@ -1779,60 +1867,109 @@ impl Parser<'_> {
                 }
                 let literal = self.bump().span;
                 end = literal.end;
-                let wide =
-                    self.wide_scalars_enabled() && self.source.text_at(literal).ends_with("i64");
-                let integer = if self.wide_scalars_enabled() {
-                    IntegerTypeSyntax::ADDITIONAL_LITERAL_SUFFIXES
-                        .into_iter()
-                        .find(|kind| self.source.text_at(literal).ends_with(kind.spelling()))
+                if let Some(kind) = self.float_literal(literal, negative, &mut end)? {
+                    kind
                 } else {
-                    None
-                };
-                let digits = if wide {
-                    self.source.span(literal.start, literal.end - 3)
-                } else if let Some(kind) = integer {
-                    self.source
-                        .span(literal.start, literal.end - kind.spelling().len())
-                } else {
-                    literal
-                };
-                if !self
-                    .source
-                    .text_at(digits)
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit())
-                    || self.source.text_at(digits).is_empty()
-                {
-                    // The unchanged lexer retains a numeric candidate as one
-                    // token. Still blame the excluded postfix punctuation for
-                    // these exact new spellings, never a fake numeric receiver.
-                    if self.peek().kind == Kind::LParen {
-                        if let Some((number, name)) = self.source.text_at(digits).split_once('.') {
-                            if number.bytes().all(|byte| byte.is_ascii_digit())
-                                && matches!(name, "to_u8_checked" | "to_i32")
+                    let wide = self.wide_scalars_enabled()
+                        && self.source.text_at(literal).ends_with("i64");
+                    let integer = if self.wide_scalars_enabled() {
+                        IntegerTypeSyntax::ADDITIONAL_LITERAL_SUFFIXES
+                            .into_iter()
+                            .find(|kind| self.source.text_at(literal).ends_with(kind.spelling()))
+                    } else {
+                        None
+                    };
+                    let digits = if wide {
+                        self.source.span(literal.start, literal.end - 3)
+                    } else if let Some(kind) = integer {
+                        self.source
+                            .span(literal.start, literal.end - kind.spelling().len())
+                    } else {
+                        literal
+                    };
+                    if !self
+                        .source
+                        .text_at(digits)
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit())
+                        || self.source.text_at(digits).is_empty()
+                    {
+                        // The unchanged lexer retains a numeric candidate as one
+                        // token. Still blame the excluded postfix punctuation for
+                        // these exact new spellings, never a fake numeric receiver.
+                        if self.peek().kind == Kind::LParen {
+                            if let Some((number, name)) =
+                                self.source.text_at(digits).split_once('.')
                             {
-                                let dot = digits.start + number.len();
-                                return Err(self.array_unsupported(self.source.span(dot, dot + 1)));
+                                if number.bytes().all(|byte| byte.is_ascii_digit())
+                                    && matches!(name, "to_u8_checked" | "to_i32")
+                                {
+                                    let dot = digits.start + number.len();
+                                    return Err(
+                                        self.array_unsupported(self.source.span(dot, dot + 1))
+                                    );
+                                }
                             }
                         }
+                        return Err(self.diagnostic(
+                            "E0101",
+                            "parse",
+                            "unsupported numeric spelling; expected ASCII decimal literal digits",
+                            Some(self.source.span(token.span.start, end)),
+                        ));
                     }
+                    if wide {
+                        ExprKind::I64Number { digits, negative }
+                    } else if let Some(kind) = integer {
+                        ExprKind::IntegerNumber {
+                            digits,
+                            negative,
+                            kind,
+                        }
+                    } else {
+                        ExprKind::Number { digits, negative }
+                    }
+                }
+            }
+            Some(PrimaryStart::Name)
+                if self.wide_scalars_enabled()
+                    && FloatTypeSyntax::from_spelling(self.source.text_at(token.span))
+                        .is_some()
+                    && self.enum_qualified_ahead() =>
+            {
+                let selected =
+                    FloatTypeSyntax::from_spelling(self.source.text_at(token.span)).unwrap();
+                self.bump();
+                self.bump();
+                self.bump();
+                let method = self
+                    .expect(Kind::Ident, "expected floating-point constructor")?
+                    .span;
+                if self.source.text_at(method) != "from_bits" {
                     return Err(self.diagnostic(
                         "E0101",
                         "parse",
-                        "unsupported numeric spelling; expected ASCII decimal literal digits",
-                        Some(self.source.span(token.span.start, end)),
+                        "supported floating-point constructor is from_bits",
+                        Some(method),
                     ));
                 }
-                if wide {
-                    ExprKind::I64Number { digits, negative }
-                } else if let Some(kind) = integer {
-                    ExprKind::IntegerNumber {
-                        digits,
-                        negative,
-                        kind,
-                    }
-                } else {
-                    ExprKind::Number { digits, negative }
+                self.expect(Kind::LParen, "from_bits requires `(`")?;
+                let name = self
+                    .expect(Kind::Ident, "from_bits requires a named integer value")?
+                    .span;
+                self.node()?;
+                let operand = self.push_expr(ExprKind::Name(name), name)?;
+                end = self
+                    .expect(
+                        Kind::RParen,
+                        "from_bits requires one named integer value and `)`",
+                    )?
+                    .span
+                    .end;
+                ExprKind::Conversion {
+                    op: ConversionOp::FloatFromBits(selected),
+                    operand,
+                    name_span: method,
                 }
             }
             Some(PrimaryStart::Name)

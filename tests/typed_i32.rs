@@ -184,22 +184,18 @@ fn range_errors_have_exact_signed_origins_and_never_round() {
     );
 }
 #[test]
-fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
+fn spelling_range_and_non_integer_results_have_distinct_diagnostics() {
     for literal in [
         "1i32",
         "1_000",
         "0xff",
         "0o7",
         "0b1",
-        "1.0",
-        "1e9",
-        "1e999999",
         "999999999999999999999i32",
         "１",
         "١",
         "1é",
         "1١",
-        "- /* 雪 */ 1.0",
     ] {
         reject(
             &format!("fn main() -> i32 {{ return {literal}; }}"),
@@ -208,6 +204,20 @@ fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
             literal,
         );
     }
+    for literal in ["1.0", "1e9", "- /* 雪 */ 1.0"] {
+        reject(
+            &format!("fn main() -> i32 {{ return {literal}; }}"),
+            "E0300",
+            "type",
+            literal,
+        );
+    }
+    reject(
+        "fn main() -> i32 { return 1e999999; }",
+        "E0301",
+        "resolve",
+        "1e999999",
+    );
     for (expr, origin) in [("+1", "+"), ("1 as i32", "as")] {
         reject(
             &format!("fn main() -> i32 {{ return {expr}; }}"),

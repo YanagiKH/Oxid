@@ -134,7 +134,10 @@ impl<'s> Visitor<'s> {
                 self.span(*span)?;
                 match value {
                     Rvalue::Load(place) => self.span(place.span)?,
-                    Rvalue::CheckedI32ToU8 {
+                    Rvalue::FloatConvert {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedI32ToU8 {
                         operand, name_span, ..
                     }
                     | Rvalue::U8ToI32 {
@@ -156,7 +159,11 @@ impl<'s> Visitor<'s> {
                         self.span(operand.span)?;
                         self.span(*name_span)?;
                     }
-                    Rvalue::BitNot {
+                    Rvalue::FloatNegate {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::BitNot {
                         operand,
                         operator_span,
                     }
@@ -180,7 +187,13 @@ impl<'s> Visitor<'s> {
                         self.span(*operator_span)?;
                     }
                     Rvalue::Copy(operand) => self.span(operand.span)?,
-                    Rvalue::Bitwise {
+                    Rvalue::FloatArithmetic {
+                        left,
+                        right,
+                        operator_span,
+                        ..
+                    }
+                    | Rvalue::Bitwise {
                         left,
                         right,
                         operator_span,
@@ -218,6 +231,7 @@ impl<'s> Visitor<'s> {
                     | Rvalue::I32(_)
                     | Rvalue::I64(_)
                     | Rvalue::Integer { .. }
+                    | Rvalue::Float { .. }
                     | Rvalue::Integer128 { .. }
                     | Rvalue::U8(_)
                     | Rvalue::Unit => (),
@@ -284,6 +298,12 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
     // A real discriminator inspection also happens for predecessor assignments.
     increment(&mut visitor.dimensions)?;
     let (operation, operand, name_span, source_expr) = match assign.value {
+        Rvalue::FloatConvert {
+            op,
+            operand,
+            source_expr,
+            name_span,
+        } => (op, operand, name_span, source_expr),
         Rvalue::CheckedI32ToU8 {
             operand,
             name_span,
@@ -371,14 +391,23 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
             && body.span.file == assign.span.file
             && body.span.start <= assign.span.start
             && assign.span.end <= owner.end.end
-            && operand.span.start == assign.span.start
-            && operand.span.end <= name_span.start
+            && if matches!(operation, ast::ConversionOp::FloatFromBits(_)) {
+                assign.span.start < name_span.start
+                    && name_span.end < operand.span.start
+                    && operand.span.end < assign.span.end
+            } else {
+                operand.span.start == assign.span.start && operand.span.end <= name_span.start
+            }
             && name_span.end < assign.span.end
     ) {
         return Err(bad());
     }
     let name = inspect!(sources.try_text(name_span)).ok_or_else(bad)?;
     let expected = match operation {
+        ast::ConversionOp::ToFloat(ast::FloatTypeSyntax::F32) => "to_f32",
+        ast::ConversionOp::ToFloat(ast::FloatTypeSyntax::F64) => "to_f64",
+        ast::ConversionOp::FloatToBits => "to_bits",
+        ast::ConversionOp::FloatFromBits(_) => "from_bits",
         ast::ConversionOp::ToU8Checked => "to_u8_checked",
         ast::ConversionOp::ToI32 => "to_i32",
         ast::ConversionOp::ToI64 => "to_i64",

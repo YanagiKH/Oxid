@@ -9,6 +9,8 @@ use crate::frontend::build_config::{ExecutionPolicy, HOSTED_FUEL};
 use crate::frontend::options::EntryPolicy;
 use std::mem::size_of;
 
+#[path = "execute_floats.rs"]
+mod floats;
 #[path = "execute_values.rs"]
 mod values;
 use values::StoredValue;
@@ -1682,6 +1684,30 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             Rvalue::I32(value) => Scalar::I32(value).into(),
             Rvalue::U8(value) => Scalar::U8(value).into(),
             Rvalue::Unit => Scalar::Unit.into(),
+            Rvalue::FloatConvert {
+                op,
+                operand,
+                name_span,
+                ..
+            } => floats::convert(op, self.read(frame, operand)?, name_span)?,
+            Rvalue::Float { bits, ty } => {
+                V::from_float(ty, bits).ok_or_else(|| bad("float literal storage", assign.span))?
+            }
+            Rvalue::FloatNegate {
+                operand,
+                operator_span,
+            } => floats::negate(self.read(frame, operand)?, operator_span)?,
+            Rvalue::FloatArithmetic {
+                op,
+                left,
+                right,
+                operator_span,
+            } => floats::arithmetic(
+                op,
+                self.read(frame, left)?,
+                self.read(frame, right)?,
+                operator_span,
+            )?,
             Rvalue::I64(value) => values::checked_wide(value, assign.span)?,
             Rvalue::Integer128 { ty, low, high } => {
                 V::from_integer128(ty, u128::from(low) | (u128::from(high) << 64))
@@ -3490,8 +3516,8 @@ fn encode_enum<V: StoredValue>(
 fn scalar_size(ty: hir::Ty) -> usize {
     match ty {
         hir::Ty::I16 | hir::Ty::U16 => 2,
-        hir::Ty::I32 | hir::Ty::U32 => 4,
-        hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
+        hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
+        hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
         hir::Ty::I128 | hir::Ty::U128 => 16,
         hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => 1,
     }
@@ -3532,6 +3558,8 @@ fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar
         | hir::Ty::Isize
         | hir::Ty::Usize
         | hir::Ty::I128
+        | hir::Ty::F32
+        | hir::Ty::F64
         | hir::Ty::U128 => return Err(bad("wide payload in narrow execution", span)),
         hir::Ty::U8 => Scalar::U8(
             *bytes
@@ -3912,6 +3940,16 @@ fn execute_plan_policy<V: StoredValue>(
             )?,
         )
         .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_floats() {
+                    floats::control_bytes::<V>() + 8192
+                } else {
+                    0
+                },
+            )
+        })
         .and_then(|bytes| {
             plan::add(
                 bytes,

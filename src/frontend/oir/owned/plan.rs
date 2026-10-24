@@ -144,6 +144,9 @@ impl<'a> ExecutionPlan<'a> {
     pub(super) fn uses_integer_extension(&self) -> bool {
         self.integer_extension & 1 != 0
     }
+    pub(super) fn uses_floats(&self) -> bool {
+        self.integer_extension & 4 != 0
+    }
     pub(super) fn uses_bitwise(&self) -> bool {
         self.integer_extension & 2 != 0
     }
@@ -326,7 +329,8 @@ impl<'a> ExecutionPlan<'a> {
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
         let functions = witness.functions();
-        let wide_type = |ty: hir::Ty| ty == hir::Ty::I64 || ty.extended_integer().is_some();
+        let wide_type =
+            |ty: hir::Ty| ty == hir::Ty::I64 || ty.floating() || ty.extended_integer().is_some();
         let wide_scalars = functions.iter().any(|function| {
             matches!(function.result, ValueTy::Scalar(ty) if wide_type(ty))
                 || function.locals.iter().any(|local| wide_type(local.ty))
@@ -366,6 +370,11 @@ impl<'a> ExecutionPlan<'a> {
                             }))
                         )
                     })
+        });
+        let floats = functions.iter().any(|f| {
+            matches!(f.result, ValueTy::Scalar(ty) if ty.floating())
+                || f.locals.iter().any(|l| l.ty.floating())
+                || f.places.iter().any(|p| p.ty.floating())
         });
         let bitwise = functions
             .iter()
@@ -505,7 +514,9 @@ impl<'a> ExecutionPlan<'a> {
                 .map_err(|_| AdmissionFailure::new("owned plan bytes", None))?,
             dynamic_resources,
             wide_scalars,
-            integer_extension: u8::from(integer_extension) | (u8::from(bitwise) << 1),
+            integer_extension: u8::from(integer_extension)
+                | (u8::from(bitwise) << 1)
+                | (u8::from(floats) << 2),
             quad_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.

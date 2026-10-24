@@ -355,6 +355,7 @@ impl<'s> SourceOwner<'s> {
                     | ast::ExprKind::ArrayLength { .. }
                     | ast::ExprKind::ByteString { .. }
                     | ast::ExprKind::I64Number { .. }
+                    | ast::ExprKind::FloatNumber { .. }
                     | ast::ExprKind::IntegerNumber { .. }
                     | ast::ExprKind::Bitwise { .. }
                     | ast::ExprKind::BitNot { .. }

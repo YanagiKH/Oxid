@@ -207,6 +207,7 @@ impl<'a> Fingerprint<'a> {
             ArrayElementTypeSyntax::Bool => "bool-element",
             ArrayElementTypeSyntax::I32 => "i32-element",
             ArrayElementTypeSyntax::I64 => "i64-element",
+            ArrayElementTypeSyntax::Float(kind) => kind.spelling(),
             ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
             ArrayElementTypeSyntax::U8 => "u8-element",
             ArrayElementTypeSyntax::Unit => "unit-element",
@@ -234,6 +235,7 @@ impl<'a> Fingerprint<'a> {
                     ArrayElementTypeSyntax::Bool => "bool",
                     ArrayElementTypeSyntax::I32 => "i32",
                     ArrayElementTypeSyntax::I64 => "i64",
+                    ArrayElementTypeSyntax::Float(kind) => kind.spelling(),
                     ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
                     ArrayElementTypeSyntax::U8 => "u8",
                     ArrayElementTypeSyntax::Unit => "unit",
@@ -330,6 +332,15 @@ impl<'a> Fingerprint<'a> {
                 name_span,
             } => {
                 self.tag(match op {
+                    ConversionOp::ToFloat(crate::frontend::ast::FloatTypeSyntax::F32) => "to-f32",
+                    ConversionOp::ToFloat(crate::frontend::ast::FloatTypeSyntax::F64) => "to-f64",
+                    ConversionOp::FloatToBits => "float-to-bits",
+                    ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F32) => {
+                        "f32-from-bits"
+                    }
+                    ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F64) => {
+                        "f64-from-bits"
+                    }
                     ConversionOp::ToU8Checked => "to-u8-checked",
                     ConversionOp::ToI32 => "to-i32",
                     ConversionOp::ToI64 => "to-i64",
@@ -398,6 +409,16 @@ impl<'a> Fingerprint<'a> {
             }
             ExprKind::I64Number { digits, negative } => {
                 self.tag("number-i64");
+                self.spelling(*digits);
+                self.flag(*negative);
+            }
+            ExprKind::FloatNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                self.tag("float-number");
+                self.tag(kind.spelling());
                 self.spelling(*digits);
                 self.flag(*negative);
             }
@@ -736,6 +757,10 @@ impl<'a> Fingerprint<'a> {
                                 ScalarTypeSyntax::Bool => self.tag("bool-payload"),
                                 ScalarTypeSyntax::I32 => self.tag("i32-payload"),
                                 ScalarTypeSyntax::I64 => self.tag("i64-payload"),
+                                ScalarTypeSyntax::Float(kind) => {
+                                    self.tag("float-payload");
+                                    self.tag(kind.spelling());
+                                }
                                 ScalarTypeSyntax::Integer(kind) => {
                                     self.tag("integer-payload");
                                     self.tag(kind.spelling());
@@ -934,6 +959,7 @@ fn normalization_ignores_arena_storage_order_but_retains_edges() {
             ExprKind::Bool(_)
             | ExprKind::Number { .. }
             | ExprKind::I64Number { .. }
+            | ExprKind::FloatNumber { .. }
             | ExprKind::IntegerNumber { .. } => {}
             ExprKind::Call { args, .. } => {
                 for argument in args {

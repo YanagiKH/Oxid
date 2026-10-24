@@ -153,6 +153,7 @@ impl<'a> VariantView<'a> {
                 ast::ScalarTypeSyntax::Bool => Ty::Bool,
                 ast::ScalarTypeSyntax::I32 => Ty::I32,
                 ast::ScalarTypeSyntax::I64 => Ty::I64,
+                ast::ScalarTypeSyntax::Float(kind) => Ty::from_float(kind),
                 ast::ScalarTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
                 ast::ScalarTypeSyntax::Name

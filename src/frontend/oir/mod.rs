@@ -145,6 +145,26 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    Float {
+        bits: u64,
+        ty: Ty,
+    },
+    FloatConvert {
+        op: hir::ConversionOp,
+        operand: Operand,
+        source_expr: crate::frontend::ast::ExprId,
+        name_span: Span,
+    },
+    FloatArithmetic {
+        op: hir::ArithmeticOp,
+        left: Operand,
+        right: Operand,
+        operator_span: Span,
+    },
+    FloatNegate {
+        operand: Operand,
+        operator_span: Span,
+    },
     BitNot {
         operand: Operand,
         operator_span: Span,
@@ -419,6 +439,8 @@ pub(super) enum RuntimeScalar {
     U64(u64),
     Isize(i64),
     Usize(u64),
+    F32(u32),
+    F64(u64),
 }
 impl From<Scalar> for RuntimeScalar {
     fn from(value: Scalar) -> Self {
@@ -426,6 +448,21 @@ impl From<Scalar> for RuntimeScalar {
     }
 }
 impl RuntimeScalar {
+    pub(super) fn float(self) -> Option<(Ty, u64)> {
+        match self {
+            Self::F32(bits) => Some((Ty::F32, u64::from(bits))),
+            Self::F64(bits) => Some((Ty::F64, bits)),
+            _ => None,
+        }
+    }
+    pub(super) fn from_float(ty: Ty, bits: u64) -> Option<Self> {
+        match ty {
+            Ty::F32 => u32::try_from(bits).ok().map(Self::F32),
+            Ty::F64 => Some(Self::F64(bits)),
+            _ => None,
+        }
+    }
+
     pub(super) fn integer(self) -> Option<(Ty, u64)> {
         Some(match self {
             Self::Narrow(Scalar::I32(value)) => (Ty::I32, value as i64 as u64),
@@ -438,7 +475,9 @@ impl RuntimeScalar {
             Self::U64(value) => (Ty::U64, value),
             Self::Isize(value) => (Ty::Isize, value as u64),
             Self::Usize(value) => (Ty::Usize, value),
-            Self::Narrow(Scalar::Bool(_) | Scalar::Unit) => return None,
+            Self::F32(_) | Self::F64(_) | Self::Narrow(Scalar::Bool(_) | Scalar::Unit) => {
+                return None
+            }
         })
     }
     pub(super) fn from_integer(ty: Ty, bits: u64) -> Option<Self> {
@@ -457,7 +496,7 @@ impl RuntimeScalar {
             Ty::U64 => Some(Self::U64(bits)),
             Ty::Isize => Some(Self::Isize(bits as i64)),
             Ty::Usize => Some(Self::Usize(bits)),
-            Ty::Bool | Ty::Unit | Ty::I128 | Ty::U128 => None,
+            Ty::Bool | Ty::Unit | Ty::I128 | Ty::U128 | Ty::F32 | Ty::F64 => None,
         }
     }
     pub(super) fn narrow(self) -> Option<Scalar> {
@@ -470,6 +509,8 @@ impl RuntimeScalar {
             | Self::U32(_)
             | Self::U64(_)
             | Self::Isize(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Usize(_) => None,
         }
     }
@@ -488,6 +529,14 @@ impl RuntimeScalar {
             Self::U32(value) => Some(format!("{{\"type\":\"u32\",\"value\":{value}}}")),
             Self::U64(value) => Some(format!("{{\"type\":\"u64\",\"value\":\"{value}\"}}")),
             Self::Isize(value) => Some(format!("{{\"type\":\"isize\",\"value\":\"{value}\"}}")),
+            Self::F32(bits) => Some(format!(
+                "{{\"type\":\"f32\",\"value\":\"{}\"}}",
+                f32::from_bits(bits)
+            )),
+            Self::F64(bits) => Some(format!(
+                "{{\"type\":\"f64\",\"value\":\"{}\"}}",
+                f64::from_bits(bits)
+            )),
             Self::Usize(value) => Some(format!("{{\"type\":\"usize\",\"value\":\"{value}\"}}")),
         }
     }
@@ -504,6 +553,8 @@ impl std::fmt::Display for RuntimeScalar {
             Self::U32(value) => value.fmt(formatter),
             Self::U64(value) => value.fmt(formatter),
             Self::Isize(value) => value.fmt(formatter),
+            Self::F32(bits) => f32::from_bits(*bits).fmt(formatter),
+            Self::F64(bits) => f64::from_bits(*bits).fmt(formatter),
             Self::Usize(value) => value.fmt(formatter),
         }
     }

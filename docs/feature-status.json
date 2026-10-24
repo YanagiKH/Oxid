@@ -1552,6 +1552,37 @@
         "scripts/verify_integer_bits.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "floating-point",
+      "classification": "production-path",
+      "summary": "IEEE 754 f32/f64 arithmetic, comparisons, explicit numeric conversions, raw bit representations and aggregate storage.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "No implicit conversion, hexadecimal float literals or float-to-integer conversion. Bit constructors currently take named integer values. Process main, indexes and lengths remain i32. Existing borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0055-floating-point.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/execute_floats.rs",
+        "src/frontend/oir/owned/native_floats.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "native/float_format.rs",
+        "native/typed_float.c"
+      ],
+      "tests": [
+        "tests/typed_floats.rs",
+        "src/frontend/oir/owned/source/float_tests.rs",
+        "scripts/verify_floats.py",
+        "scripts/test_floats.py"
+      ],
+      "evidence": []
     }
   ]
 }

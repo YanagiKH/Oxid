@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
-import legacy_scalar_observer_integer_bits as adapter
+import legacy_scalar_observer_floats as adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +112,15 @@ class ByteRangeObserverTests(unittest.TestCase):
                                      ("outside_subset", "integer_literal"))
                     self.assertEqual(value["span"], {"file_id": 0, "start": source.index(literal),
                                      "end": source.index(literal) + len(literal)})
+
+    def test_float_literals_are_explicitly_outside_the_retained_scalar_schema(self):
+        for literal in ("0.1", "-0.5f32", "1e-3", "1e+2f64"):
+            source = "fn f()->i32{let value=" + literal + ";return 0;}"
+            for kind, args in MODES:
+                with self.subTest(literal=literal, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]), ("outside_subset", "float_literal"))
+                    self.assertEqual(value["span"], {"file_id": 0, "start": source.index(literal), "end": source.index(literal)+len(literal)})
 
     def test_new_modules_are_exact_copies_and_wrapper_pins_are_unchanged(self):
         for kind, builder in (("parser", parser), ("static", static)):

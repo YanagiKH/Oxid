@@ -14,6 +14,11 @@ use std::{
 const LLVM_VERSION: &str = "19.1.7";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const FLOAT_FORMAT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/float_format.a"));
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+const FLOAT_FORMAT: &[u8] = &[];
 const INTEGER128_RUNTIME: &str = include_str!("../../native/typed_integer128.c");
 const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
 const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
@@ -392,6 +397,20 @@ fn compile_inner(
         runtime.push_str(INTEGER128_RUNTIME);
         fs::write(runtime_path, runtime).map_err(io)?;
     }
+    let float_output = module.contains("declare i32 @__oxid_print_float_bits(i64, i32)");
+    let float_operations = module
+        .lines()
+        .any(|line| line == "declare void @__oxid_float_runtime()");
+    if float_operations {
+        fs::write(workspace.0.join("float_format.a"), FLOAT_FORMAT).map_err(io)?;
+    }
+    if float_output {
+        let path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(FLOAT_RUNTIME);
+        fs::write(path, runtime).map_err(io)?;
+    }
     let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
     let invoke = |path: &Path, values: Vec<OsString>| {
         run(
@@ -480,6 +499,13 @@ fn compile_inner(
         "-o",
         "executable",
     ]);
+    if float_operations {
+        link.push(OsString::from("float_format.a"));
+        link.push(OsString::from("-Wl,--gc-sections"));
+    }
+    if float_operations {
+        link.push(OsString::from("-lm"));
+    }
     let mut linker = OsString::from("--ld-path=");
     linker.push(lld);
     link.push(linker);

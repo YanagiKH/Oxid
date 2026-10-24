@@ -109,3 +109,6 @@ mod integer128_tests;
 
 #[cfg(test)]
 mod integer_bit_tests;
+
+#[cfg(test)]
+mod float_tests;

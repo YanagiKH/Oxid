@@ -35,6 +35,9 @@ pub struct BodyBlockId(pub usize);
 /// Closed named-receiver scalar conversions; no general cast or method dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConversionOp {
+    ToFloat(FloatTypeSyntax),
+    FloatToBits,
+    FloatFromBits(FloatTypeSyntax),
     ToU8Checked,
     ToI32,
     ToI64,
@@ -137,6 +140,26 @@ impl IntegerTypeSyntax {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatTypeSyntax {
+    F32,
+    F64,
+}
+impl FloatTypeSyntax {
+    pub fn from_spelling(text: &str) -> Option<Self> {
+        match text {
+            "f32" => Some(Self::F32),
+            "f64" => Some(Self::F64),
+            _ => None,
+        }
+    }
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithmeticOp {
     Add,
     Subtract,
@@ -218,6 +241,11 @@ pub enum ExprKind {
         digits: Span,
         negative: bool,
     },
+    FloatNumber {
+        digits: Span,
+        negative: bool,
+        kind: FloatTypeSyntax,
+    },
     IntegerNumber {
         digits: Span,
         negative: bool,
@@ -284,6 +312,7 @@ pub enum ScalarTypeSyntax {
     Array(FixedArraySyntax),
     I64,
     Integer(IntegerTypeSyntax),
+    Float(FloatTypeSyntax),
 }
 /// Scalar elements in the existing fixed-array grammar.
 #[derive(Clone, Copy, Debug)]
@@ -294,6 +323,7 @@ pub enum ArrayElementTypeSyntax {
     Unit,
     I64,
     Integer(IntegerTypeSyntax),
+    Float(FloatTypeSyntax),
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FixedArraySyntax {
@@ -352,6 +382,7 @@ impl EnumPayloadSyntax {
                 ScalarTypeSyntax::Bool
                 | ScalarTypeSyntax::I32
                 | ScalarTypeSyntax::I64
+                | ScalarTypeSyntax::Float(_)
                 | ScalarTypeSyntax::Integer(_)
                 | ScalarTypeSyntax::Name => TypeSyntaxKind::Name(ItemPath::Unqualified(self.span)),
                 ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
@@ -1076,6 +1107,7 @@ impl Program {
                 ExprKind::Bool(_) | ExprKind::Unit => true,
                 ExprKind::Number { digits, .. }
                 | ExprKind::I64Number { digits, .. }
+                | ExprKind::FloatNumber { digits, .. }
                 | ExprKind::IntegerNumber { digits, .. } => valid(*digits),
                 ExprKind::Name(name) => valid(*name),
                 ExprKind::Call { callee, args } => {
@@ -1192,8 +1224,17 @@ impl Program {
         }
         visit() && ProjectSyntax::new(project_syntax, *std_syntax) == self.project_syntax
     }
-    /// Byte values use the current typed checker. The separate owned-syntax
-    /// predicate retains the narrow parser and observer contract.
+    /// Float literals and annotations select the current typed checker.
+    pub(super) fn uses_float_syntax(&self, source: &SourceFile) -> bool {
+        let float_type = |ty: &TypeSyntax| {
+            matches!(ty.kind,
+            TypeSyntaxKind::Name(ItemPath::Unqualified(name)) if FloatTypeSyntax::from_spelling(source.text_at(name)).is_some())
+        };
+        self.expressions.iter().any(|e| matches!(e.kind, ExprKind::FloatNumber { .. }))
+            || self.functions.iter().any(|f| float_type(&f.result)
+                || f.params.iter().any(|p| float_type(&p.ty))
+                || f.blocks.iter().any(|b| b.body.iter().any(|s| matches!(&s.kind, StmtKind::Let { annotation: Some(ty), .. } if float_type(ty)))))
+    }
     pub(super) fn uses_bitwise_syntax(&self) -> bool {
         self.expressions.iter().any(|expression| {
             matches!(

@@ -10,6 +10,8 @@ use std::mem::size_of;
 mod bitwise;
 #[path = "native_experimental.rs"]
 mod experimental;
+#[path = "native_floats.rs"]
+mod floats;
 #[path = "native_integer128.rs"]
 mod integer128;
 #[path = "native_integers.rs"]
@@ -869,7 +871,7 @@ fn admit_policy_accounted(
             0
         };
     let runtime_bytes = add(
-        fuel_bytes,
+        add(fuel_bytes, if plan.uses_floats() { 8192 } else { 0 })?,
         add(
             if plan.uses_dynamic_resources() { 64 } else { 0 },
             if plan.has_binary_delivery() {
@@ -1109,7 +1111,9 @@ impl FailureKind {
             hir::Ty::Usize => 9,
             hir::Ty::I128 => 10,
             hir::Ty::U128 => 11,
-            hir::Ty::Bool | hir::Ty::Unit => unreachable!("checked integer diagnostic"),
+            hir::Ty::F32 | hir::Ty::F64 | hir::Ty::Bool | hir::Ty::Unit => {
+                unreachable!("checked integer diagnostic")
+            }
         }
     }
     fn integer_type(code: u8) -> hir::Ty {
@@ -1861,6 +1865,8 @@ fn emit_guard_value(
 }
 fn ty(t: hir::Ty) -> &'static str {
     match t {
+        hir::Ty::F32 => "float",
+        hir::Ty::F64 => "double",
         hir::Ty::Bool => "i1",
         hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::I16 | hir::Ty::U16 => "i16",
@@ -1876,6 +1882,10 @@ fn result_ty(t: ValueTy) -> &'static str {
     }
 }
 fn load_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty) -> String {
+    if t.floating() {
+        writeln!(out, "  %{name} = load {}, ptr {pointer}, align 8", ty(t)).unwrap();
+        return format!("%{name}");
+    }
     if t.quad_integer() {
         writeln!(out, "  %{name} = load i128, ptr {pointer}, align 16").unwrap();
         return format!("%{name}");
@@ -1888,6 +1898,10 @@ fn load_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty) -> Strin
     format!("%{name}")
 }
 fn store_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty, value: &str) {
+    if t.floating() {
+        writeln!(out, "  store {} {value}, ptr {pointer}, align 8", ty(t)).unwrap();
+        return;
+    }
     if t.quad_integer() {
         writeln!(out, "  store i128 {value}, ptr {pointer}, align 16").unwrap();
         return;
@@ -1968,8 +1982,8 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
 fn element_stride(element: hir::Ty) -> usize {
     match element {
         hir::Ty::I16 | hir::Ty::U16 => 2,
-        hir::Ty::I32 | hir::Ty::U32 => 4,
-        hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
+        hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
+        hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
         hir::Ty::I128 | hir::Ty::U128 => 16,
         hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
@@ -1977,8 +1991,8 @@ fn element_stride(element: hir::Ty) -> usize {
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
         hir::Ty::I16 | hir::Ty::U16 => "i16",
-        hir::Ty::I32 | hir::Ty::U32 => "i32",
-        hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
         hir::Ty::I128 | hir::Ty::U128 => "i128",
         hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
@@ -3125,6 +3139,14 @@ fn emit(
             }
         }
     }
+    if plan.uses_floats() {
+        out.write_str("declare void @__oxid_float_runtime()\n")
+            .unwrap();
+    }
+    if matches!(plan.witness().functions()[entry.0].result, ValueTy::Scalar(ty) if ty.floating()) {
+        out.write_str("declare i32 @__oxid_print_float_bits(i64, i32)\n")
+            .unwrap();
+    }
     if plan.uses_quad_scalars() {
         out.write_str("declare i32 @__oxid_print_i128_parts(i64, i64)\ndeclare i32 @__oxid_print_u128_parts(i64, i64)\ndeclare i32 @__oxid_checked_mul128_parts(i64, i64, i64, i64, i32, ptr, ptr)\ndeclare i32 @__oxid_udivmod128_parts(i64, i64, i64, i64, ptr, ptr, ptr, ptr)\n").unwrap();
         for operation in ["sadd", "ssub", "uadd", "usub"] {
@@ -3242,6 +3264,9 @@ fn emit(
         return;
     }
     match result {
+        hir::Ty::F32 => out.write_str("  %float_bits = bitcast float %value to i32\n  %output_value = zext i32 %float_bits to i64\n  %status = call i32 @__oxid_print_float_bits(i64 %output_value, i32 32)\n").unwrap(),
+        hir::Ty::F64 => out.write_str("  %output_value = bitcast double %value to i64\n  %status = call i32 @__oxid_print_float_bits(i64 %output_value, i32 64)\n").unwrap(),
+
         hir::Ty::Bool => out.write_str("  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n").unwrap(),
         hir::Ty::I32 => out.write_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n").unwrap(),
         hir::Ty::I64 => out.write_str("  %status = call i32 @__oxid_print_i64(i64 %value)\n").unwrap(),
@@ -3329,6 +3354,10 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
                 | Rvalue::I32(_)
                 | Rvalue::I64(_)
                 | Rvalue::Integer { .. }
+                | Rvalue::FloatConvert { .. }
+                | Rvalue::Float { .. }
+                | Rvalue::FloatArithmetic { .. }
+                | Rvalue::FloatNegate { .. }
                 | Rvalue::Integer128 { .. }
                 | Rvalue::U8(_)
                 | Rvalue::Unit
@@ -4568,6 +4597,36 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::Float { bits, ty: selected } => {
+            let integer = if selected == hir::Ty::F32 {
+                "i32"
+            } else {
+                "i64"
+            };
+            writeln!(
+                out,
+                "  %{name}_value = bitcast {integer} {bits} to {}",
+                ty(selected)
+            )
+            .unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::FloatNegate { operand, .. } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            writeln!(out, "  %{name}_value = fneg {} {value}", ty(t)).unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::FloatArithmetic {
+            op, left, right, ..
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            floats::arithmetic(out, name, t, op, &a, &b)
+        }
+        Rvalue::FloatConvert { op, operand, .. } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            floats::convert(out, name, f.locals[operand.local.0].ty, t, op, &value)
+        }
         Rvalue::BitNot { operand, .. } => {
             let value = load_operand(out, f, &format!("{name}_operand"), operand);
             writeln!(out, "  %{name}_value = xor {} {value}, -1", ty(t)).unwrap();
@@ -4705,6 +4764,7 @@ fn emit_scalar(
                     | hir::Ty::Usize
                     | hir::Ty::U128
             );
+            let floating = f.locals[left.local.0].ty.floating();
             let operand_type = ty(f.locals[left.local.0].ty);
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
@@ -4740,9 +4800,24 @@ fn emit_scalar(
                     }
                 }
             };
+            let (instruction, predicate) = if floating {
+                (
+                    "fcmp",
+                    match op {
+                        hir::ComparisonOp::Equal => "oeq",
+                        hir::ComparisonOp::NotEqual => "une",
+                        hir::ComparisonOp::Less => "olt",
+                        hir::ComparisonOp::LessEqual => "ole",
+                        hir::ComparisonOp::Greater => "ogt",
+                        hir::ComparisonOp::GreaterEqual => "oge",
+                    },
+                )
+            } else {
+                ("icmp", predicate)
+            };
             writeln!(
                 out,
-                "  %{name}_value = icmp {predicate} {operand_type} {left}, {right}"
+                "  %{name}_value = {instruction} {predicate} {operand_type} {left}, {right}"
             )
             .unwrap();
             format!("%{name}_value")

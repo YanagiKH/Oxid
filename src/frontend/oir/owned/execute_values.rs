@@ -26,6 +26,12 @@ pub(super) trait StoredValue: Copy + std::fmt::Debug + Eq + From<Scalar> {
         let value = Self::from_integer(ty, bits as u64)?;
         (value.integer128() == Some((ty, bits))).then_some(value)
     }
+    fn float(self) -> Option<(hir::Ty, u64)> {
+        None
+    }
+    fn from_float(_ty: hir::Ty, _bits: u64) -> Option<Self> {
+        None
+    }
     fn ty(self) -> hir::Ty;
     fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Self>;
     fn encode(self, bytes: &mut [u8], offset: usize, span: Span) -> Result<()>;
@@ -68,6 +74,12 @@ impl StoredValue for Scalar {
 }
 
 impl StoredValue for RuntimeScalar {
+    fn float(self) -> Option<(hir::Ty, u64)> {
+        RuntimeScalar::float(self)
+    }
+    fn from_float(ty: hir::Ty, bits: u64) -> Option<Self> {
+        RuntimeScalar::from_float(ty, bits)
+    }
     const WIDE: bool = true;
     fn narrow(self) -> Option<Scalar> {
         RuntimeScalar::narrow(self)
@@ -99,11 +111,24 @@ impl StoredValue for RuntimeScalar {
             Self::U64(_) => hir::Ty::U64,
             Self::Isize(_) => hir::Ty::Isize,
             Self::Usize(_) => hir::Ty::Usize,
+            Self::F32(_) => hir::Ty::F32,
+            Self::F64(_) => hir::Ty::F64,
         }
     }
     fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Self> {
         if matches!(ty, hir::Ty::I128 | hir::Ty::U128) {
             return Err(bad("quad value in legacy storage", span));
+        }
+        if ty.floating() {
+            let width = scalar_size(ty);
+            let selected = offset
+                .checked_add(width)
+                .and_then(|end| bytes.get(offset..end))
+                .ok_or_else(|| bad("float payload range", span))?;
+            let mut encoded = [0u8; 8];
+            encoded[..width].copy_from_slice(selected);
+            return Self::from_float(ty, u64::from_le_bytes(encoded))
+                .ok_or_else(|| bad("float payload", span));
         }
         if ty.extended_integer().is_some() {
             let width = scalar_size(ty);
@@ -138,6 +163,16 @@ impl StoredValue for RuntimeScalar {
     }
     fn encode(self, bytes: &mut [u8], offset: usize, span: Span) -> Result<()> {
         match self {
+            value @ (Self::F32(_) | Self::F64(_)) => {
+                let (ty, bits) = value.float().ok_or_else(|| bad("float payload", span))?;
+                let width = scalar_size(ty);
+                let selected = offset
+                    .checked_add(width)
+                    .and_then(|end| bytes.get_mut(offset..end))
+                    .ok_or_else(|| bad("float payload range", span))?;
+                selected.copy_from_slice(&bits.to_le_bytes()[..width]);
+                Ok(())
+            }
             Self::Narrow(value) => encode(bytes, offset, value, span),
             Self::I64(value) => {
                 let selected = offset
@@ -169,6 +204,12 @@ impl StoredValue for RuntimeScalar {
 }
 
 impl StoredValue for RuntimeValue {
+    fn float(self) -> Option<(hir::Ty, u64)> {
+        self.legacy()?.float()
+    }
+    fn from_float(ty: hir::Ty, bits: u64) -> Option<Self> {
+        RuntimeScalar::from_float(ty, bits).map(Self::Scalar)
+    }
     const WIDE: bool = true;
     const QUAD: bool = true;
     fn narrow(self) -> Option<Scalar> {
@@ -244,6 +285,9 @@ pub(super) fn comparison<V: StoredValue>(
     op: hir::ComparisonOp,
     span: Span,
 ) -> Result<bool> {
+    if left.ty().floating() {
+        return floats::comparison(left, right, op, span);
+    }
     if left.ty().extended_integer().is_some() {
         return integers::comparison(left, right, op, span);
     }
