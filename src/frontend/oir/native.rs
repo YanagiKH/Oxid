@@ -561,6 +561,7 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
         | Rvalue::CheckedI64ToU8 { .. }
         | Rvalue::CheckedNegateI64 { .. }
         | Rvalue::Integer { .. }
+        | Rvalue::Integer128 { .. }
         | Rvalue::CheckedInteger { .. }
         | Rvalue::CheckedNegateInteger { .. }
         | Rvalue::CheckedIntegerCast { .. }
@@ -978,6 +979,7 @@ fn ty(ty: hir::Ty) -> &'static str {
         hir::Ty::I16 | hir::Ty::U16 => "i16",
         hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::I128 | hir::Ty::U128 => unreachable!("closed scalar native type"),
     }
 }
 fn write_u8_checks(out: &mut Emission, n: usize, operand: usize) {
@@ -1521,7 +1523,9 @@ fn emit(
         | hir::Ty::U32
         | hir::Ty::U64
         | hir::Ty::Isize
-        | hir::Ty::Usize => {
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128 => {
             unreachable!("entry rejected before closed scalar native admission")
         }
     }

@@ -96,8 +96,14 @@ impl EnumDecl {
         Layout {
             // Layout admission caps size at 1 MiB. A private high bit retains
             // alignment without enlarging this frozen declaration carrier.
-            size: (self.size & 0x7fff_ffff) as usize,
-            align: if self.size & 0x8000_0000 == 0 { 4 } else { 8 },
+            size: (self.size & 0x3fff_ffff) as usize,
+            align: if self.size & 0x4000_0000 != 0 {
+                16
+            } else if self.size & 0x8000_0000 != 0 {
+                8
+            } else {
+                4
+            },
         }
     }
     pub(in crate::frontend::oir) fn width(&self) -> usize {
@@ -126,6 +132,12 @@ enum PayloadSlot {
     AlignedRecord(u32),
     AlignedEnum(u32),
     AlignedArray(super::FixedArrayTy),
+    DoubleAlignedScalar(hir::Ty),
+    DoubleAlignedRecord(u32),
+    DoubleAlignedEnum(u32),
+    DoubleAlignedArray(super::FixedArrayTy),
+    DoubleAlignedByteBuf,
+    DoubleAlignedFile,
 }
 impl PayloadSlot {
     fn check(ty: ValueTy, alignment: usize) -> Result<Self, DeclarationError> {
@@ -153,29 +165,46 @@ impl PayloadSlot {
                 Self::File => Self::File,
                 _ => unreachable!("fresh compact payload"),
             }),
+            16 => Ok(match payload {
+                Self::Scalar(ty) => Self::DoubleAlignedScalar(ty),
+                Self::Record(id) => Self::DoubleAlignedRecord(id),
+                Self::Enum(id) => Self::DoubleAlignedEnum(id),
+                Self::Array(array) => Self::DoubleAlignedArray(array),
+                Self::ByteBuf => Self::DoubleAlignedByteBuf,
+                Self::File => Self::DoubleAlignedFile,
+                _ => unreachable!("fresh compact payload"),
+            }),
             _ => Err(DeclarationError::LayoutOverflow),
         }
     }
     fn value(self) -> ValueTy {
         use super::{AggregateTy, RecordId};
         match self {
-            Self::Scalar(ty) | Self::AlignedScalar(ty) => ValueTy::Scalar(ty),
-            Self::Record(id) | Self::AlignedRecord(id) => {
+            Self::Scalar(ty) | Self::AlignedScalar(ty) | Self::DoubleAlignedScalar(ty) => {
+                ValueTy::Scalar(ty)
+            }
+            Self::Record(id) | Self::AlignedRecord(id) | Self::DoubleAlignedRecord(id) => {
                 ValueTy::Owned(AggregateTy::Record(RecordId(id as usize)))
             }
-            Self::Enum(id) | Self::AlignedEnum(id) => {
+            Self::Enum(id) | Self::AlignedEnum(id) | Self::DoubleAlignedEnum(id) => {
                 ValueTy::Owned(AggregateTy::Enum(EnumId(id as usize)))
             }
-            Self::Array(array) | Self::AlignedArray(array) => {
+            Self::Array(array) | Self::AlignedArray(array) | Self::DoubleAlignedArray(array) => {
                 ValueTy::Owned(AggregateTy::FixedArray(array))
             }
-            Self::ByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
-            Self::File => ValueTy::Owned(AggregateTy::File),
+            Self::ByteBuf | Self::DoubleAlignedByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
+            Self::File | Self::DoubleAlignedFile => ValueTy::Owned(AggregateTy::File),
         }
     }
     fn offset(self) -> usize {
         match self {
             Self::Scalar(_) | Self::Record(_) | Self::Enum(_) | Self::Array(_) => 4,
+            Self::DoubleAlignedScalar(_)
+            | Self::DoubleAlignedRecord(_)
+            | Self::DoubleAlignedEnum(_)
+            | Self::DoubleAlignedArray(_)
+            | Self::DoubleAlignedByteBuf
+            | Self::DoubleAlignedFile => 16,
             _ => 8,
         }
     }
@@ -431,9 +460,13 @@ impl PreparedEnums<'_> {
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
                 size: u32::try_from(layout.size)
                     .ok()
-                    .filter(|size| *size < 0x8000_0000)
+                    .filter(|size| *size < 0x4000_0000)
                     .ok_or(DeclarationError::LayoutOverflow)?
-                    | if layout.align == 8 { 0x8000_0000 } else { 0 },
+                    | match layout.align {
+                        16 => 0x4000_0000,
+                        8 => 0x8000_0000,
+                        _ => 0,
+                    },
                 width: u32::try_from(summaries.get(declaration.id.0).map_or(2, |s| s.width))
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
             });
@@ -490,7 +523,9 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
             | hir::Ty::U32
             | hir::Ty::U64
             | hir::Ty::Isize
-            | hir::Ty::Usize),
+            | hir::Ty::Usize
+            | hir::Ty::I128
+            | hir::Ty::U128),
         ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
@@ -557,10 +592,10 @@ fn prepare_shapes<'a>(
                 scalar_payload(variant)?;
             }
         }
-        if scalar_enum_layout(declaration).align == 8 {
+        if scalar_enum_layout(declaration).size > 8 {
             usage.layout_bytes = super::limited_add(
                 usage.layout_bytes,
-                8,
+                scalar_enum_layout(declaration).size - 8,
                 limits.bounded().layout_bytes,
                 "declaration layout bytes",
             )?;
@@ -576,6 +611,11 @@ fn prepare_shapes<'a>(
 }
 
 fn scalar_enum_layout(declaration: &RawEnumDecl) -> Layout {
+    if declaration.variants.iter().any(|variant| {
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.quad_integer())
+    }) {
+        return Layout { size: 32, align: 16 };
+    }
     if declaration.variants.iter().any(|variant| {
         matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.integer_bits() == Some(64))
     }) {

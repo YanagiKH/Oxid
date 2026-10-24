@@ -124,6 +124,15 @@ See [integer types and conversions](../rfcs/0051-checked-integer-widths.md)
 and [byte arithmetic](../rfcs/0052-byte-integer-arithmetic.md) for ranges,
 results and storage rules.
 
+## 128-bit integers
+
+Use `i128` and `u128` for exact values beyond 64 bits, with explicit suffixes
+such as `18446744073709551616u128`. Both support checked arithmetic,
+comparisons, calls and aggregate storage. Convert named integers with
+`.to_i128_checked()`, `.to_u128_checked()` or another checked integer method.
+JSON results use decimal strings. See [128-bit integers](../rfcs/0053-checked-128-bit-integers.md)
+for ranges, diagnostics and storage rules.
+
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept

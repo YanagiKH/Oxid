@@ -77,6 +77,11 @@ pub(super) enum ExprKind {
         bits: u64,
         ty: Ty,
     },
+    Integer128 {
+        low: u64,
+        high: u64,
+        ty: Ty,
+    },
     Unit,
     Binding(BindingId),
     Group(ExprId),

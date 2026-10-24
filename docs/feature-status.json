@@ -1493,6 +1493,37 @@
         "scripts/test_byte_integer_oracle.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "checked-128-bit-integers",
+      "classification": "production-path",
+      "summary": "Exact signed and unsigned 128-bit arithmetic, checked conversions, aligned aggregate values and decimal results.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "No implicit conversions, wrapping arithmetic or unsigned negation. Process main, indexes and lengths remain i32. Existing borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0053-checked-128-bit-integers.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/execute_integer128.rs",
+        "src/frontend/oir/owned/native_integer128.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "src/frontend/oir/owned_types/enums.rs",
+        "native/typed_integer128.c"
+      ],
+      "tests": [
+        "tests/typed_integer128.rs",
+        "src/frontend/oir/owned/source/integer128_tests.rs",
+        "scripts/verify_integer128.py",
+        "scripts/test_integer128_oracle.py",
+        "scripts/test_integer128_runtime.py"
+      ],
+      "evidence": []
     }
   ]
 }

@@ -45,6 +45,12 @@ impl Parser<'_> {
             "to_usize_checked" if self.wide_scalars_enabled() => {
                 ConversionOp::ToIntegerChecked(IntegerTypeSyntax::Usize)
             }
+            "to_i128_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I128)
+            }
+            "to_u128_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U128)
+            }
             _ => return None,
         };
         (tokens.next()?.kind == Kind::LParen).then_some(op)

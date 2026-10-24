@@ -116,7 +116,9 @@ fn scalar_type(ty: hir::Ty) -> String {
         | hir::Ty::U32
         | hir::Ty::U64
         | hir::Ty::Isize
-        | hir::Ty::Usize => {
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128 => {
             panic!("integer width is outside this retained narrow fixture or observer")
         }
         hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
@@ -191,6 +193,7 @@ fn call_result(value: CallResult) -> String {
 fn rvalue(value: &Rvalue) -> String {
     match value {
         Rvalue::Integer { .. }
+        | Rvalue::Integer128 { .. }
         | Rvalue::CheckedInteger { .. }
         | Rvalue::CheckedNegateInteger { .. }
         | Rvalue::CheckedIntegerCast { .. } => {

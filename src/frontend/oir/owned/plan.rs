@@ -131,6 +131,7 @@ pub(super) struct ExecutionPlan<'a> {
     dynamic_resources: bool,
     wide_scalars: bool,
     integer_extension: bool,
+    quad_scalars: bool,
 }
 const _: () = assert!(
     size_of::<ExecutionPlan<'_>>()
@@ -142,6 +143,16 @@ impl<'a> ExecutionPlan<'a> {
     }
     pub(super) fn uses_integer_extension(&self) -> bool {
         self.integer_extension
+    }
+    pub(super) fn uses_quad_scalars(&self) -> bool {
+        self.quad_scalars
+    }
+    pub(super) fn native_scalar_bytes(&self) -> usize {
+        if self.quad_scalars {
+            16
+        } else {
+            8
+        }
     }
     pub(super) fn uses_dynamic_resources(&self) -> bool {
         self.dynamic_resources
@@ -318,6 +329,13 @@ impl<'a> ExecutionPlan<'a> {
                 || function.locals.iter().any(|local| wide_type(local.ty))
                 || function.places.iter().any(|place| wide_type(place.ty))
         });
+        let quad_scalars = functions.iter().any(|function| {
+            matches!(function.result, ValueTy::Scalar(ty) if ty.quad_integer())
+                || function.locals.iter().any(|local| local.ty.quad_integer())
+                || function.places.iter().any(|place| place.ty.quad_integer())
+                || function.owners.iter().any(|owner| matches!(owner.aggregate(), AggregateTy::FixedArray(array) if array.element().quad_integer()))
+        }) || witness.declarations().records().iter().any(|record| record.layout().align() == 16)
+           || witness.declarations().enums().enums().iter().any(|enumeration| enumeration.layout().align() == 16);
         let integer_extension = functions.iter().any(|function| {
             matches!(function.result, ValueTy::Scalar(ty) if ty.extended_integer().is_some())
                 || function
@@ -337,6 +355,7 @@ impl<'a> ExecutionPlan<'a> {
                             statement.kind,
                             OwnedInstruction::Scalar(Statement::Assign(Assign {
                                 value: Rvalue::Integer { .. }
+                                    | Rvalue::Integer128 { .. }
                                     | Rvalue::CheckedInteger { .. }
                                     | Rvalue::CheckedNegateInteger { .. }
                                     | Rvalue::CheckedIntegerCast { .. },
@@ -345,7 +364,9 @@ impl<'a> ExecutionPlan<'a> {
                         )
                     })
         });
-        let scalar_bytes = if wide_scalars {
+        let scalar_bytes = if quad_scalars {
+            size_of::<Option<RuntimeValue>>()
+        } else if wide_scalars {
             size_of::<Option<RuntimeScalar>>()
         } else {
             size_of::<Option<Scalar>>()
@@ -469,6 +490,7 @@ impl<'a> ExecutionPlan<'a> {
             dynamic_resources,
             wide_scalars,
             integer_extension,
+            quad_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
         for f in functions {
@@ -568,7 +590,14 @@ fn frame_usage(
     }
     u.native_bytes = add(
         add(
-            mul(add(u.scalar_slots, u.arguments)?, 8)?,
+            mul(
+                add(u.scalar_slots, u.arguments)?,
+                if scalar_bytes == size_of::<Option<RuntimeValue>>() {
+                    16
+                } else {
+                    8
+                },
+            )?,
             mul(add(u.references, u.loans)?, 8)?,
         )?,
         align(u.payload_bytes, native_owner_alignment(declarations, f))?,
@@ -586,6 +615,9 @@ fn frame_usage(
         .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
         .count();
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
+    if scalar_bytes == size_of::<Option<RuntimeValue>>() {
+        u.native_bytes = add(u.native_bytes, 32)?;
+    }
     Ok(u)
 }
 

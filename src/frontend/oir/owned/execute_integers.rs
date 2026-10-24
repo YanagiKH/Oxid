@@ -16,6 +16,9 @@ pub(super) fn arithmetic<V: StoredValue>(
     right: V,
     span: Span,
 ) -> Result<V> {
+    if left.ty().quad_integer() {
+        return integer128::arithmetic(op, left, right, span);
+    }
     let (ty, lhs) = left
         .integer()
         .ok_or_else(|| bad("integer left operand", span))?;
@@ -75,6 +78,9 @@ pub(super) fn arithmetic<V: StoredValue>(
 }
 
 pub(super) fn negate<V: StoredValue>(operand: V, span: Span) -> Result<V> {
+    if operand.ty().quad_integer() {
+        return integer128::negate(operand, span);
+    }
     let (ty, bits) = operand
         .integer()
         .ok_or_else(|| bad("integer negate operand", span))?;
@@ -90,6 +96,9 @@ pub(super) fn negate<V: StoredValue>(operand: V, span: Span) -> Result<V> {
 }
 
 pub(super) fn cast<V: StoredValue>(operand: V, target: hir::Ty, span: Span) -> Result<V> {
+    if operand.ty().quad_integer() || target.quad_integer() {
+        return integer128::cast(operand, target, span);
+    }
     let (input, bits) = operand
         .integer()
         .ok_or_else(|| bad("integer conversion operand", span))?;
@@ -116,6 +125,9 @@ pub(super) fn comparison<V: StoredValue>(
     op: hir::ComparisonOp,
     span: Span,
 ) -> Result<bool> {
+    if left.ty().quad_integer() {
+        return integer128::comparison(left, right, op, span);
+    }
     let (ty, a) = left
         .integer()
         .ok_or_else(|| bad("integer comparison left", span))?;
@@ -176,4 +188,9 @@ struct Control<V> {
 }
 pub(super) fn control_bytes<V: StoredValue>() -> usize {
     size_of::<Control<V>>()
+        + if V::QUAD {
+            integer128::control_bytes::<V>()
+        } else {
+            0
+        }
 }

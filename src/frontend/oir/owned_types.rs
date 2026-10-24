@@ -56,6 +56,8 @@ impl FixedArrayTy {
                 | hir::Ty::U64
                 | hir::Ty::Isize
                 | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::U128
         ) {
             return Err(DeclarationError::TypeMismatch);
         }
@@ -170,7 +172,9 @@ impl BorrowedSlot {
                 | hir::Ty::U32
                 | hir::Ty::U64
                 | hir::Ty::Isize
-                | hir::Ty::Usize),
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::U128),
             ) => BorrowedSlotRepr::ScalarSlice(element),
         }))
     }
@@ -351,6 +355,10 @@ impl Layout {
             hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => {
                 Self { size: 8, align: 8 }
             }
+            hir::Ty::I128 | hir::Ty::U128 => Self {
+                size: 16,
+                align: 16,
+            },
         }
     }
 }
@@ -853,7 +861,9 @@ impl Declarations {
                 | hir::Ty::U32
                 | hir::Ty::U64
                 | hir::Ty::Isize
-                | hir::Ty::Usize,
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::U128,
             ) => Ok(()),
         }
     }
@@ -1287,6 +1297,8 @@ where
                     | hir::Ty::U64
                     | hir::Ty::Isize
                     | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::U128
             ) {
                 return Err(DeclarationError::TypeMismatch);
             }

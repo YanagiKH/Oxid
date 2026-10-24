@@ -279,6 +279,20 @@ impl CheckedSourceProgram<'_> {
         }
     }
 
+    pub(in crate::frontend) fn run_result(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeValue, Box<Diagnostic>> {
+        match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(self.entry, execution)
+                .map(RuntimeValue::from)
+                .map_err(|error| error.diagnostic(self.sources)),
+            CheckedBody::Owned(program) => program.run_result(self.entry, self.sources, execution),
+        }
+    }
+
+    #[cfg(test)]
     pub(in crate::frontend) fn run_value(
         &self,
         execution: crate::frontend::build_config::ExecutionPolicy,

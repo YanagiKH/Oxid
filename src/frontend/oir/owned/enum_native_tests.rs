@@ -1262,7 +1262,9 @@ fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
                     | hir::Ty::U32
                     | hir::Ty::U64
                     | hir::Ty::Isize
-                    | hir::Ty::Usize,
+                    | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::U128,
                 ) => panic!("integer width is outside this retained narrow fixture or observer"),
                 Some(hir::Ty::I64) => {
                     panic!("i64 is outside this retained narrow fixture or observer")

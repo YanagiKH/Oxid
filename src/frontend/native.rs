@@ -14,6 +14,7 @@ use std::{
 const LLVM_VERSION: &str = "19.1.7";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const INTEGER128_RUNTIME: &str = include_str!("../../native/typed_integer128.c");
 const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
 const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
 const FILE_CORE: &str = include_str!("../../native/experimental_files.c");
@@ -383,6 +384,13 @@ fn compile_inner(
             format!("{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
         )
         .map_err(io)?;
+    }
+    if module.contains("declare i32 @__oxid_print_i128_parts(i64, i64)") {
+        let runtime_path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&runtime_path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(INTEGER128_RUNTIME);
+        fs::write(runtime_path, runtime).map_err(io)?;
     }
     let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
     let invoke = |path: &Path, values: Vec<OsString>| {

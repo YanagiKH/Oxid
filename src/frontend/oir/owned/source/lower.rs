@@ -1375,6 +1375,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::I64(value) => Rvalue::I64(value),
             source::ExprKind::Integer { bits, ty } => Rvalue::Integer { bits, ty },
+            source::ExprKind::Integer128 { low, high, ty } => Rvalue::Integer128 { low, high, ty },
             source::ExprKind::Unit => Rvalue::Unit,
             source::ExprKind::Binding(binding) => match self.location(binding, span)? {
                 BindingLocation::ScalarValue(local) => Rvalue::Copy(Operand { local, span }),

@@ -360,6 +360,7 @@ fn execute_with_execution(
                 | Rvalue::CheckedI64ToU8 { .. }
                 | Rvalue::CheckedNegateI64 { .. }
                 | Rvalue::Integer { .. }
+                | Rvalue::Integer128 { .. }
                 | Rvalue::CheckedInteger { .. }
                 | Rvalue::CheckedNegateInteger { .. }
                 | Rvalue::CheckedIntegerCast { .. }
