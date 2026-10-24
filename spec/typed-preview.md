@@ -63,7 +63,8 @@ Checking never executes; run consumes only the completely verified OIR for the s
 parser, dynamic values, macro expander, interpreter, or artifact writer.
 
 `--message-format text|json` is available only with typed preview. Unknown
-preview options are rejected. Backend/target/output options are available only for the native compile route; profile requests remain unavailable.
+preview options are rejected. Backend/target/output options are available only
+for the native compile route; explicit-file commands reject profile requests.
 Manifest edition propagation and local-package typed builds are available through
 the experimental [project workflow](../docs/TYPED_PROJECTS.md). Explicitly selected
 file commands retain this specification's original argument and entry defaults.
@@ -72,7 +73,12 @@ The Linux project route admits local path dependencies under
 visibility and nominal identities within one checking session.
 [RFC 0034](../rfcs/0034-typed-local-locking.md) adds local dependency input locks
 and locked/offline/frozen project commands using retained source bytes.
-Typed Git/registry dependencies, workspaces and incremental builds remain unimplemented.
+Native project builds also support [workspaces](../rfcs/0035-typed-workspaces.md),
+[object caching](../rfcs/0036-native-object-reuse.md),
+[source packages](../rfcs/0038-typed-source-packages.md),
+[relative diagnostic paths](../rfcs/0039-reproducible-native-builds.md), and
+[`dev`/`release` profiles](../rfcs/0040-native-build-profiles.md).
+Typed Git and registry dependencies remain unimplemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 

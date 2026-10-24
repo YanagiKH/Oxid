@@ -31,6 +31,10 @@ rules. `--` ends option recognition; later words are source operands. No backend
 profile, optimization, CPU feature, linker-argument, library, or cross-compilation
 fallback exists. Unknown options/values fail with E0001 before source reading.
 
+This explicit-file command uses `-O0`. Native project builds additionally accept
+`--profile dev|release|bounded`, applying `-O0` or `-O2` to the program and runtime.
+See [native build profiles](../rfcs/0040-native-build-profiles.md).
+
 The only build host is Linux x86_64 and the only target is
 `x86_64-unknown-linux-gnu` (also the default). Generated files are ELF PIE
 executables, not OXBC. They depend on the host-compatible libc and ELF loader;
@@ -363,7 +367,8 @@ terminator-guard success block. Phi is first; its pure selection precedes the
 merge fuel check, but no later operation or effect may precede that check.
 No eager and/or/select replaces the source's conditional RHS execution.
 Branches, direct calls and returns retain their OIR structure. Functions are
-`internal` and `noinline`; this preview uses `-O0` and no LTO or fast-math.
+`internal` and `noinline`; explicit-file compilation uses `-O0`, while project
+profiles select `-O0` or `-O2`. Neither enables LTO or fast-math.
 
 Scalar symbols are deterministic numeric `__oxid_fn_<DefId>` names; owned
 functions use private numeric `__oxid_owned_fn_<DefId>` symbols. Source identifiers

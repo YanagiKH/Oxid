@@ -195,7 +195,7 @@ fn unknown_editions_and_unsupported_configuration_never_fall_back() {
             "backend",
         ),
         (
-            "[project]\nedition = \"typed-preview\"\n[build]\nprofile = \"release\"\n",
+            "[project]\nedition = \"typed-preview\"\n[build]\nprofile = \"unknown\"\n",
             "profile",
         ),
         (

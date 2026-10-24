@@ -193,6 +193,7 @@ def current_manifest(inputs, baseline, checkout):
             "package_semantics_qualified_by_this_gate": False,
             "workspace_semantics_qualified_by_this_gate": False,
             "native_reproducibility_qualified_by_this_gate": False,
+            "native_optimization_qualified_by_this_gate": False,
             "unchanged_baseline_inputs": len(baseline) - len(changes),
             "files": [identity(n, b) for n, b in sorted(inputs.items())]}
 

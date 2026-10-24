@@ -1779,7 +1779,7 @@ fn compile_file(input: &Path, output: &Path) -> Result<(), String> {
     let (program, module_count) = compile_program(input)?;
     if let Some(parent) = output.parent() { fs::create_dir_all(parent).map_err(|e| format!("cannot create output directory: {}", e))?; }
     artifact::write(output, &program, module_count)?;
-    println!("compiled: {} -> {} ({} modules, bytecode v1)", input.display(), output.display(), module_count);
+    println!("packaged: {} -> {} ({} modules; runs with Oxid)", input.display(), output.display(), module_count);
     Ok(())
 }
 
@@ -2879,10 +2879,10 @@ fn bootstrap_project(root: &Path, write_artifacts: bool) -> Result<(), String> {
     let decoded1 = artifact::decode(&stage1)?;
     let stage2 = artifact::encode(&decoded1.program, decoded1.module_count)?;
     if stage0 != stage1 {
-        return Err("Stage-0/Stage-1 compiler artifacts differ".to_string());
+        return Err("script package bytes changed during the first round-trip".to_string());
     }
     if stage1 != stage2 {
-        return Err("Stage-1/Stage-2 compiler fixed point failed".to_string());
+        return Err("script package bytes changed during the second round-trip".to_string());
     }
 
     let mut interpreter = Interpreter::new();
@@ -2900,7 +2900,7 @@ fn bootstrap_project(root: &Path, write_artifacts: bool) -> Result<(), String> {
         );
         atomic_write_file(&output.join("manifest.json"), manifest.as_bytes())?;
     }
-    println!("bootstrap verified: stage0 == stage1 == stage2 ({})", checksum);
+    println!("bootstrap verified: byte-identical script packages ({})", checksum);
     Ok(())
 }
 
@@ -2924,48 +2924,66 @@ extern "C" {
 
 fn help() {
     println!("Oxid {}", OXID_VERSION);
-    println!("Usage:");
-    println!("  oxid run <file.ox|file.oxb>");
-    println!("  oxid script <name> [args...]");
-    println!("  oxid check <file.ox> [--edition typed-preview --message-format text|json]");
-    println!("  --edition legacy-0.9 keeps legacy behavior; typed-preview enables checked native projects");
-    println!("  oxid new <name> --edition typed-preview (experimental Linux x86_64 workflow)");
-    println!("  typed workspaces: check/build/test --workspace; run --package <name-or-member-path>");
-    println!("  typed native builds: build --reproducible [--incremental]; --no-reproducible overrides the manifest");
-    println!("  workspace lock covers every member; use lock --update for reviewed input changes");
-    println!("  oxid package [--frozen] [--output ARCHIVE]; package --verify/--extract ARCHIVE (typed source bundles)");
-    println!("  oxid compile <file.ox> [-o app.oxb]");
+    println!("Run scripts and build typed native programs.");
+    println!("Usage: oxid <command> [options]");
+    println!();
+    println!("Script projects:");
+    println!("  oxid new <name>                   Create a script project");
+    println!("  oxid run <file.ox|file.oxb>        Run a script or package");
+    println!("  oxid check <file.ox>              Check script syntax");
+    println!("  oxid test                        Run project tests");
+    println!("  oxid build                       Package the project for Oxid");
+    println!("  oxid fmt [path]                  Format script files in place");
+    println!("  oxid repl                        Open the interactive interpreter");
+    println!();
+    println!("Native projects (development; Linux x86_64, LLVM 19.1.7):");
+    println!("  oxid new <name> --edition typed-preview");
+    println!("  oxid check                       Check types and ownership");
+    println!("  oxid run                         Run the project entry point");
+    println!("  oxid build --profile dev          Build without optimization");
+    println!("  oxid build --profile release      Build with optimization");
+    println!("  oxid build --reproducible         Use relative runtime error locations");
+    println!("  oxid build --incremental          Reuse matching native objects");
+    println!("  oxid fmt <file.ox>                Print formatted source");
+    println!("  oxid doctor --native              Check native build tools");
+    println!("  oxid check --workspace            Check all workspace members");
+    println!("  oxid run --package <name-or-path>  Run one workspace member");
+    println!("  oxid lock                        Record dependency inputs");
+    println!("  oxid lock --update                Accept dependency input changes");
+    println!();
+    println!("Share code:");
+    println!("  oxid compile <file.ox> [-o app.oxb]  Package a script for Oxid");
     println!("  oxid ast <file.ox> [-o app.oxa]");
     println!("  oxid inspect <file.oxb>");
-    println!("  oxid repl");
-    println!("  oxid new <project-name>");
-    println!("  oxid init <project-name>");
+    println!("  oxid package [--frozen] [--output ARCHIVE]  Bundle native-project sources");
+    println!("  oxid package --verify ARCHIVE");
+    println!("  oxid package --extract ARCHIVE --output NEW_DIRECTORY");
+    println!();
+    println!("More project tools:");
+    println!("  oxid init <name>");
+    println!("  oxid script <name> [args...]");
     println!("  oxid add <name> <path-or-target>");
     println!("  oxid remove <name>");
-    println!("  oxid lock [--offline|--locked]");
     println!("  oxid fetch [--offline|--locked]");
-    println!("  oxid update");
     println!("  oxid install [--offline|--locked]");
+    println!("  oxid update");
     println!("  oxid list");
-    println!("  oxid bridge <python|java|go|c|cpp|all> [output]");
-    println!("  oxid web new <project-name>");
-    println!("  oxid discord new <project-name>");
     println!("  oxid watch <file.ox>");
-    println!("  oxid build [--offline|--locked|--frozen]");
     println!("  oxid clean");
-    println!("  oxid fmt [path]");
-    println!("  oxid test");
-    println!("  oxid doctor");
-    println!("  oxid doctor --native [--message-format=json]");
     println!("  oxid doc");
+    println!("  oxid lint");
     println!("  oxid bench [--iterations N] [--json report.json]");
-    println!("  oxid bootstrap [--check]");
+    println!("  oxid bridge <python|java|go|c|cpp|all> [output]");
+    println!("  oxid web new <name>");
+    println!("  oxid discord new <name>");
+    println!();
+    println!("Compiler tools:");
+    println!("  oxid bootstrap [--check]          Check script package round-trips");
     println!("  oxid emit [--check]");
     println!("  oxid self-compile [--check]");
-    println!("  oxid self-host [--check]");
+    println!("  oxid self-host [--check]          Alias for the script package check");
     println!("  oxid frontend");
     println!("  oxid diagnose");
-    println!("  oxid lint");
     println!("  oxid module");
     println!("  oxid syntax");
     println!("  oxid interop");

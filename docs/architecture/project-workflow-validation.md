@@ -241,3 +241,27 @@ deletes their originals, extracts elsewhere and checks frozen offline rebuilding
 with independent byte-count cases. Both compiler profiles run in CI, and native
 evidence is retained separately from interpreter evidence. Source-bundle
 determinism does not establish native-code reproducibility or registry trust.
+
+## Native optimization profiles
+
+Project builds select `dev`/`bounded` (`-O0`) or `release` (`-O2`) for both
+program and runtime compilation. The configuration stays separate from entry
+policy, source-path presentation and bounded execution. Compiler tests cover
+setting resolution; `tests/native_profiles.rs` checks real tool arguments,
+cache identity and native semantics through the public CLI. It runs in both
+Rust compiler profiles, with ordinary admission tests and explicit real-LLVM
+tests. Existing default native oracles continue to use their original O0 route.
+
+```sh
+python3 -B scripts/verify_native_profiles.py target/debug/oxid target/release/oxid \
+  --output /tmp/oxid-native-profiles --llvm-bin "$OXID_LLVM_BIN"
+```
+
+This independent application check retains program objects and untouched linked
+ELF files. It compares clean, cached and relocated builds within each native
+profile and checks byte-count results before and after source-free deployment.
+It also requires a real machine-code difference between O0 and O2 for this
+application. Results do not establish a speed ratio, additional target support
+or general execution without limits. The retained single-package semantic gate
+records optimization qualification as false; only the explicit profile checks
+exercise the new O2 choice.

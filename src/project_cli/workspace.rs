@@ -405,7 +405,7 @@ impl Workspace {
             selected
                 .iter()
                 .map(|&index| build_options.resolve(&self.members[index].snapshot.manifest))
-                .collect()
+                .collect::<Result<_, _>>()?
         } else {
             Vec::new()
         };
