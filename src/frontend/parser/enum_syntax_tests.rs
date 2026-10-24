@@ -533,6 +533,7 @@ fn parser_for<'a>(
         project_recovery: false,
         tokens: lexer::lex(file).unwrap(),
         cursor: 0,
+        pending_equal: None,
         expressions: Vec::new(),
         paths: Vec::new(),
         path_segments: Vec::new(),

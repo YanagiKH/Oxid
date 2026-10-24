@@ -817,7 +817,9 @@ impl<'a> Resolver<'_, 'a> {
                     Some(expr.span),
                 ));
             }
-            ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
+            ast::ExprKind::StructLiteral { .. }
+            | ast::ExprKind::FieldRead { .. }
+            | ast::ExprKind::GenericVariant { .. } => {
                 return Err(Diagnostic::new(
                     "E0500",
                     "resolve",

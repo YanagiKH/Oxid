@@ -234,7 +234,8 @@ impl<'src> ResolvedOwnedProgram<'src> {
         record: RecordId,
         at: Span,
     ) -> Result<PreparedTypeName<'src>, Box<Diagnostic>> {
-        self.query().prepare_type_name(record, at)
+        self.query()
+            .prepare_type_name(self.index().template_record_for_instance(record)?, at)
     }
     pub(super) fn text(&self, span: Span) -> &str {
         self.sources.text(span)
@@ -1371,7 +1372,23 @@ fn resolve_index_impl(
                 } else if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ty = value_type(&mut index.query(work), module, field.ty)?;
+                let ty = match index.instantiated_record_field(
+                    FieldId {
+                        record: RecordId(id),
+                        index: position,
+                    },
+                    field.ty,
+                    work,
+                )? {
+                    ParameterTy::Value(value) => value,
+                    _ => {
+                        return Err(error(
+                            "E0300",
+                            format_args!("record fields require owned values"),
+                            field.span,
+                        ))
+                    }
+                };
                 let ty = record_field_type(ty, field.span)?;
                 storage::room(&fields, fields.capacity(), paid.is_some(), field.span)?;
                 fields.push(Field {
@@ -1522,12 +1539,26 @@ fn resolve_index_impl(
                     _ => return Err(vec![*invalid_signature_identity(variant.diagnostic_span())]),
                 };
                 let at = variant.payload_span().unwrap_or(variant.diagnostic_span());
+                // Generic declaration visibility was checked with opaque
+                // arguments. A private local instantiation does not change the
+                // public template's visibility domain.
+                if index.has_generic_instances() {
+                    continue;
+                }
                 if let NominalExposure::Denied {
                     declaration,
                     restrictor,
                 } = index
                     .query(work)
-                    .enum_payload_exposure(enumeration.id(), nominal, at)
+                    .enum_payload_exposure(
+                        index
+                            .template_enum_for_instance(enumeration.id())
+                            .map_err(|error| vec![*error])?,
+                        index
+                            .template_nominal_for_instance(nominal)
+                            .map_err(|error| vec![*error])?,
+                        at,
+                    )
                     .map_err(|error| vec![*error])?
                 {
                     let mut failure = secondary(
@@ -1728,12 +1759,22 @@ fn resolve_index_impl(
             };
             // Retain the old record query, work and diagnostic route exactly.
             let exposure = match nominal {
-                NominalId::Record(record) => {
-                    index.query(work).signature_exposure(definition, record, at)
-                }
+                NominalId::Record(record) => index.query(work).signature_exposure(
+                    definition,
+                    index
+                        .template_record_for_instance(record)
+                        .map_err(|e| vec![*e])?,
+                    at,
+                ),
                 NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => index
                     .query(work)
-                    .nominal_signature_exposure(definition, nominal, at)
+                    .nominal_signature_exposure(
+                        definition,
+                        index
+                            .template_nominal_for_instance(nominal)
+                            .map_err(|error| vec![*error])?,
+                        at,
+                    )
                     .map(|exposure| match exposure {
                         NominalExposure::Allowed => Exposure::Allowed,
                         NominalExposure::Denied {
@@ -2412,6 +2453,11 @@ impl<'a> Resolver<'_, 'a> {
                                 path: arm.variant,
                             },
                         )?;
+                        let variant = self.index.instantiated_match_variant(
+                            self.context.function(),
+                            arm.span,
+                            variant,
+                        )?;
                         let view = self.index.enum_view(variant.enumeration)?;
                         if let Some(expected) = builder.enumeration {
                             if variant.enumeration != expected {
@@ -2656,6 +2702,41 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::GenericVariant {
+                application,
+                variant,
+                args,
+            } => {
+                let application = self
+                    .ast
+                    .generic_application(*application)
+                    .ok_or_else(|| invalid_signature_identity(expr.span))?;
+                let template = self.index.generic_variant_template(
+                    self.context.module(),
+                    application.path,
+                    *variant,
+                    self.work,
+                )?;
+                let variant =
+                    self.index
+                        .instantiated_variant(self.context.function(), id, template)?;
+                let declared = self
+                    .index
+                    .enum_view(variant.enumeration)?
+                    .variant(variant)?;
+                let payload = match (declared.has_payload(), args.as_deref()) {
+                    (false, None) => None,
+                    (true, Some([ast::Argument::Value(value)])) => Some(self.expression(*value)?),
+                    _ => {
+                        return Err(error(
+                            "E0300",
+                            format_args!("enum variant payload mismatch"),
+                            expr.span,
+                        ))
+                    }
+                };
+                ExprKind::ConstructEnum { variant, payload }
+            }
             ast::ExprKind::QualifiedValue { path, args } => {
                 // The zero-enum absolute call is the same old query over the
                 // same borrowed syntax, before any argument work or retention.
@@ -2713,6 +2794,11 @@ impl<'a> Resolver<'_, 'a> {
                         ExprKind::Call { target, args }
                     }
                     QualifiedValueEndpoint::Variant(variant) => {
+                        let variant = self.index.instantiated_variant(
+                            self.context.function(),
+                            id,
+                            variant,
+                        )?;
                         let enumeration = self.index.enum_view(variant.enumeration)?;
                         let declared = enumeration.variant(variant)?;
                         if declared.has_owned_payload() {
@@ -2906,6 +2992,9 @@ impl<'a> Resolver<'_, 'a> {
                         .query(self.work)
                         .private_field_diagnostic(field, primary, "resolve")?);
                 }
+                let record =
+                    self.index
+                        .instantiated_constructor(self.context.function(), id, record)?;
                 let declared = &self.records[record.0];
                 let mut seen = HashMap::new();
                 let mut resolved = match self.storage.paid.as_deref_mut() {

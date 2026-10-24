@@ -1,10 +1,12 @@
 //! Source-only generic checking and bounded concrete function instantiation.
 //! Template identities always refer to the original frozen declaration index.
 mod flow;
+mod nominal;
 use super::*;
 use crate::frontend::ast::{self, Argument, ExprId, ExprKind, StmtKind, TypeSyntaxKind};
 use crate::frontend::lexer::Kind as TokenKind;
 use crate::frontend::oir::owned_types::FixedArrayTy;
+use nominal::Nominals;
 
 const MAX_INSTANCES: usize = 1024;
 const MAX_DEPTH: usize = 64;
@@ -20,6 +22,37 @@ fn exhausted(at: Span) -> Box<Diagnostic> {
         "generic instantiation resource limit exceeded",
         at,
     )
+}
+
+fn reject_parameter_base(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    module: ModuleId,
+    declaration: Span,
+    path: ast::ItemPath,
+    at: Span,
+) -> Result<(), Box<Diagnostic>> {
+    let program = index.sources().ast(module)?;
+    let name = match path {
+        ast::ItemPath::Unqualified(name) => name,
+        ast::ItemPath::Absolute(path) if program.paths[path.0].root == ast::PathRoot::LocalType => {
+            *program
+                .path_segments(path)
+                .and_then(|segments| segments.first())
+                .ok_or_else(|| bad(at))?
+        }
+        _ => return Ok(()),
+    };
+    for parameter in program.generic_parameters(declaration) {
+        work.debit(1, at, "generic parameter base resolution")?;
+        if index.sources().text(name)? == index.sources().text(parameter.name)? {
+            return Err(error(
+                "a type parameter cannot be used as a nominal constructor or type application",
+                at,
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -66,10 +99,18 @@ impl Storage {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ExposureOwner {
+    Function(DefId),
+    Enumeration(EnumId),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Value {
     Concrete(ValueTy),
-    Parameter(usize),
+    Parameter { position: usize, copy: bool },
+    Record(usize),
+    Enumeration(usize),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Type {
@@ -145,8 +186,11 @@ struct Call {
 #[derive(Debug, PartialEq, Eq)]
 struct Instance {
     definition: DefId,
-    arguments: Vec<ValueTy>,
+    arguments: Vec<Value>,
     calls: Vec<Call>,
+    types: Vec<(Span, Type)>,
+    constructors: Vec<(ExprId, Value)>,
+    matches: Vec<(Span, Value)>,
     depth: usize,
 }
 #[derive(Debug, PartialEq, Eq)]
@@ -154,8 +198,15 @@ pub(super) struct Plan {
     instances: Vec<Instance>,
     ordinary: Vec<Option<DefId>>,
     template_count: usize,
+    nominals: Nominals,
 }
 impl Plan {
+    pub(super) fn enum_count(&self) -> usize {
+        self.nominals.enum_count()
+    }
+    pub(super) fn record_count(&self) -> usize {
+        self.nominals.record_count()
+    }
     pub(super) fn len(&self) -> usize {
         self.instances.len()
     }
@@ -188,20 +239,88 @@ impl Plan {
             instances: Vec::new(),
             ordinary: Vec::new(),
             template_count: index.template_function_count(),
+            nominals: Nominals::default(),
         };
-        for module in 0..index.sources().count() {
-            let program = index.sources().ast(ModuleId(module))?;
-            for declaration in program
-                .records
+        let mut nominals = Nominals::default();
+        nominals.template_enum_count = index.template_enum_count();
+        for id in 0..index.template_record_count() {
+            let record = RecordId(id);
+            let (key, module) = index.template_record(record)?;
+            let program = index.sources().ast(module)?;
+            let declaration = &program.records[key.index];
+            let parameters = program.generic_parameters(declaration.name);
+            validate_parameters(index, work, parameters)?;
+            let mut arguments = Vec::new();
+            for (position, parameter) in parameters.iter().enumerate() {
+                storage.push(
+                    &mut arguments,
+                    Value::Parameter {
+                        position,
+                        copy: !parameter.bounds.is_empty(),
+                    },
+                    allocator,
+                    work,
+                    parameter.name,
+                )?;
+            }
+            nominals.record(
+                index,
+                work,
+                &mut storage,
+                allocator,
+                record,
+                arguments,
+                declaration.name,
+                0,
+            )?;
+        }
+        for id in 0..index.template_enum_count() {
+            let enumeration = EnumId(id);
+            let (key, module) = index.template_enumeration(enumeration)?;
+            let program = index.sources().ast(module)?;
+            let declaration = &program.enums[key.index];
+            let parameters = program.generic_parameters(declaration.name);
+            validate_parameters(index, work, parameters)?;
+            let mut arguments = Vec::new();
+            for (position, parameter) in parameters.iter().enumerate() {
+                storage.push(
+                    &mut arguments,
+                    Value::Parameter {
+                        position,
+                        copy: !parameter.bounds.is_empty(),
+                    },
+                    allocator,
+                    work,
+                    parameter.name,
+                )?;
+            }
+            let value = nominals.enumeration(
+                index,
+                work,
+                &mut storage,
+                allocator,
+                enumeration,
+                arguments,
+                declaration.name,
+                0,
+            )?;
+            let Value::Enumeration(id) = value else {
+                return Err(bad(declaration.name));
+            };
+            for (variant, payload) in declaration
+                .variants
                 .iter()
-                .map(|item| item.name)
-                .chain(program.enums.iter().map(|item| item.name))
+                .zip(&nominals.enumerations[id].variants)
             {
-                if !program.generic_parameters(declaration).is_empty() {
-                    return Err(error(
-                        "generic struct and enum declarations are not available yet",
-                        declaration,
-                    ));
+                if let Some(value) = payload {
+                    nominals.exposure(
+                        index,
+                        work,
+                        ExposureOwner::Enumeration(enumeration),
+                        *value,
+                        variant.payload.map_or(variant.name, |payload| payload.span),
+                        0,
+                    )?;
                 }
             }
         }
@@ -224,6 +343,9 @@ impl Plan {
                         definition,
                         arguments: Vec::new(),
                         calls: Vec::new(),
+                        types: Vec::new(),
+                        constructors: Vec::new(),
+                        matches: Vec::new(),
                         depth: 0,
                     },
                     allocator,
@@ -241,7 +363,10 @@ impl Plan {
                 for (position, parameter) in parameters.iter().enumerate() {
                     storage.push(
                         &mut arguments,
-                        Value::Parameter(position),
+                        Value::Parameter {
+                            position,
+                            copy: !parameter.bounds.is_empty(),
+                        },
                         allocator,
                         work,
                         parameter.name,
@@ -252,6 +377,7 @@ impl Plan {
                     work,
                     allocator,
                     &mut storage,
+                    &mut nominals,
                     None,
                     definition,
                     arguments,
@@ -267,24 +393,28 @@ impl Plan {
             for argument in &plan.instances[next].arguments {
                 storage.push(
                     &mut arguments,
-                    Value::Concrete(*argument),
+                    *argument,
                     allocator,
                     work,
                     index.sources().eof(),
                 )?;
             }
-            let calls = Walker::new(
+            let checked = Walker::new(
                 index,
                 work,
                 allocator,
                 &mut storage,
+                &mut nominals,
                 Some(&mut plan),
                 definition,
                 arguments,
                 Some(DefId(next)),
             )?
             .check()?;
-            plan.instances[next].calls = calls;
+            plan.instances[next].calls = checked.calls;
+            plan.instances[next].types = checked.types;
+            plan.instances[next].constructors = checked.constructors;
+            plan.instances[next].matches = checked.matches;
             next += 1;
         }
         let count = plan.instances.len();
@@ -295,6 +425,8 @@ impl Plan {
                 }
             }
         }
+        nominals.finish(&mut storage, allocator, work, index.sources().eof())?;
+        plan.nominals = nominals;
         Ok(plan)
     }
     // Keep the caller's shared storage budget, failure seam and work meter explicit.
@@ -302,7 +434,7 @@ impl Plan {
     fn instantiate(
         &mut self,
         definition: DefId,
-        arguments: Vec<ValueTy>,
+        arguments: Vec<Value>,
         depth: usize,
         storage: &mut Storage,
         allocator: &mut Allocator,
@@ -327,6 +459,9 @@ impl Plan {
                 definition,
                 arguments,
                 calls: Vec::new(),
+                types: Vec::new(),
+                constructors: Vec::new(),
+                matches: Vec::new(),
                 depth,
             },
             allocator,
@@ -420,14 +555,11 @@ fn syntax_type(
     index: &DeclarationIndex<'_>,
     work: &WorkMeter,
     module: ModuleId,
-    function: &ast::Function,
+    declaration: Span,
     arguments: &[Value],
     syntax: ast::TypeSyntax,
 ) -> Result<Type, Box<Diagnostic>> {
-    let parameters = index
-        .sources()
-        .ast(module)?
-        .generic_parameters(function.name);
+    let parameters = index.sources().ast(module)?.generic_parameters(declaration);
     let path = match syntax.kind {
         TypeSyntaxKind::Name(path) => Some((path, None)),
         TypeSyntaxKind::Reference { mutable, referent } => Some((
@@ -459,6 +591,220 @@ fn syntax_type(
 }
 
 impl DeclarationIndex<'_> {
+    pub fn template_enum_for_instance(
+        &self,
+        enumeration: EnumId,
+    ) -> Result<EnumId, Box<Diagnostic>> {
+        self.generic_plan().map_or(Ok(enumeration), |plan| {
+            plan.nominals
+                .enum_definition(enumeration, self.sources().eof())
+        })
+    }
+    pub fn ordinary_enum_instance(&self, template: EnumId) -> Result<EnumId, Box<Diagnostic>> {
+        let Some(plan) = self.generic_plan() else {
+            return Ok(template);
+        };
+        plan.nominals
+            .enumerations
+            .iter()
+            .find(|enumeration| {
+                enumeration.template == template && enumeration.arguments.is_empty()
+            })
+            .and_then(|enumeration| enumeration.emitted)
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn template_nominal_for_instance(
+        &self,
+        nominal: NominalId,
+    ) -> Result<NominalId, Box<Diagnostic>> {
+        Ok(match nominal {
+            NominalId::Record(record) => {
+                NominalId::Record(self.template_record_for_instance(record)?)
+            }
+            NominalId::Enum(enumeration) => {
+                NominalId::Enum(self.template_enum_for_instance(enumeration)?)
+            }
+            _ => nominal,
+        })
+    }
+    pub(super) fn generic_enum_payload(&self, variant: VariantId) -> Option<Option<ValueTy>> {
+        let plan = self.generic_plan()?;
+        if variant.enumeration.0 >= plan.nominals.enum_count() {
+            return None;
+        }
+        Some(
+            plan.nominals
+                .payload(variant, self.sources().eof())
+                .expect("completed source enum application"),
+        )
+    }
+    pub fn generic_variant_template(
+        &self,
+        module: ModuleId,
+        path: ast::ItemPath,
+        name: Span,
+        work: &WorkMeter,
+    ) -> Result<VariantId, Box<Diagnostic>> {
+        let nominal = self.query(work).nominal_type(
+            module,
+            ItemPathRef {
+                file: name.file,
+                path,
+            },
+            TypeContext::Constructor,
+        )?;
+        let NominalId::Enum(enumeration) = nominal else {
+            return Err(error("variant construction requires an enum type", name));
+        };
+        if enumeration.0 >= self.template_enum_count() {
+            return Err(error("this enum does not accept type arguments", name));
+        }
+        let (key, module) = self.template_enumeration(enumeration)?;
+        for (index, variant) in self.sources().ast(module)?.enums[key.index]
+            .variants
+            .iter()
+            .enumerate()
+        {
+            work.debit(1, name, "generic enum variant lookup")?;
+            if self.sources().text(variant.name)? == self.sources().text(name)? {
+                return Ok(VariantId { enumeration, index });
+            }
+        }
+        Err(error("unknown enum variant", name))
+    }
+    fn lowered_variant(
+        &self,
+        value: Value,
+        template: VariantId,
+    ) -> Result<VariantId, Box<Diagnostic>> {
+        let plan = self
+            .generic_plan()
+            .ok_or_else(|| bad(self.sources().eof()))?;
+        let ValueTy::Owned(AggregateTy::Enum(enumeration)) =
+            plan.nominals.value(value, self.sources().eof())?
+        else {
+            return Err(bad(self.sources().eof()));
+        };
+        if self.template_enum_for_instance(enumeration)? != template.enumeration {
+            return Err(bad(self.sources().eof()));
+        }
+        Ok(VariantId {
+            enumeration,
+            index: template.index,
+        })
+    }
+    pub fn instantiated_variant(
+        &self,
+        caller: DefId,
+        expression: ExprId,
+        template: VariantId,
+    ) -> Result<VariantId, Box<Diagnostic>> {
+        let Some(plan) = self.generic_plan() else {
+            return Ok(template);
+        };
+        let instance = plan
+            .instances
+            .get(caller.0)
+            .ok_or_else(|| bad(self.sources().eof()))?;
+        let value = instance
+            .constructors
+            .iter()
+            .find(|(id, _)| *id == expression)
+            .map(|(_, value)| *value)
+            .ok_or_else(|| bad(self.sources().eof()))?;
+        self.lowered_variant(value, template)
+    }
+    pub fn instantiated_match_variant(
+        &self,
+        caller: DefId,
+        arm: Span,
+        template: VariantId,
+    ) -> Result<VariantId, Box<Diagnostic>> {
+        let Some(plan) = self.generic_plan() else {
+            return Ok(template);
+        };
+        let instance = plan.instances.get(caller.0).ok_or_else(|| bad(arm))?;
+        let value = instance
+            .matches
+            .iter()
+            .find(|(span, _)| *span == arm)
+            .map(|(_, value)| *value)
+            .ok_or_else(|| bad(arm))?;
+        self.lowered_variant(value, template)
+    }
+    pub fn template_record_for_instance(
+        &self,
+        record: RecordId,
+    ) -> Result<RecordId, Box<Diagnostic>> {
+        self.generic_plan().map_or(Ok(record), |plan| {
+            plan.nominals.template(record, self.sources().eof())
+        })
+    }
+    pub fn ordinary_record_instance(
+        &self,
+        template: RecordId,
+    ) -> Result<RecordId, Box<Diagnostic>> {
+        let Some(plan) = self.generic_plan() else {
+            return Ok(template);
+        };
+        plan.nominals
+            .records
+            .iter()
+            .find(|record| record.template == template && record.arguments.is_empty())
+            .and_then(|record| record.emitted)
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn template_field_for_instance(&self, field: FieldId) -> Result<FieldId, Box<Diagnostic>> {
+        Ok(FieldId {
+            record: self.template_record_for_instance(field.record)?,
+            index: field.index,
+        })
+    }
+    pub fn instantiated_record_field(
+        &self,
+        field: FieldId,
+        syntax: ast::TypeSyntax,
+        work: &WorkMeter,
+    ) -> Result<ParameterTy, Box<Diagnostic>> {
+        if let Some(plan) = self.generic_plan() {
+            work.debit(1, syntax.span, "instantiated record field")?;
+            return plan
+                .nominals
+                .field(field.record, field.index, syntax.span)
+                .map(ParameterTy::Value);
+        }
+        let (_, module) = self.record(field.record)?;
+        self.query(work).parameter_type(module, syntax)
+    }
+    pub fn instantiated_constructor(
+        &self,
+        caller: DefId,
+        expression: ExprId,
+        template: RecordId,
+    ) -> Result<RecordId, Box<Diagnostic>> {
+        let Some(plan) = self.generic_plan() else {
+            return Ok(template);
+        };
+        let instance = plan
+            .instances
+            .get(caller.0)
+            .ok_or_else(|| bad(self.sources().eof()))?;
+        let value = instance
+            .constructors
+            .iter()
+            .find(|(id, _)| *id == expression)
+            .map(|(_, value)| *value)
+            .ok_or_else(|| bad(self.sources().eof()))?;
+        let ValueTy::Owned(AggregateTy::Record(record)) =
+            plan.nominals.value(value, self.sources().eof())?
+        else {
+            return Err(bad(self.sources().eof()));
+        };
+        if self.template_record_for_instance(record)? != template {
+            return Err(bad(self.sources().eof()));
+        }
+        Ok(record)
+    }
     pub fn template_for_instance(&self, function: DefId) -> Result<DefId, Box<Diagnostic>> {
         match self.generic_plan() {
             Some(plan) => plan.definition(function),
@@ -504,22 +850,18 @@ impl DeclarationIndex<'_> {
             .instances
             .get(function.0)
             .ok_or_else(|| bad(syntax.span))?;
-        let (key, module) = self.template_function(instance.definition)?;
-        let declaration = &self.sources().ast(module)?.functions[key.index];
-        let mut arguments =
-            [Value::Concrete(ValueTy::Scalar(Ty::Unit)); crate::frontend::parser::MAX_PARAMS];
-        for (target, source) in arguments.iter_mut().zip(&instance.arguments) {
-            *target = Value::Concrete(*source);
-        }
-        syntax_type(
-            self,
-            work,
-            module,
-            declaration,
-            &arguments[..instance.arguments.len()],
-            syntax,
-        )?
-        .parameter(syntax.span)
+        work.debit(
+            instance.types.len() as u64 + 1,
+            syntax.span,
+            "instantiated source type",
+        )?;
+        let ty = instance
+            .types
+            .iter()
+            .find(|(span, _)| *span == syntax.span)
+            .map(|(_, ty)| *ty)
+            .ok_or_else(|| bad(syntax.span))?;
+        plan.nominals.parameter(ty, syntax.span)
     }
     pub fn instantiated_value(
         &self,
@@ -574,6 +916,76 @@ impl DeclarationIndex<'_> {
     pub fn has_generic_instances(&self) -> bool {
         self.generic_plan().is_some()
     }
+    pub fn expected_generic_construction(
+        &self,
+        caller: DefId,
+        span: Span,
+        work: &WorkMeter,
+    ) -> Result<(ValueTy, Option<VariantId>), Box<Diagnostic>> {
+        let plan = self.generic_plan().ok_or_else(|| bad(span))?;
+        let instance = plan.instances.get(caller.0).ok_or_else(|| bad(span))?;
+        let (_, module) = self.template_function(instance.definition)?;
+        let ast = self.sources().ast(module)?;
+        for (id, value) in &instance.constructors {
+            work.debit(1, span, "generic constructor source identity")?;
+            let expression = &ast.expressions[id.0];
+            if expression.span != span {
+                continue;
+            }
+            let variant = match expression.kind {
+                ExprKind::GenericVariant {
+                    application,
+                    variant,
+                    ..
+                } => {
+                    let application = ast
+                        .generic_application(application)
+                        .ok_or_else(|| bad(span))?;
+                    Some(self.generic_variant_template(module, application.path, variant, work)?)
+                }
+                ExprKind::QualifiedValue { path, .. } => Some(self.query(work).variant(
+                    module,
+                    QualifiedPathRef {
+                        file: span.file,
+                        path,
+                    },
+                )?),
+                ExprKind::StructLiteral { .. } => None,
+                _ => return Err(bad(span)),
+            };
+            return Ok((
+                plan.nominals.value(*value, span)?,
+                variant
+                    .map(|variant| self.lowered_variant(*value, variant))
+                    .transpose()?,
+            ));
+        }
+        Err(bad(span))
+    }
+    pub fn expected_generic_match(
+        &self,
+        caller: DefId,
+        span: Span,
+        work: &WorkMeter,
+    ) -> Result<EnumId, Box<Diagnostic>> {
+        let plan = self.generic_plan().ok_or_else(|| bad(span))?;
+        let instance = plan.instances.get(caller.0).ok_or_else(|| bad(span))?;
+        work.debit(
+            instance.matches.len() as u64 + 1,
+            span,
+            "generic match source identity",
+        )?;
+        let value = instance
+            .matches
+            .iter()
+            .find(|(at, _)| *at == span)
+            .map(|(_, value)| *value)
+            .ok_or_else(|| bad(span))?;
+        match plan.nominals.value(value, span)? {
+            ValueTy::Owned(AggregateTy::Enum(enumeration)) => Ok(enumeration),
+            _ => Err(bad(span)),
+        }
+    }
     pub fn expected_generic_call(
         &self,
         caller: DefId,
@@ -605,11 +1017,18 @@ struct Loan {
     binding: usize,
     kind: BorrowKind,
 }
+struct Checked {
+    calls: Vec<Call>,
+    types: Vec<(Span, Type)>,
+    constructors: Vec<(ExprId, Value)>,
+    matches: Vec<(Span, Value)>,
+}
 struct Walker<'a, 's> {
     index: &'a DeclarationIndex<'s>,
     work: &'a WorkMeter,
     allocator: &'a mut Allocator,
     storage: &'a mut Storage,
+    nominals: &'a mut Nominals,
     plan: Option<&'a mut Plan>,
     instance: Option<DefId>,
     definition: DefId,
@@ -619,6 +1038,9 @@ struct Walker<'a, 's> {
     arguments: Vec<Value>,
     bindings: Vec<Binding>,
     calls: Vec<Call>,
+    types: Vec<(Span, Type)>,
+    constructors: Vec<(ExprId, Value)>,
+    matches: Vec<(Span, Value)>,
     loans: Vec<Loan>,
     abstract_body: bool,
     reachable: bool,
@@ -655,6 +1077,7 @@ impl<'a, 's> Walker<'a, 's> {
         work: &'a WorkMeter,
         allocator: &'a mut Allocator,
         storage: &'a mut Storage,
+        nominals: &'a mut Nominals,
         plan: Option<&'a mut Plan>,
         definition: DefId,
         arguments: Vec<Value>,
@@ -668,6 +1091,7 @@ impl<'a, 's> Walker<'a, 's> {
             allocator,
             storage,
             abstract_body: plan.is_none(),
+            nominals,
             plan,
             instance,
             definition,
@@ -677,18 +1101,22 @@ impl<'a, 's> Walker<'a, 's> {
             arguments,
             bindings: Vec::new(),
             calls: Vec::new(),
+            types: Vec::new(),
+            constructors: Vec::new(),
+            matches: Vec::new(),
             loans: Vec::new(),
             reachable: true,
             loop_frames: Vec::new(),
         })
     }
-    fn check(mut self) -> Result<Vec<Call>, Box<Diagnostic>> {
+    fn check(mut self) -> Result<Checked, Box<Diagnostic>> {
         for parameter in &self.function.params {
             let ty = self.ty(parameter.ty)?;
             self.exposure(ty, parameter.ty.span)?;
             self.bind(parameter.name, ty, false)?;
         }
-        self.exposure(self.ty(self.function.result)?, self.function.result.span)?;
+        let result = self.ty(self.function.result)?;
+        self.exposure(result, self.function.result.span)?;
         let flow = self.block(self.function.body, 0)?;
         if flow.falls && self.ty(self.function.result)? != Type::scalar(Ty::Unit) {
             return Err(error("not all paths return a value", self.function.end));
@@ -701,44 +1129,63 @@ impl<'a, 's> Walker<'a, 's> {
         {
             return Err(bad(self.function.name));
         }
-        Ok(self.calls)
+        Ok(Checked {
+            calls: self.calls,
+            types: self.types,
+            constructors: self.constructors,
+            matches: self.matches,
+        })
     }
-    fn ty(&self, syntax: ast::TypeSyntax) -> Result<Type, Box<Diagnostic>> {
-        syntax_type(
+    fn ty(&mut self, syntax: ast::TypeSyntax) -> Result<Type, Box<Diagnostic>> {
+        self.work.debit(
+            self.types.len() as u64 + 1,
+            syntax.span,
+            "generic syntax type lookup",
+        )?;
+        if let Some((_, ty)) = self.types.iter().find(|(span, _)| *span == syntax.span) {
+            return Ok(*ty);
+        }
+        let ty = self.nominals.syntax(
             self.index,
             self.work,
+            self.storage,
+            self.allocator,
             self.module,
-            self.function,
+            self.function.name,
             &self.arguments,
             syntax,
-        )
+            0,
+        )?;
+        self.storage.push(
+            &mut self.types,
+            (syntax.span, ty),
+            self.allocator,
+            self.work,
+            syntax.span,
+        )?;
+        Ok(ty)
     }
     fn exposure(&self, ty: Type, at: Span) -> Result<(), Box<Diagnostic>> {
-        if !self.abstract_body {
+        if !self.abstract_body
+            && !self
+                .program
+                .generic_parameters(self.function.name)
+                .is_empty()
+        {
             return Ok(());
         }
-        let nominal = match ty {
-            Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::Record(record))))
-            | Type::Reference {
-                value: Value::Concrete(ValueTy::Owned(AggregateTy::Record(record))),
-                ..
-            } => NominalId::Record(record),
-            Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::Enum(enumeration)))) => {
-                NominalId::Enum(enumeration)
-            }
+        let value = match ty {
+            Type::Value(value) | Type::Reference { value, .. } => value,
             _ => return Ok(()),
         };
-        match self.index.query(self.work).nominal_signature_exposure(
-            self.definition,
-            nominal,
+        self.nominals.exposure(
+            self.index,
+            self.work,
+            ExposureOwner::Function(self.definition),
+            value,
             at,
-        )? {
-            NominalExposure::Allowed => Ok(()),
-            NominalExposure::Denied { .. } => Err(error(
-                "generic function signature exposes a private type",
-                at,
-            )),
-        }
+            0,
+        )
     }
     fn mutable_place(&self, position: usize, at: Span) -> Result<(), Box<Diagnostic>> {
         let binding = self.bindings[position];
@@ -761,12 +1208,8 @@ impl<'a, 's> Walker<'a, 's> {
     fn copy(&self, value: Value) -> bool {
         match value {
             Value::Concrete(ValueTy::Scalar(_)) => true,
-            Value::Concrete(ValueTy::Owned(_)) => false,
-            Value::Parameter(position) => self
-                .program
-                .generic_parameters(self.function.name)
-                .get(position)
-                .is_some_and(|parameter| !parameter.bounds.is_empty()),
+            Value::Concrete(ValueTy::Owned(_)) | Value::Record(_) | Value::Enumeration(_) => false,
+            Value::Parameter { copy, .. } => copy,
         }
     }
     fn bind(&mut self, name: Span, ty: Type, mutable: bool) -> Result<(), Box<Diagnostic>> {
@@ -920,7 +1363,8 @@ impl<'a, 's> Walker<'a, 's> {
                     };
                     ty.value(statement.span)?;
                     if let Some(annotation) = annotation {
-                        self.expect(ty, self.ty(*annotation)?, annotation.span)?;
+                        let expected = self.ty(*annotation)?;
+                        self.expect(ty, expected, annotation.span)?;
                     }
                     self.bind(*name, ty, *mutable)?;
                     Flow::FALL
@@ -956,7 +1400,8 @@ impl<'a, 's> Walker<'a, 's> {
                     } else {
                         Type::scalar(Ty::Unit)
                     };
-                    self.expect(ty, self.ty(self.function.result)?, statement.span)?;
+                    let expected = self.ty(self.function.result)?;
+                    self.expect(ty, expected, statement.span)?;
                     Flow {
                         falls: false,
                         returns: true,
@@ -1031,12 +1476,17 @@ impl<'a, 's> Walker<'a, 's> {
                 }
                 StmtKind::Match { scrutinee, arms } => {
                     let position = self.local(*scrutinee)?;
-                    let Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::Enum(
-                        enumeration,
-                    )))) = self.bindings[position].ty
-                    else {
-                        return Err(error("match requires a known enum type", *scrutinee));
-                    };
+                    let value = self.bindings[position].ty.value(*scrutinee)?;
+                    let enumeration = self.nominals.enum_template(value, *scrutinee)?;
+                    if !self.matches.iter().any(|(span, _)| *span == statement.span) {
+                        self.storage.push(
+                            &mut self.matches,
+                            (statement.span, value),
+                            self.allocator,
+                            self.work,
+                            statement.span,
+                        )?;
+                    }
                     if self.abstract_body && self.reachable {
                         self.bindings[position].moved = true;
                     }
@@ -1062,11 +1512,18 @@ impl<'a, 's> Walker<'a, 's> {
                             return Err(error("duplicate or mismatched enum match arm", arm.span));
                         }
                         seen[variant.index] = true;
-                        let payload = self
-                            .index
-                            .enum_view(enumeration)?
-                            .variant(variant)?
-                            .value_payload(self.work)?;
+                        if !self.matches.iter().any(|(span, _)| *span == arm.span) {
+                            self.storage.push(
+                                &mut self.matches,
+                                (arm.span, value),
+                                self.allocator,
+                                self.work,
+                                arm.span,
+                            )?;
+                        }
+                        let payload =
+                            self.nominals
+                                .variant(self.index, value, variant.index, arm.span)?;
                         self.bindings.clear();
                         for binding in &before {
                             self.storage.push(
@@ -1078,9 +1535,7 @@ impl<'a, 's> Walker<'a, 's> {
                             )?;
                         }
                         match (arm.binding, payload) {
-                            (Some(name), Some(ty)) => {
-                                self.bind(name, Type::concrete(ParameterTy::Value(ty)), false)?
-                            }
+                            (Some(name), Some(ty)) => self.bind(name, Type::Value(ty), false)?,
                             (None, None) => (),
                             _ => return Err(error("match arm payload binding mismatch", arm.span)),
                         }
@@ -1097,7 +1552,9 @@ impl<'a, 's> Walker<'a, 's> {
                         }
                         result = result.union(flow);
                     }
-                    if seen[..self.index.enum_view(enumeration)?.variant_count()]
+                    if seen[..self
+                        .nominals
+                        .variant_count(self.index, value, statement.span)?]
                         .iter()
                         .any(|seen| !seen)
                     {
@@ -1131,6 +1588,37 @@ impl<'a, 's> Walker<'a, 's> {
         let expression = &self.program.expressions[id.0];
         self.work.debit(1, expression.span, "generic expression")?;
         Ok(match &expression.kind {
+            ExprKind::GenericVariant {
+                application,
+                variant,
+                args,
+            } => {
+                let syntax = self
+                    .program
+                    .generic_application(*application)
+                    .ok_or_else(|| bad(expression.span))?;
+                reject_parameter_base(
+                    self.index,
+                    self.work,
+                    self.module,
+                    self.function.name,
+                    syntax.path,
+                    expression.span,
+                )?;
+                let variant = self.index.generic_variant_template(
+                    self.module,
+                    syntax.path,
+                    *variant,
+                    self.work,
+                )?;
+                self.enum_literal(
+                    id,
+                    variant,
+                    args.as_deref(),
+                    Some(&syntax.arguments),
+                    expression.span,
+                )?
+            }
             ExprKind::Name(name) => {
                 let position = self.local(*name)?;
                 let ty = self.bindings[position].ty;
@@ -1200,6 +1688,14 @@ impl<'a, 's> Walker<'a, 's> {
                 self.call(id, definition, args, expression.span)?
             }
             ExprKind::QualifiedValue { path, args } => {
+                reject_parameter_base(
+                    self.index,
+                    self.work,
+                    self.module,
+                    self.function.name,
+                    ast::ItemPath::Absolute(*path),
+                    expression.span,
+                )?;
                 match self.index.query(self.work).qualified_value_endpoint(
                     self.module,
                     QualifiedPathRef {
@@ -1220,50 +1716,71 @@ impl<'a, 's> Walker<'a, 's> {
                                 expression.span,
                             ));
                         }
-                        let payload = self
-                            .index
-                            .enum_view(variant.enumeration)?
-                            .variant(variant)?
-                            .value_payload(self.work)?;
-                        match (payload, args.as_deref()) {
-                            (None, None) => (),
-                            (Some(expected), Some([Argument::Value(value)])) => {
-                                let actual = self.expression(*value)?;
-                                self.expect(
-                                    actual,
-                                    Type::concrete(ParameterTy::Value(expected)),
-                                    expression.span,
-                                )?;
-                            }
-                            _ => {
-                                return Err(error("enum variant payload mismatch", expression.span))
-                            }
-                        }
-                        Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::Enum(
-                            variant.enumeration,
-                        ))))
+                        self.enum_literal(id, variant, args.as_deref(), None, expression.span)?
                     }
                 }
             }
             ExprKind::StructLiteral { record, fields } => {
-                let ty = self.index.query(self.work).value_type(
+                reject_parameter_base(
+                    self.index,
+                    self.work,
                     self.module,
-                    ast::TypeSyntax {
-                        span: self
-                            .program
-                            .item_path_span(*record)
-                            .ok_or_else(|| bad(expression.span))?,
-                        kind: TypeSyntaxKind::Name(*record),
-                    },
-                    TypeContext::Value,
+                    self.function.name,
+                    *record,
+                    expression.span,
                 )?;
-                let ValueTy::Owned(AggregateTy::Record(record)) = ty else {
-                    return Err(error(
-                        "record literal requires a record type",
-                        expression.span,
-                    ));
+                let path_span = self
+                    .program
+                    .item_path_span(*record)
+                    .ok_or_else(|| bad(expression.span))?;
+                let record = self.index.query(self.work).record_type(
+                    self.module,
+                    ItemPathRef {
+                        file: expression.span.file,
+                        path: *record,
+                    },
+                    TypeContext::Constructor,
+                )?;
+                let mut arguments = Vec::new();
+                if let Some(explicit) = self.program.generic_arguments(expression.span) {
+                    for syntax in explicit {
+                        let value = self.ty(*syntax)?.value(syntax.span)?;
+                        self.storage.push(
+                            &mut arguments,
+                            value,
+                            self.allocator,
+                            self.work,
+                            syntax.span,
+                        )?;
+                    }
+                }
+                let value = self.nominals.record(
+                    self.index,
+                    self.work,
+                    self.storage,
+                    self.allocator,
+                    record,
+                    arguments,
+                    path_span,
+                    0,
+                )?;
+                let Value::Record(application) = value else {
+                    return Err(bad(expression.span));
                 };
-                let (key, module) = self.index.record(record)?;
+                if !self
+                    .constructors
+                    .iter()
+                    .any(|(expression, _)| *expression == id)
+                {
+                    self.storage.push(
+                        &mut self.constructors,
+                        (id, value),
+                        self.allocator,
+                        self.work,
+                        expression.span,
+                    )?;
+                }
+                let (key, module) = self.index.template_record(record)?;
                 let declaration = &self.index.sources().ast(module)?.records[key.index];
                 if !matches!(
                     self.index.query(self.work).construction_access(
@@ -1291,21 +1808,18 @@ impl<'a, 's> Walker<'a, 's> {
                             return Err(duplicate(field.name, earlier.name));
                         }
                     }
-                    let expected = declaration
+                    let position = declaration
                         .fields
                         .iter()
-                        .find(|candidate| {
+                        .position(|candidate| {
                             self.index.sources().text(candidate.name).ok() == Some(name)
                         })
                         .ok_or_else(|| error("unknown record field", field.name))?;
-                    let expected = self
-                        .index
-                        .query(self.work)
-                        .parameter_type(module, expected.ty)?;
+                    let expected = Type::Value(self.nominals.records[application].fields[position]);
                     let actual = self.expression(field.value)?;
-                    self.expect(actual, Type::concrete(expected), field.span)?;
+                    self.expect(actual, expected, field.span)?;
                 }
-                Type::Value(Value::Concrete(ty))
+                Type::Value(value)
             }
             ExprKind::FieldRead { base, field } => self.field(*base, *field)?,
             ExprKind::ArrayLiteral { elements } => {
@@ -1472,6 +1986,61 @@ impl<'a, 's> Walker<'a, 's> {
             }
         })
     }
+    fn enum_literal(
+        &mut self,
+        expression: ExprId,
+        variant: VariantId,
+        arguments: Option<&[Argument]>,
+        explicit: Option<&[ast::TypeSyntax]>,
+        at: Span,
+    ) -> Result<Type, Box<Diagnostic>> {
+        let mut types = Vec::new();
+        if let Some(explicit) = explicit {
+            for syntax in explicit {
+                let value = self.ty(*syntax)?.value(syntax.span)?;
+                self.storage
+                    .push(&mut types, value, self.allocator, self.work, syntax.span)?;
+            }
+        }
+        let value = if variant.enumeration.0 < self.index.template_enum_count() {
+            self.nominals.enumeration(
+                self.index,
+                self.work,
+                self.storage,
+                self.allocator,
+                variant.enumeration,
+                types,
+                at,
+                0,
+            )?
+        } else {
+            if explicit.is_some() {
+                return Err(error("this enum does not accept type arguments", at));
+            }
+            Value::Concrete(ValueTy::Owned(AggregateTy::Enum(variant.enumeration)))
+        };
+        let payload = self
+            .nominals
+            .variant(self.index, value, variant.index, at)?;
+        match (payload, arguments) {
+            (None, None) => (),
+            (Some(expected), Some([Argument::Value(expression)])) => {
+                let actual = self.expression(*expression)?;
+                self.expect(actual, Type::Value(expected), at)?;
+            }
+            _ => return Err(error("enum variant payload mismatch", at)),
+        }
+        if !self.constructors.iter().any(|(id, _)| *id == expression) {
+            self.storage.push(
+                &mut self.constructors,
+                (expression, value),
+                self.allocator,
+                self.work,
+                at,
+            )?;
+        }
+        Ok(Type::Value(value))
+    }
     fn number(&self, digits: Span, negative: bool, ty: Ty) -> Result<(), Box<Diagnostic>> {
         let magnitude = self
             .index
@@ -1534,9 +2103,22 @@ impl<'a, 's> Walker<'a, 's> {
                     value: Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))),
                     ..
                 } => id,
+                Type::Value(Value::Record(id))
+                | Type::Reference {
+                    value: Value::Record(id),
+                    ..
+                } => self.nominals.records[id].template,
                 _ => return Err(error("field access requires a known record type", fields)),
             };
-            let (key, module) = self.index.record(record)?;
+            let application = match ty {
+                Type::Value(Value::Record(id))
+                | Type::Reference {
+                    value: Value::Record(id),
+                    ..
+                } => Some(id),
+                _ => None,
+            };
+            let (key, module) = self.index.template_record(record)?;
             let declaration = &self.index.sources().ast(module)?.records[key.index];
             let (position, member) = declaration
                 .fields
@@ -1559,11 +2141,14 @@ impl<'a, 's> Walker<'a, 's> {
             ) {
                 return Err(error("field access uses a private field", fields));
             }
-            ty = Type::concrete(
-                self.index
-                    .query(self.work)
-                    .parameter_type(module, member.ty)?,
-            );
+            ty = match application {
+                Some(id) => Type::Value(self.nominals.records[id].fields[position]),
+                None => Type::concrete(
+                    self.index
+                        .query(self.work)
+                        .parameter_type(module, member.ty)?,
+                ),
+            };
         }
         Ok(ty)
     }
@@ -1779,40 +2364,25 @@ impl<'a, 's> Walker<'a, 's> {
             .iter_mut()
             .enumerate()
         {
-            *argument = Value::Parameter(position);
+            *argument = Value::Parameter {
+                position,
+                copy: !type_parameters[position].bounds.is_empty(),
+            };
         }
         for (argument, parameter) in arguments.iter().zip(&function.params) {
             let actual = self.argument(argument)?;
-            let formal = syntax_type(
+            let formal = self.nominals.syntax(
                 self.index,
                 self.work,
+                self.storage,
+                self.allocator,
                 module,
-                function,
+                function.name,
                 &formal_arguments[..type_parameters.len()],
                 parameter.ty,
+                0,
             )?;
-            match (formal, actual) {
-                (Type::Value(Value::Parameter(position)), Type::Value(value))
-                | (
-                    Type::Reference {
-                        value: Value::Parameter(position),
-                        ..
-                    },
-                    Type::Reference { value, .. },
-                ) => {
-                    if inferred[position].is_some_and(|previous| previous != value) {
-                        return Err(error("type parameter inferred as incompatible types", at));
-                    }
-                    inferred[position] = Some(value);
-                    let expected = match formal {
-                        Type::Value(_) => Type::Value(value),
-                        Type::Reference { kind, .. } => Type::Reference { value, kind },
-                        _ => unreachable!(),
-                    };
-                    self.expect(actual, expected, at)?;
-                }
-                _ => self.expect(actual, formal, at)?,
-            }
+            self.infer(formal, actual, &mut inferred, at)?;
         }
         let mut concrete = Vec::new();
         for (position, parameter) in type_parameters.iter().enumerate() {
@@ -1823,20 +2393,23 @@ impl<'a, 's> Walker<'a, 's> {
             }
             formal_arguments[position] = value;
             if self.plan.is_some() {
-                let Value::Concrete(value) = value else {
+                if !self.nominals.concrete(value) {
                     return Err(bad(at));
-                };
+                }
                 self.storage
                     .push(&mut concrete, value, self.allocator, self.work, at)?;
             }
         }
-        let result = syntax_type(
+        let result = self.nominals.syntax(
             self.index,
             self.work,
+            self.storage,
+            self.allocator,
             module,
-            function,
+            function.name,
             &formal_arguments[..type_parameters.len()],
             function.result,
+            0,
         )?;
         if let Some(plan) = self.plan.as_deref_mut() {
             let target = if type_parameters.is_empty() {
@@ -1870,6 +2443,82 @@ impl<'a, 's> Walker<'a, 's> {
         }
         Ok(result)
     }
+    fn infer(
+        &self,
+        formal: Type,
+        actual: Type,
+        inferred: &mut [Option<Value>],
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        match (formal, actual) {
+            (Type::Value(formal), Type::Value(actual)) => {
+                self.infer_value(formal, actual, inferred, at, 0)
+            }
+            (
+                Type::Reference {
+                    value: formal,
+                    kind: expected,
+                },
+                Type::Reference {
+                    value: actual,
+                    kind,
+                },
+            ) if kind == BorrowKind::Exclusive || expected == BorrowKind::Shared => {
+                self.infer_value(formal, actual, inferred, at, 0)
+            }
+            _ => self.expect(actual, formal, at),
+        }
+    }
+    fn infer_value(
+        &self,
+        formal: Value,
+        actual: Value,
+        inferred: &mut [Option<Value>],
+        at: Span,
+        depth: usize,
+    ) -> Result<(), Box<Diagnostic>> {
+        if depth > MAX_DEPTH {
+            return Err(exhausted(at));
+        }
+        self.work.debit(1, at, "nominal type inference")?;
+        match (formal, actual) {
+            (Value::Parameter { position, .. }, value) => {
+                if inferred[position].is_some_and(|previous| previous != value) {
+                    return Err(error("type parameter inferred as incompatible types", at));
+                }
+                inferred[position] = Some(value);
+                Ok(())
+            }
+            (Value::Record(formal), Value::Record(actual)) => {
+                let formal = &self.nominals.records[formal];
+                let actual = &self.nominals.records[actual];
+                if formal.template != actual.template
+                    || formal.arguments.len() != actual.arguments.len()
+                {
+                    return Err(error("generic nominal type mismatch", at));
+                }
+                for (formal, actual) in formal.arguments.iter().zip(&actual.arguments) {
+                    self.infer_value(*formal, *actual, inferred, at, depth + 1)?;
+                }
+                Ok(())
+            }
+            (Value::Enumeration(formal), Value::Enumeration(actual)) => {
+                let formal = &self.nominals.enumerations[formal];
+                let actual = &self.nominals.enumerations[actual];
+                if formal.template != actual.template
+                    || formal.arguments.len() != actual.arguments.len()
+                {
+                    return Err(error("generic nominal type mismatch", at));
+                }
+                for (formal, actual) in formal.arguments.iter().zip(&actual.arguments) {
+                    self.infer_value(*formal, *actual, inferred, at, depth + 1)?;
+                }
+                Ok(())
+            }
+            _ if formal == actual => Ok(()),
+            _ => Err(error("generic argument or value type mismatch", at)),
+        }
+    }
     fn builtin_signature(
         &mut self,
         definition: DefId,
@@ -1890,6 +2539,7 @@ impl<'a, 's> Walker<'a, 's> {
                     BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
                     BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
                 })?;
+                let enumeration = self.index.template_enum_for_instance(enumeration)?;
                 let (parameter, ty) = builtin.signature(enumeration);
                 let mut parameters = Vec::new();
                 self.storage
@@ -1919,7 +2569,13 @@ impl<'a, 's> Walker<'a, 's> {
                         at,
                     )?;
                 }
-                result = Some((parameters, signature.result));
+                let result_ty = match signature.result {
+                    ValueTy::Owned(AggregateTy::Enum(id)) => ValueTy::Owned(AggregateTy::Enum(
+                        self.index.template_enum_for_instance(id)?,
+                    )),
+                    _ => signature.result,
+                };
+                result = Some((parameters, result_ty));
             }
         }
         result.ok_or_else(|| bad(at))

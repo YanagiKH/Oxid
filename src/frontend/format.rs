@@ -437,12 +437,13 @@ fn roles_with_syntax(
             .partition_point(|token| token.span.start < call.span.start);
         for token in program.tokens[first..]
             .iter()
-            .take_while(|token| token.span.end <= call.span.end)
+            .take_while(|token| token.span.start < call.span.end)
         {
             match token.kind {
                 Kind::Colon | Kind::Less | Kind::Greater => {
                     roles[token.span.start] |= TIGHT_BEFORE | TIGHT_AFTER
                 }
+                Kind::GreaterEqual => roles[token.span.start] |= TIGHT_BEFORE,
                 _ => (),
             }
         }

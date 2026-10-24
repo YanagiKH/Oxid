@@ -389,6 +389,8 @@ impl<'s> SourceOwner<'s> {
         match ty.kind {
             ast::TypeSyntaxKind::Unit => Ok(false),
             ast::TypeSyntaxKind::Reference { .. }
+            | ast::TypeSyntaxKind::Applied(_)
+            | ast::TypeSyntaxKind::AppliedReference { .. }
             | ast::TypeSyntaxKind::Array(_)
             | ast::TypeSyntaxKind::ArrayReference { .. }
             | ast::TypeSyntaxKind::SliceReference { .. }

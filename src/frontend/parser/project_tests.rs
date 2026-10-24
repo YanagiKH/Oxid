@@ -555,6 +555,7 @@ fn checked_segment_count_overflow_precedes_all_admission_and_reserves() {
         project_recovery: false,
         tokens: super::super::lexer::lex(file).unwrap(),
         cursor: 0,
+        pending_equal: None,
         expressions: Vec::new(),
         paths: Vec::new(),
         path_segments: Vec::new(),

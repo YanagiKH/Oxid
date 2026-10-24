@@ -683,9 +683,14 @@ fn check_impl(
             if index.has_generic_instances() {
                 let typed = typed.ok_or_else(bad)?;
                 if field.ty
-                    != index
-                        .query(typed.work())
-                        .parameter_type(module, original.ty)?
+                    != index.instantiated_record_field(
+                        FieldId {
+                            record: id,
+                            index: field_index,
+                        },
+                        original.ty,
+                        typed.work(),
+                    )?
                 {
                     return Err(bad());
                 }
@@ -755,6 +760,77 @@ fn check_impl(
                     return Err(bad());
                 }
             }
+            for block in &declaration.blocks {
+                for statement in &block.statements {
+                    let (destination, variant) = match statement.kind {
+                        OwnedInstruction::Construct { destination, .. }
+                        | OwnedInstruction::ConstructComposite { destination, .. } => {
+                            (destination, None)
+                        }
+                        OwnedInstruction::ConstructEnum {
+                            destination,
+                            variant,
+                            ..
+                        }
+                        | OwnedInstruction::ConstructOwnedEnum {
+                            destination,
+                            variant,
+                            ..
+                        } => (destination, Some(variant)),
+                        _ => continue,
+                    };
+                    let (expected, expected_variant) =
+                        index.expected_generic_construction(id, statement.span, typed.work())?;
+                    let actual = ValueTy::Owned(
+                        declaration
+                            .owners
+                            .get(destination.0)
+                            .ok_or_else(bad)?
+                            .aggregate(),
+                    );
+                    if actual != expected || variant != expected_variant {
+                        return Err(bad());
+                    }
+                }
+            }
+            for descriptor in &declaration.matches {
+                let enumeration =
+                    index.expected_generic_match(id, descriptor.span, typed.work())?;
+                if declaration
+                    .owners
+                    .get(descriptor.source.0)
+                    .ok_or_else(bad)?
+                    .aggregate()
+                    != AggregateTy::Enum(enumeration)
+                {
+                    return Err(bad());
+                }
+                let original = original
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.body)
+                    .find(|statement| statement.span == descriptor.span)
+                    .ok_or_else(bad)?;
+                let crate::frontend::ast::StmtKind::Match { arms, .. } = &original.kind else {
+                    return Err(bad());
+                };
+                if arms.len() != descriptor.arms.len() {
+                    return Err(bad());
+                }
+                for (source, actual) in arms.iter().zip(&descriptor.arms) {
+                    let template = index.query(typed.work()).variant(
+                        module,
+                        crate::frontend::project::QualifiedPathRef {
+                            file: source.span.file,
+                            path: source.variant,
+                        },
+                    )?;
+                    let expected = index.instantiated_match_variant(id, source.span, template)?;
+                    if actual.variant != expected {
+                        return Err(bad());
+                    }
+                }
+            }
         }
         visitor.file(original.name.file);
         function(
@@ -776,6 +852,62 @@ mod generic_source_tests {
         declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
         project::{budget::Allocator, ProjectLimits, ProjectSources},
     };
+
+    #[test]
+    fn nominal_same_layout_identity_swaps_fail_source_association() {
+        use crate::frontend::oir::owned_types::AggregateSlot;
+        for (kind, source) in [
+            ("record", "struct Marker<T>{value:i32}fn main()->i32{let first=Marker::<i32>{value:1};let second=Marker::<bool>{value:2};return first.value+second.value;}"),
+            ("enum", "enum Marker<T>{Empty,Value(i32)}fn main()->i32{let first=Marker::<i32>::Value(1);let second=Marker::<bool>::Value(2);match first{Marker::Empty=>{return 0;},Marker::Value(value)=>{},}match second{Marker::Empty=>{return 0;},Marker::Value(value)=>{return value;},}}"),
+        ] {
+            let path=std::env::temp_dir().join(format!("oxid-nominal-auth-{kind}-{}.ox",std::process::id()));
+            std::fs::write(&path,source).unwrap();
+            let project=ProjectSources::load_typed(path.to_str().unwrap(),ProjectLimits::default()).unwrap();
+            std::fs::remove_file(path).unwrap();
+            let work=WorkMeter::default();
+            let mut allocator=Allocator::default();
+            let index=collect_originals(SourceOwner::project(&project),IndexLimits::default(),&work,&mut allocator).unwrap().finish(&work,&mut allocator).unwrap();
+            let typed=if kind=="enum" {
+                super::super::resolve::type_enum_source(&index,&work,&mut allocator).unwrap()
+            } else {
+                super::super::typeck::check(super::super::resolve::resolve_project(&index,&work).unwrap()).unwrap()
+            };
+            assert!(associate_lowered(super::super::lower::lower(&typed).unwrap(),&typed).is_ok());
+            for independent in [true,false] {
+                let mut raw=super::super::lower::lower(&typed).unwrap();
+                assert_eq!(if kind=="record" {raw.records.len()} else {raw.enums.len()},2);
+                let swap_record=|field:&mut FieldId|{assert!(field.record.0<2);field.record.0=1-field.record.0;};
+                for function in &mut raw.functions {
+                    for owner in &mut function.owners {
+                        let aggregate=match owner.aggregate() {
+                            AggregateTy::Record(RecordId(id)) if kind=="record"=>AggregateTy::Record(RecordId(1-id)),
+                            AggregateTy::Enum(EnumId(id)) if kind=="enum"=>AggregateTy::Enum(EnumId(1-id)),
+                            other=>other,
+                        };
+                        owner.aggregate=AggregateSlot::try_from_aggregate(aggregate).unwrap();
+                    }
+                    for descriptor in &mut function.matches {
+                        for arm in &mut descriptor.arms {arm.variant.enumeration.0=1-arm.variant.enumeration.0;}
+                    }
+                    for block in &mut function.blocks {
+                        for statement in &mut block.statements {
+                            match &mut statement.kind {
+                                OwnedInstruction::Construct {fields,..}=>{for (field,_) in fields {swap_record(field);}},
+                                OwnedInstruction::ConstructComposite {fields,..}=>{for (field,_) in fields {swap_record(field);}},
+                                OwnedInstruction::ReadField {field,..}=>swap_record(field),
+                                OwnedInstruction::ReadProjection {path,..}|OwnedInstruction::WriteProjection {path,..}|OwnedInstruction::ProjectionLength {path,..}=>{for field in path {swap_record(field);}},
+                                OwnedInstruction::ConstructEnum {variant,..}|OwnedInstruction::ConstructOwnedEnum {variant,..}=>{variant.enumeration.0=1-variant.enumeration.0;},
+                                _=>(),
+                            }
+                        }
+                    }
+                }
+                if independent {
+                    assert!(super::super::super::verified::verify_owned(raw,project.sources()).is_ok());
+                } else {assert!(associate_lowered(raw,&typed).is_err());}
+            }
+        }
+    }
 
     #[test]
     fn same_signature_generic_call_swap_is_rejected_by_source_association() {

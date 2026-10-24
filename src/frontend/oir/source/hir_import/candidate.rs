@@ -737,6 +737,7 @@ fn expression_kind(
     argument: &mut usize,
 ) -> Result<hir::ExprKind, Failure> {
     Ok(match kind {
+        ast::ExprKind::GenericVariant { .. } => return Err(Failure::Shape),
         ast::ExprKind::Bitwise { .. }
         | ast::ExprKind::BitNot { .. }
         | ast::ExprKind::I64Number { .. }

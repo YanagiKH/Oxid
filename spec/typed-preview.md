@@ -854,14 +854,41 @@ unused definitions. Unknown or repeated bounds are errors.
 Concrete specializations are shared for the same declaration and ordered type
 arguments. Name resolution stays in the definition's module and package.
 Reference parameters `&T` and `&mut T` infer a supported owned referent; references
-cannot be returned or stored as values. Generic record/enum declarations and
-other trait bounds remain unavailable. Function type arguments cannot be applied
-to enum variants, ordinary functions or builtin functions.
+cannot be returned or stored as values. Other trait bounds remain unavailable.
+Function type arguments cannot be applied to enum variants, ordinary functions
+or builtin functions. Enum type arguments precede the variant name instead.
 
-A project may create at most 1,024 generic specializations, with at most 64 newly
-created instances along an instantiation chain. Generic checking
-also has an 8 MiB working storage limit. Other project and native build limits
+A project may create at most 1,024 generic function specializations, with at most
+64 newly created instances along an instantiation chain. Each nominal family
+also permits at most 1,024 applications with nonempty arguments, including the
+opaque applications used to check definitions. Type argument depth is at most
+64. Generic checking has a shared 8 MiB working storage limit. Other project and native build limits
 still apply; exceeding a limit reports a compilation error.
+
+## Generic structs and enums
+
+Struct and enum declarations may declare the same type parameters and scalar
+`Copy` bounds as functions. Type applications use `Cell<T>` and
+`Result<T, E>` in annotations, fields, payloads and function signatures.
+Applications resolve in the module containing that syntax. Their identity
+includes the original package/declaration and the complete ordered arguments;
+phantom arguments remain part of identity and public API visibility checks.
+
+Constructors require complete explicit arguments, as in
+`Cell::<i32> { value: 42 }`, `Option::<i32>::Some(42)` and
+`Option::<i32>::None`. An enum constructor's type arguments apply to its enum,
+not its variant. Match arms use ordinary variant paths without arguments and
+are checked against the matched concrete enum type. Payloads can transfer owned
+records, enums, arrays and byte buffers to an arm binding.
+
+Function inference recurses through nominal arguments, including parameters
+that affect identity without appearing in stored fields. Every nominal
+declaration is checked with opaque arguments even if unused. By-value recursive
+layouts, wrong argument counts and unsatisfied bounds are errors. Concrete
+layouts are emitted only for complete applications; templates have no runtime
+layout. Record field operations retain the existing move, scalar access and
+whole-owner borrowing restrictions. Reference returns, stored references and
+user-defined traits remain unsupported.
 
 ## Grammar
 
@@ -876,20 +903,22 @@ item_path      := name | absolute_path
 function       := "pub"? "fn" name type_parameters? "(" parameters? ")" "->" value_type block
 type_parameters := "<" type_parameter ("," type_parameter)* ","? ">"
 type_parameter := name (":" "Copy")?
-type_arguments := "::" "<" value_type ("," value_type)* ","? ">"
+type_arguments := "::" nominal_arguments
+nominal_arguments := "<" value_type ("," value_type)* ","? ">"
+applied_type   := item_path nominal_arguments
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
 scalar_type    := "bool" | "i32" | "u8" | "(" ")"
 array_element_type := "bool" | "i32" | "u8" | "(" ")"
-enum_payload_type := "bool" | "i32" | "(" ")" | item_path | fixed_array_type
+enum_payload_type := "bool" | "i32" | "(" ")" | item_path | applied_type | fixed_array_type
 fixed_array_type := "[" array_element_type ";" decimal "]"
 slice_type     := "[" array_element_type "]"
-value_type     := scalar_type | item_path | fixed_array_type
-referent_type  := item_path | fixed_array_type | slice_type
+value_type     := scalar_type | item_path | applied_type | fixed_array_type
+referent_type  := item_path | applied_type | fixed_array_type | slice_type
 parameter_type := value_type | "&" referent_type | "&" "mut" referent_type
-struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
+struct_decl    := "pub"? "struct" type_name type_parameters? "{" field_decls? "}"
 field_decl     := "pub"? name ":" value_type
 field_decls    := field_decl ("," field_decl)* ","?
-enum_decl      := "pub"? "enum" type_name "{" variant_decl ("," variant_decl)* ","? "}"
+enum_decl      := "pub"? "enum" type_name type_parameters? "{" variant_decl ("," variant_decl)* ","? "}"
 variant_decl   := name ("(" enum_payload_type ")")?
 variant_path   := name "::" name | absolute_path "::" name
 match_arm      := variant_path ("(" name ")")? "=>" block
@@ -915,8 +944,9 @@ unary          := ("!" | "-") unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
                 | item_path type_arguments? "(" arguments? ")" | decimal | "-" decimal
                 | byte_string
-                | field_path | item_path "{" field_inits? "}"
+                | field_path | item_path type_arguments? "{" field_inits? "}"
                 | variant_path ("(" expression ")")?
+                | item_path type_arguments "::" name ("(" expression ")")?
                 | array_base "[" expression "]" | array_base "." "len" "(" ")"
 field_path     := name ("." name)+
 array_base     := name | field_path

@@ -28,8 +28,18 @@ impl Program {
             .binary_search_by_key(&callee.start, |call| call.callee.start)
             .ok()
             .and_then(|id| self.generic_calls().get(id))
-            .filter(|call| call.callee.file == callee.file)
+            .filter(|call| {
+                call.callee.file == callee.file
+                    && call.context == GenericArgumentContext::Expression
+            })
             .map(|call| call.arguments.as_slice())
+    }
+
+    pub(in crate::frontend) fn generic_application(
+        &self,
+        id: GenericApplicationId,
+    ) -> Option<&GenericArguments> {
+        self.generic_calls().get(id.0)
     }
 
     /// Generic functions can use the original single-file owned producer.

@@ -1771,7 +1771,7 @@
     },
     {
       "id": "inferred-generic-functions",
-      "summary": "Generic functions with inferred or explicit type arguments, scalar Copy bounds and concrete native specialization.",
+      "summary": "Generic functions, structs and enums with recursive type inference, explicit constructors, scalar Copy bounds and concrete native specialization.",
       "status": "experimental",
       "classification": "production-path",
       "owner": "unassigned",
@@ -1779,7 +1779,7 @@
       "edition": "typed-preview",
       "backend": "Owned typed frontend, reference execution and native builds.",
       "target_scope": "Linux x86_64 with LLVM 19.1.7 for native execution.",
-      "limitations": "Value type arguments and owned reference referents only. Explicit calls must name every type parameter. Generic structs/enums, returned references and other trait bounds are unavailable. Compiler resource limits apply.",
+      "limitations": "Value type arguments and owned reference referents only. Explicit calls and nominal constructors must name every type parameter. Record operations retain whole-owner moves and borrows. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
       "spec": [
         "spec/typed-preview.md",
         "docs/TYPED_PROJECTS.md"
@@ -1791,13 +1791,17 @@
         "src/frontend/declaration_index/generics.rs",
         "src/frontend/declaration_index/sealed.rs",
         "src/frontend/oir/owned/source/resolve.rs",
-        "src/frontend/oir/owned/source/association.rs"
+        "src/frontend/oir/owned/source/association.rs",
+        "src/frontend/declaration_index/generics/nominal.rs",
+        "src/frontend/declaration_index/enum_views.rs"
       ],
       "tests": [
         "tests/typed_generics.rs",
         "src/frontend/parser/generic_syntax_tests.rs",
         "scripts/test_explicit_generic_arguments_compatibility.py",
-        "src/frontend/oir/owned/source/association.rs"
+        "src/frontend/oir/owned/source/association.rs",
+        "tests/typed_nominal_generics.rs",
+        "scripts/test_nominal_generics_compatibility.py"
       ],
       "evidence": []
     }
