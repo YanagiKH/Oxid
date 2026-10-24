@@ -152,6 +152,44 @@ def authenticate_policies(repo, parent):
         require(regular(repo, name) == before, "predecessor source policy changed: " + name)
 
 
+PARSER_RESOURCE = "archive/resource/parser-resource-review-tests.rs"
+PARSER_RESOURCE_INPUT = (2114, "e3081188e6dfb0bd171e806992091f3a58b9b463d38a194b481341ff3064a2b5")
+PARSER_RESOURCE_OUTPUT = (2141, "7f6516b92a695df8758299948bc22ec17502a90529a152d32b4beedabd6d7283")
+PARSER_RESOURCE_BEFORE = b"storage:enums::SyntaxStorage::default(),tokens,"
+PARSER_RESOURCE_AFTER = b"storage:enums::SyntaxStorage::default(),generic_headers:Vec::new(),tokens,"
+
+
+def adapt_parser_resource(body):
+    require(type(body) is bytes and (len(body), sha(body)) == PARSER_RESOURCE_INPUT,
+            "wrong parser resource predecessor")
+    require(body.count(PARSER_RESOURCE_BEFORE) == 1 and PARSER_RESOURCE_AFTER not in body,
+            "parser resource initializer drift")
+    result = body.replace(PARSER_RESOURCE_BEFORE, PARSER_RESOURCE_AFTER, 1)
+    require((len(result), sha(result)) == PARSER_RESOURCE_OUTPUT
+            and result.replace(PARSER_RESOURCE_AFTER, PARSER_RESOURCE_BEFORE, 1) == body,
+            "wrong parser resource successor")
+    return result
+
+
+def prepare_with_parser_resource(original, output, captured, adapter, resource):
+    selected = copy.deepcopy(captured)
+    selected["resource"] = resource
+    selected, seam = library.prepare_current_observer(original, output, selected, adapter)
+    require(regular(Path(seam["resource_package_root"]), PARSER_RESOURCE) == resource,
+            "prepared parser resource differs from authenticated successor")
+    seam["generic_parser_resource_adapter"] = {
+        "before": identity(PARSER_RESOURCE, captured["resource"]),
+        "after": identity(PARSER_RESOURCE, resource),
+        "scope": "Initialize empty parser syntax metadata; every predecessor control statement and assertion is unchanged.",
+    }
+    return selected, seam
+
+
+def prepare_current_observer(original, output, captured, adapter):
+    return prepare_with_parser_resource(original, output, captured, adapter,
+                                        adapt_parser_resource(captured["resource"]))
+
+
 run_file_observer_controls = library.run_file_observer_controls
 run_i64_observer_controls = library.run_i64_observer_controls
 run_integer_width_observer_controls = library.run_integer_width_observer_controls

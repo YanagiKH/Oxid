@@ -205,7 +205,7 @@ class GenericFunctionsPolicyAuthority(unittest.TestCase):
     def test_helpers_and_observer_controls_are_the_unchanged_authenticated_parent_functions(self):
         self.assertEqual(ast.dump(ast.parse(inspect.getsource(gate.regular))),
                          ast.dump(ast.parse(inspect.getsource(gate.library.regular))))
-        for name in ("extract_baseline", "checkout_identity", "verify_materialized", "prepare_current_observer",
+        for name in ("extract_baseline", "checkout_identity", "verify_materialized",
                      "verify_current_observer", "run_byte_buffer_observer_controls"):
             self.assertIs(getattr(gate, name), getattr(gate.library, name))
         self.assertEqual(gate.GENERIC_FUNCTIONS_CHANGED, {'src/frontend/lexer.rs', 'src/frontend/parser/project_tests.rs', 'src/frontend/declaration_index/sealed.rs', 'src/frontend/project/budget.rs', 'src/frontend/parser/enum_syntax_tests.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/oir/owned/source/association.rs', 'src/frontend/oir/owned/source/resolve.rs', 'src/frontend/ast.rs', 'src/frontend/parser/enums.rs', 'src/frontend/declaration_index/source_owner.rs', 'src/frontend/format.rs', 'src/frontend/project.rs', 'src/frontend/declaration_index.rs', 'src/frontend/parser.rs'})
@@ -214,6 +214,32 @@ class GenericFunctionsPolicyAuthority(unittest.TestCase):
         self.assertEqual(set(gate.GENERIC_FUNCTIONS_INPUTS), gate.GENERIC_FUNCTIONS_CHANGED | gate.GENERIC_FUNCTIONS_ADDED)
         self.assertEqual(gate.PREDECESSOR_ADDED, gate.library.PARENT_ADDED)
         self.assertEqual(gate.PARENT_ADDED, gate.PREDECESSOR_ADDED | gate.GENERIC_FUNCTIONS_ADDED)
+
+    def parser_resource(self):
+        body = (ROOT / "tests/fixtures/typed_project_unit2_independent/archive/resource/parser-resource-review-tests.rs").read_bytes()
+        self.assertEqual((len(body), gate.sha(body)), (1951, "5a26942d2864979a430b28aa5714ceea43edf8e80cf9a6f7c789d66c12a11b73"))
+        before = b"mode:SourceMode::ProjectCandidate,tokens,"
+        after = b"mode:SourceMode::ProjectCandidate,project_recovery:false,arrays:ArraySyntaxPolicy::Closed,enums:EnumSyntaxPolicy::Closed,std_imports:StdImportPolicy::Closed,storage:enums::SyntaxStorage::default(),tokens,"
+        self.assertEqual(body.count(before), 1)
+        return body.replace(before, after, 1)
+
+    def test_parser_resource_initializes_only_empty_metadata_and_preserves_all_old_assertions(self):
+        before = self.parser_resource()
+        after = gate.adapt_parser_resource(before)
+        self.assertEqual(after.replace(gate.PARSER_RESOURCE_AFTER, gate.PARSER_RESOURCE_BEFORE, 1), before)
+        self.assertEqual(after.count(b"generic_headers:Vec::new(),"), 1)
+        self.assertEqual(after.count(b"assert"), before.count(b"assert"))
+        for changed in (before + b"\n", before.replace(b"assert_eq!", b"assert_ne!", 1), after):
+            with self.subTest(changed=gate.sha(changed)):
+                with self.assertRaisesRegex(ValueError, "parser resource"):
+                    gate.adapt_parser_resource(changed)
+
+    def test_parser_resource_wrapper_passes_only_the_authenticated_successor(self):
+        captured = {"resource": self.parser_resource(), "unchanged": object()}
+        sentinel = object()
+        with patch.object(gate, "prepare_with_parser_resource", return_value=sentinel) as prepare:
+            self.assertIs(gate.prepare_current_observer("original", "output", captured, "adapter"), sentinel)
+        prepare.assert_called_once_with("original", "output", captured, "adapter", gate.adapt_parser_resource(captured["resource"]))
 
     def test_selected_controller_enters_qualification_before_checkout_validation(self):
         with tempfile.TemporaryDirectory() as directory:
