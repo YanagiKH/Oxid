@@ -21,6 +21,98 @@ fn parse_generic(file: &SourceFile, allocator: &mut Allocator) -> Result<Program
 }
 
 #[test]
+fn nominal_applications_keep_nested_types_and_enum_members_as_separate_origins() {
+    let mut map = SourceMap::new();
+    let id=map.add("nominal.ox".into(),"struct Pair<T,U>{first:T,second:U}enum Option<T>{None,Some(T)}fn read<T>(pair:&Pair<T,Option<i32>>)->Option<T>{let value:Option<Pair<T,i32>>=Option::<Pair<T,i32>>::None;return Option::<T>::Some(pair.first);}".into());
+    let file = map.get(id);
+    let mut allocator = Allocator::default();
+    let program = parse_generic(file, &mut allocator).unwrap();
+    assert!(program.belongs_to(file));
+    assert!(program
+        .generic_calls()
+        .windows(2)
+        .all(|p| p[0].callee.start < p[1].callee.start));
+    let TypeSyntaxKind::AppliedReference { application, .. } =
+        program.functions[0].params[0].ty.kind
+    else {
+        panic!("expected applied reference")
+    };
+    let app = program.generic_application(application).unwrap();
+    assert_eq!(app.context, GenericArgumentContext::Type);
+    assert_eq!(file.text_at(app.callee), "Pair");
+    assert_eq!(app.arguments.len(), 2);
+    let TypeSyntaxKind::Applied(nested) = app.arguments[1].kind else {
+        panic!("expected nested application")
+    };
+    assert_eq!(
+        file.text_at(program.generic_application(nested).unwrap().callee),
+        "Option"
+    );
+    let variants = program
+        .expressions
+        .iter()
+        .filter_map(|expr| {
+            if let ExprKind::GenericVariant {
+                application,
+                variant,
+                ..
+            } = expr.kind
+            {
+                Some((application, variant))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(variants.len(), 2);
+    assert_eq!(file.text_at(variants[0].1), "None");
+    assert_eq!(file.text_at(variants[1].1), "Some");
+    for (application, _) in variants {
+        assert_eq!(
+            program.generic_application(application).unwrap().context,
+            GenericArgumentContext::Expression
+        );
+    }
+}
+
+#[test]
+fn nominal_application_syntax_refuses_each_allocation_failure_and_excessive_depth() {
+    let mut map = SourceMap::new();
+    let id=map.add("nominal-alloc.ox".into(),"struct Pair<T>{value:T}fn pass<T>(value:Pair<Pair<T>>)->Pair<T>{let n=Option::<Pair<T>>::Some(value);return value;}".into());
+    let file = map.get(id);
+    let mut allocator = Allocator::default();
+    parse_generic(file, &mut allocator).unwrap();
+    for failure in 1..=allocator.attempts {
+        let mut allocator = Allocator {
+            fail_at: Some(failure),
+            ..Default::default()
+        };
+        assert_eq!(
+            parse_generic(file, &mut allocator).unwrap_err()[0].code,
+            "E0400",
+            "allocation {failure}"
+        );
+    }
+    let nested = format!(
+        "{}i32{}",
+        "Pair<".repeat(MAX_NESTING + 1),
+        ">".repeat(MAX_NESTING + 1)
+    );
+    let mut map = SourceMap::new();
+    let id = map.add(
+        "depth.ox".into(),
+        format!("fn main(value:{nested})->(){{return;}}"),
+    );
+    let errors = parse_generic(map.get(id), &mut Allocator::default()).unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.code == "E0400" && e.message.contains("nesting")),
+        "{errors:?}"
+    );
+}
+
+#[test]
 fn generic_header_origins_and_every_allocation_failure_are_checked() {
     let mut map = SourceMap::new();
     let file = map.add("generic.ox".into(), "fn identity < T /* bound */ : Copy, U, > (value:T,other:U)->T{return value;}fn main()->i32{return identity(42,true);}".into());
@@ -239,4 +331,43 @@ fn generic_metadata_does_not_open_original_adapter_project_syntax() {
             "{prefix}"
         );
     }
+}
+
+#[test]
+fn nominal_index_allocation_and_work_exhaustion_never_publish_a_partial_plan() {
+    let mut map = SourceMap::new();
+    let id=map.add("nominal-resource.ox".into(), "struct Cell<T>{value:T}enum Option<T>{None,Some(T)}fn wrap<T>(value:T)->Option<Cell<T>>{return Option::<Cell<T>>::Some(Cell::<T>{value:value});}fn main()->i32{let value=wrap(42);match value{Option::None=>{return 1;},Option::Some(cell)=>{return cell.value;},}}".into());
+    let file = map.get(id);
+    let program = parse_generic(file, &mut Allocator::default()).unwrap();
+    let owner = SourceOwner::original(file, &program, SourceView::Map(&map)).unwrap();
+    let mut baseline = Allocator::default();
+    let work = WorkMeter::default();
+    let index = collect_originals(owner, IndexLimits::default(), &work, &mut baseline)
+        .unwrap()
+        .finish(&work, &mut baseline)
+        .unwrap();
+    assert_eq!(index.record_count(), 1);
+    assert_eq!(index.source_enum_count(), 1);
+    assert_eq!(index.source_function_count(), 2);
+    for failure in 1..=baseline.attempts {
+        let work = WorkMeter::default();
+        let mut allocator = Allocator {
+            fail_at: Some(failure),
+            ..Default::default()
+        };
+        let error = match collect_originals(owner, IndexLimits::default(), &work, &mut allocator) {
+            Ok(facts) => facts.finish(&work, &mut allocator).unwrap_err().remove(0),
+            Err(error) => *error,
+        };
+        assert_eq!(error.code, "E0400", "allocation {failure}: {error:?}");
+        assert_eq!(allocator.attempts, failure);
+    }
+    let used = work.used();
+    let work = WorkMeter::new(used - 1);
+    let mut allocator = Allocator::default();
+    let error = match collect_originals(owner, IndexLimits::default(), &work, &mut allocator) {
+        Ok(facts) => facts.finish(&work, &mut allocator).unwrap_err().remove(0),
+        Err(error) => *error,
+    };
+    assert_eq!(error.code, "E0400");
 }

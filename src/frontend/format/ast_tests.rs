@@ -237,6 +237,22 @@ impl<'a> Fingerprint<'a> {
         let TypeSyntax { span, kind } = ty;
         self.span(span);
         match kind {
+            TypeSyntaxKind::Applied(id)
+            | TypeSyntaxKind::AppliedReference {
+                application: id, ..
+            } => {
+                self.tag("applied-type");
+                self.flag(matches!(kind, TypeSyntaxKind::AppliedReference { .. }));
+                if let TypeSyntaxKind::AppliedReference { mutable, .. } = kind {
+                    self.flag(mutable);
+                }
+                let app = self.program.generic_application(id).unwrap();
+                self.path(app.path);
+                self.count(app.arguments.len());
+                for argument in &app.arguments {
+                    self.ty(*argument);
+                }
+            }
             TypeSyntaxKind::Name(path) => {
                 self.tag("name-type");
                 self.path(path);
@@ -325,6 +341,27 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::GenericVariant {
+                application,
+                variant,
+                args,
+            } => {
+                self.tag("generic-variant");
+                let app = self.program.generic_application(*application).unwrap();
+                self.path(app.path);
+                self.count(app.arguments.len());
+                for argument in &app.arguments {
+                    self.ty(*argument);
+                }
+                self.spelling(*variant);
+                self.flag(args.is_some());
+                if let Some(args) = args {
+                    self.count(args.len());
+                    for arg in args {
+                        self.argument(arg);
+                    }
+                }
+            }
             ExprKind::Character(value) => {
                 self.tag("character");
                 self.count(u32::from(*value) as usize);
@@ -796,6 +833,7 @@ impl<'a> Fingerprint<'a> {
                                 }
                                 ScalarTypeSyntax::Unit => self.tag("unit-payload"),
                                 ScalarTypeSyntax::Name
+                                | ScalarTypeSyntax::Applied(_)
                                 | ScalarTypeSyntax::Absolute(_)
                                 | ScalarTypeSyntax::Array(_) => {
                                     self.tag("owned-payload");
@@ -810,6 +848,8 @@ impl<'a> Fingerprint<'a> {
         }
         for call in program.generic_calls() {
             self.tag("explicit-type-arguments");
+            self.path(call.path);
+            self.flag(call.context == GenericArgumentContext::Type);
             self.span(call.callee);
             self.span(call.span);
             self.count(call.arguments.len());
@@ -887,6 +927,33 @@ fn explicit_call_type_arguments_preserve_independent_ast_origins() {
         let after=after_map.get(after);
         assert_eq!(before,fingerprint(after,&parse(after)));
         assert_eq!(format_source(after).unwrap(),after.text());
+    }
+}
+
+#[test]
+fn nominal_application_formatting_preserves_raw_tokens_nested_types_and_enum_members() {
+    let parse_current = |source: &SourceFile| {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    };
+    for text in [
+        "struct Pair<A,B>{first:A,second:B}enum Option<T>{None,Some(T)}fn read<T:Copy>(pair:&Pair<T,Option<i32>>)->Option<T>{let value:Option<Pair<T,i32>,>=Option::<Pair<T,i32>,>::None;return Option::<T>::Some(pair.first);}",
+        "enum Outer<T>{Empty,Value(Inner<T>)}struct Inner<T>{value:T}fn f(value:&mut Inner<Inner<i32>>)->(){let a:Inner<i32>=Inner::<i32>{value:42};return;}",
+    ] {
+        let mut sources=SourceMap::new();let id=sources.add("nominal-format.ox".into(),text.into());let source=sources.get(id);
+        let before=fingerprint(source,&parse_current(source));
+        let formatted=format_source(source).unwrap();
+        let mut output=SourceMap::new();let id=output.add("nominal-format.ox".into(),formatted);let source=output.get(id);
+        assert_eq!(before,fingerprint(source,&parse_current(source)));
+        assert_eq!(format_source(source).unwrap(),source.text());
     }
 }
 

@@ -11,11 +11,11 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
-import legacy_scalar_observer_characters as adapter
+import legacy_scalar_observer_nominals as adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-ADDED_SOURCES = ("experimental_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs")
+ADDED_SOURCES = ("experimental_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs")
 MODES = (("parser", ()), ("static", ()), ("static", ("--resolve-only",)))
 
 # Raw stdout hashes from separately built, unchanged parent158 observers

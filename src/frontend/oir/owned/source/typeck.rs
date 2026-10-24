@@ -332,7 +332,10 @@ fn type_name<'a>(
         ValueTy::Owned(AggregateTy::FixedArray(array)) => Ok(TypeName::Array(array)),
         ValueTy::Owned(AggregateTy::Enum(enumeration)) => program
             .query()
-            .prepare_nominal_type_name(NominalId::Enum(enumeration), span)
+            .prepare_nominal_type_name(
+                NominalId::Enum(program.index().template_enum_for_instance(enumeration)?),
+                span,
+            )
             .map(TypeName::Record),
     }
 }
@@ -2164,10 +2167,11 @@ fn projection(
                     token.span,
                 )
             })?;
-        if let Access::Denied(field) = program
-            .query()
-            .field_access(requester, field.id, token.span)?
-        {
+        if let Access::Denied(field) = program.query().field_access(
+            requester,
+            program.index().template_field_for_instance(field.id)?,
+            token.span,
+        )? {
             return Err(program
                 .query()
                 .private_field_diagnostic(field, token.span, "type")?);

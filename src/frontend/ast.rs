@@ -271,6 +271,11 @@ pub enum ExprKind {
         record: ItemPath,
         fields: Vec<FieldInit>,
     },
+    GenericVariant {
+        application: GenericApplicationId,
+        variant: Span,
+        args: Option<Vec<Argument>>,
+    },
     FieldRead {
         base: Span,
         /// The bounded dot-separated field path, including retained trivia.
@@ -313,6 +318,7 @@ pub enum ScalarTypeSyntax {
     Name,
     /// Compact index into the existing bounded qualified-path table.
     Absolute(u32),
+    Applied(u32),
     Array(FixedArraySyntax),
     I64,
     Integer(IntegerTypeSyntax),
@@ -339,10 +345,15 @@ pub struct FixedArraySyntax {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TypeSyntaxKind {
     Name(ItemPath),
+    Applied(GenericApplicationId),
     Unit,
     Reference {
         mutable: bool,
         referent: ItemPath,
+    },
+    AppliedReference {
+        mutable: bool,
+        application: GenericApplicationId,
     },
     Array(FixedArraySyntax),
     SliceReference {
@@ -377,11 +388,20 @@ pub struct GenericHeader {
     pub declaration: Span,
     pub parameters: Vec<GenericParam>,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GenericApplicationId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenericArgumentContext {
+    Expression,
+    Type,
+}
 #[derive(Debug, PartialEq, Eq)]
 pub struct GenericArguments {
     pub callee: Span,
+    pub path: ItemPath,
     pub arguments: Vec<TypeSyntax>,
     pub span: Span,
+    pub context: GenericArgumentContext,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct GenericSyntax {
@@ -417,6 +437,9 @@ impl EnumPayloadSyntax {
                 ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
                 ScalarTypeSyntax::Absolute(id) => {
                     TypeSyntaxKind::Name(ItemPath::Absolute(PathId(id as usize)))
+                }
+                ScalarTypeSyntax::Applied(id) => {
+                    TypeSyntaxKind::Applied(GenericApplicationId(id as usize))
                 }
                 ScalarTypeSyntax::Array(array) => TypeSyntaxKind::Array(array),
             },
@@ -811,12 +834,27 @@ impl Program {
                     }
                     TypeSyntaxKind::Name(path)
                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
+                    TypeSyntaxKind::Applied(id)
+                    | TypeSyntaxKind::AppliedReference {
+                        application: id, ..
+                    } => self.generic_application(id).is_some_and(|app| {
+                        app.context == GenericArgumentContext::Type && path_valid(app.path, valid)
+                    }),
                 }
         };
         for call in self.generic_calls() {
             if !visit()
                 || !valid(call.callee)
                 || !valid(call.span)
+                || !match (call.context, call.path) {
+                    (GenericArgumentContext::Expression, ItemPath::Absolute(id)) => {
+                        visit()
+                            && self.paths.get(id.0).is_some_and(|path| {
+                                matches!(path.root, PathRoot::Crate | PathRoot::LocalType)
+                            })
+                    }
+                    _ => path_valid(call.path, &mut valid),
+                }
                 || call.arguments.is_empty()
                 || call.arguments.len() > super::parser::MAX_PARAMS
                 || call
@@ -1216,6 +1254,20 @@ impl Program {
                 | ExprKind::FloatNumber { digits, .. }
                 | ExprKind::IntegerNumber { digits, .. } => valid(*digits),
                 ExprKind::Name(name) => valid(*name),
+                ExprKind::GenericVariant {
+                    application,
+                    variant,
+                    args,
+                } => {
+                    enum_syntax.get_or_insert(expression.span);
+                    self.generic_application(*application)
+                        .is_some_and(|app| app.context == GenericArgumentContext::Expression)
+                        && valid(*variant)
+                        && args.iter().flatten().all(|arg| match arg {
+                            Argument::Value(id) => earlier(*id),
+                            Argument::Borrow { .. } => false,
+                        })
+                }
                 ExprKind::Call { callee, args } => {
                     path_valid(*callee, &mut valid)
                         && args.iter().all(|arg| {
@@ -1377,6 +1429,7 @@ impl Program {
     pub(super) fn uses_owned_syntax(&self, source: &super::source::SourceFile) -> bool {
         let owned_type = |ty: &TypeSyntax| match ty.kind {
             TypeSyntaxKind::Unit => false,
+            TypeSyntaxKind::Applied(_) | TypeSyntaxKind::AppliedReference { .. } => true,
             TypeSyntaxKind::Reference { .. } => true,
             TypeSyntaxKind::Array(_)
             | TypeSyntaxKind::ArrayReference { .. }
@@ -1407,6 +1460,7 @@ impl Program {
             })
             || self.expressions.iter().any(|e| match &e.kind {
                 ExprKind::StructLiteral { .. }
+                | ExprKind::GenericVariant { .. }
                 | ExprKind::FieldRead { .. }
                 | ExprKind::ArrayLiteral { .. }
                 | ExprKind::ByteString { .. }

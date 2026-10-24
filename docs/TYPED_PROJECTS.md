@@ -199,9 +199,40 @@ once. `Copy` does not provide arithmetic or comparison operators.
 Type arguments are inferred from arguments. You can also specify every type
 parameter in declaration order, for example `identity::<Number>(Number { value: 42 })`.
 Use explicit type arguments when a parameter cannot be inferred from the inputs.
-Type names at a call resolve in the caller's module. Generic structs, generic enums and user-defined traits are
-not available yet. Generic functions work with `check`, `run`, tests and native
-builds. Recursive calls require the `hosted` execution policy for native builds.
+Type names at a call resolve in the caller's module. Generic functions work with
+`check`, `run`, tests and native builds. Recursive calls require the `hosted`
+execution policy for native builds. User-defined traits are not available yet.
+
+## Generic structs and enums
+
+Give reusable data types their own type parameters:
+
+```oxid
+struct Cell<T> { value: T }
+enum Option<T> { None, Some(T) }
+
+fn wrap<T>(value: T) -> Option<Cell<T>> {
+    return Option::<Cell<T>>::Some(Cell::<T> { value: value });
+}
+
+fn main() -> i32 {
+    let value = wrap(42);
+    match value {
+        Option::None => { return 0; },
+        Option::Some(cell) => { return cell.value; },
+    }
+}
+```
+
+Write `Cell<i32>` in a type annotation and `Cell::<i32> { value: 42 }` to
+construct it. Constructors require every type argument in declaration order;
+functions infer type arguments through nested structs and enums. Match arms
+use the type of the matched value, so `Option::Some` needs no type arguments.
+
+Each declaration and ordered argument list defines a distinct type, even when
+its fields have the same layout. An owned enum payload transfers ownership to
+its match binding. Reading a generic scalar field requires `T: Copy`; record
+fields otherwise keep the existing whole-owner move and borrow rules.
 
 ## Long-running programs
 

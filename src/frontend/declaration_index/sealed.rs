@@ -1721,7 +1721,38 @@ impl<'s> DeclarationIndex<'s> {
         self.source_enum_count() + self.builtin_set().extra_enums()
     }
     pub fn source_enum_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.enums.len(), |plan| plan.enum_count())
+    }
+    pub(super) fn template_enum_count(&self) -> usize {
         self.tables.enums.len()
+    }
+    pub(super) fn template_enumeration(
+        &self,
+        id: EnumId,
+    ) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
+        enumeration(&self.tables, id)
+    }
+    pub(super) fn template_builtin_enum_item(
+        &self,
+        id: EnumId,
+    ) -> Result<BuiltinItem, Box<Diagnostic>> {
+        let rank =
+            id.0.checked_sub(self.tables.enums.len())
+                .ok_or_else(|| bad(self.sources().eof()))?;
+        let read = usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus));
+        if read != 0 && rank == 0 {
+            return Ok(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
+        }
+        if self.builtin_set().contains_enum(BuiltinEnum::WriteStatus) && rank == read {
+            return Ok(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self.builtin_set().experimental_enum_rank(item) == Some(rank) {
+                return Ok(BuiltinItem::Experimental(item.item()));
+            }
+        }
+        Err(bad(self.sources().eof()))
     }
     pub fn builtin_set(&self) -> BuiltinSet {
         self.tables.builtins.set()
@@ -1741,7 +1772,7 @@ impl<'s> DeclarationIndex<'s> {
         self.tables.require_no_builtin_candidate()
     }
     pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
-        enumeration(&self.tables, id)
+        enumeration(&self.tables, self.template_enum_for_instance(id)?)
     }
     pub fn builtin_enum_id(&self, item: BuiltinEnum) -> Result<EnumId, Box<Diagnostic>> {
         self.tables.builtin_handle(BuiltinItem::Enum(item))?;
@@ -1912,6 +1943,10 @@ impl<'s> DeclarationIndex<'s> {
     }
     // Only checked view constructors use these narrow immutable projections.
     pub(super) fn frozen_enum_syntax(&self, id: EnumId) -> Option<&ast::EnumDecl> {
+        if id.0 >= self.source_enum_count() {
+            return None;
+        }
+        let id = self.template_enum_for_instance(id).ok()?;
         self.tables.enums.get(id.0).map(|row| {
             self.tables.sources.frozen_enum(EnumAstKey {
                 file: SourceFileId(row.file as usize),
@@ -1946,14 +1981,15 @@ impl<'s> DeclarationIndex<'s> {
         )
     }
     pub(super) fn frozen_variant_count(&self, id: EnumId) -> usize {
-        self.tables.enums.get(id.0).map_or_else(
+        self.frozen_enum_syntax(id).map_or_else(
             || match self.frozen_enum_origin(id) {
                 DeclarationOrigin::Builtin(item) => item.variant_count(),
                 _ => unreachable!("checked enum count"),
             },
-            |row| row.variant_len as usize,
+            |syntax| syntax.variants.len(),
         )
     }
+
     pub fn enum_for(&self, key: EnumAstKey) -> Result<EnumId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
         let row = self.tables.modules[module.0];
@@ -1961,10 +1997,10 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = EnumId(row.enum_base as usize + key.index);
-        if self.enumeration(id)?.0 != key {
+        if self.template_enumeration(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        self.ordinary_enum_instance(id)
     }
     pub fn enum_view(&self, id: EnumId) -> Result<EnumView<'_>, Box<Diagnostic>> {
         EnumView::from_index(self, id)
@@ -2036,8 +2072,18 @@ impl<'s> DeclarationIndex<'s> {
     ) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
         function(&self.tables, id)
     }
-    pub fn record_count(&self) -> usize {
+    pub(super) fn template_record_count(&self) -> usize {
         self.tables.records.len()
+    }
+    pub(super) fn template_record(
+        &self,
+        id: RecordId,
+    ) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
+        record(&self.tables, id)
+    }
+    pub fn record_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.records.len(), |plan| plan.record_count())
     }
     pub fn function(&self, id: DefId) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
         let definition = match self.generic_plan() {
@@ -2047,6 +2093,7 @@ impl<'s> DeclarationIndex<'s> {
         function(&self.tables, definition)
     }
     pub fn record(&self, id: RecordId) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
+        let id = self.template_record_for_instance(id)?;
         record(&self.tables, id)
     }
     pub fn def_for(&self, key: FunctionAstKey) -> Result<DefId, Box<Diagnostic>> {
@@ -2073,10 +2120,10 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = RecordId(row.record_base as usize + key.index);
-        if self.record(id)?.0 != key {
+        if self.template_record(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        self.ordinary_record_instance(id)
     }
     pub fn root_original_main(&self) -> Option<DefId> {
         let definition =

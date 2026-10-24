@@ -1292,6 +1292,14 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.work.debit(1, ty.span, "query value type")?;
         self.requester(requester, ty.span)?;
         match ty.kind {
+            ast::TypeSyntaxKind::Applied(_) | ast::TypeSyntaxKind::AppliedReference { .. } => {
+                Err(diagnostic(
+                    "E0300",
+                    "generics",
+                    "generic nominal types are not available yet",
+                    ty.span,
+                ))
+            }
             ast::TypeSyntaxKind::Array(array) => self
                 .array_type(requester, array, ty.span)
                 .map(|array| ValueTy::Owned(AggregateTy::FixedArray(array))),

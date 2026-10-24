@@ -127,6 +127,9 @@ impl<'a> VariantView<'a> {
             .and_then(|syntax| syntax.payload.map(|payload| payload.span))
     }
     pub fn has_owned_payload(&self) -> bool {
+        if let Some(payload) = self.index.generic_enum_payload(self.id) {
+            return matches!(payload, Some(ValueTy::Owned(_)));
+        }
         if let DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) = self.origin() {
             return item
                 .enumeration()
@@ -138,6 +141,7 @@ impl<'a> VariantView<'a> {
                 matches!(
                     payload.kind,
                     ast::ScalarTypeSyntax::Name
+                        | ast::ScalarTypeSyntax::Applied(_)
                         | ast::ScalarTypeSyntax::Absolute(_)
                         | ast::ScalarTypeSyntax::Array(_)
                 )
@@ -148,6 +152,12 @@ impl<'a> VariantView<'a> {
         self.has_owned_payload() || self.payload().is_some()
     }
     pub fn payload(&self) -> Option<Ty> {
+        if let Some(payload) = self.index.generic_enum_payload(self.id) {
+            return match payload {
+                Some(ValueTy::Scalar(ty)) => Some(ty),
+                _ => None,
+            };
+        }
         match self.source_syntax() {
             Some(syntax) => syntax.payload.map(|payload| match payload.kind {
                 ast::ScalarTypeSyntax::Bool => Ty::Bool,
@@ -158,6 +168,7 @@ impl<'a> VariantView<'a> {
                 ast::ScalarTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
                 ast::ScalarTypeSyntax::Name
+                | ast::ScalarTypeSyntax::Applied(_)
                 | ast::ScalarTypeSyntax::Absolute(_)
                 | ast::ScalarTypeSyntax::Array(_) => {
                     panic!("owned enum payload requires value_payload")
@@ -173,6 +184,10 @@ impl<'a> VariantView<'a> {
     /// scope cannot grant access to a private type or change nominal identity.
     /// Existing scalar and builtin payloads retain their original query work.
     pub fn value_payload(&self, work: &WorkMeter) -> Result<Option<ValueTy>, Box<Diagnostic>> {
+        if let Some(payload) = self.index.generic_enum_payload(self.id) {
+            work.debit(1, self.diagnostic_span(), "instantiated enum payload")?;
+            return Ok(payload);
+        }
         if let DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) = self.origin() {
             return Ok(item
                 .enumeration()
@@ -265,6 +280,7 @@ impl DeclarationIndex<'_> {
                     matches!(
                         payload.kind,
                         ast::ScalarTypeSyntax::Name
+                            | ast::ScalarTypeSyntax::Applied(_)
                             | ast::ScalarTypeSyntax::Absolute(_)
                             | ast::ScalarTypeSyntax::Array(_)
                     )

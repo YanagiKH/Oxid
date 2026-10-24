@@ -373,6 +373,7 @@ fn parse_counted_with_policies(
         project_recovery: false,
         tokens,
         cursor: 0,
+        pending_equal: None,
         expressions: Vec::new(),
         paths: Vec::new(),
         path_segments: Vec::new(),
@@ -596,6 +597,7 @@ struct Parser<'a> {
     project_recovery: bool,
     tokens: Vec<Token>,
     cursor: usize,
+    pending_equal: Option<Token>,
     expressions: Vec<Expr>,
     paths: Vec<AbsolutePath>,
     path_segments: Vec<super::source::Span>,
@@ -612,9 +614,12 @@ impl Parser<'_> {
         }
     }
     fn peek(&self) -> Token {
-        self.tokens[self.cursor]
+        self.pending_equal.unwrap_or(self.tokens[self.cursor])
     }
     fn bump(&mut self) -> Token {
+        if let Some(token) = self.pending_equal.take() {
+            return token;
+        }
         let token = self.peek();
         if token.kind != Kind::Eof {
             self.cursor += 1;
@@ -630,6 +635,9 @@ impl Parser<'_> {
         }
     }
     fn next_kind(&self) -> Kind {
+        if self.pending_equal.is_some() {
+            return self.tokens[self.cursor].kind;
+        }
         self.tokens[self.cursor + 1..]
             .iter()
             .find(|token| token.kind != Kind::Trivia)
@@ -1074,18 +1082,61 @@ impl Parser<'_> {
     }
     fn generic_call_arguments(
         &mut self,
+        path: ItemPath,
         callee: super::source::Span,
-    ) -> Result<(), Box<Diagnostic>> {
+    ) -> Result<GenericApplicationId, Box<Diagnostic>> {
         let start = self.bump().span.start;
         self.expect(Kind::Colon, "type arguments require `::`")?;
+        let id = self.type_arguments(path, callee, GenericArgumentContext::Expression, start, 0)?;
+        if !self.wide_scalars_enabled() && self.peek().kind != Kind::LParen {
+            return Err(self.error("explicit function type arguments require a call"));
+        }
+        if !matches!(self.peek().kind, Kind::LParen | Kind::LBrace) && !self.double_colon() {
+            return Err(self.error("explicit type arguments require a call or constructor"));
+        }
+        Ok(id)
+    }
+    fn type_arguments(
+        &mut self,
+        path: ItemPath,
+        callee: super::source::Span,
+        context: GenericArgumentContext,
+        start: usize,
+        depth: usize,
+    ) -> Result<GenericApplicationId, Box<Diagnostic>> {
+        if !self.mode.owned() {
+            return Err(self.error("generic type arguments require typed project syntax"));
+        }
+        if context == GenericArgumentContext::Type && !self.wide_scalars_enabled() {
+            return Err(self.error("generic nominal types require current typed project syntax"));
+        }
+        if depth >= MAX_NESTING {
+            return Err(self.diagnostic(
+                "E0400",
+                "parse",
+                "type application nesting limit exceeded",
+                Some(self.peek().span),
+            ));
+        }
         self.expect(Kind::Less, "type arguments require `<`")?;
-        if self.peek().kind == Kind::Greater {
+        if matches!(self.peek().kind, Kind::Greater | Kind::GreaterEqual) {
             return Err(self.error("type argument list cannot be empty"));
         }
+        let mut calls = std::mem::take(&mut self.generic_calls);
+        self.candidate_reserve(&mut calls, MAX_NODES, "generic application syntax", callee)?;
+        let id = GenericApplicationId(calls.len());
+        calls.push(GenericArguments {
+            callee,
+            path,
+            arguments: Vec::new(),
+            span: self.source.span(start, start),
+            context,
+        });
+        self.generic_calls = calls;
         let mut arguments = Vec::new();
         loop {
             self.node()?;
-            let argument = self.ty()?;
+            let argument = self.ty_with_paths_at(true, depth + 1)?;
             self.candidate_reserve(
                 &mut arguments,
                 MAX_PARAMS,
@@ -1093,26 +1144,28 @@ impl Parser<'_> {
                 argument.span,
             )?;
             arguments.push(argument);
-            if self.take(Kind::Comma).is_none() || self.peek().kind == Kind::Greater {
+            if self.take(Kind::Comma).is_none()
+                || matches!(self.peek().kind, Kind::Greater | Kind::GreaterEqual)
+            {
                 break;
             }
         }
-        let end = self
-            .expect(Kind::Greater, "expected `>` after type arguments")?
-            .span
-            .end;
-        if self.peek().kind != Kind::LParen {
-            return Err(self.error("explicit function type arguments require a call"));
-        }
-        let mut calls = std::mem::take(&mut self.generic_calls);
-        self.candidate_reserve(&mut calls, MAX_NODES, "generic call syntax", callee)?;
-        calls.push(GenericArguments {
-            callee,
-            arguments,
-            span: self.source.span(start, end),
-        });
-        self.generic_calls = calls;
-        Ok(())
+        let end = if self.peek().kind == Kind::GreaterEqual {
+            let token = self.bump();
+            let middle = token.span.start + 1;
+            self.pending_equal = Some(Token {
+                kind: Kind::Equal,
+                span: self.source.span(middle, token.span.end),
+            });
+            middle
+        } else {
+            self.expect(Kind::Greater, "expected `>` after type arguments")?
+                .span
+                .end
+        };
+        self.generic_calls[id.0].arguments = arguments;
+        self.generic_calls[id.0].span = self.source.span(start, end);
+        Ok(id)
     }
     fn function(
         &mut self,
@@ -1200,6 +1253,13 @@ impl Parser<'_> {
         self.ty_with_paths(true)
     }
     fn ty_with_paths(&mut self, paths: bool) -> Result<TypeSyntax, Box<Diagnostic>> {
+        self.ty_with_paths_at(paths, 0)
+    }
+    fn ty_with_paths_at(
+        &mut self,
+        paths: bool,
+        depth: usize,
+    ) -> Result<TypeSyntax, Box<Diagnostic>> {
         let token = self.peek();
         let (kind, end) = if self.arrays_enabled() && self.array_punctuation("[") {
             if !paths {
@@ -1216,7 +1276,21 @@ impl Parser<'_> {
             )
         } else {
             let (name, span) = self.item_path("expected `bool`, `i32` or `()` type", paths)?;
-            (TypeSyntaxKind::Name(name), span.end)
+            if self.peek().kind == Kind::Less {
+                let id = self.type_arguments(
+                    name,
+                    span,
+                    GenericArgumentContext::Type,
+                    self.peek().span.start,
+                    depth,
+                )?;
+                (
+                    TypeSyntaxKind::Applied(id),
+                    self.generic_calls[id.0].span.end,
+                )
+            } else {
+                (TypeSyntaxKind::Name(name), span.end)
+            }
         };
         Ok(TypeSyntax {
             span: self.source.span(token.span.start, end),
@@ -1236,6 +1310,24 @@ impl Parser<'_> {
             }
             let (referent, span) =
                 self.item_path("reference parameter requires a record name", true)?;
+            if self.peek().kind == Kind::Less {
+                let application = self.type_arguments(
+                    referent,
+                    span,
+                    GenericArgumentContext::Type,
+                    self.peek().span.start,
+                    0,
+                )?;
+                return Ok(TypeSyntax {
+                    span: self
+                        .source
+                        .span(start, self.generic_calls[application.0].span.end),
+                    kind: TypeSyntaxKind::AppliedReference {
+                        mutable,
+                        application,
+                    },
+                });
+            }
             return Ok(TypeSyntax {
                 span: self.source.span(start, span.end),
                 kind: TypeSyntaxKind::Reference { mutable, referent },
@@ -2226,10 +2318,51 @@ impl Parser<'_> {
                     None => self.item_path("expected item name", true)?,
                 };
                 end = path_span.end;
-                if self.type_arguments_ahead() {
-                    self.generic_call_arguments(path_span)?;
-                }
-                if self.take(Kind::LParen).is_some() {
+                let application = if self.type_arguments_ahead() {
+                    Some(self.generic_call_arguments(path, path_span)?)
+                } else {
+                    None
+                };
+                if let Some(application) = application.filter(|_| self.double_colon()) {
+                    self.bump();
+                    self.bump();
+                    let variant = self
+                        .expect(Kind::Ident, "expected enum variant after type arguments")?
+                        .span;
+                    end = variant.end;
+                    let args = if self.take(Kind::LParen).is_some() {
+                        let mut args = Vec::new();
+                        if self.peek().kind != Kind::RParen {
+                            loop {
+                                let argument = Argument::Value(
+                                    self.expression(depth + 1, LiteralContext::Allowed)?,
+                                );
+                                self.candidate_reserve(
+                                    &mut args,
+                                    MAX_PARAMS,
+                                    "generic variant arguments",
+                                    variant,
+                                )?;
+                                args.push(argument);
+                                if self.take(Kind::Comma).is_none() {
+                                    break;
+                                }
+                            }
+                        }
+                        end = self
+                            .expect(Kind::RParen, "variant payload requires `)`")?
+                            .span
+                            .end;
+                        Some(args)
+                    } else {
+                        None
+                    };
+                    ExprKind::GenericVariant {
+                        application,
+                        variant,
+                        args,
+                    }
+                } else if self.take(Kind::LParen).is_some() {
                     let mut args = Vec::new();
                     if self.peek().kind != Kind::RParen {
                         loop {

@@ -1028,6 +1028,9 @@ fn count_expression(
                 ast::ExprKind::Call { args, .. }
                 | ast::ExprKind::QualifiedValue {
                     args: Some(args), ..
+                }
+                | ast::ExprKind::GenericVariant {
+                    args: Some(args), ..
                 } => {
                     visit(work, args.len(), at)?;
                     increment(&mut c.calls, 1, at)?;
@@ -1075,6 +1078,9 @@ fn count_expression(
                 },
                 ast::ExprKind::Call { args, .. }
                 | ast::ExprKind::QualifiedValue {
+                    args: Some(args), ..
+                }
+                | ast::ExprKind::GenericVariant {
                     args: Some(args), ..
                 } => match args.get(next / 2) {
                     Some(ast::Argument::Value(value)) if next % 2 == 0 => Some(*value),
