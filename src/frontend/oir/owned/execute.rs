@@ -552,8 +552,42 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         Ok((self.leaf_offset(key, field.offset(), ty, span)?, ty))
     }
 
-    fn load_field(&self, key: OwnerKey, field: FieldId, span: Span) -> Result<V> {
-        let (offset, ty) = self.payload_field(key, field, span)?;
+    fn accessed_field(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        key: OwnerKey,
+        field: FieldId,
+        span: Span,
+    ) -> Result<(usize, hir::Ty)> {
+        let view = self.base_view(frame, base, key, span)?;
+        let aggregate = view
+            .aggregate
+            .ok_or_else(|| bad("field view type", span))?
+            .aggregate();
+        let field = self
+            .plan
+            .witness()
+            .declarations()
+            .field(record_type(aggregate, span)?, field)
+            .map_err(|_| bad("field view identity", span))?;
+        let ValueTy::Scalar(ty) = field.value_ty() else {
+            return Err(bad("aggregate field scalar access", span));
+        };
+        let relative = index(view.offset, span)?
+            .checked_add(field.offset())
+            .ok_or_else(|| bad("field view offset", span))?;
+        Ok((self.leaf_offset(key, relative, ty, span)?, ty))
+    }
+    fn load_field(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        key: OwnerKey,
+        field: FieldId,
+        span: Span,
+    ) -> Result<V> {
+        let (offset, ty) = self.accessed_field(frame, base, key, field, span)?;
         V::decode(&self.frames[key.frame as usize].payload, offset, ty, span)
     }
     fn store_field(&mut self, key: OwnerKey, field: FieldId, value: V, span: Span) -> Result<()> {
@@ -612,8 +646,12 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .ok_or_else(|| bad("missing view type", span))?
             .aggregate();
         let root_type = self.aggregate(key, span)?;
-        if (matches!(root_type, AggregateTy::FixedArray(_))
-            || matches!(aggregate, AggregateTy::Record(_)))
+        if matches!(aggregate, AggregateTy::Record(_))
+            && !matches!(root_type, AggregateTy::Record(_))
+        {
+            return Err(bad("view record root type", span));
+        }
+        if matches!(root_type, AggregateTy::FixedArray(_))
             && (view.offset != 0 || root_type != aggregate)
         {
             return Err(bad("view root type", span));
@@ -645,6 +683,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         span: Span,
     ) -> Result<BorrowView> {
         let mut permission = permission;
+        let mut offset = 0u64;
+        let mut selected = None;
         for _ in 0..plan::MAX_FRAMES {
             let loan = self.loan(permission, span)?;
             if loan.root != root {
@@ -656,32 +696,64 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 .get(index(permission.loan, span)?)
                 .ok_or_else(|| bad("view loan descriptor", span))?;
             if !descriptor.projection.is_empty() {
+                let base = match descriptor.authority {
+                    AccessBase::Owner(owner) => function
+                        .owners
+                        .get(owner.0)
+                        .map(|owner| BorrowedTy::Exact(owner.aggregate())),
+                    AccessBase::Parameter(parameter) => function
+                        .references
+                        .get(parameter.0)
+                        .map(ReferenceDecl::referent),
+                }
+                .ok_or_else(|| bad("view projection authority", span))?;
+                let BorrowedTy::Exact(base) = base else {
+                    return Err(bad("view projection root", span));
+                };
                 let (
                     ValueTy::Owned(
-                        aggregate @ (AggregateTy::FixedArray(_)
+                        aggregate @ (AggregateTy::Record(_)
+                        | AggregateTy::FixedArray(_)
                         | AggregateTy::ByteBuf
                         | AggregateTy::File),
                     ),
-                    offset,
+                    relative,
                 ) = self
                     .plan
                     .witness()
                     .declarations()
-                    .projection(self.aggregate(root, span)?, &descriptor.projection)
+                    .projection(base, &descriptor.projection)
                     .map_err(|_| bad("view projection path", span))?
                 else {
                     return Err(bad("view projection array", span));
                 };
-                return Ok(BorrowView {
-                    offset: offset as u64,
-                    aggregate: Some(
+                if selected.is_none() {
+                    selected = Some(
                         AggregateSlot::try_from_aggregate(aggregate)
                             .map_err(|_| bad("view projection descriptor", span))?,
-                    ),
-                });
+                    );
+                }
+                offset = offset
+                    .checked_add(relative as u64)
+                    .ok_or_else(|| bad("view projection offset", span))?;
             }
             if loan.parent.instance == 0 {
-                break;
+                let AccessBase::Owner(owner) = descriptor.authority else {
+                    return Err(bad("view projection root authority", span));
+                };
+                let frame = &self.frames[index(permission.frame, span)?];
+                if root.frame != permission.frame
+                    || root.activation != frame.activation
+                    || root.owner != owner.0 as u64
+                {
+                    return Err(bad("view projection root identity", span));
+                }
+                return selected
+                    .map(|aggregate| BorrowView {
+                        offset,
+                        aggregate: Some(aggregate),
+                    })
+                    .ok_or_else(|| bad("projected view provenance", span));
             }
             permission = loan.parent;
         }
@@ -728,7 +800,11 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             self.view_extent(handle.root, handle.view, span)?;
         }
         if matches!(self.aggregate(handle.root, span)?, AggregateTy::Record(_))
-            && matches!(actual, AggregateTy::FixedArray(_) | AggregateTy::ByteBuf)
+            && (matches!(
+                actual,
+                AggregateTy::FixedArray(_) | AggregateTy::ByteBuf | AggregateTy::File
+            ) || (matches!(actual, AggregateTy::Record(_))
+                && (actual != root_type || handle.view.offset != 0)))
         {
             let original = self.projected_view(handle.permission, handle.root, span)?;
             match (original.aggregate.map(AggregateSlot::aggregate), actual) {
@@ -810,7 +886,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                             .aggregate
                             .map(AggregateSlot::aggregate)
                             .ok_or_else(|| bad("view parent type", span))?;
-                        let (ValueTy::Owned(projected @ AggregateTy::FixedArray(_)), offset) = self
+                        let (
+                            ValueTy::Owned(
+                                projected @ (AggregateTy::Record(_)
+                                | AggregateTy::FixedArray(_)
+                                | AggregateTy::ByteBuf
+                                | AggregateTy::File),
+                            ),
+                            offset,
+                        ) = self
                             .plan
                             .witness()
                             .declarations()
@@ -964,7 +1048,13 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 .ok_or_else(|| bad("projection reference declaration", span))?
                 .referent(),
         };
-        let actual = self.aggregate(key, span)?;
+        let view = self
+            .base_view(frame, base, key, span)
+            .map_err(|_| bad("projection base type", span))?;
+        let actual = view
+            .aggregate
+            .ok_or_else(|| bad("projection view type", span))?
+            .aggregate();
         let declarations = self.plan.witness().declarations();
         declarations
             .check_borrowed_view(BorrowedTy::Exact(actual), expected)
@@ -972,6 +1062,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let (ty, relative) = declarations
             .projection(actual, path)
             .map_err(|_| bad("projection path", span))?;
+        let relative = index(view.offset, span)?
+            .checked_add(relative)
+            .ok_or_else(|| bad("projection view offset", span))?;
         let size = match ty {
             ValueTy::Scalar(ty) => scalar_size(ty),
             ValueTy::Owned(aggregate) => declarations
@@ -1511,7 +1604,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         if !descriptor.projection.is_empty() {
             let (
                 ValueTy::Owned(
-                    projected @ (AggregateTy::FixedArray(_)
+                    projected @ (AggregateTy::Record(_)
+                    | AggregateTy::FixedArray(_)
                     | AggregateTy::ByteBuf
                     | AggregateTy::File),
                 ),
@@ -2827,13 +2921,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 field,
             } => {
                 let key = self.base(frame, *base, Access::Read, span)?;
-                let value = self.load_field(key, *field, span)?;
+                let value = self.load_field(frame, *base, key, *field, span)?;
                 self.write(frame, *destination, value, span)?;
             }
             OwnedInstruction::WriteField { base, field, value } => {
                 let key = self.base(frame, *base, Access::Write, span)?;
                 let value = self.read(frame, *value)?;
-                self.store_field(key, *field, value, span)?;
+                let (offset, ty) = self.accessed_field(frame, *base, key, *field, span)?;
+                if ty != value.ty() {
+                    return Err(bad("field value type", span));
+                }
+                value.encode(&mut self.frames[key.frame as usize].payload, offset, span)?;
                 #[cfg(test)]
                 self.record_event(Event::WriteField(key, *field, value));
             }
@@ -4189,6 +4287,97 @@ fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File => Err(bad("unsupported aggregate carrier", span)),
+    }
+}
+
+#[cfg(test)]
+pub(super) mod record_field_view_tests {
+    use super::*;
+
+    fn machine<'p, 'w>(plan: &'p ExecutionPlan<'w>) -> Machine<'p, 'w> {
+        let mut machine = Machine {
+            plan,
+            frames: Vec::new(),
+            limits: Limits {
+                frames: 8,
+                ..Limits::default()
+            },
+            fuel: 0,
+            next_activation: 1,
+            live_slots: 0,
+            live_cells: 0,
+            live_bytes: 0,
+            header_bytes: 8 * size_of::<Frame>(),
+            heap: byte_buffer::Heap::default(),
+            events: Vec::new(),
+            observer: array_observe::Observer::default(),
+        };
+        machine.install(Frame::allocate(plan, hir::DefId(0), 1, None).unwrap());
+        machine
+    }
+
+    // Accept a sealed witness only from its existing source owner. The
+    // corruption exercise returns bounded counts, never execution authority.
+    pub(in crate::frontend::oir::owned) fn exercise_record_views(
+        witness: &verified::VerifiedOwnedProgram,
+    ) -> usize {
+        assert_eq!(run(witness, Some(hir::DefId(0))), Ok(Scalar::I32(37)));
+        let plan = ExecutionPlan::build(witness).unwrap();
+        for mutation in 0..5 {
+            let mut machine = machine(&plan);
+            let (frame, base, at) = loop {
+                if let Some(frame) = machine.frames.last() {
+                    let function = machine.function(frame.function);
+                    if frame.function == hir::DefId(2) {
+                        if let Some(statement) =
+                            function.blocks[frame.block.0].statements.get(frame.next)
+                        {
+                            if let OwnedInstruction::ReadField { base, .. } = statement.kind {
+                                break (machine.frames.len() - 1, base, statement.span);
+                            }
+                        }
+                    }
+                }
+                machine.fuel += 1;
+                assert!(matches!(
+                    machine.execute(),
+                    Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
+                ));
+            };
+            let AccessBase::Parameter(parameter) = base else {
+                panic!("reference read required");
+            };
+            let original = machine.frames[frame].references[parameter.0];
+            assert_eq!(original.view.offset, 8);
+            assert!(machine.checked_handle_view(original, at).is_ok());
+            let mut forged = original;
+            match mutation {
+                0 => forged.view.offset += 4, // same nominal type in the sibling field
+                1 => forged.view.offset = 0,
+                2 => forged.view.offset += 1,
+                3 => forged.view.offset = u64::MAX,
+                _ => {
+                    forged.view.aggregate = Some(
+                        AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(3)))
+                            .unwrap(),
+                    )
+                }
+            }
+            // Keep the mutable transport rows coherent: an equality check of
+            // retained handles alone must not grant another field's storage.
+            machine.frames[frame].references[parameter.0] = forged;
+            machine.frames[forged.permission.frame as usize].loans
+                [forged.permission.loan as usize]
+                .view = forged.view;
+            assert!(machine.validate_handle(forged, Access::Read, at).is_ok());
+            assert!(machine.checked_handle_view(forged, at).is_err());
+            machine.fuel = plan::MAX_FUEL;
+            assert!(matches!(
+                machine.execute(),
+                Err(OwnedRunFailure::Invariant { .. })
+            ));
+        }
+        5
     }
 }
 

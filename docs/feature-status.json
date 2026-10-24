@@ -1638,6 +1638,34 @@
         "scripts/verify_float_vector.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "projected-record-borrows",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Call-only shared and exclusive borrows of nested record fields with exact nominal views and whole-root loan authority.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Typed source checking, verified owned OIR, reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference compiler hosts; native execution on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "Record fields only in this extension. Loans retain whole-root conflicts and cannot escape calls. No field-disjoint loans, returned references or partial field moves.",
+      "spec": [
+        "rfcs/0057-record-field-borrows.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/shape.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/execute_experimental.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/record_field_borrows.rs",
+        "src/frontend/oir/owned/source/program.rs",
+        "scripts/test_record_field_compatibility.py"
+      ],
+      "evidence": []
     }
   ]
 }

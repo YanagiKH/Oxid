@@ -2212,23 +2212,25 @@ fn projected_array_access(
     let mut field_span = first.span;
     field_span.end = base_span.end;
     let projection = projection(program, function, binding, root, field_span, bindings, paid)?;
-    let element =
-        match program.records()[projection.field.record.0].fields[projection.field.index].ty {
-            ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.element()),
-            ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(Ty::U8),
-            ValueTy::Owned(AggregateTy::File) if borrow => None,
-            _ => {
-                return Err(error(
-                    "E0305",
-                    if borrow {
-                        "projected borrowing requires a fixed scalar array, ByteBuf or File field"
-                    } else {
-                        "indexed access requires a fixed scalar array field"
-                    },
-                    base_span,
-                ))
-            }
-        };
+    let element = match program.records()[projection.field.record.0].fields[projection.field.index]
+        .ty
+    {
+        ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.element()),
+        ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(Ty::U8),
+        ValueTy::Owned(AggregateTy::File) if borrow => None,
+        ValueTy::Owned(AggregateTy::Record(_)) if borrow => None,
+        _ => {
+            return Err(error(
+                "E0305",
+                if borrow {
+                    "projected borrowing requires a record, fixed scalar array, ByteBuf or File field"
+                } else {
+                    "indexed access requires a fixed scalar array field"
+                },
+                base_span,
+            ))
+        }
+    };
     let base = projection.base;
     Ok((Some(projection), base, element))
 }
@@ -2745,12 +2747,14 @@ fn expression_type(
                                 argument,
                                 projection,
                             });
-                            // A projected fixed array is admitted only as a scalar slice.
-                            // It cannot silently add exact-array or record field borrowing.
+                            // Arrays retain slice erasure; records and resources
+                            // preserve their exact nominal borrowed identity.
                             ParameterTy::Reference {
                                 referent: match projected_type {
                                     ValueTy::Owned(
-                                        resource @ (AggregateTy::ByteBuf | AggregateTy::File),
+                                        resource @ (AggregateTy::Record(_)
+                                        | AggregateTy::ByteBuf
+                                        | AggregateTy::File),
                                     ) => BorrowedTy::Exact(resource),
                                     _ => BorrowedTy::ScalarSlice(
                                         element.expect("array borrowing has an element"),

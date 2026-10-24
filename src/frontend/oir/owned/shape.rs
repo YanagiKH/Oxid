@@ -463,6 +463,7 @@ pub(super) fn check_with_conversion_authority(
                 }
                 ValueTy::Owned(AggregateTy::ByteBuf) => BorrowedTy::Exact(AggregateTy::ByteBuf),
                 ValueTy::Owned(AggregateTy::File) => BorrowedTy::Exact(AggregateTy::File),
+                ValueTy::Owned(record @ AggregateTy::Record(_)) => BorrowedTy::Exact(record),
                 _ => return Err(bad(Malformed::Type, l.span)),
             }
         };

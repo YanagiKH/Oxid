@@ -404,9 +404,14 @@ transfer initialized leaves and empty sentinels without copying padding.
 
 ## Call-only projected array slices
 
+Record fields can also be borrowed by their exact record type with
+`&value.field`, `&mut value.field`, and explicit parameter reborrows such as
+`&mut *parameter.field`. Nested paths retain a loan on the whole outer owner.
+See [borrowing record fields](../rfcs/0057-record-field-borrows.md).
+
 [RFC 0022](../rfcs/0022-projected-array-slices.md) permits `sum(&batch.samples)`
 and `bump(&mut batch.samples)` when the bounded named-root field path ends in a
-fixed bool/i32/unit array and the formal is exactly the matching shared/exclusive
+fixed scalar array and the formal is exactly the matching shared/exclusive
 scalar slice. Paths may contain up to 64 fields and visibility is checked at each
 hop. Length zero works through an explicitly typed empty-array initializer.
 
@@ -420,8 +425,9 @@ Existing `&*p` reborrowing remains unchanged.
 A view exposes only the selected complete array, while its loan covers the
 entire root record. Different fields therefore still conflict for exclusive
 borrows; shared/shared loans may coexist. Parent permissions restore on return.
-The view cannot escape, grant field ownership, borrow scalar/record fields,
-supply an exact fixed-array formal, or enable ranges/element borrowing.
+Array views cannot escape, grant field ownership, borrow scalar fields,
+supply an exact fixed-array formal, or enable element references. Byte views
+also support the ranges described under [growable byte buffers](#growable-byte-buffers-and-partial-binary-io).
 
 Runtime and native consumers preserve field offsets, actual lengths, argument
 staging, RHS/index/fuel/bounds/store order and neighboring fields. Retained view
