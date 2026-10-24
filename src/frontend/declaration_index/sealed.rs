@@ -1379,7 +1379,7 @@ impl<'s> DeclarationFacts<'s> {
             index
                 .sources()
                 .ast(ModuleId(module))
-                .is_ok_and(|program| program.has_generics())
+                .is_ok_and(|program| program.has_generics() || program.has_record_patterns())
         });
         if has_generics {
             index

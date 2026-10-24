@@ -102,6 +102,7 @@ pub(super) struct FunctionCounts {
     pub diagnostic_origins: usize,
     pub max_constructor_fields: usize,
     pub ownership_active: bool,
+    pub destructured_fields: u32,
 }
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProgramCounts {
@@ -227,7 +228,10 @@ pub(super) fn account_function(
     )?;
     if ownership_active {
         let a = add(c.descriptor_arguments, c.preparations)?;
-        let composition = add(c.composite_fields, c.projection_fields)?;
+        let composition = add(
+            add(c.composite_fields, c.projection_fields)?,
+            c.destructured_fields as usize,
+        )?;
         u.owners = cap(add(u.owners, c.owners)?, limits.owners, "owners")?;
         u.expanded_events = cap(
             add(
@@ -280,6 +284,10 @@ pub(super) fn account_function(
             (c.constructed_fields, size_of::<(FieldId, Operand)>()),
             (c.constructed_elements, size_of::<Operand>()),
             (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+            (
+                c.destructured_fields as usize,
+                size_of::<(FieldId, OwnerPlaceId)>(),
+            ),
             (c.projection_fields, size_of::<FieldId>()),
         ] {
             metadata = add(metadata, mul(count, size)?)?;
@@ -440,6 +448,12 @@ pub(super) fn preflight(
                     OwnedInstruction::Construct { fields, .. } => {
                         c.constructed_fields = add(c.constructed_fields, fields.len())?;
                         c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
+                    }
+                    OwnedInstruction::DestructureRecord { fields, .. } => {
+                        cap(fields.len(), 1024, "record pattern owned fields")?;
+                        c.destructured_fields =
+                            u32::try_from(add(c.destructured_fields as usize, fields.len())?)
+                                .map_err(|_| OwnedFailure::resource("record pattern fields"))?;
                     }
                     OwnedInstruction::ConstructComposite { fields, .. } => {
                         cap(fields.len(), 1024, "composite constructor fields")?;

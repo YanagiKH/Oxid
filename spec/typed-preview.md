@@ -389,8 +389,9 @@ field. The root must remain available and its existing whole-root permissions
 must allow the access. A shared/exclusive helper borrows the complete outer
 record; explicit reborrows keep existing parent-suspension rules.
 
-No aggregate field may be extracted, moved, discarded, passed or returned by
-value or independently replaced. Replace the complete outer record instead.
+Individual aggregate fields cannot be moved or independently replaced.
+Use a complete record pattern below to transfer fields into new bindings,
+or replace the complete outer record.
 The call-only fixed-array-field slice exception below retains whole-root authority. Partial initialization, arrays of records,
 nested arrays, stored references and temporary/grouped path roots remain
 excluded. Subobjects never gain independent ownership or loan authority.
@@ -890,6 +891,31 @@ layout. Record field operations retain the existing move, scalar access and
 whole-owner borrowing restrictions. Reference returns, stored references and
 user-defined traits remain unsupported.
 
+## Record patterns
+
+Use a complete record pattern to consume a struct and bind its fields:
+
+```text
+struct Cell<T> { value: T }
+fn take<T>(cell: Cell<T>) -> T {
+    let Cell { value } = cell;
+    return value;
+}
+```
+
+Every field must appear exactly once. Fields can appear in any order and can
+be renamed, as in `let Pair { second: right, first: left } = pair;`.
+Bindings are immutable and their types come from the initializer, including
+generic arguments. Qualified struct names and field visibility follow the
+same rules as construction.
+
+The initializer runs once. The pattern consumes the complete struct; the old
+binding is unavailable afterward. Owned fields transfer to separate bindings,
+and unused bindings release their resources at the end of their scope. Scalar
+fields retain their concrete scalar behavior. `let Empty {} = value;` consumes
+an empty struct. Reference initializers, partial patterns with `..`, nested
+patterns and `let mut` patterns are not supported.
+
 ## Grammar
 
 ```text
@@ -924,6 +950,7 @@ variant_path   := name "::" name | absolute_path "::" name
 match_arm      := variant_path ("(" name ")")? "=>" block
 block          := "{" statement* "}"
 statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
+                | "let" item_path "{" record_bindings? "}" "=" expression ";"
                 | name "=" expression ";"
                 | field_path "=" expression ";"
                 | array_base "[" expression "]" "=" expression ";"
@@ -953,6 +980,8 @@ array_base     := name | field_path
 decimal        := ASCII_DIGIT+
 byte_string    := "b" '"' byte_string_contents '"'
 field_inits    := name ":" expression ("," name ":" expression)* ","?
+record_bindings := record_binding ("," record_binding)* ","?
+record_binding := name (":" name)?
 arguments      := argument ("," argument)*
 argument       := expression | borrow_argument
 borrow_argument := "&" name | "&" "mut" name
@@ -1238,7 +1267,7 @@ whereas `a.field = consume(a);` fails when the final target is unavailable.
 Earlier moves and writes are not rolled back if a later operation fails; an
 unpaid store performs no write.
 
-Partial moves, aggregate-field extraction/replacement, destructuring, aggregate
+Partial moves, individual aggregate-field extraction/replacement, aggregate
 equality, stored or returned references, scalar/field/temporary borrows, general dereference,
 reference coercions, mutable parameter bindings, heap resources and user
 destructors remain unavailable.
@@ -1639,6 +1668,7 @@ as defined above, and r be the call's number of borrowed arguments:
 | Bounded stdin core, capacity C and A attempted reads | `4 + C + A`; result construction and commit prepaid |
 | Bounded stdout core, capacity C and A attempted writes | `4 + C + A`; validation/staging and infallible result commit prepaid |
 | Whole replacement | `1 + 2w` |
+| Complete record pattern with K owned fields | `1 + 2w + K`, after scalar field reads |
 | OpenCall | `1 + owned_argument_count` |
 | Invoke | `1 + argc + X(callee) + sum(owned_argument_widths) + r(r-1)/2` |
 | Scalar return | `1 + P + L + C + R` |

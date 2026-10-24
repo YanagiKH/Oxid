@@ -1432,6 +1432,12 @@ fn diagnostic_occurrences(
                 }
             }
             for statement in &b.statements {
+                if matches!(statement.kind, OwnedInstruction::DestructureRecord { .. }) {
+                    let span = plan::instruction_span(statement);
+                    visit(FailureKind::ResourceDescriptor, span)?;
+                    visit(FailureKind::EnumTag, span)?;
+                    visit(FailureKind::EnumPayload, span)?;
+                }
                 if plan.uses_dynamic_resources() {
                     let span = plan::instruction_span(statement);
                     visit(FailureKind::ResourceDescriptor, span)?;
@@ -2232,6 +2238,22 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         // Complete/InvalidInput tags and IoError tag/payload.
                         // Staging and one-byte attempts remain fixed loop text.
                         cells = add(cells, 4)?;
+                        None
+                    }
+                    OwnedInstruction::DestructureRecord { ref fields, .. } => {
+                        cells = add(cells, 1)?;
+                        for (_, destination) in fields {
+                            visits = add(visits, 1)?;
+                            let aggregate = f.owners[destination.0].aggregate();
+                            cells = add(
+                                cells,
+                                active_transfer_inventory(plan, aggregate, false, &mut visits)?,
+                            )?;
+                            cells = add(
+                                cells,
+                                active_transfer_inventory(plan, aggregate, true, &mut visits)?,
+                            )?;
+                        }
                         None
                     }
                     OwnedInstruction::ConstructEnum { payload, .. } => {
@@ -3423,6 +3445,7 @@ fn emit(
 #[derive(Clone, Copy)]
 enum Continuation {
     Unsplit,
+    Aggregate,
     Arithmetic,
     Conversion,
     Bounds,
@@ -3434,6 +3457,7 @@ impl Continuation {
     fn suffix(self) -> Option<&'static str> {
         match self {
             Self::Unsplit => None,
+            Self::Aggregate => Some("aggregate_ok"),
             Self::Arithmetic => Some("checked_ok"),
             Self::Conversion => Some("conversion_ok"),
             Self::Bounds => Some("bounds_ok"),
@@ -3446,6 +3470,7 @@ impl Continuation {
 /// Exhaustive classification shared by operation emission and phi predecessors.
 fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
     match instruction {
+        OwnedInstruction::DestructureRecord { .. } => Continuation::Aggregate,
         OwnedInstruction::PrepareBorrowRange { .. } => Continuation::Bounds,
         OwnedInstruction::Experimental { .. } => Continuation::Unsplit,
         OwnedInstruction::ReadStdin { .. } => Continuation::Input,
@@ -4397,6 +4422,51 @@ fn emit_statement(
             let base = base_pointer(out, name, *base);
             let ptr = field_pointer(out, name, &base, offset);
             writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(scalar)).unwrap();
+        }
+        OwnedInstruction::DestructureRecord { source, fields } => {
+            // Admit every field before the first ownership-bearing store.
+            for (index, (field, destination)) in fields.iter().enumerate() {
+                let member = plan
+                    .witness()
+                    .declarations()
+                    .field(field.record, *field)
+                    .expect("verified record pattern field");
+                let name = format!("{name}_admit{index}");
+                let pointer =
+                    field_pointer(out, &name, &format!("%o{}", source.0), member.offset());
+                active_transfer_with_intent(
+                    out,
+                    plan,
+                    &name,
+                    f.owners[destination.0].aggregate(),
+                    &pointer,
+                    TransferIntent::Validate,
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
+            for (index, (field, destination)) in fields.iter().enumerate() {
+                let member = plan
+                    .witness()
+                    .declarations()
+                    .field(field.record, *field)
+                    .expect("verified record pattern field");
+                let name = format!("{name}_move{index}");
+                let pointer =
+                    field_pointer(out, &name, &format!("%o{}", source.0), member.offset());
+                active_transfer_with_intent(
+                    out,
+                    plan,
+                    &name,
+                    f.owners[destination.0].aggregate(),
+                    &pointer,
+                    TransferIntent::Move(&format!("%o{}", destination.0)),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
+            if !out.expand(Expansion::Transfer) {
+                return;
+            }
+            writeln!(out, "  br label %{name}_aggregate_ok\n{name}_aggregate_ok:").unwrap();
         }
         OwnedInstruction::ConstructComposite {
             destination,

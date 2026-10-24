@@ -112,6 +112,10 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.constructed_fields, size_of::<(FieldId, Operand)>()),
         (c.constructed_elements, size_of::<Operand>()),
         (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+        (
+            c.destructured_fields as usize,
+            size_of::<(FieldId, OwnerPlaceId)>(),
+        ),
         (c.projection_fields, size_of::<FieldId>()),
     ] {
         bytes = add(bytes, mul(n, width)?)?;

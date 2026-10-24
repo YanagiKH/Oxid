@@ -971,6 +971,15 @@ fn count_statement(
             increment(&mut c.bindings, 1, at)?;
             count_expression(ast, *init, at, work, c)?;
         }
+        ast::StmtKind::DestructureRecord { fields, init, .. } => {
+            visit(work, fields.len(), at)?;
+            increment(&mut c.bindings, fields.len(), at)?;
+            // Pattern field rows have the same complete carrier as field
+            // initializer rows; share the existing explicit record envelope.
+            increment(&mut c.record_literals, 1, at)?;
+            increment(&mut c.field_initializers, fields.len(), at)?;
+            count_expression(ast, *init, at, work, c)?;
+        }
         ast::StmtKind::Assign { value, .. }
         | ast::StmtKind::FieldAssign { value, .. }
         | ast::StmtKind::Expr(value) => count_expression(ast, *value, at, work, c)?,

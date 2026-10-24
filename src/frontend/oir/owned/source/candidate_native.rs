@@ -147,6 +147,7 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         | OwnedInstruction::ConsumeOwnedVariant { .. } => {
             unreachable!("enum source gate")
         }
+        OwnedInstruction::DestructureRecord { .. } => "DestructureRecord",
         OwnedInstruction::ConstructComposite { .. } => "ConstructComposite",
         OwnedInstruction::ReadProjection { .. } => "ReadProjection",
         OwnedInstruction::WriteProjection { .. } => "WriteProjection",

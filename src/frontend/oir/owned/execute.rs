@@ -1376,6 +1376,35 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .iter()
             .any(|variant| matches!(variant.value_payload(), Some(ValueTy::Owned(_))))
     }
+    fn owned_record_field_extent(
+        &self,
+        root: OwnerKey,
+        record: RecordId,
+        field: FieldId,
+        span: Span,
+    ) -> Result<(AggregateTy, std::ops::Range<usize>)> {
+        let declarations = self.plan.witness().declarations();
+        let member = declarations
+            .field(record, field)
+            .map_err(|_| bad("record pattern field", span))?;
+        let ValueTy::Owned(aggregate) = member.value_ty() else {
+            return Err(bad("owned record pattern field", span));
+        };
+        let extent = self.owner_extent(root, span)?;
+        let start = extent
+            .start
+            .checked_add(member.offset())
+            .ok_or_else(|| bad("record pattern field extent", span))?;
+        let size = declarations
+            .aggregate_layout(aggregate)
+            .map_err(|_| bad("record pattern field layout", span))?
+            .size();
+        let end = start
+            .checked_add(size)
+            .filter(|end| *end <= extent.end)
+            .ok_or_else(|| bad("record pattern field extent", span))?;
+        Ok((aggregate, start..end))
+    }
     fn preflight_active(
         &self,
         from: OwnerKey,
@@ -2463,6 +2492,59 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 self.change_owner(frame, descriptor.source, MOVED, span)?;
                 #[cfg(test)]
                 self.record_event(Event::EnumBind(key, *destination, value.payload));
+            }
+            OwnedInstruction::DestructureRecord { source, fields } => {
+                let from = self.base(frame, AccessBase::Owner(*source), Access::Consume, span)?;
+                self.expect_owner(frame, *source, &[AVAILABLE], span)?;
+                let record = record_type(self.aggregate(from, span)?, span)?;
+                let root_extent = self.owner_extent(from, span)?;
+                // Every destination, type, active resource and byte range is
+                // checked before any transfer. The verifier proves coverage
+                // of all owned fields and unique fresh destinations.
+                for (field, destination) in fields {
+                    self.expect_owner(frame, *destination, &[UNINITIALIZED], span)?;
+                    let to = self.raw_key(frame, *destination);
+                    let (aggregate, source_extent) =
+                        self.owned_record_field_extent(from, record, *field, span)?;
+                    let destination_extent = self.owner_extent(to, span)?;
+                    self.plan
+                        .witness()
+                        .declarations()
+                        .same_aggregate_type(aggregate, self.aggregate(to, span)?)
+                        .map_err(|_| bad("record pattern destination type", span))?;
+                    if root_extent.start < destination_extent.end
+                        && destination_extent.start < root_extent.end
+                    {
+                        return Err(bad("overlapping record pattern transfer", span));
+                    }
+                    self.preflight_active(
+                        from,
+                        source_extent,
+                        aggregate,
+                        destination_extent,
+                        span,
+                    )?;
+                }
+                // Keep destinations uninitialized until all bytes have moved.
+                // An unexpected copy error therefore leaves cleanup authority
+                // solely with the complete source record.
+                for (field, destination) in fields {
+                    let to = self.raw_key(frame, *destination);
+                    let (aggregate, source_extent) =
+                        self.owned_record_field_extent(from, record, *field, span)?;
+                    self.copy_active(
+                        from,
+                        source_extent,
+                        to,
+                        self.owner_extent(to, span)?,
+                        aggregate,
+                        span,
+                    )?;
+                }
+                self.change_owner(frame, *source, MOVED, span)?;
+                for (_, destination) in fields {
+                    self.change_owner(frame, *destination, AVAILABLE, span)?;
+                }
             }
             OwnedInstruction::ConstructComposite {
                 destination,

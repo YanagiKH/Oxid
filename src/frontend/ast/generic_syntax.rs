@@ -19,6 +19,17 @@ impl Program {
         self.source.has_generics()
     }
 
+    pub(in crate::frontend) fn has_record_patterns(&self) -> bool {
+        self.functions.iter().any(|function| {
+            function.blocks.iter().any(|block| {
+                block
+                    .body
+                    .iter()
+                    .any(|statement| matches!(statement.kind, StmtKind::DestructureRecord { .. }))
+            })
+        })
+    }
+
     pub(in crate::frontend) fn generic_calls(&self) -> &[GenericArguments] {
         self.source.generic_calls()
     }
@@ -45,7 +56,7 @@ impl Program {
     /// Generic functions can use the original single-file owned producer.
     /// Imports, module paths and visibility still require the project owner.
     pub(in crate::frontend) fn has_only_original_generic_syntax(&self) -> bool {
-        self.has_generics()
+        (self.has_generics() || self.has_record_patterns())
             && self.modules.is_empty()
             && self.imports.is_empty()
             && self

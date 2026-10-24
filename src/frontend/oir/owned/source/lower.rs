@@ -350,7 +350,10 @@ impl<'a, 'b> Walk<'a, 'b> {
             )?,
             budget::add(
                 budget::add(c.constructed_fields, c.constructed_elements)?,
-                budget::add(c.composite_fields, c.projection_fields)?,
+                budget::add(
+                    budget::add(c.composite_fields, c.projection_fields)?,
+                    c.destructured_fields as usize,
+                )?,
             )?,
         )?;
         let expanded = budget::add(expanded, budget::add(c.matches, c.match_arms)?)?;
@@ -2057,7 +2060,8 @@ impl<'a, 'b> Walk<'a, 'b> {
                 continue;
             }
             let root = match statement.kind {
-                source::StmtKind::Let { init, .. }
+                source::StmtKind::DestructureRecord { init, .. }
+                | source::StmtKind::Let { init, .. }
                 | source::StmtKind::Assign { value: init, .. }
                 | source::StmtKind::FieldAssign { value: init, .. }
                 | source::StmtKind::Expr(init) => Some(init),
@@ -2077,6 +2081,91 @@ impl<'a, 'b> Walk<'a, 'b> {
                     frames.push(BodyFrame::MatchArm(cursor), s)?;
                 }
                 source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
+                source::StmtKind::DestructureRecord {
+                    ref fields, init, ..
+                } => {
+                    let EvaluatedValue::Owned(source) = self.value(init)? else {
+                        return Err(invariant(s));
+                    };
+                    let owned = fields
+                        .iter()
+                        .filter(|field| {
+                            matches!(
+                                self.view.binding_ty(field.binding),
+                                ParameterTy::Value(ValueTy::Owned(_))
+                            )
+                        })
+                        .count();
+                    self.counts.destructured_fields = u32::try_from(budget::add(
+                        self.counts.destructured_fields as usize,
+                        owned,
+                    )?)
+                    .map_err(|_| OwnedFailure::resource("record pattern fields"))?;
+                    self.check_counts()?;
+                    let mut destinations = if self.output.is_some() {
+                        budget::reserve(owned)?
+                    } else {
+                        Vec::new()
+                    };
+                    for field in fields {
+                        match self.view.binding_ty(field.binding) {
+                            ParameterTy::Value(ValueTy::Scalar(_)) => {
+                                let BindingLocation::ScalarValue(destination) =
+                                    self.location(field.binding, field.span)?
+                                else {
+                                    return Err(invariant(field.span));
+                                };
+                                self.statement(
+                                    OwnedInstruction::ReadField {
+                                        destination,
+                                        base: AccessBase::Owner(source),
+                                        field: field.field,
+                                    },
+                                    field.span,
+                                    field.span,
+                                    s,
+                                )?;
+                            }
+                            ParameterTy::Value(ValueTy::Owned(aggregate)) => {
+                                let declaration = &f.bindings[field.binding.0];
+                                let destination = self.owner(
+                                    aggregate,
+                                    OwnerKind::Local { mutable: false },
+                                    declaration.span,
+                                )?;
+                                if let Some(out) = &mut self.output {
+                                    require(out.bindings[field.binding.0].is_none(), field.span)?;
+                                    out.bindings[field.binding.0] =
+                                        Some(BindingLocation::Owner(destination));
+                                    budget::append(
+                                        &mut destinations,
+                                        (field.field, destination),
+                                        owned,
+                                        field.span,
+                                    )?;
+                                }
+                                self.statement(
+                                    OwnedInstruction::StorageLive(destination),
+                                    s,
+                                    declaration.span,
+                                    s,
+                                )?;
+                                self.register(destination, s)?;
+                            }
+                            _ => return Err(invariant(field.span)),
+                        }
+                    }
+                    self.statement(
+                        OwnedInstruction::DestructureRecord {
+                            source,
+                            fields: destinations,
+                        },
+                        s,
+                        s,
+                        s,
+                    )?;
+                    self.end_value(source, s, f.expressions[init.0].span, s)?;
+                }
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
                         BindingLocation::ScalarValue(destination) => {

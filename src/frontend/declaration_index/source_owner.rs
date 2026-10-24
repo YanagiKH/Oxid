@@ -337,7 +337,8 @@ impl<'s> SourceOwner<'s> {
                                 annotation: Some(ty),
                                 ..
                             } => owned |= self.owned_type(ty, work)?,
-                            ast::StmtKind::FieldAssign { .. }
+                            ast::StmtKind::DestructureRecord { .. }
+                            | ast::StmtKind::FieldAssign { .. }
                             | ast::StmtKind::IndexAssign { .. }
                             | ast::StmtKind::Match { .. } => owned = true,
                             _ => (),

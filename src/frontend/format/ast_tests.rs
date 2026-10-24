@@ -582,6 +582,21 @@ impl<'a> Fingerprint<'a> {
         let Stmt { kind, span } = statement;
         self.span(*span);
         match kind {
+            StmtKind::DestructureRecord {
+                record,
+                fields,
+                init,
+            } => {
+                self.tag("record-pattern");
+                self.path(*record);
+                self.count(fields.len());
+                for field in fields {
+                    self.spelling(field.field);
+                    self.spelling(field.binding);
+                    self.span(field.span);
+                }
+                self.expression(*init);
+            }
             StmtKind::Let {
                 mutable,
                 name,
@@ -1985,6 +2000,32 @@ fn bytebuf_formatter_preserves_call_only_range_endpoints_and_forwarding() {
     let formatted = format_source(source).unwrap();
     let mut output = SourceMap::new();
     let id = output.add("range-formatted.ox".into(), formatted);
+    let after = output.get(id);
+    assert_eq!(before, fingerprint(after, &parse(after)));
+    assert_eq!(format_source(after).unwrap(), after.text());
+}
+
+#[test]
+fn record_pattern_formatter_preserves_field_names_bindings_and_origins() {
+    fn parse(source: &SourceFile) -> Program {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    }
+    let mut sources = SourceMap::new();
+    let id = sources.add("pattern.ox".into(), "// 雪\r\nstruct Pair<A,B>{first:A,second:B}fn take<T>(value:Pair<T,i32>)->T{let crate::Pair{second /* S */ :discard,first:kept,}=value;return kept;}fn main()->i32{return take(Pair::<i32,i32>{first:42,second:0});}".into());
+    let source = sources.get(id);
+    let before = fingerprint(source, &parse(source));
+    let formatted = format_source(source).unwrap();
+    let mut output = SourceMap::new();
+    let id = output.add("formatted-pattern.ox".into(), formatted);
     let after = output.get(id);
     assert_eq!(before, fingerprint(after, &parse(after)));
     assert_eq!(format_source(after).unwrap(), after.text());

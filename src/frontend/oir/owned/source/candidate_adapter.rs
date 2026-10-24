@@ -327,7 +327,8 @@ fn instruction(value: &OwnedInstruction) -> String {
             unreachable!("enum source gate")
         }
         // This frozen scalar-record observer is not the composition qualification path.
-        OwnedInstruction::ConstructComposite { .. }
+        OwnedInstruction::DestructureRecord { .. }
+        | OwnedInstruction::ConstructComposite { .. }
         | OwnedInstruction::ReadProjection { .. }
         | OwnedInstruction::WriteProjection { .. }
         | OwnedInstruction::ProjectionLength { .. }

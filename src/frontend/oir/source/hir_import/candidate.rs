@@ -720,7 +720,8 @@ fn statement_kind(
                 else_block: otherwise,
             }
         }
-        ast::StmtKind::FieldAssign { .. }
+        ast::StmtKind::DestructureRecord { .. }
+        | ast::StmtKind::FieldAssign { .. }
         | ast::StmtKind::IndexAssign { .. }
         | ast::StmtKind::Match { .. } => return Err(Failure::Shape),
     })

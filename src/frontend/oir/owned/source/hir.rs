@@ -186,7 +186,18 @@ pub(super) struct MatchArm {
     pub(super) span: Span,
 }
 #[derive(Debug)]
+pub(super) struct RecordPatternField {
+    pub(super) field: FieldId,
+    pub(super) binding: BindingId,
+    pub(super) span: Span,
+}
+#[derive(Debug)]
 pub(super) enum StmtKind {
+    DestructureRecord {
+        record: RecordId,
+        fields: Vec<RecordPatternField>,
+        init: ExprId,
+    },
     /// A named owner, never an expression that would move it before dispatch.
     #[allow(dead_code)]
     Match {
@@ -279,3 +290,6 @@ pub(super) struct Projection {
     pub(super) field: FieldId,
     pub(super) path: Vec<FieldId>,
 }
+
+// Complete record-pattern fields share the already priced initializer carrier.
+const _: [(); std::mem::size_of::<RecordPatternField>()] = [(); std::mem::size_of::<FieldInit>()];

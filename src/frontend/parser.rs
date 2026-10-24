@@ -1528,18 +1528,66 @@ impl Parser<'_> {
         }
         let kind = if self.take(Kind::Let).is_some() {
             let mutable = self.take(Kind::Mut).is_some();
-            let name = self.expect(Kind::Ident, "expected binding name")?.span;
-            let annotation = if self.take(Kind::Colon).is_some() {
-                Some(self.ty()?)
+            let (path, at) = if self.wide_scalars_enabled() {
+                self.item_path("expected binding name or record pattern", true)?
             } else {
-                None
+                let name = self.expect(Kind::Ident, "expected binding name")?.span;
+                (ItemPath::Unqualified(name), name)
             };
-            self.expect(Kind::Equal, "binding requires an initializer")?;
-            StmtKind::Let {
-                mutable,
-                name,
-                annotation,
-                init: self.expression(0, LiteralContext::Allowed)?,
+            if self.wide_scalars_enabled() && self.take(Kind::LBrace).is_some() {
+                if mutable {
+                    return Err(self.error("record patterns declare immutable bindings"));
+                }
+                let mut fields = Vec::new();
+                while self.peek().kind != Kind::RBrace {
+                    self.node()?;
+                    let field = self
+                        .expect(Kind::Ident, "expected record pattern field")?
+                        .span;
+                    let binding = if self.take(Kind::Colon).is_some() {
+                        self.expect(Kind::Ident, "expected field binding name")?
+                            .span
+                    } else {
+                        field
+                    };
+                    self.candidate_reserve(&mut fields, MAX_NODES, "record pattern fields", field)?;
+                    fields.push(RecordPatternField {
+                        field,
+                        binding,
+                        span: self.source.span(field.start, binding.end),
+                    });
+                    if self.take(Kind::Comma).is_none() {
+                        break;
+                    }
+                }
+                self.expect(Kind::RBrace, "expected record pattern `}`")?;
+                self.expect(Kind::Equal, "record pattern requires an initializer")?;
+                StmtKind::DestructureRecord {
+                    record: path,
+                    fields,
+                    init: self.expression(0, LiteralContext::Allowed)?,
+                }
+            } else {
+                let ItemPath::Unqualified(name) = path else {
+                    return Err(self.diagnostic(
+                        "E0100",
+                        "parse",
+                        "qualified binding requires a record pattern",
+                        Some(at),
+                    ));
+                };
+                let annotation = if self.take(Kind::Colon).is_some() {
+                    Some(self.ty()?)
+                } else {
+                    None
+                };
+                self.expect(Kind::Equal, "binding requires an initializer")?;
+                StmtKind::Let {
+                    mutable,
+                    name,
+                    annotation,
+                    init: self.expression(0, LiteralContext::Allowed)?,
+                }
             }
         } else if self.take(Kind::Break).is_some() {
             StmtKind::Break
