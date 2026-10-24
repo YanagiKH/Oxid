@@ -179,6 +179,7 @@ impl Parser<'_> {
         self.node()?;
         let start = self.bump().span;
         let name = self.expect(Kind::Ident, "expected enum name")?.span;
+        self.generic_parameters(name)?;
         self.expect(Kind::LBrace, "expected enum variants `{`")?;
         let mut variants = Vec::new();
         if self.peek().kind == Kind::RBrace {

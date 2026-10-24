@@ -3,6 +3,7 @@
 #![allow(dead_code)] // Private ProjectCandidate qualification precedes activation.
 
 mod enum_views;
+mod generics;
 mod resource;
 mod sealed;
 mod source_owner;

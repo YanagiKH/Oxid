@@ -13,6 +13,7 @@ const MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 const TIGHT_AFTER: u8 = 1;
 const PATH_COLON: u8 = 2;
 const BITWISE_AND: u8 = 4;
+const TIGHT_BEFORE: u8 = 8;
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -410,6 +411,26 @@ fn roles_with_syntax(
         return Err(resource("formatter work table capacity exceeded admission"));
     }
     roles.resize(length, 0);
+    for header in program.generic_headers() {
+        roles[header.declaration.start] |= TIGHT_AFTER;
+        let start = program
+            .tokens
+            .partition_point(|token| token.span.end <= header.declaration.end);
+        let mut tokens = program.tokens[start..]
+            .iter()
+            .filter(|token| token.kind != Kind::Trivia);
+        let open = tokens
+            .next()
+            .ok_or_else(|| invariant("missing generic parameter delimiter"))?;
+        if open.kind != Kind::Less {
+            return Err(invariant("invalid generic parameter delimiter"));
+        }
+        roles[open.span.start] |= TIGHT_AFTER;
+        let close = tokens
+            .find(|token| token.kind == Kind::Greater)
+            .ok_or_else(|| invariant("missing generic parameter delimiter"))?;
+        roles[close.span.start] |= TIGHT_BEFORE;
+    }
     if syntax.candidate() {
         // Preserve the unchanged two-token arrow; do not skip raw trivia.
         for pair in program.tokens.windows(2) {
@@ -652,7 +673,8 @@ fn horizontal_space(source: &SourceFile, left: &Token, right: &Token, roles: &[u
         || left.kind == LParen
         || matches!(delimiter(source, left), Some(Delimiter::Open(b'[')))
         || matches!(delimiter(source, right), Some(Delimiter::Close(b'[')))
-        || (right.kind == LParen && left.kind == Ident)
+        || (right.kind == LParen
+            && (left.kind == Ident || roles[left.span.start] & TIGHT_BEFORE != 0))
         || left.kind == Dot
         || right.kind == Dot
         || (left.kind == Colon && roles[left.span.start] & PATH_COLON != 0)
@@ -661,6 +683,7 @@ fn horizontal_space(source: &SourceFile, left: &Token, right: &Token, roles: &[u
         || left.kind == Not
         || (left.kind == Ampersand && roles[left.span.start] & BITWISE_AND == 0)
         || roles[left.span.start] & TIGHT_AFTER != 0
+        || roles[right.span.start] & TIGHT_BEFORE != 0
         || (left.kind == LBrace && right.kind == RBrace)
     {
         return false;

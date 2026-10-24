@@ -31,6 +31,7 @@ pub(super) fn lower_and_associate<'s>(
     let crate::frontend::source::SourceView::Map(sources) = typed.index().sources().view() else {
         return Err(bad());
     };
+    typed.index().validate_generic_source(typed.work())?;
     let raw =
         super::lower::lower(typed).map_err(|error| super::diagnostic::lower(&error, sources))?;
     let index = typed.index();
@@ -679,6 +680,16 @@ fn check_impl(
             {
                 return Err(bad());
             }
+            if index.has_generic_instances() {
+                let typed = typed.ok_or_else(bad)?;
+                if field.ty
+                    != index
+                        .query(typed.work())
+                        .parameter_type(module, original.ty)?
+                {
+                    return Err(bad());
+                }
+            }
         }
         visitor.file(original.name.file);
         record(declaration, &mut visitor)?;
@@ -710,6 +721,41 @@ fn check_impl(
         if declaration.id != id || declaration.span != original.name {
             return Err(bad());
         }
+        if index.has_generic_instances() {
+            let typed = typed.ok_or_else(bad)?;
+            if declaration.result != index.instantiated_value(id, original.result, typed.work())? {
+                return Err(bad());
+            }
+            if declaration.parameters.len() != original.params.len() {
+                return Err(bad());
+            }
+            for (binding, parameter) in declaration.parameters.iter().zip(&original.params) {
+                let actual = match *binding {
+                    ParameterBinding::Scalar(local) => ParameterTy::Value(ValueTy::Scalar(
+                        declaration.locals.get(local.0).ok_or_else(bad)?.ty,
+                    )),
+                    ParameterBinding::Owned(place) => {
+                        let owner = declaration.owners.get(place.0).ok_or_else(bad)?;
+                        ParameterTy::Value(ValueTy::Owned(owner.aggregate()))
+                    }
+                    ParameterBinding::Reference(reference) => {
+                        let reference = declaration.references.get(reference.0).ok_or_else(bad)?;
+                        ParameterTy::Reference {
+                            referent: reference.referent(),
+                            kind: reference.kind,
+                        }
+                    }
+                };
+                if actual != index.instantiated_parameter(id, parameter.ty, typed.work())? {
+                    return Err(bad());
+                }
+            }
+            for call in &declaration.calls {
+                if call.target != index.expected_generic_call(id, call.span, typed.work())? {
+                    return Err(bad());
+                }
+            }
+        }
         visitor.file(original.name.file);
         function(
             declaration,
@@ -721,6 +767,52 @@ fn check_impl(
         )?;
     }
     visitor.finish(count)
+}
+
+#[cfg(test)]
+mod generic_source_tests {
+    use super::*;
+    use crate::frontend::{
+        declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
+        project::{budget::Allocator, ProjectLimits, ProjectSources},
+    };
+
+    #[test]
+    fn same_signature_generic_call_swap_is_rejected_by_source_association() {
+        let path =
+            std::env::temp_dir().join(format!("oxid-generic-call-auth-{}.ox", std::process::id()));
+        std::fs::write(&path, "fn one<T>(value:T)->i32{return 1;}fn two<T>(value:T)->i32{return 2;}fn main()->i32{return one(42)+two(42);}").unwrap();
+        let project =
+            ProjectSources::load_typed(path.to_str().unwrap(), ProjectLimits::default()).unwrap();
+        std::fs::remove_file(path).unwrap();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = collect_originals(
+            SourceOwner::project(&project),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        let typed = super::super::typeck::check(
+            super::super::resolve::resolve_project(&index, &work).unwrap(),
+        )
+        .unwrap();
+        let raw = super::super::lower::lower(&typed).unwrap();
+        assert!(associate_lowered(raw, &typed).is_ok());
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        let entry = index.root_original_main().unwrap();
+        assert_eq!(raw.functions[entry.0].calls.len(), 2);
+        let other = raw.functions[entry.0].calls[1].target;
+        raw.functions[entry.0].calls[0].target = other;
+        // The independent raw verifier accepts the identical ABI and ownership.
+        assert!(super::super::super::verified::verify_owned(raw, project.sources()).is_ok());
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        raw.functions[entry.0].calls[0].target = other;
+        assert!(associate_lowered(raw, &typed).is_err());
+    }
 }
 
 /// Preserve the RFC 0025 predecessor/candidate layout evidence alongside the

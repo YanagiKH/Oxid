@@ -269,6 +269,25 @@ impl<'src> ResolvedOwnedProgram<'src> {
             if function.id != DefId(ordinal) {
                 return Err(invalid_signature_identity(function.end));
             }
+            if index.has_generic_instances() {
+                let (key, module) = index.function(function.id)?;
+                let original = &index.sources().ast(module)?.functions[key.index];
+                let signature = &self.signatures[ordinal];
+                if signature.span != original.name
+                    || signature.params.len() != original.params.len()
+                    || signature.result
+                        != index.instantiated_value(function.id, original.result, self.work())?
+                {
+                    return Err(invalid_signature_identity(function.end));
+                }
+                for (actual, parameter) in signature.params.iter().zip(&original.params) {
+                    if *actual
+                        != index.instantiated_parameter(function.id, parameter.ty, self.work())?
+                    {
+                        return Err(invalid_signature_identity(parameter.ty.span));
+                    }
+                }
+            }
         }
         for builtin in BuiltinFunction::ALL {
             if !index.builtin_set().contains_function(builtin) {
@@ -1413,7 +1432,7 @@ fn resolve_index_impl(
                     function.name,
                 )?;
                 for parameter in &function.params {
-                    let ty = parameter_type(&mut index.query(work), module, parameter.ty)?;
+                    let ty = index.instantiated_parameter(DefId(id), parameter.ty, work)?;
                     storage::room(&params, params.capacity(), true, parameter.ty.span)?;
                     params.push(ty);
                 }
@@ -1422,10 +1441,10 @@ fn resolve_index_impl(
                 function
                     .params
                     .iter()
-                    .map(|p| parameter_type(&mut index.query(work), module, p.ty))
+                    .map(|p| index.instantiated_parameter(DefId(id), p.ty, work))
                     .collect::<Result<Vec<_>, _>>()?
             };
-            let result = value_type(&mut index.query(work), module, function.result)?;
+            let result = index.instantiated_value(DefId(id), function.result, work)?;
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
@@ -1433,7 +1452,7 @@ fn resolve_index_impl(
                         ..
                     } = statement.kind
                     {
-                        value_type(&mut index.query(work), module, ty)?;
+                        index.instantiated_value(DefId(id), ty, work)?;
                     } else if index.enum_count() == 0
                         && matches!(statement.kind, ast::StmtKind::Match { .. })
                     {
@@ -1689,6 +1708,15 @@ fn resolve_index_impl(
         );
         for (nominal, ty) in params.chain(std::iter::once(result)) {
             let Some(nominal) = nominal else { continue };
+            if index
+                .is_type_parameter(DefId(id), *ty)
+                .map_err(|e| vec![*e])?
+            {
+                continue;
+            }
+            let definition = index
+                .template_for_instance(DefId(id))
+                .map_err(|e| vec![*e])?;
             let at = match ty.kind {
                 ast::TypeSyntaxKind::Reference { referent, .. } => sources
                     .path_span(ItemPathRef {
@@ -1701,11 +1729,11 @@ fn resolve_index_impl(
             // Retain the old record query, work and diagnostic route exactly.
             let exposure = match nominal {
                 NominalId::Record(record) => {
-                    index.query(work).signature_exposure(DefId(id), record, at)
+                    index.query(work).signature_exposure(definition, record, at)
                 }
                 NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => index
                     .query(work)
-                    .nominal_signature_exposure(DefId(id), nominal, at)
+                    .nominal_signature_exposure(definition, nominal, at)
                     .map(|exposure| match exposure {
                         NominalExposure::Allowed => Exposure::Allowed,
                         NominalExposure::Denied {
@@ -1789,7 +1817,8 @@ fn resolve_index_impl(
             ast,
             index,
             work,
-            requester,
+            context: ResolveContext::new(requester, DefId(id), ast.functions[key.index].name)
+                .map_err(|error| vec![*error])?,
             records: &records,
             scope: HashMap::new(),
             storage: storage::ResolverStorage {
@@ -1877,13 +1906,31 @@ pub(super) enum ResolveFrame {
     Leave,
     LeaveLoop,
 }
+struct ResolveContext {
+    module: u32,
+    function: u32,
+}
+impl ResolveContext {
+    fn new(module: ModuleId, function: DefId, at: Span) -> Result<Self, Box<Diagnostic>> {
+        Ok(Self {
+            module: u32::try_from(module.0).map_err(|_| invalid_signature_identity(at))?,
+            function: u32::try_from(function.0).map_err(|_| invalid_signature_identity(at))?,
+        })
+    }
+    fn module(&self) -> ModuleId {
+        ModuleId(self.module as usize)
+    }
+    fn function(&self) -> DefId {
+        DefId(self.function as usize)
+    }
+}
 struct Resolver<'i, 'a> {
     allocator: &'i mut Allocator,
     array_entries: &'i mut usize,
     ast: &'a ast::Program,
     index: &'i DeclarationIndex<'a>,
     work: &'i WorkMeter,
-    requester: ModuleId,
+    context: ResolveContext,
     records: &'i [Record],
     scope: HashMap<&'a str, (BindingId, Span)>,
     // Construction-local policy; no returned program owner contains it.
@@ -1943,7 +1990,7 @@ impl<'a> Resolver<'_, 'a> {
         if let Some(previous) = self
             .index
             .query(self.work)
-            .value_binding_for_local_conflict(self.requester, span)?
+            .value_binding_for_local_conflict(self.context.module(), span)?
         {
             return Err(duplicate(span, previous));
         }
@@ -2243,7 +2290,8 @@ impl<'a> Resolver<'_, 'a> {
                     let init = self.expression(*init)?;
                     let annotation = annotation
                         .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
-                            value_type(&mut self.index.query(self.work), self.requester, ty)
+                            self.index
+                                .instantiated_value(self.context.function(), ty, self.work)
                         })
                         .transpose()?;
                     let local =
@@ -2358,7 +2406,7 @@ impl<'a> Resolver<'_, 'a> {
                     for arm in arms {
                         self.work.debit(1, arm.span, "enum resolve arm")?;
                         let variant = self.index.query(self.work).variant(
-                            self.requester,
+                            self.context.module(),
                             QualifiedPathRef {
                                 file: arm.span.file,
                                 path: arm.variant,
@@ -2616,7 +2664,7 @@ impl<'a> Resolver<'_, 'a> {
                     && self.ast.paths[path.0].root == ast::PathRoot::Crate
                 {
                     QualifiedValueEndpoint::Function(self.index.query(self.work).callee(
-                        self.requester,
+                        self.context.module(),
                         ItemPathRef {
                             file: expr.span.file,
                             path: ast::ItemPath::Absolute(*path),
@@ -2625,7 +2673,7 @@ impl<'a> Resolver<'_, 'a> {
                     )?)
                 } else {
                     self.index.query(self.work).qualified_value_endpoint(
-                        self.requester,
+                        self.context.module(),
                         QualifiedPathRef {
                             file: expr.span.file,
                             path: *path,
@@ -2634,6 +2682,9 @@ impl<'a> Resolver<'_, 'a> {
                 };
                 match endpoint {
                     QualifiedValueEndpoint::Function(target) => {
+                        let target =
+                            self.index
+                                .instantiated_call(self.context.function(), id, target)?;
                         let args = args.as_ref().ok_or_else(|| {
                             error(
                                 "E0300",
@@ -2827,18 +2878,18 @@ impl<'a> Resolver<'_, 'a> {
                     path,
                 })?;
                 let record = self.index.query(self.work).record_type(
-                    self.requester,
+                    self.context.module(),
                     ItemPathRef {
                         file: expr.span.file,
                         path,
                     },
                     TypeContext::Constructor,
                 )?;
-                if let Access::Denied(field) =
-                    self.index
-                        .query(self.work)
-                        .construction_access(self.requester, record, at)?
-                {
+                if let Access::Denied(field) = self.index.query(self.work).construction_access(
+                    self.context.module(),
+                    record,
+                    at,
+                )? {
                     let mut primary = at;
                     for init in fields {
                         if self
@@ -3026,13 +3077,16 @@ impl<'a> Resolver<'_, 'a> {
             }
             ast::ExprKind::Call { callee, args } => {
                 let target = self.index.query(self.work).callee(
-                    self.requester,
+                    self.context.module(),
                     ItemPathRef {
                         file: expr.span.file,
                         path: *callee,
                     },
                     false,
                 )?;
+                let target = self
+                    .index
+                    .instantiated_call(self.context.function(), id, target)?;
                 let args = if let Some(paid) = self.storage.paid.as_deref_mut() {
                     let mut resolved =
                         paid.reserve(self.allocator, Kind::Arguments, args.len(), expr.span)?;

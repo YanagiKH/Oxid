@@ -216,6 +216,23 @@ impl<'a> Fingerprint<'a> {
         self.count(usize::from(length));
     }
 
+    fn generics(&mut self, declaration: Span) {
+        let parameters = self.program.generic_parameters(declaration);
+        if parameters.is_empty() {
+            return;
+        }
+        self.tag("generic-parameters");
+        self.count(parameters.len());
+        for parameter in parameters {
+            self.spelling(parameter.name);
+            self.span(parameter.span);
+            self.count(parameter.bounds.len());
+            for bound in &parameter.bounds {
+                self.path(*bound);
+            }
+        }
+    }
+
     fn ty(&mut self, ty: TypeSyntax) {
         let TypeSyntax { span, kind } = ty;
         self.span(span);
@@ -703,6 +720,7 @@ impl<'a> Fingerprint<'a> {
                     self.tag("struct");
                     self.optional_span(*public);
                     self.spelling(*name);
+                    self.generics(*name);
                     self.span(*span);
                     self.span(*end);
                     self.count(fields.len());
@@ -734,6 +752,7 @@ impl<'a> Fingerprint<'a> {
                     self.tag("function");
                     self.optional_span(*public);
                     self.spelling(*name);
+                    self.generics(*name);
                     self.span(*end);
                     self.count(params.len());
                     for Param { name, ty } in params {
@@ -752,6 +771,7 @@ impl<'a> Fingerprint<'a> {
                     self.tag("enum");
                     self.optional_span(enumeration.public);
                     self.spelling(enumeration.name);
+                    self.generics(enumeration.name);
                     self.span(enumeration.span);
                     self.span(enumeration.end);
                     self.count(enumeration.variants.len());

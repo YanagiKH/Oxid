@@ -54,7 +54,7 @@ pub enum Kind {
     Invalid,
     Eof,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Token {
     pub kind: Kind,
     pub span: Span,
