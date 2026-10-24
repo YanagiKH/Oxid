@@ -48,7 +48,8 @@ class ManifestApplications(unittest.TestCase):
                     "examples/projects/owned_enum_payload_acceptance/ready",
                     "examples/projects/owned_enum_payload_acceptance/failed",
                     "examples/projects/owned_enum_payload_acceptance/values",
-                    "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range")
+                    "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range",
+                    "packages/float_vector", "examples/typed-float-vector")
         selected = set(self.members)
         entries = [self.root / self.application]
         for project in projects:
