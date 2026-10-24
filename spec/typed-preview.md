@@ -863,8 +863,9 @@ A project may create at most 1,024 generic function specializations, with at mos
 64 newly created instances along an instantiation chain. Each nominal family
 also permits at most 1,024 applications with nonempty arguments, including the
 opaque applications used to check definitions. Type argument depth is at most
-64. Generic checking has a shared 8 MiB working storage limit. Other project and native build limits
-still apply; exceeding a limit reports a compilation error.
+64. Generic checking has a shared 8 MiB working storage limit, including live
+constructor inference frames. Other project and native build limits still
+apply; exceeding a limit reports a compilation error.
 
 ## Generic structs and enums
 
@@ -875,12 +876,23 @@ Applications resolve in the module containing that syntax. Their identity
 includes the original package/declaration and the complete ordered arguments;
 phantom arguments remain part of identity and public API visibility checks.
 
-Constructors require complete explicit arguments, as in
-`Cell::<i32> { value: 42 }`, `Option::<i32>::Some(42)` and
-`Option::<i32>::None`. An enum constructor's type arguments apply to its enum,
-not its variant. Match arms use ordinary variant paths without arguments and
-are checked against the matched concrete enum type. Payloads can transfer owned
-records, enums, arrays and byte buffers to an arm binding.
+Constructors infer every type parameter from the struct's field values or the
+selected enum variant's payload when arguments are omitted. For example,
+`Cell { value: 42 }` and `Option::Some(42)` infer `i32`. Field names determine
+which constraints apply; initializer order does not change the inferred type.
+Inference recurses through nested nominal applications and checks generic
+function bodies using their opaque parameters. Repeated constraints must agree
+on the same type identity, and inferred arguments must satisfy declared bounds.
+
+Explicit arguments remain available, as in `Cell::<i32> { value: 42 }` and
+`Option::<i32>::Some(42)`. Every explicit argument is required in declaration
+order and is checked against the values. A nullary variant or a type parameter
+not determined by the selected fields or payload needs explicit arguments,
+for example `Option::<i32>::None`. Type annotations and return types do not
+provide constructor constraints. An enum constructor's type arguments apply
+to its enum, not its variant. Match arms use ordinary variant paths without
+arguments and are checked against the matched concrete enum type. Payloads can
+transfer owned records, enums, arrays and byte buffers to an arm binding.
 
 Function inference recurses through nominal arguments, including parameters
 that affect identity without appearing in stored fields. Every nominal

@@ -212,7 +212,7 @@ struct Cell<T> { value: T }
 enum Option<T> { None, Some(T) }
 
 fn wrap<T>(value: T) -> Option<Cell<T>> {
-    return Option::<Cell<T>>::Some(Cell::<T> { value: value });
+    return Option::Some(Cell { value: value });
 }
 
 fn main() -> i32 {
@@ -224,10 +224,15 @@ fn main() -> i32 {
 }
 ```
 
-Write `Cell<i32>` in a type annotation and `Cell::<i32> { value: 42 }` to
-construct it. Constructors require every type argument in declaration order;
-functions infer type arguments through nested structs and enums. Match arms
-use the type of the matched value, so `Option::Some` needs no type arguments.
+Write `Cell<i32>` in a type annotation. Constructors infer type arguments from
+field values or the selected enum payload: `Cell { value: 42 }` and
+`Option::Some(42)`. This also works through nested structs and enums, including
+inside generic functions. Match arms use the type of the matched value.
+
+Specify every argument in declaration order when values cannot determine the
+type, for example `Option::<i32>::None` or `Cell::<i32> { value: 42 }`.
+Annotations and return types do not supply missing constructor arguments;
+repeated occurrences of a type parameter must agree.
 
 Each declaration and ordered argument list defines a distinct type, even when
 its fields have the same layout. An owned enum payload transfers ownership to

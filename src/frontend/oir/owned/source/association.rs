@@ -1050,6 +1050,64 @@ mod generic_source_tests {
     }
 
     #[test]
+    fn inferred_constructor_nominals_cannot_be_replaced_by_equal_layouts() {
+        use super::super::record_pattern_tests::with_typed;
+        use crate::frontend::oir::owned_types::AggregateSlot;
+        for (kind, text) in [
+            ("record", "struct Left{value:i32}struct Right{value:i32}struct Cell<T>{value:T}fn main()->i32{let first=Cell{value:Left{value:20}};let second=Cell{value:Right{value:22}};return first.value.value+second.value.value;}"),
+            ("enum", "struct Left{value:i32}struct Right{value:i32}enum Choice<T>{Empty,Some(T)}fn main()->i32{let first=Choice::Some(Left{value:20});let second=Choice::Some(Right{value:22});match first{Choice::Empty=>{return 0;},Choice::Some(value)=>{},}match second{Choice::Empty=>{return 0;},Choice::Some(value)=>{return value.value;},}}"),
+        ] {
+            with_typed(text, |typed,sources| {
+                let valid=super::super::lower::lower(typed).unwrap();
+                assert_eq!(valid.records.len(),if kind=="record" {4} else {2});
+                assert_eq!(valid.enums.len(),if kind=="record" {0} else {2});
+                for id in 0..valid.records.len() {
+                    let template=typed.index().template_record_for_instance(RecordId(id)).unwrap();
+                    assert_eq!(template.0,if id<2 {id} else {2});
+                }
+                assert!(associate_lowered(valid,typed).is_ok());
+                for independent in [true,false] {
+                    let mut raw=super::super::lower::lower(typed).unwrap();
+                    let swap_record=|field:&mut FieldId| {field.record.0^=1;};
+                    for function in &mut raw.functions {
+                        for owner in &mut function.owners {
+                            owner.aggregate=AggregateSlot::try_from_aggregate(match owner.aggregate() {
+                                AggregateTy::Record(RecordId(id))=>AggregateTy::Record(RecordId(id^1)),
+                                AggregateTy::Enum(EnumId(id))=>AggregateTy::Enum(EnumId(id^1)),
+                                other=>other,
+                            }).unwrap();
+                        }
+                        for descriptor in &mut function.matches {
+                            for arm in &mut descriptor.arms {arm.variant.enumeration.0^=1;}
+                        }
+                        for block in &mut function.blocks {
+                            for statement in &mut block.statements {
+                                match &mut statement.kind {
+                                    OwnedInstruction::Construct{fields,..}=>{
+                                        for (field,_) in fields {swap_record(field);}
+                                    }
+                                    OwnedInstruction::ConstructComposite{fields,..}=>{
+                                        for (field,_) in fields {swap_record(field);}
+                                    }
+                                    OwnedInstruction::ReadField{field,..}=>swap_record(field),
+                                    OwnedInstruction::ReadProjection{path,..}|OwnedInstruction::WriteProjection{path,..}|OwnedInstruction::ProjectionLength{path,..}=>{
+                                        for field in path {swap_record(field);}
+                                    }
+                                    OwnedInstruction::ConstructEnum{variant,..}|OwnedInstruction::ConstructOwnedEnum{variant,..}=>{variant.enumeration.0^=1;}
+                                    _=>(),
+                                }
+                            }
+                        }
+                    }
+                    if independent {
+                        assert!(super::super::super::verified::verify_owned(raw,sources).is_ok(),"{kind}");
+                    } else {assert!(associate_lowered(raw,typed).is_err(),"{kind}");}
+                }
+            });
+        }
+    }
+
+    #[test]
     fn same_signature_generic_call_swap_is_rejected_by_source_association() {
         let path =
             std::env::temp_dir().join(format!("oxid-generic-call-auth-{}.ox", std::process::id()));
