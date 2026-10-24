@@ -3,6 +3,10 @@ import ast
 import builtins
 import hashlib
 import inspect
+import io
+import json
+from contextlib import redirect_stderr
+from types import SimpleNamespace
 import os
 from pathlib import Path
 import symtable
@@ -210,6 +214,27 @@ class GenericFunctionsPolicyAuthority(unittest.TestCase):
         self.assertEqual(set(gate.GENERIC_FUNCTIONS_INPUTS), gate.GENERIC_FUNCTIONS_CHANGED | gate.GENERIC_FUNCTIONS_ADDED)
         self.assertEqual(gate.PREDECESSOR_ADDED, gate.library.PARENT_ADDED)
         self.assertEqual(gate.PARENT_ADDED, gate.PREDECESSOR_ADDED | gate.GENERIC_FUNCTIONS_ADDED)
+
+    def test_selected_controller_enters_qualification_before_checkout_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "qualification"
+            args = SimpleNamespace(repo=ROOT, output=output, expected_head="not-evaluated", allow_dirty=False)
+            with patch.object(gate, "checkout_identity", side_effect=ValueError("checkout marker")) as checkout:
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(gate.run(args), 1)
+            checkout.assert_called_once_with(ROOT, "not-evaluated", False)
+            report = json.loads((output / "failure.json").read_text())
+            self.assertEqual(report["error"], "ValueError: checkout marker")
+            self.assertEqual(report["controller"]["path"], "scripts/verify_generic_functions_compatibility.py")
+
+    def test_other_checkout_cannot_enter_this_controllers_qualification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "qualification"
+            args = SimpleNamespace(repo=root, output=output)
+            with self.assertRaisesRegex(ValueError, "selected checkout"):
+                gate.run(args)
+            self.assertFalse(output.exists())
 
     def test_every_controller_function_global_resolves_in_both_execution_modes(self):
         table = symtable.symtable(Path(gate.__file__).read_text(), gate.__file__, "exec")

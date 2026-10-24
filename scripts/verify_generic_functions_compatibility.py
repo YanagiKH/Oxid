@@ -237,16 +237,16 @@ def current_manifest(inputs, baseline, checkout, parent):
 def run(args):
     require(__debug__ and not sys.flags.optimize, "qualification refuses optimized Python")
     repo, output = args.repo.resolve(strict=True), args.output.resolve()
-    require(Path(__file__).resolve() == repo / "scripts/verify_git_source_bundle_compatibility.py",
+    require(Path(__file__).resolve() == repo / "scripts/verify_generic_functions_compatibility.py",
             "run the controller from the selected checkout")
     require(output != repo and repo not in output.parents, "output must be outside repository")
     require(not output.exists(), "output must be new")
     output.mkdir(parents=True)
     report = {"schema": "oxid-project-workflow-current-result-v1", "status": "running",
-              "scope": "retained bounded scalar/record semantics and resources after Git source-bundle and workspace cache changes; source packaging qualified separately",
+              "scope": "retained bounded scalar/record semantics and resources after inferred generic functions; generic semantics qualified separately",
               "semantic_pass": False, "compiler_executions": 0, "baseline_commit": BASELINE,
               "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              "controller": identity("scripts/verify_git_source_bundle_compatibility.py", Path(__file__).read_bytes())}
+              "controller": identity("scripts/verify_generic_functions_compatibility.py", Path(__file__).read_bytes())}
     aliases = dict(sys.modules)
     try:
         checkout = checkout_identity(repo, args.expected_head, args.allow_dirty)
