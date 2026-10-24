@@ -37,7 +37,7 @@ impl Drop for Input {
     }
 }
 
-fn samples() -> [(&'static str, &'static [u8]); 5] {
+fn samples() -> [(&'static str, &'static [u8]); 6] {
     [
         (
             r#"struct Point { x:i32, y:i32 } struct Pair { prefix:u8, first:Point, second:Point, tail:i64 }
@@ -82,6 +82,28 @@ fn relay(p:&Outer)->i32{return through(&*p.data);}
 fn main()->i32{let mut bytes=new();let status=try_push(&mut bytes,42u8);match status{GrowStatus::Ok=>{},GrowStatus::CapacityOverflow=>{return -1;},GrowStatus::AllocationFailed=>{return -2;},GrowStatus::MemoryLimit=>{return -3;},}let outer=Outer{pad:99i64,data:Inner{bytes:bytes},tail:7};return relay(&outer);}"#,
             b"42\n",
         ),
+        (
+            r#"struct Leaf { pad:u8, flag:bool, signed:i128, wide:u128, single:f32, double:f64, scalar:char }
+struct Branch { prefix:u8, target:Leaf, tail:i64 }
+struct Holder { lead:i128, sibling:Leaf, branch:Branch, tail:u8 }
+fn inspect(p:&Leaf)->bool {
+let single=p.single;let double=p.double;
+return p.pad==7u8 && p.flag && p.signed == -170141183460469231731687303715884105728i128
+&& p.wide==340282366920938463463374607431768211455u128
+&& single.to_bits()==2143289361u32 && double.to_bits()==18444492273895866434u64 && p.scalar=='🦀';}
+fn change(p:&mut Leaf)->(){let tiny=1u32;p.pad=9u8;p.flag=false;p.signed=-1i128;p.wide=1u128;p.single=f32::from_bits(tiny);p.double=-0.0;p.scalar='中';return;}
+fn forward(p:&mut Branch)->bool{if !inspect(&*p.target){return false;}change(&mut *p.target);return true;}
+fn main()->i32{
+let single_bits=2143289361u32;let double_bits=18444492273895866434u64;
+let mut holder=Holder{lead:-123i128,sibling:Leaf{pad:2u8,flag:false,signed:3i128,wide:4u128,single:1.0f32,double:2.0,scalar:'A'},
+branch:Branch{prefix:5u8,target:Leaf{pad:7u8,flag:true,signed:-170141183460469231731687303715884105728i128,wide:340282366920938463463374607431768211455u128,single:f32::from_bits(single_bits),double:f64::from_bits(double_bits),scalar:'🦀'},tail:6i64},tail:8u8};
+if !forward(&mut holder.branch){return 1;}
+let single=holder.branch.target.single;let double=holder.branch.target.double;
+if holder.branch.target.pad!=9u8 || holder.branch.target.flag || holder.branch.target.signed != -1i128 || holder.branch.target.wide!=1u128 || single.to_bits()!=1u32 || double.to_bits()!=9223372036854775808u64 || holder.branch.target.scalar!='中'{return 2;}
+if holder.lead != -123i128 || holder.sibling.pad!=2u8 || holder.sibling.flag || holder.sibling.signed!=3i128 || holder.sibling.wide!=4u128 || holder.sibling.single!=1.0f32 || holder.sibling.double!=2.0 || holder.sibling.scalar!='A' || holder.branch.prefix!=5u8 || holder.branch.tail!=6i64 || holder.tail!=8u8{return 3;}
+return 0;}"#,
+            b"0\n",
+        ),
     ]
 }
 
@@ -113,6 +135,16 @@ fn nested_resource_views_retain_storage_through_record_reborrows() {
 }
 
 #[test]
+fn nested_views_preserve_wide_scalars_float_bits_unicode_and_alignment() {
+    let (source, expected) = samples()[5];
+    let result = Input::run(source, "run");
+    assert_eq!(
+        (result.status.code(), result.stdout, result.stderr),
+        (Some(0), expected.to_vec(), Vec::new())
+    );
+}
+
+#[test]
 fn field_loans_do_not_add_disjoint_mutability_or_weaken_root_ownership() {
     let declarations = "struct Inner { value:i32 } struct Outer { first:Inner, second:Inner }
 fn shared(p:&Inner)->i32{return p.value;}
@@ -134,7 +166,7 @@ fn owner(p:Outer)->i32{return p.first.value;}
 
 #[test]
 fn slices_reborrow_from_array_and_buffer_fields_inside_projected_records() {
-    for (source, expected) in &samples()[3..] {
+    for (source, expected) in &samples()[3..5] {
         let result = Input::run(source, "run");
         assert_eq!(
             (result.status.code(), result.stdout, result.stderr),
