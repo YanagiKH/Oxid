@@ -1666,6 +1666,29 @@
         "scripts/test_record_field_compatibility.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "owned-f64-matrices",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Owned row-major f64 matrices with checked indexing, transpose and ordered matrix multiplication.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Ordinary Oxid package over float_vector; reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference compiler hosts; native verification on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "Two-dimensional f64 only; i32 dimensions, at most 268435455 elements and the existing shared 16 MiB live allocation limit. Sequential multiplication, with each f64 operation separately rounded.",
+      "spec": [
+        "packages/matrix/README.md"
+      ],
+      "implementation": [
+        "packages/matrix/src/lib.ox"
+      ],
+      "tests": [
+        "examples/typed-matrix/tests/contracts.ox",
+        "scripts/verify_matrices.py"
+      ],
+      "evidence": []
     }
   ]
 }
