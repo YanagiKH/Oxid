@@ -46,6 +46,158 @@ impl Drop for Project {
         fs::remove_dir_all(&self.0).unwrap();
     }
 }
+
+#[test]
+fn explicit_type_arguments_support_parameters_absent_from_value_arguments() {
+    for (source, expected) in [
+        ("fn answer<T>()->i32{return 42;}fn main()->i32{return answer::<i64>();}", b"42\n".as_slice()),
+        ("fn first<T,U>(left:T,right:U)->T{return left;}fn main()->i32{return first::<i32,()>(42,());}", b"42\n"),
+        ("fn identity<T>(value:T)->T{return value;}fn main()->u128{return identity::<u128>(340282366920938463463374607431768211455u128);}", b"340282366920938463463374607431768211455\n"),
+        ("fn identity<T>(value:T)->T{return value;}fn relay<U>(value:U)->U{return identity::<U>(value);}struct N{value:i32}fn main()->i32{let n=relay::<N>(N{value:42});return n.value;}", b"42\n"),
+        ("fn identity<T>(value:T)->T{return value;}fn main()->i32{let values=identity::<[i32;2]>([20,22]);return values[0]+values[1];}", b"42\n"),
+        ("struct N{value:i32}fn read<T>(value:&T)->i32{return 42;}fn main()->i32{let n=N{value:1};return read::<N>(&n);}", b"42\n"),
+    ] {
+        let output = Project::new(source).invoke(&["run"]);
+        assert!(output.status.success(), "{source}: {output:?}");
+        assert_eq!(output.stdout, expected);
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
+fn explicit_type_arguments_preserve_bounds_and_value_argument_types() {
+    for (source, message) in [
+        ("fn identity<T>(value:T)->T{return value;}fn main()->i32{return identity::<bool>(42);}", "incompatible types"),
+        ("fn identity<T>(value:T)->T{return value;}fn main()->i32{return identity::<i32,bool>(42);}", "type argument count"),
+        ("fn ordinary()->i32{return 42;}fn main()->i32{return ordinary::<i32>();}", "type argument count"),
+        ("fn answer<T>()->i32{return 42;}fn main()->i32{return answer::<Unknown>();}", "Unknown"),
+        ("struct N{value:i32}fn answer<T:Copy>()->i32{return 42;}fn main()->i32{return answer::<N>();}", "satisfy Copy"),
+        ("fn answer<T:Copy>()->i32{return 42;}fn main()->i32{return answer::<[i32;0]>();}", "satisfy Copy"),
+        ("fn answer<T:Copy>()->i32{return 42;}fn relay<U>(value:U)->i32{return answer::<U>();}fn main()->i32{return 0;}", "satisfy Copy"),
+        ("enum E{N(i32)}fn main()->i32{let e=E::N::<i32>(42);return 0;}", "enum variants"),
+        ("use alloc::bytes::ByteBuf;use alloc::bytes::new;fn main()->i32{new::<i32>();return 0;}", "does not have type parameters"),
+    ] {
+        let output = Project::new(source).invoke(&["check"]);
+        assert_eq!(output.status.code(), Some(1), "{source}: {output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(message) && !stderr.contains("E0500"), "{source}: {output:?}");
+    }
+}
+
+#[test]
+fn malformed_explicit_arguments_and_noncall_uses_are_rejected() {
+    for expression in [
+        "answer::<>()",
+        "answer::<i32,bool>()",
+        "answer::<i32",
+        "answer::<i32>",
+        "answer::<i32>{}",
+    ] {
+        let source =
+            format!("fn answer<T>()->i32{{return 42;}}fn main()->i32{{return {expression};}}");
+        let output = Project::new(&source).invoke(&["check"]);
+        assert_eq!(output.status.code(), Some(1), "{expression}: {output:?}");
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains("E0500"),
+            "{output:?}"
+        );
+    }
+}
+
+#[test]
+fn explicit_type_arguments_resolve_in_the_callers_module() {
+    let project=Project::new("mod helper;struct Private{value:i32}fn main()->i32{let n=crate::helper::identity::<Private>(Private{value:42});return n.value;}");
+    fs::write(
+        project.0.join("helper.ox"),
+        "pub fn identity<T>(value:T)->T{return value;}",
+    )
+    .unwrap();
+    if project.unavailable_multifile() {
+        return;
+    }
+    let output = project.invoke(&["run"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"42\n");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
+fn explicit_arguments_format_with_comments_and_trailing_commas() {
+    let project = Project::new(
+        "fn answer<T>()->i32{return 42;}fn main()->i32{return answer :: < /* type */ i32, > ();}",
+    );
+    let formatted = project.invoke(&["fmt", "main.ox"]);
+    assert!(formatted.status.success(), "{formatted:?}");
+    let once = formatted.stdout;
+    fs::write(project.0.join("main.ox"), &once).unwrap();
+    assert!(
+        String::from_utf8_lossy(&once).contains("answer::<"),
+        "{once:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&once).contains("/* type */"),
+        "{once:?}"
+    );
+    let repeated = project.invoke(&["fmt", "main.ox"]);
+    assert!(repeated.status.success(), "{repeated:?}");
+    assert_eq!(repeated.stdout, once);
+    assert!(project
+        .invoke(&["fmt", "main.ox", "--check"])
+        .status
+        .success());
+    let output = project.invoke(&["run"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"42\n");
+}
+
+#[test]
+fn explicit_and_inferred_calls_share_equal_function_instances() {
+    let project=Project::new("fn identity<T>(value:T)->T{return value;}fn main()->i32{return identity(20)+identity::<i32>(22);}");
+    let checked = project.invoke(&["check"]);
+    assert!(checked.status.success(), "{checked:?}");
+    assert!(
+        String::from_utf8_lossy(&checked.stdout).contains("2 functions"),
+        "{checked:?}"
+    );
+    let output = project.invoke(&["run"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"42\n");
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+fn native_explicit_type_arguments_survive_source_removal() {
+    let project=Project::new("use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::len;struct N{value:i32}fn answer<T>()->i32{return 1;}fn identity<T>(value:T)->T{return value;}fn relay<U>(value:U)->U{return identity::<U>(value);}fn main()->i32{let n=relay::<N>(N{value:41});let bytes=identity::<ByteBuf>(new());if len(&bytes)!=0||answer::<i32>()!=answer::<u128>(){return 1;}return n.value+answer::<()>();}");
+    let deployment = project.0.join("deployed");
+    fs::create_dir(&deployment).unwrap();
+    for profile in ["dev", "release"] {
+        let built = project.invoke(&["build", "--profile", profile]);
+        assert!(built.status.success(), "{built:?}");
+        fs::copy(
+            project.0.join(".oxid/bin/generics"),
+            deployment.join(profile),
+        )
+        .unwrap();
+    }
+    for file in ["main.ox", "oxid.toml"] {
+        fs::remove_file(project.0.join(file)).unwrap();
+    }
+    fs::remove_dir_all(project.0.join(".oxid")).unwrap();
+    for profile in ["dev", "release"] {
+        let output = Command::new(deployment.join(profile))
+            .env_clear()
+            .current_dir(&deployment)
+            .output()
+            .unwrap();
+        assert_eq!(
+            (output.status.code(), output.stdout, output.stderr),
+            (Some(0), b"42\n".to_vec(), Vec::new())
+        );
+    }
+}
+
 #[test]
 fn generic_identity_infers_scalar_and_nominal_owned_arguments() {
     for (source,expected) in [

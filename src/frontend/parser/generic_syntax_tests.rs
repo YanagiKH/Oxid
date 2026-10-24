@@ -110,6 +110,77 @@ fn malformed_headers_and_parameter_limits_report_errors() {
 }
 
 #[test]
+fn explicit_type_arguments_have_source_origins_and_fallible_storage() {
+    let mut map = SourceMap::new();
+    let id=map.add("explicit.ox".into(),"fn answer<T>()->i32{return 42;}fn main()->i32{return answer :: < /* retained */ i32, > ();}".into());
+    let file = map.get(id);
+    let mut allocator = Allocator::default();
+    let program = parse_generic(file, &mut allocator).unwrap();
+    assert!(program.belongs_to(file));
+    let calls = program.generic_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(file.text_at(calls[0].callee), "answer");
+    assert_eq!(file.text_at(calls[0].span), ":: < /* retained */ i32, >");
+    assert_eq!(file.text_at(calls[0].arguments[0].span), "i32");
+    for failure in 1..=allocator.attempts {
+        let mut injected = Allocator {
+            fail_at: Some(failure),
+            ..Default::default()
+        };
+        assert_eq!(
+            parse_generic(file, &mut injected).unwrap_err()[0].code,
+            "E0400",
+            "allocation {failure}"
+        );
+    }
+    let owner = SourceOwner::original(file, &program, SourceView::Map(&map)).unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+    for failure in 1..=allocator.attempts {
+        let mut injected = Allocator {
+            fail_at: Some(failure),
+            ..Default::default()
+        };
+        let work = WorkMeter::default();
+        let error = match collect_originals(owner, IndexLimits::default(), &work, &mut injected) {
+            Ok(facts) => facts.finish(&work, &mut injected).unwrap_err().remove(0),
+            Err(error) => *error,
+        };
+        assert_eq!(error.code, "E0400", "allocation {failure}: {error:?}");
+    }
+}
+
+#[test]
+fn explicit_argument_call_syntax_is_authenticated_before_instantiation() {
+    let mut map = SourceMap::new();
+    let id=map.add("explicit-forgery.ox".into(),"fn answer<T>()->i32{return 42;}fn other<T>()->i32{return 7;}fn main()->i32{return answer::<i32>();}".into());
+    let file = map.get(id);
+    let mut program = parse_generic(file, &mut Allocator::default()).unwrap();
+    let other = program.functions[1].name;
+    let call = program
+        .expressions
+        .iter_mut()
+        .find(|expr| matches!(expr.kind, ExprKind::Call { .. }))
+        .unwrap();
+    let ExprKind::Call { callee, .. } = &mut call.kind else {
+        unreachable!()
+    };
+    *callee = ItemPath::Unqualified(other);
+    let owner = SourceOwner::original(file, &program, SourceView::Map(&map)).unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let errors = collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap_err();
+    assert_eq!(errors[0].code, "E0500");
+}
+
+#[test]
 fn generic_index_construction_never_survives_an_injected_allocation_failure() {
     let mut map = SourceMap::new();
     let id = map.add(

@@ -1214,6 +1214,12 @@ impl<'a, 's> Walker<'a, 's> {
                         expression.span,
                     )?,
                     QualifiedValueEndpoint::Variant(variant) => {
+                        if self.program.generic_arguments(expression.span).is_some() {
+                            return Err(error(
+                                "enum variants do not accept function type arguments",
+                                expression.span,
+                            ));
+                        }
                         let payload = self
                             .index
                             .enum_view(variant.enumeration)?
@@ -1723,7 +1729,11 @@ impl<'a, 's> Walker<'a, 's> {
         arguments: &[Argument],
         at: Span,
     ) -> Result<Type, Box<Diagnostic>> {
+        let explicit = self.program.generic_arguments(at);
         if definition.0 >= self.index.template_function_count() {
+            if explicit.is_some() {
+                return Err(error("this function does not have type parameters", at));
+            }
             let (parameters, result) = self.builtin_signature(definition, at)?;
             if parameters.len() != arguments.len() {
                 return Err(error("function argument count mismatch", at));
@@ -1751,10 +1761,18 @@ impl<'a, 's> Walker<'a, 's> {
         let program = self.index.sources().ast(module)?;
         let function = &program.functions[key.index];
         let type_parameters = program.generic_parameters(function.name);
+        if explicit.is_some_and(|arguments| arguments.len() != type_parameters.len()) {
+            return Err(error("function type argument count mismatch", at));
+        }
         if arguments.len() != function.params.len() {
             return Err(error("function argument count mismatch", at));
         }
         let mut inferred = [None; crate::frontend::parser::MAX_PARAMS];
+        if let Some(arguments) = explicit {
+            for (position, syntax) in arguments.iter().enumerate() {
+                inferred[position] = Some(self.ty(*syntax)?.value(syntax.span)?);
+            }
+        }
         let mut formal_arguments =
             [Value::Concrete(ValueTy::Scalar(Ty::Unit)); crate::frontend::parser::MAX_PARAMS];
         for (position, argument) in formal_arguments[..type_parameters.len()]

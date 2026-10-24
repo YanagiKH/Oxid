@@ -11,7 +11,7 @@ pub(super) struct SourceProvenance {
     identity: u64,
     text_len: u32,
     file: u32,
-    generics: Option<Box<[Vec<GenericHeader>; 1]>>,
+    generics: Option<Box<[GenericSyntax; 1]>>,
 }
 impl std::fmt::Debug for SourceProvenance {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -28,6 +28,7 @@ impl SourceProvenance {
     fn new(
         source: &SourceFile,
         headers: Vec<GenericHeader>,
+        calls: Vec<GenericArguments>,
         allocator: &mut Allocator,
     ) -> Result<Self, Box<Diagnostic>> {
         let failure = || {
@@ -40,12 +41,12 @@ impl SourceProvenance {
         };
         let text_len = u32::try_from(source.text().len()).map_err(|_| failure())?;
         let file = u32::try_from(source.span(0, 0).file.0).map_err(|_| failure())?;
-        let generics = if headers.is_empty() {
+        let generics = if headers.is_empty() && calls.is_empty() {
             None
         } else {
             Some(
                 allocator
-                    .boxed_carrier(headers, "generic syntax owner")
+                    .boxed_carrier(GenericSyntax { headers, calls }, "generic syntax owner")
                     .map_err(|_| failure())?,
             )
         };
@@ -59,7 +60,15 @@ impl SourceProvenance {
     pub(super) fn generic_headers(&self) -> &[GenericHeader] {
         self.generics
             .as_ref()
-            .map_or(&[], |owner| owner[0].as_slice())
+            .map_or(&[], |owner| owner[0].headers.as_slice())
+    }
+    pub(super) fn generic_calls(&self) -> &[GenericArguments] {
+        self.generics
+            .as_ref()
+            .map_or(&[], |owner| owner[0].calls.as_slice())
+    }
+    pub(super) fn has_generics(&self) -> bool {
+        self.generics.is_some()
     }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
         self.identity == source.identity()
@@ -368,6 +377,7 @@ fn parse_counted_with_policies(
         paths: Vec::new(),
         path_segments: Vec::new(),
         generic_headers: Vec::new(),
+        generic_calls: Vec::new(),
         heights: Vec::new(),
         nodes: 0,
         node_limit: node_limit.min(MAX_NODES),
@@ -527,11 +537,16 @@ fn parse_counted_with_policies(
     }
     *storage = parser.storage;
     if diagnostics.is_empty() {
-        let has_generics = !parser.generic_headers.is_empty();
-        let provenance = SourceProvenance::new(source, parser.generic_headers, parser.allocator)
-            .map_err(|error| vec![*error])?;
+        let has_generics = !parser.generic_headers.is_empty() || !parser.generic_calls.is_empty();
+        let provenance = SourceProvenance::new(
+            source,
+            parser.generic_headers,
+            parser.generic_calls,
+            parser.allocator,
+        )
+        .map_err(|error| vec![*error])?;
         if has_generics && parser.enums.enabled() {
-            let bytes = std::mem::size_of::<Vec<GenericHeader>>();
+            let bytes = std::mem::size_of::<GenericSyntax>();
             storage.retained_capacity =
                 storage
                     .retained_capacity
@@ -585,6 +600,7 @@ struct Parser<'a> {
     paths: Vec<AbsolutePath>,
     path_segments: Vec<super::source::Span>,
     generic_headers: Vec<GenericHeader>,
+    generic_calls: Vec<GenericArguments>,
     heights: Vec<usize>,
     nodes: usize,
     node_limit: usize,
@@ -625,6 +641,14 @@ impl Parser<'_> {
                 next.kind == Kind::Colon && self.peek().span.end == next.span.start
             })
     }
+    fn type_arguments_ahead(&self) -> bool {
+        self.mode.owned()
+            && self.double_colon()
+            && self.tokens[self.cursor + 2..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Less)
+    }
     fn double_dot(&self) -> bool {
         self.peek().kind == Kind::Dot
             && self.tokens.get(self.cursor + 1).is_some_and(|next| {
@@ -652,7 +676,10 @@ impl Parser<'_> {
         paths: bool,
     ) -> Result<(ItemPath, super::source::Span), Box<Diagnostic>> {
         let first = self.expect(Kind::Ident, message)?.span;
-        if self.mode != SourceMode::ProjectCandidate || !self.double_colon() {
+        if self.mode != SourceMode::ProjectCandidate
+            || !self.double_colon()
+            || self.type_arguments_ahead()
+        {
             return Ok((ItemPath::Unqualified(first), first));
         }
         // Recognition precedes both denied field paths and denied prefixes.
@@ -806,7 +833,7 @@ impl Parser<'_> {
             let segment = self.expect(Kind::Ident, "expected item path segment")?.span;
             self.path_segment(&mut segment_len, segment)?;
             end = segment.end;
-            if !self.double_colon() {
+            if !self.double_colon() || self.type_arguments_ahead() {
                 break;
             }
         }
@@ -1043,6 +1070,48 @@ impl Parser<'_> {
             parameters,
         });
         self.generic_headers = headers;
+        Ok(())
+    }
+    fn generic_call_arguments(
+        &mut self,
+        callee: super::source::Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let start = self.bump().span.start;
+        self.expect(Kind::Colon, "type arguments require `::`")?;
+        self.expect(Kind::Less, "type arguments require `<`")?;
+        if self.peek().kind == Kind::Greater {
+            return Err(self.error("type argument list cannot be empty"));
+        }
+        let mut arguments = Vec::new();
+        loop {
+            self.node()?;
+            let argument = self.ty()?;
+            self.candidate_reserve(
+                &mut arguments,
+                MAX_PARAMS,
+                "explicit type arguments",
+                argument.span,
+            )?;
+            arguments.push(argument);
+            if self.take(Kind::Comma).is_none() || self.peek().kind == Kind::Greater {
+                break;
+            }
+        }
+        let end = self
+            .expect(Kind::Greater, "expected `>` after type arguments")?
+            .span
+            .end;
+        if self.peek().kind != Kind::LParen {
+            return Err(self.error("explicit function type arguments require a call"));
+        }
+        let mut calls = std::mem::take(&mut self.generic_calls);
+        self.candidate_reserve(&mut calls, MAX_NODES, "generic call syntax", callee)?;
+        calls.push(GenericArguments {
+            callee,
+            arguments,
+            span: self.source.span(start, end),
+        });
+        self.generic_calls = calls;
         Ok(())
     }
     fn function(
@@ -2157,6 +2226,9 @@ impl Parser<'_> {
                     None => self.item_path("expected item name", true)?,
                 };
                 end = path_span.end;
+                if self.type_arguments_ahead() {
+                    self.generic_call_arguments(path_span)?;
+                }
                 if self.take(Kind::LParen).is_some() {
                     let mut args = Vec::new();
                     if self.peek().kind != Kind::RParen {

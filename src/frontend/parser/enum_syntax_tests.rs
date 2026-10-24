@@ -537,6 +537,7 @@ fn parser_for<'a>(
         paths: Vec::new(),
         path_segments: Vec::new(),
         generic_headers: Vec::new(),
+        generic_calls: Vec::new(),
         heights: Vec::new(),
         nodes: 0,
         node_limit: limit,

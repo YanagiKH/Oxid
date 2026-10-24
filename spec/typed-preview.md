@@ -837,7 +837,13 @@ function's type namespace, including parameter/result types and local annotation
 They are distinct from function and value names. Repeated type parameters and
 built-in scalar type names are rejected.
 
-Call arguments infer each type parameter. Repeated occurrences must agree on the
+Call arguments infer each type parameter. A call can instead supply every type
+argument in declaration order using `function::<Type, OtherType>(arguments)`.
+The list is nonempty, permits a trailing comma and accepts value types, including
+the caller's type parameters. These type names resolve in the caller's module.
+The explicit arguments must satisfy the same bounds and agree with the value
+arguments; omitted parameters and inference placeholders are not supported.
+Repeated occurrences must agree on the
 same type identity, including nominal package and declaration identity. An
 unconstrained parameter is affine: passing or returning it moves the value even
 when a particular call uses a scalar. `T: Copy` permits repeated scalar reads;
@@ -848,8 +854,9 @@ unused definitions. Unknown or repeated bounds are errors.
 Concrete specializations are shared for the same declaration and ordered type
 arguments. Name resolution stays in the definition's module and package.
 Reference parameters `&T` and `&mut T` infer a supported owned referent; references
-cannot be returned or stored as values. Generic record/enum declarations,
-explicit call-site type arguments and other trait bounds remain unavailable.
+cannot be returned or stored as values. Generic record/enum declarations and
+other trait bounds remain unavailable. Function type arguments cannot be applied
+to enum variants, ordinary functions or builtin functions.
 
 A project may create at most 1,024 generic specializations, with at most 64 newly
 created instances along an instantiation chain. Generic checking
@@ -869,6 +876,7 @@ item_path      := name | absolute_path
 function       := "pub"? "fn" name type_parameters? "(" parameters? ")" "->" value_type block
 type_parameters := "<" type_parameter ("," type_parameter)* ","? ">"
 type_parameter := name (":" "Copy")?
+type_arguments := "::" "<" value_type ("," value_type)* ","? ">"
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
 scalar_type    := "bool" | "i32" | "u8" | "(" ")"
 array_element_type := "bool" | "i32" | "u8" | "(" ")"
@@ -905,7 +913,7 @@ sum            := product (("+" | "-") product)*
 product        := unary (("*" | "/" | "%") unary)*
 unary          := ("!" | "-") unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
-                | item_path "(" arguments? ")" | decimal | "-" decimal
+                | item_path type_arguments? "(" arguments? ")" | decimal | "-" decimal
                 | byte_string
                 | field_path | item_path "{" field_inits? "}"
                 | variant_path ("(" expression ")")?
@@ -930,8 +938,8 @@ parser. Unicode is permitted in comments; Unicode identifiers are not supported.
 The two colons remain separate lexer tokens and both count in the resource
 ledger. Trivia may surround the delimiter but cannot split its two bytes.
 Public-field recognition requires `pub` followed by a nontrivia identifier.
-Optional trailing commas are confined to struct field declarations, literal
-initializers, enum variants and match arms. Function parameters and call
+Optional trailing commas are confined to type parameter/argument lists, struct
+field declarations, literal initializers, enum variants and match arms. Function parameters and value call
 arguments still reject trailing commas. The two arrow bytes in `=>` must be adjacent. Legacy concise-keyword
 aliases are not supported.
 

@@ -808,6 +808,15 @@ impl<'a> Fingerprint<'a> {
                 }
             }
         }
+        for call in program.generic_calls() {
+            self.tag("explicit-type-arguments");
+            self.span(call.callee);
+            self.span(call.span);
+            self.count(call.arguments.len());
+            for ty in &call.arguments {
+                self.ty(*ty);
+            }
+        }
         for ids in [
             &functions,
             &records,
@@ -860,6 +869,25 @@ fn parse(source: &SourceFile) -> Program {
 
 fn fingerprint(source: &SourceFile, program: &Program) -> Vec<Part> {
     Fingerprint::new(source, program).program()
+}
+
+#[test]
+fn explicit_call_type_arguments_preserve_independent_ast_origins() {
+    for text in [
+        "fn relay<T>(value:T)->T{return identity :: < /* type */ T, > (value);}",
+        "fn use_types()->(){crate::helper::consume :: < [i32;2], crate::types::Number, (), > ([1,2],42,());return;}",
+    ] {
+        let mut map=SourceMap::new();
+        let id=map.add("explicit-format.ox".into(),text.into());
+        let source=map.get(id);
+        let before=fingerprint(source,&parse(source));
+        let formatted=format_source(source).unwrap();
+        let mut after_map=SourceMap::new();
+        let after=after_map.add("explicit-format.ox".into(),formatted);
+        let after=after_map.get(after);
+        assert_eq!(before,fingerprint(after,&parse(after)));
+        assert_eq!(format_source(after).unwrap(),after.text());
+    }
 }
 
 fn normalized(text: &str) -> Vec<Part> {

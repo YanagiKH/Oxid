@@ -1771,7 +1771,7 @@
     },
     {
       "id": "inferred-generic-functions",
-      "summary": "Generic functions with argument inference, scalar Copy bounds and concrete native specialization.",
+      "summary": "Generic functions with inferred or explicit type arguments, scalar Copy bounds and concrete native specialization.",
       "status": "experimental",
       "classification": "production-path",
       "owner": "unassigned",
@@ -1779,7 +1779,7 @@
       "edition": "typed-preview",
       "backend": "Owned typed frontend, reference execution and native builds.",
       "target_scope": "Linux x86_64 with LLVM 19.1.7 for native execution.",
-      "limitations": "Value type arguments and owned reference referents only. Explicit call-site type arguments, generic structs/enums, returned references and other trait bounds are unavailable. Compiler resource limits apply.",
+      "limitations": "Value type arguments and owned reference referents only. Explicit calls must name every type parameter. Generic structs/enums, returned references and other trait bounds are unavailable. Compiler resource limits apply.",
       "spec": [
         "spec/typed-preview.md",
         "docs/TYPED_PROJECTS.md"
@@ -1796,6 +1796,7 @@
       "tests": [
         "tests/typed_generics.rs",
         "src/frontend/parser/generic_syntax_tests.rs",
+        "scripts/test_explicit_generic_arguments_compatibility.py",
         "src/frontend/oir/owned/source/association.rs"
       ],
       "evidence": []
