@@ -8,7 +8,10 @@ use crate::frontend::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn with_typed(text: &str, test: impl FnOnce(&typeck::TypedOwnedProgram<'_>, &SourceMap)) {
+pub(super) fn with_typed(
+    text: &str,
+    test: impl FnOnce(&typeck::TypedOwnedProgram<'_>, &SourceMap),
+) {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let path = std::env::temp_dir().join(format!(
         "oxid-pattern-trust-{}-{}.ox",

@@ -350,7 +350,8 @@ Pass them with `oxid run -- ARGUMENTS`, or `oxid run SOURCE --edition=typed-prev
 [RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold
 bool/i32/unit, another nominal record, or a fixed bool/i32/unit array.
 [Byte fields](../rfcs/0042-byte-record-fields.md) add u8 scalars and arrays to
-that same contract. Forward type
+that same contract. Fields also support the other scalar types described above,
+finite enums and the supported owned resources. Forward type
 references are allowed, but by-value containment must be acyclic even in unused
 declarations. Records remain nominal and move-only. Containment and named-root
 field paths are bounded to 64 levels, with the existing byte and work ceilings.
@@ -517,8 +518,7 @@ fn main() -> i32 { return consume(Token::Integer(7)); }
 ```
 
 Each enum has 1..256 unique variants, each nullary or carrying exactly one
-`bool`, `i32`, `()`, record, fixed scalar array or finite enum value. Array
-payloads include `u8` arrays; a direct scalar `u8` payload is still unsupported.
+supported scalar, record, fixed scalar array, finite enum or owned resource.
 Payload type names, imported aliases and `crate::` paths use ordinary type
 resolution and exact nominal identity. A public enum must expose a visible
 payload type; private fields in that public record retain their field privacy.
@@ -566,7 +566,7 @@ independent whole-program inventories I and W, each at most 8,192, plus unchange
 1 MiB aggregate/live explicit-byte bounds and its other stricter limits; see
 [RFC 0027](../rfcs/0027-native-admission-inventories.md).
 
-Enum borrows, storage in record fields or arrays, recursive payloads,
+Enum borrows, arrays of enums, recursive payloads,
 partial moves, equality, printing and source-visible tags are unavailable.
 Match expressions, guards, wildcard/alternative/nested patterns and arbitrary
 scrutinee expressions are also unavailable. An enum-returning `main` may check;
@@ -890,6 +890,36 @@ layouts are emitted only for complete applications; templates have no runtime
 layout. Record field operations retain the existing move, scalar access and
 whole-owner borrowing restrictions. Reference returns, stored references and
 user-defined traits remain unsupported.
+
+## Enums in structs
+
+Struct fields can store enum values, including generic enum applications:
+
+```text
+enum Option<T> { None, Some(T) }
+struct Cell<T> { value: Option<T> }
+
+fn main() -> i32 {
+    let cell = Cell::<i32> { value: Option::<i32>::Some(42) };
+    let Cell { value } = cell;
+    match value {
+        Option::None => { return 0; },
+        Option::Some(number) => { return number; },
+    }
+}
+```
+
+Pass, return or replace the complete struct, or consume it with a complete
+record pattern before matching an enum field. Each payload moves once; owned
+resources are released only for the active variant. Nested structs and enums
+share the existing 64-level depth limit and must have finite, acyclic layouts.
+Borrowing an enum directly, storing references and moving just one field out
+of a struct remain unsupported.
+
+The joint layout pass uses a separate 8 MiB temporary storage budget before
+allocating its metadata. Native builds validate each complete incoming value
+before transferring fields; generated helper code follows declarations rather
+than expanding every path through shared nested types.
 
 ## Record patterns
 

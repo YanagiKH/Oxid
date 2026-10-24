@@ -26,6 +26,8 @@ mod experimental;
 pub(super) fn binary_delivery_control_bytes() -> usize {
     experimental::binary_delivery_control_bytes()
 }
+#[path = "execute_composition.rs"]
+mod composition;
 #[path = "execute_resources.rs"]
 mod resources;
 
@@ -1359,6 +1361,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .plan
             .witness()
             .declarations()
+            .has_enum_record_nesting(aggregate)
+            .expect("verified aggregate nesting")
+        {
+            return true;
+        }
+        if self
+            .plan
+            .witness()
+            .declarations()
             .contains_resources(aggregate)
             .expect("verified resource containment")
         {
@@ -1414,15 +1425,31 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         span: Span,
     ) -> Result<()> {
         let declarations = self.plan.witness().declarations();
-        for cell in ValueCells::<V>::new(
-            declarations,
-            &self.frames[from.frame as usize].payload,
-            source.clone(),
-            aggregate,
-            span,
-        ) {
-            let (leaf, _) = cell?;
-            scalar_offset(destination.clone(), leaf.offset, leaf.ty, span)?;
+        if declarations
+            .has_enum_record_nesting(aggregate)
+            .map_err(|_| bad("composed aggregate identity", span))?
+        {
+            for cell in composition::Cells::<V>::new(
+                declarations,
+                &self.frames[from.frame as usize].payload,
+                source.clone(),
+                aggregate,
+                span,
+            ) {
+                let (leaf, _) = cell?;
+                scalar_offset(destination.clone(), leaf.offset, leaf.ty, span)?;
+            }
+        } else {
+            for cell in ValueCells::<V>::new(
+                declarations,
+                &self.frames[from.frame as usize].payload,
+                source.clone(),
+                aggregate,
+                span,
+            ) {
+                let (leaf, _) = cell?;
+                scalar_offset(destination.clone(), leaf.offset, leaf.ty, span)?;
+            }
         }
         resources::preflight(
             declarations,
@@ -2600,9 +2627,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                             {
                                 return Err(bad("overlapping composite transfer", span));
                             }
-                            if declarations
-                                .contains_resources(expected)
-                                .map_err(|_| bad("construction resource type", span))?
+                            if self.active_aggregate(expected)
+                                || matches!(expected, AggregateTy::Enum(_))
                             {
                                 let start = destination_extent
                                     .start
@@ -2667,9 +2693,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         FieldInitializer::Owned(source) => {
                             let from = self.owner_key(frame, *source, span)?;
                             let aggregate = self.aggregate(from, span)?;
-                            if declarations
-                                .contains_resources(aggregate)
-                                .map_err(|_| bad("construction resource type", span))?
+                            if self.active_aggregate(aggregate)
+                                || matches!(aggregate, AggregateTy::Enum(_))
                             {
                                 let start = destination_extent.start + field.offset();
                                 let end = start
@@ -3654,10 +3679,23 @@ fn copy_active_bytes_for<V: StoredValue>(
     destination: &mut [u8],
     span: Span,
 ) -> Result<()> {
-    for cell in ValueCells::<V>::new(declarations, source, 0..source.len(), aggregate, span) {
-        let (leaf, value) = cell?;
-        let offset = scalar_offset(0..destination.len(), leaf.offset, leaf.ty, span)?;
-        value.encode(destination, offset, span)?;
+    if declarations
+        .has_enum_record_nesting(aggregate)
+        .map_err(|_| bad("composed aggregate identity", span))?
+    {
+        for cell in
+            composition::Cells::<V>::new(declarations, source, 0..source.len(), aggregate, span)
+        {
+            let (leaf, value) = cell?;
+            let offset = scalar_offset(0..destination.len(), leaf.offset, leaf.ty, span)?;
+            value.encode(destination, offset, span)?;
+        }
+    } else {
+        for cell in ValueCells::<V>::new(declarations, source, 0..source.len(), aggregate, span) {
+            let (leaf, value) = cell?;
+            let offset = scalar_offset(0..destination.len(), leaf.offset, leaf.ty, span)?;
+            value.encode(destination, offset, span)?;
+        }
     }
     resources::copy(declarations, aggregate, source, destination, span)?;
     Ok(())
@@ -4129,6 +4167,16 @@ fn execute_plan_policy<V: StoredValue>(
             )?,
         )
         .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_enum_record_nesting() {
+                    composition::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
         .and_then(|bytes| {
             plan::add(
                 bytes,

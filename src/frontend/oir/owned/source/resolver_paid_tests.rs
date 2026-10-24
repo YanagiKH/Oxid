@@ -174,7 +174,7 @@ fn c3a_paid_resolver_enum_value_types_preserve_later_body_diagnostics() {
 }
 
 #[test]
-fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative() {
+fn c3a_paid_resolver_existing_query_errors_remain_authoritative_with_enum_fields() {
     for text in [
         "enum E{V} fn take(value:&E)->E{return missing;}",
         "enum E{V} fn take(value:Missing)->E{return missing;}",
@@ -205,18 +205,19 @@ fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative
         });
     }
     with_index(
-        "enum E{V} struct R{x:E} fn main()->i32{return missing;}",
+        "enum E{V} struct R{x:E} fn main()->i32{return 0;}",
         |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(32).unwrap();
-            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
-            assert_eq!(errors[0].code, "E0300");
-            assert_eq!(errors[0].message, "enum values cannot be record fields");
+            let observation =
+                probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator)
+                    .unwrap()
+                    .unwrap();
             assert_eq!(
-                index.sources().text(errors[0].primary.unwrap()).unwrap(),
-                "x:E"
+                observation.retained_counts[storage::Kind::Fields as usize],
+                1
             );
-            prefix_only(&allocator);
+            assert!(!allocator.observer_trace_overflow);
         },
     );
 }
@@ -304,7 +305,7 @@ fn c3a_paid_resolver_record_containment_guard_is_a_no_allocation_scalar_check() 
     sources.add("guard.ox".into(), "x".into());
     let at = sources.get(SourceFileId(0)).span(0, 1);
     let (result, stats) = super::super::reviewer_source::integration_measured(|| {
-        record_field_type(ValueTy::Scalar(Ty::I32), at)
+        record_field_type(ValueTy::Scalar(Ty::I32), at, 0)
     });
     result.unwrap();
     assert_eq!(stats, (0, 0, 0));

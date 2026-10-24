@@ -9,6 +9,8 @@ use std::mem::size_of;
 
 #[path = "native_bitwise.rs"]
 mod bitwise;
+#[path = "native_composition.rs"]
+mod composition;
 #[path = "native_experimental.rs"]
 mod experimental;
 #[path = "native_floats.rs"]
@@ -589,19 +591,26 @@ fn native_module_policy_accounted_with_source_names(
         names,
     )?;
     let emitter_transient = add(
+        if plan.uses_enum_record_nesting() {
+            composition::control_bytes()
+        } else {
+            0
+        },
         add(
-            EMITTER_TRANSIENT_BYTES,
-            if policy.recursive() {
-                hosted_frames::EMISSION_BYTES
+            add(
+                EMITTER_TRANSIENT_BYTES,
+                if policy.recursive() {
+                    hosted_frames::EMISSION_BYTES
+                } else {
+                    0
+                },
+            )?,
+            if plan.uses_dynamic_resources() {
+                resources::control_bytes(&plan)
             } else {
                 0
             },
         )?,
-        if plan.uses_dynamic_resources() {
-            resources::control_bytes(&plan)
-        } else {
-            0
-        },
     )?;
     let emission_metadata = add(
         add(
@@ -1412,7 +1421,7 @@ fn diagnostic_occurrences(
         }
     }
     for f in plan.witness().functions() {
-        if plan.uses_dynamic_resources() {
+        if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
             visit(FailureKind::ResourceDescriptor, f.span)?;
             visit(FailureKind::EnumTag, f.span)?;
             visit(FailureKind::EnumPayload, f.span)?;
@@ -1438,7 +1447,7 @@ fn diagnostic_occurrences(
                     visit(FailureKind::EnumTag, span)?;
                     visit(FailureKind::EnumPayload, span)?;
                 }
-                if plan.uses_dynamic_resources() {
+                if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
                     let span = plan::instruction_span(statement);
                     visit(FailureKind::ResourceDescriptor, span)?;
                     visit(FailureKind::EnumTag, span)?;
@@ -1619,7 +1628,7 @@ fn diagnostic_occurrences(
                     visit(kind, term.span)?;
                 }
             }
-            if plan.uses_dynamic_resources() {
+            if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
                 visit(FailureKind::ResourceDescriptor, term.span)?;
                 visit(FailureKind::EnumTag, term.span)?;
                 visit(FailureKind::EnumPayload, term.span)?;
@@ -2181,7 +2190,7 @@ fn index_pointer(
         _ => unreachable!("indexed operation"),
     };
     let index = load_operand(out, f, &format!("{name}_index"), index);
-    let suffix = continuation(f, &statement.kind)
+    let suffix = continuation(plan, f, &statement.kind)
         .suffix()
         .expect("indexed continuation");
     writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", length).unwrap();
@@ -2209,8 +2218,8 @@ fn index_pointer(
 /// Counts raw sites and active enum branch trees without expanding static
 /// record or array leaves during inventory.
 fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Diagnostic>> {
-    let mut cells = 0;
     let mut visits = 0;
+    let mut cells = composition::helper_inventory(plan, &mut visits)?;
     for f in plan.witness().functions() {
         visits = add(visits, 1)?;
         for parameter in &f.parameters {
@@ -2288,7 +2297,8 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         None
                     }
                     OwnedInstruction::Discard(owner)
-                        if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) =>
+                        if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_))
+                            || composition::needed(plan, f.owners[owner.0].aggregate()) =>
                     {
                         cells = add(
                             cells,
@@ -2299,6 +2309,28 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                                 &mut visits,
                             )?,
                         )?;
+                        None
+                    }
+                    OwnedInstruction::ConstructComposite {
+                        destination,
+                        ref fields,
+                    } if composition::needed(plan, f.owners[destination.0].aggregate()) => {
+                        cells = add(cells, usize::from(fields.is_empty()))?;
+                        for (_, value) in fields {
+                            visits = add(visits, 1)?;
+                            cells = add(
+                                cells,
+                                match value {
+                                    FieldInitializer::Scalar(_) => 1,
+                                    FieldInitializer::Owned(source) => {
+                                        composition::construction_cells(
+                                            plan,
+                                            f.owners[source.0].aggregate(),
+                                        )
+                                    }
+                                },
+                            )?;
+                        }
                         None
                     }
                     OwnedInstruction::Construct { destination, .. }
@@ -2357,9 +2389,26 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                     OwnedInstruction::ConstructComposite {
                         destination,
                         fields,
-                    } if resources::contains(plan, function.owners[destination.0].aggregate()) => {
+                    } if resources::contains(plan, function.owners[destination.0].aggregate())
+                        || composition::needed(
+                            plan,
+                            function.owners[destination.0].aggregate(),
+                        ) =>
+                    {
                         for (_, value) in fields {
                             if let FieldInitializer::Owned(source) = value {
+                                let aggregate = function.owners[source.0].aggregate();
+                                if composition::needed(
+                                    plan,
+                                    function.owners[destination.0].aggregate(),
+                                ) && matches!(
+                                    aggregate,
+                                    AggregateTy::Record(_) | AggregateTy::Enum(_)
+                                ) {
+                                    visits = add(visits, 1)?;
+                                    cells = add(cells, 1)?;
+                                    continue;
+                                }
                                 cells = add(
                                     cells,
                                     active_transfer_inventory(
@@ -2381,6 +2430,9 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         if !matches!(
                             function.owners[owner.0].aggregate(),
                             AggregateTy::Enum(_)
+                        ) && !composition::needed(
+                            plan,
+                            function.owners[owner.0].aggregate(),
                         ) =>
                     {
                         Some(owner)
@@ -2431,7 +2483,10 @@ fn transfer_expansions_counted(
     visits: &mut usize,
 ) -> Result<usize, Box<Diagnostic>> {
     let aggregate = plan.witness().functions()[id.0].owners[owner.0].aggregate();
-    if matches!(aggregate, AggregateTy::Enum(_)) || resources::contains(plan, aggregate) {
+    if matches!(aggregate, AggregateTy::Enum(_))
+        || resources::contains(plan, aggregate)
+        || composition::needed(plan, aggregate)
+    {
         active_transfer_inventory(plan, aggregate, true, visits)
     } else {
         Ok(plan.owner_width(id, owner))
@@ -2447,6 +2502,10 @@ fn active_transfer_inventory(
     copy: bool,
     visits: &mut usize,
 ) -> Result<usize, Box<Diagnostic>> {
+    if composition::needed(plan, aggregate) {
+        *visits = add(*visits, 1)?;
+        return Ok(1);
+    }
     let declarations = plan.witness().declarations();
     let factor = 1 + usize::from(copy);
     let AggregateTy::Enum(enumeration) = aggregate else {
@@ -2530,6 +2589,18 @@ fn transfer_checked(
     pointers: (&str, &str),
     failure: (&Diagnostics, Span),
 ) {
+    if composition::needed(plan, aggregate) {
+        composition::transfer(
+            out,
+            name,
+            aggregate,
+            pointers.0,
+            TransferIntent::Move(pointers.1),
+            Expansion::Transfer,
+            failure,
+        );
+        return;
+    }
     match aggregate {
         AggregateTy::Enum(enumeration) => enum_transfer(
             out,
@@ -2679,6 +2750,19 @@ fn enum_transfer_with_intent(
     intent: TransferIntent<'_>,
     failure: (&Diagnostics, Span),
 ) {
+    let aggregate = AggregateTy::Enum(enumeration);
+    if composition::needed(plan, aggregate) {
+        composition::transfer(
+            out,
+            name,
+            aggregate,
+            source,
+            intent,
+            Expansion::Transfer,
+            failure,
+        );
+        return;
+    }
     let destination = intent.destination();
     if out.exceeded {
         return;
@@ -2982,6 +3066,18 @@ fn active_transfer_with_intent(
     intent: TransferIntent<'_>,
     failure: (&Diagnostics, Span),
 ) {
+    if composition::needed(plan, aggregate) {
+        composition::transfer(
+            out,
+            name,
+            aggregate,
+            source,
+            intent,
+            Expansion::Transfer,
+            failure,
+        );
+        return;
+    }
     let destination = intent.destination();
     if let AggregateTy::Enum(enumeration) = aggregate {
         enum_transfer_with_intent(out, plan, name, enumeration, source, intent, failure);
@@ -3344,6 +3440,7 @@ fn emit(
         }
         writeln!(out, "\"").unwrap();
     }
+    composition::emit_helpers(out, plan);
     for f in plan.witness().functions() {
         if out.exceeded {
             return;
@@ -3468,7 +3565,22 @@ impl Continuation {
     }
 }
 /// Exhaustive classification shared by operation emission and phi predecessors.
-fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
+fn continuation(
+    plan: &ExecutionPlan<'_>,
+    f: &RawOwnedFunction,
+    instruction: &OwnedInstruction,
+) -> Continuation {
+    if let OwnedInstruction::ConstructComposite { destination, .. } = instruction {
+        if composition::needed(plan, f.owners[destination.0].aggregate()) {
+            return Continuation::Aggregate;
+        }
+    }
+    if let OwnedInstruction::StorageEnd(owner) = instruction {
+        let aggregate = f.owners[owner.0].aggregate();
+        if composition::needed(plan, aggregate) && resources::contains(plan, aggregate) {
+            return Continuation::Aggregate;
+        }
+    }
     match instruction {
         OwnedInstruction::DestructureRecord { .. } => Continuation::Aggregate,
         OwnedInstruction::PrepareBorrowRange { .. } => Continuation::Bounds,
@@ -3484,6 +3596,8 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         | OwnedInstruction::Discard(source) => {
             if matches!(f.owners[source.0].aggregate(), AggregateTy::Enum(_)) {
                 Continuation::Enum
+            } else if composition::needed(plan, f.owners[source.0].aggregate()) {
+                Continuation::Aggregate
             } else {
                 Continuation::Unsplit
             }
@@ -3550,7 +3664,13 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         | OwnedInstruction::PrepareBorrow { .. } => Continuation::Unsplit,
     }
 }
-fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emission) -> String {
+fn exit_label(
+    plan: &ExecutionPlan<'_>,
+    f: &RawOwnedFunction,
+    block: usize,
+    guarded: bool,
+    out: &mut Emission,
+) -> String {
     if guarded {
         return format!(
             "f{}_b{block}_g{}_ok",
@@ -3560,7 +3680,7 @@ fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emiss
     }
     for (i, statement) in f.blocks[block].statements.iter().enumerate().rev() {
         out.predecessor_visits += 1;
-        if let Some(suffix) = continuation(f, &statement.kind).suffix() {
+        if let Some(suffix) = continuation(plan, f, &statement.kind).suffix() {
             return format!("f{}_b{block}_i{i}_{suffix}", f.id.0);
         }
     }
@@ -3783,8 +3903,8 @@ fn emit_function(
             let [left, right] = m.incoming;
             // Select storage, then read exactly the taken input after charging.
             // A value phi would read an uninitialized slot on the untaken arm.
-            let left_label = exit_label(f, left.predecessor.0, guarded, out);
-            let right_label = exit_label(f, right.predecessor.0, guarded, out);
+            let left_label = exit_label(plan, f, left.predecessor.0, guarded, out);
+            let right_label = exit_label(plan, f, right.predecessor.0, guarded, out);
             writeln!(
                 out,
                 "  %{name}_slot = phi ptr [ %s{}, %{} ], [ %s{}, %{} ]",
@@ -3894,6 +4014,7 @@ fn emit_read_stdin(
         .size();
     debug_assert!(storage.owner_offset(destination) + result_extent <= scratch.start);
     let suffix = continuation(
+        plan,
         &plan.witness().functions()[id.0],
         &OwnedInstruction::ReadStdin {
             buffer,
@@ -4001,6 +4122,7 @@ fn emit_write_stdout(
         .size();
     debug_assert!(storage.owner_offset(destination) + result_extent <= scratch.start);
     let suffix = continuation(
+        plan,
         &plan.witness().functions()[id.0],
         &OwnedInstruction::WriteStdout {
             buffer,
@@ -4264,7 +4386,17 @@ fn emit_statement(
         }
         OwnedInstruction::Discard(owner) => {
             let aggregate = f.owners[owner.0].aggregate();
-            if resources::contains(plan, aggregate) {
+            if composition::needed(plan, aggregate) {
+                composition::transfer(
+                    out,
+                    name,
+                    aggregate,
+                    &format!("%o{}", owner.0),
+                    TransferIntent::Release,
+                    Expansion::Transfer,
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            } else if resources::contains(plan, aggregate) {
                 resources::drop_owner(
                     out,
                     plan,
@@ -4472,9 +4604,25 @@ fn emit_statement(
             destination,
             fields,
         } => {
-            if resources::contains(plan, f.owners[destination.0].aggregate()) {
+            let composed = composition::needed(plan, f.owners[destination.0].aggregate());
+            if resources::contains(plan, f.owners[destination.0].aggregate()) || composed {
                 for (index, (_, value)) in fields.iter().enumerate() {
                     if let FieldInitializer::Owned(source) = value {
+                        let aggregate = f.owners[source.0].aggregate();
+                        if composed
+                            && matches!(aggregate, AggregateTy::Record(_) | AggregateTy::Enum(_))
+                        {
+                            composition::transfer(
+                                out,
+                                &format!("{name}_incoming{index}"),
+                                aggregate,
+                                &format!("%o{}", source.0),
+                                TransferIntent::Validate,
+                                Expansion::Transfer,
+                                (diagnostics, plan::instruction_span(statement)),
+                            );
+                            continue;
+                        }
                         active_transfer_with_intent(
                             out,
                             plan,
@@ -4526,6 +4674,21 @@ fn emit_statement(
                         // No recursive native calls or intermediate leaf buffers.
                         let ptr =
                             field_pointer(out, &n, &format!("%o{}", destination.0), field.offset());
+                        let aggregate = f.owners[source.0].aggregate();
+                        if composed
+                            && matches!(aggregate, AggregateTy::Record(_) | AggregateTy::Enum(_))
+                        {
+                            composition::transfer(
+                                out,
+                                &n,
+                                aggregate,
+                                &format!("%o{}", source.0),
+                                TransferIntent::Move(&ptr),
+                                Expansion::Construct,
+                                (diagnostics, plan::instruction_span(statement)),
+                            );
+                            continue;
+                        }
                         transfer_leaves(
                             out,
                             plan,
@@ -4537,6 +4700,9 @@ fn emit_statement(
                         );
                     }
                 }
+            }
+            if composed {
+                writeln!(out, "  br label %{name}_aggregate_ok\n{name}_aggregate_ok:").unwrap();
             }
         }
         OwnedInstruction::Scalar(_) => emit_scalar(storage, name, statement, diagnostics, out),
@@ -4988,7 +5154,7 @@ fn emit_scalar(
             operand, name_span, ..
         } => {
             let operand = load_operand(out, f, &format!("{name}_operand"), operand);
-            let suffix = continuation(f, &owned_statement.kind)
+            let suffix = continuation(plan, f, &owned_statement.kind)
                 .suffix()
                 .expect("conversion continuation");
             writeln!(out, "  %{name}_negative = icmp slt i32 {operand}, 0\n  %{name}_large = icmp sgt i32 {operand}, 255\n  %{name}_invalid = or i1 %{name}_negative, %{name}_large\n  br i1 %{name}_invalid, label %{name}_conversion_error, label %{name}_{suffix}\n{name}_conversion_error:").unwrap();
@@ -5085,7 +5251,7 @@ fn emit_scalar(
             operator_span,
         } => {
             let operand = load_operand(out, f, &format!("{name}_operand"), operand);
-            let suffix = continuation(f, &owned_statement.kind)
+            let suffix = continuation(plan, f, &owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
             writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.ssub.with.overflow.i32(i32 0, i32 {operand})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1").unwrap();
@@ -5106,7 +5272,7 @@ fn emit_scalar(
         } => {
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
-            let suffix = continuation(f, &owned_statement.kind)
+            let suffix = continuation(plan, f, &owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
             match op {

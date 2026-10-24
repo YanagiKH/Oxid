@@ -456,8 +456,19 @@ impl Nominals {
                 ExposureOwner::Enumeration(enumeration) => index
                     .query(work)
                     .enum_payload_exposure(enumeration, nominal, at)?,
+                ExposureOwner::Field(field) => index
+                    .query(work)
+                    .record_field_exposure(field, nominal, at)?,
             };
         if matches!(exposure, NominalExposure::Denied { .. }) {
+            if matches!(owner, ExposureOwner::Field(_)) {
+                return Err(crate::frontend::owned_diagnostic::diagnostic(
+                    "E0207",
+                    "resolve",
+                    format_args!("record field exposes a private type"),
+                    Some(at),
+                ));
+            }
             return Err(error(
                 "public declaration exposes a private type argument",
                 at,

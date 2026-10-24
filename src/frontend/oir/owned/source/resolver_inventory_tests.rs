@@ -262,7 +262,7 @@ fn c3a_inventory_reconciliation_uses_real_reserves_and_returns_fixed_payload_tot
 }
 
 #[test]
-fn c3a_inventory_distinguishes_legal_enum_values_from_forbidden_containment() {
+fn c3a_inventory_counts_enum_fields_but_keeps_enum_references_and_empty_matches_closed() {
     use crate::frontend::oir::owned_types::EnumId;
     let plan = scalar_plan();
     let at = at();
@@ -311,7 +311,7 @@ fn c3a_inventory_distinguishes_legal_enum_values_from_forbidden_containment() {
             }
         }
         let result = inventory_parts(&parts, &WorkMeter::default(), at);
-        if matches!(mutant, 1 | 4 | 6) {
+        if matches!(mutant, 1 | 4) {
             assert_eq!(
                 result.unwrap_err().code,
                 "E0500",

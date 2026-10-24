@@ -380,12 +380,17 @@ fn value_type(
 ) -> Result<ValueTy, Box<Diagnostic>> {
     query.value_type(requester, ty, TypeContext::Value)
 }
-// Generic value-type resolution must never silently authorize enum containment.
-fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>> {
-    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
+// Name resolution supplies nominal IDs; the joint layout pass independently
+// checks containment before a resolved program can leave this module.
+fn record_field_type(
+    ty: ValueTy,
+    span: Span,
+    enum_count: usize,
+) -> Result<ValueTy, Box<Diagnostic>> {
+    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(id)) if id.0 >= enum_count) {
         Err(error(
-            "E0300",
-            format_args!("enum values cannot be record fields"),
+            "E0500",
+            format_args!("invalid resolved enum field identity"),
             span,
         ))
     } else {
@@ -400,8 +405,8 @@ fn check_owned_enum_cycles(
     work: &WorkMeter,
 ) -> Result<(), Box<Diagnostic>> {
     use crate::frontend::{oir::owned_types::EnumId, parser::MAX_NESTING};
-    // The source enum grammar has one payload edge per variant. Records cannot
-    // contain enums, so only enum edges can create a new recursive layout.
+    // Diagnose enum-only cycles here. Mixed record/enum cycles are checked by
+    // the joint layout inventory after every record field has been resolved.
     let mut stack = [None; MAX_NESTING];
     for root in 0..index.source_enum_count() {
         let mut depth = 1usize;
@@ -453,7 +458,7 @@ fn check_owned_enum_cycles(
     Ok(())
 }
 #[test]
-fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
+fn enum_source_record_fields_require_declared_nominal_identities() {
     let mut sources = SourceMap::new();
     let id = sources.add("enum-field-gate.ox".into(), "field".into());
     let span = sources.get(id).span(0, 5);
@@ -463,11 +468,16 @@ fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
                 crate::frontend::oir::owned_types::EnumId(id),
             )),
             span,
+            0,
         )
         .unwrap_err();
-        assert_eq!(error.code, "E0300");
+        assert_eq!(error.code, "E0500");
         assert_eq!(error.primary, Some(span));
     }
+    let declared = ValueTy::Owned(AggregateTy::Enum(
+        crate::frontend::oir::owned_types::EnumId(0),
+    ));
+    assert_eq!(record_field_type(declared, span, 1).unwrap(), declared);
 }
 
 fn parameter_type(
@@ -1391,7 +1401,7 @@ fn resolve_index_impl(
                         ))
                     }
                 };
-                let ty = record_field_type(ty, field.span)?;
+                let ty = record_field_type(ty, field.span, index.enum_count())?;
                 storage::room(&fields, fields.capacity(), paid.is_some(), field.span)?;
                 fields.push(Field {
                     id: FieldId {
@@ -1654,7 +1664,10 @@ fn resolve_index_impl(
         };
         append().map_err(|error| vec![*error])?;
     }
-    if records.iter().any(|record| {
+    if super::record_enum_layouts::needed(&records) {
+        super::record_enum_layouts::inventory(index, &records, work, &mut Allocator::default())
+            .map_err(|error| vec![*error])?;
+    } else if records.iter().any(|record| {
         record
             .fields
             .iter()

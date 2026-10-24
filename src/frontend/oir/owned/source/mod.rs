@@ -9,6 +9,9 @@ mod hir_budget;
 pub(super) mod lower;
 mod owned_enum_resources;
 mod program;
+#[cfg(test)]
+mod record_enum_field_tests;
+mod record_enum_layouts;
 pub(in crate::frontend::oir) mod resolve;
 mod resolver_storage;
 #[cfg(test)]
