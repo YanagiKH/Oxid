@@ -527,6 +527,12 @@ impl DeclarationIndex<'_> {
         syntax: ast::TypeSyntax,
         work: &WorkMeter,
     ) -> Result<ValueTy, Box<Diagnostic>> {
+        if self.generic_plan().is_none() {
+            let (_, module) = self.function(function)?;
+            return self
+                .query(work)
+                .value_type(module, syntax, TypeContext::Value);
+        }
         match self.instantiated_parameter(function, syntax, work)? {
             ParameterTy::Value(ty) => Ok(ty),
             _ => Err(error("a reference type cannot be used here", syntax.span)),
