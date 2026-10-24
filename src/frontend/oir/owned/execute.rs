@@ -12,6 +12,8 @@ use std::mem::size_of;
 #[path = "execute_values.rs"]
 mod values;
 use values::StoredValue;
+#[path = "execute_bitwise.rs"]
+mod bitwise;
 #[path = "execute_integer128.rs"]
 mod integer128;
 #[path = "execute_integers.rs"]
@@ -1662,6 +1664,20 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             }
         };
         let value: V = match assign.value {
+            Rvalue::BitNot {
+                operand,
+                operator_span,
+            } => bitwise::complement(self.read(frame, operand)?, operator_span)?,
+            Rvalue::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let left = self.read(frame, left)?;
+                let right = self.read(frame, right)?;
+                bitwise::binary(op, left, right, operator_span)?
+            }
             Rvalue::Bool(value) => Scalar::Bool(value).into(),
             Rvalue::I32(value) => Scalar::I32(value).into(),
             Rvalue::U8(value) => Scalar::U8(value).into(),
@@ -3896,6 +3912,16 @@ fn execute_plan_policy<V: StoredValue>(
             )?,
         )
         .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_bitwise() {
+                    bitwise::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
         .and_then(|bytes| {
             plan::add(
                 bytes,

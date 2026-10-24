@@ -6,6 +6,8 @@ use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
 use std::fmt::Write;
 use std::mem::size_of;
 
+#[path = "native_bitwise.rs"]
+mod bitwise;
 #[path = "native_experimental.rs"]
 mod experimental;
 #[path = "native_integer128.rs"]
@@ -1092,6 +1094,7 @@ impl FailureKind {
     const WideDivisionByZero: Self = Self(13);
     const I64ToI32Range: Self = Self(14);
     const I64ToU8Range: Self = Self(15);
+    const BitShift: Self = Self(16);
     fn integer_code(ty: hir::Ty) -> u8 {
         match ty {
             hir::Ty::I8 => 0,
@@ -1167,6 +1170,7 @@ impl FailureKind {
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::ByteRange => RunFailure::ByteRange(span).diagnostic(sources),
+            Self::BitShift => RunFailure::BitShift(span).diagnostic(sources),
             Self::WideOverflow => RunFailure::WideOverflow(span).diagnostic(sources),
             Self::WideDivisionByZero => RunFailure::WideDivisionByZero(span).diagnostic(sources),
             Self::I64ToI32Range => RunFailure::I64ToI32Range(span).diagnostic(sources),
@@ -1345,6 +1349,13 @@ fn diagnostic_occurrences(
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::Bitwise {
+                                op, operator_span, ..
+                            },
+                        ..
+                    })) if op.shift() => visit(FailureKind::BitShift, *operator_span)?,
                     OwnedInstruction::Scalar(Statement::Assign(Assign {
                         destination,
                         value:
@@ -3297,6 +3308,8 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         }
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
+                Rvalue::Bitwise { op, .. } if op.shift() => Continuation::Arithmetic,
+                Rvalue::Bitwise { .. } | Rvalue::BitNot { .. } => Continuation::Unsplit,
                 Rvalue::CheckedI32 { .. }
                 | Rvalue::CheckedNegateI32 { .. }
                 | Rvalue::CheckedI64 { .. }
@@ -4555,6 +4568,31 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::BitNot { operand, .. } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            writeln!(out, "  %{name}_value = xor {} {value}, -1", ty(t)).unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::Bitwise {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            bitwise::binary(
+                out,
+                diagnostics,
+                name,
+                op,
+                t,
+                f.locals[right.local.0].ty,
+                &a,
+                &b,
+                operator_span,
+            )
+        }
         Rvalue::Integer128 { low, high, .. } => {
             (u128::from(low) | (u128::from(high) << 64)).to_string()
         }

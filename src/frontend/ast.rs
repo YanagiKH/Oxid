@@ -145,6 +145,19 @@ pub enum ArithmeticOp {
     Remainder,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitwiseOp {
+    And,
+    Or,
+    Xor,
+    ShiftLeft,
+    ShiftRight,
+}
+impl BitwiseOp {
+    pub const fn shift(self) -> bool {
+        matches!(self, Self::ShiftLeft | Self::ShiftRight)
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComparisonOp {
     Equal,
     NotEqual,
@@ -160,6 +173,16 @@ pub enum LogicalOp {
 }
 #[derive(Debug)]
 pub enum ExprKind {
+    BitNot {
+        operand: ExprId,
+        operator_span: Span,
+    },
+    Bitwise {
+        op: BitwiseOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Conversion {
         op: ConversionOp,
         operand: ExprId,
@@ -1018,6 +1041,10 @@ impl Program {
                     operand,
                     operator_span,
                 }
+                | ExprKind::BitNot {
+                    operand,
+                    operator_span,
+                }
                 | ExprKind::Not {
                     operand,
                     operator_span,
@@ -1029,6 +1056,12 @@ impl Program {
                     ..
                 }
                 | ExprKind::Comparison {
+                    left,
+                    right,
+                    operator_span,
+                    ..
+                }
+                | ExprKind::Bitwise {
                     left,
                     right,
                     operator_span,
@@ -1161,6 +1194,14 @@ impl Program {
     }
     /// Byte values use the current typed checker. The separate owned-syntax
     /// predicate retains the narrow parser and observer contract.
+    pub(super) fn uses_bitwise_syntax(&self) -> bool {
+        self.expressions.iter().any(|expression| {
+            matches!(
+                expression.kind,
+                ExprKind::Bitwise { .. } | ExprKind::BitNot { .. }
+            )
+        })
+    }
     pub(super) fn uses_byte_scalars(&self, source: &SourceFile) -> bool {
         let byte_type = |ty: &TypeSyntax| {
             matches!(ty.kind,

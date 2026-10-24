@@ -1396,6 +1396,7 @@ impl Parser<'_> {
     fn expression_starter(&self) -> bool {
         self.primary_start().is_some()
             || self.peek().kind == Kind::Not // unary() prefix
+            || (self.wide_scalars_enabled() && self.peek().kind == Kind::Invalid && self.source.text_at(self.peek().span) == "~")
             || (self.mode.owned() && self.peek().kind == Kind::Ampersand) // argument() prefix
     }
     fn logical(
@@ -1437,13 +1438,13 @@ impl Parser<'_> {
         depth: usize,
         context: LiteralContext,
     ) -> Result<ExprId, Box<Diagnostic>> {
-        let left = self.sum(depth, context)?;
+        let left = self.bitwise(depth, context, 0)?;
         let Some(op) = self.comparison_op() else {
             return Ok(left);
         };
         let operator_span = self.bump().span;
         self.node()?;
-        let right = self.sum(depth, context)?;
+        let right = self.bitwise(depth, context, 0)?;
         if self.comparison_op().is_some() {
             return Err(self.error("comparison operators cannot be chained; use parentheses"));
         }
@@ -1459,6 +1460,65 @@ impl Parser<'_> {
                 self.expressions[right.0].span.end,
             ),
         )
+    }
+    // Fixed precedence levels reuse the original immutable token tape. In
+    // particular, a shift is two adjacent angle tokens; lexical certificates
+    // and byte-for-byte token classifications remain unchanged.
+    fn bitwise(
+        &mut self,
+        depth: usize,
+        context: LiteralContext,
+        level: u8,
+    ) -> Result<ExprId, Box<Diagnostic>> {
+        if !self.wide_scalars_enabled() || level == 4 {
+            return self.sum(depth, context);
+        }
+        let mut left = self.bitwise(depth, context, level + 1)?;
+        loop {
+            let first = self.peek();
+            let spelling = self.source.text_at(first.span);
+            let op = match (level, first.kind, spelling) {
+                (0, Kind::Unsupported, "|") => BitwiseOp::Or,
+                (1, Kind::Invalid, "^") => BitwiseOp::Xor,
+                (2, Kind::Ampersand, "&") => BitwiseOp::And,
+                (3, Kind::Less, "<") | (3, Kind::Greater, ">") => {
+                    let next = self.tokens[self.cursor + 1..]
+                        .iter()
+                        .find(|token| token.kind != Kind::Trivia);
+                    if !next.is_some_and(|next| {
+                        next.kind == first.kind && first.span.end == next.span.start
+                    }) {
+                        break;
+                    }
+                    if first.kind == Kind::Less {
+                        BitwiseOp::ShiftLeft
+                    } else {
+                        BitwiseOp::ShiftRight
+                    }
+                }
+                _ => break,
+            };
+            let mut operator_span = self.bump().span;
+            if op.shift() {
+                operator_span.end = self.bump().span.end;
+            }
+            self.node()?;
+            let right = self.bitwise(depth, context, level + 1)?;
+            let span = self.source.span(
+                self.expressions[left.0].span.start,
+                self.expressions[right.0].span.end,
+            );
+            left = self.push_expr(
+                ExprKind::Bitwise {
+                    op,
+                    left,
+                    right,
+                    operator_span,
+                },
+                span,
+            )?;
+        }
+        Ok(left)
     }
     fn sum(&mut self, depth: usize, context: LiteralContext) -> Result<ExprId, Box<Diagnostic>> {
         let mut left = self.product(depth, context)?;
@@ -1513,6 +1573,9 @@ impl Parser<'_> {
         // The prefix stack retains only spans; validated one-byte spelling tells
         // us which operator to construct when unwinding without larger scratch.
         while self.peek().kind == Kind::Not
+            || (self.wide_scalars_enabled()
+                && self.peek().kind == Kind::Invalid
+                && self.source.text_at(self.peek().span) == "~")
             || (self.peek().kind == Kind::Minus
                 && self.tokens[self.cursor + 1..]
                     .iter()
@@ -1550,6 +1613,11 @@ impl Parser<'_> {
             operand = self.push_expr(
                 if self.source.text_at(operator_span) == "-" {
                     ExprKind::Negate {
+                        operand,
+                        operator_span,
+                    }
+                } else if self.source.text_at(operator_span) == "~" {
+                    ExprKind::BitNot {
                         operand,
                         operator_span,
                     }
@@ -1596,6 +1664,7 @@ impl Parser<'_> {
             ExprKind::Group(inner)
             | ExprKind::Negate { operand: inner, .. }
             | ExprKind::Not { operand: inner, .. }
+            | ExprKind::BitNot { operand: inner, .. }
             | ExprKind::Conversion { operand: inner, .. } => self.heights[inner.0],
             ExprKind::Call { args, .. } => args
                 .iter()
@@ -1633,7 +1702,8 @@ impl Parser<'_> {
                 .max()
                 .unwrap_or(0),
             ExprKind::IndexRead { index, .. } => self.heights[index.0],
-            ExprKind::Arithmetic { left, right, .. }
+            ExprKind::Bitwise { left, right, .. }
+            | ExprKind::Arithmetic { left, right, .. }
             | ExprKind::Comparison { left, right, .. }
             | ExprKind::Logical { left, right, .. } => {
                 self.heights[left.0].max(self.heights[right.0])

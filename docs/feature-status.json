@@ -1524,6 +1524,34 @@
         "scripts/test_integer128_runtime.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "integer-bit-operations",
+      "classification": "production-path",
+      "summary": "Integer masks, inversion and guarded shifts across all supported integer widths.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Mask operands must have the same integer type. Shift counts must be nonnegative and smaller than the left operand width. Existing storage, borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0054-integer-bit-operations.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/format.rs",
+        "src/frontend/oir/owned/execute_bitwise.rs",
+        "src/frontend/oir/owned/native_bitwise.rs"
+      ],
+      "tests": [
+        "tests/typed_integer_bits.rs",
+        "src/frontend/oir/owned/source/integer_bit_tests.rs",
+        "scripts/verify_integer_bits.py"
+      ],
+      "evidence": []
     }
   ]
 }

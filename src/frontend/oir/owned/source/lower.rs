@@ -790,10 +790,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 | source::ExprKind::Conversion { operand: inner, .. }
                                 | source::ExprKind::Negate { operand: inner, .. }
                                 | source::ExprKind::Not { operand: inner, .. }
+                                | source::ExprKind::BitNot { operand: inner, .. }
                                 | source::ExprKind::IndexRead { index: inner, .. } => {
                                     frames.push(ExprFrame::Visit(*inner), cause)?
                                 }
-                                source::ExprKind::Arithmetic { left, right, .. }
+                                source::ExprKind::Bitwise { left, right, .. }
+                                | source::ExprKind::Arithmetic { left, right, .. }
                                 | source::ExprKind::Comparison { left, right, .. } => {
                                     frames.push(ExprFrame::Visit(*right), cause)?;
                                     frames.push(ExprFrame::Visit(*left), cause)?;
@@ -1464,6 +1466,28 @@ impl<'a, 'b> Walk<'a, 'b> {
                         operand: self.operand(operand)?,
                         operator_span,
                     }
+                }
+            }
+            source::ExprKind::BitNot {
+                operand,
+                operator_span,
+            } => Rvalue::BitNot {
+                operand: self.operand(operand)?,
+                operator_span,
+            },
+            source::ExprKind::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let left = self.operand(left)?;
+                let right = self.operand(right)?;
+                Rvalue::Bitwise {
+                    op,
+                    left,
+                    right,
+                    operator_span,
                 }
             }
             source::ExprKind::Not {

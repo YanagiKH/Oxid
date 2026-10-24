@@ -562,6 +562,8 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
         | Rvalue::CheckedNegateI64 { .. }
         | Rvalue::Integer { .. }
         | Rvalue::Integer128 { .. }
+        | Rvalue::Bitwise { .. }
+        | Rvalue::BitNot { .. }
         | Rvalue::CheckedInteger { .. }
         | Rvalue::CheckedNegateInteger { .. }
         | Rvalue::CheckedIntegerCast { .. }

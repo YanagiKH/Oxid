@@ -3012,6 +3012,28 @@ impl<'a> Resolver<'_, 'a> {
                 name_span: *name_span,
             },
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+            ast::ExprKind::BitNot {
+                operand,
+                operator_span,
+            } => ExprKind::BitNot {
+                operand: self.expression(*operand)?,
+                operator_span: *operator_span,
+            },
+            ast::ExprKind::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let left = self.expression(*left)?;
+                let right = self.expression(*right)?;
+                ExprKind::Bitwise {
+                    op: *op,
+                    left,
+                    right,
+                    operator_span: *operator_span,
+                }
+            }
             ast::ExprKind::Negate {
                 operand,
                 operator_span,

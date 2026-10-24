@@ -106,3 +106,6 @@ mod byte_storage_authority_tests;
 
 #[cfg(test)]
 mod integer128_tests;
+
+#[cfg(test)]
+mod integer_bit_tests;

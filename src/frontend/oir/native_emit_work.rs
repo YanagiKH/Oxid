@@ -122,6 +122,8 @@ fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
             | Rvalue::I64(_)
             | Rvalue::Integer { .. }
             | Rvalue::Integer128 { .. }
+            | Rvalue::Bitwise { .. }
+            | Rvalue::BitNot { .. }
             | Rvalue::Load(_)
             | Rvalue::NotBool { .. }
             | Rvalue::Bool(_)

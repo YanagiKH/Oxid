@@ -41,7 +41,10 @@ pub(in crate::frontend) fn check_source<'s>(
     let (body, entry) = if !ast.enums.is_empty() {
         let (program, entry) = owned::source::check_enum_source(owner)?;
         (CheckedBody::Owned(program), entry)
-    } else if ast.uses_owned_syntax(source) || ast.uses_byte_scalars(source) {
+    } else if ast.uses_owned_syntax(source)
+        || ast.uses_byte_scalars(source)
+        || ast.uses_bitwise_syntax()
+    {
         let resolved = owned::source::resolve::resolve_sources(owner)?;
         let typed = owned::source::typeck::check(resolved)?;
         let entry = typed.entry();

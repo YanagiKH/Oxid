@@ -1061,10 +1061,12 @@ fn count_expression(
             break match &expression.kind {
                 ast::ExprKind::Group(inner)
                 | ast::ExprKind::Conversion { operand: inner, .. }
+                | ast::ExprKind::BitNot { operand: inner, .. }
                 | ast::ExprKind::Negate { operand: inner, .. }
                 | ast::ExprKind::Not { operand: inner, .. }
                 | ast::ExprKind::IndexRead { index: inner, .. } => (next == 0).then_some(*inner),
-                ast::ExprKind::Arithmetic { left, right, .. }
+                ast::ExprKind::Bitwise { left, right, .. }
+                | ast::ExprKind::Arithmetic { left, right, .. }
                 | ast::ExprKind::Comparison { left, right, .. }
                 | ast::ExprKind::Logical { left, right, .. } => match next {
                     0 => Some(*left),

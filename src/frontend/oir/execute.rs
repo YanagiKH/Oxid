@@ -361,6 +361,8 @@ fn execute_with_execution(
                 | Rvalue::CheckedNegateI64 { .. }
                 | Rvalue::Integer { .. }
                 | Rvalue::Integer128 { .. }
+                | Rvalue::Bitwise { .. }
+                | Rvalue::BitNot { .. }
                 | Rvalue::CheckedInteger { .. }
                 | Rvalue::CheckedNegateInteger { .. }
                 | Rvalue::CheckedIntegerCast { .. }

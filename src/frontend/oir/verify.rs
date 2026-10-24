@@ -96,6 +96,34 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::BitNot {
+            operand,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, operand, sources)?;
+            if ty.integer_bits().is_none() {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            ty
+        }
+        Rvalue::Bitwise {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, left, sources)?;
+            let other = operand_in(locals, right, sources)?;
+            if ty.integer_bits().is_none()
+                || other.integer_bits().is_none()
+                || (!op.shift() && ty != other)
+            {
+                return Err(failure(FailureKind::TypeMismatch, right.span));
+            }
+            ty
+        }
         Rvalue::Integer128 { ty, .. } => {
             if !ty.quad_integer() {
                 return Err(failure(FailureKind::TypeMismatch, assign.span));
@@ -459,7 +487,9 @@ fn verify_impl(
                 if statement.as_assignment().is_some_and(|assign| {
                     matches!(
                         assign.value,
-                        Rvalue::Integer { .. }
+                        Rvalue::Bitwise { .. }
+                            | Rvalue::BitNot { .. }
+                            | Rvalue::Integer { .. }
                             | Rvalue::Integer128 { .. }
                             | Rvalue::CheckedInteger { .. }
                             | Rvalue::CheckedNegateInteger { .. }
@@ -602,7 +632,8 @@ pub(super) fn scalar_statement_uses(
         }
         Statement::Assign(assign) => match assign.value {
             Rvalue::Load(place) => visit(ScalarUse::Place(place)),
-            Rvalue::Copy(value)
+            Rvalue::BitNot { operand: value, .. }
+            | Rvalue::Copy(value)
             | Rvalue::CheckedI32ToU8 { operand: value, .. }
             | Rvalue::U8ToI32 { operand: value, .. }
             | Rvalue::WidenI64 { operand: value, .. }
@@ -613,7 +644,8 @@ pub(super) fn scalar_statement_uses(
             | Rvalue::CheckedNegateInteger { operand: value, .. }
             | Rvalue::CheckedIntegerCast { operand: value, .. }
             | Rvalue::CheckedNegateI64 { operand: value, .. } => visit(ScalarUse::Operand(value)),
-            Rvalue::CheckedI32 { left, right, .. }
+            Rvalue::Bitwise { left, right, .. }
+            | Rvalue::CheckedI32 { left, right, .. }
             | Rvalue::CheckedI64 { left, right, .. }
             | Rvalue::CheckedInteger { left, right, .. }
             | Rvalue::CompareScalar { left, right, .. } => {
