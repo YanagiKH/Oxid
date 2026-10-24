@@ -1689,6 +1689,30 @@
         "scripts/verify_matrices.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "hosted-native-recursion",
+      "summary": "Hosted native direct/mutual recursive calls, checked live call storage, owned returns and call-only reborrows.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native project builds at O0/O2.",
+      "target_scope": "Native execution on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "1,024 live calls, 200,000 scalar slots and 1 MiB planned native frame/runtime storage. Existing compiler size and heap limits remain. Bounded native calls remain acyclic.",
+      "spec": [
+        "rfcs/0058-hosted-native-recursion.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/hosted_recursion.rs",
+        "scripts/test_hosted_recursion_compatibility.py"
+      ],
+      "evidence": []
     }
   ]
 }

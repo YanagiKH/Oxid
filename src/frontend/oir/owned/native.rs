@@ -1,5 +1,6 @@
 //! Private owned LLVM consumer. All metadata is bound to one immutable witness
 //! by ExecutionPlan; the scalar source route does not enter this module.
+use super::super::native::hosted_frames;
 use super::{plan::ExecutionPlan, verified::VerifiedOwnedProgram, *};
 use crate::frontend::build_config::NativeSourceNames;
 use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
@@ -297,18 +298,47 @@ enum NativeEntryPolicy {
     HostedProcess,
     TypedResult,
     HostedTypedResult,
+    RecursiveHostedResult,
+    RecursiveHostedProcess,
+    RecursiveHostedTypedResult,
 }
 
 impl NativeEntryPolicy {
     fn process(self) -> bool {
-        matches!(self, Self::Process | Self::HostedProcess)
+        matches!(
+            self,
+            Self::Process | Self::HostedProcess | Self::RecursiveHostedProcess
+        )
     }
 
     fn hosted(self) -> bool {
         matches!(
             self,
-            Self::HostedResult | Self::HostedProcess | Self::HostedTypedResult
+            Self::HostedResult
+                | Self::HostedProcess
+                | Self::HostedTypedResult
+                | Self::RecursiveHostedResult
+                | Self::RecursiveHostedProcess
+                | Self::RecursiveHostedTypedResult
         )
+    }
+
+    fn recursive(self) -> bool {
+        matches!(
+            self,
+            Self::RecursiveHostedResult
+                | Self::RecursiveHostedProcess
+                | Self::RecursiveHostedTypedResult
+        )
+    }
+
+    fn with_recursion(self, recursive: bool) -> Self {
+        match (self, recursive) {
+            (Self::HostedResult, true) => Self::RecursiveHostedResult,
+            (Self::HostedProcess, true) => Self::RecursiveHostedProcess,
+            (Self::HostedTypedResult, true) => Self::RecursiveHostedTypedResult,
+            _ => self,
+        }
     }
 }
 
@@ -533,6 +563,7 @@ fn native_module_policy_accounted_with_source_names(
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(plan.metadata_bytes());
     let limits = limits.bounded();
     let bounds = admit_policy_accounted(&plan, limits, policy, accounting)?;
+    let policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
     let admission_metadata = add(
         plan.metadata_bytes(),
         accounting.metrics.admission_scratch_peak,
@@ -558,7 +589,14 @@ fn native_module_policy_accounted_with_source_names(
         names,
     )?;
     let emitter_transient = add(
-        EMITTER_TRANSIENT_BYTES,
+        add(
+            EMITTER_TRANSIENT_BYTES,
+            if policy.recursive() {
+                hosted_frames::EMISSION_BYTES
+            } else {
+                0
+            },
+        )?,
         if plan.uses_dynamic_resources() {
             resources::control_bytes(&plan)
         } else {
@@ -842,7 +880,9 @@ fn admit_policy_accounted(
                 f.span,
             )?;
         }
-        limit(bound.depth, limits.depth, "call depth", f.span)?;
+        if !policy.hosted() {
+            limit(bound.depth, limits.depth, "call depth", f.span)?;
+        }
         limit(
             bound.scalar_slots,
             limits.scalar_slots,
@@ -857,19 +897,56 @@ fn admit_policy_accounted(
             }
         }
     }
-    if visited != functions.len() {
+    if policy.hosted() {
+        // An unresolved call-cycle component is charged dynamically by its
+        // callers. All ordinary per-function/compiler inventories still apply.
+        for (i, pending) in remaining.iter().enumerate() {
+            if *pending != 0 {
+                let u = plan.function(functions[i].id).usage();
+                bounds[i] = Bound {
+                    cyclic: true,
+                    scalar_slots: u.scalar_slots,
+                    cells: u.expanded_cells,
+                    bytes: u.native_bytes,
+                    ..Bound::default()
+                };
+            }
+        }
+    } else if visited != functions.len() {
         let f = &functions[remaining
             .iter()
             .position(|&n| n != 0)
             .expect("cycle member")];
         return Err(reject("native preview does not support recursive call graphs, including unused functions and unchosen branches", Some(f.span)));
     }
-    let fuel_bytes =
-        if plan.uses_dynamic_resources() || policy.process() || bounds.iter().any(|b| b.cyclic) {
-            8
-        } else {
-            0
-        };
+    let recursive_policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
+    let runtime_bytes = runtime_storage_bytes(
+        plan,
+        plan.uses_dynamic_resources() || policy.process() || bounds.iter().any(|b| b.cyclic),
+        recursive_policy,
+    )?;
+    limit(
+        add(bytes, runtime_bytes)?,
+        limits.bytes,
+        "aggregate storage bytes",
+        origin,
+    )?;
+    for (f, bound) in functions.iter().zip(&bounds) {
+        limit(
+            add(bound.bytes, runtime_bytes)?,
+            limits.live_bytes,
+            "live storage bytes",
+            f.span,
+        )?;
+    }
+    Ok(bounds)
+}
+fn runtime_storage_bytes(
+    plan: &ExecutionPlan<'_>,
+    guarded: bool,
+    policy: NativeEntryPolicy,
+) -> Result<usize, Box<Diagnostic>> {
+    let fuel_bytes = if guarded { 8 } else { 0 };
     let runtime_bytes = add(
         add(fuel_bytes, if plan.uses_floats() { 8192 } else { 0 })?,
         add(
@@ -893,22 +970,16 @@ fn admit_policy_accounted(
             },
         )?,
     )?;
-    limit(
-        add(bytes, runtime_bytes)?,
-        limits.bytes,
-        "aggregate storage bytes",
-        origin,
-    )?;
-    for (f, bound) in functions.iter().zip(&bounds) {
-        limit(
-            add(bound.bytes, runtime_bytes)?,
-            limits.live_bytes,
-            "live storage bytes",
-            f.span,
-        )?;
-    }
-    Ok(bounds)
+    add(
+        runtime_bytes,
+        if policy.recursive() {
+            hosted_frames::COUNTER_BYTES
+        } else {
+            0
+        },
+    )
 }
+
 fn successors(f: &RawOwnedFunction, kind: &OwnedTerminatorKind) -> impl Iterator<Item = BlockId> {
     let targets = match kind {
         OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
@@ -1098,6 +1169,9 @@ impl FailureKind {
     const I64ToU8Range: Self = Self(15);
     const BitShift: Self = Self(16);
     const CharacterRange: Self = Self(17);
+    const Frames: Self = Self(18);
+    const Slots: Self = Self(19);
+    const NativeFrameBytes: Self = Self(20);
     fn integer_code(ty: hir::Ty) -> u8 {
         match ty {
             hir::Ty::I8 => 0,
@@ -1172,6 +1246,12 @@ impl FailureKind {
                 Some(span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
+            Self::Frames => RunFailure::Frames(span).diagnostic(sources),
+            Self::Slots => RunFailure::Slots(span).diagnostic(sources),
+            Self::NativeFrameBytes => execute::OwnedRunFailure::Resource(
+                plan::AdmissionFailure::new("live native frame bytes", Some(span)),
+            )
+            .diagnostic(sources),
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::ByteRange => RunFailure::ByteRange(span).diagnostic(sources),
@@ -1320,6 +1400,16 @@ fn diagnostic_occurrences(
     }
     if guarded {
         visit(FailureKind::Fuel, plan.witness().functions()[entry.0].span)?;
+    }
+    if policy.recursive() {
+        let span = plan.witness().functions()[entry.0].span;
+        for kind in [
+            FailureKind::Frames,
+            FailureKind::Slots,
+            FailureKind::NativeFrameBytes,
+        ] {
+            visit(kind, span)?;
+        }
     }
     for f in plan.witness().functions() {
         if plan.uses_dynamic_resources() {
@@ -1514,6 +1604,15 @@ fn diagnostic_occurrences(
                 )?;
             }
             let term = b.terminator.as_ref().expect("verified terminator");
+            if policy.recursive() && matches!(term.kind, OwnedTerminatorKind::Invoke { .. }) {
+                for kind in [
+                    FailureKind::Frames,
+                    FailureKind::Slots,
+                    FailureKind::NativeFrameBytes,
+                ] {
+                    visit(kind, term.span)?;
+                }
+            }
             if plan.uses_dynamic_resources() {
                 visit(FailureKind::ResourceDescriptor, term.span)?;
                 visit(FailureKind::EnumTag, term.span)?;
@@ -1844,8 +1943,12 @@ fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind
         NativeEntryPolicy::Result
         | NativeEntryPolicy::HostedResult
         | NativeEntryPolicy::TypedResult
-        | NativeEntryPolicy::HostedTypedResult => "__oxid_overflow",
-        NativeEntryPolicy::Process | NativeEntryPolicy::HostedProcess => "__oxid_process_failure",
+        | NativeEntryPolicy::HostedTypedResult
+        | NativeEntryPolicy::RecursiveHostedResult
+        | NativeEntryPolicy::RecursiveHostedTypedResult => "__oxid_overflow",
+        NativeEntryPolicy::Process
+        | NativeEntryPolicy::HostedProcess
+        | NativeEntryPolicy::RecursiveHostedProcess => "__oxid_process_failure",
     };
     writeln!(
         out,
@@ -3128,6 +3231,9 @@ fn emit(
     out.resources = plan.uses_dynamic_resources();
     let guarded = storage.guarded();
     out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
+    if out.policy.recursive() {
+        hosted_frames::globals(out);
+    }
     if plan.uses_wide_scalars() {
         out.write_str("declare i32 @__oxid_print_i64(i64)\ndeclare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)\ndeclare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64)\ndeclare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)\n").unwrap();
     }
@@ -3257,6 +3363,13 @@ fn emit(
             root.span,
         );
     }
+    let usage = frame_usage(plan, entry);
+    if out.policy.recursive() {
+        let initial_bytes =
+            runtime_storage_bytes(plan, guarded, out.policy).expect("admitted runtime storage");
+        hosted_frames::reset(out, initial_bytes);
+        emit_frame_enter(out, diagnostics, "hosted_root", usage, root.span);
+    }
     writeln!(
         out,
         "  %value = call {} @__oxid_owned_fn_{}({})",
@@ -3265,6 +3378,9 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
+    if out.policy.recursive() {
+        hosted_frames::leave(out, "hosted_root", usage);
+    }
     if out.resources {
         out.write_str("  %resource_status = call i32 @__oxid_bytebuf_finish()\n  %resources_released = icmp eq i32 %resource_status, 0\n  br i1 %resources_released, label %resources_complete, label %resources_error\nresources_error:\n").unwrap();
         emit_failure(out, diagnostics, FailureKind::ResourceDescriptor, root.span);
@@ -4976,6 +5092,31 @@ fn emit_scalar(
         &value,
     );
 }
+fn frame_usage(plan: &ExecutionPlan<'_>, function: hir::DefId) -> hosted_frames::Usage {
+    let usage = plan.function(function).usage();
+    hosted_frames::Usage {
+        slots: usage.scalar_slots,
+        bytes: usage.native_bytes,
+    }
+}
+
+fn emit_frame_enter(
+    out: &mut Emission,
+    diagnostics: &Diagnostics,
+    name: &str,
+    usage: hosted_frames::Usage,
+    span: Span,
+) {
+    hosted_frames::enter(out, name, usage, |out, kind| {
+        let kind = match kind {
+            hosted_frames::Failure::Frames => FailureKind::Frames,
+            hosted_frames::Failure::Slots => FailureKind::Slots,
+            hosted_frames::Failure::Bytes => FailureKind::NativeFrameBytes,
+        };
+        emit_failure(out, diagnostics, kind, span);
+    });
+}
+
 fn emit_terminator(
     storage: &NativeFunctionStorage<'_, '_>,
     name: &str,
@@ -5098,6 +5239,10 @@ fn emit_terminator(
                 + joined.capacity()
                 + prefix.capacity();
             out.call_scratch_peak = out.call_scratch_peak.max(scratch);
+            let usage = frame_usage(plan, descriptor.target);
+            if out.policy.recursive() {
+                emit_frame_enter(out, diagnostics, name, usage, term.span);
+            }
             writeln!(
                 out,
                 "  {prefix}call {} @__oxid_owned_fn_{}({})",
@@ -5106,6 +5251,9 @@ fn emit_terminator(
                 joined
             )
             .unwrap();
+            if out.policy.recursive() {
+                hosted_frames::leave(out, name, usage);
+            }
             if let CallResult::Scalar(destination) = descriptor.result {
                 store_slot(
                     out,
