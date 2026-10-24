@@ -43,6 +43,93 @@ const MAX_NATIVE_BLOCKS: usize = 4_096;
 const MAX_DEPTH: usize = 32;
 const MAX_COST: usize = 100_000;
 
+/// Internal executable call accounting shared by the two native emitters.
+/// Reservations occur at the caller, before the callee can allocate a frame.
+pub(super) mod hosted_frames {
+    use std::fmt::Write;
+
+    pub(in crate::frontend::oir) const MAX_BYTES: usize = 1024 * 1024;
+    pub(in crate::frontend::oir) const COUNTER_BYTES: usize = 24;
+    // Two counter iteration carriers, usage, callback captures and formatter
+    // arguments have a fixed payload independent of source or call depth.
+    pub(in crate::frontend::oir) const EMISSION_BYTES: usize = 1024;
+    const _: () = assert!(
+        2 * std::mem::size_of::<[(&str, usize, usize, Failure); 3]>()
+            + std::mem::size_of::<Usage>()
+            + std::mem::size_of::<std::fmt::Arguments<'static>>()
+            + 16 * std::mem::size_of::<usize>()
+            <= EMISSION_BYTES
+    );
+    const MAX_FRAMES: usize = 1024;
+    const MAX_SLOTS: usize = 200_000;
+
+    #[derive(Clone, Copy)]
+    pub(in crate::frontend::oir) struct Usage {
+        pub(in crate::frontend::oir) slots: usize,
+        pub(in crate::frontend::oir) bytes: usize,
+    }
+
+    #[derive(Clone, Copy)]
+    pub(in crate::frontend::oir) enum Failure {
+        Frames,
+        Slots,
+        Bytes,
+    }
+
+    fn counters(usage: Usage) -> [(&'static str, usize, usize, Failure); 3] {
+        [
+            ("frames", 1, MAX_FRAMES, Failure::Frames),
+            ("slots", usage.slots, MAX_SLOTS, Failure::Slots),
+            ("bytes", usage.bytes, MAX_BYTES, Failure::Bytes),
+        ]
+    }
+
+    pub(in crate::frontend::oir) fn globals(out: &mut impl Write) {
+        for name in ["frames", "slots", "bytes"] {
+            writeln!(
+                out,
+                "@__oxid_hosted_{name} = internal thread_local global i64 0, align 8"
+            )
+            .unwrap();
+        }
+    }
+
+    pub(in crate::frontend::oir) fn reset(out: &mut impl Write, initial_bytes: usize) {
+        for name in ["frames", "slots", "bytes"] {
+            let value = if name == "bytes" { initial_bytes } else { 0 };
+            writeln!(
+                out,
+                "  store i64 {value}, ptr @__oxid_hosted_{name}, align 8"
+            )
+            .unwrap();
+        }
+    }
+
+    pub(in crate::frontend::oir) fn enter<W: Write>(
+        out: &mut W,
+        name: &str,
+        usage: Usage,
+        mut failure: impl FnMut(&mut W, Failure),
+    ) {
+        for (counter, charge, limit, kind) in counters(usage) {
+            let available = limit.checked_sub(charge).expect("admitted native frame");
+            writeln!(out, "  %{name}_{counter} = load i64, ptr @__oxid_hosted_{counter}, align 8\n  %{name}_{counter}_full = icmp ugt i64 %{name}_{counter}, {available}\n  br i1 %{name}_{counter}_full, label %{name}_{counter}_error, label %{name}_{counter}_ready\n{name}_{counter}_error:").unwrap();
+            failure(out, kind);
+            writeln!(out, "{name}_{counter}_ready:").unwrap();
+        }
+        // Check every budget before committing any of the reservations.
+        for (counter, charge, _, _) in counters(usage) {
+            writeln!(out, "  %{name}_{counter}_next = add nuw i64 %{name}_{counter}, {charge}\n  store i64 %{name}_{counter}_next, ptr @__oxid_hosted_{counter}, align 8").unwrap();
+        }
+    }
+
+    pub(in crate::frontend::oir) fn leave(out: &mut impl Write, name: &str, usage: Usage) {
+        for (counter, charge, _, _) in counters(usage) {
+            writeln!(out, "  %{name}_{counter}_returned = load i64, ptr @__oxid_hosted_{counter}, align 8\n  %{name}_{counter}_previous = sub nuw i64 %{name}_{counter}_returned, {charge}\n  store i64 %{name}_{counter}_previous, ptr @__oxid_hosted_{counter}, align 8").unwrap();
+        }
+    }
+}
+
 fn reject(message: impl Into<String>, span: Option<Span>) -> Box<Diagnostic> {
     Diagnostic::new("E0700", "native-admission", message, span)
 }
@@ -71,18 +158,44 @@ enum EntryPolicy {
     Process,
     HostedResult,
     HostedProcess,
+    RecursiveHostedResult,
+    RecursiveHostedProcess,
 }
 impl EntryPolicy {
     fn process(self) -> bool {
-        matches!(self, Self::Process | Self::HostedProcess)
+        matches!(
+            self,
+            Self::Process | Self::HostedProcess | Self::RecursiveHostedProcess
+        )
     }
     fn hosted(self) -> bool {
-        matches!(self, Self::HostedResult | Self::HostedProcess)
+        matches!(
+            self,
+            Self::HostedResult
+                | Self::HostedProcess
+                | Self::RecursiveHostedResult
+                | Self::RecursiveHostedProcess
+        )
+    }
+    fn recursive(self) -> bool {
+        matches!(
+            self,
+            Self::RecursiveHostedResult | Self::RecursiveHostedProcess
+        )
+    }
+    fn with_recursion(self, recursive: bool) -> Self {
+        match (self, recursive) {
+            (Self::HostedResult, true) => Self::RecursiveHostedResult,
+            (Self::HostedProcess, true) => Self::RecursiveHostedProcess,
+            _ => self,
+        }
     }
     fn failure_symbol(self) -> &'static str {
         match self {
-            Self::Result | Self::HostedResult => "__oxid_overflow",
-            Self::Process | Self::HostedProcess => "__oxid_process_failure",
+            Self::Result | Self::HostedResult | Self::RecursiveHostedResult => "__oxid_overflow",
+            Self::Process | Self::HostedProcess | Self::RecursiveHostedProcess => {
+                "__oxid_process_failure"
+            }
         }
     }
 }
@@ -343,6 +456,7 @@ impl VerifiedProgram {
         } else {
             self.admit()?
         };
+        let policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
         let guarded = !policy.hosted() && bounds.iter().any(|bound| bound.cyclic);
         // Process diagnostics use the same bounded table even for acyclic
         // bodies. This does not change their ABI or introduce fuel guards.
@@ -522,7 +636,9 @@ impl VerifiedProgram {
                     f.span,
                 )?;
             }
-            limit(bound.depth, MAX_DEPTH, "call depth", f.span)?;
+            if !hosted {
+                limit(bound.depth, MAX_DEPTH, "call depth", f.span)?;
+            }
             limit(bound.slots, MAX_NATIVE_LOCALS, "live local slots", f.span)?;
             bounds[i] = bound;
             for &caller in &callers[i] {
@@ -532,7 +648,18 @@ impl VerifiedProgram {
                 }
             }
         }
-        if visited != functions.len() {
+        if hosted {
+            // Zero depth marks a function whose transitive callees include a
+            // call cycle. Runtime caller reservations replace that static sum.
+            for (i, pending) in remaining.iter().enumerate() {
+                if *pending != 0 {
+                    bounds[i] = Bound {
+                        cyclic: true,
+                        ..Bound::default()
+                    };
+                }
+            }
+        } else if visited != functions.len() {
             let f = &functions[remaining
                 .iter()
                 .position(|&n| n != 0)
@@ -745,6 +872,8 @@ impl Write for LimitedCount {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum FailureKind {
     Fuel,
+    Frames,
+    Slots,
     Overflow,
     DivisionByZero,
     ByteRange,
@@ -764,6 +893,8 @@ impl FailureKind {
         }
         match self {
             Self::Fuel => RunFailure::Fuel(span),
+            Self::Frames => RunFailure::Frames(span),
+            Self::Slots => RunFailure::Slots(span),
             Self::Overflow => RunFailure::Overflow(span),
             Self::DivisionByZero => RunFailure::DivisionByZero(span),
             Self::ByteRange => RunFailure::ByteRange(span),
@@ -776,7 +907,9 @@ impl FailureKind {
             Self::Overflow => "__oxid_error",
             Self::DivisionByZero => "__oxid_division_error",
             Self::ByteRange => "__oxid_byte_range_error",
-            Self::Fuel | Self::ProcessStatus => unreachable!("arithmetic failure kind"),
+            Self::Fuel | Self::Frames | Self::Slots | Self::ProcessStatus => {
+                unreachable!("arithmetic failure kind")
+            }
         }
     }
 }
@@ -916,6 +1049,10 @@ impl GuardedDiagnostics {
         if guarded {
             add(FailureKind::Fuel, program.functions[entry.0].span)?;
         }
+        if policy.recursive() {
+            add(FailureKind::Frames, program.functions[entry.0].span)?;
+            add(FailureKind::Slots, program.functions[entry.0].span)?;
+        }
         for function in &program.functions {
             for block in &function.blocks {
                 if guarded {
@@ -941,6 +1078,11 @@ impl GuardedDiagnostics {
                         FailureKind::Fuel,
                         block.terminator.as_ref().expect("verified terminator").span,
                     )?;
+                }
+                let term = block.terminator.as_ref().expect("verified terminator");
+                if policy.recursive() && matches!(term.kind, TerminatorKind::Call { .. }) {
+                    add(FailureKind::Frames, term.span)?;
+                    add(FailureKind::Slots, term.span)?;
                 }
             }
         }
@@ -978,6 +1120,29 @@ fn emit_guard(
     let failure = out.policy.failure_symbol();
     writeln!(out, "{name}_error:\n  call void @{failure}(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable", message.len()).unwrap();
     writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
+}
+
+fn emit_frame_enter(
+    out: &mut Emission,
+    diagnostics: &GuardedDiagnostics,
+    name: &str,
+    usage: hosted_frames::Usage,
+    span: Span,
+) {
+    hosted_frames::enter(out, name, usage, |out, kind| {
+        let kind = match kind {
+            hosted_frames::Failure::Frames => FailureKind::Frames,
+            hosted_frames::Failure::Slots | hosted_frames::Failure::Bytes => FailureKind::Slots,
+        };
+        let (id, message) = diagnostics.get(kind, span);
+        let failure = out.policy.failure_symbol();
+        writeln!(
+            out,
+            "  call void @{failure}(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable",
+            message.len()
+        )
+        .unwrap();
+    });
 }
 
 fn ty(ty: hir::Ty) -> &'static str {
@@ -1076,6 +1241,9 @@ fn emit(
     // byte is escaped as LLVM constant data; no source path can become syntax.
     if out.policy.process() {
         out.push_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n");
+    }
+    if out.policy.recursive() {
+        hosted_frames::globals(out);
     }
     if let Some(diagnostics) = diagnostics {
         for (id, message) in diagnostics.messages.iter().enumerate() {
@@ -1469,6 +1637,21 @@ fn emit(
                     destination,
                     continuation,
                 } => {
+                    let frame_slots = program.functions[target.0].slot_count();
+                    let usage = hosted_frames::Usage {
+                        slots: frame_slots,
+                        bytes: frame_slots * 4,
+                    };
+                    if out.policy.recursive() {
+                        let frame_name = format!("f{}_b{}_call", f.id.0, i);
+                        emit_frame_enter(
+                            out,
+                            diagnostics.expect("hosted diagnostics"),
+                            &frame_name,
+                            usage,
+                            terminator.span,
+                        );
+                    }
                     write!(
                         out,
                         "  %v{} = call {} @__oxid_fn_{}(",
@@ -1486,7 +1669,12 @@ fn emit(
                         }
                         write!(out, "{} %v{}", ty(f.locals[arg.local.0].ty), arg.local.0).unwrap();
                     }
-                    writeln!(out, ")\n  br label %b{}", continuation.0).unwrap();
+                    writeln!(out, ")").unwrap();
+                    if out.policy.recursive() {
+                        let frame_name = format!("f{}_b{}_call", f.id.0, i);
+                        hosted_frames::leave(out, &frame_name, usage);
+                    }
+                    writeln!(out, "  br label %b{}", continuation.0).unwrap();
                 }
             }
         }
@@ -1503,6 +1691,21 @@ fn emit(
         let root = &program.functions[entry.0];
         emit_guard(out, diagnostics, "root", 1 + root.slot_count(), root.span);
     }
+    let frame_slots = program.functions[entry.0].slot_count();
+    let usage = hosted_frames::Usage {
+        slots: frame_slots,
+        bytes: frame_slots * 4,
+    };
+    if out.policy.recursive() {
+        hosted_frames::reset(out, hosted_frames::COUNTER_BYTES);
+        emit_frame_enter(
+            out,
+            diagnostics.expect("hosted diagnostics"),
+            "hosted_root",
+            usage,
+            program.functions[entry.0].span,
+        );
+    }
     writeln!(
         out,
         "  %value = call {} @__oxid_fn_{}({})",
@@ -1511,6 +1714,9 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
+    if out.policy.recursive() {
+        hosted_frames::leave(out, "hosted_root", usage);
+    }
     if out.policy.process() {
         let diagnostics = diagnostics.expect("process diagnostics");
         let (id, message) =

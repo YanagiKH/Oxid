@@ -35,6 +35,12 @@ This explicit-file command uses `-O0`. Native project builds additionally accept
 `--profile dev|release|bounded`, applying `-O0` or `-O2` to the program and runtime.
 See [native build profiles](../rfcs/0040-native-build-profiles.md).
 
+Typed projects can additionally select `policy = "hosted"` to use recursive
+native calls. The call-graph rejection and static depth of 32 described below
+apply to bounded execution. Hosted recursion checks live call storage at each
+call; see [its limits and errors](../rfcs/0058-hosted-native-recursion.md).
+
+
 The only build host is Linux x86_64 and the only target is
 `x86_64-unknown-linux-gnu` (also the default). Generated files are ELF PIE
 executables, not OXBC. They depend on the host-compatible libc and ELF loader;

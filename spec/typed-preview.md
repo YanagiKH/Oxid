@@ -1775,3 +1775,9 @@ Each workspace binary chooses its own policy; library dependencies cannot change
 the caller's policy. `run`, native `build` and declared project tests use the same
 setting. The `dev`/`release` optimization choice is independent. See the
 [execution policy contract](../rfcs/0044-project-execution-policy.md).
+
+Hosted native project builds support direct and mutual recursion, including
+owned results and call-only reborrows. Calls reserve storage before entering the
+callee. Limits and runtime errors are specified in
+[hosted native recursion](../rfcs/0058-hosted-native-recursion.md). The bounded
+native policy retains its acyclic call-graph and depth requirements.
