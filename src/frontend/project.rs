@@ -609,6 +609,33 @@ impl ProjectSources {
             ..Inventory::default()
         };
         for program in &self.programs {
+            if !program.generic_headers().is_empty() {
+                result.ast_payload = result
+                    .ast_payload
+                    .checked_add(size_of::<Vec<ast::GenericHeader>>())?;
+            }
+            result.ast_payload = result.ast_payload.checked_add(
+                program
+                    .generic_headers()
+                    .len()
+                    .checked_mul(size_of::<ast::GenericHeader>())?,
+            )?;
+            for header in program.generic_headers() {
+                result.ast_payload = result.ast_payload.checked_add(
+                    header
+                        .parameters
+                        .len()
+                        .checked_mul(size_of::<ast::GenericParam>())?,
+                )?;
+                for parameter in &header.parameters {
+                    result.ast_payload = result.ast_payload.checked_add(
+                        parameter
+                            .bounds
+                            .len()
+                            .checked_mul(size_of::<ast::ItemPath>())?,
+                    )?;
+                }
+            }
             result.tokens = result.tokens.checked_add(
                 program
                     .tokens

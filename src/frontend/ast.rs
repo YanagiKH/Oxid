@@ -1,3 +1,4 @@
+mod generic_syntax;
 use super::lexer::Token;
 use super::source::{SourceFile, Span};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,7 +14,7 @@ pub enum PathRoot {
     Std,
     LocalType,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QualifiedPath {
     pub span: Span,
     pub segment_start: usize,
@@ -22,7 +23,7 @@ pub struct QualifiedPath {
 }
 /// Compatibility spelling for the still-absolute production parser.
 pub type AbsolutePath = QualifiedPath;
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImportDecl {
     pub path: PathId,
     pub alias: Span,
@@ -196,7 +197,7 @@ pub enum LogicalOp {
     And,
     Or,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ExprKind {
     BitNot {
         operand: ExprId,
@@ -298,12 +299,12 @@ pub enum ExprKind {
         operator_span: Span,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScalarTypeSyntax {
     Bool,
     I32,
@@ -319,7 +320,7 @@ pub enum ScalarTypeSyntax {
     Char,
 }
 /// Scalar elements in the existing fixed-array grammar.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArrayElementTypeSyntax {
     Bool,
     I32,
@@ -330,12 +331,12 @@ pub enum ArrayElementTypeSyntax {
     Float(FloatTypeSyntax),
     Char,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FixedArraySyntax {
     pub element: ArrayElementTypeSyntax,
     pub length: u16,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TypeSyntaxKind {
     Name(ItemPath),
     Unit,
@@ -353,19 +354,30 @@ pub enum TypeSyntaxKind {
         array: FixedArraySyntax,
     },
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypeSyntax {
     pub span: Span,
     pub kind: TypeSyntaxKind,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructField {
     pub public: Option<Span>,
     pub name: Span,
     pub ty: TypeSyntax,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct GenericParam {
+    pub name: Span,
+    pub bounds: Vec<ItemPath>,
+    pub span: Span,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub struct GenericHeader {
+    pub declaration: Span,
+    pub parameters: Vec<GenericParam>,
+}
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructDecl {
     pub public: Option<Span>,
     pub name: Span,
@@ -373,7 +385,7 @@ pub struct StructDecl {
     pub span: Span,
     pub end: Span,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumPayloadSyntax {
     #[cfg_attr(not(test), allow(dead_code))] // Read by private structural qualification.
     pub kind: ScalarTypeSyntax,
@@ -400,13 +412,13 @@ impl EnumPayloadSyntax {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct EnumVariantSyntax {
     pub name: Span,
     pub payload: Option<EnumPayloadSyntax>,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct EnumDecl {
     pub public: Option<Span>,
     pub name: Span,
@@ -415,14 +427,14 @@ pub struct EnumDecl {
     pub end: Span,
 }
 /// Private source-discovery grammar; no namespace or runtime semantics yet.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModuleDecl {
     pub name: Span,
     pub public: Option<Span>,
     #[allow(dead_code)] // Full original declaration origin for the staged shared index.
     pub span: Span,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemId {
     Module(usize),
     Import(usize),
@@ -431,7 +443,7 @@ pub enum ItemId {
     #[cfg_attr(not(test), allow(dead_code))] // No enum parser production yet.
     Enum(usize),
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BorrowPlace {
     /// Complete bounded named-root field path, or a single whole binding name.
     OwnerName(Span),
@@ -446,7 +458,7 @@ pub enum BorrowPlace {
         star: Option<u32>,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Argument {
     Value(ExprId),
     Borrow {
@@ -455,26 +467,26 @@ pub enum Argument {
         span: Span,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FieldInit {
     pub name: Span,
     pub value: ExprId,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Param {
     pub name: Span,
     pub ty: TypeSyntax,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MatchArmSyntax {
     pub variant: PathId,
     pub binding: Option<Span>,
     pub body: BodyBlockId,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum StmtKind {
     Let {
         mutable: bool,
@@ -519,18 +531,18 @@ pub enum StmtKind {
         arms: Vec<MatchArmSyntax>,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BodyBlock {
     pub body: Vec<Stmt>,
     pub span: Span,
     pub end: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Function {
     pub public: Option<Span>,
     pub name: Span,
@@ -571,7 +583,6 @@ const _: () = {
     assert!(std::mem::align_of::<ProjectSyntax>() == std::mem::align_of::<bool>());
 };
 
-#[derive(Debug)]
 pub struct Program {
     /// The complete lossless token tape, not a full public CST.
     pub tokens: Vec<Token>,
@@ -586,6 +597,28 @@ pub struct Program {
     pub imports: Vec<ImportDecl>,
     source: super::parser::SourceProvenance,
     project_syntax: ProjectSyntax,
+}
+
+impl std::fmt::Debug for Program {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = formatter.debug_struct("Program");
+        out.field("tokens", &self.tokens);
+        out.field("functions", &self.functions);
+        out.field("expressions", &self.expressions);
+        out.field("records", &self.records);
+        out.field("enums", &self.enums);
+        out.field("items", &self.items);
+        out.field("modules", &self.modules);
+        out.field("paths", &self.paths);
+        out.field("path_segments", &self.path_segments);
+        out.field("imports", &self.imports);
+        if !self.generic_headers().is_empty() {
+            out.field("generic_headers", &self.generic_headers());
+        }
+        out.field("source", &self.source);
+        out.field("project_syntax", &self.project_syntax);
+        out.finish()
+    }
 }
 
 impl Program {
@@ -603,7 +636,8 @@ impl Program {
         path_segments: Vec<Span>,
         imports: Vec<ImportDecl>,
     ) -> Self {
-        let mut project_syntax = !modules.is_empty() || !imports.is_empty();
+        let mut project_syntax =
+            !modules.is_empty() || !imports.is_empty() || !source.generic_headers().is_empty();
         let mut std_import_syntax = false;
         // Both private summaries are derived during bounded AST construction.
         // The index never needs an unmetered path/import scan to read them.
@@ -631,8 +665,22 @@ impl Program {
             project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax),
         }
     }
+    pub(super) fn syntax_matches(&self, other: &Self) -> bool {
+        self.tokens == other.tokens
+            && self.functions == other.functions
+            && self.expressions == other.expressions
+            && self.records == other.records
+            && self.enums == other.enums
+            && self.items == other.items
+            && self.modules == other.modules
+            && self.paths == other.paths
+            && self.path_segments == other.path_segments
+            && self.imports == other.imports
+            && self.generic_headers() == other.generic_headers()
+            && self.project_syntax == other.project_syntax
+    }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
-        self.source.belongs_to(source)
+        self.source.belongs_to(source) && self.generic_headers_match_source(source)
     }
     pub(super) fn item_path_span(&self, path: ItemPath) -> Option<Span> {
         match path {
@@ -705,7 +753,9 @@ impl Program {
         if !visit() {
             return false;
         }
-        let mut project_syntax = !self.modules.is_empty() || !self.imports.is_empty();
+        let mut project_syntax = !self.modules.is_empty()
+            || !self.imports.is_empty()
+            || !self.generic_headers().is_empty();
         let path_valid = |path: ItemPath, valid: &mut dyn FnMut(Span) -> bool| match path {
             ItemPath::Unqualified(span) => valid(span),
             ItemPath::Absolute(id) => {
@@ -716,6 +766,28 @@ impl Program {
                         .is_some_and(|path| path.root == PathRoot::Crate)
             }
         };
+        for header in self.generic_headers() {
+            if !visit()
+                || !valid(header.declaration)
+                || header.parameters.is_empty()
+                || header.parameters.len() > super::parser::MAX_PARAMS
+            {
+                return false;
+            }
+            for parameter in &header.parameters {
+                if !visit()
+                    || !valid(parameter.name)
+                    || !valid(parameter.span)
+                    || parameter.bounds.len() > super::parser::MAX_PARAMS
+                    || parameter
+                        .bounds
+                        .iter()
+                        .any(|bound| !visit() || !path_valid(*bound, &mut valid))
+                {
+                    return false;
+                }
+            }
+        }
         let type_valid = |ty: TypeSyntax, valid: &mut dyn FnMut(Span) -> bool| {
             valid(ty.span)
                 && match ty.kind {

@@ -174,6 +174,33 @@ Try [UTF-8 normalize](../apps/utf8-normalize/README.md) to validate and transfor
 text using a shared [owned UTF-8 library](../packages/utf8_text/README.md).
 See the [language reference](../spec/typed-preview.md) for supported syntax.
 
+## Generic functions
+
+Write a function once and let its arguments choose the type:
+
+```oxid
+fn identity<T>(value: T) -> T {
+    return value;
+}
+
+struct Number { value: i32 }
+
+fn main() -> i32 {
+    let number = identity(Number { value: 42 });
+    return number.value;
+}
+```
+
+Type parameters can stand for scalar or owned values, including records, enums,
+fixed arrays and byte buffers. Passing an owned value transfers ownership.
+Use `T: Copy` when the function needs to read the same scalar value more than
+once. `Copy` does not provide arithmetic or comparison operators.
+
+Type arguments are inferred from arguments; a parameter used only in the result
+cannot be inferred. Generic structs, generic enums and user-defined traits are
+not available yet. Generic functions work with `check`, `run`, tests and native
+builds. Recursive calls require the `hosted` execution policy for native builds.
+
 ## Long-running programs
 
 Add this setting to a typed binary's `oxid.toml` to run without a cumulative work budget:

@@ -93,24 +93,25 @@ impl<'s> BuiltinAdmission<'s> {
         (self.anchors[slot] != NONE).then_some(self.anchors[slot])
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub(super) enum CandidateOrigin {
     Current,
+    CurrentGeneric(Box<[super::generics::Plan; 1]>),
     Enum(CompactSpan),
     Builtin(CompactSpan),
     #[cfg(test)]
     Output(CompactSpan),
 }
 impl CandidateOrigin {
-    pub(super) fn span(self) -> Option<Span> {
+    pub(super) fn span(&self) -> Option<Span> {
         match self {
-            Self::Current => None,
+            Self::Current | Self::CurrentGeneric(_) => None,
             Self::Enum(at) | Self::Builtin(at) => Some(at.span()),
             #[cfg(test)]
             Self::Output(at) => Some(at.span()),
         }
     }
-    pub(super) fn is_builtin(self) -> bool {
+    pub(super) fn is_builtin(&self) -> bool {
         matches!(self, Self::Builtin(_))
     }
 }
@@ -550,7 +551,10 @@ fn collect<'s>(
                 candidate_source_origin = CandidateOrigin::Enum(CompactSpan::new(span)?);
             }
         }
-        if sources.is_original_adapter() && ast.uses_project_syntax() {
+        if sources.is_original_adapter()
+            && ast.uses_project_syntax()
+            && !ast.has_only_original_generic_syntax()
+        {
             return Err(bad(at));
         }
         c.functions = add(c.functions, ast.functions.len() as u64, at)?;
@@ -1309,7 +1313,7 @@ impl<'s> DeclarationFacts<'s> {
     pub fn finish(
         self,
         work: &WorkMeter,
-        _allocator: &mut Allocator,
+        allocator: &mut Allocator,
     ) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
         work.phase("original-conflicts");
         let mut errors = Vec::new();
@@ -1370,7 +1374,31 @@ impl<'s> DeclarationFacts<'s> {
         if !errors.is_empty() {
             return Err(errors);
         }
-        CleanOriginals { facts: self }.freeze(work)
+        let mut index = CleanOriginals { facts: self }.freeze(work)?;
+        let has_generics = (0..index.sources().count()).any(|module| {
+            index
+                .sources()
+                .ast(ModuleId(module))
+                .is_ok_and(|program| program.has_generics())
+        });
+        if has_generics {
+            index
+                .require_current_source_pipeline()
+                .map_err(|error| vec![*error])?;
+            let plan = super::generics::Plan::build(&index, work, allocator)
+                .map_err(|error| vec![*error])?;
+            index.tables.candidate_source_origin = CandidateOrigin::CurrentGeneric(
+                allocator
+                    .boxed_carrier(plan, "generic instantiation owner")
+                    .map_err(|_| {
+                        vec![*resource(
+                            "generic instantiation owner allocation failed",
+                            index.sources().eof(),
+                        )]
+                    })?,
+            );
+        }
+        Ok(index)
     }
 }
 
@@ -1676,7 +1704,7 @@ impl<'s> DeclarationIndex<'s> {
     pub fn is_current_source_pipeline(&self) -> bool {
         matches!(
             self.tables.candidate_source_origin,
-            CandidateOrigin::Current
+            CandidateOrigin::Current | CandidateOrigin::CurrentGeneric(_)
         )
     }
     #[cfg(test)]
@@ -1990,13 +2018,33 @@ impl<'s> DeclarationIndex<'s> {
         self.source_function_count() + self.builtin_set().extra_functions()
     }
     pub fn source_function_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.functions.len(), |plan| plan.len())
+    }
+    pub(super) fn generic_plan(&self) -> Option<&super::generics::Plan> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::CurrentGeneric(plan) => Some(&plan[0]),
+            _ => None,
+        }
+    }
+    pub(super) fn template_function_count(&self) -> usize {
         self.tables.functions.len()
+    }
+    pub(super) fn template_function(
+        &self,
+        id: DefId,
+    ) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
+        function(&self.tables, id)
     }
     pub fn record_count(&self) -> usize {
         self.tables.records.len()
     }
     pub fn function(&self, id: DefId) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
-        function(&self.tables, id)
+        let definition = match self.generic_plan() {
+            Some(plan) => plan.definition(id)?,
+            None => id,
+        };
+        function(&self.tables, definition)
     }
     pub fn record(&self, id: RecordId) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
         record(&self.tables, id)
@@ -2008,10 +2056,15 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = DefId(row.function_base as usize + key.index);
-        if self.function(id)?.0 != key {
+        if self.template_function(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        match self.generic_plan() {
+            Some(plan) => plan
+                .non_generic(id)
+                .ok_or_else(|| bad(self.tables.sources.eof())),
+            None => Ok(id),
+        }
     }
     pub fn record_for(&self, key: RecordAstKey) -> Result<RecordId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
@@ -2026,7 +2079,12 @@ impl<'s> DeclarationIndex<'s> {
         Ok(id)
     }
     pub fn root_original_main(&self) -> Option<DefId> {
-        (self.tables.root_main != NONE).then_some(DefId(self.tables.root_main as usize))
+        let definition =
+            (self.tables.root_main != NONE).then_some(DefId(self.tables.root_main as usize))?;
+        match self.generic_plan() {
+            Some(plan) => plan.non_generic(definition),
+            None => Some(definition),
+        }
     }
     pub fn query<'i>(&'i self, work: &'i WorkMeter) -> QuerySession<'i, 's> {
         QuerySession {

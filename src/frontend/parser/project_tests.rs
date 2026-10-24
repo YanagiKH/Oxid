@@ -558,6 +558,7 @@ fn checked_segment_count_overflow_precedes_all_admission_and_reserves() {
         expressions: Vec::new(),
         paths: Vec::new(),
         path_segments: Vec::new(),
+        generic_headers: Vec::new(),
         heights: Vec::new(),
         nodes: 0,
         node_limit: 0,

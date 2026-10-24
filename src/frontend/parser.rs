@@ -9,8 +9,9 @@ use super::{
 /// manufacture it for a different source owner.
 pub(super) struct SourceProvenance {
     identity: u64,
-    text_len: usize,
-    file: super::source::SourceFileId,
+    text_len: u32,
+    file: u32,
+    generics: Option<Box<[Vec<GenericHeader>; 1]>>,
 }
 impl std::fmt::Debug for SourceProvenance {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -18,23 +19,52 @@ impl std::fmt::Debug for SourceProvenance {
         // observations deterministic across identical source allocations.
         formatter
             .debug_struct("SourceProvenance")
-            .field("text_len", &self.text_len)
-            .field("file", &self.file)
+            .field("text_len", &(self.text_len as usize))
+            .field("file", &super::source::SourceFileId(self.file as usize))
             .finish_non_exhaustive()
     }
 }
 impl SourceProvenance {
-    fn new(source: &SourceFile) -> Self {
-        Self {
+    fn new(
+        source: &SourceFile,
+        headers: Vec<GenericHeader>,
+        allocator: &mut Allocator,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let failure = || {
+            Diagnostic::new(
+                "E0400",
+                "parse",
+                "generic source metadata allocation or compact source limit exceeded",
+                Some(source.span(0, 0)),
+            )
+        };
+        let text_len = u32::try_from(source.text().len()).map_err(|_| failure())?;
+        let file = u32::try_from(source.span(0, 0).file.0).map_err(|_| failure())?;
+        let generics = if headers.is_empty() {
+            None
+        } else {
+            Some(
+                allocator
+                    .boxed_carrier(headers, "generic syntax owner")
+                    .map_err(|_| failure())?,
+            )
+        };
+        Ok(Self {
             identity: source.identity(),
-            text_len: source.text().len(),
-            file: source.span(0, 0).file,
-        }
+            text_len,
+            file,
+            generics,
+        })
+    }
+    pub(super) fn generic_headers(&self) -> &[GenericHeader] {
+        self.generics
+            .as_ref()
+            .map_or(&[], |owner| owner[0].as_slice())
     }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
         self.identity == source.identity()
-            && self.text_len == source.text().len()
-            && self.file == source.span(0, 0).file
+            && self.text_len as usize == source.text().len()
+            && self.file as usize == source.span(0, 0).file.0
     }
 }
 pub const MAX_NODES: usize = 100_000;
@@ -337,6 +367,7 @@ fn parse_counted_with_policies(
         expressions: Vec::new(),
         paths: Vec::new(),
         path_segments: Vec::new(),
+        generic_headers: Vec::new(),
         heights: Vec::new(),
         nodes: 0,
         node_limit: node_limit.min(MAX_NODES),
@@ -496,9 +527,30 @@ fn parse_counted_with_policies(
     }
     *storage = parser.storage;
     if diagnostics.is_empty() {
+        let has_generics = !parser.generic_headers.is_empty();
+        let provenance = SourceProvenance::new(source, parser.generic_headers, parser.allocator)
+            .map_err(|error| vec![*error])?;
+        if has_generics && parser.enums.enabled() {
+            let bytes = std::mem::size_of::<Vec<GenericHeader>>();
+            storage.retained_capacity =
+                storage
+                    .retained_capacity
+                    .checked_add(bytes)
+                    .ok_or_else(|| {
+                        vec![*Diagnostic::new(
+                            "E0400",
+                            "parse",
+                            "generic syntax storage overflow",
+                            Some(source.span(0, 0)),
+                        )]
+                    })?;
+            storage.peak_capacity_bound = storage
+                .peak_capacity_bound
+                .max(storage.retained_capacity + storage.scratch_capacity);
+        }
         Ok((
             Program::parsed(
-                SourceProvenance::new(source),
+                provenance,
                 parser.tokens,
                 functions,
                 parser.expressions,
@@ -532,6 +584,7 @@ struct Parser<'a> {
     expressions: Vec<Expr>,
     paths: Vec<AbsolutePath>,
     path_segments: Vec<super::source::Span>,
+    generic_headers: Vec<GenericHeader>,
     heights: Vec<usize>,
     nodes: usize,
     node_limit: usize,
@@ -924,6 +977,74 @@ impl Parser<'_> {
         })
     }
 
+    fn generic_parameters(
+        &mut self,
+        declaration: super::source::Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let mut parameters = Vec::new();
+        if self.peek().kind != Kind::Less {
+            return Ok(());
+        }
+        if !self.mode.owned() {
+            return Err(self.diagnostic(
+                "E0002",
+                "parse",
+                "generic parameters require typed project syntax",
+                Some(self.peek().span),
+            ));
+        }
+        self.bump();
+        if self.peek().kind == Kind::Greater {
+            return Err(self.diagnostic(
+                "E0002",
+                "parse",
+                "generic parameter list cannot be empty",
+                Some(self.peek().span),
+            ));
+        }
+        loop {
+            self.node()?;
+            let name = self
+                .expect(Kind::Ident, "expected type parameter name")?
+                .span;
+            let mut bounds = Vec::new();
+            let mut end = name.end;
+            if self.take(Kind::Colon).is_some() {
+                loop {
+                    let (bound, span) = self.item_path("expected trait bound", true)?;
+                    self.candidate_reserve(&mut bounds, MAX_PARAMS, "type parameter bounds", span)?;
+                    bounds.push(bound);
+                    end = span.end;
+                    if self.take(Kind::Plus).is_none() {
+                        break;
+                    }
+                }
+            }
+            self.candidate_reserve(&mut parameters, MAX_PARAMS, "generic parameters", name)?;
+            parameters.push(GenericParam {
+                name,
+                bounds,
+                span: self.source.span(name.start, end),
+            });
+            if self.take(Kind::Comma).is_none() || self.peek().kind == Kind::Greater {
+                break;
+            }
+        }
+        self.expect(Kind::Greater, "expected `>` after type parameters")?;
+        let mut headers = std::mem::take(&mut self.generic_headers);
+        self.candidate_reserve(
+            &mut headers,
+            MAX_NODES,
+            "generic declaration headers",
+            declaration,
+        )?;
+        headers.push(GenericHeader {
+            declaration,
+            parameters,
+        });
+        self.generic_headers = headers;
+        Ok(())
+    }
     fn function(
         &mut self,
         public: Option<super::source::Span>,
@@ -931,6 +1052,7 @@ impl Parser<'_> {
         self.node()?;
         self.expect(Kind::Fn, "expected a top-level function declaration")?;
         let name = self.expect(Kind::Ident, "expected function name")?.span;
+        self.generic_parameters(name)?;
         self.expect(Kind::LParen, "expected `(`")?;
         let mut params = Vec::new();
         if self.peek().kind != Kind::RParen {
@@ -1061,6 +1183,7 @@ impl Parser<'_> {
             .expect(Kind::Struct, "expected struct declaration")?
             .span;
         let name = self.expect(Kind::Ident, "expected record name")?.span;
+        self.generic_parameters(name)?;
         self.expect(Kind::LBrace, "expected record fields `{`")?;
         let mut fields = Vec::new();
         while self.peek().kind != Kind::RBrace {
@@ -2307,6 +2430,8 @@ pub(super) fn parse_with_lowered_node_limit(
     parse_with_node_limit(source, tokens, mode, limit)
 }
 
+#[cfg(test)]
+mod generic_syntax_tests;
 #[cfg(test)]
 #[path = "parser/project_tests.rs"]
 mod project_tests;
