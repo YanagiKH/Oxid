@@ -10,6 +10,17 @@ pub struct Text {
     bytes: ByteBuf
 }
 
+pub struct Character {
+    pub value: char,
+    pub next_byte: i32
+}
+
+pub enum CharacterRead {
+    Found(Character),
+    End,
+    InvalidOffset
+}
+
 pub enum Validation {
     Valid,
     Invalid(i32)
@@ -237,6 +248,62 @@ pub fn append_scalar(text: &mut Text, scalar: i32) -> ScalarAppendStatus {
         GrowStatus::AllocationFailed => { return ScalarAppendStatus::AllocationFailed; },
         GrowStatus::MemoryLimit => { return ScalarAppendStatus::MemoryLimit; },
     }
+}
+
+pub fn append_char(text: &mut Text, value: char) -> AppendStatus {
+    let code = value.to_u32();
+    let scalar = code.to_i32_checked();
+    let status = append_scalar(&mut *text, scalar);
+    match status {
+        ScalarAppendStatus::Ok => { return AppendStatus::Ok; },
+        ScalarAppendStatus::InvalidScalar(invalid) => { return AppendStatus::InvalidInput(invalid); },
+        ScalarAppendStatus::CapacityOverflow => { return AppendStatus::CapacityOverflow; },
+        ScalarAppendStatus::AllocationFailed => { return AppendStatus::AllocationFailed; },
+        ScalarAppendStatus::MemoryLimit => { return AppendStatus::MemoryLimit; },
+    }
+}
+
+fn read_character(input: &[u8], offset: i32) -> CharacterRead {
+    if !valid_boundary(&*input, offset) {
+        return CharacterRead::InvalidOffset;
+    }
+    if offset == input.len() {
+        return CharacterRead::End;
+    }
+    let width = scalar_width(&*input, offset);
+    if width == 0 {
+        return CharacterRead::InvalidOffset;
+    }
+    let lead_byte = input[offset];
+    let lead = lead_byte.to_i32();
+    let mut scalar = lead;
+    if width == 2 {
+        let second_byte = input[offset + 1];
+        let second = second_byte.to_i32();
+        scalar = (lead - 192) * 64 + second - 128;
+    }
+    if width == 3 {
+        let second_byte = input[offset + 1];
+        let second = second_byte.to_i32();
+        let third_byte = input[offset + 2];
+        let third = third_byte.to_i32();
+        scalar = (lead - 224) * 4096 + (second - 128) * 64 + third - 128;
+    }
+    if width == 4 {
+        let second_byte = input[offset + 1];
+        let second = second_byte.to_i32();
+        let third_byte = input[offset + 2];
+        let third = third_byte.to_i32();
+        let fourth_byte = input[offset + 3];
+        let fourth = fourth_byte.to_i32();
+        scalar = (lead - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + fourth - 128;
+    }
+    let value = scalar.to_char_checked();
+    return CharacterRead::Found(Character { value: value, next_byte: offset + width });
+}
+
+pub fn char_at(text: &Text, byte_offset: i32) -> CharacterRead {
+    return read_character(&*text.bytes, byte_offset);
 }
 
 fn valid_boundary(input: &[u8], length: i32) -> bool {

@@ -45,6 +45,8 @@ match arms handle invalid UTF-8 and allocation errors.
 | `scalar_count(&Text)` | Count Unicode scalar values, rather than grapheme clusters. |
 | `append_utf8(&mut Text, &[u8])` | Validate the complete input before appending it. |
 | `append_scalar(&mut Text, i32)` | Encode and append one Unicode scalar value. |
+| `append_char(&mut Text, char)` | Append one character, preserving valid UTF-8. |
+| `char_at(&Text, i32)` | Read a character at a byte offset and return its next byte offset. |
 | `equals_utf8(&Text, &[u8])` | Compare the initialized bytes exactly. |
 | `truncate(&mut Text, i32)` | Shorten at a scalar boundary; return `false` and preserve the text otherwise. |
 | `append_to_bytes(&Text, &mut ByteBuf)` | Append a copy of the text bytes to a byte buffer. |
@@ -54,6 +56,18 @@ encodings, surrogate code points, values above U+10FFFF, and incomplete
 sequences. It accepts NUL, byte order marks, and Unicode noncharacters.
 The library does not normalize text or group grapheme clusters. Allocations
 share the runtime memory limit with other byte buffers.
+
+To walk through characters, call `char_at` starting at byte offset zero.
+`CharacterRead::Found(character)` returns `character.value` as `char` and
+`character.next_byte` for the next call. `End` means the offset equals the
+text's byte length. `InvalidOffset` means the offset is negative, past the end,
+or inside a character's UTF-8 encoding. Reading leaves the text available for
+another read, append or truncation. A letter and a separate combining accent
+are two characters.
+
+`append_char` returns the same `AppendStatus` as `append_utf8`. A `char` is
+already a valid Unicode scalar; allocation and capacity failures still leave
+the previous text intact.
 
 See [`utf8-normalize`](../../apps/utf8-normalize/README.md) for a complete
 application that reads, validates, transforms, and writes UTF-8 text.

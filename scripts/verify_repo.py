@@ -81,6 +81,7 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/projects/owned_enum_payload_acceptance/library/src/lib.ox",
         "examples/projects/owned_enum_payload_acceptance/library/src/model.ox",
     ),
+    "examples/typed-unicode-range": ("examples/typed-unicode-range/src/main.ox",),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
@@ -89,6 +90,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/byte-reverse",
     "packages/utf8_text",
     "apps/utf8-normalize",
+    "examples/typed-unicode-range",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
 # Effectful roots are checked here, but run only by dedicated verifiers that

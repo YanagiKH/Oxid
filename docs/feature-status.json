@@ -1347,7 +1347,7 @@
       "id": "owned-utf8-text",
       "status": "experimental",
       "classification": "production-path",
-      "summary": "A reusable owned UTF-8 text library with strict validation, scalar appends and boundary-safe truncation.",
+      "summary": "Owned UTF-8 text with validated byte transfer, character append/access, scalar-boundary truncation and exact byte round-trips.",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "edition": "typed-preview",
@@ -1364,7 +1364,10 @@
       "tests": [
         "apps/utf8-normalize/contracts/src/main.ox",
         "scripts/test_utf8_text_app.py",
-        "scripts/verify_utf8_text_app.py"
+        "scripts/verify_utf8_text_app.py",
+        "examples/typed-unicode-range/src/main.ox",
+        "scripts/verify_utf8_characters.py",
+        "scripts/test_utf8_characters.py"
       ],
       "evidence": []
     },

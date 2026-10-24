@@ -55,6 +55,8 @@ TEXT_PROJECTS = {
     ),
 }
 TEXT_MEMBERS = {member for members in TEXT_PROJECTS.values() for member in members}
+UNICODE_PROJECTS = {"examples/typed-unicode-range": ("examples/typed-unicode-range/src/main.ox",)}
+UNICODE_MEMBERS = {member for members in UNICODE_PROJECTS.values() for member in members}
 
 WIDE_FILES = tuple("fixtures/typed-parser-wide-span/" + name + ".ox" for name in (
     "parser_main", "parser_state", "parser_signature", "parser_atom", "parser_call",
@@ -227,9 +229,16 @@ class PublishedRegistrationTests(unittest.TestCase):
             application + "/packages/counts/src/lib.ox", application + "/packages/report/src/lib.ox",
         )
         self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS,
-                         {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS})
+                         {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
-                         (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize"))
+                         (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range"))
+        self.assertEqual([name for name in language if name in UNICODE_MEMBERS], sorted(UNICODE_MEMBERS))
+        self.assertEqual({row for row in check_inventory if row[0] in UNICODE_PROJECTS},
+                         {(name, True) for name in UNICODE_PROJECTS})
+        self.assertFalse(any(name in UNICODE_MEMBERS | UNICODE_PROJECTS.keys() for name, _ in run_inventory))
+        language = [name for name in language if name not in UNICODE_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in UNICODE_PROJECTS]
+        typed_members -= len(UNICODE_MEMBERS)
         self.assertEqual(len(TEXT_MEMBERS), 3)
         self.assertEqual([name for name in language if name in TEXT_MEMBERS], sorted(TEXT_MEMBERS))
         self.assertEqual({row for row in check_inventory if row[0] in TEXT_PROJECTS},
@@ -466,10 +475,10 @@ class PublishedRegistrationTests(unittest.TestCase):
                         if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/byte-reverse"]
         self.assertEqual([call.args[0] for call in buffer_calls],
                          [[str(Path(sys.executable).resolve()), "check"]])
-        for name in TEXT_PROJECTS:
+        for name in TEXT_PROJECTS | UNICODE_PROJECTS:
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
             self.assertEqual([call.args[0] for call in calls], [[str(Path(sys.executable).resolve()), "check"]])
-        manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS | BUFFER_PROJECTS | TEXT_PROJECTS}
+        manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS | BUFFER_PROJECTS | TEXT_PROJECTS | UNICODE_PROJECTS}
         commands = [call.args[0] for call in run.call_args_list if call.kwargs.get("cwd") not in manifest_roots]
         byte_pilot = str(verify_repo.ROOT / BYTE_PILOT)
         self.assertEqual([command[1] for command in commands if byte_pilot in command], ["check", "run"])
@@ -535,12 +544,12 @@ class PublishedRegistrationTests(unittest.TestCase):
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
         application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
-        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
-                      f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
+        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
+                      f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
                       "81 runnable programs", output.getvalue())
-        self.assertIn("9 manifest projects checked; 5 run; 2 tested", output.getvalue())
+        self.assertIn("10 manifest projects checked; 5 run; 2 tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(additional_members)} typed source members / "
+                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(additional_members)} typed source members / "
                       "14 typed entry runs", output.getvalue())
         self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
