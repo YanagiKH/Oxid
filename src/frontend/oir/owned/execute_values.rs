@@ -26,6 +26,12 @@ pub(super) trait StoredValue: Copy + std::fmt::Debug + Eq + From<Scalar> {
         let value = Self::from_integer(ty, bits as u64)?;
         (value.integer128() == Some((ty, bits))).then_some(value)
     }
+    fn character(self) -> Option<char> {
+        None
+    }
+    fn from_character(_value: char) -> Option<Self> {
+        None
+    }
     fn float(self) -> Option<(hir::Ty, u64)> {
         None
     }
@@ -74,6 +80,16 @@ impl StoredValue for Scalar {
 }
 
 impl StoredValue for RuntimeScalar {
+    fn character(self) -> Option<char> {
+        if let Self::Char(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+    fn from_character(value: char) -> Option<Self> {
+        Some(Self::Char(value))
+    }
     fn float(self) -> Option<(hir::Ty, u64)> {
         RuntimeScalar::float(self)
     }
@@ -113,11 +129,26 @@ impl StoredValue for RuntimeScalar {
             Self::Usize(_) => hir::Ty::Usize,
             Self::F32(_) => hir::Ty::F32,
             Self::F64(_) => hir::Ty::F64,
+            Self::Char(_) => hir::Ty::Char,
         }
     }
     fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Self> {
         if matches!(ty, hir::Ty::I128 | hir::Ty::U128) {
             return Err(bad("quad value in legacy storage", span));
+        }
+        if ty == hir::Ty::Char {
+            let selected = offset
+                .checked_add(4)
+                .and_then(|end| bytes.get(offset..end))
+                .ok_or_else(|| bad("character payload range", span))?;
+            let value = u32::from_le_bytes(
+                selected
+                    .try_into()
+                    .map_err(|_| bad("character payload width", span))?,
+            );
+            return char::from_u32(value)
+                .map(Self::Char)
+                .ok_or_else(|| bad("invalid Unicode scalar", span));
         }
         if ty.floating() {
             let width = scalar_size(ty);
@@ -163,6 +194,14 @@ impl StoredValue for RuntimeScalar {
     }
     fn encode(self, bytes: &mut [u8], offset: usize, span: Span) -> Result<()> {
         match self {
+            Self::Char(value) => {
+                let selected = offset
+                    .checked_add(4)
+                    .and_then(|end| bytes.get_mut(offset..end))
+                    .ok_or_else(|| bad("character payload range", span))?;
+                selected.copy_from_slice(&u32::from(value).to_le_bytes());
+                Ok(())
+            }
             value @ (Self::F32(_) | Self::F64(_)) => {
                 let (ty, bits) = value.float().ok_or_else(|| bad("float payload", span))?;
                 let width = scalar_size(ty);
@@ -204,6 +243,12 @@ impl StoredValue for RuntimeScalar {
 }
 
 impl StoredValue for RuntimeValue {
+    fn character(self) -> Option<char> {
+        self.legacy()?.character()
+    }
+    fn from_character(value: char) -> Option<Self> {
+        Some(Self::Scalar(RuntimeScalar::Char(value)))
+    }
     fn float(self) -> Option<(hir::Ty, u64)> {
         self.legacy()?.float()
     }
@@ -279,12 +324,71 @@ pub(super) fn checked_wide<V: StoredValue>(value: i64, span: Span) -> Result<V> 
     V::from_wide(value).ok_or_else(|| bad("wide value in narrow execution", span))
 }
 
+pub(super) fn convert_character<V: StoredValue>(
+    operation: hir::ConversionOp,
+    value: V,
+    span: Span,
+) -> Result<V> {
+    match operation {
+        hir::ConversionOp::CharToU32 => {
+            let scalar = value
+                .character()
+                .ok_or_else(|| bad("character conversion source", span))?;
+            V::from_integer(hir::Ty::U32, u64::from(u32::from(scalar)))
+                .ok_or_else(|| bad("character conversion storage", span))
+        }
+        hir::ConversionOp::ToCharChecked => {
+            let (_, bits) = value
+                .integer128()
+                .ok_or_else(|| bad("character integer source", span))?;
+            // Signed integers are sign extended before this test. Every negative
+            // value therefore fails without narrowing away its high bits.
+            let scalar = u32::try_from(bits)
+                .ok()
+                .and_then(char::from_u32)
+                .ok_or(OwnedRunFailure::Scalar(RunFailure::CharacterRange(span)))?;
+            V::from_character(scalar).ok_or_else(|| bad("character conversion storage", span))
+        }
+        _ => Err(bad("character conversion operation", span)),
+    }
+}
+
+#[allow(dead_code)]
+struct CharacterControl<V> {
+    input: V,
+    integer: Option<(hir::Ty, u128)>,
+    narrowed: std::result::Result<u32, std::num::TryFromIntError>,
+    scalar: Option<char>,
+    output: Option<V>,
+    result: Result<V>,
+    codec: [u8; 4],
+    read: Option<&'static [u8]>,
+    write: Option<&'static mut [u8]>,
+    range: Option<std::ops::Range<usize>>,
+}
+pub(super) fn character_control_bytes<V: StoredValue>() -> usize {
+    size_of::<CharacterControl<V>>()
+}
+
 pub(super) fn comparison<V: StoredValue>(
     left: V,
     right: V,
     op: hir::ComparisonOp,
     span: Span,
 ) -> Result<bool> {
+    if let Some(a) = left.character() {
+        let b = right
+            .character()
+            .ok_or_else(|| bad("character comparison type", span))?;
+        return Ok(match op {
+            hir::ComparisonOp::Equal => a == b,
+            hir::ComparisonOp::NotEqual => a != b,
+            hir::ComparisonOp::Less => a < b,
+            hir::ComparisonOp::LessEqual => a <= b,
+            hir::ComparisonOp::Greater => a > b,
+            hir::ComparisonOp::GreaterEqual => a >= b,
+        });
+    }
     if left.ty().floating() {
         return floats::comparison(left, right, op, span);
     }

@@ -526,6 +526,7 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
             | hir::Ty::Usize
             | hir::Ty::I128
             | hir::Ty::U128
+            | hir::Ty::Char
             | hir::Ty::F32
             | hir::Ty::F64),
         ))) => Ok(Some(ty)),

@@ -1681,9 +1681,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 bitwise::binary(op, left, right, operator_span)?
             }
             Rvalue::Bool(value) => Scalar::Bool(value).into(),
+            Rvalue::Character(value) => V::from_character(value)
+                .ok_or_else(|| bad("character literal storage", assign.span))?,
             Rvalue::I32(value) => Scalar::I32(value).into(),
             Rvalue::U8(value) => Scalar::U8(value).into(),
             Rvalue::Unit => Scalar::Unit.into(),
+            Rvalue::CharacterConvert {
+                op,
+                operand,
+                name_span,
+                ..
+            } => values::convert_character(op, self.read(frame, operand)?, name_span)?,
             Rvalue::FloatConvert {
                 op,
                 operand,
@@ -3516,7 +3524,7 @@ fn encode_enum<V: StoredValue>(
 fn scalar_size(ty: hir::Ty) -> usize {
     match ty {
         hir::Ty::I16 | hir::Ty::U16 => 2,
-        hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
         hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
         hir::Ty::I128 | hir::Ty::U128 => 16,
         hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => 1,
@@ -3558,6 +3566,7 @@ fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar
         | hir::Ty::Isize
         | hir::Ty::Usize
         | hir::Ty::I128
+        | hir::Ty::Char
         | hir::Ty::F32
         | hir::Ty::F64
         | hir::Ty::U128 => return Err(bad("wide payload in narrow execution", span)),
@@ -3940,6 +3949,16 @@ fn execute_plan_policy<V: StoredValue>(
             )?,
         )
         .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_characters() {
+                    values::character_control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
         .and_then(|bytes| {
             plan::add(
                 bytes,

@@ -207,6 +207,7 @@ impl<'a> Fingerprint<'a> {
             ArrayElementTypeSyntax::Bool => "bool-element",
             ArrayElementTypeSyntax::I32 => "i32-element",
             ArrayElementTypeSyntax::I64 => "i64-element",
+            ArrayElementTypeSyntax::Char => "char-element",
             ArrayElementTypeSyntax::Float(kind) => kind.spelling(),
             ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
             ArrayElementTypeSyntax::U8 => "u8-element",
@@ -235,6 +236,7 @@ impl<'a> Fingerprint<'a> {
                     ArrayElementTypeSyntax::Bool => "bool",
                     ArrayElementTypeSyntax::I32 => "i32",
                     ArrayElementTypeSyntax::I64 => "i64",
+                    ArrayElementTypeSyntax::Char => "char-element",
                     ArrayElementTypeSyntax::Float(kind) => kind.spelling(),
                     ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
                     ArrayElementTypeSyntax::U8 => "u8",
@@ -306,6 +308,10 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::Character(value) => {
+                self.tag("character");
+                self.count(u32::from(*value) as usize);
+            }
             ExprKind::BitNot {
                 operand,
                 operator_span,
@@ -334,6 +340,8 @@ impl<'a> Fingerprint<'a> {
                 self.tag(match op {
                     ConversionOp::ToFloat(crate::frontend::ast::FloatTypeSyntax::F32) => "to-f32",
                     ConversionOp::ToFloat(crate::frontend::ast::FloatTypeSyntax::F64) => "to-f64",
+                    ConversionOp::ToCharChecked => "to-char-checked",
+                    ConversionOp::CharToU32 => "char-to-u32",
                     ConversionOp::FloatToBits => "float-to-bits",
                     ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F32) => {
                         "f32-from-bits"
@@ -754,6 +762,7 @@ impl<'a> Fingerprint<'a> {
                         self.flag(variant.payload.is_some());
                         if let Some(payload) = variant.payload {
                             match payload.kind {
+                                ScalarTypeSyntax::Char => self.tag("char-payload"),
                                 ScalarTypeSyntax::Bool => self.tag("bool-payload"),
                                 ScalarTypeSyntax::I32 => self.tag("i32-payload"),
                                 ScalarTypeSyntax::I64 => self.tag("i64-payload"),

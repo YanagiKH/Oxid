@@ -96,6 +96,18 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::Character(_) => Ty::Char,
+        Rvalue::CharacterConvert {
+            op,
+            operand,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            operand_in(locals, operand, sources)?
+                .character_conversion(op)
+                .ok_or_else(|| failure(FailureKind::TypeMismatch, operand.span))?
+        }
         Rvalue::FloatConvert {
             op,
             operand,
@@ -350,6 +362,7 @@ pub(super) fn scalar_statement_shape(
                     if left_ty != hir::Ty::Bool
                         && left_ty.integer_bits().is_none()
                         && !left_ty.floating()
+                        && left_ty != Ty::Char
                     {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
@@ -359,7 +372,10 @@ pub(super) fn scalar_statement_shape(
                 | hir::ComparisonOp::LessEqual
                 | hir::ComparisonOp::Greater
                 | hir::ComparisonOp::GreaterEqual => {
-                    if left_ty.integer_bits().is_none() && !left_ty.floating() {
+                    if left_ty.integer_bits().is_none()
+                        && !left_ty.floating()
+                        && left_ty != Ty::Char
+                    {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -678,7 +694,8 @@ pub(super) fn scalar_statement_uses(
         }
         Statement::Assign(assign) => match assign.value {
             Rvalue::Load(place) => visit(ScalarUse::Place(place)),
-            Rvalue::FloatConvert { operand: value, .. }
+            Rvalue::CharacterConvert { operand: value, .. }
+            | Rvalue::FloatConvert { operand: value, .. }
             | Rvalue::FloatNegate { operand: value, .. }
             | Rvalue::BitNot { operand: value, .. }
             | Rvalue::Copy(value)
@@ -705,6 +722,7 @@ pub(super) fn scalar_statement_uses(
             | Rvalue::I32(_)
             | Rvalue::I64(_)
             | Rvalue::Integer { .. }
+            | Rvalue::Character(_)
             | Rvalue::Float { .. }
             | Rvalue::Integer128 { .. }
             | Rvalue::U8(_)

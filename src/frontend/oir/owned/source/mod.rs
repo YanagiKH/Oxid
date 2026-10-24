@@ -112,3 +112,6 @@ mod integer_bit_tests;
 
 #[cfg(test)]
 mod float_tests;
+
+#[cfg(test)]
+mod character_tests;

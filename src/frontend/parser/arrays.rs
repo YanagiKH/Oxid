@@ -118,6 +118,12 @@ impl Parser<'_> {
                 self.bump();
                 ArrayElementTypeSyntax::I32
             }
+            Kind::Ident
+                if self.wide_scalars_enabled() && self.source.text_at(token.span) == "char" =>
+            {
+                self.bump();
+                ArrayElementTypeSyntax::Char
+            }
             Kind::Ident if self.source.text_at(token.span) == "u8" => {
                 self.bump();
                 ArrayElementTypeSyntax::U8

@@ -152,11 +152,21 @@ storage. JSON result values are decimal strings, including `-0`, `inf` and
 `NaN`. See [floating-point numbers](../rfcs/0055-floating-point.md) for rounding,
 comparison, conversion and native execution rules.
 
+## Characters
+
+Use `char` for one Unicode scalar, written as `'a'`, `'中'`, `'🦀'` or an
+escape such as `'\u{1f980}'`. Characters compare by scalar value and support
+calls and aggregate storage. Convert a named integer with `.to_char_checked()`;
+invalid Unicode scalar values report E0612. Convert a named character back
+with `.to_u32()`. Text results use UTF-8 and JSON results use one-character
+strings. See [characters](../rfcs/0056-characters.md) for escapes, storage and
+execution rules.
+
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept
 move-only scalar arrays, including `[bool; N]`, `[(); N]` and arrays of the
-supported integer and floating-point types, for decimal lengths 0..1024.
+supported integer, floating-point and character types, for decimal lengths 0..1024.
 Nonempty literals infer one exact scalar element type and their element count:
 
 ```text

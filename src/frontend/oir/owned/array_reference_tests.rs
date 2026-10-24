@@ -34,6 +34,7 @@ fn values(ty: hir::Ty, n: usize, seed: Seed) -> Vec<Scalar> {
                 | hir::Ty::Usize
                 | hir::Ty::I128
                 | hir::Ty::U128
+                | hir::Ty::Char
                 | hir::Ty::F32
                 | hir::Ty::F64,
                 _,
@@ -63,6 +64,7 @@ fn replacement(ty: hir::Ty, seed: Seed) -> Scalar {
             | hir::Ty::Usize
             | hir::Ty::I128
             | hir::Ty::U128
+            | hir::Ty::Char
             | hir::Ty::F32
             | hir::Ty::F64,
             _,

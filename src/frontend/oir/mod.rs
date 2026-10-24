@@ -145,6 +145,13 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    Character(char),
+    CharacterConvert {
+        op: hir::ConversionOp,
+        operand: Operand,
+        source_expr: crate::frontend::ast::ExprId,
+        name_span: Span,
+    },
     Float {
         bits: u64,
         ty: Ty,
@@ -441,6 +448,7 @@ pub(super) enum RuntimeScalar {
     Usize(u64),
     F32(u32),
     F64(u64),
+    Char(char),
 }
 impl From<Scalar> for RuntimeScalar {
     fn from(value: Scalar) -> Self {
@@ -475,9 +483,10 @@ impl RuntimeScalar {
             Self::U64(value) => (Ty::U64, value),
             Self::Isize(value) => (Ty::Isize, value as u64),
             Self::Usize(value) => (Ty::Usize, value),
-            Self::F32(_) | Self::F64(_) | Self::Narrow(Scalar::Bool(_) | Scalar::Unit) => {
-                return None
-            }
+            Self::Char(_)
+            | Self::F32(_)
+            | Self::F64(_)
+            | Self::Narrow(Scalar::Bool(_) | Scalar::Unit) => return None,
         })
     }
     pub(super) fn from_integer(ty: Ty, bits: u64) -> Option<Self> {
@@ -496,7 +505,7 @@ impl RuntimeScalar {
             Ty::U64 => Some(Self::U64(bits)),
             Ty::Isize => Some(Self::Isize(bits as i64)),
             Ty::Usize => Some(Self::Usize(bits)),
-            Ty::Bool | Ty::Unit | Ty::I128 | Ty::U128 | Ty::F32 | Ty::F64 => None,
+            Ty::Bool | Ty::Unit | Ty::I128 | Ty::U128 | Ty::F32 | Ty::F64 | Ty::Char => None,
         }
     }
     pub(super) fn narrow(self) -> Option<Scalar> {
@@ -511,6 +520,7 @@ impl RuntimeScalar {
             | Self::Isize(_)
             | Self::F32(_)
             | Self::F64(_)
+            | Self::Char(_)
             | Self::Usize(_) => None,
         }
     }
@@ -529,6 +539,12 @@ impl RuntimeScalar {
             Self::U32(value) => Some(format!("{{\"type\":\"u32\",\"value\":{value}}}")),
             Self::U64(value) => Some(format!("{{\"type\":\"u64\",\"value\":\"{value}\"}}")),
             Self::Isize(value) => Some(format!("{{\"type\":\"isize\",\"value\":\"{value}\"}}")),
+            Self::Char(value) => {
+                let mut bytes = [0u8; 4];
+                let encoded =
+                    crate::frontend::diagnostic::json_string(value.encode_utf8(&mut bytes));
+                Some(format!("{{\"type\":\"char\",\"value\":{encoded}}}"))
+            }
             Self::F32(bits) => Some(format!(
                 "{{\"type\":\"f32\",\"value\":\"{}\"}}",
                 f32::from_bits(bits)
@@ -553,6 +569,7 @@ impl std::fmt::Display for RuntimeScalar {
             Self::U32(value) => value.fmt(formatter),
             Self::U64(value) => value.fmt(formatter),
             Self::Isize(value) => value.fmt(formatter),
+            Self::Char(value) => value.fmt(formatter),
             Self::F32(bits) => f32::from_bits(*bits).fmt(formatter),
             Self::F64(bits) => f64::from_bits(*bits).fmt(formatter),
             Self::Usize(value) => value.fmt(formatter),
@@ -636,6 +653,7 @@ pub(super) enum RunFailure {
     ByteEntry(Span),
     QuadEntry(Span),
     BitShift(Span),
+    CharacterRange(Span),
     Fuel(Span),
     Frames(Span),
     Slots(Span),
@@ -660,6 +678,7 @@ impl RunFailure {
                 None,
             ),
             Self::Entry(span) => ("E0600", "typed-preview main must have no parameters", span),
+            Self::CharacterRange(span) => ("E0612", "integer is outside the Unicode scalar range", Some(span)),
             Self::BitShift(span) => ("E0611", "integer shift count must be nonnegative and below the bit width", Some(span)),
             Self::QuadEntry(span) => ("E0600", "128-bit program requires the typed result interface", Some(span)),
             Self::ByteEntry(span) => ("E0600", "typed-preview main must return bool, i32 or ()", Some(span)),

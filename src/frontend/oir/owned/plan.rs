@@ -144,6 +144,9 @@ impl<'a> ExecutionPlan<'a> {
     pub(super) fn uses_integer_extension(&self) -> bool {
         self.integer_extension & 1 != 0
     }
+    pub(super) fn uses_characters(&self) -> bool {
+        self.integer_extension & 8 != 0
+    }
     pub(super) fn uses_floats(&self) -> bool {
         self.integer_extension & 4 != 0
     }
@@ -329,8 +332,12 @@ impl<'a> ExecutionPlan<'a> {
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
         let functions = witness.functions();
-        let wide_type =
-            |ty: hir::Ty| ty == hir::Ty::I64 || ty.floating() || ty.extended_integer().is_some();
+        let wide_type = |ty: hir::Ty| {
+            ty == hir::Ty::Char
+                || ty == hir::Ty::I64
+                || ty.floating()
+                || ty.extended_integer().is_some()
+        };
         let wide_scalars = functions.iter().any(|function| {
             matches!(function.result, ValueTy::Scalar(ty) if wide_type(ty))
                 || function.locals.iter().any(|local| wide_type(local.ty))
@@ -370,6 +377,11 @@ impl<'a> ExecutionPlan<'a> {
                             }))
                         )
                     })
+        });
+        let characters = functions.iter().any(|f| {
+            f.result == ValueTy::Scalar(hir::Ty::Char)
+                || f.locals.iter().any(|l| l.ty == hir::Ty::Char)
+                || f.places.iter().any(|p| p.ty == hir::Ty::Char)
         });
         let floats = functions.iter().any(|f| {
             matches!(f.result, ValueTy::Scalar(ty) if ty.floating())
@@ -516,7 +528,8 @@ impl<'a> ExecutionPlan<'a> {
             wide_scalars,
             integer_extension: u8::from(integer_extension)
                 | (u8::from(bitwise) << 1)
-                | (u8::from(floats) << 2),
+                | (u8::from(floats) << 2)
+                | (u8::from(characters) << 3),
             quad_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.

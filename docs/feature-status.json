@@ -339,7 +339,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -1581,6 +1581,35 @@
         "src/frontend/oir/owned/source/float_tests.rs",
         "scripts/verify_floats.py",
         "scripts/test_floats.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "characters",
+      "classification": "production-path",
+      "summary": "Unicode scalar literals, comparisons, checked integer conversions, UTF-8 output and aggregate storage.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "One Unicode scalar per character. No implicit conversions, character arithmetic, normalization or locale collation. Conversion methods currently take named values. Existing borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0056-characters.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser/characters.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "src/frontend/oir/owned/native.rs",
+        "native/typed_character.c"
+      ],
+      "tests": [
+        "tests/typed_characters.rs",
+        "src/frontend/oir/owned/source/character_tests.rs",
+        "scripts/verify_characters.py",
+        "scripts/test_characters.py"
       ],
       "evidence": []
     }

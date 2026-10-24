@@ -121,7 +121,9 @@ fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
             | Rvalue::WidenI64 { .. }
             | Rvalue::I64(_)
             | Rvalue::Integer { .. }
+            | Rvalue::CharacterConvert { .. }
             | Rvalue::FloatConvert { .. }
+            | Rvalue::Character(_)
             | Rvalue::Float { .. }
             | Rvalue::FloatArithmetic { .. }
             | Rvalue::FloatNegate { .. }

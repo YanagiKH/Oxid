@@ -57,6 +57,7 @@ impl FixedArrayTy {
                 | hir::Ty::Isize
                 | hir::Ty::Usize
                 | hir::Ty::I128
+                | hir::Ty::Char
                 | hir::Ty::F32
                 | hir::Ty::F64
                 | hir::Ty::U128
@@ -176,6 +177,7 @@ impl BorrowedSlot {
                 | hir::Ty::Isize
                 | hir::Ty::Usize
                 | hir::Ty::I128
+                | hir::Ty::Char
                 | hir::Ty::F32
                 | hir::Ty::F64
                 | hir::Ty::U128),
@@ -355,7 +357,9 @@ impl Layout {
         match ty {
             hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => Self { size: 1, align: 1 },
             hir::Ty::I16 | hir::Ty::U16 => Self { size: 2, align: 2 },
-            hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => Self { size: 4, align: 4 },
+            hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => {
+                Self { size: 4, align: 4 }
+            }
             hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => {
                 Self { size: 8, align: 8 }
             }
@@ -868,6 +872,7 @@ impl Declarations {
                 | hir::Ty::Usize
                 | hir::Ty::I128
                 | hir::Ty::U128
+                | hir::Ty::Char
                 | hir::Ty::F32
                 | hir::Ty::F64,
             ) => Ok(()),
@@ -1304,6 +1309,7 @@ where
                     | hir::Ty::Isize
                     | hir::Ty::Usize
                     | hir::Ty::I128
+                    | hir::Ty::Char
                     | hir::Ty::F32
                     | hir::Ty::F64
                     | hir::Ty::U128

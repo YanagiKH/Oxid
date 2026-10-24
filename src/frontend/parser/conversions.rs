@@ -17,6 +17,8 @@ impl Parser<'_> {
             return None;
         }
         let op = match self.source.text_at(name.span) {
+            "to_char_checked" if self.wide_scalars_enabled() => ConversionOp::ToCharChecked,
+            "to_u32" if self.wide_scalars_enabled() => ConversionOp::CharToU32,
             "to_f32" if self.wide_scalars_enabled() => ConversionOp::ToFloat(FloatTypeSyntax::F32),
             "to_f64" if self.wide_scalars_enabled() => ConversionOp::ToFloat(FloatTypeSyntax::F64),
             "to_bits" if self.wide_scalars_enabled() => ConversionOp::FloatToBits,

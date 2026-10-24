@@ -2403,6 +2403,7 @@ fn expression_type(
             ValueTy::Owned(AggregateTy::Enum(variant.enumeration))
         }
         ExprKind::Bool(_) => scalar(Ty::Bool),
+        ExprKind::Character(_) => scalar(Ty::Char),
         ExprKind::I32(_) => scalar(Ty::I32),
         ExprKind::I64(_) => scalar(Ty::I64),
         ExprKind::Float { ty, .. }
@@ -2422,6 +2423,19 @@ fn expression_type(
         ExprKind::Conversion { op, operand, .. } => {
             let actual = child!(*operand)?;
             let (accepted, input, output) = match op {
+                operation @ (ConversionOp::ToCharChecked | ConversionOp::CharToU32) => {
+                    let result = if let ValueTy::Scalar(ty) = actual {
+                        ty.character_conversion(*operation)
+                    } else {
+                        None
+                    };
+                    let input = if *operation == ConversionOp::CharToU32 {
+                        Ty::Char
+                    } else {
+                        Ty::U32
+                    };
+                    (result.is_some(), input, result.unwrap_or(Ty::Char))
+                }
                 operation @ (ConversionOp::ToFloat(_)
                 | ConversionOp::FloatToBits
                 | ConversionOp::FloatFromBits(_)) => {
@@ -2571,7 +2585,7 @@ fn expression_type(
                 ComparisonOp::Equal | ComparisonOp::NotEqual => {
                     if !matches!(
                         actual,
-                        ValueTy::Scalar(ty) if ty == Ty::Bool || ty.integer_bits().is_some() || ty.floating()
+                        ValueTy::Scalar(ty) if ty == Ty::Bool || ty.integer_bits().is_some() || ty.floating() || ty == Ty::Char
                     ) {
                         return Err(error(
                             "E0300",
@@ -2582,7 +2596,7 @@ fn expression_type(
                     actual
                 }
                 _ => {
-                    if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() || ty.floating())
+                    if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() || ty.floating() || ty == Ty::Char)
                     {
                         return Err(mismatch(
                             program,

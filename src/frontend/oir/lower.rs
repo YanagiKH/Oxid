@@ -403,7 +403,9 @@ fn lower_expression(
                         name_span,
                         source_expr,
                     } => Some(match op {
-                        hir::ConversionOp::ToFloat(_)
+                        hir::ConversionOp::ToCharChecked
+                        | hir::ConversionOp::CharToU32
+                        | hir::ConversionOp::ToFloat(_)
                         | hir::ConversionOp::FloatToBits
                         | hir::ConversionOp::FloatFromBits(_)
                         | hir::ConversionOp::ToI64

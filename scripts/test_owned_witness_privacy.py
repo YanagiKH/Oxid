@@ -138,7 +138,10 @@ class PrivacyCheckoutTests(unittest.TestCase):
                              (ROOT / 'native/typed_integer128.c').read_bytes())
             # The float adapter embeds one C source and its generated no_std archive.
             float_runtime_inputs = 2
-            self.assertEqual(count, float_runtime_inputs + predecessor_include_sites + u8_boundary_source_reads
+            character_runtime_inputs = 1
+            self.assertEqual((checkout / "native/typed_character.c").read_bytes(),
+                             (ROOT / "native/typed_character.c").read_bytes())
+            self.assertEqual(count, character_runtime_inputs + float_runtime_inputs + predecessor_include_sites + u8_boundary_source_reads
                              + byte_buffer_runtime_reads + native_file_runtime_reads
                              + program_argument_runtime_reads + integer128_runtime_reads)
 
