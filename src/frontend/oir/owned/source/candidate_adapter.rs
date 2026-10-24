@@ -118,7 +118,9 @@ fn scalar_type(ty: hir::Ty) -> String {
         | hir::Ty::Isize
         | hir::Ty::Usize
         | hir::Ty::I128
-        | hir::Ty::U128 => {
+        | hir::Ty::U128
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
             panic!("integer width is outside this retained narrow fixture or observer")
         }
         hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
@@ -195,6 +197,10 @@ fn rvalue(value: &Rvalue) -> String {
         Rvalue::Bitwise { .. }
         | Rvalue::BitNot { .. }
         | Rvalue::Integer { .. }
+        | Rvalue::Float { .. }
+        | Rvalue::FloatConvert { .. }
+        | Rvalue::FloatNegate { .. }
+        | Rvalue::FloatArithmetic { .. }
         | Rvalue::Integer128 { .. }
         | Rvalue::CheckedInteger { .. }
         | Rvalue::CheckedNegateInteger { .. }

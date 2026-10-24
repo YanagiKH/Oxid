@@ -96,6 +96,49 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::FloatConvert {
+            op,
+            operand,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            operand_in(locals, operand, sources)?
+                .float_conversion(op)
+                .ok_or_else(|| failure(FailureKind::TypeMismatch, operand.span))?
+        }
+        Rvalue::Float { bits, ty } => {
+            if RuntimeScalar::from_float(ty, bits).is_none() {
+                return Err(failure(FailureKind::TypeMismatch, assign.span));
+            }
+            ty
+        }
+        Rvalue::FloatNegate {
+            operand,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, operand, sources)?;
+            if !ty.floating() {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            ty
+        }
+        Rvalue::FloatArithmetic {
+            left,
+            right,
+            operator_span,
+            ..
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, left, sources)?;
+            if !ty.floating() {
+                return Err(failure(FailureKind::TypeMismatch, left.span));
+            }
+            same_type(operand_in(locals, right, sources)?, ty, right.span)?;
+            ty
+        }
+
         Rvalue::BitNot {
             operand,
             operator_span,
@@ -304,7 +347,10 @@ pub(super) fn scalar_statement_shape(
             let left_ty = operand_in(locals, left, sources)?;
             let expected = match op {
                 hir::ComparisonOp::Equal | hir::ComparisonOp::NotEqual => {
-                    if left_ty != hir::Ty::Bool && left_ty.integer_bits().is_none() {
+                    if left_ty != hir::Ty::Bool
+                        && left_ty.integer_bits().is_none()
+                        && !left_ty.floating()
+                    {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -313,7 +359,7 @@ pub(super) fn scalar_statement_shape(
                 | hir::ComparisonOp::LessEqual
                 | hir::ComparisonOp::Greater
                 | hir::ComparisonOp::GreaterEqual => {
-                    if left_ty.integer_bits().is_none() {
+                    if left_ty.integer_bits().is_none() && !left_ty.floating() {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -632,7 +678,9 @@ pub(super) fn scalar_statement_uses(
         }
         Statement::Assign(assign) => match assign.value {
             Rvalue::Load(place) => visit(ScalarUse::Place(place)),
-            Rvalue::BitNot { operand: value, .. }
+            Rvalue::FloatConvert { operand: value, .. }
+            | Rvalue::FloatNegate { operand: value, .. }
+            | Rvalue::BitNot { operand: value, .. }
             | Rvalue::Copy(value)
             | Rvalue::CheckedI32ToU8 { operand: value, .. }
             | Rvalue::U8ToI32 { operand: value, .. }
@@ -644,7 +692,8 @@ pub(super) fn scalar_statement_uses(
             | Rvalue::CheckedNegateInteger { operand: value, .. }
             | Rvalue::CheckedIntegerCast { operand: value, .. }
             | Rvalue::CheckedNegateI64 { operand: value, .. } => visit(ScalarUse::Operand(value)),
-            Rvalue::Bitwise { left, right, .. }
+            Rvalue::FloatArithmetic { left, right, .. }
+            | Rvalue::Bitwise { left, right, .. }
             | Rvalue::CheckedI32 { left, right, .. }
             | Rvalue::CheckedI64 { left, right, .. }
             | Rvalue::CheckedInteger { left, right, .. }
@@ -656,6 +705,7 @@ pub(super) fn scalar_statement_uses(
             | Rvalue::I32(_)
             | Rvalue::I64(_)
             | Rvalue::Integer { .. }
+            | Rvalue::Float { .. }
             | Rvalue::Integer128 { .. }
             | Rvalue::U8(_)
             | Rvalue::Unit => Ok(()),

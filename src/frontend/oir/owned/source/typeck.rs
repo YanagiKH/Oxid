@@ -2405,7 +2405,9 @@ fn expression_type(
         ExprKind::Bool(_) => scalar(Ty::Bool),
         ExprKind::I32(_) => scalar(Ty::I32),
         ExprKind::I64(_) => scalar(Ty::I64),
-        ExprKind::Integer { ty, .. } | ExprKind::Integer128 { ty, .. } => scalar(*ty),
+        ExprKind::Float { ty, .. }
+        | ExprKind::Integer { ty, .. }
+        | ExprKind::Integer128 { ty, .. } => scalar(*ty),
         ExprKind::Unit => scalar(Ty::Unit),
         ExprKind::Binding(binding) => match bindings[binding.0]
             .expect("resolved binding initialized")
@@ -2420,6 +2422,24 @@ fn expression_type(
         ExprKind::Conversion { op, operand, .. } => {
             let actual = child!(*operand)?;
             let (accepted, input, output) = match op {
+                operation @ (ConversionOp::ToFloat(_)
+                | ConversionOp::FloatToBits
+                | ConversionOp::FloatFromBits(_)) => {
+                    let result = if let ValueTy::Scalar(ty) = actual {
+                        ty.float_conversion(*operation)
+                    } else {
+                        None
+                    };
+                    let input = match operation {
+                        ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F32) => {
+                            Ty::U32
+                        }
+                        ConversionOp::FloatFromBits(_) => Ty::U64,
+                        ConversionOp::FloatToBits => Ty::F64,
+                        _ => Ty::I32,
+                    };
+                    (result.is_some(), input, result.unwrap_or(Ty::F64))
+                }
                 ConversionOp::ToU8Checked => (
                     matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()),
                     Ty::I32,
@@ -2455,7 +2475,7 @@ fn expression_type(
         ExprKind::Group(inner) => child!(*inner)?,
         ExprKind::Negate { operand, .. } => {
             let actual = child!(*operand)?;
-            if !matches!(actual, ValueTy::Scalar(ty) if ty.signed_integer()) {
+            if !matches!(actual, ValueTy::Scalar(ty) if ty.signed_integer() || ty.floating()) {
                 return Err(mismatch(
                     program,
                     scalar(Ty::I32),
@@ -2518,7 +2538,8 @@ fn expression_type(
             let actual = child!(*left)?;
             let expected = if matches!(expr.kind, ExprKind::Logical { .. }) {
                 scalar(Ty::Bool)
-            } else if matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+            } else if matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() || ty.floating())
+            {
                 actual
             } else {
                 scalar(Ty::I32)
@@ -2550,7 +2571,7 @@ fn expression_type(
                 ComparisonOp::Equal | ComparisonOp::NotEqual => {
                     if !matches!(
                         actual,
-                        ValueTy::Scalar(ty) if ty == Ty::Bool || ty.integer_bits().is_some()
+                        ValueTy::Scalar(ty) if ty == Ty::Bool || ty.integer_bits().is_some() || ty.floating()
                     ) {
                         return Err(error(
                             "E0300",
@@ -2561,7 +2582,8 @@ fn expression_type(
                     actual
                 }
                 _ => {
-                    if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                    if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() || ty.floating())
+                    {
                         return Err(mismatch(
                             program,
                             scalar(Ty::I32),

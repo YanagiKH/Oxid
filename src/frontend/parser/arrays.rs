@@ -123,6 +123,16 @@ impl Parser<'_> {
                 ArrayElementTypeSyntax::U8
             }
             Kind::Ident
+                if self.wide_scalars_enabled()
+                    && FloatTypeSyntax::from_spelling(self.source.text_at(token.span))
+                        .is_some() =>
+            {
+                self.bump();
+                ArrayElementTypeSyntax::Float(
+                    FloatTypeSyntax::from_spelling(self.source.text_at(token.span)).unwrap(),
+                )
+            }
+            Kind::Ident
                 if self.wide_scalars_enabled() && self.source.text_at(token.span) == "i64" =>
             {
                 self.bump();

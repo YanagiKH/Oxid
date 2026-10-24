@@ -98,7 +98,13 @@ class PrivacyCheckoutTests(unittest.TestCase):
                 dynamic = re.findall(
                     r'include(?:_str|_bytes)?!\(\s*concat!\(\s*env!\("CARGO_MANIFEST_DIR"\),\s*"(/tests/fixtures/checked_hir_import/(?:scalar-)?)",\s*\$name,\s*"(-source\.txt|-success\.bin)"\s*\)\s*\)',
                     text)
-                self.assertEqual(len(literal) + len(rooted) + len(dynamic),
+                generated = re.findall(r'include_bytes!\(concat!\(env!\("OUT_DIR"\), "/float_format\.a"\)\)', text)
+                self.assertEqual(len(generated), 1 if source.relative_to(checkout).as_posix() == 'src/frontend/native.rs' else 0)
+                if generated:
+                    self.assertEqual((checkout / 'native/float_format.rs').read_bytes(), (ROOT / 'native/float_format.rs').read_bytes())
+                    self.assertIn('native/float_format.rs', (checkout / 'build.rs').read_text())
+                    self.assertIn('float_format.a', (checkout / 'build.rs').read_text())
+                self.assertEqual(len(literal) + len(rooted) + len(dynamic) + len(generated),
                                  len(re.findall(r'include(?:_str|_bytes)?!\(', text)), source)
                 for name, base in [(name, source.parent) for name in literal] + [(name.lstrip('/'), checkout) for name in rooted]:
                     target = (base / name).resolve()
@@ -115,7 +121,7 @@ class PrivacyCheckoutTests(unittest.TestCase):
                         relative = prefix.lstrip('/') + name + suffix
                         self.assertIn(relative, privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES)
                         self.assertTrue((checkout / relative).is_file(), relative)
-                count += len(literal) + len(rooted) + len(dynamic)
+                count += len(literal) + len(rooted) + len(dynamic) + len(generated)
             # 61 predecessor includes, 60 original import includes/macro
             # definitions, two v2 endpoints and ten diagnostic-test include sites.
             # Real cfg(test)
@@ -130,7 +136,9 @@ class PrivacyCheckoutTests(unittest.TestCase):
             integer128_runtime_reads = 1  # typed_integer128.c
             self.assertEqual((checkout / 'native/typed_integer128.c').read_bytes(),
                              (ROOT / 'native/typed_integer128.c').read_bytes())
-            self.assertEqual(count, predecessor_include_sites + u8_boundary_source_reads
+            # The float adapter embeds one C source and its generated no_std archive.
+            float_runtime_inputs = 2
+            self.assertEqual(count, float_runtime_inputs + predecessor_include_sites + u8_boundary_source_reads
                              + byte_buffer_runtime_reads + native_file_runtime_reads
                              + program_argument_runtime_reads + integer128_runtime_reads)
 

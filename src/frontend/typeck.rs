@@ -287,6 +287,14 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                             ConversionOp::ToI32 => (Ty::U8, Ty::I32),
                             ConversionOp::ToI64 => (Ty::I32, Ty::I64),
                             ConversionOp::ToI32Checked => (Ty::I64, Ty::I32),
+                            ConversionOp::ToFloat(_)
+                            | ConversionOp::FloatToBits
+                            | ConversionOp::FloatFromBits(_) => return Err(Diagnostic::new(
+                                "E0300",
+                                "type",
+                                "floating-point conversion requires the owned typed source path",
+                                Some(expr.span),
+                            )),
                             ConversionOp::ToIntegerChecked(_) => {
                                 return Err(Diagnostic::new(
                                     "E0300",

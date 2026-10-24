@@ -85,6 +85,10 @@ pub(super) enum ExprKind {
     Bool(bool),
     I32(i32),
     I64(i64),
+    Float {
+        bits: u64,
+        ty: Ty,
+    },
     Integer {
         bits: u64,
         ty: Ty,

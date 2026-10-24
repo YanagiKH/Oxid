@@ -246,6 +246,14 @@ impl Parser<'_> {
                 self.bump();
                 (ScalarTypeSyntax::I32, start.end)
             }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && FloatTypeSyntax::from_spelling(self.source.text_at(start)).is_some() =>
+            {
+                let kind = FloatTypeSyntax::from_spelling(self.source.text_at(start)).unwrap();
+                self.bump();
+                (ScalarTypeSyntax::Float(kind), start.end)
+            }
             Kind::Ident if self.wide_scalars_enabled() && self.source.text_at(start) == "i64" => {
                 self.bump();
                 (ScalarTypeSyntax::I64, start.end)

@@ -141,11 +141,22 @@ through the bit width minus one report E0611. Left shift discards high bits;
 signed right shift copies the sign bit. See [integer bit operations](../rfcs/0054-integer-bit-operations.md)
 for precedence, examples and execution rules.
 
+## Floating-point numbers
+
+Use `f32` or `f64` for IEEE 754 binary floating-point arithmetic. Decimal and
+scientific literals default to `f64`; write `0.1f32` for single precision.
+Operations require matching types. Named numeric values convert explicitly
+with `.to_f32()` or `.to_f64()`; `.to_bits()` and the matching `from_bits`
+constructor preserve raw representations. Floats support calls and aggregate
+storage. JSON result values are decimal strings, including `-0`, `inf` and
+`NaN`. See [floating-point numbers](../rfcs/0055-floating-point.md) for rounding,
+comparison, conversion and native execution rules.
+
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept
 move-only scalar arrays, including `[bool; N]`, `[(); N]` and arrays of the
-supported integer types, for decimal lengths 0..1024.
+supported integer and floating-point types, for decimal lengths 0..1024.
 Nonempty literals infer one exact scalar element type and their element count:
 
 ```text

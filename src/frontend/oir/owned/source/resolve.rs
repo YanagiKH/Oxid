@@ -2941,6 +2941,53 @@ impl<'a> Resolver<'_, 'a> {
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
             }
+            ast::ExprKind::FloatNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                let text = self.text(*digits);
+                let bits = match kind {
+                    ast::FloatTypeSyntax::F32 => {
+                        let value: f32 = text.parse().map_err(|_| {
+                            error(
+                                "E0301",
+                                format_args!("invalid floating-point literal"),
+                                expr.span,
+                            )
+                        })?;
+                        if !value.is_finite() {
+                            return Err(error(
+                                "E0301",
+                                format_args!("f32 literal is outside the finite range"),
+                                expr.span,
+                            ));
+                        }
+                        u64::from((if *negative { -value } else { value }).to_bits())
+                    }
+                    ast::FloatTypeSyntax::F64 => {
+                        let value: f64 = text.parse().map_err(|_| {
+                            error(
+                                "E0301",
+                                format_args!("invalid floating-point literal"),
+                                expr.span,
+                            )
+                        })?;
+                        if !value.is_finite() {
+                            return Err(error(
+                                "E0301",
+                                format_args!("f64 literal is outside the finite range"),
+                                expr.span,
+                            ));
+                        }
+                        (if *negative { -value } else { value }).to_bits()
+                    }
+                };
+                ExprKind::Float {
+                    bits,
+                    ty: Ty::from_float(*kind),
+                }
+            }
             ast::ExprKind::I64Number { digits, negative } => {
                 ExprKind::I64(decimal_i64(self.text(*digits), *negative, expr.span)?)
             }

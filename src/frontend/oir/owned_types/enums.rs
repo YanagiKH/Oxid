@@ -525,7 +525,9 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
             | hir::Ty::Isize
             | hir::Ty::Usize
             | hir::Ty::I128
-            | hir::Ty::U128),
+            | hir::Ty::U128
+            | hir::Ty::F32
+            | hir::Ty::F64),
         ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
@@ -617,7 +619,7 @@ fn scalar_enum_layout(declaration: &RawEnumDecl) -> Layout {
         return Layout { size: 32, align: 16 };
     }
     if declaration.variants.iter().any(|variant| {
-        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.integer_bits() == Some(64))
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.integer_bits() == Some(64) || ty == hir::Ty::F64)
     }) {
         Layout { size: 16, align: 8 }
     } else {

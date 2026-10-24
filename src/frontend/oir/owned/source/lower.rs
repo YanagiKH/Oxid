@@ -1376,6 +1376,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::I64(value) => Rvalue::I64(value),
+            source::ExprKind::Float { bits, ty } => Rvalue::Float { bits, ty },
             source::ExprKind::Integer { bits, ty } => Rvalue::Integer { bits, ty },
             source::ExprKind::Integer128 { low, high, ty } => Rvalue::Integer128 { low, high, ty },
             source::ExprKind::Unit => Rvalue::Unit,
@@ -1390,6 +1391,14 @@ impl<'a, 'b> Walk<'a, 'b> {
                 operand,
                 name_span,
             } => match op {
+                op @ (source::ConversionOp::ToFloat(_)
+                | source::ConversionOp::FloatToBits
+                | source::ConversionOp::FloatFromBits(_)) => Rvalue::FloatConvert {
+                    op,
+                    operand: self.operand(operand)?,
+                    source_expr,
+                    name_span,
+                },
                 source::ConversionOp::ToU8Checked
                     if self.view.expression_ty(operand) == ValueTy::Scalar(hir::Ty::I64) =>
                 {
@@ -1451,7 +1460,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                 operand,
                 operator_span,
             } => {
-                if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
+                if matches!(self.view.expression_ty(id), ValueTy::Scalar(ty) if ty.floating()) {
+                    Rvalue::FloatNegate {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
                     Rvalue::CheckedNegateI64 {
                         operand: self.operand(operand)?,
                         operator_span,
@@ -1514,7 +1528,14 @@ impl<'a, 'b> Walk<'a, 'b> {
                 right,
                 operator_span,
             } => {
-                if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
+                if matches!(self.view.expression_ty(id), ValueTy::Scalar(ty) if ty.floating()) {
+                    Rvalue::FloatArithmetic {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
                     Rvalue::CheckedI64 {
                         op,
                         left: self.operand(left)?,

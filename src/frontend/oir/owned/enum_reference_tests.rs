@@ -493,7 +493,9 @@ fn enum_reference_poisoned_destinations_copy_only_tag_and_active_bytes() {
                     | hir::Ty::Isize
                     | hir::Ty::Usize
                     | hir::Ty::I128
-                    | hir::Ty::U128,
+                    | hir::Ty::U128
+                    | hir::Ty::F32
+                    | hir::Ty::F64,
                 ) => panic!("integer width is outside this retained narrow fixture or observer"),
                 Some(hir::Ty::I64) => {
                     panic!("i64 is outside this retained narrow fixture or observer")
@@ -947,7 +949,9 @@ fn enum_reference_changed_variant_replacement_every_fuel_and_active_bytes() {
                         | hir::Ty::Isize
                         | hir::Ty::Usize
                         | hir::Ty::I128
-                        | hir::Ty::U128,
+                        | hir::Ty::U128
+                        | hir::Ty::F32
+                        | hir::Ty::F64,
                     ) => {
                         panic!("integer width is outside this retained narrow fixture or observer")
                     }

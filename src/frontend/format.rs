@@ -437,6 +437,33 @@ fn roles_with_syntax(
             ExprKind::ByteString { .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
+            ExprKind::Conversion {
+                op: crate::frontend::ast::ConversionOp::FloatFromBits(_),
+                name_span,
+                ..
+            } => {
+                for token in program.tokens.iter().filter(|t| {
+                    t.span.start >= expression.span.start && t.span.end <= name_span.start
+                }) {
+                    if token.kind == Kind::Colon {
+                        roles[token.span.start] |= TIGHT_AFTER;
+                    }
+                }
+            }
+            ExprKind::FloatNumber {
+                digits, negative, ..
+            } => {
+                if *negative {
+                    roles[expression.span.start] |= TIGHT_AFTER;
+                }
+                for token in program
+                    .tokens
+                    .iter()
+                    .filter(|t| t.span.start >= digits.start && t.span.end < digits.end)
+                {
+                    roles[token.span.start] |= TIGHT_AFTER;
+                }
+            }
             ExprKind::Negate { .. }
             | ExprKind::Number { negative: true, .. }
             | ExprKind::I64Number { negative: true, .. }
