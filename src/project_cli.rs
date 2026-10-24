@@ -435,7 +435,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "check" | "run" | "compile" | "fmt" => {
             if options.has_lock_options() {
                 Err("locking options require a source-less project command".into())
-            } else if !manifest.dependencies.is_empty() {
+            } else if command != "fmt" && !manifest.dependencies.is_empty() {
                 Err("package dependencies require a source-less project command: use `oxid check`, `oxid run`, `oxid build` or `oxid test`".into())
             } else if command == "fmt"
                 && operands
