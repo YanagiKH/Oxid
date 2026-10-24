@@ -356,6 +356,8 @@ impl<'s> SourceOwner<'s> {
                     | ast::ExprKind::ByteString { .. }
                     | ast::ExprKind::I64Number { .. }
                     | ast::ExprKind::IntegerNumber { .. }
+                    | ast::ExprKind::Bitwise { .. }
+                    | ast::ExprKind::BitNot { .. }
                     | ast::ExprKind::Conversion { .. } => owned = true,
                     ast::ExprKind::Call { args, .. } => {
                         for argument in args {

@@ -130,7 +130,7 @@ pub(super) struct ExecutionPlan<'a> {
     metadata_bytes: u32,
     dynamic_resources: bool,
     wide_scalars: bool,
-    integer_extension: bool,
+    integer_extension: u8,
     quad_scalars: bool,
 }
 const _: () = assert!(
@@ -142,7 +142,10 @@ impl<'a> ExecutionPlan<'a> {
         self.wide_scalars
     }
     pub(super) fn uses_integer_extension(&self) -> bool {
-        self.integer_extension
+        self.integer_extension & 1 != 0
+    }
+    pub(super) fn uses_bitwise(&self) -> bool {
+        self.integer_extension & 2 != 0
     }
     pub(super) fn uses_quad_scalars(&self) -> bool {
         self.quad_scalars
@@ -364,6 +367,19 @@ impl<'a> ExecutionPlan<'a> {
                         )
                     })
         });
+        let bitwise = functions
+            .iter()
+            .flat_map(|f| &f.blocks)
+            .flat_map(|b| &b.statements)
+            .any(|s| {
+                matches!(
+                    s.kind,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::Bitwise { .. } | Rvalue::BitNot { .. },
+                        ..
+                    }))
+                )
+            });
         let scalar_bytes = if quad_scalars {
             size_of::<Option<RuntimeValue>>()
         } else if wide_scalars {
@@ -489,7 +505,7 @@ impl<'a> ExecutionPlan<'a> {
                 .map_err(|_| AdmissionFailure::new("owned plan bytes", None))?,
             dynamic_resources,
             wide_scalars,
-            integer_extension,
+            integer_extension: u8::from(integer_extension) | (u8::from(bitwise) << 1),
             quad_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.

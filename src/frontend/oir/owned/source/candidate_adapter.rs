@@ -192,7 +192,9 @@ fn call_result(value: CallResult) -> String {
 
 fn rvalue(value: &Rvalue) -> String {
     match value {
-        Rvalue::Integer { .. }
+        Rvalue::Bitwise { .. }
+        | Rvalue::BitNot { .. }
+        | Rvalue::Integer { .. }
         | Rvalue::Integer128 { .. }
         | Rvalue::CheckedInteger { .. }
         | Rvalue::CheckedNegateInteger { .. }

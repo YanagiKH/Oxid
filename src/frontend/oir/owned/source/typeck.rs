@@ -2465,6 +2465,43 @@ fn expression_type(
             }
             actual
         }
+        ExprKind::BitNot { operand, .. } => {
+            let actual = child!(*operand)?;
+            if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                return Err(mismatch(
+                    program,
+                    scalar(Ty::I32),
+                    actual,
+                    function.expressions[operand.0].span,
+                ));
+            }
+            actual
+        }
+        ExprKind::Bitwise {
+            op, left, right, ..
+        } => {
+            let actual = child!(*left)?;
+            if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                return Err(mismatch(
+                    program,
+                    scalar(Ty::I32),
+                    actual,
+                    function.expressions[left.0].span,
+                ));
+            }
+            let rhs = child!(*right)?;
+            if (op.shift() && !matches!(rhs, ValueTy::Scalar(ty) if ty.integer_bits().is_some()))
+                || (!op.shift() && rhs != actual)
+            {
+                return Err(mismatch(
+                    program,
+                    actual,
+                    rhs,
+                    function.expressions[right.0].span,
+                ));
+            }
+            actual
+        }
         ExprKind::Not { operand, .. } => {
             let actual = child!(*operand)?;
             if actual != scalar(Ty::Bool) {

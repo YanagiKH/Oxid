@@ -63,11 +63,12 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_integer128_compatibility.py', current)
+        self.assertIn('scripts/verify_integer_bit_compatibility.py', current)
         self.assertIn('scripts/verify_i64.py', current)
         self.assertIn('scripts/verify_integer_widths.py', current)
         self.assertIn('scripts/verify_byte_integers.py', current)
         self.assertIn('scripts/verify_integer128.py', current)
+        self.assertIn('scripts/verify_integer_bits.py', current)
         self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
 
         replay = block(self.ci, 'historical-qualification', 2)

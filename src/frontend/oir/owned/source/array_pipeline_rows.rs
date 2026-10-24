@@ -329,7 +329,10 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
-            source_hir::ExprKind::Integer { .. } | source_hir::ExprKind::Integer128 { .. } => {
+            source_hir::ExprKind::Bitwise { .. }
+            | source_hir::ExprKind::BitNot { .. }
+            | source_hir::ExprKind::Integer { .. }
+            | source_hir::ExprKind::Integer128 { .. } => {
                 panic!("integer width is outside this retained narrow fixture or observer")
             }
             source_hir::ExprKind::I64(_) => {
@@ -859,7 +862,9 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Rvalue::Integer { .. }
+            Rvalue::Bitwise { .. }
+            | Rvalue::BitNot { .. }
+            | Rvalue::Integer { .. }
             | Rvalue::Integer128 { .. }
             | Rvalue::CheckedInteger { .. }
             | Rvalue::CheckedNegateInteger { .. }

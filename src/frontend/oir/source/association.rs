@@ -156,7 +156,11 @@ impl<'s> Visitor<'s> {
                         self.span(operand.span)?;
                         self.span(*name_span)?;
                     }
-                    Rvalue::CheckedNegateI32 {
+                    Rvalue::BitNot {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::CheckedNegateI32 {
                         operand,
                         operator_span,
                     }
@@ -176,7 +180,13 @@ impl<'s> Visitor<'s> {
                         self.span(*operator_span)?;
                     }
                     Rvalue::Copy(operand) => self.span(operand.span)?,
-                    Rvalue::CompareScalar {
+                    Rvalue::Bitwise {
+                        left,
+                        right,
+                        operator_span,
+                        ..
+                    }
+                    | Rvalue::CompareScalar {
                         left,
                         right,
                         operator_span,

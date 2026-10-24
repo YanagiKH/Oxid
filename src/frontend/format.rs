@@ -12,6 +12,7 @@ const MAX_DELIMITERS: usize = 128;
 const MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 const TIGHT_AFTER: u8 = 1;
 const PATH_COLON: u8 = 2;
+const BITWISE_AND: u8 = 4;
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -422,6 +423,17 @@ fn roles_with_syntax(
     }
     for expression in &program.expressions {
         match &expression.kind {
+            ExprKind::BitNot { operator_span, .. } => roles[operator_span.start] |= TIGHT_AFTER,
+            ExprKind::Bitwise {
+                op, operator_span, ..
+            } => {
+                if op.shift() {
+                    roles[operator_span.start] |= TIGHT_AFTER;
+                }
+                if *op == crate::frontend::ast::BitwiseOp::And {
+                    roles[operator_span.start] |= BITWISE_AND;
+                }
+            }
             ExprKind::ByteString { .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
@@ -619,7 +631,8 @@ fn horizontal_space(source: &SourceFile, left: &Token, right: &Token, roles: &[u
         || (left.kind == Colon && roles[left.span.start] & PATH_COLON != 0)
         || (right.kind == Colon && roles[right.span.start] & PATH_COLON != 0)
         || right.kind == Colon
-        || matches!(left.kind, Ampersand | Not)
+        || left.kind == Not
+        || (left.kind == Ampersand && roles[left.span.start] & BITWISE_AND == 0)
         || roles[left.span.start] & TIGHT_AFTER != 0
         || (left.kind == LBrace && right.kind == RBrace)
     {

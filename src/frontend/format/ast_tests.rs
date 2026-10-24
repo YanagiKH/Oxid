@@ -304,6 +304,26 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::BitNot {
+                operand,
+                operator_span,
+            } => {
+                self.tag("bit-not");
+                self.span(*operator_span);
+                self.expression(*operand);
+            }
+            ExprKind::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                self.tag("bitwise");
+                self.count(*op as usize);
+                self.span(*operator_span);
+                self.expression(*left);
+                self.expression(*right);
+            }
             ExprKind::Conversion {
                 op,
                 operand,

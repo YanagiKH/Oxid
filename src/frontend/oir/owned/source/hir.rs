@@ -1,5 +1,7 @@
 //! Resolved source identities and immutable producer views, never an ownership proof.
-pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, ConversionOp, LogicalOp};
+pub(super) use crate::frontend::ast::{
+    ArithmeticOp, BitwiseOp, ComparisonOp, ConversionOp, LogicalOp,
+};
 pub(super) use crate::frontend::hir::{DefId, Ty};
 pub(super) use crate::frontend::oir::owned_types::{
     AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
@@ -64,6 +66,16 @@ pub(super) struct FieldInit {
 }
 #[derive(Debug)]
 pub(super) enum ExprKind {
+    BitNot {
+        operand: ExprId,
+        operator_span: Span,
+    },
+    Bitwise {
+        op: BitwiseOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Conversion {
         op: ConversionOp,
         operand: ExprId,

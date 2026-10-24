@@ -145,6 +145,16 @@ struct Assign {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Rvalue {
+    BitNot {
+        operand: Operand,
+        operator_span: Span,
+    },
+    Bitwise {
+        op: hir::BitwiseOp,
+        left: Operand,
+        right: Operand,
+        operator_span: Span,
+    },
     CheckedI32ToU8 {
         operand: Operand,
         name_span: Span,
@@ -574,6 +584,7 @@ pub(super) enum RunFailure {
     Entry(Option<Span>),
     ByteEntry(Span),
     QuadEntry(Span),
+    BitShift(Span),
     Fuel(Span),
     Frames(Span),
     Slots(Span),
@@ -598,6 +609,7 @@ impl RunFailure {
                 None,
             ),
             Self::Entry(span) => ("E0600", "typed-preview main must have no parameters", span),
+            Self::BitShift(span) => ("E0611", "integer shift count must be nonnegative and below the bit width", Some(span)),
             Self::QuadEntry(span) => ("E0600", "128-bit program requires the typed result interface", Some(span)),
             Self::ByteEntry(span) => ("E0600", "typed-preview main must return bool, i32 or ()", Some(span)),
             Self::Fuel(span) => ("E0601", "execution fuel exhausted", Some(span)),

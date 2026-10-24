@@ -208,17 +208,20 @@ fn spelling_is_validated_before_range_and_other_operators_remain_unavailable() {
             literal,
         );
     }
-    for (expr, origin) in [
-        ("+1", "+"),
-        ("true & false", "&"),
-        ("true | false", "|"),
-        ("1 as i32", "as"),
-    ] {
+    for (expr, origin) in [("+1", "+"), ("1 as i32", "as")] {
         reject(
             &format!("fn main() -> i32 {{ return {expr}; }}"),
             "E0101",
             "parse",
             origin,
+        );
+    }
+    for expr in ["true & false", "true | false"] {
+        reject(
+            &format!("fn main() -> i32 {{ return {expr}; }}"),
+            "E0300",
+            "type",
+            "true",
         );
     }
 }

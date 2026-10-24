@@ -1,5 +1,5 @@
 //! Resolved IDs are compilation-local, deterministic in source order.
-pub use super::ast::{ArithmeticOp, ComparisonOp, ConversionOp, LogicalOp};
+pub use super::ast::{ArithmeticOp, BitwiseOp, ComparisonOp, ConversionOp, LogicalOp};
 use super::{
     ast,
     declaration_index::{
@@ -760,7 +760,9 @@ impl<'a> Resolver<'_, 'a> {
                     Some(expr.span),
                 ));
             }
-            ast::ExprKind::ArrayLiteral { .. }
+            ast::ExprKind::Bitwise { .. }
+            | ast::ExprKind::BitNot { .. }
+            | ast::ExprKind::ArrayLiteral { .. }
             | ast::ExprKind::ByteString { .. }
             | ast::ExprKind::IndexRead { .. }
             | ast::ExprKind::ArrayLength { .. } => {

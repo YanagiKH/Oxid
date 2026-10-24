@@ -133,6 +133,14 @@ comparisons, calls and aggregate storage. Convert named integers with
 JSON results use decimal strings. See [128-bit integers](../rfcs/0053-checked-128-bit-integers.md)
 for ranges, diagnostics and storage rules.
 
+## Integer bit operations
+
+Integers support `&`, `|`, `^`, `~`, `<<` and `>>`. Masks require matching
+operand types; a shift count may use any integer type. Counts outside zero
+through the bit width minus one report E0611. Left shift discards high bits;
+signed right shift copies the sign bit. See [integer bit operations](../rfcs/0054-integer-bit-operations.md)
+for precedence, examples and execution rules.
+
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept
