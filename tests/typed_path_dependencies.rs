@@ -352,7 +352,7 @@ fn path_and_manifest_failures_are_precise_and_json_remains_framed() {
 #[test]
 fn unsupported_dependency_forms_and_malicious_paths_cannot_be_ignored() {
     for declaration in [
-        "[dependencies]\ndep = \"https://invalid.example/repo.git#0123456789012345678901234567890123456789\"\n",
+        "[dependencies]\ndep = \"https://invalid.example/repo.git#main\"\n",
         "[dependencies]\ndep = \"git+file:///tmp/repo\"\n",
         "[dependencies]\ndep = \"registry:dep@1\"\n",
         "[dependencies]\ndep = \"../dep\\u0000\"\n",

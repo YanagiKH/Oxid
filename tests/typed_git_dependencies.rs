@@ -370,6 +370,54 @@ fn a_symlinked_cache_root_is_refused_without_writing_its_target() {
     assert_eq!(fs::read_dir(f.0.join("outside")).unwrap().count(), 1);
 }
 
+#[test]
+fn a_local_alias_cannot_bypass_a_pinned_packages_dependency_boundary() {
+    let f = Fixture::new();
+    let _ = f.repository();
+    f.write(
+        "outside/oxid.toml",
+        "[project]\nname=\"outside\"\nedition=\"typed-preview\"\nkind=\"lib\"\n",
+    );
+    f.write("outside/src/lib.ox", "pub fn answer()->i32{return 42;}");
+    let manifest = fs::read_to_string(f.0.join("remote/oxid.toml")).unwrap();
+    f.write(
+        "remote/oxid.toml",
+        &format!(
+            "{manifest}[dependencies]\nescape={:?}\n",
+            f.0.join("outside").to_str().unwrap()
+        ),
+    );
+    f.write(
+        "remote/src/lib.ox",
+        "use crate::escape::answer;pub fn read()->i32{return answer();}",
+    );
+    f.git("remote", &["add", "."]);
+    f.git(
+        "remote",
+        &["commit", "--quiet", "-m", "Request outside package"],
+    );
+    let revision = f.git("remote", &["rev-parse", "HEAD"]);
+    let source = f.source(&revision);
+    f.application(&[("pinned", source.clone())], "fn main()->i32{return 0;}");
+    failure(f.invoke(&["check"]), "inside its checkout");
+    let cached = f
+        .checkouts()
+        .remove(0)
+        .strip_prefix(f.0.join("app"))
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    for (local_alias, git_alias) in [("first_local", "last_git"), ("last_local", "first_git")] {
+        f.application(
+            &[(local_alias, cached.clone()), (git_alias, source.clone())],
+            "fn main()->i32{return 0;}",
+        );
+        failure(f.invoke(&["check"]), "inside its checkout");
+        assert!(!f.0.join("app/oxid.lock").exists());
+        assert!(!f.0.join("app/.oxid/bin").exists());
+    }
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn deployed(path: &Path, cwd: &Path) -> Output {
     use std::os::unix::process::CommandExt;

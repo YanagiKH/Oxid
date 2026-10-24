@@ -2,7 +2,8 @@
 
 Status: experimental
 
-Typed projects on Linux can use libraries from Git repositories:
+Typed projects on Linux can use libraries from Git repositories. Install Git
+before resolving or checking these dependencies:
 
 ```toml
 [dependencies]
@@ -53,7 +54,8 @@ cache directory aside before fetching again. Earlier dependencies may already
 have resolved when a later one fails.
 
 A Git package may use relative local dependencies within its checkout. Such an
-edge cannot escape the checkout, including through a symlink. A separately pinned
+edge cannot escape the checkout, including through a symlink or another alias
+of the same cached package. A separately pinned
 Git dependency remains available for libraries in another repository.
 
 Source bundles currently require portable local dependency paths. A project

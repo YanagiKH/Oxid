@@ -587,6 +587,13 @@ trait ProjectReader {
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
         fs::canonicalize(root.join(source)).map_err(|error| error.to_string())
     }
+    fn finish_graph(
+        &self,
+        _packages: &[frontend::PackageSpec],
+        _manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
 struct RegularProjectReader {
     root: PathBuf,
@@ -626,6 +633,35 @@ impl ProjectReader for RegularProjectReader {
             return Err("a Git package's local dependency must remain inside its checkout".into());
         }
         Ok(target)
+    }
+
+    fn finish_graph(
+        &self,
+        packages: &[frontend::PackageSpec],
+        manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        // A local alias can discover a checkout before its Git edge. Validate
+        // the completed canonical graph so traversal order cannot hide a local
+        // edge outside a subsequently authenticated Git checkout.
+        for (package, manifest) in packages.iter().zip(manifests) {
+            if let Some(anchor) = self
+                .git_roots
+                .iter()
+                .find(|root| package.root.starts_with(root.as_path()))
+            {
+                for edge in &package.dependencies {
+                    let source = &manifest.manifest.dependencies[&edge.alias];
+                    let git = source.starts_with("git+") || source.starts_with("https://");
+                    if !git && !packages[edge.package].root.starts_with(anchor) {
+                        return Err(
+                            "a Git package's local dependency must remain inside its checkout"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -754,12 +790,18 @@ fn package_graph_with(
                     || source.chars().any(char::is_control)
                     || source.starts_with(['{', '['])
                 {
-                    return Err(format!("invalid dependency source for `{alias}`"));
+                    return Err(format!("dependencies: invalid source for `{alias}`"));
                 }
                 let target = self
                     .reader
                     .dependency(&root, &source)
-                    .map_err(|error| format!("dependencies: cannot resolve `{alias}`: {error}"))?;
+                    .map_err(|error| {
+                        if source.starts_with("git+") || source.starts_with("https://") {
+                            format!("dependencies: cannot resolve `{alias}`: {error}")
+                        } else {
+                            format!("dependencies: cannot open local path for `{alias}` ({source}): {error}")
+                        }
+                    })?;
                 if !target.is_dir() {
                     return Err(format!(
                         "dependencies: path for `{alias}` must be a package directory"
@@ -833,6 +875,9 @@ fn package_graph_with(
     if longest_path(0, &graph.packages, &mut vec![None; graph.packages.len()]) > 32 {
         return Err("dependencies exceed the 32-level graph path limit".into());
     }
+    graph
+        .reader
+        .finish_graph(&graph.packages, &graph.manifests)?;
     Ok(PackageGraph {
         specs: graph.packages,
         manifests: graph.manifests,

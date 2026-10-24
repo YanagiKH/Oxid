@@ -23,7 +23,7 @@ PREDECESSOR_POLICY_BYTES = 17852
 TYPED_GIT_CHANGED = frozenset(('src/main.rs', 'src/project_cli.rs', 'src/project_cli/workspace.rs', 'src/runtime/packages.rs'))
 TYPED_GIT_ADDED = frozenset()
 TYPED_GIT_INPUTS = {'src/main.rs': (155495, '101605d80c5c725277fb967c7eade2207b2a35891d0ee0ccd7fc7d673fa4b3c2'),
- 'src/project_cli.rs': (57771, '664c5c414ba21122d03d5491679bdfdbb8bad67b9d52f09b0446d19c7f0ca5e1'),
+ 'src/project_cli.rs': (59570, '0945af65dc1f2c87ceb697d7d5b497076bfbda1e21d04966208f16aed3870514'),
  'src/project_cli/workspace.rs': (32222,
                                   '0cda6edd33e2d61d1ab164ccb8194015e88f0176610285aed73cd41c410b0b2d'),
  'src/runtime/packages.rs': (78423, 'e9a016132953a280eb7b8eed1e1e311c27f44f6369fd5d5a346acdcfd96fdeb9')}
