@@ -1,5 +1,6 @@
 //! Experimental scalar compiler and bounded reference runner. This module does not import the legacy runtime.
 mod ast;
+mod build_config;
 mod builtin_catalog;
 mod declaration_index;
 mod diagnostic;
@@ -20,6 +21,7 @@ mod parser;
 mod project;
 mod source;
 mod typeck;
+pub(crate) use build_config::NativeBuildSettings;
 pub use driver::dispatch;
 pub(crate) use driver::{
     prepare_package_project, prepare_package_project_bounded, PreparedPackageProject,

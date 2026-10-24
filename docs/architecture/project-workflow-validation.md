@@ -25,13 +25,15 @@ Import failures and test failures fail the current job.
 semantic and resource assertions against the complete current compiler input
 set. The authenticated predecessor is
 `9ff8ef90a26f003f4616838dfc186fa3bfb6845c`. Admission permits changes only in
-the five CLI, manifest and build orchestration files plus seven explicitly
-named package loader/declaration/OIR source interfaces. The eleven additions are
+the five CLI, manifest and build orchestration files, seven explicitly
+named package loader/declaration/OIR source interfaces and four native
+presentation interfaces (one overlaps the package interface set). The twelve additions are
 `src/project_cli.rs`, `src/project_cli/workspace.rs`, `src/project_cli/package.rs`,
 `src/project_package.rs`, `src/project_package/archive.rs`, `src/project_lock.rs`,
 `src/doctor_cli.rs`,
 `src/frontend/native_cache.rs`, `src/frontend/native/doctor.rs`,
-`src/frontend/project/packages.rs`, and its compiler tests.
+`src/frontend/project/packages.rs`, its compiler tests and
+`src/frontend/build_config.rs`.
 All other predecessor inputs remain byte-identical. Compile-time
 include and path directives cannot add inputs through the changed files.
 
@@ -52,8 +54,10 @@ worktree evidence; CI does not enable it. `--prepare-only` performs admission
 and assembly with zero compiler executions and cannot report a semantic pass.
 These unchanged assertions cover predecessor single-package behavior and
 resource counts on the changed compiler. The source manifest explicitly records
-that they do not qualify new package or workspace semantics. Parser, ownership verification,
-OIR verification, native lowering and runtime inputs remain unchanged. Future
+that they do not qualify new package/workspace semantics or native reproducibility.
+Native presentation changes are listed separately in the source manifest; scalar
+and owned emission receive independently tested presentation maps. Parser,
+ownership verification, OIR verification and runtime inputs remain unchanged. Future
 changes require another explicit scope revision; a wider source allowance alone
 cannot qualify new semantics.
 
@@ -101,6 +105,18 @@ verification, runtime compilation and linking. The latter three run on every
 build. Cache unit controls cover bounded immutable blobs and failure cases.
 This evidence concerns object reuse; the retained Unit2 assertions do not
 qualify new cache semantics or per-module incremental frontend compilation.
+
+`tests/reproducible_native.rs` and
+`scripts/verify_reproducible_native.py` separately exercise the opt-in relative
+native diagnostic paths in [RFC 0039](../../rfcs/0039-reproducible-native-builds.md).
+The native controller compares raw executables across clean builds, cold/warm
+caches and relocated standalone/workspace layouts, and checks byte-count output
+using independent expected values. It records the toolchain, explicit environment
+overrides, commands and artifact hashes for each compiler profile. Public tests
+also check default diagnostic paths, mapped failure paths, strict selection,
+workspace preflight and output preservation. Compiler tests cover the retained
+source-map witness and diagnostic sizing. These results have their own scope;
+the unchanged Unit2 predicates do not establish native reproducibility.
 
 `tests/native_doctor.rs` checks explicit native diagnosis, bounded probe failures,
 process cleanup, project/lock admission and real SDK compilation, linking and

@@ -4,11 +4,12 @@
 
 ## 目前開發狀態
 
-- [R1 typed 專案流程](TYPED_PROJECTS.md) 已實作為 experimental：`new` 建立明確 edition 的專案，`check/run/build/test` 使用 `oxid.toml` 的設定；`fmt` 可依專案 edition 處理指定檔案。`build` 產出真正的 native executable，成功後才替換管理的產物；建置失敗保留前次產物。這些能力尚未成為穩定 edition 或已發布的 v1 功能。
-- Linux 的 typed 本地路徑依賴已接入單一 compiler session，保留套件自己的 `crate::`、可見性、所有權與型別身分。[Byte count](../apps/byte-count/README.md) 是 fixture 之外的三套件應用；其獨立驗證涵蓋直譯／原生輸出、依賴修改、建置失敗保留產物與移除來源後部署。typed 鎖檔另記錄本機依賴的實際載入來源，支援 locked／offline／frozen 檢查。typed workspace 已加入成員選擇、library 檢查與涵蓋完整依賴圖的共用鎖檔，並設有資源上限；來源封裝已加入完整本地依賴配置、保留輸入驗證與原子解壓；registry、vendor、逐模組增量建置與原生產物可重現性仍待完成。
+- [原生專案流程](TYPED_PROJECTS.md) 支援建立專案、檢查程式、執行、建置、測試與格式化。設定集中於 `oxid.toml`；建置成功才替換執行檔，失敗時保留上次的產物。目前功能仍屬實驗性質。
+- Linux 的 typed 本地路徑依賴已接入單一 compiler session，保留套件自己的 `crate::`、可見性、所有權與型別身分。[Byte count](../apps/byte-count/README.md) 是 fixture 之外的三套件應用；其獨立驗證涵蓋直譯／原生輸出、依賴修改、建置失敗保留產物與移除來源後部署。typed 鎖檔另記錄本機依賴的實際載入來源，支援 locked／offline／frozen 檢查。typed workspace 已加入成員選擇、library 檢查與涵蓋完整依賴圖的共用鎖檔，並設有資源上限；來源封裝已加入完整本地依賴配置、保留輸入驗證與原子解壓；可選的相對路徑 native 建置支援固定工具鏈與保留來源配置下的搬移重建；registry、vendor、逐模組增量建置與更廣泛的產物驗收仍待完成。
 - CI 已配置五個編譯器 host：Linux x86_64、Linux ARM64、Windows x86_64、macOS x86_64、macOS ARM64。各 host 的結果說明 Rust 實作的編譯器在該環境的行為；目前 Oxid native 建置與執行範圍仍限 **Linux x86_64、LLVM 19.1.7、`-O0`、bounded policy**。
 - 現有 native 回歸會分別使用 debug／release 建置的 Rust 編譯器。Oxid 程式本身的正式最佳化 profile、除錯資訊及一般 hosted execution policy 尚待完成。
 - `build --incremental` 可選用 LLVM object 快取；每次仍檢查來源、驗證鎖檔、編譯 runtime 並重新連結 SDK。這項能力尚不包含逐模組 frontend 增量編譯，亦不代表原生產物已通過可重現性或效能驗收；見 [RFC 0036](../rfcs/0036-native-object-reuse.md)。
+- `build --reproducible` 使用相對於專案／工作區的執行時診斷路徑；驗證獨立比對 clean、快取與搬移建置的原始執行檔。範圍限相同 compiler、LLVM／SDK、設定與環境，見 [RFC 0039](../rfcs/0039-reproducible-native-builds.md)。
 - `doctor --native` 透過實際的工具版本、SDK 編譯、連結與執行探測診斷環境，亦檢查目前 typed 專案與既有鎖檔；見 [native 診斷契約](NATIVE_DOCTOR.md)。
 
 實作與驗證範圍見 [RFC 0032](../rfcs/0032-typed-project-workflow.md)、[RFC 0033](../rfcs/0033-typed-path-dependencies.md)、[RFC 0034](../rfcs/0034-typed-local-locking.md)、[RFC 0035](../rfcs/0035-typed-workspaces.md)、[RFC 0038](../rfcs/0038-typed-source-packages.md)、[typed preview 規格](../spec/typed-preview.md) 與 [project workflow validation](architecture/project-workflow-validation.md)。CI 設定、工作分支功能與已發布版本分別記錄，不以設定存在或排程成功代替實際驗證結果。

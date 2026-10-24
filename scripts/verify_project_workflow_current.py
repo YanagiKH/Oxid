@@ -31,11 +31,15 @@ PACKAGE_CHANGED = frozenset(("src/frontend/project.rs", "src/frontend/declaratio
                             "src/frontend/declaration_index/source_owner.rs",
                             "src/frontend/oir/project.rs", "src/frontend/oir/source.rs",
                             "src/frontend/oir/source/sealed.rs"))
-CHANGED = ORCHESTRATION_CHANGED | PACKAGE_CHANGED
+NATIVE_PRESENTATION_CHANGED = frozenset(("src/frontend/oir/native.rs",
+                                        "src/frontend/oir/owned/native.rs",
+                                        "src/frontend/oir/source/sealed.rs",
+                                        "src/frontend/oir/owned/source/program.rs"))
+CHANGED = ORCHESTRATION_CHANGED | PACKAGE_CHANGED | NATIVE_PRESENTATION_CHANGED
 ADDED = frozenset(("src/project_cli.rs", "src/project_cli/workspace.rs", "src/project_cli/package.rs",
                    "src/project_package.rs", "src/project_package/archive.rs", "src/project_lock.rs", "src/doctor_cli.rs",
                    "src/frontend/native_cache.rs", "src/frontend/native/doctor.rs", "src/frontend/project/packages.rs",
-                   "src/frontend/project/packages/tests.rs"))
+                   "src/frontend/project/packages/tests.rs", "src/frontend/build_config.rs"))
 INSTRUMENTED = frozenset(("src/frontend/declaration_index.rs", "src/frontend/parser.rs",
                           "src/frontend/source.rs", "src/frontend/oir/mod.rs",
                           "src/frontend/project.rs"))
@@ -91,10 +95,12 @@ def regular(root, name):
 def capture_sources(repo, baseline):
     """Record the reviewed project/package boundary; reject other input changes.
 
-    Package/workspace namespace, locks, native diagnosis and opt-in object reuse are admitted explicitly.
+    Package/workspace namespace, locks, native diagnosis, object reuse and native
+    diagnostic presentation are admitted explicitly.
     The retained assertions still qualify only the old single-package semantics/resource cases;
     package graph behavior has separate compiler, CLI and real-application tests.
-    Parser, ownership, OIR verification, lowering and runtime remain unchanged.
+    Native presentation has separate default-path and mapped native regressions.
+    Parser, ownership, OIR verification and runtime remain unchanged.
     """
     actual, directories = set(), set()
     for part in ("src", "native"):
@@ -183,8 +189,10 @@ def current_manifest(inputs, baseline, checkout):
             "checkout": checkout, "changes": changes, "additions": sorted(ADDED),
             "assertion_scope": "retained single-package Unit2 semantics and resources",
             "package_boundary_inputs": sorted(PACKAGE_CHANGED),
+            "native_presentation_inputs": sorted(NATIVE_PRESENTATION_CHANGED),
             "package_semantics_qualified_by_this_gate": False,
             "workspace_semantics_qualified_by_this_gate": False,
+            "native_reproducibility_qualified_by_this_gate": False,
             "unchanged_baseline_inputs": len(baseline) - len(changes),
             "files": [identity(n, b) for n, b in sorted(inputs.items())]}
 
@@ -210,7 +218,7 @@ def run(args):
     require(not output.exists(), "output must be new")
     output.mkdir(parents=True)
     report = {"schema": "oxid-project-workflow-current-result-v1", "status": "running",
-              "scope": "retained single-package Unit2 semantics and resources; not package/workspace graph qualification",
+              "scope": "retained single-package Unit2 semantics and resources; not package/workspace graph or native reproducibility qualification",
               "semantic_pass": False, "compiler_executions": 0, "baseline_commit": BASELINE,
               "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "controller": identity("scripts/verify_project_workflow_current.py", Path(__file__).read_bytes())}

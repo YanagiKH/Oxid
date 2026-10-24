@@ -38,6 +38,10 @@ lock format is separate from legacy locking; see
 `oxid build --incremental` enables [native object reuse](../rfcs/0036-native-object-reuse.md).
 It still validates sources and locks, compiles the runtime and links the executable.
 Ordinary builds remain uncached.
+`oxid build --reproducible` selects stable relative paths in embedded runtime
+diagnostics; `--no-reproducible` overrides a manifest's boolean default.
+See [the native reproducibility contract](../rfcs/0039-reproducible-native-builds.md)
+for the preserved-layout and toolchain requirements.
 Typed workspaces add --workspace and --package / -p selection to source-less
 commands. Workspace lock admission always covers the complete member roster;
 workspace builds check libraries and optionally cache each binary's native

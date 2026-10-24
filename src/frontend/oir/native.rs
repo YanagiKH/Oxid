@@ -1,6 +1,7 @@
 //! Admission and LLVM lowering consume only the verifier's immutable witness.
 //! Admission is intentionally stricter than checking/reference execution.
 use super::*;
+use crate::frontend::build_config::NativeSourceNames;
 use std::fmt::Write;
 
 // Private text admission remains separate from default source consumers.
@@ -102,6 +103,47 @@ impl VerifiedProgram {
         )
     }
 
+    pub(in crate::frontend) fn native_module_with_source_names(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        names: &NativeSourceNames<'_>,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_source_names_policy(entry, sources, names, EntryPolicy::Result)
+    }
+
+    pub(in crate::frontend) fn native_process_module_with_source_names(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        names: &NativeSourceNames<'_>,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_source_names_policy(entry, sources, names, EntryPolicy::Process)
+    }
+
+    fn native_module_source_names_policy(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        names: &NativeSourceNames<'_>,
+        policy: EntryPolicy,
+    ) -> Result<String, Box<Diagnostic>> {
+        self.native_module_policy_limits_mode_with_source_names(
+            entry,
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            policy,
+            OutputMode::Default,
+            Some(names),
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
+
     #[cfg(test)]
     pub(super) fn native_process_module_with_fuel(
         &self,
@@ -198,6 +240,33 @@ impl VerifiedProgram {
         policy: EntryPolicy,
         mode: OutputMode<'_>,
     ) -> Result<String, EmitFailure> {
+        self.native_module_policy_limits_mode_with_source_names(
+            entry,
+            sources,
+            fuel,
+            diagnostic_limit,
+            ir_limit,
+            policy,
+            mode,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn native_module_policy_limits_mode_with_source_names(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
+        policy: EntryPolicy,
+        mode: OutputMode<'_>,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, EmitFailure> {
+        if let Some(names) = names {
+            names.validate(sources)?;
+        }
         let id = entry.ok_or_else(|| {
             reject(
                 "native compile requires a declared zero-argument main",
@@ -237,15 +306,24 @@ impl VerifiedProgram {
         // Process diagnostics use the same bounded table even for acyclic
         // bodies. This does not change their ABI or introduce fuel guards.
         let diagnostics = (guarded || policy == EntryPolicy::Process)
-            .then(|| {
-                GuardedDiagnostics::new_policy(
+            .then(|| match names {
+                Some(names) => GuardedDiagnostics::new_policy_with_source_names(
                     &self.program,
                     id,
                     sources,
                     diagnostic_limit,
                     guarded,
                     policy,
-                )
+                    Some(names),
+                ),
+                None => GuardedDiagnostics::new_policy(
+                    &self.program,
+                    id,
+                    sources,
+                    diagnostic_limit,
+                    guarded,
+                    policy,
+                ),
             })
             .transpose()?;
         #[cfg(test)]
@@ -262,6 +340,7 @@ impl VerifiedProgram {
             &self.program,
             id,
             sources,
+            names,
             diagnostics.as_ref(),
             guarded,
             fuel,
@@ -279,6 +358,7 @@ impl VerifiedProgram {
             &self.program,
             id,
             sources,
+            names,
             diagnostics.as_ref(),
             guarded,
             fuel,
@@ -658,6 +738,42 @@ fn checked_failures(value: &Rvalue) -> Option<(&'static [FailureKind], Span)> {
     }
 }
 type DiagnosticKey = (FailureKind, usize, usize, usize);
+
+// Presentation never changes the source map used to authenticate spans. The
+// caller validates the complete borrowed name view before native admission.
+fn write_runtime_diagnostic(
+    diagnostic: &Diagnostic,
+    sources: &SourceMap,
+    names: Option<&NativeSourceNames<'_>>,
+    out: &mut impl Write,
+) -> std::fmt::Result {
+    match names {
+        None => diagnostic.write_human(sources, out),
+        Some(names) => diagnostic.write_human_with_locations(out, |span| {
+            let source = sources.get(span.file);
+            source.span(span.start, span.end);
+            let (line, column) = source.location(span.start);
+            Ok((names.path(span.file).ok_or(std::fmt::Error)?, line, column))
+        }),
+    }
+}
+
+fn render_runtime_diagnostic(
+    diagnostic: &Diagnostic,
+    sources: &SourceMap,
+    names: Option<&NativeSourceNames<'_>>,
+) -> String {
+    match names {
+        None => diagnostic.render_human(sources),
+        Some(_) => {
+            let mut text = String::new();
+            write_runtime_diagnostic(diagnostic, sources, names, &mut text)
+                .expect("validated source names and infallible String output");
+            text
+        }
+    }
+}
+
 struct GuardedDiagnostics {
     messages: Vec<String>,
     ids: std::collections::BTreeMap<DiagnosticKey, usize>,
@@ -680,6 +796,19 @@ impl GuardedDiagnostics {
         guarded: bool,
         policy: EntryPolicy,
     ) -> Result<Self, Box<Diagnostic>> {
+        Self::new_policy_with_source_names(program, entry, sources, maximum, guarded, policy, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_policy_with_source_names(
+        program: &Program,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        maximum: usize,
+        guarded: bool,
+        policy: EntryPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<Self, Box<Diagnostic>> {
         let mut result = Self {
             messages: Vec::new(),
             ids: std::collections::BTreeMap::new(),
@@ -699,7 +828,7 @@ impl GuardedDiagnostics {
             let before = count.len;
             #[cfg(test)]
             emit_observation::event(emit_observation::Event::HumanCount, 1);
-            diagnostic.write_human(sources, &mut count).map_err(|_| {
+            write_runtime_diagnostic(&diagnostic, sources, names, &mut count).map_err(|_| {
                 reject(
                     format!("native preview guarded diagnostic bytes limit exceeded ({maximum})"),
                     Some(span),
@@ -712,7 +841,9 @@ impl GuardedDiagnostics {
             result.ids.insert(key, result.messages.len());
             #[cfg(test)]
             emit_observation::event(emit_observation::Event::HumanRender, 1);
-            result.messages.push(diagnostic.render_human(sources));
+            result
+                .messages
+                .push(render_runtime_diagnostic(&diagnostic, sources, names));
             #[cfg(test)]
             emit_observation::human_bytes(true, result.messages.last().unwrap().len());
             Ok(())
@@ -801,12 +932,36 @@ fn write_u8_widen(out: &mut Emission, n: usize, operand: usize) {
     writeln!(out, "  %v{n} = zext i8 %v{operand} to i32").unwrap();
 }
 
+#[cfg(test)]
 fn emit_arithmetic_failure(
     out: &mut Emission,
     guarded: Option<&GuardedDiagnostics>,
     kind: FailureKind,
     span: Span,
     sources: &SourceMap,
+    function: usize,
+    destination: usize,
+) {
+    emit_arithmetic_failure_with_source_names(
+        out,
+        guarded,
+        kind,
+        span,
+        sources,
+        None,
+        function,
+        destination,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_arithmetic_failure_with_source_names(
+    out: &mut Emission,
+    guarded: Option<&GuardedDiagnostics>,
+    kind: FailureKind,
+    span: Span,
+    sources: &SourceMap,
+    names: Option<&NativeSourceNames<'_>>,
     function: usize,
     destination: usize,
 ) {
@@ -823,7 +978,8 @@ fn emit_arithmetic_failure(
         let symbol = kind.arithmetic_symbol();
         #[cfg(test)]
         emit_observation::event(emit_observation::Event::HumanRender, 1);
-        let length = kind.diagnostic(span, sources).render_human(sources).len();
+        let length =
+            render_runtime_diagnostic(&kind.diagnostic(span, sources), sources, names).len();
         #[cfg(test)]
         emit_observation::human_bytes(true, length);
         writeln!(
@@ -834,10 +990,12 @@ fn emit_arithmetic_failure(
     }
     writeln!(out, "  unreachable").unwrap();
 }
+#[allow(clippy::too_many_arguments)]
 fn emit(
     program: &Program,
     entry: hir::DefId,
     sources: &SourceMap,
+    names: Option<&NativeSourceNames<'_>>,
     diagnostics: Option<&GuardedDiagnostics>,
     guarded: bool,
     fuel: usize,
@@ -878,9 +1036,11 @@ fn emit(
                         let symbol = kind.arithmetic_symbol();
                         #[cfg(test)]
                         emit_observation::event(emit_observation::Event::HumanRender, 1);
-                        let message = kind
-                            .diagnostic(operator_span, sources)
-                            .render_human(sources);
+                        let message = render_runtime_diagnostic(
+                            &kind.diagnostic(operator_span, sources),
+                            sources,
+                            names,
+                        );
                         #[cfg(test)]
                         emit_observation::human_bytes(true, message.len());
                         write!(
@@ -1063,12 +1223,13 @@ fn emit(
                         // use and both signed i32 range checks. Truncation and
                         // destination initialization exist only on success.
                         write_u8_checks(out, n, operand.local.0);
-                        emit_arithmetic_failure(
+                        emit_arithmetic_failure_with_source_names(
                             out,
                             diagnostics,
                             FailureKind::ByteRange,
                             name_span,
                             sources,
+                            names,
                             f.id.0,
                             n,
                         );
@@ -1093,12 +1254,13 @@ fn emit(
                         )
                         .unwrap();
                         writeln!(out, "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok\noverflow{n}_error:").unwrap();
-                        emit_arithmetic_failure(
+                        emit_arithmetic_failure_with_source_names(
                             out,
                             diagnostics,
                             FailureKind::Overflow,
                             operator_span,
                             sources,
+                            names,
                             f.id.0,
                             n,
                         );
@@ -1122,12 +1284,13 @@ fn emit(
                                 // zero and MIN/-1. Neither instruction may precede these
                                 // guards, even when only the remainder is requested.
                                 writeln!(out, "  %division{n}_zero = icmp eq i32 %v{}, 0\n  br i1 %division{n}_zero, label %division{n}_error, label %division{n}_nonzero\ndivision{n}_error:", right.local.0).unwrap();
-                                emit_arithmetic_failure(
+                                emit_arithmetic_failure_with_source_names(
                                     out,
                                     diagnostics,
                                     FailureKind::DivisionByZero,
                                     operator_span,
                                     sources,
+                                    names,
                                     f.id.0,
                                     n,
                                 );
@@ -1153,12 +1316,13 @@ fn emit(
                             }
                         }
                         writeln!(out, "  br i1 %overflow{n}, label %overflow{n}_error, label %checked{n}_ok\noverflow{n}_error:").unwrap();
-                        emit_arithmetic_failure(
+                        emit_arithmetic_failure_with_source_names(
                             out,
                             diagnostics,
                             FailureKind::Overflow,
                             operator_span,
                             sources,
+                            names,
                             f.id.0,
                             n,
                         );
@@ -1321,6 +1485,211 @@ mod tests {
     }
     fn verified(text: &str) -> VerifiedProgram {
         verified_with_sources(text).0
+    }
+
+    fn source_name_paths(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = std::env::temp_dir().join("oxid-native-source-presentation-project");
+        let path = root.join("src").join(name);
+        (root, path)
+    }
+
+    fn diagnostic_constants(module: &str) -> Vec<String> {
+        module
+            .lines()
+            .filter_map(|line| {
+                let (_, tail) = line.split_once(" = private unnamed_addr constant [")?;
+                let (length, tail) = tail.split_once(" x i8] c\"")?;
+                let encoded = tail.strip_suffix('"').unwrap();
+                assert_eq!(encoded.len() % 3, 0);
+                let bytes: Vec<_> = encoded
+                    .as_bytes()
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|part| {
+                        assert_eq!(part[0], b'\\');
+                        u8::from_str_radix(std::str::from_utf8(&part[1..]).unwrap(), 16).unwrap()
+                    })
+                    .collect();
+                assert_eq!(bytes.len(), length.parse::<usize>().unwrap());
+                Some(String::from_utf8(bytes).unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn native_source_names_change_runtime_locations_for_both_scalar_entry_policies() {
+        let (logical_root, source_path) = source_name_paths("雪.ox");
+        let path = source_path.to_str().unwrap();
+        for prefix in ["", "while false {}"] {
+            let (program, sources) = verified_at(
+                path,
+                &format!("fn main()->i32 {{ {prefix} return (2147483647+1)/0; }}"),
+            );
+            let (presented_program, presented_sources) = verified_at(
+                "src/雪.ox",
+                &format!("fn main()->i32 {{ {prefix} return (2147483647+1)/0; }}"),
+            );
+            let relative = NativeSourceNames::project_relative(
+                &sources,
+                &logical_root,
+                [(
+                    crate::frontend::source::SourceFileId(0),
+                    source_path.as_path(),
+                )],
+            )
+            .unwrap();
+            for policy in [EntryPolicy::Result, EntryPolicy::Process] {
+                let default = program
+                    .native_module_policy_limits(
+                        Some(hir::DefId(0)),
+                        &sources,
+                        execute::MAX_FUEL,
+                        MAX_GUARDED_DIAGNOSTIC_BYTES,
+                        MAX_GUARDED_IR_BYTES,
+                        policy,
+                    )
+                    .unwrap();
+                let mapped = program
+                    .native_module_source_names_policy(
+                        Some(hir::DefId(0)),
+                        &sources,
+                        &relative,
+                        policy,
+                    )
+                    .unwrap();
+                // Independent ordinary emission with the expected display path
+                // must produce the identical complete module, not just text
+                // obtained by replacing an already-emitted LLVM string.
+                assert_eq!(
+                    mapped,
+                    presented_program
+                        .native_module_policy_limits(
+                            Some(hir::DefId(0)),
+                            &presented_sources,
+                            execute::MAX_FUEL,
+                            MAX_GUARDED_DIAGNOSTIC_BYTES,
+                            MAX_GUARDED_IR_BYTES,
+                            policy,
+                        )
+                        .unwrap()
+                );
+                let before = diagnostic_constants(&default);
+                let after = diagnostic_constants(&mapped);
+                assert!(!before.is_empty());
+                assert!(before.iter().all(|message| message.contains(path)));
+                assert_eq!(
+                    after,
+                    before
+                        .iter()
+                        .map(|text| text.replace(path, "src/雪.ox"))
+                        .collect::<Vec<_>>(),
+                );
+                assert!(mapped.len() < default.len());
+            }
+        }
+    }
+
+    #[test]
+    fn native_source_names_guarded_diagnostic_and_ir_limits_use_mapped_lengths() {
+        let (logical_root, source_path) = source_name_paths("main.ox");
+        let path = source_path.to_str().unwrap();
+        let (program, sources) = verified_at(path, "fn main()->i32 { while false {} return 1+2; }");
+        let names = NativeSourceNames::project_relative(
+            &sources,
+            &logical_root,
+            [(
+                crate::frontend::source::SourceFileId(0),
+                source_path.as_path(),
+            )],
+        )
+        .unwrap();
+        for policy in [EntryPolicy::Result, EntryPolicy::Process] {
+            let module = program
+                .native_module_source_names_policy(Some(hir::DefId(0)), &sources, &names, policy)
+                .unwrap();
+            let diagnostic_bytes = diagnostic_constants(&module).iter().map(String::len).sum();
+            for less in [0, 1] {
+                for (diagnostic_limit, ir_limit, marker) in [
+                    (diagnostic_bytes - less, module.len(), "diagnostic bytes"),
+                    (diagnostic_bytes, module.len() - less, "LLVM bytes"),
+                ] {
+                    let result = program.native_module_policy_limits_mode_with_source_names(
+                        Some(hir::DefId(0)),
+                        &sources,
+                        execute::MAX_FUEL,
+                        diagnostic_limit,
+                        ir_limit,
+                        policy,
+                        OutputMode::Default,
+                        Some(&names),
+                    );
+                    if less == 0 {
+                        assert_eq!(result.unwrap(), module);
+                    } else {
+                        let EmitFailure::Diagnostic(error) = result.unwrap_err() else {
+                            panic!("default emitter must return a diagnostic");
+                        };
+                        assert_eq!(error.code, "E0700");
+                        assert!(error.message.contains(marker), "{}", error.message);
+                    }
+                }
+            }
+            assert!(program
+                .native_module_policy_limits(
+                    Some(hir::DefId(0)),
+                    &sources,
+                    execute::MAX_FUEL,
+                    diagnostic_bytes,
+                    MAX_GUARDED_IR_BYTES,
+                    policy,
+                )
+                .unwrap_err()
+                .message
+                .contains("diagnostic bytes"));
+        }
+    }
+
+    #[test]
+    fn native_source_names_refuse_other_maps_and_preserve_admission_diagnostics() {
+        let (logical_root, source_path) = source_name_paths("main.ox");
+        let path = source_path.to_str().unwrap();
+        let text = "fn main(argument:i32)->i32 { return argument; }";
+        let (program, sources) = verified_at(path, text);
+        let (_, other) = verified_at(path, text);
+        let wrong = NativeSourceNames::project_relative(
+            &other,
+            &logical_root,
+            [(
+                crate::frontend::source::SourceFileId(0),
+                source_path.as_path(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            program
+                .native_module_with_source_names(Some(hir::DefId(0)), &sources, &wrong,)
+                .unwrap_err()
+                .code,
+            "E0500"
+        );
+        let names = NativeSourceNames::project_relative(
+            &sources,
+            &logical_root,
+            [(
+                crate::frontend::source::SourceFileId(0),
+                source_path.as_path(),
+            )],
+        )
+        .unwrap();
+        let before = program
+            .native_module(Some(hir::DefId(0)), &sources)
+            .unwrap_err();
+        let after = program
+            .native_module_with_source_names(Some(hir::DefId(0)), &sources, &names)
+            .unwrap_err();
+        assert_eq!(before.render_human(&sources), after.render_human(&sources));
+        assert!(after.render_human(&sources).contains(path));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use super::project::packages::{self, LoadedSourceInput, PackageSources, PackageSpec};
 use super::{
+    build_config::{NativeBuildSettings, NativeSourceNames},
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
     oir,
@@ -346,6 +347,99 @@ impl PreparedPackageProject<'_> {
         )
     }
 
+    /// Presentation is derived from the canonical paths retained by this exact
+    /// source owner. A singleton keeps its admitted absolute entry spelling and
+    /// does not need the module loader's deferred canonical-path allocation.
+    pub(crate) fn native_source_names(
+        &self,
+        logical_root: &Path,
+    ) -> Result<NativeSourceNames<'_>, Box<Diagnostic>> {
+        let project = self.project();
+        let sources = project.sources();
+        if project.modules().len() != sources.files().len()
+            || project
+                .modules()
+                .iter()
+                .any(|header| header.file.0 >= sources.files().len())
+        {
+            return Err(Diagnostic::new(
+                "E0700",
+                "native-admission",
+                "native source presentation has an invalid retained source identity",
+                None,
+            ));
+        }
+        NativeSourceNames::project_relative(
+            sources,
+            logical_root,
+            project.modules().iter().map(|header| {
+                (
+                    header.file,
+                    header
+                        .canonical_path
+                        .as_deref()
+                        .unwrap_or_else(|| Path::new(sources.get(header.file).path())),
+                )
+            }),
+        )
+    }
+
+    fn native_module_with_settings(
+        &self,
+        checked: &oir::CheckedSourceProgram<'_>,
+        process: bool,
+        settings: &NativeBuildSettings,
+        logical_root: &Path,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !settings.reproducible() {
+            return if process {
+                checked.native_process_module()
+            } else {
+                checked.native_module()
+            };
+        }
+        if process {
+            // Preserve the existing host and checked-entry guards before the
+            // additional presentation allocation. The sealed emitter repeats
+            // these guards for every caller of its new entry point.
+            checked.process_preflight()?;
+        }
+        let names = self.native_source_names(logical_root)?;
+        if process {
+            checked.native_process_module_with_source_names(&names)
+        } else {
+            checked.native_module_with_source_names(&names)
+        }
+    }
+
+    /// Native workspace preflight uses the same retained inputs, presentation,
+    /// and IR admission as publication, before any member invokes native tools.
+    pub(crate) fn workspace_preflight_with_native_settings(
+        &self,
+        json: bool,
+        process: bool,
+        settings: &NativeBuildSettings,
+        logical_root: &Path,
+    ) -> i32 {
+        if !settings.reproducible() {
+            return self.workspace_preflight(json, process, true, false);
+        }
+        let admitted = self.checked().and_then(|checked| {
+            self.native_module_with_settings(&checked, process, settings, logical_root)
+                .map(|_| ())
+                .map_err(|error| vec![*error])
+        });
+        match admitted {
+            Ok(()) => 0,
+            Err(errors) => report(
+                self.project().sources(),
+                errors,
+                json,
+                Summary::empty(Operation::Check),
+            ),
+        }
+    }
+
     /// Semantic preflight emits nothing on success and cannot run source or
     /// invoke native tools, so a later member refusal leaves all outputs intact.
     pub(crate) fn workspace_preflight(
@@ -521,6 +615,52 @@ impl PreparedPackageProject<'_> {
             };
         }
         process_loaded(project, json, operation, None, executable)
+    }
+
+    /// Typed project builds consume one resolved plan. Non-native operations
+    /// keep their original execution and reporting paths; explicit-file callers
+    /// continue using execute and the historical native wrapper entry points.
+    pub(crate) fn execute_with_native_settings(
+        &self,
+        command: PackageCommand<'_>,
+        json: bool,
+        process: bool,
+        settings: &NativeBuildSettings,
+        logical_root: &Path,
+    ) -> i32 {
+        let PackageCommand::Compile {
+            output,
+            managed,
+            incremental,
+        } = command
+        else {
+            return self.execute(command, json, process);
+        };
+        let result = (|| {
+            let checked = self.checked()?;
+            let module = self
+                .native_module_with_settings(&checked, process, settings, logical_root)
+                .map_err(|error| vec![*error])?;
+            if managed && incremental {
+                super::native::compile_managed_incremental_with_settings(&module, output, settings)
+                    .map(|outcome| report_cache(outcome, json))
+            } else if managed {
+                super::native::compile_managed_with_settings(&module, output, settings)
+            } else {
+                super::native::compile_with_settings(&module, output, settings)
+            }
+            .map_err(|error| vec![*error])?;
+            Ok(Summary::Compile(Some(output.to_owned())))
+        })();
+        match result {
+            Ok(summary) => report(self.project().sources(), Vec::new(), json, summary),
+            Err(errors) => report(
+                self.project().sources(),
+                errors,
+                json,
+                Summary::Compile(None),
+            ),
+        }
     }
 }
 
@@ -1364,6 +1504,214 @@ mod tests {
             oir::Scalar::I32(42)
         );
         assert_eq!(prepared.execute(PackageCommand::Check, false, false), 0);
+    }
+
+    #[test]
+    fn prepared_native_names_keep_singleton_ownership_and_default_emission_after_removal() {
+        let fixture = PreparedFixture::new();
+        fixture.write("app/src/main.ox", "fn main()->i32{return 40+2;}");
+        let mut specs = [fixture.spec("app", "src/main.ox", &[])];
+        // Keep the admitted synthetic path in the host's canonical separator
+        // spelling, including Windows compiler-host unit tests.
+        specs[0].entry = specs[0].root.join("src").join("main.ox");
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        let usage = prepared.project().usage();
+        let heap = prepared.project().sources().heap_capacity_bytes();
+        let checked = prepared.checked().unwrap();
+        let original = checked.native_module().unwrap();
+        assert_eq!(
+            prepared
+                .native_module_with_settings(
+                    &checked,
+                    false,
+                    &NativeBuildSettings::new(false),
+                    Path::new("irrelevant-original-presentation-root"),
+                )
+                .unwrap(),
+            original
+        );
+        let settings = NativeBuildSettings::new(true);
+        let relative = prepared
+            .native_module_with_settings(&checked, false, &settings, &specs[0].root)
+            .unwrap();
+        let names = prepared.native_source_names(&specs[0].root).unwrap();
+        assert_eq!(
+            names.path(super::super::source::SourceFileId(0)),
+            Some("src/main.ox")
+        );
+        names.validate(prepared.project().sources()).unwrap();
+        assert_ne!(relative, original);
+        fixture.write("app/src/main.ox", "not valid source anymore");
+        std::fs::remove_dir_all(&specs[0].root).unwrap();
+        assert_eq!(
+            prepared
+                .native_module_with_settings(&checked, false, &settings, &specs[0].root)
+                .unwrap(),
+            relative
+        );
+        assert_eq!(
+            prepared.checked().unwrap().native_module().unwrap(),
+            original
+        );
+        assert_eq!(prepared.project().usage(), usage);
+        assert_eq!(prepared.project().sources().heap_capacity_bytes(), heap);
+        assert_eq!(
+            prepared.project().syntax_flavor(),
+            SyntaxFlavor::OriginalSingleFile
+        );
+        assert_eq!(
+            prepared.workspace_preflight_with_native_settings(
+                false,
+                false,
+                &settings,
+                &specs[0].root
+            ),
+            0
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prepared_relative_native_ir_preserves_diamond_and_unicode_sibling_layout_after_removal() {
+        fn graph(fixture: &PreparedFixture) -> Vec<PackageSpec> {
+            fixture.write(
+                "workspace/app/main.ox",
+                "fn main()->i32{return crate::left::value()+crate::right::value();}",
+            );
+            fixture.write(
+                "workspace/left/lib.ox",
+                "pub fn value()->i32{return crate::shared::value();}",
+            );
+            fixture.write(
+                "workspace/right/lib.ox",
+                "pub fn value()->i32{return crate::shared::value();}",
+            );
+            fixture.write(
+                "共享/target/lib.ox",
+                "mod nested; pub fn value()->i32{return crate::nested::value();}",
+            );
+            fixture.write("共享/target/nested.ox", "pub fn value()->i32{return 21;}");
+            vec![
+                fixture.spec("workspace/app", "main.ox", &[("left", 1), ("right", 2)]),
+                fixture.spec("workspace/left", "lib.ox", &[("shared", 3)]),
+                fixture.spec("workspace/right", "lib.ox", &[("shared", 3)]),
+                fixture.spec("共享", "target/lib.ox", &[]),
+            ]
+        }
+        let first = PreparedFixture::new();
+        let second = PreparedFixture::new();
+        let first_graph = graph(&first);
+        let second_graph = graph(&second);
+        let first_prepared = prepare_package_project(&first_graph, None).unwrap();
+        let second_prepared = prepare_package_project(&second_graph, None).unwrap();
+        let first_root = first.0.join("workspace");
+        let second_root = second.0.join("workspace");
+        let settings = NativeBuildSettings::new(true);
+        let fingerprint = first_prepared
+            .workspace_fingerprints(&first_graph[0])
+            .unwrap();
+        let names = first_prepared.native_source_names(&first_root).unwrap();
+        let mut paths: Vec<_> = (0..first_prepared.input_usage().0)
+            .map(|id| names.path(super::super::source::SourceFileId(id)).unwrap())
+            .collect();
+        paths.sort_unstable();
+        assert_eq!(
+            paths,
+            [
+                "../共享/target/lib.ox",
+                "../共享/target/nested.ox",
+                "app/main.ox",
+                "left/lib.ox",
+                "right/lib.ox"
+            ]
+        );
+        let before = first_prepared.checked().unwrap();
+        let after = second_prepared.checked().unwrap();
+        for process in [false, true] {
+            if process && !cfg!(target_arch = "x86_64") {
+                continue;
+            }
+            let module = first_prepared
+                .native_module_with_settings(&before, process, &settings, &first_root)
+                .unwrap();
+            assert_eq!(
+                module,
+                second_prepared
+                    .native_module_with_settings(&after, process, &settings, &second_root)
+                    .unwrap()
+            );
+        }
+        std::fs::remove_dir_all(&first.0).unwrap();
+        std::fs::remove_dir_all(&second.0).unwrap();
+        assert_eq!(
+            first_prepared
+                .workspace_fingerprints(&first_graph[0])
+                .unwrap(),
+            fingerprint
+        );
+        assert_eq!(
+            first_prepared.checked().unwrap().run().unwrap(),
+            oir::Scalar::I32(42)
+        );
+        assert_eq!(
+            first_prepared
+                .native_module_with_settings(
+                    &first_prepared.checked().unwrap(),
+                    false,
+                    &settings,
+                    &first_root
+                )
+                .unwrap(),
+            second_prepared
+                .native_module_with_settings(
+                    &second_prepared.checked().unwrap(),
+                    false,
+                    &settings,
+                    &second_root
+                )
+                .unwrap(),
+        );
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    #[ignore = "requires LLVM 19.1.7 and the qualified native SDK"]
+    fn prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal() {
+        let fixture = PreparedFixture::new();
+        fixture.write(
+            "app/src/main.ox",
+            "fn main()->i32{return crate::lib::value();}",
+        );
+        fixture.write(
+            "lib/src/lib.ox",
+            "pub fn value()->i32{return 2147483647+1;}",
+        );
+        let specs = fixture.pair("src/lib.ox");
+        let prepared = prepare_package_project(&specs, None).unwrap();
+        std::fs::remove_dir_all(&specs[0].root).unwrap();
+        std::fs::remove_dir_all(&specs[1].root).unwrap();
+        let output = fixture.0.join(".oxid/bin/retained-relative-program");
+        assert_eq!(
+            prepared.execute_with_native_settings(
+                PackageCommand::Compile {
+                    output: output.to_str().unwrap(),
+                    managed: true,
+                    incremental: false
+                },
+                false,
+                true,
+                &NativeBuildSettings::new(true),
+                &specs[0].root,
+            ),
+            0
+        );
+        let result = std::process::Command::new(output).output().unwrap();
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty());
+        let stderr = String::from_utf8(result.stderr).unwrap();
+        assert!(stderr.contains("../lib/src/lib.ox:1:"), "{stderr}");
+        assert!(stderr.contains("overflow"), "{stderr}");
+        assert!(!stderr.contains(fixture.0.to_str().unwrap()), "{stderr}");
     }
 
     #[cfg(target_os = "linux")]

@@ -1,6 +1,7 @@
 //! Private owned LLVM consumer. All metadata is bound to one immutable witness
 //! by ExecutionPlan; the scalar source route does not enter this module.
 use super::{plan::ExecutionPlan, verified::VerifiedOwnedProgram, *};
+use crate::frontend::build_config::NativeSourceNames;
 use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
 use std::fmt::Write;
 use std::mem::size_of;
@@ -303,6 +304,43 @@ pub(super) fn native_module(
 ) -> Result<String, Box<Diagnostic>> {
     native_module_limits(witness, entry, sources, plan::MAX_FUEL, Limits::DEFAULT)
 }
+
+pub(super) fn native_module_with_source_names(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    names: &NativeSourceNames<'_>,
+) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_source_names(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::DEFAULT,
+        NativeEntryPolicy::Result,
+        &mut Accounting::default(),
+        Some(names),
+    )
+}
+
+pub(super) fn native_process_module_with_source_names(
+    witness: &VerifiedOwnedProgram,
+    entry: hir::DefId,
+    sources: &SourceMap,
+    names: &NativeSourceNames<'_>,
+) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_source_names(
+        witness,
+        Some(entry),
+        sources,
+        plan::MAX_FUEL,
+        Limits::DEFAULT,
+        NativeEntryPolicy::Process,
+        &mut Accounting::default(),
+        Some(names),
+    )
+}
+
 #[cfg(test)]
 pub(super) fn native_module_with_fuel(
     witness: &VerifiedOwnedProgram,
@@ -355,6 +393,25 @@ fn native_module_policy_accounted(
     policy: NativeEntryPolicy,
     accounting: &mut Accounting,
 ) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_source_names(
+        witness, entry, sources, fuel, limits, policy, accounting, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_module_policy_accounted_with_source_names(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    fuel: usize,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    names: Option<&NativeSourceNames<'_>>,
+) -> Result<String, Box<Diagnostic>> {
+    if let Some(names) = names {
+        names.validate(sources)?;
+    }
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
     if policy == NativeEntryPolicy::Result && witness.builtin_output_function().is_some() {
@@ -415,7 +472,7 @@ fn native_module_policy_accounted(
         root.span,
     )?;
     let guarded = policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic);
-    let diagnostics = Diagnostics::new_policy_accounted(
+    let diagnostics = Diagnostics::new_policy_accounted_with_source_names(
         &plan,
         id,
         sources,
@@ -424,6 +481,7 @@ fn native_module_policy_accounted(
         limits.diagnostic_bytes,
         limits.metadata_bytes,
         accounting,
+        names,
     )?;
     let emission_metadata = add(
         add(
@@ -983,6 +1041,16 @@ impl DiagnosticOccurrence {
         out: &mut impl Write,
         accounting: &mut Accounting,
     ) -> std::fmt::Result {
+        self.write_with_source_names(sources, None, out, accounting)
+    }
+
+    fn write_with_source_names(
+        &self,
+        sources: &SourceMap,
+        names: Option<&NativeSourceNames<'_>>,
+        out: &mut impl Write,
+        accounting: &mut Accounting,
+    ) -> std::fmt::Result {
         let span = self.span();
         let diagnostic = self.key.0.diagnostic(span, sources);
         let transient = size_of::<Diagnostic>() + diagnostic.message.capacity();
@@ -999,7 +1067,11 @@ impl DiagnosticOccurrence {
             if self.line == 0 || requested != span {
                 return Err(std::fmt::Error);
             }
-            Ok((sources.get(span.file).path(), self.line, self.column))
+            let path = match names {
+                Some(names) => names.path(span.file).ok_or(std::fmt::Error)?,
+                None => sources.get(span.file).path(),
+            };
+            Ok((path, self.line, self.column))
         })
     }
 }
@@ -1169,6 +1241,31 @@ impl Diagnostics {
         metadata_maximum: usize,
         accounting: &mut Accounting,
     ) -> Result<Self, Box<Diagnostic>> {
+        Self::new_policy_accounted_with_source_names(
+            plan,
+            entry,
+            sources,
+            guarded,
+            policy,
+            maximum,
+            metadata_maximum,
+            accounting,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_policy_accounted_with_source_names(
+        plan: &ExecutionPlan<'_>,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        guarded: bool,
+        policy: NativeEntryPolicy,
+        maximum: usize,
+        metadata_maximum: usize,
+        accounting: &mut Accounting,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<Self, Box<Diagnostic>> {
         let mut count = 0;
         let mut diagnostic_transient = DIAGNOSTIC_TRANSIENT_BYTES;
         diagnostic_occurrences(plan, entry, guarded, policy, |kind, _| {
@@ -1331,7 +1428,7 @@ impl Diagnostics {
         };
         for row in &mut rows {
             let before = bytes.len;
-            let result = row.write(sources, &mut bytes, accounting);
+            let result = row.write_with_source_names(sources, names, &mut bytes, accounting);
             accounting.metrics.message_count_bytes = bytes.len;
             accounting.metrics.metadata_peak = accounting
                 .metrics
@@ -1357,7 +1454,7 @@ impl Diagnostics {
                 text: Some(text),
                 ..Emission::count(row.rendered_len)
             };
-            row.write(sources, &mut output, accounting)
+            row.write_with_source_names(sources, names, &mut output, accounting)
                 .map_err(|_| mismatch("diagnostic association"))?;
             if output.exceeded || output.len != row.rendered_len {
                 return Err(mismatch("diagnostic count/render"));
@@ -3723,6 +3820,255 @@ mod division_tests {
 #[cfg(test)]
 #[path = "native_inventory_admission_tests.rs"]
 mod inventory_admission_tests;
+
+#[cfg(test)]
+mod source_name_controls {
+    use super::*;
+    use crate::frontend::source::SourceFileId;
+
+    fn source_name_paths(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = std::env::temp_dir().join("oxid-owned-native-source-presentation-project");
+        let path = root.join("src").join(name);
+        (root, path)
+    }
+
+    fn checked_at(path: &str, text: &str) -> source::resource_fixtures::CheckedSource {
+        source::SourceProgram::native_source_presentation_fixture(path, text)
+    }
+
+    fn emit_named(
+        case: &source::resource_fixtures::CheckedSource,
+        policy: NativeEntryPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+        limits: Limits,
+        accounting: &mut Accounting,
+    ) -> Result<String, Box<Diagnostic>> {
+        native_module_policy_accounted_with_source_names(
+            &case.witness,
+            Some(case.entry),
+            &case.sources,
+            plan::MAX_FUEL,
+            limits,
+            policy,
+            accounting,
+            names,
+        )
+    }
+
+    #[test]
+    fn owned_native_source_names_preserve_default_bytes_and_complete_accounting() {
+        let (logical_root, source_path) = source_name_paths("雪.ox");
+        let path = source_path.to_str().unwrap();
+        for prefix in ["", "while false {}"] {
+            let case = checked_at(path, &format!(
+                "struct Number {{ value:i32 }} fn main()->i32 {{ let x=Number {{ value:7 }}; {prefix} return (x.value/3)%2; }}"
+            ));
+            let presented_case = checked_at("src/雪.ox", &format!(
+                "struct Number {{ value:i32 }} fn main()->i32 {{ let x=Number {{ value:7 }}; {prefix} return (x.value/3)%2; }}"
+            ));
+            let relative = NativeSourceNames::project_relative(
+                &case.sources,
+                &logical_root,
+                [(SourceFileId(0), source_path.as_path())],
+            )
+            .unwrap();
+            for policy in [NativeEntryPolicy::Result, NativeEntryPolicy::Process] {
+                let mut baseline = Accounting::default();
+                let before = native_module_policy_accounted(
+                    &case.witness,
+                    Some(case.entry),
+                    &case.sources,
+                    plan::MAX_FUEL,
+                    Limits::DEFAULT,
+                    policy,
+                    &mut baseline,
+                )
+                .unwrap();
+                let mut mapped = Accounting::default();
+                let after =
+                    emit_named(&case, policy, Some(&relative), Limits::DEFAULT, &mut mapped)
+                        .unwrap();
+                let mut reference = Accounting::default();
+                let expected_module = native_module_policy_accounted(
+                    &presented_case.witness,
+                    Some(presented_case.entry),
+                    &presented_case.sources,
+                    plan::MAX_FUEL,
+                    Limits::DEFAULT,
+                    policy,
+                    &mut reference,
+                )
+                .unwrap();
+                assert_eq!(after, expected_module);
+                assert_eq!(
+                    format!("{:?}", mapped.metrics),
+                    format!("{:?}", reference.metrics)
+                );
+                assert!(after.len() < before.len());
+                assert_eq!(mapped.metrics.count_bytes, after.len());
+                assert_eq!(mapped.metrics.render_bytes, after.len());
+                assert_eq!(
+                    mapped.metrics.message_count_bytes,
+                    mapped.metrics.message_render_bytes
+                );
+                assert!(mapped.metrics.message_bytes < baseline.metrics.message_bytes);
+                assert_eq!(mapped.metrics.row_sizes, baseline.metrics.row_sizes);
+                assert_eq!(
+                    mapped.metrics.occurrence_bytes,
+                    baseline.metrics.occurrence_bytes
+                );
+                assert_eq!(mapped.metrics.source_bytes, baseline.metrics.source_bytes);
+                assert_eq!(
+                    mapped.metrics.source_scalars,
+                    baseline.metrics.source_scalars
+                );
+                assert_eq!(
+                    mapped.metrics.allocation_attempts,
+                    baseline.metrics.allocation_attempts
+                );
+                assert_eq!(mapped.metrics.metadata_peak, baseline.metrics.metadata_peak);
+
+                let plan = ExecutionPlan::build(&case.witness).unwrap();
+                let guarded = policy == NativeEntryPolicy::Process || !prefix.is_empty();
+                let expected = Diagnostics::new_policy_accounted(
+                    &plan,
+                    case.entry,
+                    &case.sources,
+                    guarded,
+                    policy,
+                    MAX_DIAGNOSTIC_BYTES,
+                    Limits::DEFAULT.metadata_bytes,
+                    &mut Accounting::default(),
+                )
+                .unwrap();
+                let actual = Diagnostics::new_policy_accounted_with_source_names(
+                    &plan,
+                    case.entry,
+                    &case.sources,
+                    guarded,
+                    policy,
+                    MAX_DIAGNOSTIC_BYTES,
+                    Limits::DEFAULT.metadata_bytes,
+                    &mut Accounting::default(),
+                    Some(&relative),
+                )
+                .unwrap();
+                assert!(!expected.messages.is_empty());
+                assert_eq!(
+                    actual.messages,
+                    expected
+                        .messages
+                        .iter()
+                        .map(|text| text.replace(path, "src/雪.ox"))
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(actual.ids, expected.ids);
+            }
+        }
+    }
+
+    #[test]
+    fn owned_native_source_names_count_mapped_diagnostics_before_reserving_text() {
+        let (logical_root, source_path) = source_name_paths("main.ox");
+        let path = source_path.to_str().unwrap();
+        let case = checked_at(path,
+            "struct Number { value:i32 } fn main()->i32 { let x=Number { value:7 }; while false {} return x.value/0; }"
+        );
+        let names = NativeSourceNames::project_relative(
+            &case.sources,
+            &logical_root,
+            [(SourceFileId(0), source_path.as_path())],
+        )
+        .unwrap();
+        for policy in [NativeEntryPolicy::Result, NativeEntryPolicy::Process] {
+            let mut accounting = Accounting::default();
+            let module = emit_named(
+                &case,
+                policy,
+                Some(&names),
+                Limits::DEFAULT,
+                &mut accounting,
+            )
+            .unwrap();
+            let diagnostic_bytes = accounting.metrics.message_bytes;
+            for less in [0, 1] {
+                for (limits, marker) in [
+                    (
+                        Limits {
+                            diagnostic_bytes: diagnostic_bytes - less,
+                            ..Limits::DEFAULT
+                        },
+                        "diagnostic bytes",
+                    ),
+                    (
+                        Limits {
+                            ir_bytes: module.len() - less,
+                            ..Limits::DEFAULT
+                        },
+                        "LLVM bytes",
+                    ),
+                ] {
+                    let mut attempt = Accounting::default();
+                    let result = emit_named(&case, policy, Some(&names), limits, &mut attempt);
+                    if less == 0 {
+                        assert_eq!(result.unwrap(), module);
+                    } else {
+                        let error = result.unwrap_err();
+                        assert_eq!(error.code, "E0700");
+                        assert!(error.message.contains(marker), "{}", error.message);
+                        assert_eq!(attempt.metrics.render_bytes, 0);
+                        if marker == "diagnostic bytes" {
+                            assert_eq!(attempt.metrics.message_render_bytes, 0);
+                        }
+                    }
+                }
+            }
+            let error = emit_named(
+                &case,
+                policy,
+                None,
+                Limits {
+                    diagnostic_bytes,
+                    ..Limits::DEFAULT
+                },
+                &mut Accounting::default(),
+            )
+            .unwrap_err();
+            assert!(error.message.contains("diagnostic bytes"));
+        }
+    }
+
+    #[test]
+    fn owned_native_source_names_reject_another_map_before_native_allocation() {
+        let (logical_root, source_path) = source_name_paths("main.ox");
+        let path = source_path.to_str().unwrap();
+        let text = "struct Number { value:i32 } fn main()->i32 { let x=Number { value:7 }; return x.value; }";
+        let case = checked_at(path, text);
+        let other = checked_at(path, text);
+        let names = NativeSourceNames::project_relative(
+            &other.sources,
+            &logical_root,
+            [(SourceFileId(0), source_path.as_path())],
+        )
+        .unwrap();
+        for policy in [NativeEntryPolicy::Result, NativeEntryPolicy::Process] {
+            let mut accounting = Accounting::default();
+            let error = emit_named(
+                &case,
+                policy,
+                Some(&names),
+                Limits::DEFAULT,
+                &mut accounting,
+            )
+            .unwrap_err();
+            assert_eq!(error.code, "E0500");
+            assert_eq!(accounting.metrics.plan_bytes, 0);
+            assert_eq!(accounting.metrics.allocation_attempts, 0);
+            assert_eq!(accounting.metrics.count_bytes, 0);
+            assert_eq!(accounting.metrics.render_bytes, 0);
+        }
+    }
+}
 
 #[cfg(test)]
 mod u8_inventory_controls {
