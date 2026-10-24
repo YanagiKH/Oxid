@@ -163,6 +163,10 @@ fn deployed_outputs(project: &Project) -> Vec<Output> {
     fs::remove_file(project.0.join("main.ox")).unwrap();
     fs::remove_file(project.0.join("oxid.toml")).unwrap();
     fs::remove_dir_all(project.0.join(".oxid")).unwrap();
+    let cache = project.0.join("cache");
+    if cache.exists() {
+        fs::remove_dir_all(cache).unwrap();
+    }
     ["dev", "release"]
         .map(|name| native_limited(&deployment.join(name), &deployment))
         .into_iter()
