@@ -8,6 +8,8 @@ use std::mem::size_of;
 
 #[path = "native_experimental.rs"]
 mod experimental;
+#[path = "native_integer128.rs"]
+mod integer128;
 #[path = "native_integers.rs"]
 mod integers;
 #[path = "native_numeric.rs"]
@@ -1102,6 +1104,8 @@ impl FailureKind {
             hir::Ty::U64 => 7,
             hir::Ty::Isize => 8,
             hir::Ty::Usize => 9,
+            hir::Ty::I128 => 10,
+            hir::Ty::U128 => 11,
             hir::Ty::Bool | hir::Ty::Unit => unreachable!("checked integer diagnostic"),
         }
     }
@@ -1117,6 +1121,8 @@ impl FailureKind {
             7 => hir::Ty::U64,
             8 => hir::Ty::Isize,
             9 => hir::Ty::Usize,
+            10 => hir::Ty::I128,
+            11 => hir::Ty::U128,
             _ => unreachable!("private integer diagnostic code"),
         }
     }
@@ -1127,7 +1133,14 @@ impl FailureKind {
         Self(48 + Self::integer_code(ty))
     }
     fn integer_range(input: hir::Ty, target: hir::Ty) -> Self {
-        Self(64 + Self::integer_code(input) * 10 + Self::integer_code(target))
+        let input = Self::integer_code(input);
+        let target = Self::integer_code(target);
+        Self(match (input < 10, target < 10) {
+            (true, true) => 64 + input * 10 + target,
+            (false, true) => 164 + (input - 10) * 10 + target,
+            (true, false) => 184 + input * 2 + target - 10,
+            (false, false) => 204 + (input - 10) * 2 + target - 10,
+        })
     }
     fn transient_bytes(self) -> usize {
         match self {
@@ -1186,12 +1199,12 @@ impl FailureKind {
                 )
             }
             _ => match self.0 {
-                32..=41 => RunFailure::IntegerOverflow {
+                32..=43 => RunFailure::IntegerOverflow {
                     ty: Self::integer_type(self.0 - 32),
                     span,
                 }
                 .diagnostic(sources),
-                48..=57 => RunFailure::IntegerDivisionByZero {
+                48..=59 => RunFailure::IntegerDivisionByZero {
                     ty: Self::integer_type(self.0 - 48),
                     span,
                 }
@@ -1202,6 +1215,19 @@ impl FailureKind {
                     span,
                 }
                 .diagnostic(sources),
+                164..=207 => {
+                    let (input, target) = match self.0 {
+                        164..=183 => ((self.0 - 164) / 10 + 10, (self.0 - 164) % 10),
+                        184..=203 => ((self.0 - 184) / 2, (self.0 - 184) % 2 + 10),
+                        _ => ((self.0 - 204) / 2 + 10, (self.0 - 204) % 2 + 10),
+                    };
+                    RunFailure::IntegerRange {
+                        input: Self::integer_type(input),
+                        target: Self::integer_type(target),
+                        span,
+                    }
+                    .diagnostic(sources)
+                }
                 _ => unreachable!("private native diagnostic code"),
             },
         }
@@ -1828,6 +1854,7 @@ fn ty(t: hir::Ty) -> &'static str {
         hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::I16 | hir::Ty::U16 => "i16",
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::I128 | hir::Ty::U128 => "i128",
         hir::Ty::I8 | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
@@ -1838,6 +1865,10 @@ fn result_ty(t: ValueTy) -> &'static str {
     }
 }
 fn load_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty) -> String {
+    if t.quad_integer() {
+        writeln!(out, "  %{name} = load i128, ptr {pointer}, align 16").unwrap();
+        return format!("%{name}");
+    }
     if t.integer_bits() == Some(64) {
         writeln!(out, "  %{name} = load i64, ptr {pointer}, align 8").unwrap();
         return format!("%{name}");
@@ -1846,6 +1877,10 @@ fn load_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty) -> Strin
     format!("%{name}")
 }
 fn store_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty, value: &str) {
+    if t.quad_integer() {
+        writeln!(out, "  store i128 {value}, ptr {pointer}, align 16").unwrap();
+        return;
+    }
     if t.integer_bits() == Some(64) {
         writeln!(out, "  store i64 {value}, ptr {pointer}, align 8").unwrap();
         return;
@@ -1924,6 +1959,7 @@ fn element_stride(element: hir::Ty) -> usize {
         hir::Ty::I16 | hir::Ty::U16 => 2,
         hir::Ty::I32 | hir::Ty::U32 => 4,
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
+        hir::Ty::I128 | hir::Ty::U128 => 16,
         hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
 }
@@ -1932,6 +1968,7 @@ fn sentinel_ty(array: FixedArrayTy) -> &'static str {
         hir::Ty::I16 | hir::Ty::U16 => "i16",
         hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::I128 | hir::Ty::U128 => "i128",
         hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
@@ -3077,6 +3114,16 @@ fn emit(
             }
         }
     }
+    if plan.uses_quad_scalars() {
+        out.write_str("declare i32 @__oxid_print_i128_parts(i64, i64)\ndeclare i32 @__oxid_print_u128_parts(i64, i64)\ndeclare i32 @__oxid_checked_mul128_parts(i64, i64, i64, i64, i32, ptr, ptr)\ndeclare i32 @__oxid_udivmod128_parts(i64, i64, i64, i64, ptr, ptr, ptr, ptr)\n").unwrap();
+        for operation in ["sadd", "ssub", "uadd", "usub"] {
+            writeln!(
+                out,
+                "declare {{ i128, i1 }} @llvm.{operation}.with.overflow.i128(i128, i128)"
+            )
+            .unwrap();
+        }
+    }
     if out.resources {
         out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
         if out.policy.hosted() {
@@ -3195,6 +3242,10 @@ fn emit(
             writeln!(out, "  %output_value = zext {} %value to i64\n  %status = call i32 @__oxid_print_i64(i64 %output_value)", ty(result)).unwrap();
         }
         hir::Ty::Isize => out.write_str("  %status = call i32 @__oxid_print_i64(i64 %value)\n").unwrap(),
+        hir::Ty::I128 | hir::Ty::U128 => {
+            let function = if result.signed_integer() { "i128" } else { "u128" };
+            writeln!(out, "  %output_low = trunc i128 %value to i64\n  %output_shifted = lshr i128 %value, 64\n  %output_high = trunc i128 %output_shifted to i64\n  %status = call i32 @__oxid_print_{function}_parts(i64 %output_low, i64 %output_high)").unwrap();
+        }
         hir::Ty::U64 | hir::Ty::Usize => out.write_str("  %status = call i32 @__oxid_print_u64(i64 %value)\n").unwrap(),
         hir::Ty::Unit => out.write_str("  %status = call i32 @__oxid_print_unit()\n").unwrap(),
     }
@@ -3265,6 +3316,7 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
                 | Rvalue::I32(_)
                 | Rvalue::I64(_)
                 | Rvalue::Integer { .. }
+                | Rvalue::Integer128 { .. }
                 | Rvalue::U8(_)
                 | Rvalue::Unit
                 | Rvalue::Copy(_)
@@ -3360,9 +3412,27 @@ fn emit_function(
         separator = ", ";
     }
     out.write_str(") noinline {\nentry:\n").unwrap();
+    if storage.scalar_width() == 16 {
+        out.write_str("  %integer128_scratch = alloca [4 x i64], align 8\n")
+            .unwrap();
+        for word in 0..4 {
+            writeln!(
+                out,
+                "  %integer128_word{word} = getelementptr i8, ptr %integer128_scratch, i64 {}",
+                word * 8
+            )
+            .unwrap();
+        }
+    }
     let slots = storage.scalar_slots();
     if slots != 0 {
-        writeln!(out, "  %scalars = alloca [{slots} x i64], align 8").unwrap();
+        let scalar_width = storage.scalar_width();
+        let scalar_bits = scalar_width * 8;
+        writeln!(
+            out,
+            "  %scalars = alloca [{slots} x i{scalar_bits}], align {scalar_width}"
+        )
+        .unwrap();
     }
     // Round the byte alloca itself to the four-byte size charged in Dnative.
     if storage.owner_bytes() != 0 {
@@ -4485,6 +4555,9 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::Integer128 { low, high, .. } => {
+            (u128::from(low) | (u128::from(high) << 64)).to_string()
+        }
         Rvalue::Integer { ty, bits } => integers::literal(ty, bits),
         Rvalue::CheckedInteger {
             op,
@@ -4587,7 +4660,12 @@ fn emit_scalar(
         } => {
             let unsigned = matches!(
                 f.locals[left.local.0].ty,
-                hir::Ty::U8 | hir::Ty::U16 | hir::Ty::U32 | hir::Ty::U64 | hir::Ty::Usize
+                hir::Ty::U8
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Usize
+                    | hir::Ty::U128
             );
             let operand_type = ty(f.locals[left.local.0].ty);
             let left = load_operand(out, f, &format!("{name}_left"), left);

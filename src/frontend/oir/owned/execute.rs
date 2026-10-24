@@ -12,6 +12,8 @@ use std::mem::size_of;
 #[path = "execute_values.rs"]
 mod values;
 use values::StoredValue;
+#[path = "execute_integer128.rs"]
+mod integer128;
 #[path = "execute_integers.rs"]
 mod integers;
 
@@ -229,7 +231,9 @@ impl<V: StoredValue> ValueFrame<V> {
         return_to: Option<Resume>,
     ) -> Result<Self> {
         let f = &plan.witness().functions()[function.0];
-        if plan.uses_wide_scalars() != V::WIDE {
+        if (plan.uses_wide_scalars() || plan.uses_quad_scalars()) != V::WIDE
+            || plan.uses_quad_scalars() != V::QUAD
+        {
             return Err(bad("scalar storage representation", f.span));
         }
         let u = plan.function(function).usage();
@@ -1663,6 +1667,10 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             Rvalue::U8(value) => Scalar::U8(value).into(),
             Rvalue::Unit => Scalar::Unit.into(),
             Rvalue::I64(value) => values::checked_wide(value, assign.span)?,
+            Rvalue::Integer128 { ty, low, high } => {
+                V::from_integer128(ty, u128::from(low) | (u128::from(high) << 64))
+                    .ok_or_else(|| bad("128-bit literal storage", assign.span))?
+            }
             Rvalue::Integer { ty, bits } => V::from_integer(ty, bits)
                 .ok_or_else(|| bad("integer literal storage", assign.span))?,
             Rvalue::CheckedInteger {
@@ -3468,6 +3476,7 @@ fn scalar_size(ty: hir::Ty) -> usize {
         hir::Ty::I16 | hir::Ty::U16 => 2,
         hir::Ty::I32 | hir::Ty::U32 => 4,
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
+        hir::Ty::I128 | hir::Ty::U128 => 16,
         hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => 1,
     }
 }
@@ -3505,7 +3514,9 @@ fn decode(bytes: &[u8], offset: usize, ty: hir::Ty, span: Span) -> Result<Scalar
         | hir::Ty::U32
         | hir::Ty::U64
         | hir::Ty::Isize
-        | hir::Ty::Usize => return Err(bad("wide payload in narrow execution", span)),
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128 => return Err(bad("wide payload in narrow execution", span)),
         hir::Ty::U8 => Scalar::U8(
             *bytes
                 .get(offset)
@@ -3569,6 +3580,43 @@ pub(super) fn run(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> 
     run_limits(witness, entry, Limits::default())
 }
 
+pub(super) fn run_result(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    limits: Limits,
+    execution: ExecutionPolicy,
+) -> Result<RuntimeValue> {
+    let entry = checked_entry_policy(witness, entry, EntryPolicy::Result)?;
+    let plan = ExecutionPlan::build(witness)?;
+    execute_result_plan(&plan, entry, limits, EntryPolicy::Result, execution)
+}
+
+fn execute_result_plan(
+    plan: &ExecutionPlan<'_>,
+    entry: hir::DefId,
+    limits: Limits,
+    policy: EntryPolicy,
+    execution: ExecutionPolicy,
+) -> Result<RuntimeValue> {
+    if plan.uses_quad_scalars() {
+        execute_plan_policy::<RuntimeValue>(
+            plan,
+            entry,
+            limits,
+            policy,
+            execution,
+            #[cfg(test)]
+            None,
+            #[cfg(test)]
+            None,
+            #[cfg(test)]
+            None,
+        )
+    } else {
+        execute_value_plan(plan, entry, limits, policy, execution).map(RuntimeValue::from)
+    }
+}
+
 pub(super) fn run_value(
     witness: &VerifiedOwnedProgram,
     entry: Option<hir::DefId>,
@@ -3577,6 +3625,9 @@ pub(super) fn run_value(
 ) -> Result<RuntimeScalar> {
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Result)?;
     let plan = ExecutionPlan::build(witness)?;
+    if plan.uses_quad_scalars() {
+        return Err(RunFailure::QuadEntry(witness.functions()[entry.0].span).into());
+    }
     execute_value_plan(&plan, entry, limits, EntryPolicy::Result, execution)
 }
 
@@ -3799,7 +3850,9 @@ fn execute_plan_policy<V: StoredValue>(
             plan.witness().functions()[entry.0].span,
         ));
     }
-    if plan.uses_wide_scalars() != V::WIDE {
+    if (plan.uses_wide_scalars() || plan.uses_quad_scalars()) != V::WIDE
+        || plan.uses_quad_scalars() != V::QUAD
+    {
         return Err(bad(
             "scalar storage representation",
             plan.witness().functions()[entry.0].span,
@@ -3846,7 +3899,7 @@ fn execute_plan_policy<V: StoredValue>(
         .and_then(|bytes| {
             plan::add(
                 bytes,
-                if plan.uses_integer_extension() {
+                if plan.uses_integer_extension() || plan.uses_quad_scalars() {
                     integers::control_bytes::<V>()
                 } else {
                     0
@@ -3958,7 +4011,7 @@ fn run_process_policy(
     }
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Process)?;
     let plan = ExecutionPlan::build(witness)?;
-    execute_value_plan(&plan, entry, limits, EntryPolicy::Process, execution)?
+    execute_result_plan(&plan, entry, limits, EntryPolicy::Process, execution)?
         .narrow()
         .ok_or(OwnedRunFailure::ProcessResult(
             witness.functions()[entry.0].span,

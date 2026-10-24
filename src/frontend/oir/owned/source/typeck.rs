@@ -2405,7 +2405,7 @@ fn expression_type(
         ExprKind::Bool(_) => scalar(Ty::Bool),
         ExprKind::I32(_) => scalar(Ty::I32),
         ExprKind::I64(_) => scalar(Ty::I64),
-        ExprKind::Integer { ty, .. } => scalar(*ty),
+        ExprKind::Integer { ty, .. } | ExprKind::Integer128 { ty, .. } => scalar(*ty),
         ExprKind::Unit => scalar(Ty::Unit),
         ExprKind::Binding(binding) => match bindings[binding.0]
             .expect("resolved binding initialized")

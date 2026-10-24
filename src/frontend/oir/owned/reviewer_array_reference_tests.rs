@@ -106,7 +106,9 @@ fn value(ty: hir::Ty, j: usize) -> Scalar {
         | hir::Ty::U32
         | hir::Ty::U64
         | hir::Ty::Isize
-        | hir::Ty::Usize => {
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128 => {
             panic!("integer width is outside this retained narrow fixture or observer")
         }
         hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
@@ -124,7 +126,9 @@ fn replacement(ty: hir::Ty) -> Scalar {
         | hir::Ty::U32
         | hir::Ty::U64
         | hir::Ty::Isize
-        | hir::Ty::Usize => {
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128 => {
             panic!("integer width is outside this retained narrow fixture or observer")
         }
         hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),

@@ -39,6 +39,14 @@ pub(super) fn arithmetic(
     right: &str,
     span: Span,
 ) -> String {
+    if kind.quad_integer()
+        && matches!(
+            op,
+            hir::ArithmeticOp::Multiply | hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder
+        )
+    {
+        return integer128::arithmetic(out, diagnostics, name, kind, op, left, right, span);
+    }
     let t = ty(kind);
     let signed = kind.signed_integer();
     if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) {

@@ -641,7 +641,7 @@ impl PreparedPackageProject<'_> {
         }
         let result = executable.and_then(|checked| {
             checked
-                .run_value(execution)
+                .run_result(execution)
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error])
         });
@@ -1119,7 +1119,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
 
 enum Summary {
     Check(Option<usize>),
-    Run(Option<oir::RuntimeScalar>),
+    Run(Option<oir::RuntimeValue>),
     Compile(Option<String>),
 }
 impl Summary {
@@ -1186,11 +1186,11 @@ fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
     if matches!(result, Some(oir::Scalar::U8(_))) {
         return run_runtime_summary(errors.max(1), None);
     }
-    run_runtime_summary(errors, result.map(oir::RuntimeScalar::from))
+    run_runtime_summary(errors, result.map(oir::RuntimeValue::from))
 }
-fn run_runtime_summary(errors: usize, result: Option<oir::RuntimeScalar>) -> String {
+fn run_runtime_summary(errors: usize, result: Option<oir::RuntimeValue>) -> String {
     format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":{},\"errors\":{errors},\"result\":{}}}",
-        errors == 0, result.filter(|_| errors == 0).and_then(oir::RuntimeScalar::json).unwrap_or_else(|| "null".into()))
+        errors == 0, result.filter(|_| errors == 0).and_then(oir::RuntimeValue::json).unwrap_or_else(|| "null".into()))
 }
 
 fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
@@ -1407,7 +1407,7 @@ fn process_loaded(
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
-                .run_value(crate::frontend::build_config::ExecutionPolicy::Bounded)
+                .run_result(crate::frontend::build_config::ExecutionPolicy::Bounded)
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error]),
         }

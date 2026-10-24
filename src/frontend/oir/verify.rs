@@ -96,6 +96,12 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::Integer128 { ty, .. } => {
+            if !ty.quad_integer() {
+                return Err(failure(FailureKind::TypeMismatch, assign.span));
+            }
+            ty
+        }
         Rvalue::Integer { ty, bits } => {
             if RuntimeScalar::from_integer(ty, bits).is_none() {
                 return Err(failure(FailureKind::TypeMismatch, assign.span));
@@ -454,6 +460,7 @@ fn verify_impl(
                     matches!(
                         assign.value,
                         Rvalue::Integer { .. }
+                            | Rvalue::Integer128 { .. }
                             | Rvalue::CheckedInteger { .. }
                             | Rvalue::CheckedNegateInteger { .. }
                             | Rvalue::CheckedIntegerCast { .. }
@@ -617,6 +624,7 @@ pub(super) fn scalar_statement_uses(
             | Rvalue::I32(_)
             | Rvalue::I64(_)
             | Rvalue::Integer { .. }
+            | Rvalue::Integer128 { .. }
             | Rvalue::U8(_)
             | Rvalue::Unit => Ok(()),
         },

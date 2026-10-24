@@ -103,3 +103,6 @@ mod byte_storage_fuel_tests;
 
 #[cfg(test)]
 mod byte_storage_authority_tests;
+
+#[cfg(test)]
+mod integer128_tests;

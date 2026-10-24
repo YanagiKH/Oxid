@@ -90,7 +90,9 @@ fn verifier_enforces_the_complete_closed_comparison_type_table() {
                         | hir::Ty::U32
                         | hir::Ty::U64
                         | hir::Ty::Isize
-                        | hir::Ty::Usize => panic!(
+                        | hir::Ty::Usize
+                        | hir::Ty::I128
+                        | hir::Ty::U128 => panic!(
                             "integer width is outside this retained narrow fixture or observer"
                         ),
                         hir::Ty::I64 => {

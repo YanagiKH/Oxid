@@ -217,6 +217,17 @@ impl SourceProgram {
             })
     }
 
+    pub(in crate::frontend::oir) fn run_result(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeValue, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
+        execute::run_result(&self.witness, entry, execute::Limits::default(), execution)
+            .map_err(|error| error.diagnostic(sources))
+    }
+
     pub(in crate::frontend::oir) fn run_value(
         &self,
         entry: Option<hir::DefId>,

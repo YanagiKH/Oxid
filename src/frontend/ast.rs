@@ -55,9 +55,11 @@ pub enum IntegerTypeSyntax {
     U64,
     Isize,
     Usize,
+    I128,
+    U128,
 }
 impl IntegerTypeSyntax {
-    pub const ADDITIONAL_LITERAL_SUFFIXES: [Self; 8] = [
+    pub const ADDITIONAL_LITERAL_SUFFIXES: [Self; 10] = [
         Self::I8,
         Self::U8,
         Self::I16,
@@ -66,6 +68,8 @@ impl IntegerTypeSyntax {
         Self::U64,
         Self::Isize,
         Self::Usize,
+        Self::I128,
+        Self::U128,
     ];
     pub const fn spelling(self) -> &'static str {
         match self {
@@ -79,6 +83,8 @@ impl IntegerTypeSyntax {
             Self::U64 => "u64",
             Self::Isize => "isize",
             Self::Usize => "usize",
+            Self::I128 => "i128",
+            Self::U128 => "u128",
         }
     }
     pub fn from_spelling(text: &str) -> Option<Self> {
@@ -93,6 +99,8 @@ impl IntegerTypeSyntax {
             "u64" => Some(Self::U64),
             "isize" => Some(Self::Isize),
             "usize" => Some(Self::Usize),
+            "i128" => Some(Self::I128),
+            "u128" => Some(Self::U128),
             _ => None,
         }
     }
@@ -102,12 +110,13 @@ impl IntegerTypeSyntax {
             Self::I16 | Self::U16 => 16,
             Self::I32 | Self::U32 => 32,
             Self::I64 | Self::U64 | Self::Isize | Self::Usize => 64,
+            Self::I128 | Self::U128 => 128,
         }
     }
     pub const fn signed(self) -> bool {
         matches!(
             self,
-            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize | Self::I128
         )
     }
     pub const fn checked_conversion(self) -> &'static str {
@@ -122,6 +131,8 @@ impl IntegerTypeSyntax {
             Self::U64 => "to_u64_checked",
             Self::Isize => "to_isize_checked",
             Self::Usize => "to_usize_checked",
+            Self::I128 => "to_i128_checked",
+            Self::U128 => "to_u128_checked",
         }
     }
 }

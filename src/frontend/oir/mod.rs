@@ -211,6 +211,11 @@ enum Rvalue {
         ty: Ty,
         bits: u64,
     },
+    Integer128 {
+        ty: Ty,
+        low: u64,
+        high: u64,
+    },
     CheckedInteger {
         op: hir::ArithmeticOp,
         left: Operand,
@@ -442,7 +447,7 @@ impl RuntimeScalar {
             Ty::U64 => Some(Self::U64(bits)),
             Ty::Isize => Some(Self::Isize(bits as i64)),
             Ty::Usize => Some(Self::Usize(bits)),
-            Ty::Bool | Ty::Unit => None,
+            Ty::Bool | Ty::Unit | Ty::I128 | Ty::U128 => None,
         }
     }
     pub(super) fn narrow(self) -> Option<Scalar> {
@@ -493,10 +498,82 @@ impl std::fmt::Display for RuntimeScalar {
         }
     }
 }
+/// Current typed results can use 128-bit values without enlarging the retained
+/// eight-byte Scalar or sixteen-byte RuntimeScalar storage representations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RuntimeValue {
+    Scalar(RuntimeScalar),
+    I128(i128),
+    U128(u128),
+}
+const _: () = assert!(std::mem::size_of::<RuntimeValue>() == 32);
+const _: () = assert!(std::mem::size_of::<Option<RuntimeValue>>() == 32);
+impl From<Scalar> for RuntimeValue {
+    fn from(value: Scalar) -> Self {
+        Self::Scalar(RuntimeScalar::from(value))
+    }
+}
+impl From<RuntimeScalar> for RuntimeValue {
+    fn from(value: RuntimeScalar) -> Self {
+        Self::Scalar(value)
+    }
+}
+impl RuntimeValue {
+    pub(super) fn legacy(self) -> Option<RuntimeScalar> {
+        match self {
+            Self::Scalar(value) => Some(value),
+            Self::I128(_) | Self::U128(_) => None,
+        }
+    }
+    pub(super) fn integer128(self) -> Option<(Ty, u128)> {
+        match self {
+            Self::I128(value) => Some((Ty::I128, value as u128)),
+            Self::U128(value) => Some((Ty::U128, value)),
+            Self::Scalar(value) => value.integer().map(|(ty, bits)| {
+                (
+                    ty,
+                    if ty.signed_integer() {
+                        bits as i64 as i128 as u128
+                    } else {
+                        u128::from(bits)
+                    },
+                )
+            }),
+        }
+    }
+    pub(super) fn from_integer128(ty: Ty, bits: u128) -> Option<Self> {
+        match ty {
+            Ty::I128 => Some(Self::I128(bits as i128)),
+            Ty::U128 => Some(Self::U128(bits)),
+            _ => {
+                let value = Self::Scalar(RuntimeScalar::from_integer(ty, bits as u64)?);
+                (value.integer128() == Some((ty, bits))).then_some(value)
+            }
+        }
+    }
+    pub(super) fn json(self) -> Option<String> {
+        match self {
+            Self::Scalar(value) => value.json(),
+            Self::I128(value) => Some(format!("{{\"type\":\"i128\",\"value\":\"{value}\"}}")),
+            Self::U128(value) => Some(format!("{{\"type\":\"u128\",\"value\":\"{value}\"}}")),
+        }
+    }
+}
+impl std::fmt::Display for RuntimeValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Scalar(value) => value.fmt(formatter),
+            Self::I128(value) => value.fmt(formatter),
+            Self::U128(value) => value.fmt(formatter),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum RunFailure {
     Entry(Option<Span>),
     ByteEntry(Span),
+    QuadEntry(Span),
     Fuel(Span),
     Frames(Span),
     Slots(Span),
@@ -521,6 +598,7 @@ impl RunFailure {
                 None,
             ),
             Self::Entry(span) => ("E0600", "typed-preview main must have no parameters", span),
+            Self::QuadEntry(span) => ("E0600", "128-bit program requires the typed result interface", Some(span)),
             Self::ByteEntry(span) => ("E0600", "typed-preview main must return bool, i32 or ()", Some(span)),
             Self::Fuel(span) => ("E0601", "execution fuel exhausted", Some(span)),
             Self::Frames(span) => ("E0602", "live call-frame limit exceeded", Some(span)),

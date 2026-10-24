@@ -27,8 +27,13 @@ pub enum Ty {
     U64,
     Isize,
     Usize,
+    I128,
+    U128,
 }
 impl Ty {
+    pub const fn quad_integer(self) -> bool {
+        matches!(self, Self::I128 | Self::U128)
+    }
     pub const fn from_extended_integer(kind: ast::IntegerTypeSyntax) -> Self {
         match kind {
             ast::IntegerTypeSyntax::I8 => Self::I8,
@@ -41,6 +46,8 @@ impl Ty {
             ast::IntegerTypeSyntax::U64 => Self::U64,
             ast::IntegerTypeSyntax::Isize => Self::Isize,
             ast::IntegerTypeSyntax::Usize => Self::Usize,
+            ast::IntegerTypeSyntax::I128 => Self::I128,
+            ast::IntegerTypeSyntax::U128 => Self::U128,
         }
     }
     pub const fn extended_integer(self) -> Option<ast::IntegerTypeSyntax> {
@@ -52,6 +59,8 @@ impl Ty {
             Self::U64 => Some(ast::IntegerTypeSyntax::U64),
             Self::Isize => Some(ast::IntegerTypeSyntax::Isize),
             Self::Usize => Some(ast::IntegerTypeSyntax::Usize),
+            Self::I128 => Some(ast::IntegerTypeSyntax::I128),
+            Self::U128 => Some(ast::IntegerTypeSyntax::U128),
             _ => None,
         }
     }
@@ -61,13 +70,14 @@ impl Ty {
             Self::I16 | Self::U16 => Some(16),
             Self::I32 | Self::U32 => Some(32),
             Self::I64 | Self::U64 | Self::Isize | Self::Usize => Some(64),
+            Self::I128 | Self::U128 => Some(128),
             Self::Bool | Self::Unit => None,
         }
     }
     pub const fn signed_integer(self) -> bool {
         matches!(
             self,
-            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize | Self::I128
         )
     }
 }
@@ -87,6 +97,8 @@ impl std::fmt::Display for Ty {
             Self::U64 => "u64",
             Self::Isize => "isize",
             Self::Usize => "usize",
+            Self::I128 => "i128",
+            Self::U128 => "u128",
         })
     }
 }

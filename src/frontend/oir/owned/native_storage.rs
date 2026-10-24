@@ -273,7 +273,9 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         // independently reconciled, without replacing their admission policy.
         let scalar = add(u.scalar_slots, arguments)?;
         let mut expanded = add(scalar, cells)?;
-        let scalar_bytes = if self.execution.uses_wide_scalars() {
+        let scalar_bytes = if self.execution.uses_quad_scalars() {
+            size_of::<Option<RuntimeValue>>()
+        } else if self.execution.uses_wide_scalars() {
             size_of::<Option<RuntimeScalar>>()
         } else {
             size_of::<Option<Scalar>>()
@@ -362,13 +364,26 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     }
     pub(in super::super) fn native_bytes(&self) -> Result<usize, AdmissionFailure> {
         add(
-            add(mul(self.scalar_slots, 8)?, self.owner_bytes)?,
+            add(
+                add(
+                    mul(self.scalar_slots, self.execution.native_scalar_bytes())?,
+                    self.owner_bytes,
+                )?,
+                if self.execution.uses_quad_scalars() {
+                    32
+                } else {
+                    0
+                },
+            )?,
             add(mul(self.reference_slots, 8)?, mul(self.slice_slots, 4)?)?,
         )
     }
+    pub(in super::super) fn scalar_width(&self) -> usize {
+        self.execution.native_scalar_bytes()
+    }
     pub(in super::super) fn scalar_offset(&self, slot: usize) -> usize {
         assert!(slot < self.scalar_slots);
-        slot * 8
+        slot * self.execution.native_scalar_bytes()
     }
     pub(in super::super) fn reference_offset(&self, slot: usize) -> usize {
         assert!(slot < self.reference_slots);

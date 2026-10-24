@@ -208,6 +208,7 @@ impl<'s> Visitor<'s> {
                     | Rvalue::I32(_)
                     | Rvalue::I64(_)
                     | Rvalue::Integer { .. }
+                    | Rvalue::Integer128 { .. }
                     | Rvalue::U8(_)
                     | Rvalue::Unit => (),
                 }

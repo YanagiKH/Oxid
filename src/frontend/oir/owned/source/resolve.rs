@@ -497,6 +497,13 @@ fn decimal_integer(
     kind: ast::IntegerTypeSyntax,
     span: Span,
 ) -> Result<u64, Box<Diagnostic>> {
+    if kind.bits() > 64 {
+        return Err(error(
+            "E0500",
+            format_args!("invalid narrow integer literal type"),
+            span,
+        ));
+    }
     let range = || {
         error(
             "E0203",
@@ -533,6 +540,52 @@ fn decimal_integer(
     }
     Ok(if negative {
         0u64.wrapping_sub(magnitude)
+    } else {
+        magnitude
+    })
+}
+
+fn decimal_integer128(
+    digits: &str,
+    negative: bool,
+    kind: ast::IntegerTypeSyntax,
+    span: Span,
+) -> Result<u128, Box<Diagnostic>> {
+    if kind.bits() != 128 || digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(error(
+            "E0500",
+            format_args!("invalid 128-bit integer literal source"),
+            span,
+        ));
+    }
+    let range = || {
+        error(
+            "E0203",
+            format_args!("decimal literal is outside the {} range", kind.spelling()),
+            span,
+        )
+    };
+    if negative && !kind.signed() {
+        return Err(range());
+    }
+    let mut magnitude = 0u128;
+    for byte in digits.bytes() {
+        magnitude = magnitude
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u128::from(byte - b'0')))
+            .ok_or_else(range)?;
+    }
+    let bound = if kind.signed() {
+        (1u128 << 127) - u128::from(!negative)
+    } else {
+        u128::MAX
+    };
+    if magnitude > bound {
+        return Err(range());
+    }
+    Ok(if negative {
+        0u128.wrapping_sub(magnitude)
     } else {
         magnitude
     })
@@ -2895,10 +2948,21 @@ impl<'a> Resolver<'_, 'a> {
                 digits,
                 negative,
                 kind,
-            } => ExprKind::Integer {
-                bits: decimal_integer(self.text(*digits), *negative, *kind, expr.span)?,
-                ty: Ty::from_extended_integer(*kind),
-            },
+            } => {
+                if kind.bits() == 128 {
+                    let bits = decimal_integer128(self.text(*digits), *negative, *kind, expr.span)?;
+                    ExprKind::Integer128 {
+                        low: bits as u64,
+                        high: (bits >> 64) as u64,
+                        ty: Ty::from_extended_integer(*kind),
+                    }
+                } else {
+                    ExprKind::Integer {
+                        bits: decimal_integer(self.text(*digits), *negative, *kind, expr.span)?,
+                        ty: Ty::from_extended_integer(*kind),
+                    }
+                }
+            }
             ast::ExprKind::Unit => ExprKind::Unit,
             ast::ExprKind::Name(span) => {
                 let name = self.text(*span);
