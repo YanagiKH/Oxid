@@ -104,11 +104,33 @@ fn main() -> i32 {
 '''
 
 
+def oracle_batches(patterns):
+    programs = [oracle_program(patterns[i:i+8]) for i in range(0, len(patterns), 8)]
+    return combine_programs(programs, 'vector_case')
+
+
+def combine_programs(programs, prefix):
+    """Keep each sample's frame bounded while sharing helpers and library builds."""
+    prelude = None
+    entries = []
+    calls = []
+    for index, program in enumerate(programs):
+        shared, entry = program.split('fn main()', 1)
+        if prelude is None:
+            prelude = shared
+        elif prelude != shared:
+            raise ValueError('oracle helper definitions differ')
+        name = prefix + '_' + str(index)
+        entries.append('fn ' + name + '()' + entry)
+        calls.append('    if ' + name + '() != 0 { return ' + str(index + 1) + '; }')
+    return prelude + '\n'.join(entries) + '\nfn main() -> i32 {\n' + '\n'.join(calls) + '\n    return 0;\n}\n'
+
+
 def native_limits():
     resource.setrlimit(resource.RLIMIT_AS, (32 * 1024 * 1024,) * 2)
 
 
-def main():
+def main_for_package(ROOT, EXAMPLE, SOURCES, executable_name, test_name, cases, statistics, controller):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('compilers', nargs='+', type=Path)
     parser.add_argument('--output', type=Path, required=True)
@@ -121,12 +143,8 @@ def main():
     compilers = [p.resolve(strict=True) for p in args.compilers]
     pins = [{'path':str(p),'bytes':p.stat().st_size,'sha256':digest(p)} for p in compilers]
     source_pins = {str(p):digest(ROOT/p) for p in SOURCES}
-    patterns = bit_patterns();cases = [('mean',(ROOT/EXAMPLE/'src/main.ox').read_text(),b'4\n'),
-                                     ('contracts',(ROOT/EXAMPLE/'tests/vector.ox').read_text(),b'0\n')]
-    cases += [('bits-'+str(i//8),oracle_program(patterns[i:i+8]),b'0\n')
-              for i in range(0,len(patterns),8)]
-    receipt = {'status':'running','compilers':pins,'sources':source_pins,'controller_sha256':digest(__file__),
-               'commands':0,'reference_cases':0,'native_cases':0,'bit_patterns':len(patterns),
+    receipt = {'status':'running','compilers':pins,'sources':source_pins,'controller_sha256':digest(controller),'runner_sha256':digest(__file__),
+               'commands':0,'reference_cases':0,'native_cases':0,**statistics,
                'reference_only':args.reference_only,'native_elfs':[]}
     env = dict(os.environ,OXID_CACHE_DIR=str(output/'cache'));env.pop('OXID_PATH',None)
     if args.llvm_bin:env['OXID_LLVM_BIN']=str(args.llvm_bin.resolve(strict=True))
@@ -156,14 +174,14 @@ def main():
                         (project/'src/main.ox').write_text(body)
                         invoke([compiler,'check'],project,name+'-check')
                         invoke([compiler,'run'],project,name+'-reference',expected);receipt['reference_cases']+=1
-                        if name=='mean':invoke([compiler,'test'],project,'public-contract-tests',b'',
-                            expected_stderr=b'test "vector": ok (exit status: 0)\ntests: 1 passed; 0 failed\n')
+                        if name==cases[0][0]:invoke([compiler,'test'],project,'public-contract-tests',b'',
+                            expected_stderr=('test "'+test_name+'": ok (exit status: 0)\ntests: 1 passed; 0 failed\n').encode())
                         if args.reference_only:continue
                         for profile in ['dev','release']:
                             for cache in ['cold','warm']:
                                 built=invoke([compiler,'build','--profile',profile,'--incremental'],project,name+'-'+profile+'-'+cache)
                                 if cache=='warm' and b'typed-preview native object cache: hit' not in built.stdout.splitlines():raise ValueError('missing warm object-cache hit')
-                            executable=project/'.oxid/bin/float-vector-example'
+                            executable=project/'.oxid/bin'/executable_name
                             dst=output/'executables'/f'compiler-{ci}'/policy/(name+'-'+profile);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(executable,dst)
                             key=(policy,name,profile);identity=digest(dst)
                             if key in artifacts and artifacts[key]!=identity:raise ValueError('compiler profile changes native bytes')
@@ -184,7 +202,16 @@ def main():
             receipt.update(status='failed',failure=f'{type(error).__name__}: {error}');raise
         finally:
             receipt['commands_sha256']=digest(output/'commands.jsonl');(output/'result.json').write_text(json.dumps(receipt,indent=2)+'\n')
-    print(json.dumps(receipt,sort_keys=True))
+    print(json.dumps({k:v for k,v in receipt.items() if k not in ['native_elfs','sources']},sort_keys=True))
+
+
+def main():
+    patterns = bit_patterns()
+    cases = [('mean',(ROOT/EXAMPLE/'src/main.ox').read_text(),b'4\n'),
+             ('contracts',(ROOT/EXAMPLE/'tests/vector.ox').read_text(),b'0\n')]
+    cases.append(('all-bit-patterns', oracle_batches(patterns), b'0\n'))
+    main_for_package(ROOT, EXAMPLE, SOURCES, 'float-vector-example', 'vector', cases,
+                     {'bit_patterns':len(patterns), 'oracle_batches':(len(patterns)+7)//8}, __file__)
 
 
 if __name__=='__main__':main()
