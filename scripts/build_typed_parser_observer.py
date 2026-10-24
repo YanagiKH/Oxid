@@ -25,6 +25,7 @@ SOURCE_FILES = (
     "owned_diagnostic.rs", "builtin_catalog.rs", "experimental_builtins.rs", "hir.rs",
     "declaration_index.rs", "declaration_index/generics.rs",
     "declaration_index/generics/flow.rs", "declaration_index/generics/nominal.rs",
+    "declaration_index/generics/inference.rs",
     "declaration_index/enum_views.rs",
     "declaration_index/resource.rs", "declaration_index/sealed.rs",
     "declaration_index/u8_reservation.rs",

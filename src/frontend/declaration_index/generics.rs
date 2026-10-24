@@ -1,6 +1,7 @@
 //! Source-only generic checking and bounded concrete function instantiation.
 //! Template identities always refer to the original frozen declaration index.
 mod flow;
+mod inference;
 mod nominal;
 use super::*;
 use crate::frontend::ast::{self, Argument, ExprId, ExprKind, StmtKind, TypeSyntaxKind};
@@ -58,8 +59,16 @@ fn reject_parameter_base(
 #[derive(Default)]
 struct Storage {
     bytes: usize,
+    // Constructor frames coexist with retained type metadata. Account their
+    // live controls in the same ceiling, releasing them on every Result path.
+    constructor_scratch: usize,
 }
 impl Storage {
+    fn live_after(&self, additional: usize) -> Option<usize> {
+        self.bytes
+            .checked_add(self.constructor_scratch)?
+            .checked_add(additional)
+    }
     fn push<T>(
         &mut self,
         values: &mut Vec<T>,
@@ -72,8 +81,7 @@ impl Storage {
         if values.len() == values.capacity() {
             let size = size_of::<T>();
             if self
-                .bytes
-                .checked_add(size)
+                .live_after(size)
                 .is_none_or(|bytes| bytes > MAX_STORAGE)
             {
                 return Err(exhausted(at));
@@ -90,7 +98,7 @@ impl Storage {
                         .ok_or_else(|| exhausted(at))?,
                 )
                 .ok_or_else(|| exhausted(at))?;
-            if self.bytes > MAX_STORAGE {
+            if self.live_after(0).is_none_or(|bytes| bytes > MAX_STORAGE) {
                 return Err(exhausted(at));
             }
         }
@@ -235,6 +243,7 @@ impl Plan {
         authenticate_syntax(index, work, allocator)?;
         let mut storage = Storage {
             bytes: size_of::<Plan>(),
+            ..Default::default()
         };
         let mut plan = Self {
             instances: Vec::new(),
@@ -1950,6 +1959,13 @@ impl<'a, 's> Walker<'a, 's> {
                     },
                     TypeContext::Constructor,
                 )?;
+                if self.program.generic_arguments(expression.span).is_none() {
+                    if let Some(value) =
+                        self.infer_record_constructor(id, record, fields, expression.span)?
+                    {
+                        return Ok(value);
+                    }
+                }
                 let mut arguments = Vec::new();
                 if let Some(explicit) = self.program.generic_arguments(expression.span) {
                     for syntax in explicit {
@@ -2203,6 +2219,11 @@ impl<'a, 's> Walker<'a, 's> {
         explicit: Option<&[ast::TypeSyntax]>,
         at: Span,
     ) -> Result<Type, Box<Diagnostic>> {
+        if explicit.is_none() {
+            if let Some(value) = self.infer_enum_constructor(expression, variant, arguments, at)? {
+                return Ok(value);
+            }
+        }
         let mut types = Vec::new();
         if let Some(explicit) = explicit {
             for syntax in explicit {

@@ -373,6 +373,41 @@ fn nominal_index_allocation_and_work_exhaustion_never_publish_a_partial_plan() {
 }
 
 #[test]
+fn inferred_constructor_index_refuses_every_reservation_and_insufficient_work() {
+    let mut map = SourceMap::new();
+    let id=map.add("inferred-resources.ox".into(),"enum Option<T>{None,Some(T)}struct Cell<T>{value:T}fn wrap<T>(value:T)->Cell<Option<T>>{return Cell{value:Option::Some(value)};}fn main()->i32{let cell=wrap(42);let Cell{value}=cell;match value{Option::None=>{return 1;},Option::Some(number)=>{return number;},}}".into());
+    let source = map.get(id);
+    let program = parse_generic(source, &mut Allocator::default()).unwrap();
+    let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+    let run = |fail_at: Option<usize>, limit: u64| {
+        let work = WorkMeter::new(limit);
+        let mut allocator = Allocator {
+            fail_at,
+            ..Default::default()
+        };
+        let result = match collect_originals(owner, IndexLimits::default(), &work, &mut allocator) {
+            Ok(facts) => facts
+                .finish(&work, &mut allocator)
+                .map(|index| {
+                    assert_eq!(index.record_count(), 1);
+                    assert_eq!(index.source_enum_count(), 1);
+                })
+                .map_err(|mut errors| errors.remove(0)),
+            Err(error) => Err(*error),
+        };
+        (result, allocator.attempts, work.used())
+    };
+    let (result, attempts, used) = run(None, u64::MAX);
+    result.unwrap();
+    for failure in 1..=attempts {
+        let (result, observed, _) = run(Some(failure), u64::MAX);
+        assert_eq!(result.unwrap_err().code, "E0400", "allocation {failure}");
+        assert_eq!(observed, failure);
+    }
+    assert_eq!(run(None, used - 1).0.unwrap_err().code, "E0400");
+}
+
+#[test]
 fn complete_record_patterns_preserve_binding_origins_and_fallible_storage() {
     let mut map = SourceMap::new();
     let id=map.add("record-pattern.ox".into(),"struct Cell<T>{value:T}fn take<T>(cell:Cell<T>)->T{let Cell{value:inner,}=cell;return inner;}fn main()->i32{return take(Cell::<i32>{value:42});}".into());
