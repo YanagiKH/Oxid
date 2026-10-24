@@ -23,6 +23,76 @@ use crate::text::append_scalar;
 use crate::text::equals_utf8;
 use crate::text::append_to_bytes;
 use crate::text::into_bytes;
+use crate::text::append_char;
+use crate::text::char_at;
+use crate::text::CharacterRead;
+
+fn character_append_succeeded(status: AppendStatus) -> bool {
+    match status {
+        AppendStatus::Ok => { return true; },
+        AppendStatus::InvalidInput(offset) => { return false; },
+        AppendStatus::CapacityOverflow => { return false; },
+        AppendStatus::AllocationFailed => { return false; },
+        AppendStatus::MemoryLimit => { return false; },
+    }
+}
+
+fn character_is(text: &Text, offset: i32, expected: char, next_byte: i32) -> bool {
+    let read = char_at(&*text, offset);
+    match read {
+        CharacterRead::Found(character) => {
+            return character.value == expected && character.next_byte == next_byte;
+        },
+        CharacterRead::End => { return false; },
+        CharacterRead::InvalidOffset => { return false; },
+    }
+}
+
+fn no_character(text: &Text, offset: i32, at_end: bool) -> bool {
+    let read = char_at(&*text, offset);
+    match read {
+        CharacterRead::Found(character) => { return false; },
+        CharacterRead::End => { return at_end; },
+        CharacterRead::InvalidOffset => { return !at_end; },
+    }
+}
+
+fn check_character_access() -> i32 {
+    let mut text = new_text();
+    if !no_character(&text, 0, true) || !no_character(&text, -1, false) || !no_character(&text, 1, false) { return -92; }
+    let characters = ['\0', '\u{7f}', '\u{80}', '\u{7ff}', '\u{800}', '\u{d7ff}', '\u{e000}', '\u{ffff}', '\u{10000}', '\u{10ffff}', 'e', '\u{301}'];
+    let widths = [1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 1, 2];
+    let mut index = 0;
+    while index < characters.len() {
+        let value = characters[index];
+        if !character_append_succeeded(append_char(&mut text, value)) { return -93; }
+        index = index + 1;
+    }
+    if byte_len(&text) != 29 || scalar_count(&text) != 12 { return -94; }
+    let mut offset = 0;
+    index = 0;
+    while index < characters.len() {
+        let expected = characters[index];
+        let width = widths[index];
+        if !character_is(&text, offset, expected, offset + width) { return -95; }
+        if !character_is(&text, offset, expected, offset + width) { return -96; }
+        let mut interior = 1;
+        while interior < width {
+            if !no_character(&text, offset + interior, false) { return -97; }
+            interior = interior + 1;
+        }
+        offset = offset + width;
+        index = index + 1;
+    }
+    if !no_character(&text, offset, true) || !no_character(&text, offset + 1, false) { return -98; }
+    if !character_append_succeeded(append_char(&mut text, 'Z')) || !character_is(&text, offset, 'Z', offset + 1) { return -99; }
+    if !truncate(&mut text, offset) || !no_character(&text, offset, true) { return -100; }
+    let mut bytes_text = new_text();
+    let bytes = b"\0A¢€😀";
+    if !character_append_succeeded(append_utf8(&mut bytes_text, &bytes)) { return -101; }
+    if !character_is(&bytes_text, 0, '\0', 1) || !character_is(&bytes_text, 1, 'A', 2) || !character_is(&bytes_text, 2, '¢', 4) || !character_is(&bytes_text, 4, '€', 7) || !character_is(&bytes_text, 7, '😀', 11) || !no_character(&bytes_text, 11, true) { return -102; }
+    return 0;
+}
 
 fn byte(value: i32) -> u8 {
     return value.to_u8_checked();
@@ -480,5 +550,7 @@ fn main() -> i32 {
     if into_bytes_result != 0 { return into_bytes_result; }
     let full_heap_result = check_into_bytes_at_memory_limit();
     if full_heap_result != 0 { return full_heap_result; }
+    let character_result = check_character_access();
+    if character_result != 0 { return character_result; }
     return 0;
 }

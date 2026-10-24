@@ -571,3 +571,4 @@ discord = true
 "tests/qualification/byte_storage_current/oracle-v3/corpus/zero-type-u8-bool/main.ox" = true
 "tests/qualification/byte_storage_current/oracle-v3/corpus/zero-type-u8-unit/main.ox" = true
 "tests/qualification/byte_storage_current/oracle-v3/corpus/zero-type-unit-u8/main.ox" = true
+"examples/typed-unicode-range/src/main.ox" = true

@@ -85,6 +85,8 @@ jobs:
             --output "$RUNNER_TEMP/current-package-bundle-interpreter"
           python3 -B scripts/verify_utf8_text_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-utf8-text-interpreter" --reference-only
+          python3 -B scripts/verify_utf8_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-characters-interpreter" --reference-only
       - name: Retain current source qualification
         if: always()
         uses: actions/upload-artifact@v4
@@ -139,7 +141,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: current-utf8-text-interpreter
-          path: ${{ runner.temp }}/current-utf8-text-interpreter
+          path: |
+            ${{ runner.temp }}/current-utf8-text-interpreter
+            ${{ runner.temp }}/current-utf8-characters-interpreter
           if-no-files-found: warn
           retention-days: 14
       - name: Verify current source installation
@@ -402,6 +406,8 @@ jobs:
         run: |
           python3 -B scripts/verify_utf8_text_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-utf8-text-application" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_utf8_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-characters-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Check buffer runtime components at O0 and O2 with memory checking
         run: |
           python3 -B scripts/test_bytebuf_runtime.py
@@ -460,6 +466,7 @@ jobs:
             ${{ runner.temp }}/current-byte-buffers-debug
             ${{ runner.temp }}/current-byte-buffers-release
             ${{ runner.temp }}/current-byte-reverse-application
+            ${{ runner.temp }}/current-utf8-characters-native
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files
           if-no-files-found: warn
