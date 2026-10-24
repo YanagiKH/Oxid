@@ -35,6 +35,8 @@ pub struct BodyBlockId(pub usize);
 /// Closed named-receiver scalar conversions; no general cast or method dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConversionOp {
+    ToCharChecked,
+    CharToU32,
     ToFloat(FloatTypeSyntax),
     FloatToBits,
     FloatFromBits(FloatTypeSyntax),
@@ -232,6 +234,7 @@ pub enum ExprKind {
         operator_span: Span,
     },
     Bool(bool),
+    Character(char),
     /// Exact decimal digits, separate literal-only sign, and full origin on Expr.
     Number {
         digits: Span,
@@ -313,6 +316,7 @@ pub enum ScalarTypeSyntax {
     I64,
     Integer(IntegerTypeSyntax),
     Float(FloatTypeSyntax),
+    Char,
 }
 /// Scalar elements in the existing fixed-array grammar.
 #[derive(Clone, Copy, Debug)]
@@ -324,6 +328,7 @@ pub enum ArrayElementTypeSyntax {
     I64,
     Integer(IntegerTypeSyntax),
     Float(FloatTypeSyntax),
+    Char,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct FixedArraySyntax {
@@ -383,6 +388,7 @@ impl EnumPayloadSyntax {
                 | ScalarTypeSyntax::I32
                 | ScalarTypeSyntax::I64
                 | ScalarTypeSyntax::Float(_)
+                | ScalarTypeSyntax::Char
                 | ScalarTypeSyntax::Integer(_)
                 | ScalarTypeSyntax::Name => TypeSyntaxKind::Name(ItemPath::Unqualified(self.span)),
                 ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
@@ -1104,7 +1110,7 @@ impl Program {
                     operator_span,
                     ..
                 } => earlier(*left) && earlier(*right) && valid(*operator_span),
-                ExprKind::Bool(_) | ExprKind::Unit => true,
+                ExprKind::Bool(_) | ExprKind::Unit | ExprKind::Character(_) => true,
                 ExprKind::Number { digits, .. }
                 | ExprKind::I64Number { digits, .. }
                 | ExprKind::FloatNumber { digits, .. }
@@ -1234,6 +1240,16 @@ impl Program {
             || self.functions.iter().any(|f| float_type(&f.result)
                 || f.params.iter().any(|p| float_type(&p.ty))
                 || f.blocks.iter().any(|b| b.body.iter().any(|s| matches!(&s.kind, StmtKind::Let { annotation: Some(ty), .. } if float_type(ty)))))
+    }
+    pub(super) fn uses_character_syntax(&self, source: &SourceFile) -> bool {
+        let character_type = |ty: &TypeSyntax| {
+            matches!(ty.kind,
+            TypeSyntaxKind::Name(ItemPath::Unqualified(name)) if source.text_at(name) == "char")
+        };
+        self.expressions.iter().any(|e| matches!(e.kind, ExprKind::Character(_)))
+            || self.functions.iter().any(|f| character_type(&f.result)
+                || f.params.iter().any(|p| character_type(&p.ty))
+                || f.blocks.iter().any(|b| b.body.iter().any(|s| matches!(&s.kind, StmtKind::Let { annotation: Some(ty), .. } if character_type(ty)))))
     }
     pub(super) fn uses_bitwise_syntax(&self) -> bool {
         self.expressions.iter().any(|expression| {

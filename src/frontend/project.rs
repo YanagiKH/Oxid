@@ -1087,7 +1087,12 @@ impl SourceSetBuilder<'_> {
                 })?
                 .map_err(one)?
         } else {
-            lexer::lex_with_allocator(source, remaining_tokens, self.allocator)
+            let lex = if matches!(self.enums, ProjectEnumSyntax::Enabled) {
+                lexer::lex_current_with_allocator
+            } else {
+                lexer::lex_with_allocator
+            };
+            lex(source, remaining_tokens, self.allocator)
                 .map_err(|failure| one(failure.diagnostic()))?
         };
         self.project.usage.non_eof_tokens =

@@ -31,8 +31,16 @@ pub enum Ty {
     U128,
     F32,
     F64,
+    Char,
 }
 impl Ty {
+    pub fn character_conversion(self, operation: ast::ConversionOp) -> Option<Self> {
+        match operation {
+            ast::ConversionOp::ToCharChecked if self.integer_bits().is_some() => Some(Self::Char),
+            ast::ConversionOp::CharToU32 if self == Self::Char => Some(Self::U32),
+            _ => None,
+        }
+    }
     pub fn float_conversion(self, operation: ast::ConversionOp) -> Option<Self> {
         match operation {
             ast::ConversionOp::ToFloat(kind)
@@ -104,7 +112,7 @@ impl Ty {
             Self::I32 | Self::U32 => Some(32),
             Self::I64 | Self::U64 | Self::Isize | Self::Usize => Some(64),
             Self::I128 | Self::U128 => Some(128),
-            Self::Bool | Self::Unit | Self::F32 | Self::F64 => None,
+            Self::Bool | Self::Unit | Self::F32 | Self::F64 | Self::Char => None,
         }
     }
     pub const fn signed_integer(self) -> bool {
@@ -134,6 +142,7 @@ impl std::fmt::Display for Ty {
             Self::U128 => "u128",
             Self::F32 => "f32",
             Self::F64 => "f64",
+            Self::Char => "char",
         })
     }
 }
@@ -825,7 +834,9 @@ impl<'a> Resolver<'_, 'a> {
                     Some(expr.span),
                 ))
             }
-            ast::ExprKind::FloatNumber { .. } | ast::ExprKind::IntegerNumber { .. } => {
+            ast::ExprKind::Character(_)
+            | ast::ExprKind::FloatNumber { .. }
+            | ast::ExprKind::IntegerNumber { .. } => {
                 return Err(Diagnostic::new(
                     "E0101",
                     "resolve",

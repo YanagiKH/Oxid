@@ -131,6 +131,7 @@ enum LiteralContext {
 }
 enum PrimaryStart {
     Boolean,
+    Character,
     Number,
     Name,
     Group,
@@ -1385,6 +1386,12 @@ impl Parser<'_> {
         Some(match self.peek().kind {
             Kind::True | Kind::False => PrimaryStart::Boolean,
             Kind::Number | Kind::Minus => PrimaryStart::Number,
+            Kind::Unsupported
+                if self.wide_scalars_enabled()
+                    && self.source.text_at(self.peek().span).starts_with('\'') =>
+            {
+                PrimaryStart::Character
+            }
             Kind::Ident => PrimaryStart::Name,
             Kind::LParen => PrimaryStart::Group,
             Kind::Unsupported if self.arrays_enabled() && self.array_punctuation("[") => {
@@ -1852,6 +1859,19 @@ impl Parser<'_> {
                 self.bump();
                 ExprKind::Bool(token.kind == Kind::True)
             }
+            Some(PrimaryStart::Character) => {
+                self.bump();
+                ExprKind::Character(character_value(self.source.text_at(token.span)).ok_or_else(
+                    || {
+                        self.diagnostic(
+                            "E0101",
+                            "parse",
+                            "character literal requires one Unicode scalar or a valid escape",
+                            Some(token.span),
+                        )
+                    },
+                )?)
+            }
             Some(PrimaryStart::Number) => {
                 let negative = token.kind == Kind::Minus;
                 if negative {
@@ -2254,8 +2274,11 @@ impl Parser<'_> {
 
 #[path = "parser/arrays.rs"]
 mod arrays;
+#[path = "parser/characters.rs"]
+mod characters;
 #[path = "parser/conversions.rs"]
 mod conversions;
+pub(super) use characters::character_value;
 #[path = "parser/enums.rs"]
 mod enums;
 #[cfg(test)]

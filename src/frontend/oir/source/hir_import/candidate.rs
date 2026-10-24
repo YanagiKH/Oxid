@@ -740,6 +740,7 @@ fn expression_kind(
         ast::ExprKind::Bitwise { .. }
         | ast::ExprKind::BitNot { .. }
         | ast::ExprKind::I64Number { .. }
+        | ast::ExprKind::Character(_)
         | ast::ExprKind::FloatNumber { .. }
         | ast::ExprKind::IntegerNumber { .. } => return Err(Failure::Shape),
         ast::ExprKind::Number { .. } => hir::ExprKind::I32(mapping.resolution(reference)?),

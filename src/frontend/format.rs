@@ -314,7 +314,7 @@ fn parse_with_syntax(
             parse(source, allocator).map(|program| (program, ParseMetrics::default()))
         }
         _ => {
-            let tokens = lexer::lex_with_allocator(source, lexer::MAX_TOKENS, allocator)
+            let tokens = lexer::lex_current_with_allocator(source, lexer::MAX_TOKENS, allocator)
                 .map_err(|error| vec![*error.diagnostic()])?;
             let token_bytes = tokens
                 .capacity()

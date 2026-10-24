@@ -715,7 +715,8 @@ pub(super) fn check_with_conversion_authority(
                         && matches!(
                             i,
                             Statement::Assign(Assign {
-                                value: Rvalue::FloatConvert { .. }
+                                value: Rvalue::CharacterConvert { .. }
+                                    | Rvalue::FloatConvert { .. }
                                     | Rvalue::CheckedI32ToU8 { .. }
                                     | Rvalue::U8ToI32 { .. }
                                     | Rvalue::WidenI64 { .. }

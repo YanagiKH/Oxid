@@ -83,6 +83,7 @@ pub(super) enum ExprKind {
         source_expr: crate::frontend::ast::ExprId,
     },
     Bool(bool),
+    Character(char),
     I32(i32),
     I64(i64),
     Float {

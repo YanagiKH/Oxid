@@ -14,6 +14,7 @@ use std::{
 const LLVM_VERSION: &str = "19.1.7";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const CHARACTER_RUNTIME: &str = include_str!("../../native/typed_character.c");
 const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const FLOAT_FORMAT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/float_format.a"));
@@ -396,6 +397,16 @@ fn compile_inner(
         runtime.push('\n');
         runtime.push_str(INTEGER128_RUNTIME);
         fs::write(runtime_path, runtime).map_err(io)?;
+    }
+    if module
+        .lines()
+        .any(|line| line == "declare i32 @__oxid_print_char(i32)")
+    {
+        let path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(CHARACTER_RUNTIME);
+        fs::write(path, runtime).map_err(io)?;
     }
     let float_output = module.contains("declare i32 @__oxid_print_float_bits(i64, i32)");
     let float_operations = module

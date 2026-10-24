@@ -561,7 +561,9 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
         | Rvalue::CheckedI64ToU8 { .. }
         | Rvalue::CheckedNegateI64 { .. }
         | Rvalue::Integer { .. }
+        | Rvalue::CharacterConvert { .. }
         | Rvalue::FloatConvert { .. }
+        | Rvalue::Character(_)
         | Rvalue::Float { .. }
         | Rvalue::FloatArithmetic { .. }
         | Rvalue::FloatNegate { .. }
@@ -985,7 +987,7 @@ fn ty(ty: hir::Ty) -> &'static str {
         hir::Ty::I16 | hir::Ty::U16 => "i16",
         hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
-        hir::Ty::F32 | hir::Ty::F64 | hir::Ty::I128 | hir::Ty::U128 => {
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::F64 | hir::Ty::I128 | hir::Ty::U128 => {
             unreachable!("closed scalar native type")
         }
     }
@@ -1535,6 +1537,7 @@ fn emit(
         | hir::Ty::I128
         | hir::Ty::F32
         | hir::Ty::F64
+        | hir::Ty::Char
         | hir::Ty::U128 => {
             unreachable!("entry rejected before closed scalar native admission")
         }

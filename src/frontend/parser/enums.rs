@@ -242,6 +242,10 @@ impl Parser<'_> {
                 self.bump();
                 (ScalarTypeSyntax::Bool, start.end)
             }
+            Kind::Ident if self.wide_scalars_enabled() && self.source.text_at(start) == "char" => {
+                self.bump();
+                (ScalarTypeSyntax::Char, start.end)
+            }
             Kind::Ident if self.source.text_at(start) == "i32" => {
                 self.bump();
                 (ScalarTypeSyntax::I32, start.end)

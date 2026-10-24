@@ -63,7 +63,9 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_float_compatibility.py', current)
+        self.assertIn('scripts/verify_character_compatibility.py', current)
+        self.assertIn('scripts/verify_floats.py', current)
+        self.assertIn('scripts/verify_characters.py', current)
         self.assertIn('scripts/verify_i64.py', current)
         self.assertIn('scripts/verify_integer_widths.py', current)
         self.assertIn('scripts/verify_byte_integers.py', current)

@@ -2938,6 +2938,7 @@ impl<'a> Resolver<'_, 'a> {
                 }
             }
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
+            ast::ExprKind::Character(value) => ExprKind::Character(*value),
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
             }

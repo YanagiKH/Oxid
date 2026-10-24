@@ -1097,6 +1097,7 @@ impl FailureKind {
     const I64ToI32Range: Self = Self(14);
     const I64ToU8Range: Self = Self(15);
     const BitShift: Self = Self(16);
+    const CharacterRange: Self = Self(17);
     fn integer_code(ty: hir::Ty) -> u8 {
         match ty {
             hir::Ty::I8 => 0,
@@ -1111,7 +1112,7 @@ impl FailureKind {
             hir::Ty::Usize => 9,
             hir::Ty::I128 => 10,
             hir::Ty::U128 => 11,
-            hir::Ty::F32 | hir::Ty::F64 | hir::Ty::Bool | hir::Ty::Unit => {
+            hir::Ty::Char | hir::Ty::F32 | hir::Ty::F64 | hir::Ty::Bool | hir::Ty::Unit => {
                 unreachable!("checked integer diagnostic")
             }
         }
@@ -1175,6 +1176,7 @@ impl FailureKind {
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::ByteRange => RunFailure::ByteRange(span).diagnostic(sources),
             Self::BitShift => RunFailure::BitShift(span).diagnostic(sources),
+            Self::CharacterRange => RunFailure::CharacterRange(span).diagnostic(sources),
             Self::WideOverflow => RunFailure::WideOverflow(span).diagnostic(sources),
             Self::WideDivisionByZero => RunFailure::WideDivisionByZero(span).diagnostic(sources),
             Self::I64ToI32Range => RunFailure::I64ToI32Range(span).diagnostic(sources),
@@ -1353,6 +1355,15 @@ fn diagnostic_occurrences(
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::CharacterConvert {
+                                op: hir::ConversionOp::ToCharChecked,
+                                name_span,
+                                ..
+                            },
+                        ..
+                    })) => visit(FailureKind::CharacterRange, *name_span)?,
                     OwnedInstruction::Scalar(Statement::Assign(Assign {
                         value:
                             Rvalue::Bitwise {
@@ -1868,7 +1879,7 @@ fn ty(t: hir::Ty) -> &'static str {
         hir::Ty::F32 => "float",
         hir::Ty::F64 => "double",
         hir::Ty::Bool => "i1",
-        hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::Char | hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::I16 | hir::Ty::U16 => "i16",
         hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
         hir::Ty::I128 | hir::Ty::U128 => "i128",
@@ -1982,7 +1993,7 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
 fn element_stride(element: hir::Ty) -> usize {
     match element {
         hir::Ty::I16 | hir::Ty::U16 => 2,
-        hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
         hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
         hir::Ty::I128 | hir::Ty::U128 => 16,
         hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
@@ -1991,7 +2002,7 @@ fn element_stride(element: hir::Ty) -> usize {
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
         hir::Ty::I16 | hir::Ty::U16 => "i16",
-        hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => "i32",
         hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
         hir::Ty::I128 | hir::Ty::U128 => "i128",
         hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
@@ -3139,6 +3150,10 @@ fn emit(
             }
         }
     }
+    if plan.witness().functions()[entry.0].result == ValueTy::Scalar(hir::Ty::Char) {
+        out.write_str("declare i32 @__oxid_print_char(i32)\n")
+            .unwrap();
+    }
     if plan.uses_floats() {
         out.write_str("declare void @__oxid_float_runtime()\n")
             .unwrap();
@@ -3264,6 +3279,7 @@ fn emit(
         return;
     }
     match result {
+        hir::Ty::Char => out.write_str("  %status = call i32 @__oxid_print_char(i32 %value)\n").unwrap(),
         hir::Ty::F32 => out.write_str("  %float_bits = bitcast float %value to i32\n  %output_value = zext i32 %float_bits to i64\n  %status = call i32 @__oxid_print_float_bits(i64 %output_value, i32 32)\n").unwrap(),
         hir::Ty::F64 => out.write_str("  %output_value = bitcast double %value to i64\n  %status = call i32 @__oxid_print_float_bits(i64 %output_value, i32 64)\n").unwrap(),
 
@@ -3333,6 +3349,11 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         }
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
+                Rvalue::CharacterConvert {
+                    op: hir::ConversionOp::ToCharChecked,
+                    ..
+                } => Continuation::Conversion,
+                Rvalue::CharacterConvert { .. } => Continuation::Unsplit,
                 Rvalue::Bitwise { op, .. } if op.shift() => Continuation::Arithmetic,
                 Rvalue::Bitwise { .. } | Rvalue::BitNot { .. } => Continuation::Unsplit,
                 Rvalue::CheckedI32 { .. }
@@ -3355,6 +3376,7 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
                 | Rvalue::I64(_)
                 | Rvalue::Integer { .. }
                 | Rvalue::FloatConvert { .. }
+                | Rvalue::Character(_)
                 | Rvalue::Float { .. }
                 | Rvalue::FloatArithmetic { .. }
                 | Rvalue::FloatNegate { .. }
@@ -4597,6 +4619,54 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::CharacterConvert {
+            op,
+            operand,
+            name_span,
+            ..
+        } => {
+            let input = f.locals[operand.local.0].ty;
+            let value = load_operand(out, f, &format!("{name}_source"), operand);
+            if op == hir::ConversionOp::CharToU32 {
+                value
+            } else {
+                let width = ty(input);
+                let guarded = if input.quad_integer() {
+                    value.clone()
+                } else {
+                    let extension = if input.signed_integer() {
+                        "sext"
+                    } else {
+                        "zext"
+                    };
+                    writeln!(
+                        out,
+                        "  %{name}_char_full = {extension} {width} {value} to i128"
+                    )
+                    .unwrap();
+                    format!("%{name}_char_full")
+                };
+                writeln!(out, "  %{name}_char_max = icmp ule i128 {guarded}, 1114111\n  %{name}_char_before = icmp ult i128 {guarded}, 55296\n  %{name}_char_after = icmp ugt i128 {guarded}, 57343\n  %{name}_char_not_surrogate = or i1 %{name}_char_before, %{name}_char_after\n  %{name}_char_valid = and i1 %{name}_char_max, %{name}_char_not_surrogate\n  br i1 %{name}_char_valid, label %{name}_conversion_ok, label %{name}_char_error\n{name}_char_error:").unwrap();
+                emit_failure(out, diagnostics, FailureKind::CharacterRange, name_span);
+                writeln!(out, "{name}_conversion_ok:").unwrap();
+                if input.integer_bits() == Some(32) {
+                    value
+                } else {
+                    let instruction = if input.integer_bits().expect("verified integer") < 32 {
+                        "zext"
+                    } else {
+                        "trunc"
+                    };
+                    writeln!(
+                        out,
+                        "  %{name}_value = {instruction} {width} {value} to i32"
+                    )
+                    .unwrap();
+                    format!("%{name}_value")
+                }
+            }
+        }
+        Rvalue::Character(value) => u32::from(value).to_string(),
         Rvalue::Float { bits, ty: selected } => {
             let integer = if selected == hir::Ty::F32 {
                 "i32"

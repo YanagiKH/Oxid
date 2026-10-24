@@ -360,7 +360,9 @@ fn execute_with_execution(
                 | Rvalue::CheckedI64ToU8 { .. }
                 | Rvalue::CheckedNegateI64 { .. }
                 | Rvalue::Integer { .. }
+                | Rvalue::CharacterConvert { .. }
                 | Rvalue::FloatConvert { .. }
+                | Rvalue::Character(_)
                 | Rvalue::Float { .. }
                 | Rvalue::FloatArithmetic { .. }
                 | Rvalue::FloatNegate { .. }

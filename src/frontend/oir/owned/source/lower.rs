@@ -1374,6 +1374,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 return Ok(());
             }
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
+            source::ExprKind::Character(value) => Rvalue::Character(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
             source::ExprKind::I64(value) => Rvalue::I64(value),
             source::ExprKind::Float { bits, ty } => Rvalue::Float { bits, ty },
@@ -1391,6 +1392,14 @@ impl<'a, 'b> Walk<'a, 'b> {
                 operand,
                 name_span,
             } => match op {
+                op @ (source::ConversionOp::ToCharChecked | source::ConversionOp::CharToU32) => {
+                    Rvalue::CharacterConvert {
+                        op,
+                        operand: self.operand(operand)?,
+                        source_expr,
+                        name_span,
+                    }
+                }
                 op @ (source::ConversionOp::ToFloat(_)
                 | source::ConversionOp::FloatToBits
                 | source::ConversionOp::FloatFromBits(_)) => Rvalue::FloatConvert {

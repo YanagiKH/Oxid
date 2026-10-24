@@ -134,7 +134,10 @@ impl<'s> Visitor<'s> {
                 self.span(*span)?;
                 match value {
                     Rvalue::Load(place) => self.span(place.span)?,
-                    Rvalue::FloatConvert {
+                    Rvalue::CharacterConvert {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::FloatConvert {
                         operand, name_span, ..
                     }
                     | Rvalue::CheckedI32ToU8 {
@@ -231,6 +234,7 @@ impl<'s> Visitor<'s> {
                     | Rvalue::I32(_)
                     | Rvalue::I64(_)
                     | Rvalue::Integer { .. }
+                    | Rvalue::Character(_)
                     | Rvalue::Float { .. }
                     | Rvalue::Integer128 { .. }
                     | Rvalue::U8(_)
@@ -298,7 +302,13 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
     // A real discriminator inspection also happens for predecessor assignments.
     increment(&mut visitor.dimensions)?;
     let (operation, operand, name_span, source_expr) = match assign.value {
-        Rvalue::FloatConvert {
+        Rvalue::CharacterConvert {
+            op,
+            operand,
+            source_expr,
+            name_span,
+        }
+        | Rvalue::FloatConvert {
             op,
             operand,
             source_expr,
@@ -406,6 +416,8 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
     let expected = match operation {
         ast::ConversionOp::ToFloat(ast::FloatTypeSyntax::F32) => "to_f32",
         ast::ConversionOp::ToFloat(ast::FloatTypeSyntax::F64) => "to_f64",
+        ast::ConversionOp::ToCharChecked => "to_char_checked",
+        ast::ConversionOp::CharToU32 => "to_u32",
         ast::ConversionOp::FloatToBits => "to_bits",
         ast::ConversionOp::FloatFromBits(_) => "from_bits",
         ast::ConversionOp::ToU8Checked => "to_u8_checked",

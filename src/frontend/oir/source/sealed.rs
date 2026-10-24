@@ -45,6 +45,7 @@ pub(in crate::frontend) fn check_source<'s>(
         || ast.uses_byte_scalars(source)
         || ast.uses_bitwise_syntax()
         || ast.uses_float_syntax(source)
+        || ast.uses_character_syntax(source)
     {
         let resolved = owned::source::resolve::resolve_sources(owner)?;
         let typed = owned::source::typeck::check(resolved)?;
