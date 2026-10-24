@@ -32,6 +32,28 @@ pub(in crate::frontend::oir) fn check_source(
     Ok((check_typed(&typed)?, entry))
 }
 
+#[test]
+fn record_field_views_rederive_composed_offsets_before_scalar_reads() {
+    use crate::frontend::{lexer, parser};
+    let mut sources = SourceMap::new();
+    let id = sources.add("record-field-views.ox".into(), "struct Inner{x:i32}struct Middle{pad:i32,a:Inner,b:Inner}struct Outer{pad:i32,middle:Middle}struct Other{x:i32}\nfn main()->i32{let outer=Outer{pad:11,middle:Middle{pad:22,a:Inner{x:37},b:Inner{x:99}}};return relay(&outer.middle);}\nfn relay(p:&Middle)->i32{return read(&*p.a);}\nfn read(p:&Inner)->i32{return p.x;}".into());
+    let file = sources.get(id);
+    let (ast, _) = parser::parse_counted_with_arrays(
+        file,
+        lexer::lex(file).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+        parser::MAX_NODES,
+        &mut Allocator::default(),
+        parser::ArraySyntaxPolicy::Enabled,
+    )
+    .unwrap();
+    let (program, _) = check_source(file, &ast, &sources).unwrap();
+    assert_eq!(
+        execute::record_field_view_tests::exercise_record_views(&program.witness),
+        5
+    );
+}
+
 /// Keep the fresh index and paid typed owner local until ordinary source
 /// lowering, association and the complete raw verifier have finished.
 pub(in crate::frontend::oir) fn check_enum_source(

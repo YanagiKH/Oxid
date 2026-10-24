@@ -83,6 +83,15 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     /// The descriptor address is re-derived from checked nominal paths. A slice
     /// stores only its initialized range and can never manufacture an owner.
     fn resource_origin(&self, mut permission: LoanKey, root: OwnerKey, span: Span) -> Result<u64> {
+        if matches!(self.aggregate(root, span)?, AggregateTy::Record(_)) {
+            let view = self
+                .projected_view(permission, root, span)
+                .map_err(|_| bad("resource projection", span))?;
+            if view.aggregate.map(AggregateSlot::aggregate) != Some(AggregateTy::ByteBuf) {
+                return Err(bad("resource projection type", span));
+            }
+            return Ok(view.offset);
+        }
         for _ in 0..plan::MAX_FRAMES {
             let loan = self.loan(permission, span)?;
             if loan.root != root {

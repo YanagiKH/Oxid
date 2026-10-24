@@ -214,7 +214,7 @@ fn rejection_cases() -> Vec<(String, &'static str, &'static str)> {
         (format!("{b} fn take(p:&[i32])->(){{return;}} fn main()->(){{{init}take(&b.left.unknown);return;}}"), "E0305", "type"),
         (format!("{b} fn take(p:&[i32])->(){{return;}} fn main()->(){{{init}take(&b.unknown);return;}}"), "E0305", "type"),
         (format!("{b} fn main()->(){{{init}let extracted=b.left;return;}}"), "E0305", "type"),
-        ("struct Inner{values:[i32;1]} struct B{inner:Inner} fn take(p:&Inner)->(){return;} fn main()->(){let b=B{inner:Inner{values:[1]}};take(&b.inner);return;}".into(), "E0305", "type"),
+        ("struct Inner{values:[i32;1]} struct Other{values:[i32;1]} struct B{inner:Inner} fn take(p:&Other)->(){return;} fn main()->(){let b=B{inner:Inner{values:[1]}};take(&b.inner);return;}".into(), "E0300", "type"),
     ]);
     for spelling in [
         "&(b.left)",
@@ -253,6 +253,16 @@ fn projected_slice_public_rejects_conflicts_permissions_exact_views_and_nonarray
             assert!(!text.contains("E0701"), "{source}: {text}");
             assert!(!project.0.join("program").exists());
         }
+    }
+}
+
+#[test]
+fn nested_record_field_borrow_now_uses_its_exact_record_type() {
+    let project = Project::new("struct Inner{values:[i32;1]} struct B{inner:Inner} fn take(p:&Inner)->(){return;} fn main()->(){let b=B{inner:Inner{values:[1]}};take(&b.inner);return;}");
+    for operation in ["check", "run"] {
+        let output = project.json(operation);
+        assert!(output.status.success(), "{operation}: {output:?}");
+        assert!(output.stderr.is_empty());
     }
 }
 

@@ -4539,12 +4539,14 @@ fn emit_statement(
                 out.borrow_projection_visits += declaration.projection.len();
                 let (value, offset) =
                     projection(plan, f, declaration.authority, &declaration.projection);
-                let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
-                    unreachable!("verified projected array slice")
+                let projected_length = match value {
+                    ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.length()),
+                    ValueTy::Owned(AggregateTy::Record(_)) => None,
+                    _ => unreachable!("verified projected record or array slice"),
                 };
                 (
                     field_pointer(out, &format!("{name}_borrow_projection"), &base, offset),
-                    Some(array.length()),
+                    projected_length,
                 )
             };
             writeln!(
