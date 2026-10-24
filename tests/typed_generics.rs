@@ -19,6 +19,20 @@ impl Project {
         fs::write(root.join("oxid.toml"),"[project]\nname=\"generics\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"result\"\n").unwrap();
         Self(root)
     }
+    fn unavailable_multifile(&self) -> bool {
+        if cfg!(target_os = "linux") {
+            return false;
+        }
+        let output = self.invoke(&["check"]);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        let message = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            message.contains("error[E0005] (source):") && message.contains("qualified"),
+            "{output:?}"
+        );
+        true
+    }
     fn invoke(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_oxid"))
             .args(args)
@@ -118,6 +132,9 @@ fn generic_inference_rejects_conflicting_types_and_unsatisfied_bounds() {
 fn generic_names_resolve_in_the_defining_module() {
     let project = Project::new("mod helper;fn main()->i32{return crate::helper::forward(42);}");
     fs::write(project.0.join("helper.ox"),"fn identity<T>(value:T)->T{return value;}pub fn forward<T>(value:T)->T{return identity(value);}").unwrap();
+    if project.unavailable_multifile() {
+        return;
+    }
     let output = project.invoke(&["run"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, b"42\n");
@@ -131,6 +148,9 @@ fn generic_calls_accept_private_types_without_exposing_them() {
         "pub fn identity<T>(value:T)->T{return value;}",
     )
     .unwrap();
+    if project.unavailable_multifile() {
+        return;
+    }
     let output = project.invoke(&["run"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, b"42\n");
@@ -257,6 +277,9 @@ fn generic_functions_keep_dependency_type_and_definition_identity() {
             "pub struct Item{pub value:i32}pub fn identity<T>(value:T)->T{return value;}",
         )
         .unwrap();
+    }
+    if project.unavailable_multifile() {
+        return;
     }
     let output = project.invoke(&["run"]);
     assert!(output.status.success(), "{output:?}");
