@@ -128,12 +128,18 @@ fn unsupported_constructs_never_enter_legacy_frontend() {
         ),
         ("macro hi { }", "macro"),
         ("fn f() -> () { const x = true; return; }", "const"),
-        ("fn f() -> () { let x = true; x & false; return; }", "&"),
         ("fn f() -> () { for true { return; } return; }", "for"),
         ("async fn f() -> () { return; }", "async"),
         ("fn f() -> () { \"text\"; return; }", "\"text\""),
     ] {
         failure(source, "E0101", mark);
+    }
+    for operator in ["&", "|", "^"] {
+        failure(
+            &format!("fn f() -> () {{ let x = true; x {operator} false; return; }}"),
+            "E0300",
+            "x",
+        );
     }
 }
 #[test]
