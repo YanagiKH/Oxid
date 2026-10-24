@@ -1615,6 +1615,29 @@
         "scripts/test_characters.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "owned-float-vectors",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Owned growable f64 vectors with exact bit storage, checked indexing, fallible growth and little-endian byte transfer.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Ordinary Oxid local package using reference execution and LLVM native builds at O0/O2.",
+      "target_scope": "Reference compiler hosts; native verification on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "f64 elements only, i32 lengths and the existing shared 16 MiB live allocation limit. Indexed values are copied; no borrowed f64 views or generic collection type.",
+      "spec": [
+        "packages/float_vector/README.md"
+      ],
+      "implementation": [
+        "packages/float_vector/src/lib.ox"
+      ],
+      "tests": [
+        "examples/typed-float-vector/tests/vector.ox",
+        "scripts/verify_float_vector.py"
+      ],
+      "evidence": []
     }
   ]
 }

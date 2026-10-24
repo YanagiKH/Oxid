@@ -66,6 +66,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('scripts/verify_project_format_compatibility.py', current)
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_characters.py', current)
+        self.assertIn('scripts/verify_float_vector.py', current)
         self.assertIn('scripts/verify_i64.py', current)
         self.assertIn('scripts/verify_integer_widths.py', current)
         self.assertIn('scripts/verify_byte_integers.py', current)
