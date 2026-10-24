@@ -59,6 +59,7 @@ pub(super) enum DeniedOperation {
     StorageLive,
     StorageEnd,
     Construct,
+    DestructureRecord,
     ConstructArray,
     ConstructEnum,
     ConsumeVariant,
@@ -142,6 +143,13 @@ impl DenialContext {
                 if base == AccessBase::Owner(*destination) =>
             {
                 DeniedOperation::Construct
+            }
+            (OwnedInstruction::DestructureRecord { source, .. }, SourceConsume)
+                if base == AccessBase::Owner(*source) => DeniedOperation::DestructureRecord,
+            (OwnedInstruction::DestructureRecord { source, fields }, InitializationDestination)
+                if fields.iter().any(|(_, destination)| base == AccessBase::Owner(*destination)) => {
+                counterpart = Some(Self::owner(f, *source)?);
+                DeniedOperation::DestructureRecord
             }
             (OwnedInstruction::ConstructComposite { destination, fields }, SourceConsume)
                 if fields.iter().any(|(_, value)| matches!(value, FieldInitializer::Owned(source) if base == AccessBase::Owner(*source))) => {
@@ -414,6 +422,21 @@ fn step(
             legal = &[Available];
             next = Moved;
             role = DeniedRole::SourceConsume;
+        }
+        OwnedInstruction::DestructureRecord { source, .. } if *source == owner => {
+            event = true;
+            legal = &[Available];
+            next = Moved;
+            role = DeniedRole::SourceConsume;
+        }
+        OwnedInstruction::DestructureRecord { fields, .. }
+            if fields.iter().any(|(_, destination)| *destination == owner) =>
+        {
+            event = true;
+            legal = &[Uninitialized];
+            next = Available;
+            failure = Violation::Initialization;
+            role = DeniedRole::InitializationDestination;
         }
         OwnedInstruction::ConstructComposite { fields, .. }
             if fields.iter().any(
@@ -921,6 +944,20 @@ fn accesses(
                     DeniedRole::InitializationDestination
                 },
             )?;
+        }
+        OwnedInstruction::DestructureRecord { source, fields } => {
+            visit(
+                AccessBase::Owner(*source),
+                Access::Consume,
+                DeniedRole::SourceConsume,
+            )?;
+            for (_, destination) in fields {
+                visit(
+                    AccessBase::Owner(*destination),
+                    Access::Write,
+                    DeniedRole::InitializationDestination,
+                )?;
+            }
         }
         OwnedInstruction::ConstructComposite {
             destination,

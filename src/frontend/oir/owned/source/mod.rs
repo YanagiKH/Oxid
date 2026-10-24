@@ -115,3 +115,6 @@ mod float_tests;
 
 #[cfg(test)]
 mod character_tests;
+
+#[cfg(test)]
+mod record_pattern_tests;

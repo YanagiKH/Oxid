@@ -207,6 +207,11 @@ fn function(
                         return Err(bad());
                     }
                 }
+                OwnedInstruction::DestructureRecord { .. } => {
+                    if matches!(source, FunctionSource::Synthetic) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::ConstructEnum { payload, .. } => {
                     if !allow_enums {
                         return Err(bad());
@@ -830,6 +835,136 @@ fn check_impl(
                         return Err(bad());
                     }
                 }
+            }
+        }
+        for block in &declaration.blocks {
+            for statement in &block.statements {
+                let OwnedInstruction::DestructureRecord { source, ref fields } = statement.kind
+                else {
+                    continue;
+                };
+                let typed = typed.ok_or_else(bad)?;
+                let (record, pattern, initializer) =
+                    index.source_record_pattern(id, statement.span, typed.work())?;
+                let source_decl = declaration.owners.get(source.0).ok_or_else(bad)?;
+                if source_decl.aggregate() != AggregateTy::Record(record)
+                    || source_decl.span != initializer
+                    || !matches!(
+                        source_decl.kind,
+                        OwnerKind::Temporary | OwnerKind::CallResult { .. }
+                    )
+                {
+                    return Err(bad());
+                }
+                let (record_key, record_module) = index.record(record)?;
+                let record_ast = &index.sources().ast(record_module)?.records[record_key.index];
+                let mut owned = 0usize;
+                for field in pattern {
+                    typed.work().debit(
+                        record_ast.fields.len() as u64 + 1,
+                        field.span,
+                        "record pattern field correspondence",
+                    )?;
+                    let ordinal = record_ast
+                        .fields
+                        .iter()
+                        .position(|member| {
+                            index.sources().text(member.name).ok()
+                                == index.sources().text(field.field).ok()
+                        })
+                        .ok_or_else(bad)?;
+                    let expected_id = FieldId {
+                        record,
+                        index: ordinal,
+                    };
+                    let expected = index.instantiated_record_field(
+                        expected_id,
+                        record_ast.fields[ordinal].ty,
+                        typed.work(),
+                    )?;
+                    match expected {
+                        ParameterTy::Value(ValueTy::Owned(aggregate)) => {
+                            let (actual_id, destination) = fields.get(owned).ok_or_else(bad)?;
+                            let target = declaration.owners.get(destination.0).ok_or_else(bad)?;
+                            if *actual_id != expected_id
+                                || target.aggregate() != aggregate
+                                || target.span != field.binding
+                                || target.kind != (OwnerKind::Local { mutable: false })
+                            {
+                                return Err(bad());
+                            }
+                            owned += 1;
+                        }
+                        ParameterTy::Value(ValueTy::Scalar(ty)) => {
+                            let mut matches = 0usize;
+                            for raw in declaration
+                                .blocks
+                                .iter()
+                                .flat_map(|block| &block.statements)
+                            {
+                                typed.work().debit(
+                                    1,
+                                    field.span,
+                                    "record pattern scalar correspondence",
+                                )?;
+                                if raw.span != field.span {
+                                    continue;
+                                }
+                                if let OwnedInstruction::ReadField {
+                                    destination,
+                                    base: AccessBase::Owner(actual_source),
+                                    field: actual_field,
+                                } = raw.kind
+                                {
+                                    let destination =
+                                        declaration.locals.get(destination.0).ok_or_else(bad)?;
+                                    if actual_source != source
+                                        || actual_field != expected_id
+                                        || destination.ty != ty
+                                        || destination.span != field.binding
+                                        || destination.kind != LocalKind::Binding
+                                    {
+                                        return Err(bad());
+                                    }
+                                    matches += 1;
+                                }
+                            }
+                            if matches != 1 {
+                                return Err(bad());
+                            }
+                        }
+                        _ => return Err(bad()),
+                    }
+                }
+                if owned != fields.len() {
+                    return Err(bad());
+                }
+            }
+        }
+        for statement in original.blocks.iter().flat_map(|block| &block.body) {
+            if !matches!(
+                statement.kind,
+                crate::frontend::ast::StmtKind::DestructureRecord { .. }
+            ) {
+                continue;
+            }
+            let typed = typed.ok_or_else(bad)?;
+            let mut count = 0usize;
+            for lowered in declaration
+                .blocks
+                .iter()
+                .flat_map(|block| &block.statements)
+            {
+                typed
+                    .work()
+                    .debit(1, statement.span, "record pattern statement correspondence")?;
+                count += usize::from(
+                    lowered.span == statement.span
+                        && matches!(lowered.kind, OwnedInstruction::DestructureRecord { .. }),
+                );
+            }
+            if count != 1 {
+                return Err(bad());
             }
         }
         visitor.file(original.name.file);

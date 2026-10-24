@@ -474,6 +474,7 @@ impl fmt::Display for HirStatement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::StmtKind as S;
         match self.0 {
+            S::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             S::Match { .. } => unreachable!("enum source gate"),
             S::Let { binding, init } => write!(f, "[\"let\",{},{}]", binding.0, init.0),
             S::Assign {
@@ -997,6 +998,7 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
+            I::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             I::PrepareBorrowRange { .. }
             | I::Experimental { .. }
             | I::ReadStdin { .. }

@@ -521,7 +521,18 @@ pub struct MatchArmSyntax {
     pub span: Span,
 }
 #[derive(Debug, PartialEq, Eq)]
+pub struct RecordPatternField {
+    pub field: Span,
+    pub binding: Span,
+    pub span: Span,
+}
+#[derive(Debug, PartialEq, Eq)]
 pub enum StmtKind {
+    DestructureRecord {
+        record: ItemPath,
+        fields: Vec<RecordPatternField>,
+        init: ExprId,
+    },
     Let {
         mutable: bool,
         name: Span,
@@ -1115,6 +1126,20 @@ impl Program {
                         return false;
                     }
                     let ok = match &statement.kind {
+                        StmtKind::DestructureRecord {
+                            record,
+                            fields,
+                            init,
+                        } => {
+                            path_valid(*record, &mut valid)
+                                && fields.iter().all(|field| {
+                                    visit()
+                                        && valid(field.field)
+                                        && valid(field.binding)
+                                        && valid(field.span)
+                                })
+                                && expr_valid(*init)
+                        }
                         StmtKind::Let {
                             name,
                             annotation,
@@ -1451,7 +1476,8 @@ impl Program {
                                 annotation: Some(ty),
                                 ..
                             } => owned_type(ty),
-                            StmtKind::FieldAssign { .. }
+                            StmtKind::DestructureRecord { .. }
+                            | StmtKind::FieldAssign { .. }
                             | StmtKind::IndexAssign { .. }
                             | StmtKind::Match { .. } => true,
                             _ => false,

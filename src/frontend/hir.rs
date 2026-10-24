@@ -651,6 +651,15 @@ impl<'a> Resolver<'_, 'a> {
             };
             frames.push(Frame::Next(block, index + 1));
             let kind = match &statement.kind {
+                ast::StmtKind::DestructureRecord { .. } => {
+                    return Err(Diagnostic::new(
+                        "E0101",
+                        "resolve",
+                        "record patterns require the owned source pipeline",
+                        Some(statement.span),
+                    ));
+                }
+
                 ast::StmtKind::Let {
                     mutable,
                     name,

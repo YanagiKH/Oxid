@@ -776,6 +776,87 @@ impl DeclarationIndex<'_> {
         let (_, module) = self.record(field.record)?;
         self.query(work).parameter_type(module, syntax)
     }
+    pub fn source_record_pattern(
+        &self,
+        caller: DefId,
+        span: Span,
+        work: &WorkMeter,
+    ) -> Result<(RecordId, &[ast::RecordPatternField], Span), Box<Diagnostic>> {
+        let (key, module) = self.function(caller)?;
+        let program = self.sources().ast(module)?;
+        for block in &program.functions[key.index].blocks {
+            for statement in &block.body {
+                work.debit(1, span, "record pattern source identity")?;
+                if statement.span != span {
+                    continue;
+                }
+                let StmtKind::DestructureRecord {
+                    record,
+                    fields,
+                    init,
+                } = &statement.kind
+                else {
+                    return Err(bad(span));
+                };
+                let template = self.query(work).record_type(
+                    module,
+                    ItemPathRef {
+                        file: span.file,
+                        path: *record,
+                    },
+                    TypeContext::Value,
+                )?;
+                let mut initializer = *init;
+                let initializer = loop {
+                    work.debit(1, span, "record pattern initializer origin")?;
+                    let expression = program
+                        .expressions
+                        .get(initializer.0)
+                        .ok_or_else(|| bad(span))?;
+                    match expression.kind {
+                        ExprKind::Group(inner) => initializer = inner,
+                        _ => break expression.span,
+                    }
+                };
+                return Ok((
+                    self.instantiated_record_pattern(caller, span, template, work)?,
+                    fields,
+                    initializer,
+                ));
+            }
+        }
+        Err(bad(span))
+    }
+    pub fn instantiated_record_pattern(
+        &self,
+        caller: DefId,
+        span: Span,
+        template: RecordId,
+        work: &WorkMeter,
+    ) -> Result<RecordId, Box<Diagnostic>> {
+        let Some(plan) = self.generic_plan() else {
+            return Ok(template);
+        };
+        let instance = plan.instances.get(caller.0).ok_or_else(|| bad(span))?;
+        work.debit(
+            instance.matches.len() as u64 + 1,
+            span,
+            "record pattern source type",
+        )?;
+        let value = instance
+            .matches
+            .iter()
+            .find(|(at, _)| *at == span)
+            .map(|(_, value)| *value)
+            .ok_or_else(|| bad(span))?;
+        let ValueTy::Owned(AggregateTy::Record(record)) = plan.nominals.value(value, span)? else {
+            return Err(bad(span));
+        };
+        if self.template_record_for_instance(record)? != template {
+            return Err(bad(span));
+        }
+        Ok(record)
+    }
     pub fn instantiated_constructor(
         &self,
         caller: DefId,
@@ -1335,6 +1416,100 @@ impl<'a, 's> Walker<'a, 's> {
             self.reachable = inherited_reachable && flow.falls;
             self.work.debit(1, statement.span, "generic statement")?;
             let next = match &statement.kind {
+                StmtKind::DestructureRecord {
+                    record,
+                    fields,
+                    init,
+                } => {
+                    reject_parameter_base(
+                        self.index,
+                        self.work,
+                        self.module,
+                        self.function.name,
+                        *record,
+                        statement.span,
+                    )?;
+                    let value = self.expression(*init)?.value(statement.span)?;
+                    let Value::Record(application) = value else {
+                        return Err(error(
+                            "record pattern requires a known owned record",
+                            statement.span,
+                        ));
+                    };
+                    let template = self.index.query(self.work).record_type(
+                        self.module,
+                        ItemPathRef {
+                            file: statement.span.file,
+                            path: *record,
+                        },
+                        TypeContext::Value,
+                    )?;
+                    if self.nominals.records[application].template != template {
+                        return Err(error("record pattern type mismatch", statement.span));
+                    }
+                    let (key, module) = self.index.template_record(template)?;
+                    let declaration = &self.index.sources().ast(module)?.records[key.index];
+                    if fields.len() != declaration.fields.len() {
+                        return Err(error(
+                            "record pattern must bind every field",
+                            statement.span,
+                        ));
+                    }
+                    let mut seen = Vec::new();
+                    for _ in &declaration.fields {
+                        self.storage.push(
+                            &mut seen,
+                            false,
+                            self.allocator,
+                            self.work,
+                            statement.span,
+                        )?;
+                    }
+                    for field in fields {
+                        self.work.debit(
+                            declaration.fields.len() as u64 + 1,
+                            field.span,
+                            "record pattern field identity",
+                        )?;
+                        let position = declaration
+                            .fields
+                            .iter()
+                            .position(|member| {
+                                self.index.sources().text(member.name).ok()
+                                    == self.index.sources().text(field.field).ok()
+                            })
+                            .ok_or_else(|| error("unknown record pattern field", field.field))?;
+                        if seen[position] {
+                            return Err(error("duplicate record pattern field", field.field));
+                        }
+                        seen[position] = true;
+                        if !matches!(
+                            self.index.query(self.work).field_access(
+                                self.module,
+                                FieldId {
+                                    record: template,
+                                    index: position
+                                },
+                                field.field
+                            )?,
+                            Access::Allowed
+                        ) {
+                            return Err(error("record pattern uses a private field", field.field));
+                        }
+                        let ty = Type::Value(self.nominals.records[application].fields[position]);
+                        self.bind(field.binding, ty, false)?;
+                    }
+                    if !self.matches.iter().any(|(span, _)| *span == statement.span) {
+                        self.storage.push(
+                            &mut self.matches,
+                            (statement.span, value),
+                            self.allocator,
+                            self.work,
+                            statement.span,
+                        )?;
+                    }
+                    Flow::FALL
+                }
                 StmtKind::Let {
                     name,
                     annotation,

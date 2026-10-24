@@ -5,6 +5,83 @@ use super::*;
 mod source_resources;
 
 #[test]
+fn record_pattern_runtime_preflights_every_destination_before_any_payload_copy() {
+    let checked = super::super::source::resource_fixtures::checked_enum_project(
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;struct Pair{first:ByteBuf,second:ByteBuf}fn main()->i32{let pair=Pair{first:make(40u8),second:make(2u8)};let Pair{first:a,second:b}=pair;return len(&a)+len(&b);}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}"
+    );
+    assert_eq!(checked.entry, hir::DefId(0));
+    let plan = ExecutionPlan::build(&checked.witness).unwrap();
+    for mutation in 0..4 {
+        let initial = 1 + plan.function(checked.entry).usage().activation_fuel_cells();
+        let mut selected = None;
+        for fuel in initial..initial + 1000 {
+            let machine = stopped_machine(&plan, fuel);
+            let frame = machine.frames.len() - 1;
+            let current = &machine.frames[frame];
+            let function = &plan.witness().functions()[current.function.0];
+            if let Some(statement) = function.blocks[current.block.0]
+                .statements
+                .get(current.next)
+            {
+                if matches!(statement.kind, OwnedInstruction::DestructureRecord { .. }) {
+                    selected = Some((machine, frame, statement));
+                    break;
+                }
+            }
+        }
+        let (mut machine, frame, statement) = selected.expect("record pattern reached");
+        let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind else {
+            unreachable!()
+        };
+        assert_eq!(fields.len(), 2);
+        let span = plan::instruction_span(statement);
+        let last = fields[1].1;
+        match mutation {
+            0 => machine.frames[frame].owners[last.0].generation = u64::MAX,
+            1 => machine.frames[frame].owners[source.0].generation = u64::MAX,
+            2 => machine.frames[frame].owners[last.0].state = AVAILABLE,
+            3 => {
+                let key = machine.raw_key(frame, *source);
+                let AggregateTy::Record(record) = machine.aggregate(key, span).unwrap() else {
+                    unreachable!()
+                };
+                let (_, extent) = machine
+                    .owned_record_field_extent(key, record, fields[1].0, span)
+                    .unwrap();
+                machine.frames[frame].payload[extent].fill(0xff);
+            }
+            _ => unreachable!(),
+        }
+        let payload = machine.frames[frame].payload.clone();
+        let owners = machine.frames[frame]
+            .owners
+            .iter()
+            .map(|owner| (owner.state, owner.generation))
+            .collect::<Vec<_>>();
+        assert!(machine.statement(frame, &statement.kind, span).is_err());
+        assert_eq!(
+            machine.frames[frame].payload, payload,
+            "mutation {mutation}"
+        );
+        assert_eq!(
+            machine.frames[frame]
+                .owners
+                .iter()
+                .map(|owner| (owner.state, owner.generation))
+                .collect::<Vec<_>>(),
+            owners
+        );
+        assert_eq!(machine.heap.ledger().live_allocations, 2);
+        machine.heap.cleanup();
+        assert_eq!(machine.heap.ledger().live_allocations, 0);
+        assert_eq!(
+            machine.heap.ledger().allocations,
+            machine.heap.ledger().releases
+        );
+    }
+}
+
+#[test]
 fn independently_counted_complete_traces_and_every_lower_fuel() {
     type Builder = fn() -> (SourceMap, RawOwnedProgram, Schedule);
     for build in [empty_record as Builder, owned_relay, shared_read] {

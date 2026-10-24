@@ -3576,7 +3576,8 @@ fn check_body(
                 }
                 None
             }
-            StmtKind::Assign { value: init, .. }
+            StmtKind::DestructureRecord { init, .. }
+            | StmtKind::Assign { value: init, .. }
             | StmtKind::FieldAssign { value: init, .. }
             | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
@@ -3596,6 +3597,68 @@ fn check_body(
             )?;
         }
         match statement.kind {
+            StmtKind::DestructureRecord {
+                record,
+                ref fields,
+                init,
+            } => {
+                let actual = expressions[init.0].expect("typed record pattern initializer");
+                let expected = ValueTy::Owned(AggregateTy::Record(record));
+                if actual != expected {
+                    return Err(mismatch(
+                        program,
+                        expected,
+                        actual,
+                        function.expressions[init.0].span,
+                    ));
+                }
+                let declared = program.records().get(record.0).ok_or_else(|| {
+                    error("E0500", "invalid record pattern identity", statement.span)
+                })?;
+                if fields.len() != declared.fields.len() {
+                    return Err(error(
+                        "E0300",
+                        "record pattern must bind every field",
+                        statement.span,
+                    ));
+                }
+                for (position, field) in fields.iter().enumerate() {
+                    program.work().debit(
+                        position as u64 + 1,
+                        field.span,
+                        "record pattern binding type",
+                    )?;
+                    if field.field.record != record
+                        || fields[..position].iter().any(|other| {
+                            other.field == field.field || other.binding == field.binding
+                        })
+                    {
+                        return Err(error(
+                            "E0500",
+                            "invalid record pattern field mapping",
+                            field.span,
+                        ));
+                    }
+                    let member = declared.fields.get(field.field.index).ok_or_else(|| {
+                        error("E0500", "invalid record pattern field", field.span)
+                    })?;
+                    let binding = function.bindings.get(field.binding.0).ok_or_else(|| {
+                        error("E0500", "invalid record pattern binding", field.span)
+                    })?;
+                    if binding.mutable
+                        || binding.parameter_position.is_some()
+                        || binding.annotation != Some(member.ty)
+                        || bindings[field.binding.0].is_some()
+                    {
+                        return Err(error(
+                            "E0500",
+                            "invalid record pattern destination",
+                            field.span,
+                        ));
+                    }
+                    bindings[field.binding.0] = Some(ParameterTy::Value(member.ty));
+                }
+            }
             StmtKind::Match {
                 scrutinee,
                 ref arms,

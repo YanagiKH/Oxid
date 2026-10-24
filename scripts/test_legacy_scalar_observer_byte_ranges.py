@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
-import legacy_scalar_observer_nominals as adapter
+import legacy_scalar_observer_record_patterns as adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +121,19 @@ class ByteRangeObserverTests(unittest.TestCase):
                     value = json.loads(self.observe(kind, source, args))
                     self.assertEqual((value["status"], value["family"]), ("outside_subset", "float_literal"))
                     self.assertEqual(value["span"], {"file_id": 0, "start": source.index(literal), "end": source.index(literal)+len(literal)})
+
+    def test_record_patterns_stay_outside_the_retained_scalar_schema(self):
+        statement = "let Cell { value: item } = source;"
+        source = "fn f()->(){" + statement + "return;}"
+        for kind, args in MODES:
+            with self.subTest(kind=kind, args=args):
+                value = json.loads(self.observe(kind, source, args))
+                self.assertEqual((value["status"], value["family"]),
+                                 ("outside_subset", "record_pattern"))
+                self.assertEqual(value["span"], {"file_id": 0,
+                                 "start": source.index(statement),
+                                 "end": source.index(statement) + len(statement)})
+                self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
 
     def test_new_modules_are_exact_copies_and_wrapper_pins_are_unchanged(self):
         for kind, builder in (("parser", parser), ("static", static)):

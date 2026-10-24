@@ -781,6 +781,35 @@ pub(super) fn check_with_conversion_authority(
                         )?;
                     }
                 }
+                OwnedInstruction::DestructureRecord { source, fields } => {
+                    let source_decl = ordinary(f, *source, s)?;
+                    let record = record(source_decl.aggregate(), s)?;
+                    let expected = d.record(record)?.owned_field_count();
+                    equal(fields.len(), expected, s)?;
+                    for (position, (field, destination)) in fields.iter().enumerate() {
+                        meter.visit()?;
+                        let member = d.field(record, *field)?;
+                        if source == destination {
+                            return Err(bad(Malformed::Binding, s));
+                        }
+                        for (earlier, _) in &fields[..position] {
+                            meter.visit()?;
+                            if earlier == field {
+                                return Err(bad(Malformed::Binding, s));
+                            }
+                        }
+                        let target = ordinary(f, *destination, s)?;
+                        if target.kind != (OwnerKind::Local { mutable: false }) {
+                            return Err(bad(Malformed::OwnerClass, s));
+                        }
+                        d.same_value_type(member.value_ty(), ValueTy::Owned(target.aggregate()))?;
+                        let previous = &mut owners[destination.0].initialize;
+                        if previous.is_some() {
+                            return Err(bad(Malformed::CanonicalSite, s));
+                        }
+                        *previous = Some(site);
+                    }
+                }
                 OwnedInstruction::ConstructComposite {
                     destination,
                     fields,

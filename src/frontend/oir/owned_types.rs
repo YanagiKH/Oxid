@@ -408,9 +408,21 @@ pub(super) struct RecordDecl {
     field_start: usize,
     field_end: usize,
     layout: Layout,
-    width: usize,
+    // Width is at most 1 MiB and a record has at most 1,024 fields.
+    // These two checked counts fit in the original word on 32/64-bit hosts.
+    width_and_owned_fields: usize,
 }
 impl RecordDecl {
+    const WIDTH_BITS: u32 = 21;
+
+    fn width(&self) -> usize {
+        self.width_and_owned_fields & ((1usize << Self::WIDTH_BITS) - 1)
+    }
+
+    pub(super) fn owned_field_count(&self) -> usize {
+        self.width_and_owned_fields >> Self::WIDTH_BITS
+    }
+
     pub(super) fn id(&self) -> RecordId {
         self.id
     }
@@ -677,8 +689,10 @@ impl Declarations {
         for record in raw {
             let field_start = fields.len();
             let mut cursor = LayoutCursor::default();
+            let mut owned_fields = 0usize;
             for field in &record.fields {
                 let ty = value_field(field)?;
+                owned_fields += usize::from(matches!(ty, ValueTy::Owned(_)));
                 let offset = cursor.push(value_summary(ty, &summaries)?.layout)?;
                 fields.push(FieldDecl {
                     id: field.id,
@@ -693,7 +707,8 @@ impl Declarations {
                 field_start,
                 field_end: fields.len(),
                 layout: cursor.finish()?,
-                width: summaries[record.id.0].width,
+                width_and_owned_fields: summaries[record.id.0].width
+                    | (owned_fields << RecordDecl::WIDTH_BITS),
             });
         }
         let mut result = Self {
@@ -827,7 +842,7 @@ impl Declarations {
         match ty {
             AggregateTy::ByteBuf => Ok(3),
             AggregateTy::File => Ok(2),
-            AggregateTy::Record(id) => self.record(id).map(|record| record.width),
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::width),
             AggregateTy::Enum(id) => self
                 .enums
                 .enumeration(id)
@@ -1462,6 +1477,42 @@ mod tests {
             table.record(RecordId(0)).unwrap_err(),
             DeclarationError::InvalidRecordId(RecordId(0))
         );
+    }
+
+    #[test]
+    fn record_pattern_cached_field_counts_preserve_width_and_carrier_at_both_limits() {
+        #[allow(dead_code)]
+        struct OriginalRecordDecl {
+            id: RecordId,
+            span: Span,
+            field_start: usize,
+            field_end: usize,
+            layout: Layout,
+            width: usize,
+        }
+        assert_eq!(size_of::<RecordDecl>(), size_of::<OriginalRecordDecl>());
+        assert_eq!(
+            std::mem::align_of::<RecordDecl>(),
+            std::mem::align_of::<OriginalRecordDecl>()
+        );
+        let (sources, span) = source();
+        let array = FixedArrayTy::check(hir::Ty::U8, 1024).unwrap();
+        for owned in [0, 1, 1024] {
+            let mut raw = record(0, &vec![hir::Ty::Bool; 1024], span);
+            for field in &mut raw.fields[..owned] {
+                field.ty = ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)));
+            }
+            let declarations = Declarations::check(&[raw], &sources).unwrap();
+            let record = declarations.record(RecordId(0)).unwrap();
+            assert_eq!(record.owned_field_count(), owned);
+            assert_eq!(record.width(), (1024 - owned) + owned * 1024);
+            assert_eq!(
+                declarations
+                    .aggregate_width(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
+                record.width()
+            );
+        }
     }
 
     #[test]

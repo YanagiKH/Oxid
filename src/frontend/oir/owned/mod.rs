@@ -196,6 +196,12 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    /// Consume a complete record and initialize every owned field binding.
+    /// Scalar fields use ordinary checked reads before this atomic transfer.
+    DestructureRecord {
+        source: OwnerPlaceId,
+        fields: Vec<(FieldId, OwnerPlaceId)>,
+    },
     /// Operands are the independently checked canonical parameter rows. No
     /// spelling, producer layout, or arbitrary owner ID grants this authority.
     Experimental {

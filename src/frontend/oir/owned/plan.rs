@@ -293,6 +293,9 @@ impl<'a> ExecutionPlan<'a> {
             }
             OwnedInstruction::MoveInitialize { source, .. }
             | OwnedInstruction::PrepareOwned { source, .. } => 1 + self.owner_width(f, *source),
+            OwnedInstruction::DestructureRecord { source, fields } => {
+                1 + 2 * self.owner_width(f, *source) + fields.len()
+            }
             OwnedInstruction::Replace { source, .. } => 1 + 2 * self.owner_width(f, *source),
             OwnedInstruction::OpenCall(c) => 1 + self.function(f).call(*c).owned_len,
             _ => 1,
@@ -541,6 +544,14 @@ impl<'a> ExecutionPlan<'a> {
             )?;
             for owner in 0..f.owners.len() {
                 add(1, mul(2, result.owner_width(f.id, OwnerPlaceId(owner)))?)?;
+            }
+            for statement in f.blocks.iter().flat_map(|block| &block.statements) {
+                if let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind {
+                    add(
+                        add(1, mul(2, result.owner_width(f.id, *source))?)?,
+                        fields.len(),
+                    )?;
+                }
             }
             for c in &f.calls {
                 let mut cost = add(1, c.arguments.len())?;

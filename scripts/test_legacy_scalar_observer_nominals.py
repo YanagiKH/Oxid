@@ -57,11 +57,16 @@ class NominalObserverAdapterTests(unittest.TestCase):
         name = "declaration_index/generics/nominal.rs"
         for kind, builder in (("parser", parser), ("static", static)):
             self.assertEqual(builder.SOURCE_FILES.count(name), 1)
-            self.assertEqual(builder.SCHEMA, adapter.SCHEMA)
+            import legacy_scalar_observer_record_patterns as current
+            self.assertEqual(builder.SCHEMA, current.SCHEMA)
             for filename, _ in builder.WRAPPER_FILES:
                 original = self.original(kind, filename)
-                self.assertEqual(builder.adapt_wrapper(filename, original),
-                                 adapter.adapt_wrapper(kind, filename, original))
+                result = builder.adapt_wrapper(filename, original)
+                if filename == "frontend_mod.rs":
+                    for before, after in reversed(current.EDITS):
+                        self.assertEqual(result.count(after), 1)
+                        result = result.replace(after, before, 1)
+                self.assertEqual(result, adapter.adapt_wrapper(kind, filename, original))
 
 
 if __name__ == "__main__":

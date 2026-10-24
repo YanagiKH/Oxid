@@ -371,3 +371,35 @@ fn nominal_index_allocation_and_work_exhaustion_never_publish_a_partial_plan() {
     };
     assert_eq!(error.code, "E0400");
 }
+
+#[test]
+fn complete_record_patterns_preserve_binding_origins_and_fallible_storage() {
+    let mut map = SourceMap::new();
+    let id=map.add("record-pattern.ox".into(),"struct Cell<T>{value:T}fn take<T>(cell:Cell<T>)->T{let Cell{value:inner,}=cell;return inner;}fn main()->i32{return take(Cell::<i32>{value:42});}".into());
+    let source = map.get(id);
+    let mut allocator = Allocator::default();
+    let program = parse_generic(source, &mut allocator).unwrap();
+    assert!(program.belongs_to(source));
+    let StmtKind::DestructureRecord { record, fields, .. } =
+        &program.functions[0].blocks[0].body[0].kind
+    else {
+        panic!("expected record pattern");
+    };
+    assert_eq!(
+        source.text_at(program.item_path_span(*record).unwrap()),
+        "Cell"
+    );
+    assert_eq!(fields.len(), 1);
+    assert_eq!(source.text_at(fields[0].field), "value");
+    assert_eq!(source.text_at(fields[0].binding), "inner");
+    for failure in 1..=allocator.attempts {
+        let mut allocator = Allocator {
+            fail_at: Some(failure),
+            ..Default::default()
+        };
+        assert_eq!(
+            parse_generic(source, &mut allocator).unwrap_err()[0].code,
+            "E0400"
+        );
+    }
+}

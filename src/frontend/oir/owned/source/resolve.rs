@@ -140,8 +140,10 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 inventory.vector(&block.body)?;
                 for statement in &block.body {
                     inventory.row()?;
-                    if let StmtKind::Match { arms, .. } = &statement.kind {
-                        inventory.vector(arms)?;
+                    match &statement.kind {
+                        StmtKind::Match { arms, .. } => inventory.vector(arms)?,
+                        StmtKind::DestructureRecord { fields, .. } => inventory.vector(fields)?,
+                        _ => (),
                     }
                 }
             }
@@ -2322,6 +2324,117 @@ impl<'a> Resolver<'_, 'a> {
             )?;
             frames.push(ResolveFrame::Next(block, index + 1));
             let kind = match &statement.kind {
+                ast::StmtKind::DestructureRecord {
+                    record,
+                    fields,
+                    init,
+                } => {
+                    let init = self.expression(*init)?;
+                    let template = self.index.query(self.work).record_type(
+                        self.context.module(),
+                        ItemPathRef {
+                            file: statement.span.file,
+                            path: *record,
+                        },
+                        TypeContext::Value,
+                    )?;
+                    let record = self.index.instantiated_record_pattern(
+                        self.context.function(),
+                        statement.span,
+                        template,
+                        self.work,
+                    )?;
+                    let declared = &self.records[record.0];
+                    if fields.len() != declared.fields.len() {
+                        return Err(error(
+                            "E0300",
+                            format_args!("record pattern must bind every field"),
+                            statement.span,
+                        ));
+                    }
+                    let mut resolved = match self.storage.paid.as_deref_mut() {
+                        Some(paid) => paid.reserve(
+                            self.allocator,
+                            Kind::FieldInitializers,
+                            fields.len(),
+                            statement.span,
+                        )?,
+                        None => Vec::new(),
+                    };
+                    for field in fields {
+                        self.work.debit(
+                            declared.fields.len() as u64 + resolved.len() as u64 + 1,
+                            field.span,
+                            "record pattern field resolution",
+                        )?;
+                        let member = declared
+                            .fields
+                            .iter()
+                            .find(|member| {
+                                self.index.sources().text(member.name_span).ok()
+                                    == self.index.sources().text(field.field).ok()
+                            })
+                            .ok_or_else(|| {
+                                error(
+                                    "E0300",
+                                    format_args!("unknown record pattern field"),
+                                    field.field,
+                                )
+                            })?;
+                        if resolved
+                            .iter()
+                            .any(|earlier: &RecordPatternField| earlier.field == member.id)
+                        {
+                            return Err(error(
+                                "E0300",
+                                format_args!("duplicate record pattern field"),
+                                field.field,
+                            ));
+                        }
+                        let original = self.index.template_field_for_instance(member.id)?;
+                        if let Access::Denied(field_id) = self.index.query(self.work).field_access(
+                            self.context.module(),
+                            original,
+                            field.field,
+                        )? {
+                            return Err(self.index.query(self.work).private_field_diagnostic(
+                                field_id,
+                                field.field,
+                                "resolve",
+                            )?);
+                        }
+                        let binding = self.bind(
+                            field.binding,
+                            Some(member.ty),
+                            false,
+                            BodyBlockId(block.0),
+                            None,
+                        )?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(field.binding));
+                        }
+                        storage::room(
+                            &resolved,
+                            resolved.capacity(),
+                            self.storage.paid.is_some(),
+                            field.span,
+                        )?;
+                        resolved.push(RecordPatternField {
+                            field: member.id,
+                            binding,
+                            span: field.span,
+                        });
+                    }
+                    StmtKind::DestructureRecord {
+                        record,
+                        fields: resolved,
+                        init,
+                    }
+                }
+
                 ast::StmtKind::Let {
                     mutable,
                     name,

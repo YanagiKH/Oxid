@@ -324,6 +324,9 @@ pub(super) fn inventory_parts(
             inventory.vector(Kind::Statements, &block.body, work, block.span)?;
             for statement in &block.body {
                 work.debit(1, statement.span, "paid resolver inventory row")?;
+                if let StmtKind::DestructureRecord { fields, .. } = &statement.kind {
+                    inventory.vector(Kind::FieldInitializers, fields, work, statement.span)?;
+                }
                 if let StmtKind::Match { arms, .. } = &statement.kind {
                     inventory.vector(Kind::MatchArms, arms, work, statement.span)?;
                     if arms.is_empty() || arms.len() > 256 {
@@ -485,6 +488,16 @@ impl PaidScope {
             for statement in &block.body {
                 work.debit(1, statement.span, "paid resolver name inventory")?;
                 match &statement.kind {
+                    ast::StmtKind::DestructureRecord { fields, .. } => {
+                        for field in fields {
+                            work.debit(1, field.binding, "paid resolver name inventory")?;
+                            room(&names, names.capacity(), true, field.binding)?;
+                            names.push(ScopeName {
+                                name: field.binding,
+                                active: None,
+                            });
+                        }
+                    }
                     ast::StmtKind::Let { name, .. } => {
                         room(&names, names.capacity(), true, *name)?;
                         names.push(ScopeName {
