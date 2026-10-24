@@ -21,6 +21,8 @@ PREDECESSOR_POLICY = "scripts/verify_integer128_compatibility.py"
 PREDECESSOR_POLICY_SHA = '289338a3b6f7adde01c38a43e7676d9378d72b52bf61cd5868449ff6e4a98796'
 PREDECESSOR_POLICY_BYTES = 33371
 INTEGER_CHANGED = frozenset(('src/frontend/ast.rs', 'src/frontend/declaration_index/source_owner.rs', 'src/frontend/format.rs', 'src/frontend/format/ast_tests.rs', 'src/frontend/hir.rs', 'src/frontend/oir/execute.rs', 'src/frontend/oir/mod.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/native_emit_work.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/plan.rs', 'src/frontend/oir/owned/source/array_pipeline_rows.rs', 'src/frontend/oir/owned/source/candidate_adapter.rs', 'src/frontend/oir/owned/source/hir.rs', 'src/frontend/oir/owned/source/hir_budget.rs', 'src/frontend/oir/owned/source/lower.rs', 'src/frontend/oir/owned/source/mod.rs', 'src/frontend/oir/owned/source/resolve.rs', 'src/frontend/oir/owned/source/typeck.rs', 'src/frontend/oir/source/association.rs', 'src/frontend/oir/source/hir_import/candidate.rs', 'src/frontend/oir/source/sealed.rs', 'src/frontend/oir/verify.rs', 'src/frontend/parser.rs'))
+INTEGER_CHANGED = INTEGER_CHANGED | frozenset(('tests/typed_frontend.rs',))
+
 INTEGER_ADDED = frozenset(('src/frontend/oir/owned/execute_bitwise.rs', 'src/frontend/oir/owned/native_bitwise.rs', 'src/frontend/oir/owned/source/integer_bit_tests.rs'))
 INTEGER_INPUTS = {'src/frontend/ast.rs': (47347,
                          'c702910de5adee6c38d76bf002f7443ae853ed36e3e1481b778c1e61332a8913'),
@@ -78,6 +80,8 @@ INTEGER_INPUTS = {'src/frontend/ast.rs': (47347,
                                 '257f5a4a9936e66b935b71786dc4f4f6e138a3892eaf0cf6ece03cc92e111f7c'),
  'src/frontend/parser.rs': (80916,
                             '190bcfd9ab9b1955d41763f021cb5b97f4411119f3a4470258d91f5894107bee')}
+INTEGER_INPUTS['tests/typed_frontend.rs'] = (16668, '064513643ce241af11ff8f5574cd25b253a22d1f5d97fe2cdaf049d3b1361153')
+
 REVIEWED_DIRECTIVES = {'src/frontend/oir/owned/execute.rs': ([],
                                        [b'#[path = "execute_values.rs"]',
                                         b'#[path = "execute_bitwise.rs"]',
