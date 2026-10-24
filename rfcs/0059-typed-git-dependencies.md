@@ -27,7 +27,8 @@ oxid build --frozen --profile release
 
 ## Versions and locks
 
-Each application stores Git checkouts under `.oxid/deps/`. The cache identity
+Projects store Git checkouts under `.oxid/deps/`; workspaces share that directory
+at the workspace root. The cache identity
 includes the repository URL and commit. Two aliases for the same repository and
 commit share one package and its nominal types. Different commits can coexist
 even when their manifests have the same package name and version; their types
@@ -58,10 +59,10 @@ edge cannot escape the checkout, including through a symlink or another alias
 of the same cached package. A separately pinned
 Git dependency remains available for libraries in another repository.
 
-Source bundles currently require portable local dependency paths. A project
-using Git dependencies cannot yet be exported with `oxid package`; the command
-reports the unsupported source before publishing an archive. Registry versions,
-automatic version selection, signatures and source vendoring remain unavailable.
+Source bundles include cached Git libraries as portable local dependencies.
+The original manifests and lock remain unchanged; see
+[Git source bundles](0060-git-source-bundles.md). Registry versions, automatic
+version selection and package signatures remain unavailable.
 
 Public workflow checks are in
 [typed_git_dependencies.rs](../tests/typed_git_dependencies.rs).
