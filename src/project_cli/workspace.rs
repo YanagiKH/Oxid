@@ -101,7 +101,13 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
         return Ok(None);
     };
     let snapshot = runtime::load_typed_manifest(&root.join("oxid.toml"))?;
-    load_roster(root, &cwd, snapshot, &mut RegularProjectReader).map(Some)
+    let mut reader = RegularProjectReader {
+        root: root.clone(),
+        locked: true,
+        offline: true,
+        git_roots: Vec::new(),
+    };
+    load_roster(root, &cwd, snapshot, &mut reader).map(Some)
 }
 
 /// Reuse workspace member/default/nesting admission with already retained root
@@ -244,12 +250,22 @@ impl Workspace {
             .map(|member| (member.root.as_path(), &member.snapshot))
     }
 
-    fn graphs(&self, scope: &[usize]) -> Result<Vec<PackageGraph>, String> {
+    fn graphs(
+        &self,
+        scope: &[usize],
+        locked: bool,
+        offline: bool,
+    ) -> Result<Vec<PackageGraph>, String> {
         let mut graphs = Vec::new();
         let mut nodes = 0usize;
         let mut edges = 0usize;
         for &index in scope {
-            let graph = package_graph(&self.members[index].root, &self.members[index].snapshot)?;
+            let graph = package_graph_options(
+                &self.members[index].root,
+                &self.members[index].snapshot,
+                locked,
+                offline,
+            )?;
             nodes += graph.specs.len();
             edges += graph
                 .specs
@@ -300,7 +316,7 @@ impl Workspace {
     pub(super) fn validate_for_doctor(&self) -> Result<String, String> {
         let existing = project_lock::read_workspace(&self.root, false)?;
         let scope = (0..self.members.len()).collect::<Vec<_>>();
-        let graphs = self.graphs(&scope)?;
+        let graphs = self.graphs(&scope, true, true)?;
         let mut prepared = Vec::new();
         let (mut files, mut bytes) = (0, 0);
         for graph in &graphs {
@@ -446,7 +462,11 @@ impl Workspace {
         } else {
             selected.clone()
         };
-        let graphs = self.graphs(&scope)?;
+        let graphs = self.graphs(
+            &scope,
+            options.requires_lock(),
+            options.offline || options.frozen,
+        )?;
         let mut prepared = Vec::new();
         let mut files = 0usize;
         let mut bytes = 0usize;

@@ -339,7 +339,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -1711,6 +1711,33 @@
       "tests": [
         "tests/hosted_recursion.rs",
         "scripts/test_hosted_recursion_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "typed-git-dependencies",
+      "summary": "Typed project and workspace libraries from pinned Git commits with alias-local namespaces, coexisting revisions and cached offline builds.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Typed package graph and lock verification; reference execution and LLVM native builds at O0/O2.",
+      "target_scope": "Package source loading on Linux; native execution on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "Full Git commit hashes only; no registry ranges or automatic updates. Locked/offline/frozen and doctor do not fetch. Local edges from Git packages stay in their checkout. Source bundles still require portable local paths.",
+      "spec": [
+        "rfcs/0059-typed-git-dependencies.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/main.rs",
+        "src/project_cli.rs",
+        "src/project_cli/workspace.rs",
+        "src/runtime/packages.rs"
+      ],
+      "tests": [
+        "tests/typed_git_dependencies.rs",
+        "scripts/test_typed_git_compatibility.py"
       ],
       "evidence": []
     }

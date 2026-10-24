@@ -21,6 +21,7 @@ mod data;
 mod network;
 #[path = "runtime/packages.rs"]
 mod packages;
+pub(crate) use packages::materialize_typed_git;
 #[path = "runtime/benchmark.rs"]
 mod benchmark;
 
