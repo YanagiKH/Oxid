@@ -89,6 +89,8 @@ jobs:
             --output "$RUNNER_TEMP/current-utf8-characters-interpreter" --reference-only
           python3 -B scripts/verify_float_vector.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-float-vector-interpreter" --reference-only
+          python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-matrix-interpreter" --reference-only
       - name: Retain current source qualification
         if: always()
         uses: actions/upload-artifact@v4
@@ -412,6 +414,8 @@ jobs:
             --output "$RUNNER_TEMP/current-utf8-characters-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_float_vector.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-float-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Check buffer runtime components at O0 and O2 with memory checking
         run: |
           python3 -B scripts/test_bytebuf_runtime.py

@@ -574,3 +574,5 @@ discord = true
 "examples/typed-unicode-range/src/main.ox" = true
 "examples/typed-float-vector/src/main.ox" = true
 "examples/typed-float-vector/tests/vector.ox" = true
+"examples/typed-matrix/src/main.ox" = true
+"examples/typed-matrix/tests/contracts.ox" = true

@@ -87,6 +87,8 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/typed-float-vector/src/main.ox",
         "examples/typed-float-vector/tests/vector.ox",
     ),
+    "packages/matrix": ("packages/matrix/src/lib.ox",),
+    "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
@@ -97,8 +99,9 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/utf8-normalize",
     "examples/typed-unicode-range",
     "packages/float_vector",
+    "packages/matrix",
 )
-TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector")
+TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
