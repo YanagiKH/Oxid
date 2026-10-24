@@ -336,7 +336,11 @@ fn byte_storage_public_unused_nested_enum_array_payload_checks_without_effects()
         fs::create_dir(case.0.join("outer")).unwrap();
         fs::write(case.0.join("outer/inner.ox"), &inner).unwrap();
         for operation in ["check", "run"] {
-            let output = source_command(&case, operation, operation == "check");
+            let output = source_command(
+                &case,
+                operation,
+                operation == "check" || !cfg!(target_os = "linux"),
+            );
             if cfg!(target_os = "linux") {
                 assert!(output.status.success(), "{output:?}");
                 assert!(output.stderr.is_empty(), "{output:?}");
@@ -345,10 +349,23 @@ fn byte_storage_public_unused_nested_enum_array_payload_checks_without_effects()
                 }
             } else {
                 let expected = unqualified_module_diagnostic("outer");
-                let output = source_command(&case, operation, true);
-                let text = diagnostic(output, "E0005", "source");
+                assert_eq!(output.status.code(), Some(1), "{output:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+                let text = String::from_utf8(output.stdout).unwrap();
                 assert_eq!(text.lines().count(), 2);
                 assert_eq!(text.lines().next(), Some(expected.as_str()));
+                let kind = if operation == "check" {
+                    "check-summary"
+                } else {
+                    "run-summary"
+                };
+                let field = if operation == "check" {
+                    "functions"
+                } else {
+                    "result"
+                };
+                let summary = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"{kind}\",\"success\":false,\"errors\":1,\"{field}\":null}}");
+                assert_eq!(text.lines().nth(1), Some(summary.as_str()));
             }
             assert_eq!(fs::read(case.0.join("existing")).unwrap(), SENTINEL);
             for (path, expected) in [
