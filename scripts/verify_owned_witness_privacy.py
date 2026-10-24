@@ -86,6 +86,28 @@ PROBES = [
                 crate::frontend::build_config::ExecutionPolicy::Bounded);
         }
     """),
+    ("source-facade-immutable-typed-result-method", True, (), """
+        fn inspect(w: &SourceProgram, sources: &SourceMap) {
+            let _ = w.run_result(None, sources, crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("raw-program-cannot-enter-typed-source-facade", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = SourceProgram::run_result(raw, None, sources,
+                crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("checked-source-immutable-typed-result-method", True, (), """
+        fn inspect(w: &crate::frontend::oir::CheckedSourceProgram<'_>) {
+            let _ = w.run_result(crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("raw-program-cannot-enter-typed-checked-source", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = crate::frontend::oir::CheckedSourceProgram::run_result(
+                raw, crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
     ("denial-context-immutable-inspection", True, (), """
         fn inspect(context: &flow::DenialContext) {
             let facts = context.facts();

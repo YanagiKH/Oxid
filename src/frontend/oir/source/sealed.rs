@@ -292,7 +292,7 @@ impl CheckedSourceProgram<'_> {
         }
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)] // Retained checked scalar facade for internal consumers.
     pub(in crate::frontend) fn run_value(
         &self,
         execution: crate::frontend::build_config::ExecutionPolicy,
