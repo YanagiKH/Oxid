@@ -89,8 +89,21 @@ math = "../math"
 
 The library needs its own typed project manifest and a `src/lib.ox` entry.
 Import public items with `use crate::math::answer;`. Each package keeps its own
-module root and visibility. Git and registry dependencies are not yet available
-in typed projects.
+module root and visibility.
+
+On Linux, dependencies can also use a Git URL pinned to a complete commit hash:
+
+```toml
+[dependencies]
+codec = "git+https://github.com/example/codec.git#0123456789012345678901234567890123456789"
+```
+
+Replace the example URL and hash with a real library, then run `oxid lock` to
+fetch it and record its inputs. Later `--locked`, `--offline` and `--frozen`
+commands use cached checkouts without fetching. Different commits can coexist
+under different aliases. Git checkouts with local changes are preserved and
+refused. Source bundles still require portable local paths; registry dependencies
+are not yet available. See [Git dependencies](../rfcs/0059-typed-git-dependencies.md).
 
 After changing dependency manifests or source code intentionally, run
 `oxid lock --update`. Normal commands verify an existing lock. `--locked`
