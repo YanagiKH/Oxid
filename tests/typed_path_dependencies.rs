@@ -352,7 +352,7 @@ fn path_and_manifest_failures_are_precise_and_json_remains_framed() {
 #[test]
 fn unsupported_dependency_forms_and_malicious_paths_cannot_be_ignored() {
     for declaration in [
-        "[dependencies]\ndep = \"https://invalid.example/repo.git#0123456789012345678901234567890123456789\"\n",
+        "[dependencies]\ndep = \"https://invalid.example/repo.git#main\"\n",
         "[dependencies]\ndep = \"git+file:///tmp/repo\"\n",
         "[dependencies]\ndep = \"registry:dep@1\"\n",
         "[dependencies]\ndep = \"../dep\\u0000\"\n",
@@ -364,9 +364,24 @@ fn unsupported_dependency_forms_and_malicious_paths_cannot_be_ignored() {
         "[features.extra]\nenabled = true\n",
     ] {
         let packages = Packages::new();
-        packages.package("app", "app", &format!("entry = \"src/main.ox\"\n{declaration}"), "");
-        packages.write("app/src/main.ox", "write_text(\"sentinel\", \"executed\");\n");
-        failure(packages.run(&["check"]), if declaration.contains("features") { "features" } else { "dependencies" });
+        packages.package(
+            "app",
+            "app",
+            &format!("entry = \"src/main.ox\"\n{declaration}"),
+            "",
+        );
+        packages.write(
+            "app/src/main.ox",
+            "write_text(\"sentinel\", \"executed\");\n",
+        );
+        failure(
+            packages.run(&["check"]),
+            if declaration.contains("features") {
+                "features"
+            } else {
+                "dependencies"
+            },
+        );
         packages.no_outputs();
     }
     for declaration in [

@@ -587,11 +587,81 @@ trait ProjectReader {
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
         fs::canonicalize(root.join(source)).map_err(|error| error.to_string())
     }
+    fn finish_graph(
+        &self,
+        _packages: &[frontend::PackageSpec],
+        _manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
-struct RegularProjectReader;
+struct RegularProjectReader {
+    root: PathBuf,
+    locked: bool,
+    offline: bool,
+    git_roots: Vec<PathBuf>,
+}
 impl ProjectReader for RegularProjectReader {
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String> {
         runtime::load_typed_manifest(path)
+    }
+
+    fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
+        if source.starts_with("git+") || source.starts_with("https://") {
+            if !cfg!(target_os = "linux") {
+                return Err("typed Git dependencies are currently available only on Linux".into());
+            }
+            let target =
+                runtime::materialize_typed_git(&self.root, source, self.locked, self.offline)?;
+            if !self.git_roots.contains(&target) {
+                self.git_roots.push(target.clone());
+            }
+            return Ok(target);
+        }
+        let path = Path::new(source);
+        if source.contains("://") || (!path.is_absolute() && source.contains(':')) {
+            return Err(
+                "dependencies support local paths or Git URLs pinned to a full commit hash".into(),
+            );
+        }
+        let target = fs::canonicalize(root.join(path)).map_err(|error| error.to_string())?;
+        if self
+            .git_roots
+            .iter()
+            .any(|anchor| root.starts_with(anchor) && !target.starts_with(anchor))
+        {
+            return Err("a Git package's local dependency must remain inside its checkout".into());
+        }
+        Ok(target)
+    }
+
+    fn finish_graph(
+        &self,
+        packages: &[frontend::PackageSpec],
+        manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        // A local alias can discover a checkout before its Git edge. Validate
+        // the completed canonical graph so traversal order cannot hide a local
+        // edge outside a subsequently authenticated Git checkout.
+        for (package, manifest) in packages.iter().zip(manifests) {
+            if let Some(anchor) = self
+                .git_roots
+                .iter()
+                .find(|root| package.root.starts_with(root.as_path()))
+            {
+                for edge in &package.dependencies {
+                    let source = &manifest.manifest.dependencies[&edge.alias];
+                    let git = source.starts_with("git+") || source.starts_with("https://");
+                    if !git && !packages[edge.package].root.starts_with(anchor) {
+                        return Err(
+                            "a Git package's local dependency must remain inside its checkout"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -599,7 +669,22 @@ fn package_graph(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
 ) -> Result<PackageGraph, String> {
-    package_graph_with(root, snapshot, &mut RegularProjectReader)
+    package_graph_options(root, snapshot, true, true)
+}
+
+fn package_graph_options(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    locked: bool,
+    offline: bool,
+) -> Result<PackageGraph, String> {
+    let mut reader = RegularProjectReader {
+        root: fs::canonicalize(root).map_err(|error| error.to_string())?,
+        locked,
+        offline,
+        git_roots: Vec::new(),
+    };
+    package_graph_with(root, snapshot, &mut reader)
 }
 
 fn package_graph_with(
@@ -700,22 +785,23 @@ fn package_graph_with(
                 }
             }
             for (alias, source) in dependencies {
-                let path = Path::new(&source);
                 if source.is_empty()
                     || source.len() > 4096
                     || source.chars().any(char::is_control)
-                    || source.starts_with("git+")
-                    || source.contains("://")
-                    || (!path.is_absolute() && source.contains(':'))
                     || source.starts_with(['{', '['])
                 {
-                    return Err(format!("dependencies support only local directory paths; unsupported source for `{alias}`"));
+                    return Err(format!("dependencies: invalid source for `{alias}`"));
                 }
-                let target = self.reader.dependency(&root, &source).map_err(|error| {
-                    format!(
-                        "dependencies: cannot open local path for `{alias}` ({source}): {error}"
-                    )
-                })?;
+                let target = self
+                    .reader
+                    .dependency(&root, &source)
+                    .map_err(|error| {
+                        if source.starts_with("git+") || source.starts_with("https://") {
+                            format!("dependencies: cannot resolve `{alias}`: {error}")
+                        } else {
+                            format!("dependencies: cannot open local path for `{alias}` ({source}): {error}")
+                        }
+                    })?;
                 if !target.is_dir() {
                     return Err(format!(
                         "dependencies: path for `{alias}` must be a package directory"
@@ -789,6 +875,9 @@ fn package_graph_with(
     if longest_path(0, &graph.packages, &mut vec![None; graph.packages.len()]) > 32 {
         return Err("dependencies exceed the 32-level graph path limit".into());
     }
+    graph
+        .reader
+        .finish_graph(&graph.packages, &graph.manifests)?;
     Ok(PackageGraph {
         specs: graph.packages,
         manifests: graph.manifests,
@@ -981,7 +1070,12 @@ fn execute_project(
         ));
     }
     let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let graph = package_graph_options(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.offline || options.frozen,
+    )?;
     let entry_override = entry_override
         .map(|entry| local_source(&graph.specs[0].root, entry))
         .transpose()?;
@@ -1021,7 +1115,12 @@ fn lock_project(
         );
     }
     let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let graph = package_graph_options(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.offline || options.frozen,
+    )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     let expected = lock_snapshot(&graph, &prepared)?;
@@ -1195,7 +1294,12 @@ fn test(
     // Admit every package manifest before starting any declared user test.
     // Each child repeats admission and compiles its own entry in one session.
     let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let graph = package_graph_options(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.offline || options.frozen,
+    )?;
     if existing.is_some() {
         let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].0])?;
         let prepared = frontend::prepare_package_project(&graph.specs, Some(&test_entry))
