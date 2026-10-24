@@ -102,8 +102,9 @@ Replace the example URL and hash with a real library, then run `oxid lock` to
 fetch it and record its inputs. Later `--locked`, `--offline` and `--frozen`
 commands use cached checkouts without fetching. Different commits can coexist
 under different aliases. Git checkouts with local changes are preserved and
-refused. Source bundles still require portable local paths; registry dependencies
-are not yet available. See [Git dependencies](../rfcs/0059-typed-git-dependencies.md).
+refused. Workspaces share one cache under the workspace root. Source bundles
+include cached Git libraries as local dependencies; registry dependencies are
+not yet available. See [Git dependencies](../rfcs/0059-typed-git-dependencies.md).
 
 After changing dependency manifests or source code intentionally, run
 `oxid lock --update`. Normal commands verify an existing lock. `--locked`
@@ -161,6 +162,8 @@ oxid package --extract application.oxpkg.tar --output restored
 A source package includes the project, local dependencies, declared tests and
 matching lock. Extraction requires a new directory. Enter the project root
 printed by extraction, then run `oxid build --frozen` to rebuild offline.
+Cached Git libraries are included as local sources, so the restored project
+does not require Git or the original cache. Creation never fetches dependencies.
 Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 [Package details](../rfcs/0038-typed-source-packages.md).
 

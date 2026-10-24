@@ -1740,6 +1740,34 @@
         "scripts/test_typed_git_compatibility.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "git-source-bundles",
+      "summary": "Locked Git libraries exported as portable local sources, with offline extraction and native rebuilding without Git metadata.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Retained typed source-package collector, local dependency graph and LLVM native rebuilds.",
+      "target_scope": "Source bundle creation and extraction on Linux x86_64; native rebuilds with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Existing matching lock and pristine cached Git commits required; creation never fetches. Existing source-bundle byte/file/graph limits apply. Registry and package signatures remain unavailable.",
+      "spec": [
+        "rfcs/0060-git-source-bundles.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/main.rs",
+        "src/project_cli/package.rs",
+        "src/project_cli/workspace.rs",
+        "src/project_lock.rs",
+        "src/project_package.rs"
+      ],
+      "tests": [
+        "tests/typed_git_dependencies.rs",
+        "src/main.rs"
+      ],
+      "evidence": []
     }
   ]
 }

@@ -1234,8 +1234,8 @@ fn manifest_delimiter(text: &str, delimiter: char) -> Option<usize> {
             else if active == '"' && character == '\\' { escaped = true; }
             else if character == active { quote = None; }
         } else if matches!(character, '"' | '\'') { quote = Some(character); }
-        else if character == '#' { return None; }
         else if character == delimiter { return Some(index); }
+        else if character == '#' { return None; }
     }
     None
 }
@@ -1574,11 +1574,57 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
 }
 
 fn parse_manifest_text_policy(text: &str, path: &Path, edition_only: bool, strict_execution: bool) -> Result<ProjectManifest, String> {
+    parse_manifest_text_policy_spans(text, path, edition_only, strict_execution, None)
+}
+
+/// Rewrite only admitted dependency values in an exported manifest. Other
+/// sections, comments, quoted keys and line endings keep their original bytes.
+pub(crate) fn rewrite_dependency_sources(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>) -> Result<Vec<u8>, String> {
+    if bytes.len() > 1024 * 1024 { return Err("exported manifest exceeds the 1 MiB limit".into()); }
+    let text = std::str::from_utf8(bytes).map_err(|_| "exported manifest must be UTF-8")?;
+    let mut spans = Vec::new();
+    let manifest = parse_manifest_text_policy_spans(text, path, false, true, Some(&mut spans))?;
+    if let Some(error) = &manifest.configuration_error { return Err(error.clone()); }
+    for (alias, value) in replacements {
+        if !manifest.dependencies.contains_key(alias) || value.len() > 4096 || value.chars().any(char::is_control) {
+            return Err("invalid exported dependency replacement".into());
+        }
+    }
+    let mut output = Vec::new();
+    let mut cursor = 0;
+    let mut replaced = HashSet::new();
+    for (alias, range) in spans {
+        output.extend_from_slice(&bytes[cursor..range.start]);
+        if let Some(value) = replacements.get(&alias) {
+            output.extend_from_slice(quote_manifest_string(value).as_bytes());
+            replaced.insert(alias);
+        } else {
+            output.extend_from_slice(&bytes[range.clone()]);
+        }
+        cursor = range.end;
+    }
+    output.extend_from_slice(&bytes[cursor..]);
+    if output.len() > 1024 * 1024 || replaced.len() != replacements.len() {
+        return Err("exported manifest exceeds its limit or omits a dependency".into());
+    }
+    let parsed = parse_typed_manifest_bytes(path, &output)?;
+    let mut expected = manifest.dependencies;
+    for (alias, value) in replacements { expected.insert(alias.clone(), value.clone()); }
+    if parsed.manifest.dependencies != expected { return Err("exported dependencies differ from their retained graph".into()); }
+    Ok(output)
+}
+
+fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool, strict_execution: bool, mut spans: Option<&mut Vec<(String, std::ops::Range<usize>)>>) -> Result<ProjectManifest, String> {
     let mut manifest = ProjectManifest::default();
     let mut section = String::new();
     let mut continuation = ManifestValueContinuation::default();
     let mut execution_table = false;
-    for raw_line in text.lines() {
+    for (line_offset, raw_line) in text.split_inclusive('\n').scan(0usize, |offset, line| {
+        let start = *offset;
+        *offset += line.len();
+        let raw = line.strip_suffix('\n').unwrap_or(line);
+        Some((start, raw.strip_suffix('\r').unwrap_or(raw)))
+    }) {
         if (edition_only || strict_execution) && continuation.active() { continuation.scan(raw_line); continue; }
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') { continue; }
@@ -1739,10 +1785,18 @@ fn parse_manifest_text_policy(text: &str, path: &Path, edition_only: bool, stric
             ("scripts", _) => { manifest.scripts.insert(key, value); }
             ("dependencies", _) => {
                 if !value_raw.trim_start().starts_with(['"', '\'']) {
-                    manifest.configuration_error = Some(format!("typed-preview dependencies require quoted local paths for `{}`; Git, registry and table specifications are unsupported", key));
+                    manifest.configuration_error = Some(format!("typed-preview dependencies require quoted local paths or pinned Git URLs for `{}`; registry and table specifications are unsupported", key));
                 }
                 if manifest.dependencies.contains_key(&key) {
                     return Err(format!("duplicate dependency `{}` in {}", key, path.display()));
+                }
+                if let Some(spans) = spans.as_mut() {
+                    let line_start = line_offset + raw_line.len() - raw_line.trim_start().len();
+                    let end = manifest_delimiter(value_raw, '#').unwrap_or(value_raw.len());
+                    let raw = &value_raw[..end];
+                    let leading = raw.len() - raw.trim_start().len();
+                    let start = line_start + equals + 1 + leading;
+                    spans.push((key.clone(), start..start + raw.trim().len()));
                 }
                 manifest.dependencies.insert(key, value);
             }
@@ -3489,5 +3543,36 @@ const second = join(task);
         assert!(parser.parse_program().is_err());
         let mut interpreter = Interpreter::new();
         assert!(run_source("const value = 1 / 0;", Path::new("."), &mut interpreter).is_err());
+    }
+}
+
+#[cfg(test)]
+mod dependency_export_tests {
+    use super::*;
+
+    #[test]
+    fn dependency_export_preserves_inert_tables_quoted_keys_comments_and_crlf() {
+        let original = concat!(
+            "# 雪\r\n[project]\r\nedition=\"typed-preview\"\r\n",
+            "[tool.notes]\r\ntext=\"[dependencies] dep='inert'\"\r\n",
+            "[\"dependencies\"]\r\n  \"\\u0064ep\" = 'git+https://example.invalid/lib.git#0123456789012345678901234567890123456789' # keep\r\n"
+        );
+        let replacement = ".oxid/deps/git-library";
+        let mapping = HashMap::from([("dep".to_owned(), replacement.to_owned())]);
+        let exported = rewrite_dependency_sources(Path::new("oxid.toml"), original.as_bytes(), &mapping).unwrap();
+        let expected = original.replace("'git+https://example.invalid/lib.git#0123456789012345678901234567890123456789'", &quote_manifest_string(replacement));
+        assert_eq!(exported, expected.as_bytes());
+        let parsed = parse_typed_manifest_bytes(Path::new("oxid.toml"), &exported).unwrap();
+        assert_eq!(parsed.manifest.dependencies, mapping);
+    }
+
+    #[test]
+    fn dependency_export_is_an_exact_noop_without_replacements_and_refuses_unknown_aliases() {
+        let original = b"[project]\nedition=\"typed-preview\"\n[dependencies]\ndep=\"../local\" # retain\n";
+        assert_eq!(rewrite_dependency_sources(Path::new("oxid.toml"), original, &HashMap::new()).unwrap(), original);
+        let unsupported = b"[project]\nedition=\"typed-preview\"\n[tool.notes]\ntext=\"\"\"\n[dependencies]\ndep=\"inert\"\n\"\"\"\n";
+        assert!(rewrite_dependency_sources(Path::new("oxid.toml"), unsupported, &HashMap::new()).is_err());
+        let mapping = HashMap::from([("unknown".to_owned(), "../other".to_owned())]);
+        assert!(rewrite_dependency_sources(Path::new("oxid.toml"), original, &mapping).is_err());
     }
 }

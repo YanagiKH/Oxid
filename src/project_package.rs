@@ -53,7 +53,7 @@ struct Summary {
     info: archive::Info,
 }
 
-const HELP: &str = "Typed source packages (experimental):\n  oxid package [--frozen|--locked|--offline] [--workspace] [--output ARCHIVE]\n  oxid package --verify ARCHIVE [--sha256 HEX]\n  oxid package --extract ARCHIVE --output NEW_DIRECTORY [--sha256 HEX]\n\nCreation requires a matching existing typed lock and includes the whole workspace.\nIt checks retained source and declared tests without executing them. Verification\nchecks archive integrity; extraction also checks the isolated project and lock.\n--edition=typed-preview and --message-format=text|json are accepted.\n";
+const HELP: &str = "Typed source packages (experimental):\n  oxid package [--frozen|--locked|--offline] [--workspace] [--output ARCHIVE]\n  oxid package --verify ARCHIVE [--sha256 HEX]\n  oxid package --extract ARCHIVE --output NEW_DIRECTORY [--sha256 HEX]\n\nCreation requires a matching existing typed lock and includes the whole workspace.\nIt includes cached Git libraries as local sources and never fetches.\nIt checks retained source and declared tests without executing them. Verification\nchecks archive integrity; extraction also checks the isolated project and lock.\n--edition=typed-preview and --message-format=text|json are accepted.\n";
 
 /// Own `package` before project discovery so verify/extract need no local
 /// manifest. A source filename or argument of another command is never stolen.
@@ -448,7 +448,7 @@ fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
 }
 
 fn validate_archive_destination(path: &Path, inputs: &[PathBuf]) -> Result<(), String> {
-    if inputs.iter().any(|input| input == path) {
+    if inputs.iter().any(|input| path.starts_with(input)) {
         return Err("package output collides with an admitted input".into());
     }
     match fs::symlink_metadata(path) {

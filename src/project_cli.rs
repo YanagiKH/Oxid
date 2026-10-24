@@ -678,8 +678,18 @@ fn package_graph_options(
     locked: bool,
     offline: bool,
 ) -> Result<PackageGraph, String> {
+    package_graph_cache_owner(root, snapshot, locked, offline, root)
+}
+
+fn package_graph_cache_owner(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    locked: bool,
+    offline: bool,
+    cache_owner: &Path,
+) -> Result<PackageGraph, String> {
     let mut reader = RegularProjectReader {
-        root: fs::canonicalize(root).map_err(|error| error.to_string())?,
+        root: fs::canonicalize(cache_owner).map_err(|error| error.to_string())?,
         locked,
         offline,
         git_roots: Vec::new(),

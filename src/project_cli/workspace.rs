@@ -260,11 +260,12 @@ impl Workspace {
         let mut nodes = 0usize;
         let mut edges = 0usize;
         for &index in scope {
-            let graph = package_graph_options(
+            let graph = package_graph_cache_owner(
                 &self.members[index].root,
                 &self.members[index].snapshot,
                 locked,
                 offline,
+                &self.root,
             )?;
             nodes += graph.specs.len();
             edges += graph

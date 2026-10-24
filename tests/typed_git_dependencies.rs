@@ -263,18 +263,20 @@ fn workspace_locks_cover_cached_git_dependencies_of_unselected_members() {
         "app/oxid.toml",
         "[workspace]\nedition=\"typed-preview\"\nmembers=[\"left\",\"right\"]\n",
     );
-    for (name, revision) in [("left", a), ("right", b)] {
+    for (name, revision) in [("left", a), ("right", b.clone())] {
         f.write(&format!("app/{name}/oxid.toml"), &format!("[project]\nname={name:?}\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"result\"\n[dependencies]\nnumbers={:?}\n",f.source(&revision)));
         f.write(&format!("app/{name}/main.ox"),"use crate::numbers::make;use crate::numbers::value;fn main()->i32{let n=make();return value(&n);}");
     }
     success(f.invoke(&["lock"]));
     let lock = fs::read(f.0.join("app/oxid.lock")).unwrap();
-    let right = fs::read_dir(f.0.join("app/right/.oxid/deps"))
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let checkouts = f.checkouts();
+    assert_eq!(checkouts.len(), 2);
+    assert!(!f.0.join("app/left/.oxid/deps").exists());
+    assert!(!f.0.join("app/right/.oxid/deps").exists());
+    let right = checkouts
+        .into_iter()
+        .find(|path| fs::read_to_string(path.join(".git/HEAD")).unwrap().trim() == b)
+        .unwrap();
     fs::write(right.join("scratch"), b"keep").unwrap();
     failure(f.invoke(&["check", "-p", "left", "--frozen"]), "cache");
     assert_eq!(fs::read(right.join("scratch")).unwrap(), b"keep");
@@ -292,17 +294,152 @@ fn workspace_locks_cover_cached_git_dependencies_of_unselected_members() {
 }
 
 #[test]
-fn source_bundles_keep_their_portable_local_dependency_contract() {
+fn source_bundles_export_git_libraries_as_locked_local_sources() {
     let f = Fixture::new();
-    let (a, _) = f.repository();
-    f.application(&[("numbers", f.source(&a))], "fn main()->i32{return 0;}");
-    success(f.invoke(&["lock"]));
-    failure(
-        f.invoke(&["package", "--frozen", "--output", "bundle.oxpkg.tar"]),
-        "source package",
+    let (a, b) = f.repository();
+    f.application(
+        &[("old", f.source(&a)), ("new", f.source(&b))],
+        TWO_VERSIONS,
     );
-    assert!(!f.0.join("app/bundle.oxpkg.tar").exists());
+    success(f.invoke(&["lock"]));
+    let original_manifest = fs::read(f.0.join("app/oxid.toml")).unwrap();
+    let original_lock = fs::read(f.0.join("app/oxid.lock")).unwrap();
+    success(f.invoke(&["package", "--frozen", "--output", "bundle.oxpkg.tar"]));
+    success(f.invoke(&["package", "--frozen", "--output", "bundle-again.oxpkg.tar"]));
+    assert_eq!(
+        fs::read(f.0.join("app/bundle.oxpkg.tar")).unwrap(),
+        fs::read(f.0.join("app/bundle-again.oxpkg.tar")).unwrap()
+    );
+    assert_eq!(
+        fs::read(f.0.join("app/oxid.toml")).unwrap(),
+        original_manifest
+    );
+    assert_eq!(fs::read(f.0.join("app/oxid.lock")).unwrap(), original_lock);
+    assert_eq!(f.checkouts().len(), 2);
+    let archive = f.0.join("bundle.oxpkg.tar");
+    fs::copy(f.0.join("app/bundle.oxpkg.tar"), &archive).unwrap();
+    fs::rename(f.0.join("app"), f.0.join("original-app-unavailable")).unwrap();
+    fs::rename(f.0.join("remote"), f.0.join("remote-unavailable")).unwrap();
+    let destination = f.0.join("restored");
+    let no_tools = f.0.join("no-tools");
+    fs::create_dir(&no_tools).unwrap();
+    let extract = Command::new(env!("CARGO_BIN_EXE_oxid"))
+        .args(["package", "--extract"])
+        .arg(&archive)
+        .arg("--output")
+        .arg(&destination)
+        .current_dir(&f.0)
+        .env("PATH", &no_tools)
+        .output()
+        .unwrap();
+    success(extract);
+    let root = destination.join("source");
+    let exported = fs::read_to_string(root.join("oxid.toml")).unwrap();
+    assert!(!exported.contains("git+file://"));
+    for command in ["check", "run", "test"] {
+        let result = success(
+            Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .args([command, "--frozen"])
+                .current_dir(&root)
+                .env("PATH", &no_tools)
+                .output()
+                .unwrap(),
+        );
+        if command == "run" {
+            assert_eq!(result.stdout, b"28\n");
+        }
+    }
+}
+
+#[test]
+fn workspace_bundles_share_git_types_through_a_shared_local_library() {
+    let f = Fixture::new();
+    let (revision, _) = f.repository();
+    let source = f.source(&revision);
+    f.write(
+        "app/oxid.toml",
+        "[workspace]\nedition=\"typed-preview\"\nmembers=[\"left\",\"right\",\"shared\"]\n",
+    );
+    for name in ["left", "right"] {
+        f.write(&format!("app/{name}/oxid.toml"),&format!("[project]\nname={name:?}\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"result\"\n[dependencies]\nnumbers={source:?}\nshared=\"../shared\"\n"));
+        f.write(&format!("app/{name}/main.ox"),"use crate::numbers::make;use crate::shared::read;fn main()->i32{let n=make();return read(&n);}");
+    }
+    f.write("app/shared/oxid.toml",&format!("[project]\nname=\"shared\"\nedition=\"typed-preview\"\nkind=\"lib\"\n[dependencies]\nnumbers={source:?}\n"));
+    f.write("app/shared/src/lib.ox","use crate::numbers::Number;use crate::numbers::value;pub fn read(n:&Number)->i32{return value(&*n);}");
+    success(f.invoke(&["lock"]));
     assert_eq!(f.checkouts().len(), 1);
+    success(f.invoke(&["check", "--workspace", "--frozen"]));
+    success(f.invoke(&[
+        "package",
+        "--workspace",
+        "--frozen",
+        "--output",
+        "workspace.oxpkg.tar",
+    ]));
+    let archive = f.0.join("workspace.oxpkg.tar");
+    fs::copy(f.0.join("app/workspace.oxpkg.tar"), &archive).unwrap();
+    fs::rename(f.0.join("app"), f.0.join("original-app-unavailable")).unwrap();
+    fs::rename(f.0.join("remote"), f.0.join("remote-unavailable")).unwrap();
+    let no_tools = f.0.join("no-tools");
+    fs::create_dir(&no_tools).unwrap();
+    let destination = f.0.join("restored");
+    success(
+        Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .args(["package", "--extract"])
+            .arg(&archive)
+            .arg("--output")
+            .arg(&destination)
+            .current_dir(&f.0)
+            .env("PATH", &no_tools)
+            .output()
+            .unwrap(),
+    );
+    let root = destination.join("source");
+    success(
+        Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .args(["check", "--workspace", "--frozen"])
+            .current_dir(&root)
+            .env("PATH", &no_tools)
+            .output()
+            .unwrap(),
+    );
+    for member in ["left", "right"] {
+        let result = success(
+            Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .args(["run", "-p", member, "--frozen"])
+                .current_dir(&root)
+                .env("PATH", &no_tools)
+                .output()
+                .unwrap(),
+        );
+        assert_eq!(result.stdout, b"11\n");
+    }
+}
+
+#[test]
+fn packaging_cannot_overwrite_git_cache_metadata_or_create_files_in_a_checkout() {
+    let f = Fixture::new();
+    let (revision, _) = f.repository();
+    f.application(
+        &[("numbers", f.source(&revision))],
+        "fn main()->i32{return 0;}",
+    );
+    success(f.invoke(&["lock"]));
+    let cache = f.checkouts().remove(0);
+    for file in [
+        ".git/HEAD",
+        ".git/config",
+        ".git/index",
+        ".git/objects/new-payload",
+    ] {
+        let path = cache.join(file);
+        let before = fs::read(&path).ok();
+        failure(
+            f.invoke(&["package", "--frozen", "--output", path.to_str().unwrap()]),
+            "input",
+        );
+        assert_eq!(fs::read(&path).ok(), before);
+    }
 }
 
 #[test]
@@ -517,5 +654,78 @@ fn pinned_libraries_build_both_profiles_and_deploy_without_sources_or_git() {
             );
             assert!(result.stderr.is_empty(), "{result:?}");
         }
+    }
+}
+
+#[test]
+#[ignore = "requires LLVM, Clang and LLD 19.1.7"]
+fn exported_git_source_bundles_rebuild_both_profiles_without_git_and_deploy() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let (a, b) = f.repository();
+    f.application(
+        &[("old", f.source(&a)), ("new", f.source(&b))],
+        TWO_VERSIONS,
+    );
+    success(f.invoke(&["lock"]));
+    success(f.invoke(&["package", "--frozen", "--output", "bundle.oxpkg.tar"]));
+    let archive = f.0.join("bundle.oxpkg.tar");
+    fs::copy(f.0.join("app/bundle.oxpkg.tar"), &archive).unwrap();
+    fs::remove_dir_all(f.0.join("app")).unwrap();
+    fs::remove_dir_all(f.0.join("remote")).unwrap();
+    let no_git = f.0.join("no-git");
+    fs::create_dir(&no_git).unwrap();
+    let git = no_git.join("git");
+    fs::write(
+        &git,
+        "#!/bin/sh\nprintf invoked > \"$OXID_FORBIDDEN_GIT_MARKER\"\nexit 97\n",
+    )
+    .unwrap();
+    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut paths = vec![no_git];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    let path = std::env::join_paths(paths).unwrap();
+    let marker = f.0.join("git-was-invoked");
+    let destination = f.0.join("restored");
+    success(
+        Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .args(["package", "--extract"])
+            .arg(&archive)
+            .arg("--output")
+            .arg(&destination)
+            .current_dir(&f.0)
+            .env("PATH", &path)
+            .env("OXID_FORBIDDEN_GIT_MARKER", &marker)
+            .output()
+            .unwrap(),
+    );
+    let root = destination.join("source");
+    let deploy = f.0.join("deploy");
+    fs::create_dir(&deploy).unwrap();
+    for profile in ["dev", "release"] {
+        success(
+            Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .args(["build", "--frozen", "--profile", profile, "--reproducible"])
+                .current_dir(&root)
+                .env("PATH", &path)
+                .env("OXID_FORBIDDEN_GIT_MARKER", &marker)
+                .env("OXID_CACHE_DIR", f.0.join("native-cache"))
+                .output()
+                .unwrap(),
+        );
+        fs::copy(root.join(".oxid/bin/git-app"), deploy.join(profile)).unwrap();
+    }
+    assert!(
+        !marker.exists(),
+        "a portable source bundle tried to invoke Git"
+    );
+    fs::remove_dir_all(destination).unwrap();
+    if f.0.join("native-cache").exists() {
+        fs::remove_dir_all(f.0.join("native-cache")).unwrap();
+    }
+    for profile in ["dev", "release"] {
+        let result = success(deployed(&deploy.join(profile), &deploy));
+        assert_eq!(result.stdout, b"28\n");
+        assert!(result.stderr.is_empty());
     }
 }
