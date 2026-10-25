@@ -29,8 +29,8 @@ HOSTED_CAPACITY_INPUTS = {'src/frontend/oir/native.rs': (118877,
                                                       '51928fdfc35591152359f889ab8ffab8106468de0d3812e3a1d4ebb5e5585315'),
  'src/frontend/oir/owned/hosted_capacity_tests.rs': (14868,
                                                      '64e572ebfdd35115e580158644eaa3cb35d4719a3863aaba9d74e3cdd34ae0aa'),
- 'src/frontend/oir/owned/native.rs': (256894,
-                                      '95a38ed5a49a5f194f9a10eb6cd0eec3b31842d3196c1c7b1a40395f720a48c3')}
+ 'src/frontend/oir/owned/native.rs': (257273,
+                                      '435819f6695b14ec410149b10dd583d299ed280e65bb4a4c33f94b8b56afbdcc')}
 REVIEWED_DIRECTIVES = {'src/frontend/oir/native.rs': ([],
                                 [b'#[path = "native_private_emit.rs"]',
                                  b'#[path = "native_scalar_resource.rs"]',

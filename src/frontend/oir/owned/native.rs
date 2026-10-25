@@ -865,7 +865,11 @@ fn admit_policy_accounted(
     limit(blocks, limits.blocks, "aggregate blocks", origin)?;
     // Independent compiler inventories replace reference-runtime X here.
     // Fixed count facts end before graph, diagnostic and emission phases.
-    admit_inventory_policy(plan, (limits.inventory_items, limits.owner_width))?;
+    admit_inventory_policy_with_execution(
+        plan,
+        (limits.inventory_items, limits.owner_width),
+        policy,
+    )?;
     let mut ready: Vec<_> = remaining
         .iter()
         .enumerate()
@@ -3390,6 +3394,15 @@ pub(super) fn admit_inventory_policy(
     execution: &ExecutionPlan<'_>,
     limits: (usize, usize),
 ) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    admit_inventory_policy_with_execution(execution, limits, NativeEntryPolicy::Result)
+}
+
+fn admit_inventory_policy_with_execution(
+    execution: &ExecutionPlan<'_>,
+    limits: (usize, usize),
+    policy: NativeEntryPolicy,
+) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    let maximum = Limits::for_policy(policy);
     let counts = plan::native_storage::NativeInventories::checked(execution)
         .map_err(|failure| reject(failure.name, failure.span))?;
     // An empty library has zero inventory but is not an executable entry.
@@ -3397,13 +3410,13 @@ pub(super) fn admit_inventory_policy(
     if let Some(function) = execution.witness().functions().first() {
         limit(
             counts.items(),
-            limits.0.min(MAX_HOSTED_NATIVE_INVENTORY_ITEMS),
+            limits.0.min(maximum.inventory_items),
             "aggregate compiler inventory items",
             function.span,
         )?;
         limit(
             counts.owner_width(),
-            limits.1.min(MAX_HOSTED_NATIVE_OWNER_WIDTH),
+            limits.1.min(maximum.owner_width),
             "aggregate owner width cells",
             function.span,
         )?;
