@@ -34,6 +34,16 @@ oxid --version
 
 Set `OXID_INSTALL_DIR` to choose another directory or `OXID_VERSION` to pin a release tag. Without `OXID_VERSION`, the installer uses the latest release. The Unix installer supports Linux and macOS on x86_64 or ARM64. A missing asset or failed checksum stops installation before replacing the existing executable.
 
+To update or return to an earlier version, run the installer again with the desired `OXID_VERSION`. The Unix installer verifies and stages the executable before replacing the installed file; a failed copy or replacement keeps the previous executable.
+
+For an offline Unix installation, copy `install.sh`, the archive for your system and its `.sha256` file to the computer, then run:
+
+```sh
+OXID_ARCHIVE=/media/usb/oxid-linux-aarch64.tar.gz sh install.sh
+```
+
+Keep the checksum beside the archive with the same filename plus `.sha256`. `OXID_ARCHIVE` uses those local files and makes no download requests. It can also restore a previously saved release.
+
 ## Windows installer
 
 Review [install.ps1](../install.ps1), then run it in PowerShell:
