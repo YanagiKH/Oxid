@@ -28,8 +28,9 @@ positions refer to the files retained by the checked compiler session.
 
 Line information is independent of `dev` and `release` optimization. Optimizers
 can combine or remove source lines and functions; breakpoints in removed code
-may have no executable location. This version does not emit local variable,
-parameter type or aggregate layout descriptions for debugger inspection.
+may have no executable location. [Scalar variable information](0064-native-debug-variables.md)
+adds parameter types and local variables. Reference and aggregate layout
+descriptions remain unavailable.
 
 Original-path builds retain source paths. Reproducible builds use the existing
 project-relative source layout and `.` as the debug compilation directory.
