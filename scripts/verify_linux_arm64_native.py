@@ -37,6 +37,25 @@ def public_results(body):
     return sum(int(n) for n in summaries)
 
 
+def run_public_tests(runner, profile, flags, timeout):
+    common.require(PUBLIC_TESTS and len(PUBLIC_TESTS) == len(set(PUBLIC_TESTS)),
+                   "public native modules must be nonempty and unique")
+    modules, bodies = {}, []
+    for name in PUBLIC_TESTS:
+        command = profile + "-public-native-" + name
+        selected = runner.command(command, ["cargo", "test", "--locked", *flags, "--test", name,
+                                  "--", "--include-ignored", "--test-threads=1"],
+                                  timeout=min(timeout, 600))
+        body = (selected / "stdout").read_text()
+        summaries = re.findall(r"^test result:.*$", body, re.M)
+        count = re.fullmatch(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed; 0 ignored;.*",
+                             summaries[0]) if len(summaries) == 1 else None
+        common.require(count is not None, name + ": public native module is missing, empty or failed")
+        modules[name] = {"passed": int(count[1]), "command": command}
+        bodies.append(body)
+    return public_results("\n".join(bodies)), modules
+
+
 def verify(args):
     common.require(__debug__, "qualification refuses optimized Python")
     host = target.required_host()
@@ -53,7 +72,7 @@ def verify(args):
               "controller_sha256": common.digest(Path(__file__)),
               "target": host.triple, "elf_machine": host.elf_machine,
               "scope": "current sources on Linux ARM64; no reissue of historical certificates",
-              "binaries": {}, "public_test_functions": {}}
+              "binaries": {}, "public_test_functions": {}, "public_test_modules": {}}
     common.save(output / "result.json", report)
     try:
         head = runner.checkout("before")
@@ -72,11 +91,9 @@ def verify(args):
                            and data[18:20] == b"\xb7\x00", "compiler is not an ARM64 ELF")
             report["binaries"][profile] = {"compiler": str(compiler), "compiler_sha256": common.digest(compiler),
                                            "tests": str(binary), "tests_sha256": common.digest(binary)}
-            argv = ["cargo", "test", "--locked", *flags]
-            for name in PUBLIC_TESTS:
-                argv += ["--test", name]
-            selected = runner.command(profile + "-public-native", [*argv, "--", "--include-ignored", "--test-threads=1"])
-            report["public_test_functions"][profile] = public_results((selected / "stdout").read_text())
+            count, modules = run_public_tests(runner, profile, flags, args.timeout)
+            report["public_test_functions"][profile] = count
+            report["public_test_modules"][profile] = modules
             evidence = output / profile
             evidence.mkdir()
             for label, name in common.EXACT_TESTS:
