@@ -45,6 +45,11 @@ two-pass renderer counts the complete module before allocation and retains its
 `E0700`; LLVM verifies the module before compilation. Failure preserves the
 previous managed executable.
 
+The compile unit omits the optional accelerator name table. LLVM 19 can generate
+conversion base types without indexing them in `.debug_names` in optimized
+programs. Ordinary DWARF type, variable, location and line information remains
+available and must pass the complete DWARF verifier.
+
 Non-debug emission remains unchanged. Debug metadata participates in object
 cache identity and the existing fixed-toolchain reproducibility contract.
 

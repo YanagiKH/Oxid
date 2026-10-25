@@ -1584,6 +1584,19 @@ mod tests {
         fn instructions(text: &str) -> Vec<String> {
             text.lines()
                 .filter(|line| !line.trim().is_empty() && !line.starts_with('!'))
+                .filter(|line| {
+                    // Debug intrinsics describe values without executing a
+                    // program operation. Keep every other declaration/call.
+                    let line = line.trim_start();
+                    ![
+                        "declare void @llvm.dbg.value(",
+                        "declare void @llvm.dbg.declare(",
+                        "call void @llvm.dbg.value(",
+                        "call void @llvm.dbg.declare(",
+                    ]
+                    .iter()
+                    .any(|prefix| line.starts_with(prefix))
+                })
                 .map(|line| {
                     if let Some((before, _)) = line
                         .strip_prefix("define ")

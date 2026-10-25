@@ -426,6 +426,58 @@ mod native {
     }
 
     #[test]
+    #[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
+    fn optimized_multi_package_debug_information_has_valid_dwarf() {
+        fn copy(source: &Path, destination: &Path) {
+            fs::create_dir_all(destination).unwrap();
+            for entry in fs::read_dir(source).unwrap() {
+                let entry = entry.unwrap();
+                if matches!(entry.file_name().to_str(), Some(".oxid" | "target")) {
+                    continue;
+                }
+                let target = destination.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy(&entry.path(), &target);
+                } else {
+                    fs::copy(entry.path(), target).unwrap();
+                }
+            }
+        }
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new();
+            copy(
+                &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("apps/byte-count"),
+                &project.0,
+            );
+            let manifest = project.0.join("oxid.toml");
+            let mut text = fs::read_to_string(&manifest).unwrap();
+            text.push_str(&format!("\n[execution]\npolicy=\"{policy}\"\n"));
+            fs::write(manifest, text).unwrap();
+            for profile in ["dev", "release"] {
+                success(project.run(&[
+                    "build",
+                    "--profile",
+                    profile,
+                    "--debug-info",
+                    "--reproducible",
+                ]));
+                let binary = project.0.join(".oxid/bin/byte-count");
+                dwarf(&binary, "--verify");
+                let info = dwarf(&binary, "--debug-info");
+                assert!(String::from_utf8_lossy(&info.stdout).contains("DW_TAG_variable"));
+                let result = success(
+                    Command::new(binary)
+                        .env_clear()
+                        .stdin(Stdio::null())
+                        .output()
+                        .unwrap(),
+                );
+                assert_eq!(result.stdout, b"0 0\n");
+            }
+        }
+    }
+
+    #[test]
     #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
     fn source_breakpoints_stacks_cache_and_relocation_use_real_debug_information() {
         // The source-free result and debugger checks cover a multiline LLVM

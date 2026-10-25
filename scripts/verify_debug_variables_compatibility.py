@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Replay retained bounded assertions after adding native scalar debug information.
 
-All preceding source policies and compiler inputs outside the three reviewed
-native metadata emitters remain byte-authenticated. Real LLVM/GDB execution
-qualifies scalar variables separately.
+All preceding source policies and compiler inputs outside the three metadata
+emitters and the retained-source unit-test update remain byte-authenticated.
+Real LLVM/GDB execution qualifies scalar variables separately.
 """
 import argparse
 import copy
@@ -21,15 +21,18 @@ PREDECESSOR = '4821fa0336afd65949b28d3d3464727edbd18d16'
 PREDECESSOR_POLICY = 'scripts/verify_documentation_compatibility.py'
 PREDECESSOR_POLICY_SHA = 'd6a8a3b7d96b7f925783c33e4bb6b9502fd312d85b939261098eb7c25d4deed8'
 PREDECESSOR_POLICY_BYTES = 20447
-DEBUG_VARIABLES_CHANGED = frozenset(('src/frontend/native_debug.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/native.rs'))
+DEBUG_VARIABLES_CHANGED = frozenset(('src/frontend/driver.rs', 'src/frontend/native_debug.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/native.rs'))
 DEBUG_VARIABLES_ADDED = frozenset()
-DEBUG_VARIABLES_INPUTS = {'src/frontend/native_debug.rs': (23452,
-                                  'd920ca449fb5582b049f0f530727a26ed9865291e535be697b80371d769efb03'),
+DEBUG_VARIABLES_INPUTS = {'src/frontend/driver.rs': (87580,
+                            '12208e543f1466d64baa3dcd91d27f2327f86e9deb2e47bb40e39b52dfcffa31'),
+ 'src/frontend/native_debug.rs': (23473,
+                                  '0e6095476f041bfae5423d9ec6ace2904491b3b46827a8fe6f6f0248013fc398'),
  'src/frontend/oir/native.rs': (120639,
                                 '78197f611e1ace8f990a266207c9f4466582eb9bebe6af6517b9f9a7be31d05a'),
  'src/frontend/oir/owned/native.rs': (259124,
                                       '45d23e737980e503a3739b88e4e50c77c54b33b8b58c2f39ecc734231d9c14c5')}
-REVIEWED_DIRECTIVES = {'src/frontend/native_debug.rs': ([], []),
+REVIEWED_DIRECTIVES = {'src/frontend/driver.rs': ([], []),
+ 'src/frontend/native_debug.rs': ([], []),
  'src/frontend/oir/native.rs': ([],
                                 [b'#[path = "native_private_emit.rs"]',
                                  b'#[path = "native_scalar_resource.rs"]',

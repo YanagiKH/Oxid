@@ -209,7 +209,7 @@ class DebugVariablesPolicyAuthority(unittest.TestCase):
         for name in ("extract_baseline", "checkout_identity", "verify_materialized",
                      "verify_current_observer", "run_byte_buffer_observer_controls"):
             self.assertIs(getattr(gate, name), getattr(gate.library, name))
-        self.assertEqual(gate.DEBUG_VARIABLES_CHANGED, {'src/frontend/oir/owned/native.rs', 'src/frontend/oir/native.rs', 'src/frontend/native_debug.rs'})
+        self.assertEqual(gate.DEBUG_VARIABLES_CHANGED, {'src/frontend/driver.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/native.rs', 'src/frontend/native_debug.rs'})
         self.assertEqual(gate.DEBUG_VARIABLES_ADDED, set())
         self.assertIs(gate.run_character_observer_controls, gate.library.run_character_observer_controls)
         self.assertEqual(set(gate.DEBUG_VARIABLES_INPUTS), gate.DEBUG_VARIABLES_CHANGED | gate.DEBUG_VARIABLES_ADDED)

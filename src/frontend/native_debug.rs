@@ -530,7 +530,7 @@ fn render(
             string(out, "Oxid")?;
             writeln!(
                 out,
-                ", isOptimized: {optimized}, runtimeVersion: 0, emissionKind: FullDebug)"
+                ", isOptimized: {optimized}, runtimeVersion: 0, emissionKind: FullDebug, nameTableKind: None)"
             )?;
             out.write_str("!1 = !{i32 2, !\"Dwarf Version\", i32 5}\n!2 = !{i32 2, !\"Debug Info Version\", i32 3}\n!3 = !DISubroutineType(types: !4)\n!4 = !{}\n")?;
             for (index, file) in sources.files().iter().enumerate() {
