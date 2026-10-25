@@ -484,6 +484,15 @@ pub fn value_at(graph: &Graph, variable: &Variable, row: i32, column: i32) -> Te
     return TensorResult::Ok(crate::codec::load(&*graph.arena, start + row * columns + column));
 }
 
+pub fn gradient_at(graph: &Graph, variable: &Variable, row: i32, column: i32) -> TensorResult<f64>{
+    if !live(&*graph, &*variable) { return TensorResult::<f64>:: Err(Error::InvalidNode); }
+    let rows = meta(&*graph, variable.index, 3);
+    let columns = meta(&*graph, variable.index, 4);
+    if row < 0 || column < 0 || row >= rows || column >= columns { return TensorResult::<f64>:: Err(Error::Bounds); }
+    let start = meta(&*graph, variable.index, 6);
+    return TensorResult::Ok(crate::codec::load(&*graph.arena, start + row * columns + column));
+}
+
 fn step_valid(parameters: &[u8], gradients: &[u8], start: i32, elements: i32, rate: f64) -> bool {
     for element in 0..elements {
         let parameter = crate::codec::load(&*parameters, element);

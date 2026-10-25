@@ -1913,7 +1913,7 @@
     },
     {
       "id": "native-cpu-tensor-training",
-      "summary": "Checked f64 CPU tensors, reverse-mode gradients, full-batch SGD and a checkpointed XOR training application",
+      "summary": "Checked f64 CPU tensors, reverse-mode gradients, SGD/Adam/AdamW, clipping, learning-rate schedules and resumable native training",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1931,17 +1931,27 @@
         "apps/cpu-training/tensor/src/model.ox",
         "apps/cpu-training/tensor/src/model/checkpoint.ox",
         "apps/cpu-training/checkpoint/src/lib.ox",
-        "apps/cpu-training/trainer/src/main.ox"
+        "apps/cpu-training/trainer/src/main.ox",
+        "apps/cpu-training/tensor/src/optimizer.ox",
+        "apps/cpu-training/tensor/src/optimizer/checkpoint.ox",
+        "apps/cpu-training/tensor/src/model/session.ox",
+        "apps/cpu-training/checkpoint/src/training.ox"
       ],
       "tests": [
         "apps/cpu-training/trainer/tests/tensor.ox",
         "scripts/verify_cpu_training.py",
-        "scripts/test_cpu_training_oracles.py"
+        "scripts/test_cpu_training_oracles.py",
+        "apps/cpu-training/trainer/tests/optimizers.ox",
+        "scripts/verify_optimizer_math.py",
+        "scripts/verify_optimizer_checkpoints.py",
+        "scripts/verify_optimizer_training.py",
+        "scripts/test_optimizer_oracles.py",
+        "scripts/test_optimizer_sessions.py"
       ],
       "evidence": [
         "apps/cpu-training/README.md"
       ],
-      "limitations": "Row-major f64 matrices and row-bias broadcasting only. Configurable two-layer ReLU MLP with full-batch fixed-rate SGD; no general layouts, Adam, dataset pipeline or larger-model qualification. Existing compiler and 16MiB heap limits apply. This does not complete G9."
+      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP with full batches. No general views, other dtypes, mini-batch dataset pipeline or larger-model qualification. Compiler and 16MiB heap limits apply."
     }
   ]
 }

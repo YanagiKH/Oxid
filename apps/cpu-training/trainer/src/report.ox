@@ -76,15 +76,19 @@ fn intro() -> bool {
     return write(&text);
 }
 fn usage() -> bool {
-    let text = b"  cpu-training train <checkpoint-prefix> [steps]\n  cpu-training resume <checkpoint-prefix> [steps]\n\n";
+    let text = b"  cpu-training train <checkpoint-prefix> [steps] [sgd|adam|adamw]\n  cpu-training resume <checkpoint-prefix> [steps]\n\n";
     return write(&text);
 }
 fn details() -> bool {
-    let text = b"Steps: 1 to 1000000; default 2000. Learning rate: 0.05.\nTwo checkpoint files are saved every 25 updates and at completion.\n";
+    let text = b"Steps: 1 to 1000000; default 2000. Default optimizer: SGD (rate 0.05).\nAdam and AdamW use rate 0.01. Resume restores the saved optimizer.\n";
+    return write(&text);
+}
+fn checkpoints() -> bool {
+    let text = b"Two checkpoint files are saved every 25 updates and at completion.\n";
     return write(&text);
 }
 pub fn help() -> i32 {
-    if !intro() || !usage() || !details() { return 1; }
+    if !intro() || !usage() || !details() || !checkpoints() { return 1; }
     return 0;
 }
 

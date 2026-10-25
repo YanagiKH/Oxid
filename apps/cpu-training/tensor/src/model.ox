@@ -4,6 +4,7 @@ use crate::Error;
 use crate::graph::Graph;
 use crate::graph::Variable;
 pub mod checkpoint;
+pub mod session;
 
 pub struct Model {
     weights1: Tensor,
@@ -17,8 +18,162 @@ pub struct Model {
 pub struct Random { state: u32 }
 
 struct TrainingTape { weights1: Variable, bias1: Variable, weights2: Variable, bias2: Variable, loss: Variable }
+struct Gradients { values: Tensor, loss: f64 }
 
 pub fn update_count(model: &Model) -> u64 { return model.updates; }
+
+pub fn parameter_elements(model: &Model) -> i32 {
+    if !crate::valid(&*model.weights1) || !crate::valid(&*model.bias1) || !crate::valid(&*model.weights2) || !crate::valid(&*model.bias2) { return -1; }
+    let first = model.weights1.rows * model.weights1.columns;
+    let second = model.bias1.rows * model.bias1.columns;
+    let third = model.weights2.rows * model.weights2.columns;
+    let fourth = model.bias2.rows * model.bias2.columns;
+    if second > 268435455 - first { return -1; }
+    let subtotal = first + second;
+    if third > 268435455 - subtotal { return -1; }
+    let almost = subtotal + third;
+    if fourth > 268435455 - almost { return -1; }
+    return almost + fourth;
+}
+
+fn copy_parameter(source: &Tensor, target: &mut Tensor, start: i32) -> () {
+    for index in 0..source.rows * source.columns {
+        let value = crate::codec::load(&*source.data, index);
+        crate::codec::store(&mut *target.data, start + index, value);
+    }
+    return;
+}
+
+pub fn parameters(model: &Model) -> TensorResult<Tensor>{
+    let elements = parameter_elements(&*model);
+    if elements < 0 { return TensorResult::<Tensor>:: Err(Error::InvalidStorage); }
+    let allocated = crate::filled(1, elements, 0.0);
+    match allocated {
+        TensorResult::Ok(value) => {
+            let mut output = value;
+            let first = model.weights1.rows * model.weights1.columns;
+            let second = model.bias1.rows * model.bias1.columns;
+            let third = model.weights2.rows * model.weights2.columns;
+            copy_parameter(&*model.weights1, &mut output, 0);
+            copy_parameter(&*model.bias1, &mut output, first);
+            copy_parameter(&*model.weights2, &mut output, first + second);
+            copy_parameter(&*model.bias2, &mut output, first + second + third);
+            return TensorResult::Ok(output);
+        },
+        TensorResult::Err(error) => { return TensorResult::<Tensor>:: Err(error); }
+    }
+}
+
+fn restore_parameter(source: &Tensor, target: &mut Tensor, start: i32) -> () {
+    for index in 0..target.rows * target.columns {
+        let value = crate::codec::load(&*source.data, start + index);
+        crate::codec::store(&mut *target.data, index, value);
+    }
+    return;
+}
+
+fn commit_parameters(model: &mut Model, source: &Tensor) -> () {
+    let first = model.weights1.rows * model.weights1.columns;
+    let second = model.bias1.rows * model.bias1.columns;
+    let third = model.weights2.rows * model.weights2.columns;
+    restore_parameter(&*source, &mut *model.weights1, 0);
+    restore_parameter(&*source, &mut *model.bias1, first);
+    restore_parameter(&*source, &mut *model.weights2, first + second);
+    restore_parameter(&*source, &mut *model.bias2, first + second + third);
+    return;
+}
+
+pub fn set_parameters(model: &mut Model, source: &Tensor) -> TensorResult<()>{
+    let elements = parameter_elements(&*model);
+    if elements < 0 || !crate::valid(&*source) { return TensorResult::<()>:: Err(Error::InvalidStorage); }
+    if source.rows != 1 || source.columns != elements { return TensorResult::<()>:: Err(Error::ShapeMismatch); }
+    for index in 0..elements { if !finite(crate::codec::load(&*source.data, index)) { return TensorResult::<()>:: Err(Error::NonFinite); } }
+    commit_parameters(&mut *model, &*source);
+    return TensorResult::Ok(());
+}
+
+fn copy_gradient(graph: &Graph, variable: &Variable, rows: i32, columns: i32, output: &mut Tensor, start: i32) -> TensorResult<()>{
+    for row in 0..rows {
+        for column in 0..columns {
+            let read = crate::graph::gradient_at(&*graph, &*variable, row, column);
+            match read {
+                TensorResult::Ok(value) => { crate::codec::store(&mut *output.data, start + row * columns + column, value); },
+                TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); }
+            }
+        }
+    }
+    return TensorResult::Ok(());
+}
+
+fn packed_gradients(graph: &Graph, tape: &TrainingTape, model: &Model) -> TensorResult<Tensor>{
+    let elements = parameter_elements(&*model);
+    if elements < 0 { return TensorResult::<Tensor>:: Err(Error::InvalidStorage); }
+    let allocated = crate::filled(1, elements, 0.0);
+    match allocated {
+        TensorResult::Ok(value) => {
+            let mut output = value;
+            let first = model.weights1.rows * model.weights1.columns;
+            let second = model.bias1.rows * model.bias1.columns;
+            let third = model.weights2.rows * model.weights2.columns;
+            let copied1 = copy_gradient(&*graph, &*tape.weights1, model.weights1.rows, model.weights1.columns, &mut output, 0);
+            match copied1 { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Tensor>:: Err(error); } }
+            let copied2 = copy_gradient(&*graph, &*tape.bias1, model.bias1.rows, model.bias1.columns, &mut output, first);
+            match copied2 { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Tensor>:: Err(error); } }
+            let copied3 = copy_gradient(&*graph, &*tape.weights2, model.weights2.rows, model.weights2.columns, &mut output, first + second);
+            match copied3 { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Tensor>:: Err(error); } }
+            let copied4 = copy_gradient(&*graph, &*tape.bias2, model.bias2.rows, model.bias2.columns, &mut output, first + second + third);
+            match copied4 { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Tensor>:: Err(error); } }
+            return TensorResult::Ok(output);
+        },
+        TensorResult::Err(error) => { return TensorResult::<Tensor>:: Err(error); }
+    }
+}
+
+fn gradients(model: &Model, input: &Tensor, expected: &Tensor) -> TensorResult<Gradients>{
+    let mut graph = crate::graph::create();
+    let made = training_tape(&mut graph, &*model, &*input, &*expected);
+    match made {
+        TensorResult::Ok(tape) => {
+            let backward = crate::graph::backward(&mut graph, &tape.loss);
+            match backward { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Gradients>:: Err(error); } }
+            let mut objective_value = 0.0;
+            let read = crate::graph::value_at(&graph, &tape.loss, 0, 0);
+            match read { TensorResult::Ok(value) => { objective_value = value; }, TensorResult::Err(error) => { return TensorResult::<Gradients>:: Err(error); } }
+            if !finite(objective_value) { return TensorResult::<Gradients>:: Err(Error::NonFinite); }
+            let packed = packed_gradients(&graph, &tape, &*model);
+            match packed {
+                TensorResult::Ok(values) => { return TensorResult::Ok(Gradients { values: values, loss: objective_value }); },
+                TensorResult::Err(error) => { return TensorResult::<Gradients>:: Err(error); }
+            }
+        },
+        TensorResult::Err(error) => { return TensorResult::<Gradients>:: Err(error); }
+    }
+}
+
+pub fn train_with_optimizer(model: &mut Model, state: &mut crate::optimizer::State, input: &Tensor, expected: &Tensor) -> TensorResult<f64>{
+    if model.updates == 18446744073709551615u64 { return TensorResult::<f64>:: Err(Error::StepOverflow); }
+    let elements = parameter_elements(&*model);
+    if elements < 0 { return TensorResult::<f64>:: Err(Error::InvalidStorage); }
+    if crate::optimizer::row_count(&*state) != 1 || crate::optimizer::column_count(&*state) != elements { return TensorResult::<f64>:: Err(Error::ShapeMismatch); }
+    let computed = gradients(&*model, &*input, &*expected);
+    match computed {
+        TensorResult::Ok(gradient) => {
+            let copied = parameters(&*model);
+            match copied {
+                TensorResult::Ok(value) => {
+                    let mut target = value;
+                    let applied = crate::optimizer::step(&mut *state, &mut target, &gradient.values);
+                    match applied { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); } }
+                    commit_parameters(&mut *model, &target);
+                    model.updates = model.updates + 1u64;
+                    return TensorResult::Ok(gradient.loss);
+                },
+                TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); }
+            }
+        },
+        TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); }
+    }
+}
 
 pub fn parameter(model: &Model, index: i32) -> TensorResult<Tensor>{
     if index == 0 { return crate::duplicate(&*model.weights1); }
@@ -109,47 +264,12 @@ pub fn loss(model: &Model, input: &Tensor, expected: &Tensor) -> TensorResult<f6
     }
 }
 
-fn validate_updates(model: &Model, graph: &Graph, tape: &TrainingTape, rate: f64) -> TensorResult<()>{
-    let first = crate::graph::validate_sgd_update(&*model.weights1, &*graph, &*tape.weights1, rate);
-    match first { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); } }
-    let second = crate::graph::validate_sgd_update(&*model.bias1, &*graph, &*tape.bias1, rate);
-    match second { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); } }
-    let third = crate::graph::validate_sgd_update(&*model.weights2, &*graph, &*tape.weights2, rate);
-    match third { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); } }
-    return crate::graph::validate_sgd_update(&*model.bias2, &*graph, &*tape.bias2, rate);
-}
-
-fn commit_updates(model: &mut Model, graph: &Graph, tape: &TrainingTape, rate: f64) -> TensorResult<()>{
-    let first = crate::graph::sgd_update(&mut *model.weights1, &*graph, &*tape.weights1, rate);
-    match first { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); } }
-    let second = crate::graph::sgd_update(&mut *model.bias1, &*graph, &*tape.bias1, rate);
-    match second { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); } }
-    let third = crate::graph::sgd_update(&mut *model.weights2, &*graph, &*tape.weights2, rate);
-    match third { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<()>:: Err(error); } }
-    return crate::graph::sgd_update(&mut *model.bias2, &*graph, &*tape.bias2, rate);
-}
-
 pub fn train_step(model: &mut Model, input: &Tensor, expected: &Tensor, rate: f64) -> TensorResult<f64>{
     if model.updates == 18446744073709551615u64 { return TensorResult::<f64>:: Err(Error::StepOverflow); }
     if !finite(rate) || rate < 0.0 { return TensorResult::<f64>:: Err(Error::InvalidRate); }
-    let mut graph = crate::graph::create();
-    let tape_result = training_tape(&mut graph, &*model, &*input, &*expected);
-    match tape_result {
-        TensorResult::Ok(tape_value) => {
-            let tape = tape_value;
-            let backward = crate::graph::backward(&mut graph, &tape.loss);
-            match backward { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); } }
-            let mut loss_number = 0.0;
-            let read = crate::graph::value_at(&graph, &tape.loss, 0, 0);
-            match read { TensorResult::Ok(number) => { loss_number = number; }, TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); } }
-            if !finite(loss_number) { return TensorResult::<f64>:: Err(Error::NonFinite); }
-            let checked = validate_updates(&*model, &graph, &tape, rate);
-            match checked { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); } }
-            let committed = commit_updates(&mut *model, &graph, &tape, rate);
-            match committed { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); } }
-            model.updates = model.updates + 1u64;
-            return TensorResult::Ok(loss_number);
-        },
+    let initialized = crate::optimizer::initialize_sgd(1, parameter_elements(&*model), rate, model.updates);
+    match initialized {
+        TensorResult::Ok(value) => { let mut state = value; return train_with_optimizer(&mut *model, &mut state, &*input, &*expected); },
         TensorResult::Err(error) => { return TensorResult::<f64>:: Err(error); }
     }
 }

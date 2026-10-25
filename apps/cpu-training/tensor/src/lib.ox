@@ -1,6 +1,7 @@
 mod codec;
 pub mod graph;
 pub mod model;
+pub mod optimizer;
 
 use alloc::bytes::ByteBuf;
 use alloc::bytes::GrowStatus;
@@ -21,6 +22,7 @@ pub enum Error {
     GraphCapacity,
     NonFinite,
     InvalidRate,
+    InvalidOptimizer,
     StepOverflow,
     InvalidCheckpoint,
     IoError(i32),

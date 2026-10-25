@@ -173,8 +173,10 @@ def main():
             if b'workspace check: 3 passed; 0 failed' not in checked.stderr:
                 raise ValueError('workspace member check was incomplete')
             tested = invoke(label + '-tests', [compiler, 'test', '--workspace'], project, b'', stderr=None)
-            if tested.stderr != b'test trainer::tensor: ok (exit status: 0)\nworkspace test: 1 passed; 0 failed\n':
-                raise ValueError('declared tensor contract tests were not executed')
+            if tested.stderr != (b'test trainer::optimizers: ok (exit status: 0)\n'
+                                 b'test trainer::tensor: ok (exit status: 0)\n'
+                                 b'workspace test: 2 passed; 0 failed\n'):
+                raise ValueError('declared tensor and optimizer contract tests were not executed')
             invoke(label + '-lock', [compiler, 'lock'], project, stderr=b'workspace lock written\n')
             archive = output / (label + '.oxpkg')
             invoke(label + '-package', [compiler, 'package', '--frozen', '--output', archive], project, stderr=None)

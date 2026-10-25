@@ -17,6 +17,7 @@ use std::fs::sync_all;
 use std::fs::close;
 use std::io::ReadSomeStatus;
 use std::io::WriteSomeStatus;
+pub mod training;
 
 fn write_all(file: &mut File, bytes: &[u8]) -> TensorResult<()>{
     let mut offset = 0;
@@ -70,6 +71,10 @@ fn append(bytes: &mut ByteBuf, chunk: &[u8]) -> TensorResult<()>{
     }
 }
 
+fn oversized(bytes: &[u8], count: i32) -> bool {
+    return count > 16777216 || bytes.len() > 16777216 - count;
+}
+
 fn read_all(file: File) -> TensorResult<ByteBuf>{
     let mut input = file;
     let mut bytes = new();
@@ -86,6 +91,7 @@ fn read_all(file: File) -> TensorResult<ByteBuf>{
         match read {
             ReadSomeStatus::Data(count) => {
                 if count <= 0 { return TensorResult::<ByteBuf>:: Err(Error::IoError(5)); }
+                if oversized(&bytes, count) { return TensorResult::<ByteBuf>:: Err(Error::MemoryLimit); }
                 let appended = append(&mut bytes, &chunk[0..count]);
                 match appended { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<ByteBuf>:: Err(error); } }
             },
@@ -119,24 +125,8 @@ pub fn load(path: &[u8]) -> TensorResult<Model>{
 pub struct Recovery { pub model: Model, pub slot: i32 }
 
 fn recover_first(model: Model, error: Error) -> TensorResult<Recovery>{
-    match error {
-        Error::IoError(code) => { if code != 2 { return TensorResult::<Recovery>:: Err(Error::IoError(code)); } return TensorResult::Ok(Recovery { model: model, slot: 0 }); },
-        Error::InvalidCheckpoint => { return TensorResult::Ok(Recovery { model: model, slot: 0 }); },
-        Error::NegativeShape => { return TensorResult::<Recovery>:: Err(Error::NegativeShape); },
-        Error::SizeOverflow => { return TensorResult::<Recovery>:: Err(Error::SizeOverflow); },
-        Error::ShapeMismatch => { return TensorResult::<Recovery>:: Err(Error::ShapeMismatch); },
-        Error::Bounds => { return TensorResult::<Recovery>:: Err(Error::Bounds); },
-        Error::AllocationFailed => { return TensorResult::<Recovery>:: Err(Error::AllocationFailed); },
-        Error::MemoryLimit => { return TensorResult::<Recovery>:: Err(Error::MemoryLimit); },
-        Error::InvalidStorage => { return TensorResult::<Recovery>:: Err(Error::InvalidStorage); },
-        Error::EmptyReduction => { return TensorResult::<Recovery>:: Err(Error::EmptyReduction); },
-        Error::InvalidNode => { return TensorResult::<Recovery>:: Err(Error::InvalidNode); },
-        Error::GraphCapacity => { return TensorResult::<Recovery>:: Err(Error::GraphCapacity); },
-        Error::NonFinite => { return TensorResult::<Recovery>:: Err(Error::NonFinite); },
-        Error::InvalidRate => { return TensorResult::<Recovery>:: Err(Error::InvalidRate); },
-        Error::StepOverflow => { return TensorResult::<Recovery>:: Err(Error::StepOverflow); },
-        Error::WriteZero => { return TensorResult::<Recovery>:: Err(Error::WriteZero); },
-    }
+    let checked = recoverable(error);
+    match checked { TensorResult::Ok(done) => { return TensorResult::Ok(Recovery { model: model, slot: 0 }); }, TensorResult::Err(fatal) => { return TensorResult::<Recovery>:: Err(fatal); } }
 }
 
 fn second_only(path: &[u8]) -> TensorResult<Recovery>{
@@ -145,24 +135,8 @@ fn second_only(path: &[u8]) -> TensorResult<Recovery>{
 }
 
 fn recover_second(error: Error, path: &[u8]) -> TensorResult<Recovery>{
-    match error {
-        Error::IoError(code) => { if code != 2 { return TensorResult::<Recovery>:: Err(Error::IoError(code)); } return second_only(&*path); },
-        Error::InvalidCheckpoint => { return second_only(&*path); },
-        Error::NegativeShape => { return TensorResult::<Recovery>:: Err(Error::NegativeShape); },
-        Error::SizeOverflow => { return TensorResult::<Recovery>:: Err(Error::SizeOverflow); },
-        Error::ShapeMismatch => { return TensorResult::<Recovery>:: Err(Error::ShapeMismatch); },
-        Error::Bounds => { return TensorResult::<Recovery>:: Err(Error::Bounds); },
-        Error::AllocationFailed => { return TensorResult::<Recovery>:: Err(Error::AllocationFailed); },
-        Error::MemoryLimit => { return TensorResult::<Recovery>:: Err(Error::MemoryLimit); },
-        Error::InvalidStorage => { return TensorResult::<Recovery>:: Err(Error::InvalidStorage); },
-        Error::EmptyReduction => { return TensorResult::<Recovery>:: Err(Error::EmptyReduction); },
-        Error::InvalidNode => { return TensorResult::<Recovery>:: Err(Error::InvalidNode); },
-        Error::GraphCapacity => { return TensorResult::<Recovery>:: Err(Error::GraphCapacity); },
-        Error::NonFinite => { return TensorResult::<Recovery>:: Err(Error::NonFinite); },
-        Error::InvalidRate => { return TensorResult::<Recovery>:: Err(Error::InvalidRate); },
-        Error::StepOverflow => { return TensorResult::<Recovery>:: Err(Error::StepOverflow); },
-        Error::WriteZero => { return TensorResult::<Recovery>:: Err(Error::WriteZero); },
-    }
+    let checked = recoverable(error);
+    match checked { TensorResult::Ok(done) => { return second_only(&*path); }, TensorResult::Err(fatal) => { return TensorResult::<Recovery>:: Err(fatal); } }
 }
 
 fn select_second(first: Model, second: TensorResult<Model>) -> TensorResult<Recovery>{
@@ -207,5 +181,27 @@ pub fn exists(path: &[u8]) -> TensorResult<bool>{
         OpenResult::Error(code) => { if code == 2 { return TensorResult::Ok(false); } return TensorResult::<bool>:: Err(Error::IoError(code)); },
         OpenResult::AllocationFailed => { return TensorResult::<bool>:: Err(Error::AllocationFailed); },
         OpenResult::MemoryLimit => { return TensorResult::<bool>:: Err(Error::MemoryLimit); }
+    }
+}
+
+fn recoverable(error: Error) -> TensorResult<()>{
+    match error {
+        Error::IoError(code) => { if code == 2 { return TensorResult::Ok(()); } return TensorResult::<()>:: Err(Error::IoError(code)); },
+        Error::InvalidCheckpoint => { return TensorResult::Ok(()); },
+        Error::NegativeShape => { return TensorResult::<()>:: Err(Error::NegativeShape); },
+        Error::SizeOverflow => { return TensorResult::<()>:: Err(Error::SizeOverflow); },
+        Error::ShapeMismatch => { return TensorResult::<()>:: Err(Error::ShapeMismatch); },
+        Error::Bounds => { return TensorResult::<()>:: Err(Error::Bounds); },
+        Error::AllocationFailed => { return TensorResult::<()>:: Err(Error::AllocationFailed); },
+        Error::MemoryLimit => { return TensorResult::<()>:: Err(Error::MemoryLimit); },
+        Error::InvalidStorage => { return TensorResult::<()>:: Err(Error::InvalidStorage); },
+        Error::EmptyReduction => { return TensorResult::<()>:: Err(Error::EmptyReduction); },
+        Error::InvalidNode => { return TensorResult::<()>:: Err(Error::InvalidNode); },
+        Error::GraphCapacity => { return TensorResult::<()>:: Err(Error::GraphCapacity); },
+        Error::NonFinite => { return TensorResult::<()>:: Err(Error::NonFinite); },
+        Error::InvalidRate => { return TensorResult::<()>:: Err(Error::InvalidRate); },
+        Error::InvalidOptimizer => { return TensorResult::<()>:: Err(Error::InvalidOptimizer); },
+        Error::StepOverflow => { return TensorResult::<()>:: Err(Error::StepOverflow); },
+        Error::WriteZero => { return TensorResult::<()>:: Err(Error::WriteZero); }
     }
 }

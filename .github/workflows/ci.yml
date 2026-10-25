@@ -430,6 +430,12 @@ jobs:
         run: |
           python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-cpu-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_math.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-math" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_checkpoints.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-checkpoints" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-training" --llvm-bin "$OXID_LLVM_BIN"
       - name: Check buffer runtime components at O0 and O2 with memory checking
         run: |
           python3 -B scripts/test_bytebuf_runtime.py

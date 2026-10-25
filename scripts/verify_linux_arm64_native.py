@@ -105,6 +105,12 @@ def verify(args):
         runner.command("cpu-training-application", [sys.executable, "-B", "scripts/verify_cpu_training.py",
                        report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                        "--output", output / "cpu-training", "--llvm-bin", args.llvm_bin])
+        for label, controller in [("optimizer-math", "verify_optimizer_math.py"),
+                                  ("optimizer-checkpoints", "verify_optimizer_checkpoints.py"),
+                                  ("optimizer-training", "verify_optimizer_training.py")]:
+            runner.command(label, [sys.executable, "-B", "scripts/" + controller,
+                           report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
+                           "--output", output / label, "--llvm-bin", args.llvm_bin])
         common.require(runner.checkout("after") == head, "compiler checkout changed during qualification")
         for row in report["binaries"].values():
             common.require(common.digest(row["compiler"]) == row["compiler_sha256"]
