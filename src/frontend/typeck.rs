@@ -297,6 +297,7 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                             }
                             ConversionOp::ToFloat(_)
                             | ConversionOp::FloatToBits
+                            | ConversionOp::FloatSqrt
                             | ConversionOp::FloatFromBits(_) => return Err(Diagnostic::new(
                                 "E0300",
                                 "type",

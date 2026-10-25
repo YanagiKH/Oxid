@@ -39,6 +39,23 @@ A finite decimal literal outside its type's finite range is a checking error.
 Tiny literals round to a subnormal value or signed zero. Underscores and
 hexadecimal float literals are not supported.
 
+## Square roots
+
+Call `.sqrt()` on a named `f32` or `f64` value. The result keeps the same type
+and rounds to nearest, ties to even, including for subnormal inputs.
+
+```oxid
+fn main() -> f64 {
+    let squared = 81.0;
+    return squared.sqrt();
+}
+```
+
+This prints `9`. Negative finite inputs and negative infinity produce the
+canonical NaN. Positive infinity stays positive infinity; both signed zeros
+keep their signs. NaN inputs produce the canonical NaN. Integer values require
+an explicit conversion to a float first.
+
 ## Explicit conversions and bit patterns
 
 Named numeric values support `.to_f32()` and `.to_f64()`. These conversions
@@ -74,7 +91,7 @@ the selected float type, using fixed decimal notation. Infinity is `inf` or
 special values and negative zero. Process entries still return `i32`.
 
 Reference execution supports both execution policies. Native builds support
-Linux x86_64 with LLVM/Clang/LLD 19.1.7, in both native build profiles. The
+Linux x86_64 and ARM64 with LLVM/Clang/LLD 19.1.7, in both native build profiles. The
 compiler embeds its small decimal-formatting runtime; building or running a
 native program does not require Rust or an Oxid installation on the deployment
 host. Existing libc requirements still apply.

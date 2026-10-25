@@ -419,6 +419,7 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
         ast::ConversionOp::ToCharChecked => "to_char_checked",
         ast::ConversionOp::CharToU32 => "to_u32",
         ast::ConversionOp::FloatToBits => "to_bits",
+        ast::ConversionOp::FloatSqrt => "sqrt",
         ast::ConversionOp::FloatFromBits(_) => "from_bits",
         ast::ConversionOp::ToU8Checked => "to_u8_checked",
         ast::ConversionOp::ToI32 => "to_i32",

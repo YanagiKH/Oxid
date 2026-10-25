@@ -2444,6 +2444,7 @@ fn expression_type(
                 }
                 operation @ (ConversionOp::ToFloat(_)
                 | ConversionOp::FloatToBits
+                | ConversionOp::FloatSqrt
                 | ConversionOp::FloatFromBits(_)) => {
                     let result = if let ValueTy::Scalar(ty) = actual {
                         ty.float_conversion(*operation)
@@ -2455,7 +2456,7 @@ fn expression_type(
                             Ty::U32
                         }
                         ConversionOp::FloatFromBits(_) => Ty::U64,
-                        ConversionOp::FloatToBits => Ty::F64,
+                        ConversionOp::FloatToBits | ConversionOp::FloatSqrt => Ty::F64,
                         _ => Ty::I32,
                     };
                     (result.is_some(), input, result.unwrap_or(Ty::F64))

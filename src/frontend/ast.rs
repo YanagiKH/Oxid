@@ -40,6 +40,7 @@ pub enum ConversionOp {
     CharToU32,
     ToFloat(FloatTypeSyntax),
     FloatToBits,
+    FloatSqrt,
     FloatFromBits(FloatTypeSyntax),
     ToU8Checked,
     ToI32,

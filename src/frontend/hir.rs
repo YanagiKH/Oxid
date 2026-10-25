@@ -43,6 +43,7 @@ impl Ty {
     }
     pub fn float_conversion(self, operation: ast::ConversionOp) -> Option<Self> {
         match operation {
+            ast::ConversionOp::FloatSqrt if self.floating() => Some(self),
             ast::ConversionOp::ToFloat(kind)
                 if self.floating() || self.integer_bits().is_some() =>
             {

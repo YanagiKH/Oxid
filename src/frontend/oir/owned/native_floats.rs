@@ -35,6 +35,17 @@ pub(super) fn convert(
     operation: hir::ConversionOp,
     value: &str,
 ) -> String {
+    if operation == hir::ConversionOp::FloatSqrt {
+        let suffix = if input == hir::Ty::F32 { "f32" } else { "f64" };
+        writeln!(
+            out,
+            "  %{name}_raw = call {} @llvm.sqrt.{suffix}({} {value})",
+            ty(input),
+            ty(input)
+        )
+        .unwrap();
+        return canonical(out, name, target, &format!("%{name}_raw"));
+    }
     if input == target {
         return value.to_string();
     }

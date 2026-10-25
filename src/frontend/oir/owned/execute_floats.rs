@@ -128,6 +128,27 @@ pub(super) fn convert<V: StoredValue>(
         .float_conversion(operation)
         .ok_or_else(|| bad("float conversion types", span))?;
     match operation {
+        hir::ConversionOp::FloatSqrt => {
+            let (_, bits) = value
+                .float()
+                .ok_or_else(|| bad("float square-root source", span))?;
+            let bits = if target == hir::Ty::F32 {
+                let root = f32::from_bits(bits as u32).sqrt();
+                u64::from(if root.is_nan() {
+                    0x7fc0_0000
+                } else {
+                    root.to_bits()
+                })
+            } else {
+                let root = f64::from_bits(bits).sqrt();
+                if root.is_nan() {
+                    0x7ff8_0000_0000_0000
+                } else {
+                    root.to_bits()
+                }
+            };
+            result(target, bits, span)
+        }
         hir::ConversionOp::FloatToBits => {
             let (_, bits) = value.float().ok_or_else(|| bad("float bit source", span))?;
             V::from_integer(target, bits).ok_or_else(|| bad("float bit storage", span))

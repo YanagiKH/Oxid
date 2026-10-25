@@ -339,7 +339,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -1559,13 +1559,13 @@
     {
       "id": "floating-point",
       "classification": "production-path",
-      "summary": "IEEE 754 f32/f64 arithmetic, comparisons, explicit numeric conversions, raw bit representations and aggregate storage.",
+      "summary": "IEEE 754 f32/f64 arithmetic, correctly rounded square roots, comparisons, explicit numeric conversions, raw bit representations and aggregate storage.",
       "status": "experimental",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "edition": "typed-preview",
       "backend": "Reference execution and LLVM native compilation at O0/O2.",
-      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 and ARM64 with LLVM/Clang/LLD 19.1.7 for native execution.",
       "limitations": "No implicit conversion, hexadecimal float literals or float-to-integer conversion. Bit constructors currently take named integer values. Process main, indexes and lengths remain i32. Existing borrowing and compiler limits apply.",
       "spec": [
         "rfcs/0055-floating-point.md",
@@ -1577,13 +1577,17 @@
         "src/frontend/oir/owned/native_floats.rs",
         "src/frontend/oir/owned/execute_values.rs",
         "native/float_format.rs",
-        "native/typed_float.c"
+        "native/typed_float.c",
+        "src/frontend/parser/conversions.rs"
       ],
       "tests": [
         "tests/typed_floats.rs",
         "src/frontend/oir/owned/source/float_tests.rs",
         "scripts/verify_floats.py",
-        "scripts/test_floats.py"
+        "scripts/test_floats.py",
+        "tests/typed_float_roots.rs",
+        "scripts/verify_float_roots.py",
+        "scripts/test_float_root_oracle.py"
       ],
       "evidence": []
     },
