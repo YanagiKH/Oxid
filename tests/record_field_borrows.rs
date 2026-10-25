@@ -37,7 +37,7 @@ impl Drop for Input {
     }
 }
 
-fn samples() -> [(&'static str, &'static [u8]); 6] {
+fn samples() -> [(&'static str, &'static [u8]); 14] {
     [
         (
             r#"struct Point { x:i32, y:i32 } struct Pair { prefix:u8, first:Point, second:Point, tail:i64 }
@@ -104,6 +104,42 @@ if holder.lead != -123i128 || holder.sibling.pad!=2u8 || holder.sibling.flag || 
 return 0;}"#,
             b"0\n",
         ),
+        (
+            "struct Value{value:i32}struct Pair{left:Value,right:Value}\nfn change(a:&mut Value,b:&mut Value)->i32{a.value=a.value+10;b.value=b.value+20;return a.value*100+b.value;}\nfn main()->i32{let mut pair=Pair{left:Value{value:1},right:Value{value:2}};return change(&mut pair.left,&mut pair.right);}",
+            b"1122\n",
+        ),
+        (
+            "struct Value{value:i32}struct Pair{left:Value,right:Value}\nfn mix(a:&Value,b:&mut Value)->i32{b.value=b.value+a.value;return b.value;}\nfn main()->i32{let mut pair=Pair{left:Value{value:3},right:Value{value:4}};return mix(&pair.left,&mut pair.right);}",
+            b"7\n",
+        ),
+        (
+            "struct Leaf{value:i32}struct Branch{left:Leaf,right:Leaf}struct Outer{pad:i32,branch:Branch}\nfn swap(a:&mut Leaf,b:&mut Leaf)->(){let saved=a.value;a.value=b.value;b.value=saved;return;}\nfn forward(p:&mut Outer)->(){swap(&mut *p.branch.left,&mut *p.branch.right);return;}\nfn main()->i32{let mut outer=Outer{pad:9,branch:Branch{left:Leaf{value:7},right:Leaf{value:2}}};forward(&mut outer);return outer.branch.left.value*10+outer.branch.right.value;}",
+            b"27\n",
+        ),
+        (
+            "struct Value{value:i32}struct Pair{left:Value,right:Value}\nfn add(a:&mut Value,amount:i32)->i32{a.value=a.value+amount;return a.value;}\nfn main()->i32{let mut pair=Pair{left:Value{value:4},right:Value{value:3}};return add(&mut pair.left,pair.right.value);}",
+            b"7\n",
+        ),
+        (
+            "struct Value{value:i32}struct Pair{left:Value,right:Value}\nfn add(a:&mut Value,amount:i32)->i32{a.value=a.value+amount;return a.value;}\nfn observe(a:&mut Value)->i32{a.value=a.value+1;return a.value;}\nfn main()->i32{let mut pair=Pair{left:Value{value:4},right:Value{value:3}};return add(&mut pair.left,observe(&mut pair.right));}",
+            b"8\n",
+        ),
+        (
+            "struct Empty{}struct Pair{left:Empty,right:Empty}\nfn inspect(a:&mut Empty,b:&mut Empty)->i32{return 42;}\nfn main()->i32{let mut pair=Pair{left:Empty{},right:Empty{}};return inspect(&mut pair.left,&mut pair.right);}",
+            b"42\n",
+        ),
+        (
+            r#"use alloc::bytes::ByteBuf;use alloc::bytes::GrowStatus;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;
+struct Pair{left:ByteBuf,right:ByteBuf}
+fn push(p:&mut ByteBuf,value:u8)->i32{let status=try_push(&mut *p,value);match status{GrowStatus::Ok=>{return len(&*p);},GrowStatus::CapacityOverflow=>{return -1;},GrowStatus::AllocationFailed=>{return -2;},GrowStatus::MemoryLimit=>{return -3;},}}
+fn change(a:&mut ByteBuf,b:&mut ByteBuf)->i32{return push(&mut *a,11u8)*100+push(&mut *b,22u8);}
+fn main()->i32{let mut pair=Pair{left:new(),right:new()};let first=change(&mut pair.left,&mut pair.right);let second=change(&mut pair.left,&mut pair.right);return first+second;}"#,
+            b"303\n",
+        ),
+        (
+            "struct Pair{left:[u8;3],right:[u8;3]}\nfn change(a:&mut [u8],b:&mut [u8])->i32{a[0]=a[0]+1u8;b[0]=b[0]+2u8;let left=a[0];let right=b[0];return left.to_i32()*100+right.to_i32();}\nfn main()->i32{let mut pair=Pair{left:[10u8,20u8,30u8],right:[30u8,40u8,50u8]};return change(&mut pair.left[1..3],&mut pair.right[0..2]);}",
+            b"2132\n",
+        ),
     ]
 }
 
@@ -145,22 +181,91 @@ fn nested_views_preserve_wide_scalars_float_bits_unicode_and_alignment() {
 }
 
 #[test]
-fn field_loans_do_not_add_disjoint_mutability_or_weaken_root_ownership() {
+fn field_loans_preserve_mutability_liveness_and_overlap_rejections() {
     let declarations = "struct Inner { value:i32 } struct Outer { first:Inner, second:Inner }
 fn shared(p:&Inner)->i32{return p.value;}
 fn exclusive(p:&mut Inner)->i32{p.value=p.value+1;return p.value;}
 fn both(p:&mut Inner,q:&mut Inner)->i32{return p.value+q.value;}
 fn mix(p:&Inner,q:&mut Inner)->i32{return p.value+q.value;}
 fn owner(p:Outer)->i32{return p.first.value;}
+fn whole(p:&mut Outer,q:&mut Inner)->i32{return p.first.value+q.value;}
+fn reverse(p:&mut Inner,q:&mut Outer)->i32{return p.value+q.first.value;}
 ";
     for body in [
         "let outer=Outer{first:Inner{value:1},second:Inner{value:2}};return exclusive(&mut outer.first);",
-        "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};return both(&mut outer.first,&mut outer.second);",
-        "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};return mix(&outer.first,&mut outer.second);",
+        "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};return both(&mut outer.first,&mut outer.first);",
+        "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};return mix(&outer.first,&mut outer.first);",
+        "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};return whole(&mut outer,&mut outer.first);",
+        "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};return reverse(&mut outer.first,&mut outer);",
         "let mut outer=Outer{first:Inner{value:1},second:Inner{value:2}};let moved=outer;return shared(&outer.first);",
     ] {
         let result = Input::run(&format!("{declarations} fn main()->i32{{{body}}}"), "check");
         assert!(!result.status.success(), "{result:?}");
+    }
+}
+
+#[test]
+fn disjoint_fields_support_exclusive_mixed_nested_and_left_to_right_access() {
+    for (source, expected) in &samples()[6..] {
+        for command in ["check", "run"] {
+            let result = Input::run(source, command);
+            assert!(result.status.success(), "{source}\n{result:?}");
+            assert!(result.stderr.is_empty(), "{result:?}");
+            if command == "run" {
+                assert_eq!(result.stdout, *expected);
+            } else {
+                assert!(
+                    result.stdout.starts_with(b"typed-preview check ok ("),
+                    "{result:?}"
+                );
+            }
+        }
+    }
+}
+
+fn deeply_nested_sample(depth: usize) -> String {
+    let mut source = String::from("struct Value{value:i32}struct Pair{left:Value,right:Value}\nfn change(a:&mut Value,b:&mut Value)->i32{a.value=a.value+10;b.value=b.value+20;return a.value*100+b.value;}\n");
+    let mut ty = String::from("Pair");
+    let mut initializers = String::from("let seed=Pair{left:Value{value:1},right:Value{value:2}};");
+    let mut value = String::from("seed");
+    for index in 0..depth {
+        source.push_str(&format!("struct Layer{index}{{next:{ty}}}\n"));
+        ty = format!("Layer{index}");
+        initializers.push_str(&format!("let layer{index}={ty}{{next:{value}}};"));
+        value = format!("layer{index}");
+    }
+    let path = "root".to_string() + &".next".repeat(depth);
+    source.push_str(&format!(
+        "fn main()->i32{{{initializers}let mut root={value};return change(&mut {path}.left,&mut {path}.right);}}"
+    ));
+    source
+}
+
+#[test]
+fn distinct_fields_at_maximum_record_depth_stay_within_verifier_work_limits() {
+    for depth in [1, 31, 62] {
+        let source = deeply_nested_sample(depth);
+        let result = Input::run(&source, "run");
+        assert!(result.status.success(), "depth {depth}: {result:?}");
+        assert_eq!(result.stdout, b"1122\n");
+        assert!(result.stderr.is_empty());
+    }
+}
+
+#[test]
+fn parent_child_fields_and_whole_owner_moves_still_conflict() {
+    let declarations = "struct Leaf{value:i32}struct Branch{left:Leaf,right:Leaf}struct Outer{branch:Branch}\nfn whole(a:&mut Branch,b:&mut Leaf)->i32{return b.value;}\nfn reverse(a:&mut Leaf,b:&mut Branch)->i32{return a.value;}\nfn consume(value:Outer)->i32{return value.branch.left.value;}\nfn hold(a:&mut Leaf,n:i32)->i32{return a.value+n;}\nfn hold_branch(a:&mut Branch,n:i32)->i32{return a.left.value+n;}\n";
+    for expression in [
+        "whole(&mut root.branch,&mut root.branch.left)",
+        "reverse(&mut root.branch.left,&mut root.branch)",
+        "hold(&mut root.branch.left,consume(root))",
+        "hold_branch(&mut root.branch,root.branch.left.value)",
+    ] {
+        let source = format!("{declarations}fn main()->i32{{let mut root=Outer{{branch:Branch{{left:Leaf{{value:1}},right:Leaf{{value:2}}}}}};return {expression};}}");
+        let result = Input::run(&source, "check");
+        assert!(!result.status.success(), "{expression}: {result:?}");
+        let error = String::from_utf8(result.stderr).unwrap();
+        assert!(error.contains("E0311"), "{expression}: {error}");
     }
 }
 
@@ -184,8 +289,12 @@ fn slices_reborrow_from_array_and_buffer_fields_inside_projected_records() {
 #[test]
 #[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_record_field_loans_match_reference_without_sources() {
+    let deep = deeply_nested_sample(62);
     for policy in ["bounded", "hosted"] {
-        for (source, expected) in samples() {
+        for (source, expected) in samples()
+            .into_iter()
+            .chain([(deep.as_str(), &b"1122\n"[..])])
+        {
             let input = Input::new(source);
             fs::write(input.0.join("oxid.toml"), format!("[project]\nname=\"record-fields\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"result\"\n[execution]\npolicy=\"{policy}\"\n")).unwrap();
             let reference = input.invoke(&["run"]);

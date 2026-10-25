@@ -223,7 +223,7 @@
       "implementation": [],
       "tests": [],
       "evidence": [],
-      "limitations": "The complete memory model remains proposed. A private verified owned core and experimental production source integration are recorded by typed-preview-ownership-foundations; they do not establish stored-reference lifetimes/NLL, partial moves, field-disjoint loans, heap/drop safety, unsafe/FFI contracts or general memory-safety certification."
+      "limitations": "The complete memory model remains proposed. A private verified owned core and experimental production source integration are recorded by typed-preview-ownership-foundations; they do not establish stored-reference lifetimes/NLL, partial moves, heap/drop safety, unsafe/FFI contracts or general memory-safety certification."
     },
     {
       "id": "llvm-native-backend",
@@ -1647,13 +1647,13 @@
       "id": "projected-record-borrows",
       "status": "experimental",
       "classification": "production-path",
-      "summary": "Call-only shared and exclusive borrows of nested record fields with exact nominal views and whole-root loan authority.",
+      "summary": "Call-only shared and exclusive borrows of nested record fields with exact nominal views.",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "edition": "typed-preview",
       "backend": "Typed source checking, verified owned OIR, reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Reference compiler hosts; native execution on Linux x86_64 with LLVM 19.1.7.",
-      "limitations": "Record fields only in this extension. Loans retain whole-root conflicts and cannot escape calls. No field-disjoint loans, returned references or partial field moves.",
+      "limitations": "References cannot escape calls. Different field paths may be borrowed together; overlapping paths and whole-owner movement during a borrow remain rejected. Returned references and partial field moves are unavailable.",
       "spec": [
         "rfcs/0057-record-field-borrows.md"
       ],
@@ -1788,7 +1788,7 @@
       "edition": "typed-preview",
       "backend": "Owned typed frontend, reference execution and native builds.",
       "target_scope": "Linux x86_64 with LLVM 19.1.7 for native execution.",
-      "limitations": "Unconstrained constructor type parameters require explicit arguments. Record operations retain whole-owner moves and borrows. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
+      "limitations": "Unconstrained constructor type parameters require explicit arguments. Record operations retain whole-owner moves; different record fields may be borrowed together. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
       "spec": [
         "spec/typed-preview.md",
         "docs/TYPED_PROJECTS.md"
@@ -2031,6 +2031,33 @@
       ],
       "evidence": [],
       "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion, type/member navigation, rename and profiling are unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
+    },
+    {
+      "id": "disjoint-record-field-borrows",
+      "summary": "Simultaneous call-only borrows of different nested record fields",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Reference execution and supported Linux native targets; hosted qualification requires executed tests for the selected commit.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0067-disjoint-field-borrows.md",
+        "rfcs/0057-record-field-borrows.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/flow.rs",
+        "src/frontend/oir/owned/verified.rs",
+        "src/frontend/oir/owned/execute.rs"
+      ],
+      "tests": [
+        "tests/record_field_borrows.rs",
+        "src/frontend/oir/owned/verified.rs"
+      ],
+      "evidence": [],
+      "limitations": "Call-only aggregate field references. Same-field and parent/child paths overlap. Whole-owner moves, replacement and destruction remain forbidden during a field borrow. No stored or returned references, partial moves, scalar-place borrowing or disjoint ranges within one array field."
     }
   ]
 }

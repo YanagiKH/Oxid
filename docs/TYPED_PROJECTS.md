@@ -344,7 +344,10 @@ repeated occurrences of a type parameter must agree.
 Each declaration and ordered argument list defines a distinct type, even when
 its fields have the same layout. An owned enum payload transfers ownership to
 its match binding. Reading a generic scalar field requires `T: Copy`; record
-fields otherwise keep the existing whole-owner move and borrow rules.
+fields otherwise keep the existing move rules. Different record fields may be
+[borrowed together](../rfcs/0067-disjoint-field-borrows.md), including nested
+fields and fields that own buffers. The whole record cannot move while a field
+is borrowed; references remain call-only.
 
 ## Long-running programs
 

@@ -132,3 +132,7 @@ reference from ordinary typed projects and selected workspace members.
 
 [Scalar debug variables](0064-native-debug-variables.md) adds GDB inspection of
 typed function parameters and local values in their source block scopes.
+
+[RFC 0067](0067-disjoint-field-borrows.md) allows simultaneous call-only
+borrows of different nested record fields while retaining whole-owner move
+protection.

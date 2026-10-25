@@ -36,17 +36,17 @@ fields remain different types. Every field in the path must be visible to the
 calling module. An exclusive borrow requires a mutable owner or an exclusive
 reference parameter.
 
-The borrow covers the whole outer owner until the call returns. Passing two
-different fields does not permit overlapping exclusive access. Later arguments
-also cannot read another field of an already exclusively borrowed owner:
+Different fields may be borrowed together under the
+[field borrowing rules](0067-disjoint-field-borrows.md). A later argument may
+also read a different field while an earlier exclusive borrow is active:
 
 ```rust
-let amount = wrapper.amount;
-update(&mut wrapper.inner, amount);
+update(&mut wrapper.inner, wrapper.amount);
 ```
 
 Arguments evaluate left to right, and each borrow starts before evaluating the
-next argument. References remain call-only: they cannot be stored in locals or
+next argument. The whole owner cannot move or be destroyed until all its field
+borrows end. References remain call-only: they cannot be stored in locals or
 records, returned, or used to move a field out of its owner. Existing scalar
 slice and resource borrowing rules apply inside a borrowed record.
 
