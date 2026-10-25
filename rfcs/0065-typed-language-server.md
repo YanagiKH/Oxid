@@ -78,10 +78,10 @@ and the JSON parser's default nesting limit. Responses are bounded to 32 MiB
 before publication. A refresh retains at most 256 compiler diagnostics, 8 KiB of
 message text per diagnostic and eight related locations with 2 KiB messages.
 
-The service advertises synchronization, diagnostics, workspace folders and
-formatting. Completion, hover, go-to-definition, rename, code actions and
-profiling are not implemented. This experimental service does not complete the
-development-tool release gate.
+The service advertises synchronization, diagnostics, workspace folders,
+formatting and [definition/symbol queries](0066-editor-symbol-navigation.md).
+Completion, hover, rename, code actions and profiling are not implemented.
+This experimental service does not complete the development-tool release gate.
 
 ## Verification
 

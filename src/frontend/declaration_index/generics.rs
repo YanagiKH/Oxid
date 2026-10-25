@@ -1375,7 +1375,7 @@ impl<'a, 's> Walker<'a, 's> {
                 return Ok(id);
             }
         }
-        Err(error("unknown local in generic function", name))
+        Err(error("unknown local variable", name))
     }
     fn expect(&self, actual: Type, expected: Type, at: Span) -> Result<(), Box<Diagnostic>> {
         if actual == expected {

@@ -1997,7 +1997,7 @@
     },
     {
       "id": "typed-language-server",
-      "summary": "Live typed diagnostics and document formatting over open editor buffers",
+      "summary": "Live typed diagnostics, formatting, function/local definitions and source symbol lists",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -2007,7 +2007,8 @@
       "reviewer": "unassigned",
       "spec": [
         "rfcs/0065-typed-language-server.md",
-        "docs/TYPED_PROJECTS.md"
+        "docs/TYPED_PROJECTS.md",
+        "rfcs/0066-editor-symbol-navigation.md"
       ],
       "implementation": [
         "src/lsp_cli.rs",
@@ -2017,7 +2018,8 @@
         "src/lsp_cli/uri.rs",
         "src/project_cli/editor.rs",
         "src/frontend/editor.rs",
-        "src/frontend/project/editor_sources.rs"
+        "src/frontend/project/editor_sources.rs",
+        "src/frontend/editor/navigation.rs"
       ],
       "tests": [
         "tests/typed_language_server.rs",
@@ -2028,7 +2030,7 @@
         "src/lsp_cli/uri.rs"
       ],
       "evidence": [],
-      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion, navigation, rename and profiling are unavailable. Per-document, session, graph and protocol limits apply."
+      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion, type/member navigation, rename and profiling are unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
     }
   ]
 }

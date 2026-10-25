@@ -6,6 +6,9 @@ use super::{
 };
 use std::path::Path;
 
+pub(super) mod navigation;
+mod positions;
+
 pub(crate) use super::project::editor_sources::SourceOverlay;
 
 #[derive(Clone, Debug)]
@@ -21,6 +24,25 @@ pub(crate) struct EditorDiagnostic {
     pub message: String,
     pub location: Option<EditorLocation>,
     pub related: Vec<(EditorLocation, String)>,
+}
+
+pub(crate) struct EditorSymbol {
+    pub name: String,
+    pub kind: u8,
+    pub location: EditorLocation,
+    pub container: Option<String>,
+}
+
+pub(crate) struct EditorSymbols {
+    pub entries: Vec<EditorSymbol>,
+    pub files: usize,
+    pub bytes: usize,
+}
+
+pub(crate) struct EditorDefinition {
+    pub location: Option<EditorLocation>,
+    pub files: usize,
+    pub bytes: usize,
 }
 
 #[derive(Debug)]
@@ -59,7 +81,7 @@ pub(super) fn checked_sources(
     }
 }
 
-fn location(sources: &SourceMap, span: Span) -> Option<EditorLocation> {
+pub(super) fn location(sources: &SourceMap, span: Span) -> Option<EditorLocation> {
     if !sources.is_valid_span(span) {
         return None;
     }
@@ -120,6 +142,26 @@ pub(crate) fn check_entry(
     overlay: &SourceOverlay<'_>,
 ) -> EditorCheck {
     super::driver::editor_check(packages, entry, overlay)
+}
+
+pub(crate) fn definition(
+    packages: &[super::PackageSpec],
+    entry: Option<&Path>,
+    overlay: &SourceOverlay<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<EditorDefinition, Vec<EditorDiagnostic>> {
+    super::driver::editor_definition(packages, entry, overlay, path, offset)
+}
+
+pub(crate) fn symbols(
+    packages: &[super::PackageSpec],
+    entry: Option<&Path>,
+    overlay: &SourceOverlay<'_>,
+    path: Option<&Path>,
+    query: &str,
+) -> Result<EditorSymbols, Vec<EditorDiagnostic>> {
+    super::driver::editor_symbols(packages, entry, overlay, path, query)
 }
 
 pub(crate) fn format(path: &Path, text: &str) -> Result<String, Vec<EditorDiagnostic>> {

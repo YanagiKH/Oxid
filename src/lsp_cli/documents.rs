@@ -185,7 +185,7 @@ impl Documents {
 
 /// Position values beyond a line clamp as required by LSP. An index inside a
 /// UTF-16 surrogate pair has no UTF-8 source boundary and is rejected.
-fn position(text: &str, value: &Value) -> Result<usize, &'static str> {
+pub(super) fn position(text: &str, value: &Value) -> Result<usize, &'static str> {
     let line = value
         .get("line")
         .and_then(Value::as_u64)
