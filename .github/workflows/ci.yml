@@ -546,6 +546,8 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD
           python3 -B scripts/verify_linux_arm64_native.py \
             --repo . --expected-head "$EXPECTED_HEAD" \
             --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
