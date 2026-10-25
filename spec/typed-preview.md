@@ -1696,7 +1696,7 @@ X is the logical activation-fuel count. Xphysical includes the existing
 reference/loan view metadata and remains the reference expanded-cell admission
 count; the metadata and builtin scratch do not add logical activation fuel.
 
-Native admission separately uses whole-program `I = sum(S + A + O + R + L + C)`
+Bounded native admission separately uses whole-program `I = sum(S + A + O + R + L + C)`
 and `W = sum(P)`, each at most 8,192, including all argument positions, unused
 functions and untaken branches. [RFC 0027](../rfcs/0027-native-admission-inventories.md)
 replaces only the native aggregate/live Xphysical gates with these inventories.
@@ -1938,3 +1938,9 @@ owned results and call-only reborrows. Calls reserve storage before entering the
 callee. Limits and runtime errors are specified in
 [hosted native recursion](../rfcs/0058-hosted-native-recursion.md). The bounded
 native policy retains its acyclic call-graph and depth requirements.
+
+Hosted native projects permit up to 1,024 functions, 32,768 scalar storage slots,
+16,384 basic blocks and 65,536 compiler inventory items and owner width cells.
+All declarations count, including dependencies and unused functions. Per-function,
+verification, metadata, native storage and output limits also apply. See
+[hosted native program sizes](../rfcs/0062-hosted-native-program-size.md).

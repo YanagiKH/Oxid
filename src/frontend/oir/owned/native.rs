@@ -30,6 +30,8 @@ const MAX_FUNCTION_SLOTS: usize = 256;
 const MAX_SLOTS: usize = 8_192;
 const MAX_NATIVE_INVENTORY_ITEMS: usize = 8_192;
 const MAX_NATIVE_OWNER_WIDTH: usize = 8_192;
+const MAX_HOSTED_NATIVE_INVENTORY_ITEMS: usize = 65_536;
+const MAX_HOSTED_NATIVE_OWNER_WIDTH: usize = 65_536;
 const MAX_BLOCKS: usize = 4_096;
 const MAX_DEPTH: usize = 32;
 const MAX_COST: usize = 100_000;
@@ -209,8 +211,31 @@ impl Limits {
         metadata_bytes: plan::MAX_PLAN_BYTES,
         ir_bytes: MAX_IR_BYTES,
     };
+    fn for_policy(policy: NativeEntryPolicy) -> Self {
+        if policy.hosted() {
+            Self {
+                functions: super::super::native::MAX_HOSTED_FUNCTIONS,
+                scalar_slots: super::super::native::MAX_HOSTED_LOCALS,
+                blocks: super::super::native::MAX_HOSTED_BLOCKS,
+                inventory_items: MAX_HOSTED_NATIVE_INVENTORY_ITEMS,
+                owner_width: MAX_HOSTED_NATIVE_OWNER_WIDTH,
+                ..Self::DEFAULT
+            }
+        } else {
+            Self::DEFAULT
+        }
+    }
     fn bounded(self) -> Self {
-        let d = Self::DEFAULT;
+        self.clamped(Self::DEFAULT)
+    }
+    fn bounded_for(self, policy: NativeEntryPolicy) -> Self {
+        if policy.hosted() {
+            self.clamped(Self::for_policy(policy))
+        } else {
+            self.bounded()
+        }
+    }
+    fn clamped(self, d: Self) -> Self {
         Self {
             functions: self.functions.min(d.functions),
             parameters: self.parameters.min(d.parameters),
@@ -363,7 +388,7 @@ pub(super) fn native_module_with_execution(
         entry,
         sources,
         plan::MAX_FUEL,
-        Limits::DEFAULT,
+        Limits::for_policy(policy),
         policy,
         &mut Accounting::default(),
         names,
@@ -389,7 +414,7 @@ pub(super) fn native_debug_module_with_execution(
         entry,
         sources,
         plan::MAX_FUEL,
-        Limits::DEFAULT,
+        Limits::for_policy(policy),
         policy,
         &mut Accounting::default(),
         names,
@@ -607,7 +632,7 @@ fn native_module_policy_accounted_with_source_names_debug(
     let plan = ExecutionPlan::build(witness).map_err(|e| reject(e.name, e.span))?;
     accounting.metrics.plan_bytes = plan.metadata_bytes();
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(plan.metadata_bytes());
-    let limits = limits.bounded();
+    let limits = limits.bounded_for(policy);
     let bounds = admit_policy_accounted(&plan, limits, policy, accounting)?;
     let policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
     let admission_metadata = add(
@@ -840,7 +865,11 @@ fn admit_policy_accounted(
     limit(blocks, limits.blocks, "aggregate blocks", origin)?;
     // Independent compiler inventories replace reference-runtime X here.
     // Fixed count facts end before graph, diagnostic and emission phases.
-    admit_inventory_policy(plan, (limits.inventory_items, limits.owner_width))?;
+    admit_inventory_policy_with_execution(
+        plan,
+        (limits.inventory_items, limits.owner_width),
+        policy,
+    )?;
     let mut ready: Vec<_> = remaining
         .iter()
         .enumerate()
@@ -3365,6 +3394,15 @@ pub(super) fn admit_inventory_policy(
     execution: &ExecutionPlan<'_>,
     limits: (usize, usize),
 ) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    admit_inventory_policy_with_execution(execution, limits, NativeEntryPolicy::Result)
+}
+
+fn admit_inventory_policy_with_execution(
+    execution: &ExecutionPlan<'_>,
+    limits: (usize, usize),
+    policy: NativeEntryPolicy,
+) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    let maximum = Limits::for_policy(policy);
     let counts = plan::native_storage::NativeInventories::checked(execution)
         .map_err(|failure| reject(failure.name, failure.span))?;
     // An empty library has zero inventory but is not an executable entry.
@@ -3372,13 +3410,13 @@ pub(super) fn admit_inventory_policy(
     if let Some(function) = execution.witness().functions().first() {
         limit(
             counts.items(),
-            limits.0.min(MAX_NATIVE_INVENTORY_ITEMS),
+            limits.0.min(maximum.inventory_items),
             "aggregate compiler inventory items",
             function.span,
         )?;
         limit(
             counts.owner_width(),
-            limits.1.min(MAX_NATIVE_OWNER_WIDTH),
+            limits.1.min(maximum.owner_width),
             "aggregate owner width cells",
             function.span,
         )?;
@@ -5789,6 +5827,10 @@ mod division_tests {
 #[cfg(test)]
 #[path = "native_inventory_admission_tests.rs"]
 mod inventory_admission_tests;
+
+#[cfg(test)]
+#[path = "hosted_capacity_tests.rs"]
+mod hosted_capacity_tests;
 
 #[cfg(test)]
 mod source_name_controls {

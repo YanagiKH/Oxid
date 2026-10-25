@@ -57,7 +57,8 @@ callee's remaining resources are released.
 
 This applies to native typed project builds on Linux x86_64, using either native
 optimization profile and either result or process entry. Hosted execution has no
-cumulative work budget. Its compiler size and allocation limits still apply.
+cumulative work budget. Its [program-size limits](0062-hosted-native-program-size.md)
+and allocation limits still apply.
 Nonrecursive hosted call chains can also exceed the bounded policy's depth of
 32 while satisfying the remaining compiler limits.
 
