@@ -243,6 +243,13 @@ pub(super) enum StmtKind {
         condition: ExprId,
         body: BodyBlockId,
     },
+    ForRange {
+        loop_id: LoopId,
+        binding: BindingId,
+        start: ExprId,
+        end: ExprId,
+        body: BodyBlockId,
+    },
     If {
         condition: ExprId,
         then_block: BodyBlockId,

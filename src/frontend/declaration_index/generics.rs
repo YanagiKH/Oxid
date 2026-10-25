@@ -1655,7 +1655,29 @@ impl<'a, 's> Walker<'a, 's> {
                     then_flow.union(else_flow)
                 }
                 StmtKind::While { condition, body } => {
-                    self.check_loop(*condition, *body, loops, statement.span)?
+                    self.check_loop(Some(*condition), *body, loops, statement.span)?
+                }
+                StmtKind::ForRange {
+                    name,
+                    start,
+                    end,
+                    body,
+                } => {
+                    let first = self.expression(*start)?;
+                    if !matches!(first, Type::Value(Value::Concrete(ValueTy::Scalar(ty))) if ty.integer_bits().is_some())
+                    {
+                        return Err(error(
+                            "range bounds require known integer types",
+                            self.program.expressions[start.0].span,
+                        ));
+                    }
+                    let last = self.expression(*end)?;
+                    self.expect(last, first, self.program.expressions[end.0].span)?;
+                    let outer = self.bindings.len();
+                    self.bind(*name, first, false)?;
+                    let flow = self.check_loop(None, *body, loops, statement.span)?;
+                    self.bindings.truncate(outer);
+                    flow
                 }
                 StmtKind::Break | StmtKind::Continue => {
                     if loops == 0 {

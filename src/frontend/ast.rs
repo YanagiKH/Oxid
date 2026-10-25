@@ -565,6 +565,12 @@ pub enum StmtKind {
         condition: ExprId,
         body: BodyBlockId,
     },
+    ForRange {
+        name: Span,
+        start: ExprId,
+        end: ExprId,
+        body: BodyBlockId,
+    },
     If {
         condition: ExprId,
         then_block: BodyBlockId,
@@ -604,8 +610,22 @@ enum ProjectSyntax {
     Original,
     Project,
     StdImports,
+    OriginalRanges,
+    ProjectRanges,
+    StdImportsRanges,
 }
 impl ProjectSyntax {
+    fn with_ranges(self, ranges: bool) -> Self {
+        if !ranges {
+            return self;
+        }
+        match self {
+            Self::Original => Self::OriginalRanges,
+            Self::Project => Self::ProjectRanges,
+            Self::StdImports => Self::StdImportsRanges,
+            other => other,
+        }
+    }
     fn new(project: bool, std_imports: bool) -> Self {
         if std_imports {
             Self::StdImports
@@ -620,7 +640,10 @@ impl std::fmt::Debug for ProjectSyntax {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This explicit representation conversion preserves the historical
         // project_syntax boolean. Std roots remain visible in every AST path.
-        std::fmt::Debug::fmt(&(*self != Self::Original), formatter)
+        std::fmt::Debug::fmt(
+            &(!matches!(self, Self::Original | Self::OriginalRanges)),
+            formatter,
+        )
     }
 }
 const _: () = {
@@ -687,6 +710,13 @@ impl Program {
         let mut project_syntax =
             !modules.is_empty() || !imports.is_empty() || source.has_generics();
         let mut std_import_syntax = false;
+        let range_syntax = functions.iter().any(|f| {
+            f.blocks.iter().any(|b| {
+                b.body
+                    .iter()
+                    .any(|s| matches!(s.kind, StmtKind::ForRange { .. }))
+            })
+        });
         // Both private summaries are derived during bounded AST construction.
         // The index never needs an unmetered path/import scan to read them.
         for path in &paths {
@@ -710,7 +740,8 @@ impl Program {
             path_segments,
             imports,
             source,
-            project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax),
+            project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax)
+                .with_ranges(range_syntax),
         }
     }
     pub(super) fn syntax_matches(&self, other: &Self) -> bool {
@@ -751,10 +782,24 @@ impl Program {
         )
     }
     pub(super) fn uses_project_syntax(&self) -> bool {
-        self.project_syntax != ProjectSyntax::Original
+        !matches!(
+            self.project_syntax,
+            ProjectSyntax::Original | ProjectSyntax::OriginalRanges
+        )
     }
     pub(super) fn uses_std_imports(&self) -> bool {
-        self.project_syntax == ProjectSyntax::StdImports
+        matches!(
+            self.project_syntax,
+            ProjectSyntax::StdImports | ProjectSyntax::StdImportsRanges
+        )
+    }
+    pub(super) fn has_range_for(&self) -> bool {
+        matches!(
+            self.project_syntax,
+            ProjectSyntax::OriginalRanges
+                | ProjectSyntax::ProjectRanges
+                | ProjectSyntax::StdImportsRanges
+        )
     }
     /// Visit every retained source-span occurrence once, and check every arena
     /// edge without indexing it first. Source identity and UTF-8 policy belong
@@ -804,6 +849,7 @@ impl Program {
         }
         let mut project_syntax =
             !self.modules.is_empty() || !self.imports.is_empty() || self.has_generics();
+        let mut range_syntax = false;
         let path_valid = |path: ItemPath, valid: &mut dyn FnMut(Span) -> bool| match path {
             ItemPath::Unqualified(span) => valid(span),
             ItemPath::Absolute(id) => {
@@ -1187,6 +1233,19 @@ impl Program {
                         StmtKind::While { condition, body } => {
                             expr_valid(*condition) && block_valid(*body)
                         }
+                        StmtKind::ForRange {
+                            name,
+                            start,
+                            end,
+                            body,
+                        } => {
+                            range_syntax = true;
+                            enum_syntax.get_or_insert(statement.span);
+                            valid(*name)
+                                && expr_valid(*start)
+                                && expr_valid(*end)
+                                && block_valid(*body)
+                        }
                         StmtKind::If {
                             condition,
                             then_block,
@@ -1405,7 +1464,9 @@ impl Program {
                 return false;
             }
         }
-        visit() && ProjectSyntax::new(project_syntax, *std_syntax) == self.project_syntax
+        visit()
+            && ProjectSyntax::new(project_syntax, *std_syntax).with_ranges(range_syntax)
+                == self.project_syntax
     }
     /// Float literals and annotations select the current typed checker.
     pub(super) fn uses_float_syntax(&self, source: &SourceFile) -> bool {
@@ -1479,6 +1540,7 @@ impl Program {
                             StmtKind::DestructureRecord { .. }
                             | StmtKind::FieldAssign { .. }
                             | StmtKind::IndexAssign { .. }
+                            | StmtKind::ForRange { .. }
                             | StmtKind::Match { .. } => true,
                             _ => false,
                         })

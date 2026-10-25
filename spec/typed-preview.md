@@ -79,7 +79,8 @@ Native project builds also support [workspaces](../rfcs/0035-typed-workspaces.md
 [source packages](../rfcs/0038-typed-source-packages.md),
 [relative diagnostic paths](../rfcs/0039-reproducible-native-builds.md), and
 [`dev`/`release` profiles](../rfcs/0040-native-build-profiles.md).
-Typed Git and registry dependencies remain unimplemented.
+Typed Git dependencies require pinned complete commit hashes; see the project
+workflow. Registry dependencies remain unimplemented.
 Explicitly choosing a legacy command on a source remains possible; the selector
 is not a file-carried or project-wide edition marker.
 
@@ -161,6 +162,20 @@ invalid Unicode scalar values report E0612. Convert a named character back
 with `.to_u32()`. Text results use UTF-8 and JSON results use one-character
 strings. See [characters](../rfcs/0056-characters.md) for escapes, storage and
 execution rules.
+
+## Integer range loops
+
+`for index in start..end { ... }` accepts matching integer bounds of any
+supported integer type. Bounds evaluate left-to-right exactly once, before
+iteration; changing an original bound variable in the body does not change
+the range. The end is exclusive. An equal or reversed range has no iterations.
+
+The index has the bounds' type, is immutable, and is scoped to the body under
+the existing binding-name rules. `break` and `continue` target the nearest loop;
+return and all loop transfers retain ordinary ownership cleanup. The implicit
+increment cannot overflow: it executes only when the current value is strictly
+below the end. Compiler limits and the selected execution policy still apply.
+Inclusive ranges, range values and general iterator protocols are unavailable.
 
 ## Fixed scalar arrays
 

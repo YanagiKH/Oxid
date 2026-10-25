@@ -528,6 +528,17 @@ impl fmt::Display for HirStatement<'_> {
             S::Return(id) => write!(f, "[\"return\",{}]", Optional(id.map(|id| id.0))),
             S::Break { target } => write!(f, "[\"break\",{}]", target.0),
             S::Continue { target } => write!(f, "[\"continue\",{}]", target.0),
+            S::ForRange {
+                loop_id,
+                binding,
+                start,
+                end,
+                body,
+            } => write!(
+                f,
+                "[\"for-range\",{},{},{},{},{}]",
+                loop_id.0, binding.0, start.0, end.0, body.0
+            ),
             S::While {
                 loop_id,
                 condition,

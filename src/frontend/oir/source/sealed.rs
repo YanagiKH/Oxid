@@ -38,7 +38,7 @@ pub(in crate::frontend) fn check_source<'s>(
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
     let owner =
         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
-    let (body, entry) = if !ast.enums.is_empty() {
+    let (body, entry) = if !ast.enums.is_empty() || ast.has_range_for() {
         let (program, entry) = owned::source::check_enum_source(owner)?;
         (CheckedBody::Owned(program), entry)
     } else if ast.uses_owned_syntax(source)

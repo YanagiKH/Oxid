@@ -3542,6 +3542,21 @@ fn check_body(
         }
         let root = match statement.kind {
             StmtKind::Match { .. } => None,
+            StmtKind::ForRange { start, end, .. } => {
+                for root in [start, end] {
+                    expression_type(
+                        program,
+                        function,
+                        root,
+                        &bindings,
+                        &mut expressions,
+                        &mut projections,
+                        &mut borrow_projections,
+                        paid.as_deref_mut(),
+                    )?;
+                }
+                None
+            }
             StmtKind::Let { binding, init } => {
                 initializer_type(
                     program,
@@ -3872,6 +3887,59 @@ fn check_body(
                     FlowSummary::CONTINUE
                 };
                 flow = flow.then(transfer);
+            }
+            StmtKind::ForRange {
+                loop_id,
+                binding,
+                start,
+                end,
+                body,
+            } => {
+                let expected = expressions[start.0].expect("typed range bound");
+                if !matches!(expected, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                    return Err(diagnostic(
+                        "E0300",
+                        "type",
+                        "range bounds require matching integer types",
+                        Some(function.expressions[start.0].span),
+                    ));
+                }
+                for root in [start, end] {
+                    let actual = expressions[root.0].expect("typed range bound");
+                    if actual != expected {
+                        return Err(mismatch(
+                            program,
+                            expected,
+                            actual,
+                            function.expressions[root.0].span,
+                        ));
+                    }
+                }
+                bindings[binding.0] = Some(ParameterTy::Value(expected));
+                assert_eq!(
+                    loop_id.0, body.0,
+                    "resolved range loop ID is its unique body block"
+                );
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
+                frames.push(TypeFrame::WhileJoin {
+                    block,
+                    index: index + 1,
+                    before: flow,
+                    active_loop,
+                    body,
+                });
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
+                frames.push(TypeFrame::Block {
+                    block: body,
+                    index: 0,
+                    flow: FlowSummary::FALLTHROUGH,
+                    active_loop: Some(loop_id),
+                });
+                continue;
             }
             StmtKind::While {
                 loop_id,

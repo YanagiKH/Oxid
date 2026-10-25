@@ -1841,6 +1841,36 @@
         "scripts/verify_linux_arm64_native.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "integer-range-loops",
+      "summary": "Exclusive integer range iteration with once-only bounds, immutable scoped indexes and ordinary loop transfers.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Typed reference execution and LLVM native project builds.",
+      "target_scope": "Reference execution on supported compiler hosts; native builds on Linux x86_64 and ARM64 with LLVM 19.1.7.",
+      "limitations": "Bounds require the same known integer type. Inclusive ranges, range values and general iterator protocols are unavailable. Existing compiler limits and bounded/hosted execution policies apply.",
+      "spec": [
+        "spec/typed-preview.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/declaration_index/generics.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/source/lower.rs"
+      ],
+      "tests": [
+        "tests/typed_range_for.rs",
+        "src/frontend/oir/owned/source/range_for_tests.rs",
+        "scripts/test_range_for_compatibility.py"
+      ],
+      "evidence": []
     }
   ]
 }

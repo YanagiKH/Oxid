@@ -97,6 +97,8 @@ impl<'s> BuiltinAdmission<'s> {
 pub(super) enum CandidateOrigin {
     Current,
     CurrentGeneric(Box<[super::generics::Plan; 1]>),
+    CurrentRanges,
+    CurrentGenericRanges(Box<[super::generics::Plan; 1]>),
     Enum(CompactSpan),
     Builtin(CompactSpan),
     #[cfg(test)]
@@ -105,7 +107,10 @@ pub(super) enum CandidateOrigin {
 impl CandidateOrigin {
     pub(super) fn span(&self) -> Option<Span> {
         match self {
-            Self::Current | Self::CurrentGeneric(_) => None,
+            Self::Current
+            | Self::CurrentGeneric(_)
+            | Self::CurrentRanges
+            | Self::CurrentGenericRanges(_) => None,
             Self::Enum(at) | Self::Builtin(at) => Some(at.span()),
             #[cfg(test)]
             Self::Output(at) => Some(at.span()),
@@ -535,6 +540,9 @@ fn collect<'s>(
         }
         if !valid {
             return Err(bad(at));
+        }
+        if ast.has_range_for() && matches!(candidate_source_origin, CandidateOrigin::Current) {
+            candidate_source_origin = CandidateOrigin::CurrentRanges;
         }
         if let Some(span) = enum_syntax {
             if syntax == CollectionSyntax::Closed {
@@ -1387,16 +1395,20 @@ impl<'s> DeclarationFacts<'s> {
                 .map_err(|error| vec![*error])?;
             let plan = super::generics::Plan::build(&index, work, allocator)
                 .map_err(|error| vec![*error])?;
-            index.tables.candidate_source_origin = CandidateOrigin::CurrentGeneric(
-                allocator
-                    .boxed_carrier(plan, "generic instantiation owner")
-                    .map_err(|_| {
-                        vec![*resource(
-                            "generic instantiation owner allocation failed",
-                            index.sources().eof(),
-                        )]
-                    })?,
-            );
+            let ranges = index.has_range_for();
+            let plan = allocator
+                .boxed_carrier(plan, "generic instantiation owner")
+                .map_err(|_| {
+                    vec![*resource(
+                        "generic instantiation owner allocation failed",
+                        index.sources().eof(),
+                    )]
+                })?;
+            index.tables.candidate_source_origin = if ranges {
+                CandidateOrigin::CurrentGenericRanges(plan)
+            } else {
+                CandidateOrigin::CurrentGeneric(plan)
+            };
         }
         Ok(index)
     }
@@ -1704,7 +1716,16 @@ impl<'s> DeclarationIndex<'s> {
     pub fn is_current_source_pipeline(&self) -> bool {
         matches!(
             self.tables.candidate_source_origin,
-            CandidateOrigin::Current | CandidateOrigin::CurrentGeneric(_)
+            CandidateOrigin::Current
+                | CandidateOrigin::CurrentGeneric(_)
+                | CandidateOrigin::CurrentRanges
+                | CandidateOrigin::CurrentGenericRanges(_)
+        )
+    }
+    pub fn has_range_for(&self) -> bool {
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::CurrentRanges | CandidateOrigin::CurrentGenericRanges(_)
         )
     }
     #[cfg(test)]
@@ -2059,7 +2080,9 @@ impl<'s> DeclarationIndex<'s> {
     }
     pub(super) fn generic_plan(&self) -> Option<&super::generics::Plan> {
         match &self.tables.candidate_source_origin {
-            CandidateOrigin::CurrentGeneric(plan) => Some(&plan[0]),
+            CandidateOrigin::CurrentGeneric(plan) | CandidateOrigin::CurrentGenericRanges(plan) => {
+                Some(&plan[0])
+            }
             _ => None,
         }
     }

@@ -414,7 +414,9 @@ fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), 
                 Some(arm) => Some(arm.body),
                 None => None,
             },
-            StmtKind::While { body, .. } if cursor.child == 0 => Some(*body),
+            StmtKind::While { body, .. } | StmtKind::ForRange { body, .. } if cursor.child == 0 => {
+                Some(*body)
+            }
             StmtKind::If {
                 then_block,
                 else_block,

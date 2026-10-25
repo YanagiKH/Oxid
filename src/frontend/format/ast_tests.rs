@@ -678,6 +678,18 @@ impl<'a> Fingerprint<'a> {
                 self.expression(*condition);
                 self.block(function, blocks, *body);
             }
+            StmtKind::ForRange {
+                name,
+                start,
+                end,
+                body,
+            } => {
+                self.tag("for-range");
+                self.spelling(*name);
+                self.expression(*start);
+                self.expression(*end);
+                self.block(function, blocks, *body);
+            }
             StmtKind::If {
                 condition,
                 then_block,

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
 import legacy_scalar_observer_record_patterns as adapter
+import legacy_scalar_observer_range_for as current
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,11 +58,11 @@ class RecordPatternObserverAdapterTests(unittest.TestCase):
         name = "declaration_index/generics/nominal.rs"
         for kind, builder in (("parser", parser), ("static", static)):
             self.assertEqual(builder.SOURCE_FILES.count(name), 1)
-            self.assertEqual(builder.SCHEMA, adapter.SCHEMA)
+            self.assertEqual(builder.SCHEMA, current.SCHEMA)
             for filename, _ in builder.WRAPPER_FILES:
                 original = self.original(kind, filename)
                 self.assertEqual(builder.adapt_wrapper(filename, original),
-                                 adapter.adapt_wrapper(kind, filename, original))
+                                 current.adapt_wrapper(kind, filename, original))
 
 
 if __name__ == "__main__":
