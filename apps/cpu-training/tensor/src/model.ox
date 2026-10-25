@@ -46,9 +46,7 @@ pub fn next_random(state: &mut Random) -> u32 {
 }
 
 fn root(number: f64) -> f64 {
-    let mut estimate = 1.0;
-    for iteration in 0..32 { estimate = 0.5 * (estimate + number / estimate); }
-    return estimate;
+    return number.sqrt();
 }
 
 fn initialize_values(bytes: &mut [u8], state: &mut Random, fan_in: i32) -> () {

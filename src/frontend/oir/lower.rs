@@ -407,6 +407,7 @@ fn lower_expression(
                         | hir::ConversionOp::CharToU32
                         | hir::ConversionOp::ToFloat(_)
                         | hir::ConversionOp::FloatToBits
+                        | hir::ConversionOp::FloatSqrt
                         | hir::ConversionOp::FloatFromBits(_)
                         | hir::ConversionOp::ToI64
                         | hir::ConversionOp::ToI32Checked

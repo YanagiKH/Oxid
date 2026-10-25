@@ -144,7 +144,10 @@ for precedence, examples and execution rules.
 
 ## Floating-point numbers
 
-Use `f32` or `f64` for IEEE 754 binary floating-point arithmetic. Decimal and
+Use `f32` or `f64` for IEEE 754 binary floating-point arithmetic. Named float
+values support `.sqrt()`, preserving the operand width and rounding to nearest,
+ties to even. Negative inputs produce the canonical NaN; signed zeros keep
+their signs. Decimal and
 scientific literals default to `f64`; write `0.1f32` for single precision.
 Operations require matching types. Named numeric values convert explicitly
 with `.to_f32()` or `.to_f64()`; `.to_bits()` and the matching `from_bits`

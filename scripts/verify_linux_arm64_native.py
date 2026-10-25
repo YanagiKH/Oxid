@@ -23,7 +23,7 @@ PUBLIC_TESTS = (
     "owned_enum_payload_acceptance", "byte_record_fields", "bytebuf_binary",
     "hosted_execution", "byte_buffer_transfer", "byte_strings", "native_files",
     "process_arguments", "typed_i64", "typed_integer_widths", "typed_byte_integers",
-    "typed_integer128", "typed_integer_bits", "typed_floats", "typed_characters",
+    "typed_integer128", "typed_integer_bits", "typed_floats", "typed_float_roots", "typed_characters",
     "record_field_borrows", "typed_git_dependencies", "hosted_recursion",
     "typed_generics", "typed_nominal_generics", "typed_record_patterns",
     "typed_record_enum_fields", "typed_constructor_inference", "typed_range_for", "native_debug_info",
@@ -93,6 +93,9 @@ def verify(args):
                               ["frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal",
                                "--ignored", "--exact"],
                               exact="frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal")
+        runner.command("float-square-roots", [sys.executable, "-B", "scripts/verify_float_roots.py",
+                       report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
+                       "--output", output / "float-square-roots", "--llvm-bin", args.llvm_bin])
         runner.command("source-package-application", [sys.executable, "-B", "scripts/verify_typed_package_bundle.py",
                        report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                        "--output", output / "source-packages", "--native"])

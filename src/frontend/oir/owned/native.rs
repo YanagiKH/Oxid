@@ -3427,7 +3427,7 @@ fn emit(
             .unwrap();
     }
     if plan.uses_floats() {
-        out.write_str("declare void @__oxid_float_runtime()\n")
+        out.write_str("declare void @__oxid_float_runtime()\ndeclare float @llvm.sqrt.f32(float)\ndeclare double @llvm.sqrt.f64(double)\n")
             .unwrap();
     }
     if matches!(plan.witness().functions()[entry.0].result, ValueTy::Scalar(ty) if ty.floating()) {

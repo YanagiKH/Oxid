@@ -397,6 +397,7 @@ impl<'a> Fingerprint<'a> {
                     ConversionOp::ToCharChecked => "to-char-checked",
                     ConversionOp::CharToU32 => "char-to-u32",
                     ConversionOp::FloatToBits => "float-to-bits",
+                    ConversionOp::FloatSqrt => "float-sqrt",
                     ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F32) => {
                         "f32-from-bits"
                     }

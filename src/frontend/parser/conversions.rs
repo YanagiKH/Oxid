@@ -22,6 +22,7 @@ impl Parser<'_> {
             "to_f32" if self.wide_scalars_enabled() => ConversionOp::ToFloat(FloatTypeSyntax::F32),
             "to_f64" if self.wide_scalars_enabled() => ConversionOp::ToFloat(FloatTypeSyntax::F64),
             "to_bits" if self.wide_scalars_enabled() => ConversionOp::FloatToBits,
+            "sqrt" if self.wide_scalars_enabled() => ConversionOp::FloatSqrt,
             "to_u8_checked" => ConversionOp::ToU8Checked,
             "to_i32" => ConversionOp::ToI32,
             "to_i64" if self.wide_scalars_enabled() => ConversionOp::ToI64,

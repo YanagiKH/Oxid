@@ -1623,6 +1623,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 }
                 op @ (source::ConversionOp::ToFloat(_)
                 | source::ConversionOp::FloatToBits
+                | source::ConversionOp::FloatSqrt
                 | source::ConversionOp::FloatFromBits(_)) => Rvalue::FloatConvert {
                     op,
                     operand: self.operand(operand)?,
