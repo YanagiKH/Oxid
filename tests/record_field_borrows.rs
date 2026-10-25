@@ -226,17 +226,19 @@ fn disjoint_fields_support_exclusive_mixed_nested_and_left_to_right_access() {
 fn deeply_nested_sample(depth: usize) -> String {
     let mut source = String::from("struct Value{value:i32}struct Pair{left:Value,right:Value}\nfn change(a:&mut Value,b:&mut Value)->i32{a.value=a.value+10;b.value=b.value+20;return a.value*100+b.value;}\n");
     let mut ty = String::from("Pair");
-    let mut initializers = String::from("let seed=Pair{left:Value{value:1},right:Value{value:2}};");
-    let mut value = String::from("seed");
+    let mut value = String::from("Pair{left:Value{value:1},right:Value{value:2}}");
     for index in 0..depth {
         source.push_str(&format!("struct Layer{index}{{next:{ty}}}\n"));
         ty = format!("Layer{index}");
-        initializers.push_str(&format!("let layer{index}={ty}{{next:{value}}};"));
-        value = format!("layer{index}");
+        value = format!("{ty}{{next:{value}}}");
+        if index % 4 == 3 || index + 1 == depth {
+            source.push_str(&format!("fn make{index}()->{ty}{{return {value};}}\n"));
+            value = format!("make{index}()");
+        }
     }
     let path = "root".to_string() + &".next".repeat(depth);
     source.push_str(&format!(
-        "fn main()->i32{{{initializers}let mut root={value};return change(&mut {path}.left,&mut {path}.right);}}"
+        "fn main()->i32{{let mut root={value};return change(&mut {path}.left,&mut {path}.right);}}"
     ));
     source
 }
