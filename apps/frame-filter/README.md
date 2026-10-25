@@ -3,7 +3,7 @@
 A small binary stream tool that validates four-byte records, sorts numeric
 pairs, preserves raw byte pairs, and removes padding records.
 
-Build and run on Linux x86_64 with Oxid and LLVM 19.1.7 installed:
+Build and run on Linux x86_64 or ARM64 with Oxid and LLVM 19.1.7 installed:
 
 ```sh
 cd apps/frame-filter
