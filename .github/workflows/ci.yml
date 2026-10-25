@@ -257,6 +257,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  arm64-host-source-policy-predecessor:
+    name: ARM64 host-test source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_arm64_host_predecessor_tests.py "$RUNNER_TEMP/arm64-host-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 18314e95d6afa3d8a4da7970dbddc828f4f6cbac
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/arm64-host-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/arm64-host-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-host-source-policy-predecessor
+          path: ${{ runner.temp }}/arm64-host-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   cross-platform:
     name: Current compiler tests (${{ matrix.os }})
     strategy:

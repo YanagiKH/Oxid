@@ -58,6 +58,10 @@ HISTORICAL_ONLY = {
 # These complete source-pinned modules test policies on their exact parent
 # compilers. ci.yml replays them unchanged in separate required jobs.
 PREDECESSOR_ONLY = {
+    "test_arm64_host_compatibility": (
+        "91b9cb1ae16da868ee873a36f6efef8ef93745bfed3b8684340c828cf77421a1",
+        "18314e95d6afa3d8a4da7970dbddc828f4f6cbac",
+        "binds the pre-documentation module owners and ARM64 test-only correction scope"),
     "test_byte_string_compatibility": (
         'd60fd64d3a8116e191727e84194729063d1068b4da17380a3e3b6ee4952c31d8',
         "22d04a015a444edcb600a6011cdb0e2c8529cb34",

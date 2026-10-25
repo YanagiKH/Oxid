@@ -114,6 +114,14 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('name: byte-string-source-policy-predecessor', literals)
         self.assertNotRegex(literals, r'(?m)^    if:|continue-on-error:')
 
+        arm64 = block(self.ci, 'arm64-host-source-policy-predecessor', 2)
+        self.assertIn('ref: 18314e95d6afa3d8a4da7970dbddc828f4f6cbac', arm64)
+        self.assertIn('fetch-depth: 0', arm64)
+        self.assertIn('scripts/run_arm64_host_predecessor_tests.py', arm64)
+        self.assertIn('arm64-host-source-policy-replay.py" --repo .', arm64)
+        self.assertIn('name: arm64-host-source-policy-predecessor', arm64)
+        self.assertNotRegex(arm64, r'(?m)^    if:|continue-on-error:')
+
     def test_historical_provenance_reads_are_authorized_without_event_spoofing(self):
         for workflow in (self.ci, self.release, self.historical):
             self.assertIn('actions: read', block(workflow, 'permissions'))
