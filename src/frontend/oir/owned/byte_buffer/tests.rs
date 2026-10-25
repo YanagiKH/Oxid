@@ -52,8 +52,8 @@ fn bytebuf_noop_operations_allocate_nothing_even_with_zero_budget_and_fuel() {
     assert_eq!(heap.try_resize(&mut b, 0, 99, &mut 0), Ok(GrowStatus::Ok));
     heap.truncate(&mut b, 10).unwrap();
     assert_eq!(heap.ledger(), Ledger::default());
-    assert_eq!(heap.range(&b, 0, 0).unwrap(), &[]);
-    assert_eq!(heap.range_mut(&b, 0, 0).unwrap(), &[]);
+    assert_eq!(heap.range(&b, 0, 0).unwrap(), &[] as &[u8]);
+    assert_eq!(heap.range_mut(&b, 0, 0).unwrap(), &[] as &[u8]);
     assert_eq!(heap.fault, Some((Boundary::Allocate, 0)));
 }
 
@@ -186,7 +186,7 @@ fn bytebuf_shrink_regrow_overwrites_old_tail_and_never_exposes_capacity() {
     assert_eq!(heap.try_reserve(&mut b, 0, &mut 0), Ok(GrowStatus::Ok));
     assert_eq!(heap.try_extend(&mut b, &[], &mut 0), Ok(GrowStatus::Ok));
     assert_eq!(heap.try_resize(&mut b, 1, 42, &mut 0), Ok(GrowStatus::Ok));
-    assert_eq!(heap.range(&b, 1, 1).unwrap(), &[]);
+    assert_eq!(heap.range(&b, 1, 1).unwrap(), &[] as &[u8]);
 }
 
 #[test]

@@ -70,7 +70,7 @@
         "LSP, formatter, test runner, debugger integration, versioned documentation and profiling support the same ordinary project workflow."
       ],
       "remaining": [
-        "Typed project/workspace API generation uses checked sources, manifests and locks; the complete cross-file language server, debugger, versioned documentation delivery and profiling workflow remains incomplete."
+        "Typed project/workspace API generation uses checked sources, manifests and locks; live cross-file diagnostics and formatting use unsaved editor buffers. Completion, navigation, aggregate debugging, versioned documentation delivery and profiling remain incomplete."
       ]
     },
     {

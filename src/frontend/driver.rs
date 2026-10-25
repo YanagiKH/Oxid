@@ -170,6 +170,15 @@ fn prepare_package_with_limits<'a>(
     entry_override: Option<&Path>,
     limits: ProjectLimits,
 ) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
+    prepare_package_with_editor(packages, entry_override, limits, None)
+}
+
+fn prepare_package_with_editor<'a>(
+    packages: &'a [PackageSpec],
+    entry_override: Option<&Path>,
+    limits: ProjectLimits,
+    overlay: Option<&super::project::editor_sources::SourceOverlay<'_>>,
+) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
     packages::validate_graph(packages, entry_override).map_err(|error| {
         PackagePreparationError {
             sources: SourceMap::new(),
@@ -181,13 +190,21 @@ fn prepare_package_with_limits<'a>(
             .unwrap_or(&packages[0].entry)
             .to_str()
             .expect("validated UTF-8 entry");
-        let project = ProjectSources::load_typed(entry, limits)?;
+        let project = if let Some(overlay) = overlay {
+            ProjectSources::load_typed_editor(entry, limits, overlay)?
+        } else {
+            ProjectSources::load_typed(entry, limits)?
+        };
         return Ok(PreparedPackageProject {
             sources: PreparedSources::Single(project),
             dependencies: Vec::new(),
         });
     }
-    let sources = PackageSources::load(packages, entry_override, limits)?;
+    let sources = if overlay.is_some() {
+        PackageSources::load_with_editor(packages, entry_override, limits, overlay)?
+    } else {
+        PackageSources::load(packages, entry_override, limits)?
+    };
     let dependencies = match dependency_fingerprints(&sources, packages.len()) {
         Ok(dependencies) => dependencies,
         Err(error) => {
@@ -201,6 +218,30 @@ fn prepare_package_with_limits<'a>(
         sources: PreparedSources::Packages(sources),
         dependencies,
     })
+}
+
+/// Editor checking has the same grammar, package namespaces, type checking,
+/// ownership and verified OIR as project checking. It performs no execution,
+/// native compilation, artifact publication or lock update.
+pub(super) fn editor_check(
+    packages: &[PackageSpec],
+    entry_override: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+) -> super::editor::EditorCheck {
+    match prepare_package_with_editor(
+        packages,
+        entry_override,
+        ProjectLimits::default(),
+        Some(overlay),
+    ) {
+        Err(error) => super::editor::checked_sources(&error.sources, &error.diagnostics, false),
+        Ok(prepared) => match prepared.checked() {
+            Ok(_) => super::editor::checked_sources(prepared.project().sources(), &[], true),
+            Err(errors) => {
+                super::editor::checked_sources(prepared.project().sources(), &errors, true)
+            }
+        },
+    }
 }
 
 fn fingerprint_error() -> Box<Diagnostic> {

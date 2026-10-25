@@ -29,7 +29,7 @@ SOURCE_FILES = (
     "declaration_index/enum_views.rs",
     "declaration_index/resource.rs", "declaration_index/sealed.rs",
     "declaration_index/u8_reservation.rs",
-    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs",
+    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs", "project/editor_sources.rs",
     "oir/owned_types.rs", "oir/owned_types/enums.rs", "oir/owned_types/resources.rs",
     "oir/owned_types/composition.rs",
 )

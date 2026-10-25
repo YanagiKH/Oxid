@@ -1994,6 +1994,41 @@
       ],
       "evidence": [],
       "limitations": "One static HTML page with plain-text doc comments. Markdown, documentation tests, search and external dependency pages are not provided. Compiler/workspace source limits and a 32 MiB output limit apply."
+    },
+    {
+      "id": "typed-language-server",
+      "summary": "Live typed diagnostics and document formatting over open editor buffers",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "checked-source / LSP stdio",
+      "target_scope": "Portable single-file compiler checks; project modules and dependency loading currently Linux only. Hosted qualification requires executed exact-source tests.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0065-typed-language-server.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/lsp_cli.rs",
+        "src/lsp_cli/documents.rs",
+        "src/lsp_cli/json.rs",
+        "src/lsp_cli/transport.rs",
+        "src/lsp_cli/uri.rs",
+        "src/project_cli/editor.rs",
+        "src/frontend/editor.rs",
+        "src/frontend/project/editor_sources.rs"
+      ],
+      "tests": [
+        "tests/typed_language_server.rs",
+        "src/frontend/editor.rs",
+        "src/lsp_cli/documents.rs",
+        "src/lsp_cli/json.rs",
+        "src/lsp_cli/transport.rs",
+        "src/lsp_cli/uri.rs"
+      ],
+      "evidence": [],
+      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion, navigation, rename and profiling are unavailable. Per-document, session, graph and protocol limits apply."
     }
   ]
 }

@@ -32,11 +32,43 @@ when creating the project.
 | `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
 | `oxid doc` | Generate public API documentation under `.oxid/doc/`. |
+| `oxid lsp --stdio` | Check open editor buffers and provide formatting. |
 | `oxid lock` | Record local dependency inputs in `oxid.lock`. |
 | `oxid doctor --native` | Check the native tools, SDK and project configuration. |
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` takes one file and writes its result to stdout.
+
+## Edit with live diagnostics
+
+Configure your editor's language server command as `oxid lsp --stdio` and use
+the `oxid` language ID for `.ox` files. The server reads `oxid.toml`, checks open
+buffers together with their modules and dependencies, and reports type and
+ownership errors before saving. It also provides document formatting. LLVM is
+not required, and checking does not run your program or write formatted source.
+
+With Neovim 0.11 or later, add this to your configuration:
+
+```lua
+vim.filetype.add({ extension = { ox = 'oxid' } })
+vim.lsp.config('oxid', {
+  cmd = { 'oxid', 'lsp', '--stdio' },
+  filetypes = { 'oxid' },
+  root_markers = { 'oxid.toml', '.git' },
+})
+vim.lsp.enable('oxid')
+```
+
+Use `:lua vim.lsp.buf.format()` to format the current buffer. Save it normally
+when ready. For standalone files, add `--edition`, `typed-preview` to the command
+arguments. Files must already exist on disk; untitled buffers are unsupported.
+
+Workspace checks include every member and declared test entry. Dependencies are
+resolved offline; prepare Git dependencies with ordinary project commands first.
+Manifests and lockfiles are read from disk. Diagnostics reflect editor source
+buffers and do not replace `oxid check --frozen` for saved-input verification.
+Cross-file loading currently requires Linux. Completion, rename and navigation
+are not yet provided. See the [language server contract](../rfcs/0065-typed-language-server.md).
 
 ## Generate API documentation
 

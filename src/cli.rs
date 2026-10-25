@@ -9,6 +9,7 @@ mod runtime {
 
 mod doctor_cli;
 mod frontend;
+mod lsp_cli;
 mod program_arguments;
 mod project_cli;
 mod project_lock;
@@ -24,6 +25,9 @@ fn main() {
         Err(message) => argument_error(message),
     };
     let mut args = std::mem::take(&mut invocation.compiler);
+    if let Some(code) = lsp_cli::dispatch(&args) {
+        std::process::exit(code);
+    }
     if let Some(code) = project_package::dispatch(&args) {
         std::process::exit(code);
     }

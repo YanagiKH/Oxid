@@ -289,7 +289,7 @@ fn native_inventory_raw_argument_holes_and_owner_classes_are_items() {
         let plan = ExecutionPlan::build(&witness).unwrap();
         assert_eq!(declaration_census(&witness), counts);
         let inventory = NativeInventories::checked(&plan).unwrap();
-        assert_eq!(inventory.items(), counts.iter().sum());
+        assert_eq!(inventory.items(), counts.iter().sum::<usize>());
         assert_eq!(inventory.owner_width(), width);
         assert_policy_denial(
             &plan,
