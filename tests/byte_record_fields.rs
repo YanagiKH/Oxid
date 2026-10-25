@@ -82,9 +82,10 @@ const ZERO: &str = "struct Empty{before:u8,bytes:[u8;0],after:i32}
 fn relay(value:Empty)->Empty{return value;}
 fn len(bytes:&[u8])->i32{return bytes.len();}
 fn main()->i32{let bytes:[u8;0]=[];let mut value=relay(Empty{before:byte(255),bytes:bytes,after:42});value.before=byte(128);let b=value.before;return len(&value.bytes)+value.after+b.to_i32();}";
+const SEPARATE_FIELDS: &str = "struct R{a:[u8;1],b:[u8;1]}fn use_both(a:&mut[u8],b:&[u8])->i32{return b.len();}fn main()->i32{let mut r=R{a:[byte(0)],b:[byte(1)]};return use_both(&mut r.a,&r.b);}";
 
 fn acceptance(profile: Option<&str>) {
-    for (source, expected) in [(SCALAR, 255), (ZERO, 170)] {
+    for (source, expected) in [(SCALAR, 255), (ZERO, 170), (SEPARATE_FIELDS, 1)] {
         Package::new(&format!("{BYTE}{source}")).run(profile, expected);
     }
     for payload in ["make()", "((make()))"] {
@@ -103,7 +104,7 @@ fn byte_records_move_mutate_project_and_return_in_interpreter() {
 }
 
 #[test]
-fn byte_record_restrictions_and_whole_root_loans_are_preserved() {
+fn byte_record_restrictions_and_overlapping_loans_are_preserved() {
     for (source, code) in [
         ("struct R{bytes:&[u8]}fn main()->i32{return 0;}", "E0101"),
         ("struct R{bytes:[u8;1025]}fn main()->i32{return 0;}", "E0400"),
@@ -113,7 +114,7 @@ fn byte_record_restrictions_and_whole_root_loans_are_preserved() {
         ("struct R{value:u8}fn main()->i32{let r=R{value:byte(1)};let next=r;let b=r.value;return b.to_i32();}", "E0310"),
         ("struct R{bytes:[u8;1]}fn main()->i32{let r=R{bytes:[byte(1)]};let extracted=r.bytes;return 0;}", "E0305"),
         ("struct R{bytes:[u8;1]}fn main()->i32{let r=R{bytes:[byte(1)]};let i=byte(0);let b=r.bytes[i];return b.to_i32();}", "E0300"),
-        ("struct R{a:[u8;1],b:[u8;1]}fn use_both(a:&mut[u8],b:&[u8])->i32{return b.len();}fn main()->i32{let mut r=R{a:[byte(0)],b:[byte(1)]};return use_both(&mut r.a,&r.b);}", "E0311"),
+        ("struct R{a:[u8;1],b:[u8;1]}fn use_both(a:&mut[u8],b:&[u8])->i32{return b.len();}fn main()->i32{let mut r=R{a:[byte(0)],b:[byte(1)]};return use_both(&mut r.a,&r.a);}", "E0311"),
         ("struct R{bytes:[u8;1]}fn exact(bytes:&[u8;1])->i32{return bytes.len();}fn main()->i32{let r=R{bytes:[byte(1)]};return exact(&r.bytes);}", "E0300"),
         ("struct R{bytes:[u8;1]}fn wrong(bytes:&[i32])->i32{return bytes.len();}fn main()->i32{let r=R{bytes:[byte(1)]};return wrong(&r.bytes);}", "E0300"),
         ("struct R{bytes:[u8;1]}fn len(bytes:&[u8])->i32{return bytes.len();}fn wrong(r:&R)->i32{return len(&r.bytes);}fn main()->i32{return 0;}", "E0312"),

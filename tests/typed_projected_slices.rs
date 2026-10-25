@@ -146,6 +146,10 @@ fn assert_success(project: &Project, expected: &str) {
 }
 fn success_cases() -> Vec<(String, &'static str)> {
     vec![
+        ("struct B{left:[i32;1],right:[i32;1]}fn pair(a:&mut[i32],b:&mut[i32])->i32{a[0]=a[0]+10;b[0]=b[0]+20;return a[0]*100+b[0];}fn main()->i32{let mut b=B{left:[1],right:[2]};return pair(&mut b.left,&mut b.right);}".into(), "1122\n"),
+        ("struct B{left:[i32;1],right:[i32;1]}fn pair(a:&[i32],b:&mut[i32])->i32{b[0]=a[0]+b[0];return b[0];}fn main()->i32{let mut b=B{left:[1],right:[2]};return pair(&b.left,&mut b.right);}".into(), "3\n"),
+        ("struct B{left:[i32;1],right:[i32;1]}fn pair(a:&mut[i32],b:&[i32])->i32{a[0]=a[0]+b[0];return a[0];}fn main()->i32{let mut b=B{left:[1],right:[2]};return pair(&mut b.left,&b.right);}".into(), "3\n"),
+        ("struct B{left:[i32;1],scalar:i32}fn use_slice(p:&mut[i32],n:i32)->i32{p[0]=p[0]+n;return p[0];}fn main()->i32{let mut b=B{left:[1],scalar:3};return use_slice(&mut b.left,b.scalar);}".into(), "4\n"),
         (format!("{SUM} {BUMP} struct Batch{{samples:[i32;3],tag:i32}} fn main()->i32{{let mut b=Batch{{samples:[1,2,3],tag:17}};bump(&mut b.samples);return sum(&b.samples)*100+b.tag;}}"), "917\n"),
         (format!("{SUM} struct Batch{{samples:[i32;3],tag:i32}} fn main()->i32{{let b=Batch{{samples:[2,3,7],tag:41}};return sum(&b.samples)+b.tag;}}"), "53\n"),
         (format!("{SUM} {BUMP} struct Batch{{samples:[i32;2],tag:i32}} fn main()->i32{{let mut b=Batch{{samples:[2,3],tag:17}};bump(&mut b.samples);return sum(&b.samples)*100+b.tag;}}"), "717\n"),
@@ -189,9 +193,9 @@ fn rejection_cases() -> Vec<(String, &'static str, &'static str)> {
     let init = "let mut b=B{left:[1],right:[2],scalar:3};";
     let mut cases = Vec::new();
     for (params, args) in [
-        ("a:&mut [i32],b:&mut [i32]", "&mut b.left,&mut b.right"),
-        ("a:&[i32],b:&mut [i32]", "&b.left,&mut b.right"),
-        ("a:&mut [i32],b:&[i32]", "&mut b.left,&b.right"),
+        ("a:&mut [i32],b:&mut [i32]", "&mut b.left,&mut b.left"),
+        ("a:&[i32],b:&mut [i32]", "&b.left,&mut b.left"),
+        ("a:&mut [i32],b:&[i32]", "&mut b.left,&b.left"),
         ("a:&mut [i32],b:&B", "&mut b.left,&b"),
         ("a:&B,b:&mut [i32]", "&b,&mut b.left"),
     ] {
@@ -204,7 +208,7 @@ fn rejection_cases() -> Vec<(String, &'static str, &'static str)> {
         ));
     }
     cases.extend([
-        (format!("{b} fn use_slice(p:&mut [i32],n:i32)->(){{return;}} fn main()->(){{{init}use_slice(&mut b.left,b.scalar);return;}}"), "E0311", "ownership"),
+        (format!("{b} fn use_slice(p:&mut [i32],n:i32)->(){{return;}} fn main()->(){{{init}use_slice(&mut b.left,b.left[0]);return;}}"), "E0311", "ownership"),
         (format!("{b} fn consume(b:B)->i32{{return b.scalar;}} fn use_slice(p:&[i32],n:i32)->(){{return;}} fn main()->(){{{init}use_slice(&b.left,consume(b));return;}}"), "E0311", "ownership"),
         (format!("{b} fn take(p:&[i32])->(){{return;}} fn main()->(){{{init}let moved=b;take(&b.left);return;}}"), "E0310", "ownership"),
         (format!("{b} fn take(p:&mut [i32])->(){{return;}} fn main()->(){{let b=B{{left:[1],right:[2],scalar:3}};take(&mut b.left);return;}}"), "E0304", "type"),
