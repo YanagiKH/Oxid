@@ -33,7 +33,7 @@ GPU／分散式訓練、完整 Rust crate／procedural macro 相容、完整 Pyt
 | **G7 互通與遷移** | 同一份 Oxid native library 與 C、Rust、Python 實際整合；驗證 ABI、錯誤、所有權、callback、跨執行緒與資源釋放；Python native extension 可用標準方式打包，遷移工具明列不支援範圍。 | 未達。既有 subprocess adapters 尚未提供上述原生函式庫與擴充模組工作流程。 |
 | **G8 真正自宿主** | 公開 Oxid 種子在無 Rust／Cargo、無隱藏 Rust frontend fallback 的流程中重建指定 compiler 與標準庫；C1/C2/C3 重建達到同 target 的 C2/C3 固定點，並能編譯其他合法程式。 | 未達。Rust 仍掌握 parser、semantic、ownership、OIR 與 backend；bounded 元件和 AST encode/decode round-trip 尚未構成 compiler 重建。 |
 | **G9 正式應用與效能** | 下列六個應用走一般 `build/test/package` 與部署／升級流程；固定 workload 驗證正確性、壓力、恢復及效能。CPU tensor、autograd、optimizer、資料流程與 checkpoint resume 通過數值、梯度、收斂、記憶體及恢復測試。 | 未達。已加入原生 CPU tensor／autograd、SGD／Adam／AdamW、成對資料分批與完整續訓應用；完整六應用、一般 CPU 訓練能力與對照效能 corpus 尚未完成。 |
-| **G10 發布與升級** | artifacts 具有來源 provenance、摘要、簽章、平台及外部依賴清單；指定版本安裝、更新、回退與離線部署可重現，文件按版本提供。連續兩個 RC 通過全部技術關卡，核心變更後重跑受影響驗收。 | 未達。現有 release workflow 打包四個編譯器 host 並附 checksum；五平台 native 交付、簽章／provenance、完整更新與回退流程及兩個合格 v1 RC 尚未完成。 |
+| **G10 發布與升級** | artifacts 具有來源 provenance、摘要、簽章、平台及外部依賴清單；指定版本安裝、更新、回退與離線部署可重現，文件按版本提供。連續兩個 RC 通過全部技術關卡，核心變更後重跑受影響驗收。 | 未達。release workflow 已加入五個編譯器主機的封裝與 checksum；五平台 native 交付、簽章／provenance、完整更新與回退流程及兩個合格 v1 RC 尚未完成。 |
 
 ## 六個正式應用與共通驗收
 

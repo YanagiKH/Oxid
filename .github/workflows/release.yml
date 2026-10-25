@@ -44,6 +44,9 @@ jobs:
           - os: ubuntu-latest
             binary: target/release/oxid
             asset: oxid-linux-x86_64.tar.gz
+          - os: ubuntu-24.04-arm
+            binary: target/release/oxid
+            asset: oxid-linux-aarch64.tar.gz
           - os: windows-latest
             binary: target/release/oxid.exe
             asset: oxid-windows-x86_64.zip
@@ -57,8 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install qualified Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.0
 
       - name: Cache Rust builds
         uses: Swatinem/rust-cache@v2
