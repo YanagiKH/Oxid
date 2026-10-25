@@ -1,6 +1,7 @@
 //! Final String failures through the genuine, paid private Emit leaf. Source,
 //! AST and reserve-trace storage are baseline; every produced owner and error
 //! drops inside its measured interval. No LLVM tool or default route is used.
+use super::emit_tests::TARGET_TEXT_GROWTH;
 use super::{candidate, leaf, SourceOwner};
 use crate::frontend::{
     declaration_index::IndexLimits,
@@ -21,7 +22,7 @@ const RICH_WIRE: &[u8] = include_bytes!(concat!(
     "/tests/fixtures/checked_hir_import/rich-success.bin"
 ));
 const FINAL_ORDINAL: usize = 17;
-const FINAL_BYTES: usize = 14_325;
+const FINAL_BYTES: usize = 14_325 + TARGET_TEXT_GROWTH;
 const FINAL_KIND: &str = "private LLVM text";
 
 fn assert_final_trace(allocator: &Allocator, start: usize, success: bool) {
