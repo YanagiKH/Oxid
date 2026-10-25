@@ -44,6 +44,23 @@ OXID_ARCHIVE=/media/usb/oxid-linux-aarch64.tar.gz sh install.sh
 
 Keep the checksum beside the archive with the same filename plus `.sha256`. `OXID_ARCHIVE` uses those local files and makes no download requests. It can also restore a previously saved release.
 
+## Verify release provenance
+
+For releases that provide `.sigstore.json` files, use a recent [GitHub CLI](https://cli.github.com/) to verify that the archive was signed by Oxid's release workflow. Download the archive and its signature bundle, then run the following with the selected release tag:
+
+```sh
+gh attestation verify oxid-linux-aarch64.tar.gz \
+  --repo YanagiKH/Oxid \
+  --signer-workflow YanagiKH/Oxid/.github/workflows/release.yml \
+  --source-ref refs/tags/v1.0.0-rc.1 \
+  --deny-self-hosted-runners \
+  --bundle oxid-linux-aarch64.tar.gz.sigstore.json
+```
+
+Add `--source-digest COMMIT_SHA` to require a specific source commit. For offline verification, first obtain trusted roots on a connected computer with `gh attestation trusted-root > trusted_root.jsonl`; transfer that file with the archive and bundle, then add `--custom-trusted-root trusted_root.jsonl` to the verification command. Obtain the trusted roots independently of the downloaded release.
+
+Successful provenance verification identifies the producer and archive contents. Check the selected release notes for its supported language features and platforms; older releases may have checksums without signature bundles.
+
 ## Windows installer
 
 Review [install.ps1](../install.ps1), then run it in PowerShell:
