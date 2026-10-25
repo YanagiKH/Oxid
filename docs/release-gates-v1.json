@@ -120,7 +120,7 @@
         "Installation, update, rollback and offline deployment are exercised; two release candidates pass technical acceptance, with affected checks rerun after core changes."
       ],
       "remaining": [
-        "The five-host compiler archive matrix and checksums do not yet provide signed five-platform native delivery, the complete upgrade/rollback workflow or two qualified v1 release candidates."
+        "The five-host archive workflow includes source-signature verification and the Unix installer supports offline archives and failure preservation; actual signed release artifacts, five-platform native delivery, complete cross-version upgrades/rollback and two qualified v1 release candidates remain unverified."
       ]
     }
   ]
