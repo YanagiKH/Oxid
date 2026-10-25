@@ -93,6 +93,9 @@ def verify(args):
                               ["frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal",
                                "--ignored", "--exact"],
                               exact="frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal")
+        runner.command("source-package-application", [sys.executable, "-B", "scripts/verify_typed_package_bundle.py",
+                       report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
+                       "--output", output / "source-packages", "--native"])
         runner.command("cpu-training-application", [sys.executable, "-B", "scripts/verify_cpu_training.py",
                        report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                        "--output", output / "cpu-training", "--llvm-bin", args.llvm_bin])
