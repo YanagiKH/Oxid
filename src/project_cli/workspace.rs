@@ -401,7 +401,7 @@ impl Workspace {
         let selected = self.selected(options)?;
         let build_options = match options.command() {
             "build" => validate_build_options(options)?,
-            "check" | "run" | "test" | "lock" => {
+            "check" | "run" | "test" | "lock" | "doc" => {
                 if options.words.len() != 1
                     && !(matches!(options.command(), "check" | "run")
                         && options.words.len() == 2
@@ -428,7 +428,9 @@ impl Workspace {
         } else {
             Vec::new()
         };
-        if matches!(options.command(), "check" | "test" | "lock") && options.entry_mode.is_some() {
+        if matches!(options.command(), "check" | "test" | "lock" | "doc")
+            && options.entry_mode.is_some()
+        {
             return Err(format!(
                 "workspace {} does not accept --entry-mode",
                 options.command()
@@ -530,6 +532,22 @@ impl Workspace {
             return Ok(0);
         }
         project_lock::verify(&expected, existing.as_ref())?;
+        if options.command() == "doc" {
+            let mut pages = Vec::new();
+            let mut remaining = documentation::remaining();
+            for &index in &selected {
+                let slot = scope
+                    .iter()
+                    .position(|candidate| *candidate == index)
+                    .expect("selected session");
+                pages.push(documentation::fragment(
+                    &prepared[slot],
+                    &self.members[index].snapshot.manifest,
+                    &mut remaining,
+                )?);
+            }
+            return documentation::publish(&self.root, &pages, options);
+        }
         if test_child {
             let index = selected[0];
             let slot = scope

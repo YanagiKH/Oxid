@@ -102,7 +102,7 @@ fn format_rejects_directory_and_lock_options_before_touching_project_outputs() {
         (vec!["fmt", "."], "requires one source file"),
         (
             vec!["fmt", "src/main.ox", "--locked"],
-            "locking options require a typed project lock, check, run, build or test command",
+            "locking options require a typed project lock, check, run, build, test or doc command",
         ),
     ] {
         let output = project.run(&args);

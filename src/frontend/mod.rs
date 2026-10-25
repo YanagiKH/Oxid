@@ -5,6 +5,7 @@ mod builtin_catalog;
 mod byte_strings;
 mod declaration_index;
 mod diagnostic;
+mod documentation;
 mod driver;
 mod format;
 mod format_cli;
