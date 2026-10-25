@@ -1880,7 +1880,11 @@ mod tests {
                 ),
             ]
         );
-        if cfg!(target_arch = "x86_64") {
+        if cfg!(all(
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             prepared.source_package_preflight(Some(true)).unwrap();
         } else {
             assert!(prepared

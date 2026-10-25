@@ -1,4 +1,5 @@
 //! Actual paid Emit boundaries. No external native tool is invoked.
+use super::emit_tests::TARGET_TEXT_GROWTH;
 use super::u8_resource_successor::{EMIT_FIXED_GROWTH, RICH_RESERVATION_WORK, V2_RESERVATION_WORK};
 use super::{candidate, leaf, SourceOwner};
 use crate::frontend::{
@@ -27,7 +28,7 @@ const WIRE: &[u8] = include_bytes!(concat!(
 const PREDECESSOR_FIXED: u64 = 140_203;
 const FIXED: u64 = PREDECESSOR_FIXED + EMIT_FIXED_GROWTH;
 const HIR_PAIR: u64 = 3_472 + 2_241;
-const LLVM_BYTES: u64 = 14_325;
+const LLVM_BYTES: u64 = 14_325 + TARGET_TEXT_GROWTH as u64;
 const PREDECESSOR_WORK: u64 = 10_069_187;
 const WORK: u64 = PREDECESSOR_WORK + RICH_RESERVATION_WORK;
 
@@ -311,7 +312,7 @@ fn checked_hir_import_v2_actual_emit_exact_and_minus_one_endpoints_u8_admission_
         (
             140_203 + EMIT_FIXED_GROWTH,
             141_739 + EMIT_FIXED_GROWTH,
-            690,
+            690 + TARGET_TEXT_GROWTH as u64,
             1_004_093 + V2_RESERVATION_WORK
         )
     );
