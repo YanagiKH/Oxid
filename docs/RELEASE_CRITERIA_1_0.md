@@ -14,7 +14,7 @@
 
 實作與驗證範圍見 [RFC 0032](../rfcs/0032-typed-project-workflow.md)、[RFC 0033](../rfcs/0033-typed-path-dependencies.md)、[RFC 0034](../rfcs/0034-typed-local-locking.md)、[RFC 0035](../rfcs/0035-typed-workspaces.md)、[RFC 0038](../rfcs/0038-typed-source-packages.md)、[typed preview 規格](../spec/typed-preview.md) 與 [project workflow validation](architecture/project-workflow-validation.md)。CI 設定、工作分支功能與已發布版本分別記錄，不以設定存在或排程成功代替實際驗證結果。
 
-原生 CPU 訓練已加入 [三套件應用](../apps/cpu-training/README.md)：checked `f64` 矩陣、reverse-mode autograd、固定種子 MLP、SGD 與雙檔 checkpoint resume。獨立驗證比對數值差分、更新結果、收斂、損壞恢復與移除來源後部署；一般 tensor layout、Adam、資料管線、較複雜模型及完整效能驗收仍待完成。
+原生 CPU 訓練已加入 [三套件應用](../apps/cpu-training/README.md)：checked `f64` 矩陣、reverse-mode autograd、固定種子 MLP、SGD／Adam／AdamW 與雙檔 checkpoint resume。資料分批應用可載入成對矩陣，依種子洗牌並保留下一批的位置；獨立驗證比對數值差分、更新結果、收斂、損壞恢復與移除來源後部署。一般 tensor layout、大於記憶體的資料流程、較複雜模型及完整效能驗收仍待完成。
 
 ## v1.0 範圍
 
@@ -32,7 +32,7 @@ GPU／分散式訓練、完整 Rust crate／procedural macro 相容、完整 Pyt
 | **G6 開發工具** | LSP、formatter、test runner、debugger、版本化文件與 profiler 使用一致的專案設定；安裝、編輯、格式化、測試、除錯及效能分析可透過公開工具流程重現。 | 未達。已有 typed 單檔 formatter、manifest 測試流程及編輯器設定；已加入 GDB 函式／行號斷點與呼叫堆疊；區域變數檢視、跨檔 LSP、文件產生與 profiling 尚未形成完整工作流程。 |
 | **G7 互通與遷移** | 同一份 Oxid native library 與 C、Rust、Python 實際整合；驗證 ABI、錯誤、所有權、callback、跨執行緒與資源釋放；Python native extension 可用標準方式打包，遷移工具明列不支援範圍。 | 未達。既有 subprocess adapters 尚未提供上述原生函式庫與擴充模組工作流程。 |
 | **G8 真正自宿主** | 公開 Oxid 種子在無 Rust／Cargo、無隱藏 Rust frontend fallback 的流程中重建指定 compiler 與標準庫；C1/C2/C3 重建達到同 target 的 C2/C3 固定點，並能編譯其他合法程式。 | 未達。Rust 仍掌握 parser、semantic、ownership、OIR 與 backend；bounded 元件和 AST encode/decode round-trip 尚未構成 compiler 重建。 |
-| **G9 正式應用與效能** | 下列六個應用走一般 `build/test/package` 與部署／升級流程；固定 workload 驗證正確性、壓力、恢復及效能。CPU tensor、autograd、optimizer、資料流程與 checkpoint resume 通過數值、梯度、收斂、記憶體及恢復測試。 | 未達。已加入原生 CPU tensor／autograd／SGD 與 MLP checkpoint 應用；完整六應用、一般 CPU 訓練能力與對照效能 corpus 尚未完成。 |
+| **G9 正式應用與效能** | 下列六個應用走一般 `build/test/package` 與部署／升級流程；固定 workload 驗證正確性、壓力、恢復及效能。CPU tensor、autograd、optimizer、資料流程與 checkpoint resume 通過數值、梯度、收斂、記憶體及恢復測試。 | 未達。已加入原生 CPU tensor／autograd、SGD／Adam／AdamW、成對資料分批與完整續訓應用；完整六應用、一般 CPU 訓練能力與對照效能 corpus 尚未完成。 |
 | **G10 發布與升級** | artifacts 具有來源 provenance、摘要、簽章、平台及外部依賴清單；指定版本安裝、更新、回退與離線部署可重現，文件按版本提供。連續兩個 RC 通過全部技術關卡，核心變更後重跑受影響驗收。 | 未達。現有 release workflow 打包四個編譯器 host 並附 checksum；五平台 native 交付、簽章／provenance、完整更新與回退流程及兩個合格 v1 RC 尚未完成。 |
 
 ## 六個正式應用與共通驗收

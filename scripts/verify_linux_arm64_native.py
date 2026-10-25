@@ -107,7 +107,9 @@ def verify(args):
                        "--output", output / "cpu-training", "--llvm-bin", args.llvm_bin])
         for label, controller in [("optimizer-math", "verify_optimizer_math.py"),
                                   ("optimizer-checkpoints", "verify_optimizer_checkpoints.py"),
-                                  ("optimizer-training", "verify_optimizer_training.py")]:
+                                  ("optimizer-training", "verify_optimizer_training.py"),
+                                  ("data-pipeline", "verify_data_pipeline.py"),
+                                  ("minibatch-training", "verify_minibatch_training.py")]:
             runner.command(label, [sys.executable, "-B", "scripts/" + controller,
                            report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                            "--output", output / label, "--llvm-bin", args.llvm_bin])

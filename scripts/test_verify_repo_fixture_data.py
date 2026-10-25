@@ -72,24 +72,19 @@ MATRIX_MEMBERS = {member for members in MATRIX_PROJECTS.values() for member in m
 
 CPU_PROJECTS = {
     "apps/cpu-training": tuple("apps/cpu-training/" + name for name in (
-        "checkpoint/src/lib.ox",
-        "checkpoint/src/training.ox",
-        "tensor/src/codec.ox",
-        "tensor/src/graph.ox",
-        "tensor/src/lib.ox",
-        "tensor/src/model.ox",
-        "tensor/src/model/checkpoint.ox",
-        "tensor/src/model/session.ox",
-        "tensor/src/optimizer.ox",
-        "tensor/src/optimizer/checkpoint.ox",
-        "trainer/src/main.ox",
-        "trainer/src/options.ox",
-        "trainer/src/report.ox",
-        "trainer/src/training.ox",
-        "trainer/tests/tensor.ox",
-        "trainer/tests/optimizers.ox",
+        "checkpoint/src/lib.ox", "checkpoint/src/pipeline.ox", "checkpoint/src/training.ox",
+        "tensor/src/codec.ox", "tensor/src/data.ox", "tensor/src/data/checkpoint.ox",
+        "tensor/src/data/sampler_checkpoint.ox", "tensor/src/data/session.ox", "tensor/src/graph.ox",
+        "tensor/src/lib.ox", "tensor/src/model.ox", "tensor/src/model/checkpoint.ox",
+        "tensor/src/model/session.ox", "tensor/src/optimizer.ox", "tensor/src/optimizer/checkpoint.ox",
+        "trainer/src/main.ox", "trainer/src/options.ox", "trainer/src/report.ox", "trainer/src/training.ox",
+        "trainer/tests/optimizers.ox", "trainer/tests/tensor.ox",
+    )),
+    "apps/minibatch-training": tuple("apps/minibatch-training/" + name for name in (
+        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/data.ox",
     )),
 }
+
 CPU_MEMBERS = {member for members in CPU_PROJECTS.values() for member in members}
 
 WIDE_FILES = tuple("fixtures/typed-parser-wide-span/" + name + ".ox" for name in (
@@ -265,10 +260,10 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS,
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
-                         (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training"))
-        self.assertEqual(len(CPU_MEMBERS), 16)
+                         (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training"))
+        self.assertEqual(len(CPU_MEMBERS), 26)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
-        self.assertEqual([row for row in check_inventory if row[0] in CPU_PROJECTS], [("apps/cpu-training", True)])
+        self.assertEqual([row for row in check_inventory if row[0] in CPU_PROJECTS], [("apps/cpu-training", True), ("apps/minibatch-training", True)])
         self.assertFalse(any(name in CPU_MEMBERS for name, _ in check_inventory + run_inventory))
         self.assertFalse(any(name in CPU_PROJECTS for name, _ in run_inventory))
         language = [name for name in language if name not in CPU_MEMBERS]
@@ -617,7 +612,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
                       f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
                       "83 runnable programs", output.getvalue())
-        self.assertIn("15 manifest projects checked; 7 run; 4 tested", output.getvalue())
+        self.assertIn("16 manifest projects checked; 7 run; 4 tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
                       f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(additional_members)} typed source members / "
                       "16 typed entry runs", output.getvalue())

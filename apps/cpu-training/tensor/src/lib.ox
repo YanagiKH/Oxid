@@ -2,6 +2,7 @@ mod codec;
 pub mod graph;
 pub mod model;
 pub mod optimizer;
+pub mod data;
 
 use alloc::bytes::ByteBuf;
 use alloc::bytes::GrowStatus;
