@@ -548,6 +548,12 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         request: ProjectionRequest<'_>,
     ) -> Result<OwnerKey> {
         let current = &self.frames[frame];
+        // Only a function with local loans can hold children while preparing
+        // another argument. A leaf callee cannot explain a suspended incoming
+        // permission and must retain the original immediate rejection.
+        if self.function(current.function).loans.is_empty() {
+            return self.base(frame, base, access, span);
+        }
         let permission = self.plan.witness().projection_permission(
             current.function,
             current.block,
