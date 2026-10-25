@@ -7,6 +7,7 @@ mod declaration_index;
 mod diagnostic;
 mod documentation;
 mod driver;
+pub(crate) mod editor;
 mod format;
 mod format_cli;
 mod hir;

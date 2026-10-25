@@ -11,6 +11,7 @@ mod builtin_tests;
 #[path = "project/array_syntax_tests.rs"]
 mod array_syntax_tests;
 pub(super) mod budget;
+pub(crate) mod editor_sources;
 #[cfg(test)]
 #[path = "project/enum_carrier_tests.rs"]
 mod enum_carrier_tests;
@@ -18,6 +19,7 @@ mod enum_carrier_tests;
 #[path = "project/enum_index_tests.rs"]
 mod enum_index_tests;
 mod filesystem;
+use editor_sources::SourceOverlay;
 pub(super) mod packages;
 #[cfg(test)]
 mod tests;
@@ -323,6 +325,22 @@ impl ProjectSources {
             ProjectEnumSyntax::Enabled,
         )
     }
+    pub(super) fn load_typed_editor(
+        entry: &str,
+        limits: ProjectLimits,
+        overlay: &SourceOverlay<'_>,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax_inputs(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            &mut Allocator::default(),
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::Enabled,
+            None,
+            Some(overlay),
+        )
+    }
     pub(super) fn load_typed_with_provider(
         entry: &str,
         limits: ProjectLimits,
@@ -464,7 +482,22 @@ impl ProjectSources {
         allocator: &mut Allocator,
         arrays: parser::ArraySyntaxPolicy,
         enums: ProjectEnumSyntax,
+        provider: Option<&mut dyn LexicalProvider>,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax_inputs(
+            entry, limits, mode, allocator, arrays, enums, provider, None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn load_with_syntax_inputs(
+        entry: &str,
+        limits: ProjectLimits,
+        mode: parser::SourceMode,
+        allocator: &mut Allocator,
+        arrays: parser::ArraySyntaxPolicy,
+        enums: ProjectEnumSyntax,
         mut provider: Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
     ) -> Result<Self, LoadFailure> {
         let mut builder = SourceSetBuilder {
             entry,
@@ -482,7 +515,12 @@ impl ProjectSources {
                 syntax_flavor: SyntaxFlavor::OriginalSingleFile,
             },
         };
-        match builder.load_all_with_provider(&mut provider) {
+        let loaded = if overlay.is_some() {
+            builder.load_all_with_inputs(&mut provider, overlay)
+        } else {
+            builder.load_all_with_provider(&mut provider)
+        };
+        match loaded {
             Ok(()) => Ok(builder.project),
             Err(diagnostics) => Err(LoadFailure {
                 sources: builder.project.sources,
@@ -854,8 +892,15 @@ impl SourceSetBuilder<'_> {
         &mut self,
         provider: &mut Option<&mut dyn LexicalProvider>,
     ) -> Result<(), Errors> {
+        self.load_all_with_inputs(provider, None)
+    }
+    fn load_all_with_inputs(
+        &mut self,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<(), Errors> {
         let text = self
-            .read_source(Path::new(self.entry), self.entry, None)
+            .read_source_input(Path::new(self.entry), self.entry, None, overlay)
             .map_err(one)?;
         let mut display = String::new();
         self.allocator
@@ -940,7 +985,11 @@ impl SourceSetBuilder<'_> {
                 continue;
             }
             stack[height - 1].next += 1;
-            let child = self.load_child_with_provider(frame.module, frame.next, provider)?;
+            let child = if overlay.is_some() {
+                self.load_child_with_inputs(frame.module, frame.next, provider, overlay)?
+            } else {
+                self.load_child_with_provider(frame.module, frame.next, provider)?
+            };
             if height == stack.len() {
                 return Err(one(Diagnostic::new(
                     "E0500",
@@ -1218,6 +1267,15 @@ impl SourceSetBuilder<'_> {
         local: usize,
         provider: &mut Option<&mut dyn LexicalProvider>,
     ) -> Result<ModuleId, Errors> {
+        self.load_child_with_inputs(parent, local, provider, None)
+    }
+    fn load_child_with_inputs(
+        &mut self,
+        parent: ModuleId,
+        local: usize,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<ModuleId, Errors> {
         let declaration = self.project.programs[parent.0].modules[local];
         let at = Some(declaration.name);
         let name = self.project.text(declaration.name);
@@ -1339,7 +1397,9 @@ impl SourceSetBuilder<'_> {
             }
         }
         self.reserve_file(at).map_err(one)?;
-        let text = self.read_source(&canonical, &display, at).map_err(one)?;
+        let text = self
+            .read_source_input(&canonical, &display, at, overlay)
+            .map_err(one)?;
         // display is charged when admitted into SourceMap; these two owned paths here.
         self.project.usage.retained_path_bytes =
             add(self.project.usage.retained_path_bytes, relative.len(), at)

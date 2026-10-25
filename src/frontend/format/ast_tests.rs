@@ -902,7 +902,7 @@ impl<'a> Fingerprint<'a> {
                 .paths
                 .iter()
                 .map(|p| usize::from(p.segment_len))
-                .sum()
+                .sum::<usize>()
         );
         self.parts
     }

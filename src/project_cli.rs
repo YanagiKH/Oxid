@@ -4,6 +4,7 @@
 //! Projects never reinterpret typed sources using the legacy interpreter.
 use crate::{frontend, project_lock, runtime};
 mod documentation;
+mod editor;
 mod package;
 mod workspace;
 
@@ -15,6 +16,9 @@ use std::{
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
 };
+
+pub(crate) use editor::project_graphs as editor_project_graphs;
+pub(crate) use editor::source_edition as editor_source_edition;
 
 #[derive(Default)]
 struct Options {

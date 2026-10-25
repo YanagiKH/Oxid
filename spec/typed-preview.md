@@ -87,6 +87,10 @@ Native project builds also support [workspaces](../rfcs/0035-typed-workspaces.md
 [`dev`/`release` profiles](../rfcs/0040-native-build-profiles.md).
 [`oxid doc`](../rfcs/0063-typed-api-documentation.md) generates public API
 documentation using the same manifest, workspace selection, and dependency locks.
+
+[`oxid lsp --stdio`](../rfcs/0065-typed-language-server.md) provides experimental
+diagnostics over open editor buffers and document formatting. Its UTF-16 ranges
+are separate from the CLI's human diagnostic columns.
 Typed Git dependencies require pinned complete commit hashes; see the project
 workflow. Registry dependencies remain unimplemented.
 An explicit edition option applies to the current invocation; it does not alter
