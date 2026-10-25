@@ -107,7 +107,8 @@
         "Fixed workload comparisons preserve equivalent outputs and safety semantics, with raw measurements, environment, uncertainty and upgrade/recovery results."
       ],
       "remaining": [
-        "The six complete applications, native CPU training stack and comparative performance acceptance corpus are incomplete."
+        "A native f64 matrix/autograd/SGD MLP application is implemented with checkpoint recovery verification; general tensor layouts, Adam, data pipelines and a more complex training model remain incomplete.",
+        "The six complete applications and comparative performance acceptance corpus remain incomplete."
       ]
     },
     {
