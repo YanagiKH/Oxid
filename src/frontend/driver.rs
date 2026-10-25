@@ -547,6 +547,35 @@ impl PreparedPackageProject<'_> {
         }
     }
 
+    /// API output consumes only the checked session's retained source bytes.
+    /// Dependencies are checked but documented only when selected themselves.
+    pub(crate) fn documentation(
+        &self,
+        name: &str,
+        version: Option<&str>,
+        maximum: usize,
+    ) -> Result<String, String> {
+        let _checked = self
+            .checked()
+            .map_err(|errors| preparation_message(self.project().sources(), &errors))?;
+        let modules = match &self.sources {
+            PreparedSources::Single(project) => 0..project.modules().len(),
+            PreparedSources::Packages(packages) => {
+                let start = packages
+                    .context
+                    .target(0)
+                    .ok_or("missing documentation package root")?
+                    .0;
+                let end = packages
+                    .context
+                    .target(1)
+                    .map_or(packages.project.modules().len(), |module| module.0);
+                start..end
+            }
+        };
+        super::documentation::fragment(self.project(), modules, name, version, maximum)
+    }
+
     fn checked(&self) -> Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>> {
         match &self.sources {
             PreparedSources::Single(project) => check_loaded_project(project),

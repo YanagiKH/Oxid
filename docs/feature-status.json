@@ -1963,6 +1963,33 @@
         "apps/cpu-training/README.md"
       ],
       "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Data and sessions are held in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
+    },
+    {
+      "id": "typed-project-api-documentation",
+      "summary": "Checked public API documentation for typed projects and selected workspace members",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "checked-source / static-html",
+      "target_scope": "Compiler hosts; no native toolchain required. Cross-platform qualification depends on executed tests.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0063-typed-api-documentation.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/documentation.rs",
+        "src/frontend/driver.rs",
+        "src/project_cli/documentation.rs",
+        "src/project_cli/workspace.rs"
+      ],
+      "tests": [
+        "tests/typed_documentation.rs",
+        "src/frontend/documentation.rs"
+      ],
+      "evidence": [],
+      "limitations": "One static HTML page with plain-text doc comments. Markdown, documentation tests, search and external dependency pages are not provided. Compiler/workspace source limits and a 32 MiB output limit apply."
     }
   ]
 }

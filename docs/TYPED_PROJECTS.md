@@ -31,11 +31,29 @@ when creating the project.
 | `oxid build` | Build an executable under `.oxid/bin/` using project settings. |
 | `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
+| `oxid doc` | Generate public API documentation under `.oxid/doc/`. |
 | `oxid lock` | Record local dependency inputs in `oxid.lock`. |
 | `oxid doctor --native` | Check the native tools, SDK and project configuration. |
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` takes one file and writes its result to stdout.
+
+## Generate API documentation
+
+```sh
+oxid doc
+```
+
+Open `.oxid/doc/index.html` in a browser to read the project's public functions,
+generic parameters, structs and enums. Place `///` descriptions directly above
+declarations or fields, and use `//!` at the start of a module. Descriptions are
+shown as plain text; private declarations and function bodies are omitted.
+
+Use `oxid doc --workspace` for every workspace member or
+`oxid doc --package math` for one member. The selected APIs share one page at
+the workspace root. Locking options such as `--frozen` also apply. All selected
+packages are checked before replacing a page; checking or file publication
+failures preserve the previous page. The command generates documentation without running the program.
 
 ## Project settings
 

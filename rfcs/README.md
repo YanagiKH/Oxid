@@ -126,3 +126,6 @@ selected optimization profile.
 
 [Program arguments](0049-program-arguments.md) lets typed programs receive
 literal OS arguments through `std::env::arg_count` and `arg_bytes`.
+
+[API documentation](0063-typed-api-documentation.md) generates a checked public
+reference from ordinary typed projects and selected workspace members.

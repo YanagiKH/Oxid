@@ -3,6 +3,7 @@
 //! Explicit file editions retain the original pure frontend option boundary.
 //! Projects never reinterpret typed sources using the legacy interpreter.
 use crate::{frontend, project_lock, runtime};
+mod documentation;
 mod package;
 mod workspace;
 
@@ -214,10 +215,13 @@ impl Options {
             return Err("--update is valid only for `oxid lock` and conflicts with --locked, --offline and --frozen".into());
         }
         if self.has_lock_options()
-            && !matches!(self.command(), "lock" | "check" | "run" | "build" | "test")
+            && !matches!(
+                self.command(),
+                "lock" | "check" | "run" | "build" | "test" | "doc"
+            )
         {
             return Err(
-                "locking options require a typed project lock, check, run, build or test command"
+                "locking options require a typed project lock, check, run, build, test or doc command"
                     .into(),
             );
         }
@@ -279,7 +283,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     }
     let operands = operands(&options.words);
     let explicit = options.edition.is_some();
-    let project_operation = matches!(command, "lock" | "build" | "test" | "new" | "init")
+    let project_operation = matches!(command, "lock" | "build" | "test" | "doc" | "new" | "init")
         || (matches!(command, "check" | "run") && operands.is_empty());
     if explicit && !project_operation {
         return None;
@@ -428,6 +432,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "lock" => lock_project(root, &snapshot, &options),
         "build" => build(root, &snapshot, &options, process),
         "test" => test(root, &snapshot, &options),
+        "doc" => documentation::command(root, &snapshot, &options),
         "check" | "run" if operands.is_empty() => {
             if options
                 .words
