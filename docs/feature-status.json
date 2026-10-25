@@ -1696,7 +1696,7 @@
     },
     {
       "id": "hosted-native-recursion",
-      "summary": "Hosted native direct/mutual recursive calls, checked live call storage, owned returns and call-only reborrows.",
+      "summary": "Hosted native direct/mutual recursive calls, checked live call storage, owned returns, call-only reborrows and larger compiled programs.",
       "status": "experimental",
       "classification": "production-path",
       "owner": "unassigned",
@@ -1704,9 +1704,10 @@
       "edition": "typed-preview",
       "backend": "Reference execution and LLVM native project builds at O0/O2.",
       "target_scope": "Native execution on Linux x86_64 with LLVM 19.1.7.",
-      "limitations": "1,024 live calls, 200,000 scalar slots and 1 MiB planned native frame/runtime storage. Existing compiler size and heap limits remain. Bounded native calls remain acyclic.",
+      "limitations": "Hosted compilation permits 1,024 functions, 32,768 scalar slots, 16,384 blocks and 65,536 compiler inventory items/owner width cells, subject to existing verification and metadata limits. Runtime limits remain 1,024 live calls, 200,000 scalar slots, 1 MiB native frame/runtime storage and a separate 16 MiB buffer heap. Bounded native calls remain acyclic.",
       "spec": [
-        "rfcs/0058-hosted-native-recursion.md"
+        "rfcs/0058-hosted-native-recursion.md",
+        "rfcs/0062-hosted-native-program-size.md"
       ],
       "implementation": [
         "src/frontend/oir/native.rs",
@@ -1714,7 +1715,11 @@
       ],
       "tests": [
         "tests/hosted_recursion.rs",
-        "scripts/test_hosted_recursion_compatibility.py"
+        "scripts/test_hosted_recursion_compatibility.py",
+        "src/frontend/oir/native_hosted_capacity_tests.rs",
+        "src/frontend/oir/owned/hosted_capacity_tests.rs",
+        "scripts/test_hosted_capacity_compatibility.py",
+        "scripts/verify_hosted_capacity.py"
       ],
       "evidence": []
     },

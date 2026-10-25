@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_float_root_compatibility.py \
+          python3 -B scripts/verify_hosted_capacity_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -386,6 +386,8 @@ jobs:
             --output "$RUNNER_TEMP/current-float-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-float-roots-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_hosted_capacity.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-hosted-capacity-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_float_output.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-float-output" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \

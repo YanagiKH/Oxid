@@ -183,9 +183,9 @@ produces exactly 80 bytes and has separate Oxid/external consumers. Local tests
 exercise 39/63, malformed frames, capacity, checked overflow and publication
 failure; current-source qualification and exact-head hosted CI are separate.
 
-The entire call graph must be acyclic, including dead declarations and calls in
+The entire bounded call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
-The following inclusive bounds are the scalar-only native restrictions. Owned
+The following inclusive bounds are the bounded scalar-only native restrictions. Owned
 modules retain them and add the inventory and byte restrictions below; the scalar
 slot/cost formulas and examples in this section apply to scalar-only modules.
 
@@ -233,12 +233,15 @@ this is evidence, not an all-environments stack-safety theorem.
 
 ## Owned-module storage, costs and private representation
 
-Owned modules retain 256 functions, 64 user parameters, 4,096 OIR blocks, call
+Bounded owned modules retain 256 functions, 64 user parameters, 4,096 OIR blocks, call
 depth 32, whole-call-graph recursion rejection, at most 256 scalar slots per
 function and 8,192 aggregate/maximum-call-path scalar slots. Every declaration
 is included, even if unused or statically skipped. A scalar `main` is required;
 owned return values are permitted only in helpers. Native admission additionally
 requires:
+
+Hosted projects use the larger [program-size limits](../rfcs/0062-hosted-native-program-size.md).
+The remaining storage, verification and output limits below apply to both policies.
 
 | Owned resource | Inclusive maximum |
 | --- | ---: |

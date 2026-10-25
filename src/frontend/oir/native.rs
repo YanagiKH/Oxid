@@ -40,6 +40,9 @@ const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_LOCALS: usize = 256;
 const MAX_NATIVE_LOCALS: usize = 8_192;
 const MAX_NATIVE_BLOCKS: usize = 4_096;
+pub(super) const MAX_HOSTED_FUNCTIONS: usize = 1_024;
+pub(super) const MAX_HOSTED_LOCALS: usize = 32_768;
+pub(super) const MAX_HOSTED_BLOCKS: usize = 16_384;
 const MAX_DEPTH: usize = 32;
 const MAX_COST: usize = 100_000;
 
@@ -592,7 +595,22 @@ impl VerifiedProgram {
             return Ok(Vec::new());
         }
         let origin = functions[0].span;
-        limit(functions.len(), MAX_FUNCTIONS, "function count", origin)?;
+        let function_limit = if hosted {
+            MAX_HOSTED_FUNCTIONS
+        } else {
+            MAX_FUNCTIONS
+        };
+        let local_limit = if hosted {
+            MAX_HOSTED_LOCALS
+        } else {
+            MAX_NATIVE_LOCALS
+        };
+        let block_limit = if hosted {
+            MAX_HOSTED_BLOCKS
+        } else {
+            MAX_NATIVE_BLOCKS
+        };
+        limit(functions.len(), function_limit, "function count", origin)?;
         let mut callers = vec![Vec::new(); functions.len()];
         let mut remaining = vec![0usize; functions.len()];
         let (mut locals, mut blocks) = (0, 0);
@@ -645,8 +663,8 @@ impl VerifiedProgram {
                 }
             }
         }
-        limit(locals, MAX_NATIVE_LOCALS, "aggregate locals", origin)?;
-        limit(blocks, MAX_NATIVE_BLOCKS, "aggregate blocks", origin)?;
+        limit(locals, local_limit, "aggregate locals", origin)?;
+        limit(blocks, block_limit, "aggregate blocks", origin)?;
         let mut ready: Vec<_> = remaining
             .iter()
             .enumerate()
@@ -697,7 +715,7 @@ impl VerifiedProgram {
             if !hosted {
                 limit(bound.depth, MAX_DEPTH, "call depth", f.span)?;
             }
-            limit(bound.slots, MAX_NATIVE_LOCALS, "live local slots", f.span)?;
+            limit(bound.slots, local_limit, "live local slots", f.span)?;
             bounds[i] = bound;
             for &caller in &callers[i] {
                 remaining[caller] -= 1;
@@ -2950,3 +2968,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_hosted_capacity_tests.rs"]
+mod hosted_capacity_tests;

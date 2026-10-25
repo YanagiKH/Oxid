@@ -96,6 +96,9 @@ def verify(args):
         runner.command("float-square-roots", [sys.executable, "-B", "scripts/verify_float_roots.py",
                        report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                        "--output", output / "float-square-roots", "--llvm-bin", args.llvm_bin])
+        runner.command("hosted-program-size", [sys.executable, "-B", "scripts/verify_hosted_capacity.py",
+                       report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
+                       "--output", output / "hosted-program-size", "--llvm-bin", args.llvm_bin])
         runner.command("source-package-application", [sys.executable, "-B", "scripts/verify_typed_package_bundle.py",
                        report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                        "--output", output / "source-packages", "--native"])
