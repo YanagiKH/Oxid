@@ -651,3 +651,265 @@ fn malformed_frame_rejects_before_source_access() {
         .contains("frame exceeds byte limit"));
     p.unchanged();
 }
+
+fn position_at(text: &str, needle: &str) -> Value {
+    let prefix = &text[..text.find(needle).unwrap()];
+    json!({"line":prefix.bytes().filter(|byte|*byte==b'\n').count(),"character":prefix.rsplit('\n').next().unwrap().encode_utf16().count()})
+}
+
+#[test]
+fn definition_navigation_distinguishes_parameters_locals_and_function_calls() {
+    let p = Project::new();
+    let text="fn square(value:i32)->i32 {\nlet c='🦀';\nlet mut total=value;\ntotal=total+1;\nreturn total;\n}\nfn main()->i32{return square(41);}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    for (needle, line, start, end) in [
+        ("square(41)", 0, 3, 9),
+        ("value;", 0, 10, 15),
+        ("total+1", 2, 8, 13),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(text,needle)}),
+        );
+        assert_eq!(
+            result["result"],
+            json!([{"uri":path,"range":{"start":{"line":line,"character":start},"end":{"line":line,"character":end}}}]),
+            "{result}"
+        );
+    }
+    let position = position_at(text, "🦀");
+    let mut split = position.clone();
+    split["character"] = json!(position["character"].as_u64().unwrap() + 1);
+    assert_eq!(
+        c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":split})
+        )["error"]["code"],
+        -32803
+    );
+    c.finish();
+    p.unchanged();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn function_definitions_follow_import_aliases_unsaved_lines_and_privacy() {
+    let p = Project::new();
+    let main="mod math;use crate::math::answer as value;fn main()->i32{return value()+crate::math::answer();}";
+    p.package("", "app", "", main);
+    p.write(
+        "src/math.ox",
+        "pub fn answer()->i32{return 42;}fn private()->i32{return 1/0;}",
+    );
+    let path = p.uri("src/main.ox");
+    let library = p.uri("src/math.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, main);
+    c.open(
+        &library,
+        "\n\n\npub fn answer()->i32{return 42;}fn private()->i32{return 1/0;}",
+    );
+    for needle in ["value()+", "answer();"] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(main,needle)}),
+        );
+        assert_eq!(
+            result["result"],
+            json!([{"uri":library,"range":{"start":{"line":3,"character":7},"end":{"line":3,"character":13}}}]),
+            "{result}"
+        );
+    }
+    let bad = "mod math;fn main()->i32{return crate::math::private();}";
+    c.change(&path, 2, json!([{"text":bad}]));
+    assert!(!c.diagnostics[&path]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position_at(bad,"private();")}),
+    );
+    assert_eq!(result["result"], Value::Null, "{result}");
+    assert!(result.get("error").is_none());
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn document_outline_uses_declarations_and_survives_body_type_errors() {
+    let p = Project::new();
+    let text="pub struct Pair{pub left:i32,right:i32}\npub enum Choice{Yes(i32),No}\nfn main()->i32{return missing;}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    let result = c.request(
+        "textDocument/documentSymbol",
+        json!({"textDocument":{"uri":path}}),
+    );
+    let entries = result["result"].as_array().expect("missing outline");
+    assert_eq!(entries.len(), 7, "{result}");
+    for (name, kind, container) in [
+        ("Pair", 23, None),
+        ("left", 8, Some("Pair")),
+        ("right", 8, Some("Pair")),
+        ("Choice", 10, None),
+        ("Yes", 22, Some("Choice")),
+        ("No", 22, Some("Choice")),
+        ("main", 12, None),
+    ] {
+        let entry = entries.iter().find(|entry| entry["name"] == name).unwrap();
+        assert_eq!(entry["kind"], kind);
+        assert_eq!(entry["location"]["uri"], path);
+        assert_eq!(
+            entry.get("containerName").and_then(Value::as_str),
+            container
+        );
+    }
+    assert!(!c.diagnostics[&path]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    c.finish();
+    p.unchanged();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn workspace_symbol_search_keeps_same_names_distinct_and_reads_buffers() {
+    let p = Project::new();
+    p.write("oxid.toml","[workspace]\nedition=\"typed-preview\"\nmembers=[\"one\",\"two\"]\ndefault-members=[\"one\"]\n");
+    for name in ["one", "two"] {
+        p.package(
+            &format!("{name}/"),
+            name,
+            "kind=\"lib\"\nentry=\"src/main.ox\"\n",
+            "pub fn shared()->i32{return 42;}",
+        );
+    }
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    let result = c.request("workspace/symbol", json!({"query":"shared"}));
+    let entries = result["result"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "{result}");
+    assert_ne!(entries[0]["location"]["uri"], entries[1]["location"]["uri"]);
+    let one = p.uri("one/src/main.ox");
+    c.open(&one, "pub fn only_buffer()->i32{return 42;}");
+    let result = c.request("workspace/symbol", json!({"query":"only_buffer"}));
+    assert_eq!(result["result"].as_array().unwrap().len(), 1);
+    assert_eq!(result["result"][0]["location"]["uri"], one);
+    let result = c.request("workspace/symbol", json!({"query":"shared"}));
+    assert_eq!(result["result"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        result["result"][0]["location"]["uri"],
+        p.uri("two/src/main.ox")
+    );
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn range_index_definition_is_visible_only_inside_its_loop() {
+    let p = Project::new();
+    let text =
+        "fn main()->i32{let mut total=0;for index in 0..2 {total=total+index;}return total;}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position_at(text,"index;")}),
+    );
+    let start = position_at(text, "index in");
+    let mut end = start.clone();
+    end["character"] = json!(start["character"].as_u64().unwrap() + 5);
+    assert_eq!(
+        result["result"],
+        json!([{"uri":path,"range":{"start":start,"end":end}}]),
+        "{result}"
+    );
+    let bad = text.replace("return total;", "return index;");
+    c.change(&path, 2, json!([{"text":bad}]));
+    let prefix = bad.rfind("index;").unwrap();
+    let position = json!({"line":0,"character":bad[..prefix].encode_utf16().count()});
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position}),
+    );
+    assert_eq!(result["result"], Value::Null, "{result}");
+    assert!(result.get("error").is_none());
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn symbol_limit_is_enforced_before_publication_and_narrow_queries_still_work() {
+    let p = Project::new();
+    let source = |fields: usize| {
+        format!(
+            "struct Many{{{}}}\nfn main()->i32{{return 0;}}",
+            (0..fields)
+                .map(|index| format!("field_{index}:i32,"))
+                .collect::<String>()
+        )
+    };
+    let text = source(4094);
+    p.package("", "app", "", &text);
+    let path = p.uri("src/main.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, &text);
+    let result = c.request(
+        "textDocument/documentSymbol",
+        json!({"textDocument":{"uri":path}}),
+    );
+    assert_eq!(result["result"].as_array().unwrap().len(), 4096, "{result}");
+    c.change(&path, 2, json!([{"text":source(4095)}]));
+    let result = c.request(
+        "textDocument/documentSymbol",
+        json!({"textDocument":{"uri":path}}),
+    );
+    assert_eq!(result["error"]["code"], -32803, "{result}");
+    assert!(result["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("too many symbols"));
+    let result = c.request("workspace/symbol", json!({"query":"field_4094"}));
+    assert_eq!(result["result"].as_array().unwrap().len(), 1, "{result}");
+    assert_eq!(result["result"][0]["name"], "field_4094");
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn generic_instantiations_navigate_to_the_original_function_declaration() {
+    let p = Project::new();
+    let text="fn identity<T>(value:T)->T{return value;}\nfn main()->i32{let ignored=identity::<bool>(true);return identity::<i32>(42);}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    for needle in ["identity::<bool>", "identity::<i32>"] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(text,needle)}),
+        );
+        assert_eq!(
+            result["result"],
+            json!([{"uri":path,"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":11}}}]),
+            "{result}"
+        );
+    }
+    c.finish();
+    p.unchanged();
+}

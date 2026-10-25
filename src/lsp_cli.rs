@@ -220,7 +220,7 @@ impl Server {
                         Ok(()) => response(
                             writer,
                             id,
-                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
+                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
                         )?,
                         Err(message) => error(writer, id, -32602, &message)?,
                     }
@@ -253,6 +253,24 @@ impl Server {
         if method == "textDocument/formatting" {
             if let Some(id) = id {
                 match self.format(params) {
+                    Ok(value) => response(writer, id, value)?,
+                    Err(message) => error(writer, id, -32803, &message)?,
+                }
+            }
+            return Ok(None);
+        }
+        if method == "textDocument/definition" {
+            if let Some(id) = id {
+                match self.definition(params) {
+                    Ok(value) => response(writer, id, value)?,
+                    Err(message) => error(writer, id, -32803, &message)?,
+                }
+            }
+            return Ok(None);
+        }
+        if matches!(method, "textDocument/documentSymbol" | "workspace/symbol") {
+            if let Some(id) = id {
+                match self.symbols(params, method == "workspace/symbol") {
                     Ok(value) => response(writer, id, value)?,
                     Err(message) => error(writer, id, -32803, &message)?,
                 }
@@ -376,6 +394,185 @@ impl Server {
             return Ok(json!([]));
         }
         Ok(json!([{"range":range((0,0), end_position(&document.text)),"newText":text}]))
+    }
+    fn definition(&self, params: &Value) -> Result<Value, String> {
+        let document = self
+            .documents
+            .find(string(&params["textDocument"], "uri")?)
+            .ok_or("source is not open")?;
+        if self
+            .documents
+            .files
+            .values()
+            .any(|document| !document.synchronized)
+        {
+            return Err(
+                "reopen the unsynchronized document or send its full text before navigation".into(),
+            );
+        }
+        let offset = documents::position(&document.text, &params["position"])?;
+        let entries: Vec<_> = self
+            .documents
+            .files
+            .values()
+            .map(|document| (document.path.as_path(), document.text.as_str()))
+            .collect();
+        let overlay = frontend::editor::SourceOverlay::new(&entries)?;
+        let graphs = project_cli::editor_project_graphs(&document.path, self.explicit_typed)?;
+        let mut locations = Vec::new();
+        let (mut files, mut bytes) = (0, 0);
+        for graph in graphs {
+            if !graph
+                .packages
+                .iter()
+                .any(|package| document.path.starts_with(&package.root))
+            {
+                continue;
+            }
+            let found = frontend::editor::definition(
+                &graph.packages,
+                graph.entry.as_deref(),
+                &overlay,
+                &document.path,
+                offset,
+            )
+            .map_err(|errors| {
+                errors.first().map_or_else(
+                    || "cannot read source declarations".to_owned(),
+                    |error| bounded(&error.message, 8192).to_owned(),
+                )
+            })?;
+            files += found.files;
+            bytes += found.bytes;
+            if files > 1024 || bytes > 8 * 1024 * 1024 {
+                return Err("definition lookup exceeds the source limit".into());
+            }
+            if let Some(found) = found.location {
+                let value = json!({"uri":self.uri_for_path(Path::new(&found.path))?,"range":range(found.start,found.end)});
+                if !locations.contains(&value) {
+                    locations.push(value);
+                }
+                if locations.len() > 32 {
+                    return Err("navigation exceeds the definition result limit".into());
+                }
+            }
+        }
+        Ok(if locations.is_empty() {
+            Value::Null
+        } else {
+            Value::Array(locations)
+        })
+    }
+    fn symbols(&self, params: &Value, workspace: bool) -> Result<Value, String> {
+        if self
+            .documents
+            .files
+            .values()
+            .any(|document| !document.synchronized)
+        {
+            return Err(
+                "reopen the unsynchronized document or send its full text before listing symbols"
+                    .into(),
+            );
+        }
+        let query = if workspace {
+            string(params, "query")?
+        } else {
+            ""
+        };
+        if query.len() > 128 {
+            return Err("workspace symbol query exceeds 128 bytes".into());
+        }
+        let path = if workspace {
+            None
+        } else {
+            Some(
+                &self
+                    .documents
+                    .find(string(&params["textDocument"], "uri")?)
+                    .ok_or("source is not open")?
+                    .path,
+            )
+        };
+        let contexts = path.map_or_else(
+            || self.roots.values().cloned().collect::<Vec<_>>(),
+            |path| vec![path.clone()],
+        );
+        let entries: Vec<_> = self
+            .documents
+            .files
+            .values()
+            .map(|document| (document.path.as_path(), document.text.as_str()))
+            .collect();
+        let overlay = frontend::editor::SourceOverlay::new(&entries)?;
+        let mut graphs_seen = BTreeSet::new();
+        let mut symbols_seen = BTreeSet::new();
+        let mut output = Vec::new();
+        let (mut visits, mut edges, mut files, mut bytes, mut symbol_bytes) = (0, 0, 0, 0, 0);
+        for context in contexts {
+            for graph in project_cli::editor_project_graphs(&context, self.explicit_typed)? {
+                let identity = (
+                    graph
+                        .packages
+                        .iter()
+                        .map(|package| package.entry.clone())
+                        .collect::<Vec<_>>(),
+                    graph.entry.clone(),
+                );
+                if !graphs_seen.insert(identity) {
+                    continue;
+                }
+                visits += graph.packages.len();
+                edges += graph
+                    .packages
+                    .iter()
+                    .map(|package| package.dependencies.len())
+                    .sum::<usize>();
+                if visits > 256 || edges > 1024 {
+                    return Err("symbol lookup exceeds the package or dependency limit".into());
+                }
+                let result = frontend::editor::symbols(
+                    &graph.packages,
+                    graph.entry.as_deref(),
+                    &overlay,
+                    path.map(PathBuf::as_path),
+                    query,
+                )
+                .map_err(|errors| {
+                    errors.first().map_or_else(
+                        || "cannot read source symbols".to_owned(),
+                        |error| bounded(&error.message, 8192).to_owned(),
+                    )
+                })?;
+                files += result.files;
+                bytes += result.bytes;
+                if files > 1024 || bytes > 8 * 1024 * 1024 {
+                    return Err("symbol lookup exceeds the source limit".into());
+                }
+                for symbol in result.entries {
+                    let uri = self.uri_for_path(Path::new(&symbol.location.path))?;
+                    if !symbols_seen.insert((
+                        uri.clone(),
+                        symbol.location.start,
+                        symbol.location.end,
+                    )) {
+                        continue;
+                    }
+                    symbol_bytes += uri.len()
+                        + symbol.name.len()
+                        + symbol.container.as_ref().map_or(0, String::len);
+                    if output.len() >= 4096 || symbol_bytes > 8 * 1024 * 1024 {
+                        return Err("too many symbols; narrow the workspace query".into());
+                    }
+                    let mut item = json!({"name":symbol.name,"kind":symbol.kind,"location":{"uri":uri,"range":range(symbol.location.start,symbol.location.end)}});
+                    if let Some(container) = symbol.container {
+                        item["containerName"] = container.into();
+                    }
+                    output.push(item);
+                }
+            }
+        }
+        Ok(Value::Array(output))
     }
     fn uri_for_path(&self, path: &Path) -> Result<String, String> {
         let path = path.canonicalize().unwrap_or_else(|_| path.to_owned());

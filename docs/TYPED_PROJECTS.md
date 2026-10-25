@@ -63,12 +63,21 @@ Use `:lua vim.lsp.buf.format()` to format the current buffer. Save it normally
 when ready. For standalone files, add `--edition`, `typed-preview` to the command
 arguments. Files must already exist on disk; untitled buffers are unsupported.
 
+Use `:lua vim.lsp.buf.definition()` to jump from a function call or a local
+variable use to its declaration. `:lua vim.lsp.buf.document_symbol()` lists the
+current file's declarations. In a project or workspace, use
+`:lua vim.lsp.buf.workspace_symbol('name')` to search declarations by name.
+These operations read unsaved buffers too; import aliases and function privacy
+follow the compiler's ordinary namespace rules.
+
 Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
 Cross-file loading currently requires Linux. Completion, rename and navigation
-are not yet provided. See the [language server contract](../rfcs/0065-typed-language-server.md).
+to types or members are not yet provided. See the
+[language server contract](../rfcs/0065-typed-language-server.md) and
+[navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 
 ## Generate API documentation
 

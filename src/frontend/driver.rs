@@ -244,6 +244,56 @@ pub(super) fn editor_check(
     }
 }
 
+pub(super) fn editor_definition(
+    packages: &[PackageSpec],
+    entry: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<super::editor::EditorDefinition, Vec<super::editor::EditorDiagnostic>> {
+    let prepared =
+        prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
+            .map_err(|error| super::editor::diagnostics(&error.sources, &error.diagnostics))?;
+    let owner = match &prepared.sources {
+        PreparedSources::Single(project) => super::declaration_index::SourceOwner::project(project),
+        PreparedSources::Packages(package) => {
+            super::declaration_index::SourceOwner::packaged(package)
+        }
+    };
+    let sources = prepared.project().sources();
+    let location = super::editor::navigation::definition(owner, sources, path, offset)
+        .map_err(|errors| super::editor::diagnostics(sources, &errors))?;
+    Ok(super::editor::EditorDefinition {
+        location,
+        files: sources.files().len(),
+        bytes: sources
+            .files()
+            .iter()
+            .map(|source| source.text().len())
+            .sum(),
+    })
+}
+
+pub(super) fn editor_symbols(
+    packages: &[PackageSpec],
+    entry: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+    path: Option<&Path>,
+    query: &str,
+) -> Result<super::editor::EditorSymbols, Vec<super::editor::EditorDiagnostic>> {
+    let prepared =
+        prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
+            .map_err(|error| super::editor::diagnostics(&error.sources, &error.diagnostics))?;
+    let owner = match &prepared.sources {
+        PreparedSources::Single(project) => super::declaration_index::SourceOwner::project(project),
+        PreparedSources::Packages(package) => {
+            super::declaration_index::SourceOwner::packaged(package)
+        }
+    };
+    super::editor::navigation::symbols(owner, prepared.project().sources(), path, query)
+        .map_err(|errors| super::editor::diagnostics(prepared.project().sources(), &errors))
+}
+
 fn fingerprint_error() -> Box<Diagnostic> {
     Diagnostic::new(
         "E0400",
