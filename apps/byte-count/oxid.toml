@@ -6,7 +6,6 @@ entry = "src/main.ox"
 
 [build]
 backend = "llvm"
-target = "x86_64-unknown-linux-gnu"
 profile = "bounded"
 entry-mode = "process"
 
