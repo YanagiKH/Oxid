@@ -17,3 +17,7 @@ sha2 = "=0.10.9"
 
 [build-dependencies]
 cc = "1"
+
+# Native toolchain fingerprints hash large executables in debug builds too.
+[profile.dev.package.sha2]
+opt-level = 3
