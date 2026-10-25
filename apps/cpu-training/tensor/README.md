@@ -37,3 +37,17 @@ An update checks every candidate parameter and moment before committing any chan
 `optimizer::checkpoint::encode` and `decode` preserve settings, moments, powers, schedule and counter. `model::session::encode` stores a model with its optimizer; `decode` accepts complete sessions and existing fixed-rate SGD model checkpoints. Model and optimizer counters are independent, so importing or resetting an optimizer does not change the model's update history.
 
 `checkpoint::training::save`, `load` and `load_latest` provide file I/O and two-file recovery for complete sessions. Save each updated session to the other slot, preserving the previous valid file until the write completes.
+
+## Data and batches
+
+`data::create(inputs, targets)` takes ownership of two finite matrices with equal nonzero row counts and nonzero column counts. `row_count`, `feature_count`, `target_count`, `input_at` and `target_at` provide read access.
+
+`data::initialize_sampler(dataset, batch_size, shuffle, seed)` prepares an epoch order. Every row appears once per epoch, including the final partial batch. A batch size larger than the row count selects the whole dataset. A zero seed selects a fixed nonzero default; the same inputs and seed reproduce the same order.
+
+`prepare` copies the next pair of batches without advancing the sampler. `next_batch` advances only after both matrices are copied successfully. `train_next` advances model, optimizer and sampler only after the complete training update succeeds. Rejected shapes, non-finite calculations, allocation failures and counter overflow preserve their previous states. Epoch shuffling allocates no additional memory.
+
+`batch_count`, `epoch`, `position`, `next_size` and `row_index` inspect the next batch. The batch counter records consumed batches, independently of model and optimizer update counters. Shuffle uses xorshift32 and rejection sampling over its nonzero output range, followed by Fisher–Yates from an identity order at each epoch.
+
+`data::checkpoint` encodes paired matrices; `data::sampler_checkpoint` preserves permutation, RNG and progress. Sampler decoding checks dimensions, reserved fields, exact lengths, checksum, unique in-range row indices and consistent epoch/cursor/counter values. Unshuffled states require identity order.
+
+`data::session` stores the model, optimizer, dataset and sampler together. It validates their dimensions and embedded formats. `checkpoint::pipeline` adds dataset and session files plus two-slot recovery. See [minibatch training](../../minibatch-training/README.md) for commands and data export.

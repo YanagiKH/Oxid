@@ -21,6 +21,8 @@ struct TrainingTape { weights1: Variable, bias1: Variable, weights2: Variable, b
 struct Gradients { values: Tensor, loss: f64 }
 
 pub fn update_count(model: &Model) -> u64 { return model.updates; }
+pub fn input_count(model: &Model) -> i32 { return model.weights1.rows; }
+pub fn output_count(model: &Model) -> i32 { return model.weights2.columns; }
 
 pub fn parameter_elements(model: &Model) -> i32 {
     if !crate::valid(&*model.weights1) || !crate::valid(&*model.bias1) || !crate::valid(&*model.weights2) || !crate::valid(&*model.bias2) { return -1; }

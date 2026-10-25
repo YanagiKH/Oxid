@@ -18,6 +18,7 @@ use std::fs::close;
 use std::io::ReadSomeStatus;
 use std::io::WriteSomeStatus;
 pub mod training;
+pub mod pipeline;
 
 fn write_all(file: &mut File, bytes: &[u8]) -> TensorResult<()>{
     let mut offset = 0;

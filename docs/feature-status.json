@@ -1913,7 +1913,7 @@
     },
     {
       "id": "native-cpu-tensor-training",
-      "summary": "Checked f64 CPU tensors, reverse-mode gradients, SGD/Adam/AdamW, clipping, learning-rate schedules and resumable native training",
+      "summary": "Checked f64 tensors, reverse-mode gradients, SGD/Adam/AdamW and deterministic resumable minibatch training",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1923,7 +1923,8 @@
       "reviewer": "unassigned",
       "spec": [
         "apps/cpu-training/README.md",
-        "apps/cpu-training/tensor/README.md"
+        "apps/cpu-training/tensor/README.md",
+        "apps/minibatch-training/README.md"
       ],
       "implementation": [
         "apps/cpu-training/tensor/src/lib.ox",
@@ -1935,7 +1936,13 @@
         "apps/cpu-training/tensor/src/optimizer.ox",
         "apps/cpu-training/tensor/src/optimizer/checkpoint.ox",
         "apps/cpu-training/tensor/src/model/session.ox",
-        "apps/cpu-training/checkpoint/src/training.ox"
+        "apps/cpu-training/checkpoint/src/training.ox",
+        "apps/cpu-training/tensor/src/data.ox",
+        "apps/cpu-training/tensor/src/data/checkpoint.ox",
+        "apps/cpu-training/tensor/src/data/sampler_checkpoint.ox",
+        "apps/cpu-training/tensor/src/data/session.ox",
+        "apps/cpu-training/checkpoint/src/pipeline.ox",
+        "apps/minibatch-training/src/main.ox"
       ],
       "tests": [
         "apps/cpu-training/trainer/tests/tensor.ox",
@@ -1946,12 +1953,16 @@
         "scripts/verify_optimizer_checkpoints.py",
         "scripts/verify_optimizer_training.py",
         "scripts/test_optimizer_oracles.py",
-        "scripts/test_optimizer_sessions.py"
+        "scripts/test_optimizer_sessions.py",
+        "apps/minibatch-training/tests/data.ox",
+        "scripts/verify_data_pipeline.py",
+        "scripts/verify_minibatch_training.py",
+        "scripts/test_data_pipeline_oracles.py"
       ],
       "evidence": [
         "apps/cpu-training/README.md"
       ],
-      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP with full batches. No general views, other dtypes, mini-batch dataset pipeline or larger-model qualification. Compiler and 16MiB heap limits apply."
+      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Data and sessions are held in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler and 16 MiB heap limits apply."
     }
   ]
 }
