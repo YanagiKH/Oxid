@@ -1,8 +1,9 @@
 # Native projects
 
 Use Oxid's typed mode to check code, test local packages and build native
-executables. This workflow is available in development builds on Linux x86_64.
-Native builds require LLVM, Clang and LLD 19.1.7.
+executables. This workflow is available in development builds on Linux x86_64
+and ARM64. Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
+Oxid selects that host's native target automatically.
 
 ## Create and run
 

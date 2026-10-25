@@ -83,7 +83,12 @@ impl Project {
         }
         bounded_output(&mut command)
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     fn native_without_sources(&self) -> Output {
         let compile = bounded_output(
             Command::new(env!("CARGO_BIN_EXE_oxid"))
@@ -384,7 +389,12 @@ fn public_slice_module_bounds_retain_child_file_and_access_span() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run the public borrowed-slice native gate explicitly"]
 fn public_slice_source_free_native_parity() {

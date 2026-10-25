@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_constructor_inference_compatibility.py \
+          python3 -B scripts/verify_linux_native_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -480,6 +480,53 @@ jobs:
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files
           if-no-files-found: warn
+          retention-days: 14
+
+  linux-arm64-native:
+    name: Current Linux ARM64 native programs
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    container: debian:trixie-slim
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - name: Install pinned ARM64 LLVM and host tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check ARM64 code and ordinary regressions
+        run: |
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets --all-features
+      - name: Verify native ARM64 builds and source-free execution
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 -B scripts/verify_linux_arm64_native.py \
+            --repo . --expected-head "$EXPECTED_HEAD" \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
+      - name: Retain ARM64 native results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-linux-arm64-native
+          path: ${{ runner.temp }}/linux-arm64-native
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
   workflow-lint:

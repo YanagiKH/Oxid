@@ -13,7 +13,7 @@ enum Backend {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Target {
-    LinuxX86_64Gnu,
+    Host,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NativeOptimization {
@@ -89,7 +89,7 @@ impl NativeBuildSettings {
     ) -> Self {
         Self {
             backend: Backend::Llvm,
-            target: Target::LinuxX86_64Gnu,
+            target: Target::Host,
             optimization,
             execution: ExecutionPolicy::Bounded,
             source_paths: if reproducible {
@@ -102,7 +102,44 @@ impl NativeBuildSettings {
 
     pub(crate) const fn target_triple(self) -> &'static str {
         match self.target {
-            Target::LinuxX86_64Gnu => "x86_64-unknown-linux-gnu",
+            Target::Host => {
+                if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+                    "aarch64-unknown-linux-gnu"
+                } else {
+                    "x86_64-unknown-linux-gnu"
+                }
+            }
+        }
+    }
+
+    pub(crate) const fn host_supported() -> bool {
+        cfg!(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))
+    }
+
+    pub(crate) const fn elf_machine() -> u16 {
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            183 // EM_AARCH64
+        } else {
+            62 // EM_X86_64
+        }
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    pub(crate) const fn elf_interpreter() -> &'static str {
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            "ld-linux-aarch64.so.1"
+        } else {
+            "ld-linux-x86-64.so.2"
         }
     }
 
@@ -408,7 +445,20 @@ mod tests {
     fn settings_resolve_only_the_implemented_native_states() {
         for reproducible in [false, true] {
             let settings = NativeBuildSettings::new(reproducible);
-            assert_eq!(settings.target_triple(), "x86_64-unknown-linux-gnu");
+            let expected = if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+                ("aarch64-unknown-linux-gnu", 183, "ld-linux-aarch64.so.1")
+            } else {
+                ("x86_64-unknown-linux-gnu", 62, "ld-linux-x86-64.so.2")
+            };
+            assert_eq!(settings.target_triple(), expected.0);
+            assert_eq!(NativeBuildSettings::elf_machine(), expected.1);
+            #[cfg(all(
+                target_os = "linux",
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ))]
+            assert_eq!(NativeBuildSettings::elf_interpreter(), expected.2);
             assert_eq!(settings.optimization_flag(), "-O0");
             assert_eq!(settings.reproducible(), reproducible);
         }

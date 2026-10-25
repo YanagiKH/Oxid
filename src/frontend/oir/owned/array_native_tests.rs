@@ -19,7 +19,12 @@ use super::super::super::consumer_fixtures as raw;
 use super::super::super::execute::{Event, ObservationControl, OwnedRunFailure};
 use super::super::*;
 use super::{append_cycle, block};
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use super::{argv_fuel_harness, assert_result, scalar_output, Scratch};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -482,7 +487,12 @@ fn native_arrays_core_matrix_and_maximum_width_emit_without_privileged_witnesses
 
 // This adapter changes only main's fuel source. Production function bodies and
 // diagnostics are retained as their own artifact before creating a derivative.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn preserve_production(scratch: &Scratch, name: &str, text: &str) {
     let filename = format!("{name}-guarded-production.ll");
     std::fs::write(scratch.0.join(&filename), text).unwrap();
@@ -492,7 +502,12 @@ fn preserve_production(scratch: &Scratch, name: &str, text: &str) {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn check_process(
     scratch: &Scratch,
     binary: &std::path::Path,
@@ -520,7 +535,12 @@ fn check_process(
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn run_input(
     scratch: &Scratch,
     name: &str,
@@ -553,7 +573,12 @@ fn run_input(
     1 + fuels.len()
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_arrays_all_195_small_cases_use_source_free_elf_and_every_fuel() {
@@ -577,7 +602,12 @@ fn native_arrays_all_195_small_cases_use_source_free_elf_and_every_fuel() {
     eprintln!("array small core: 195 input cases, 390 compiled artifacts, {processes} ELF executions; 195 additional preserved guarded production modules");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_arrays_maximum_width_39_cases_use_source_free_elf_at_charge_boundaries() {
@@ -901,7 +931,12 @@ fn native_arrays_transfer_endpoints_and_full_types_precede_native_work() {
     assert_eq!(denials, 12);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_arrays_nine_transfer_inputs_use_source_free_elf_and_every_fuel() {
@@ -1153,7 +1188,12 @@ fn native_array_phis_name_the_actual_final_predecessor_and_load_only_the_selecte
     assert_eq!(profiles, 16);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_array_continuations_use_source_free_elf_on_both_paths_and_every_fuel() {
@@ -1406,7 +1446,12 @@ fn native_array_effect_models_keep_rhs_snapshot_and_failure_origins_explicit() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_array_effects_use_source_free_elf_and_every_fuel() {
@@ -1428,7 +1473,12 @@ fn native_array_effects_use_source_free_elf_and_every_fuel() {
     eprintln!("array effects: 4 input cases, 8 compiled artifacts, {processes} ELF executions; 4 additional preserved guarded production modules. Intermediate effect traces are reference observations; native execution proves final results and exact failure diagnostics");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_arrays_extreme_payloads_and_production_guarded_wrappers_use_real_llvm() {

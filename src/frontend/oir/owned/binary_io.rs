@@ -36,7 +36,12 @@ pub(super) fn admit_delivery(
     return_cost: usize,
     fuel: &mut usize,
 ) -> std::result::Result<(), Failure> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if !cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         return Err(Failure::Host);
     }
     i32::try_from(length).map_err(|_| Failure::Bounds)?;
@@ -63,7 +68,12 @@ impl Transport for Stdio {
         if let Some(result) = testing::read(bytes) {
             return result;
         }
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             // SAFETY: The writable slice owns its exact initialized extent.
             // libc::read makes a single unbuffered attempt. Capture errno first.
@@ -74,7 +84,12 @@ impl Transport for Stdio {
                 Ok(result as usize)
             }
         }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(not(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let _ = bytes;
             Err(38)
@@ -85,7 +100,12 @@ impl Transport for Stdio {
         if let Some(result) = testing::write(bytes) {
             return result;
         }
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             // SAFETY: Exactly the borrowed initialized extent is readable.
             let result = unsafe { libc::write(1, bytes.as_ptr().cast(), bytes.len()) };
@@ -95,7 +115,12 @@ impl Transport for Stdio {
                 Ok(result as usize)
             }
         }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(not(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let _ = bytes;
             Err(38)

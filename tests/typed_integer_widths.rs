@@ -318,8 +318,13 @@ fn every_width_survives_packed_fields_array_loans_and_both_enum_payload_forms() 
 }
 
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_all_integer_storage_widths_run_after_project_removal() {
     for (source, expected) in storage_cases() {
         for policy in ["bounded", "hosted"] {
@@ -347,8 +352,13 @@ fn native_all_integer_storage_widths_run_after_project_removal() {
 }
 
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_integer_module_runs_without_sources_in_both_policies_and_profiles() {
     for policy in ["bounded", "hosted"] {
         for profile in ["dev", "release"] {

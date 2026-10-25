@@ -145,7 +145,12 @@ fn virtual_workspace_checks_members_and_selects_a_single_process_without_extra_s
         "{result:?}"
     );
     success(workspace.run("apps/one/src", &["check"]));
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         let output = workspace.run("apps/one/src", &["run"]);
         assert_eq!(output.status.code(), Some(7), "{output:?}");
         assert!(output.stdout.is_empty() && output.stderr.is_empty());
@@ -238,7 +243,12 @@ fn package_root_joins_the_roster_and_root_commands_use_workspace_defaults() {
     success(workspace.run("", &["check", "--frozen", "--workspace"]));
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn package_root_declared_tests_keep_their_member_when_defaults_select_another_package() {
     let workspace = Workspace::new();
@@ -529,7 +539,12 @@ fn shared_lock_allows_binary_and_test_edits_and_locked_tests_without_main_source
         ],
     ));
     assert!(String::from_utf8_lossy(&output.stdout).contains("\"value\":41"));
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         fs::remove_file(workspace.root.join("apps/one/src/main.ox")).unwrap();
         fs::remove_file(workspace.root.join("apps/two/src/main.ox")).unwrap();
         success(workspace.run("", &["test", "--workspace", "--frozen"]));
@@ -798,7 +813,12 @@ fn explicit_file_editions_and_legacy_commands_keep_their_existing_boundaries() {
     // The explicitly selected legacy runtime retains its existing cache effects.
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn tests_preflight_all_declared_entries_and_report_nonzero_status_with_clean_stdout() {
     let workspace = Workspace::new();
@@ -918,7 +938,12 @@ fn member_count_and_aggregate_retained_source_limits_are_enforced() {
     }
     workspace.write("libs/math/oxid.toml", &manifest);
     workspace.write("libs/math/tests/large.ox", &test_source);
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         failure(workspace.run("", &["test"]), "8 MiB retained source limit");
     }
     workspace.no_outputs();
@@ -990,7 +1015,12 @@ fn shared_lock_and_member_manifest_special_files_fail_without_opening_a_fifo() {
     workspace.no_outputs();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn inferred_process_diagnostics_remain_fallible_and_result_manifest_errors_are_json() {
     let workspace = Workspace::new();
@@ -1021,7 +1051,12 @@ fn inferred_process_diagnostics_remain_fallible_and_result_manifest_errors_are_j
     workspace.no_outputs();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 in OXID_LLVM_BIN"]
 fn workspace_native_build_keeps_every_retained_dependency_snapshot_and_separates_same_names() {
@@ -1157,7 +1192,12 @@ fn native_doctor_admits_every_workspace_member_without_claiming_typechecks_or_ru
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 in OXID_LLVM_BIN"]
 fn incremental_workspace_builds_keep_per_member_caches_behind_shared_lock_and_doctor_admission() {

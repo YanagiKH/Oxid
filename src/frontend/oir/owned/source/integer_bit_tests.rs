@@ -25,7 +25,12 @@ fn integer_bit_cells_keep_their_original_physical_representation() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn integer_bit_exact_memory_admission_precedes_argument_delivery() {
     use super::super::binary_io;

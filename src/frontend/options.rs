@@ -510,11 +510,10 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     if operation == Operation::Compile {
         let message = if backend.as_deref() != Some("llvm") {
             Some("typed-preview compile requires --backend llvm")
-        } else if target
-            .as_deref()
-            .is_some_and(|v| v != "x86_64-unknown-linux-gnu")
-        {
-            Some("native preview supports only --target x86_64-unknown-linux-gnu")
+        } else if target.as_deref().is_some_and(|v| {
+            v != super::build_config::NativeBuildSettings::new(false).target_triple()
+        }) {
+            Some("native compilation supports only the current host target")
         } else if output.is_none() {
             Some("typed-preview compile requires --output <new-path>")
         } else {
@@ -787,7 +786,10 @@ mod tests {
                     "compile",
                     "--backend",
                     "llvm",
-                    "--target=x86_64-unknown-linux-gnu",
+                    &format!(
+                        "--target={}",
+                        super::super::build_config::NativeBuildSettings::new(false).target_triple()
+                    ),
                     "file.ox",
                     "--output=program",
                 ])),
@@ -799,6 +801,27 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn native_compile_refuses_a_foreign_target_before_source_access() {
+        let foreign = if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            "x86_64-unknown-linux-gnu"
+        } else {
+            "aarch64-unknown-linux-gnu"
+        };
+        let value = format!("--target={foreign}");
+        let result = route(&arguments(&[
+            "compile",
+            "missing.ox",
+            "--edition=typed-preview",
+            "--backend=llvm",
+            &value,
+            "--output=new.elf",
+        ]));
+        assert!(
+            matches!(result,Route::Error{message,operation:super::Operation::Compile,..} if message.contains("current host target"))
+        );
     }
 
     #[test]
@@ -1546,7 +1569,8 @@ mod producer_options_tests {
                     if command == "compile" {
                         values.extend([
                             "--backend=llvm",
-                            "--target=x86_64-unknown-linux-gnu",
+                            // The producer route remains independently gated;
+                            // native output still selects only the current host.
                             "--output=new.elf",
                         ]);
                     }
@@ -1726,7 +1750,7 @@ mod producer_options_tests {
                     "--output=new.elf",
                     "--target=other",
                 ],
-                "only --target",
+                "current host target",
             ),
             (
                 vec!["source.ox", "--backend=llvm", "--output="],

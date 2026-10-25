@@ -210,7 +210,12 @@ fn formatter_keeps_shift_pairs_and_distinguishes_masks_from_borrows() {
     assert!(again.status.success());
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM 19.1.7"]
 fn native_shift_parameters_cover_every_counter_width_after_source_removal() {

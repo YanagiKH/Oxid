@@ -294,7 +294,12 @@ fn native_projected_slices_depth_sixty_four_has_bounded_walks() {
     assert_eq!(observation.metrics.render_bytes, module.len());
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_projected_slices_source_free_mutation_metadata_and_forwarding() {
@@ -326,7 +331,12 @@ fn native_projected_slices_source_free_mutation_metadata_and_forwarding() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_projected_slices_source_free_mutation_every_fuel() {
@@ -372,7 +382,12 @@ fn native_projected_slices_source_free_mutation_every_fuel() {
     assert!(successful, "small projected slice fixture terminates");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_projected_slices_source_free_signed_bounds_and_fuel() {

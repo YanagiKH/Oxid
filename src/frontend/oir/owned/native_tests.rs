@@ -423,7 +423,12 @@ fn assert_result(result: std::process::Output, stdout: &[u8], stderr: &[u8], sta
     assert_eq!(result.stderr, stderr);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_tiny_fixtures_use_real_llvm() {
@@ -583,7 +588,12 @@ fn native_owned_batch_census_and_whole_call_path_are_independent() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_batch_every_budget_uses_real_llvm() {
@@ -869,7 +879,12 @@ fn native_owned_guard_success_edges_dominate_field_and_return_stores() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_actual_llvm_guard_dominance_and_failure_order() {
@@ -1302,7 +1317,12 @@ fn native_owned_guarded_merges_select_only_the_taken_slot() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_merge_and_depth_boundaries_use_real_llvm() {
@@ -1413,7 +1433,12 @@ fn nested_relay() -> (SourceMap, RawOwnedProgram) {
     (sources, raw)
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_extended_storage_every_budget_uses_real_llvm() {
@@ -1629,7 +1654,12 @@ fn native_owned_historical_x_boundary_has_explicit_inventory_successor() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_expanded_boundary_uses_real_llvm_and_measures_stack() {
@@ -1658,7 +1688,10 @@ fn native_owned_expanded_boundary_uses_real_llvm_and_measures_stack() {
     let built = std::process::Command::new(clang)
         .args([
             "--no-default-config",
-            "--target=x86_64-unknown-linux-gnu",
+            &format!(
+                "--target={}",
+                crate::frontend::build_config::NativeBuildSettings::new(false).target_triple()
+            ),
             "-O0",
             "-fPIE",
             "-fstack-size-section",
@@ -2186,7 +2219,12 @@ fn native_owned_batch_guard_cfg_preserves_earlier_successful_write() {
     verify_batch_write_guards(&module);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_owned_batch_write_failure_every_budget_uses_real_llvm() {

@@ -42,7 +42,12 @@ fn main()->i32{
         GrowStatus::AllocationFailed=>{return -4;},
     }
 }"#;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 const BINARY: &str = r#"
 use alloc::bytes::GrowStatus;
 use alloc::bytes::new;
@@ -176,7 +181,12 @@ fn library_execution_settings_cannot_change_the_calling_binary_policy() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn hosted_binary_delivery_continues_past_the_previous_program_budget() {
     let project = Project::new(BINARY, Some("bounded"), true);
     let bounded = project.command(&["run"]);
@@ -205,7 +215,12 @@ fn hosted_execution_retains_arithmetic_bounds_and_entry_checks() {
             "E0606",
         ),
     ];
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         cases.push(("fn main()->i32{return 256;}", true, "E0600"));
     }
     for (source, process, code) in cases {
@@ -345,8 +360,9 @@ fn quoted_execution_names_and_comments_remain_valid() {
 #[test]
 #[cfg(all(
     target_os = "linux",
-    target_arch = "x86_64",
-    target_pointer_width = "64"
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 fn workspace_declared_tests_use_the_owning_binary_or_library_execution_policy() {
     let project = Project::new("fn main()->i32{return 0;}", None, false);
@@ -402,8 +418,13 @@ fn workspace_declared_tests_use_the_owning_binary_or_library_execution_policy() 
 }
 
 #[test]
-#[ignore = "requires Linux x86_64 LLVM 19.1.7 in OXID_LLVM_BIN"]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_hosted_and_bounded_policies_keep_distinct_cache_entries_at_both_optimizations() {
     for source in [SCALAR, BUFFER, MEMORY] {
         let project = Project::new(source, Some("hosted"), false);
@@ -472,8 +493,13 @@ fn native_hosted_and_bounded_policies_keep_distinct_cache_entries_at_both_optimi
 }
 
 #[test]
-#[ignore = "requires Linux x86_64 LLVM 19.1.7 in OXID_LLVM_BIN"]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_hosted_binary_status_delivery_survives_the_long_output_workload() {
     let project = Project::new(BINARY, Some("hosted"), true);
     for profile in ["dev", "release"] {
@@ -491,7 +517,12 @@ fn native_hosted_binary_status_delivery_survives_the_long_output_workload() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn success_build(output: Output) {
     assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");

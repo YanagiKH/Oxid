@@ -72,7 +72,12 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
     let case = Case::new(SOURCE);
     for output in ["existing", "fresh"] {
         let text = diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
-        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if cfg!(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             if output == "existing" {
                 assert!(text.contains("native output already exists"), "{text}");
             } else {
@@ -81,7 +86,7 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
             }
         } else {
             assert!(
-                text.contains("native preview requires a Linux x86_64 build host"),
+                text.contains("native builds require a Linux x86_64 or ARM64 host"),
                 "{text}"
             );
         }
@@ -109,7 +114,7 @@ fn byte_storage_native_public_entry_and_capacity_refuse_before_tool_and_output()
 #[test]
 fn byte_storage_native_public_unsupported_target_has_no_artifact_effects() {
     let case = Case::new(SOURCE);
-    let output = case.compile("fresh", &["--target=aarch64-unknown-linux-gnu"]);
+    let output = case.compile("fresh", &["--target=riscv64-unknown-linux-gnu"]);
     assert_eq!(output.status.code(), Some(1));
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("E0001"), "{text}");

@@ -511,7 +511,7 @@ fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> 
         (
             "target",
             manifest.target.as_deref(),
-            "x86_64-unknown-linux-gnu",
+            frontend::NativeBuildSettings::new(false).target_triple(),
         ),
     ] {
         if value.is_some_and(|value| value != supported) {
@@ -1258,7 +1258,7 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
         }
         let supported = match name {
             "--backend" => "llvm",
-            "--target" => "x86_64-unknown-linux-gnu",
+            "--target" => frontend::NativeBuildSettings::new(false).target_triple(),
             _ => {
                 return Err(format!(
                     "unsupported option for typed-preview build: {word}"
@@ -1473,6 +1473,30 @@ mod profile_tests {
     }
 
     #[test]
+    fn project_target_selects_the_host_and_refuses_foreign_architectures() {
+        let host = frontend::NativeBuildSettings::new(false).target_triple();
+        let manifest = runtime::ProjectManifest {
+            target: Some(host.into()),
+            ..Default::default()
+        };
+        validate_settings(&manifest).unwrap();
+        let option = format!("--target={host}");
+        validate_build_options(&options(&["build", &option])).unwrap();
+        let foreign = if host == "aarch64-unknown-linux-gnu" {
+            "x86_64-unknown-linux-gnu"
+        } else {
+            "aarch64-unknown-linux-gnu"
+        };
+        let manifest = runtime::ProjectManifest {
+            target: Some(foreign.into()),
+            ..Default::default()
+        };
+        assert!(validate_settings(&manifest).unwrap_err().contains("target"));
+        let option = format!("--target={foreign}");
+        assert!(validate_build_options(&options(&["build", &option])).is_err());
+    }
+
+    #[test]
     fn cli_profile_overrides_member_profile_without_changing_source_policy() {
         for manifest_profile in [None, Some("bounded"), Some("dev"), Some("release")] {
             let manifest = runtime::ProjectManifest {
@@ -1504,7 +1528,10 @@ mod profile_tests {
                     let settings = selected.resolve(&manifest).unwrap();
                     assert_eq!(settings.optimization_flag(), flag);
                     assert!(settings.reproducible());
-                    assert_eq!(settings.target_triple(), "x86_64-unknown-linux-gnu");
+                    assert_eq!(
+                        settings.target_triple(),
+                        frontend::NativeBuildSettings::new(false).target_triple()
+                    );
                 }
             }
             let selected = validate_build_options(&options(&[
@@ -1600,7 +1627,7 @@ mod profile_tests {
         assert!(build.resolve(&invalid).unwrap_err().contains("profile"));
         let invalid = runtime::ProjectManifest {
             profile: Some("release".into()),
-            target: Some("aarch64-unknown-linux-gnu".into()),
+            target: Some("riscv64-unknown-linux-gnu".into()),
             ..Default::default()
         };
         assert!(validate_settings(&invalid).unwrap_err().contains("target"));

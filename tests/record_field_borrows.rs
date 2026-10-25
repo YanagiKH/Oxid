@@ -175,9 +175,14 @@ fn slices_reborrow_from_array_and_buffer_fields_inside_projected_records() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_record_field_loans_match_reference_without_sources() {
     for policy in ["bounded", "hosted"] {
         for (source, expected) in samples() {

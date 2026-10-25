@@ -83,7 +83,12 @@ impl Project {
         }
         bounded_output(&mut command)
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     fn native_without_sources(&self) -> Output {
         let compile = bounded_output(
             Command::new(env!("CARGO_BIN_EXE_oxid"))
@@ -309,7 +314,12 @@ fn projected_slice_public_bounds_use_actual_projected_length_and_access_span() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run projected-slice source-free native gate explicitly"]
 fn projected_slice_public_source_free_native_parity() {

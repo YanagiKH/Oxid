@@ -384,7 +384,12 @@ fn native_composition_mixed_sentinels_effects_and_phi_emit() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_composition_source_free_pilot_sentinels_effects_and_phi() {
@@ -403,7 +408,12 @@ fn native_composition_source_free_pilot_sentinels_effects_and_phi() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_composition_raw_pilot_source_free_every_fuel() {
@@ -454,7 +464,12 @@ fn native_composition_raw_pilot_source_free_every_fuel() {
     assert!(successful, "small raw composition fixture must terminate");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_composition_projected_array_bounds_fuel_and_rhs_precedence() {
@@ -538,7 +553,12 @@ fn native_composition_projected_array_bounds_fuel_and_rhs_precedence() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_composition_raw_empty_sentinels_source_free() {
@@ -559,7 +579,12 @@ fn native_composition_raw_empty_sentinels_source_free() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_composition_source_free_depth_sixty_four() {

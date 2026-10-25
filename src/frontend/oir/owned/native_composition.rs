@@ -544,9 +544,14 @@ mod tests {
         }
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
-    #[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+    #[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
     fn record_enum_native_helpers_validate_active_cells_and_leave_padding_untouched() {
         use std::{
             path::PathBuf,
@@ -584,7 +589,8 @@ mod tests {
         };
         emit_helpers(&mut output, &plan);
         let mut module = format!(
-            "target triple = \"x86_64-unknown-linux-gnu\"\n{}",
+            "target triple = \"{}\"\n{}",
+            crate::frontend::build_config::NativeBuildSettings::new(false).target_triple(),
             output.text.unwrap()
         );
         module.push_str("\ndefine i32 @validate(ptr %source) {\n %status = call i32 @__oxid_composed_validate_r0(ptr %source)\n ret i32 %status\n}\ndefine void @move_active(ptr %source, ptr %destination) {\n call void @__oxid_composed_move_r0(ptr %source, ptr %destination)\n ret void\n}\ndefine void @drop_active(ptr %source) {\n call void @__oxid_composed_drop_r0(ptr %source)\n ret void\n}\n");
@@ -646,7 +652,11 @@ int main(void) {
         for optimization in ["-O0", "-O2"] {
             let executable = directory.0.join(optimization);
             let built = Command::new(&clang)
-                .args([optimization, "-Werror", "--target=x86_64-unknown-linux-gnu"])
+                .args([optimization, "-Werror"])
+                .arg(format!(
+                    "--target={}",
+                    crate::frontend::build_config::NativeBuildSettings::new(false).target_triple()
+                ))
                 .arg(&input)
                 .arg(&harness)
                 .arg("-o")

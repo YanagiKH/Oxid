@@ -1700,7 +1700,12 @@ mod tests {
         );
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     #[ignore = "requires LLVM 19.1.7 and the qualified native SDK"]
     fn prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal() {
@@ -2093,7 +2098,12 @@ mod tests {
         assert!(message.ends_with('λ'));
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     #[ignore = "requires pinned LLVM 19.1.7 tools"]
     fn prepared_native_uses_loaded_sources_after_removal() {

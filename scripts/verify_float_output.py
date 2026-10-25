@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify float text/JSON, exact bit round-trips and isolated native output."""
+import linux_native_target as native_target
 import argparse
 import hashlib
 import json
@@ -59,8 +60,8 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--llvm-bin', required=True, type=Path)
     args = parser.parse_args()
-    if sys.platform != 'linux' or os.uname().machine != 'x86_64':
-        raise ValueError('requires Linux x86_64')
+    if native_target.host() is None:
+        raise ValueError('requires Linux x86_64 or ARM64')
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
     compilers = [p.resolve(strict=True) for p in args.compilers]

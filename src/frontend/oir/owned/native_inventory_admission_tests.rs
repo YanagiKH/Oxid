@@ -363,7 +363,12 @@ fn native_inventory_shared_fixed_roles_include_actual_caller() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the native inventory gate"]
 fn native_inventory_shared_source_reuses_helper_beyond_historical_x() {

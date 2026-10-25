@@ -1,5 +1,10 @@
 //! Pinned Git packages use the ordinary typed graph and lock checks.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use std::{
     fs,
     path::PathBuf,
@@ -7,7 +12,12 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use std::path::Path;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -555,7 +565,12 @@ fn a_local_alias_cannot_bypass_a_pinned_packages_dependency_boundary() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn deployed(path: &Path, cwd: &Path) -> Output {
     use std::os::unix::process::CommandExt;
     let mut command = Command::new(path);
@@ -575,7 +590,12 @@ fn deployed(path: &Path, cwd: &Path) -> Output {
     command.output().unwrap()
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM, Clang and LLD 19.1.7"]
 fn pinned_libraries_build_both_profiles_and_deploy_without_sources_or_git() {

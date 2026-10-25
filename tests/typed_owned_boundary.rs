@@ -104,7 +104,12 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         let json = text(&compile);
         assert_eq!(json.lines().count(), 2, "{json}");
         assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
-        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if cfg!(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             if output == "output" {
                 assert!(json.contains("native output already exists"), "{json}");
             } else {
@@ -113,7 +118,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
             }
         } else {
             assert!(
-                json.contains("native preview requires a Linux x86_64 build host"),
+                json.contains("native builds require a Linux x86_64 or ARM64 host"),
                 "{json}"
             );
         }

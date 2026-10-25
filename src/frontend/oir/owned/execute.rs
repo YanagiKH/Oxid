@@ -86,7 +86,7 @@ impl OwnedRunFailure {
             Self::BinaryHost(span) => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "binary I/O requires Linux x86_64",
+                "binary I/O requires Linux x86_64 or ARM64",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::Scalar(e) => e.diagnostic(sources),
@@ -105,13 +105,13 @@ impl OwnedRunFailure {
             Self::InputHost(span) => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "bounded stdin execution requires Linux x86_64",
+                "bounded stdin execution requires Linux x86_64 or ARM64",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::OutputHost(span) => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "bounded stdout execution requires Linux x86_64",
+                "bounded stdout execution requires Linux x86_64 or ARM64",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::OutputEntry(span) => Diagnostic::new(
@@ -123,7 +123,7 @@ impl OwnedRunFailure {
             Self::ProcessHost => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "process execution requires Linux x86_64",
+                "process execution requires Linux x86_64 or ARM64",
                 None,
             ),
             // Process drivers must intercept this and exit 74 silently. This

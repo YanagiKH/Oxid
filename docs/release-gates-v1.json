@@ -29,13 +29,13 @@
     {
       "id": "G3",
       "title": "Production native compilation",
-      "status": "unmet",
+      "status": "in-progress",
       "required": [
         "Native build, execution, debugging and release profiles on Linux x86_64, Linux ARM64, Windows x86_64, macOS x86_64 and macOS ARM64.",
         "General hosted execution without demonstration fuel limits, verified optimization and realistic multi-module clean/incremental builds."
       ],
       "remaining": [
-        "Native project compilation supports Linux x86_64 using LLVM 19.1.7 at O0/O2 with optional hosted execution. Compiler/storage limits, other native targets, source debugging and full-scale build acceptance remain incomplete."
+        "Native project compilation supports Linux x86_64 and ARM64 using LLVM 19.1.7 at O0/O2 with optional hosted execution; repository CI verifies the supported hosts. Windows/macOS native targets, source debugging, larger compiler/storage limits and full-scale build acceptance remain incomplete."
       ]
     },
     {

@@ -165,9 +165,14 @@ fn explicit_and_inferred_calls_share_equal_function_instances() {
     assert_eq!(output.stdout, b"42\n");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_explicit_type_arguments_survive_source_removal() {
     let project=Project::new("use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::len;struct N{value:i32}fn answer<T>()->i32{return 1;}fn identity<T>(value:T)->T{return value;}fn relay<U>(value:U)->U{return identity::<U>(value);}fn main()->i32{let n=relay::<N>(N{value:41});let bytes=identity::<ByteBuf>(new());if len(&bytes)!=0||answer::<i32>()!=answer::<u128>(){return 1;}return n.value+answer::<()>();}");
     let deployment = project.0.join("deployed");
@@ -308,9 +313,14 @@ fn generic_calls_accept_private_types_without_exposing_them() {
     assert_eq!(output.stdout, b"42\n");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_generic_instances_run_without_source_files() {
     for (source,policy) in [
         ("struct N{value:i32}fn relay<T>(value:T,n:i32)->T{if n==0{return value;}return relay(value,n-1);}fn main()->i32{let n=relay(N{value:42},12);let wide=relay(340282366920938463463374607431768211455u128,3);let text=relay('雪',2);let fraction=relay(0.25,4);relay((),1);if fraction!=0.25||wide!=340282366920938463463374607431768211455u128||text!='雪'{return 1;}return n.value;}","hosted"),

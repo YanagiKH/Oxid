@@ -135,9 +135,14 @@ fn incomplete_duplicate_and_borrowed_patterns_report_source_errors() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_record_patterns_transfer_resources_after_source_removal() {
     for source in [
         "struct Empty{}fn main()->i32{let empty=Empty{};let Empty{}=empty;return 42;}",
@@ -167,9 +172,14 @@ fn native_record_patterns_transfer_resources_after_source_removal() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_record_pattern_traps_keep_clean_output_after_source_removal() {
     let source = "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;struct Pair{first:ByteBuf,second:ByteBuf}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}fn main()->i32{let pair=Pair{first:make(40u8),second:make(2u8)};let Pair{first:a,second:b}=pair;let zero=0;return 1/zero;}";
     for policy in ["bounded", "hosted"] {

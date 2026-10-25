@@ -608,7 +608,12 @@ fn budgets(name: &str) -> Vec<usize> {
 /// Runtime controls contain paths and budgets only. Hash/snapshot manifests are
 /// bound externally before executing the copied test binary. Each run creates a
 /// fresh directory containing only a linked immutable ELF and clears its env.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "bounded native source collector; requires frozen original source, budget controls, pinned LLVM and a fresh output path"]
 fn emit_candidate_native_receipts() {

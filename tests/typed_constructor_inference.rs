@@ -170,7 +170,12 @@ fn imported_aliases_keep_definition_identity_and_private_fields() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn deployed(source: &str, trap: bool) {
     for policy in ["bounded", "hosted"] {
         let project = Project::new(source);
@@ -221,18 +226,28 @@ fn deployed(source: &str, trap: bool) {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_inferred_constructors_run_without_source_files() {
     for source in [ORDERED, NESTED, OWNED] {
         deployed(source, false);
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_inferred_owned_constructors_report_later_traps() {
     deployed("use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;enum Option<T>{None,Some(T)}struct Cell<T>{value:T}fn main()->i32{let mut bytes=new();try_push(&mut bytes,7u8);let cell=Cell{value:Option::Some(bytes)};let zero=0;return 1/zero;}",true);
 }

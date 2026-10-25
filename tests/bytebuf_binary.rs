@@ -1,5 +1,10 @@
 //! Public binary I/O acceptance through a separate Python byte oracle.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use std::{
     io::Write,
@@ -87,7 +92,7 @@ fn bytebuf_public_byte_reverse_reference_bytes_and_refusals() {
 }
 
 #[test]
-#[ignore = "requires real Linux x86_64 LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[ignore = "requires real Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
 fn bytebuf_public_byte_reverse_native_cache_relocation_and_deployment() {
     acceptance(false);
 }

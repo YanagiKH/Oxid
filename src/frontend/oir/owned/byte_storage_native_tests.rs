@@ -2,7 +2,12 @@
 //! source semantics fixed before execution. Resource observations measure the
 //! successor; they are not replacements for archived no-byte endpoints.
 use super::*;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use crate::frontend::source::SourceFileId;
 
 const BYTE: &str = "fn byte(x:i32)->u8{return x.to_u8_checked();}";
@@ -14,7 +19,12 @@ struct Case {
     entry: hir::DefId,
 }
 impl Case {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     fn span(&self, needle: &str) -> Span {
         let source = self.sources.get(SourceFileId(0));
         let start = source.text().find(needle).unwrap();
@@ -261,7 +271,12 @@ fn byte_storage_native_large_source_and_array_entry_refuse_before_emission() {
     assert_eq!(denied.metrics.allocation_attempts, 0);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn assert_run(
     scratch: &super::tests::Scratch,
     case: &Case,
@@ -305,7 +320,12 @@ fn assert_run(
     assert_eq!(result.stderr, expected.1, "{name}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn byte_storage_native_source_free_every_byte_pilot_and_empty_transfers() {
@@ -330,7 +350,12 @@ fn byte_storage_native_source_free_every_byte_pilot_and_empty_transfers() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn byte_storage_native_source_free_bounds_conversion_and_phi_exits() {
@@ -606,7 +631,12 @@ fn byte_storage_native_independent_small_frame_endpoints() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn byte_storage_native_source_free_independent_every_fuel_schedule() {
@@ -687,7 +717,12 @@ fn byte_storage_native_source_free_independent_every_fuel_schedule() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn byte_storage_native_source_free_unpaid_bounds_priority() {
@@ -749,7 +784,7 @@ enum ByteTextOp {
 
 struct ByteTextOracle {
     source: &'static str,
-    text: &'static str,
+    text: std::borrow::Cow<'static, str>,
     diagnostics: &'static [&'static str],
     locals: &'static [hir::Ty],
     roster: &'static [ByteTextOp],
@@ -953,10 +988,10 @@ entry:
 
 fn byte_text_oracles() -> [ByteTextOracle; 2] {
     use ByteTextOp::*;
-    [
+    let oracles = [
         ByteTextOracle {
             source: "fn main()->i32{let a:[u8;0]=[];let b=a[0];return b.to_i32();}",
-            text: BYTE_TEXT_N0,
+            text: BYTE_TEXT_N0.into(),
             diagnostics: &["error[E0606] (oir-owned-run): array index out of bounds\n  --> byte-storage.ox:1:38\n"],
             locals: &[hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
             roster: &[Live(0),Empty(0),Live(1),Move(1,0),End(0),Integer(1,0),Read(2,1),Copy(0,2,hir::Ty::U8),Copy(3,0,hir::Ty::U8),Widen(4,3),End(1)],
@@ -966,7 +1001,7 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
         },
         ByteTextOracle {
             source: "fn main()->i32{let n=128;let b=n.to_u8_checked();let a=[b];let c=a[0];return c.to_i32();}",
-            text: BYTE_TEXT_N1,
+            text: BYTE_TEXT_N1.into(),
             diagnostics: &["error[E0610] (oir-run): checked i32 to u8 conversion out of range\n  --> byte-storage.ox:1:34\n","error[E0606] (oir-owned-run): array index out of bounds\n  --> byte-storage.ox:1:66\n"],
             locals: &[hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
             roster: &[Integer(3,128),Copy(0,3,hir::Ty::I32),Copy(4,0,hir::Ty::I32),Narrow(5,4),Copy(1,5,hir::Ty::U8),Copy(6,1,hir::Ty::U8),Live(0),Construct(0,6),Live(1),Move(1,0),End(0),Integer(7,0),Read(8,7),Copy(2,8,hir::Ty::U8),Copy(9,2,hir::Ty::U8),Widen(10,9),End(1)],
@@ -974,7 +1009,20 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             metadata_bytes: 33144, native_bytes: 92,
             ordinary_visits: 64, cost: 46,
         },
-    ]
+    ];
+    oracles.map(|mut oracle| {
+        // Preserve the frozen x86 oracle. ARM changes exactly the target name
+        // and its one additional byte; every instruction and other bound stays.
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            assert_eq!(oracle.text.matches("x86_64-unknown-linux-gnu").count(), 1);
+            oracle.text = oracle
+                .text
+                .replacen("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", 1)
+                .into();
+            oracle.text_bytes += 1;
+        }
+        oracle
+    })
 }
 
 fn assert_byte_text_roster(case: &Case, oracle: &ByteTextOracle) {
@@ -1129,7 +1177,10 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
             limits: exact,
             ..NativeControl::default()
         });
-        assert_eq!(accepted.result.as_ref().unwrap(), oracle.text);
+        assert_eq!(
+            accepted.result.as_ref().unwrap().as_str(),
+            oracle.text.as_ref()
+        );
         let m = &accepted.metrics;
         assert_eq!(
             (m.count_bytes, m.render_bytes),
@@ -1323,7 +1374,12 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM 19.1.7; executes byte record corruption controls at O0 and O2"]
 fn byte_record_native_late_bool_failure_preserves_destination_at_both_optimizations() {

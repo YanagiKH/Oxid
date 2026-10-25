@@ -1,7 +1,12 @@
 //! Ordinary process-source regressions for the primitive's direct return.
 //! Real fuel boundaries, direct status delivery and preservation of prior effects.
 use super::*;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use binary_io::testing::{DeliveryFault, Script};
 
 const IO: &str = "use std::io::read_some;use std::io::write_some;
@@ -13,7 +18,12 @@ WriteSomeStatus::Error(e)=>{return 20+e;},}}
 fn read_wrap(p:&mut [u8])->ReadSomeStatus{return read_some(&mut *p);}
 fn write_wrap(p:&[u8])->WriteSomeStatus{return write_some(&*p);}";
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn binary_delivery_source_real_fuel_refusal_precedes_transport_and_status_commit() {
     for read in [false, true] {
@@ -92,7 +102,12 @@ fn binary_delivery_source_real_fuel_refusal_precedes_transport_and_status_commit
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn binary_delivery_source_status_bytes_and_ordinary_wrapper_returns() {
     let project = super::project(&format!(
         "{IMPORTS}{IO}
@@ -149,7 +164,12 @@ fn main()->i32{{let a=[byte(0),byte(128),byte(255)];return write_score(write_wra
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn binary_delivery_source_ignored_nested_and_empty_results() {
     for (body, expected, calls, deliveries) in [
         ("read_some(&mut b);write_some(&b);return 0;", 0, 1, 2),
@@ -172,7 +192,12 @@ fn main()->i32{{let mut b=new();try_resize(&mut b,3,byte(99));{body}}}"));
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn binary_delivery_source_preflight_faults_have_zero_external_effects() {
     for body in [
         "read_some(&mut b);return 0;",
@@ -231,7 +256,12 @@ fn main()->i32{{let mut b=new();try_resize(&mut b,3,byte(99));{body}}}"
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn binary_delivery_source_later_wrapper_failure_keeps_prior_effects() {
     let project = super::project(&format!(
         "{IMPORTS}{IO}

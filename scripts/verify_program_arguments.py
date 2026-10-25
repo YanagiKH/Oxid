@@ -4,6 +4,7 @@
 Each deployed process receives raw input/output path arguments, an empty
 process environment and a 32 MiB address-space ceiling, including a 64 MiB copy.
 """
+import linux_native_target as native_target
 import argparse
 import hashlib
 import json
@@ -61,8 +62,8 @@ def equal_files(left, right):
 
 
 def run(args):
-    require(platform.system() == "Linux" and platform.machine() == "x86_64",
-            "argument qualification requires Linux x86_64")
+    require(native_target.host() is not None,
+            "argument qualification requires Linux x86_64 or ARM64")
     output = args.output.resolve()
     require(not output.exists() and output != ROOT and ROOT not in output.parents,
             "output must be new and outside the repository")

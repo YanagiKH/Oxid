@@ -127,7 +127,12 @@ fn recursive_calls_cannot_alias_exclusive_arguments() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_limited(path: &std::path::Path, cwd: &std::path::Path) -> Output {
     use std::os::unix::process::CommandExt;
     let mut command = Command::new(path);
@@ -147,7 +152,12 @@ fn native_limited(path: &std::path::Path, cwd: &std::path::Path) -> Output {
     command.output().unwrap()
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn deployed_outputs(project: &Project) -> Vec<Output> {
     let deployment = project.0.join("deployment");
     fs::create_dir(&deployment).unwrap();
@@ -173,9 +183,14 @@ fn deployed_outputs(project: &Project) -> Vec<Output> {
         .collect()
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_hosted_recursion_works_without_sources() {
     for (source, expected) in [
         (FACTORIAL, b"720\n".as_slice()),
@@ -212,9 +227,14 @@ fn native_hosted_recursion_works_without_sources() {
         .contains("call depth"));
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_call_limits_match_reference_error_positions() {
     for source in [
         depth(1022, false),
@@ -254,9 +274,14 @@ fn native_call_limits_match_reference_error_positions() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_recursive_storage_is_reserved_before_the_call() {
     let values = vec!["0u8"; 64].join(",");
     let fields = (0..16)
@@ -280,9 +305,14 @@ fn native_recursive_storage_is_reserved_before_the_call() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_process_recursion_preserves_status_and_error_contracts() {
     for (source, status) in [(depth(15, false), 1), (OWNED_BUFFER.to_owned(), 40)] {
         let project = Project::new(&source, "hosted");

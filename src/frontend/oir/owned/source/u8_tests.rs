@@ -476,7 +476,12 @@ fn owned_u8_tracker_seed_overlay_has_exact_unchanged_ceiling() {
     println!("RFC0030 owned tracker owners=1 expressions=65 requested={requested} incremental={extra} unchanged_cap={cap}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn owned_u8_real_native_helpers_and_all_roundtrips() {
