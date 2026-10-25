@@ -73,16 +73,21 @@ MATRIX_MEMBERS = {member for members in MATRIX_PROJECTS.values() for member in m
 CPU_PROJECTS = {
     "apps/cpu-training": tuple("apps/cpu-training/" + name for name in (
         "checkpoint/src/lib.ox",
+        "checkpoint/src/training.ox",
         "tensor/src/codec.ox",
         "tensor/src/graph.ox",
         "tensor/src/lib.ox",
         "tensor/src/model.ox",
         "tensor/src/model/checkpoint.ox",
+        "tensor/src/model/session.ox",
+        "tensor/src/optimizer.ox",
+        "tensor/src/optimizer/checkpoint.ox",
         "trainer/src/main.ox",
         "trainer/src/options.ox",
         "trainer/src/report.ox",
         "trainer/src/training.ox",
         "trainer/tests/tensor.ox",
+        "trainer/tests/optimizers.ox",
     )),
 }
 CPU_MEMBERS = {member for members in CPU_PROJECTS.values() for member in members}
@@ -261,7 +266,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training"))
-        self.assertEqual(len(CPU_MEMBERS), 11)
+        self.assertEqual(len(CPU_MEMBERS), 16)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
         self.assertEqual([row for row in check_inventory if row[0] in CPU_PROJECTS], [("apps/cpu-training", True)])
         self.assertFalse(any(name in CPU_MEMBERS for name, _ in check_inventory + run_inventory))
