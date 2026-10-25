@@ -155,7 +155,7 @@ fn validate_version_output(
 }
 
 fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
-    [
+    let mut arguments: Vec<OsString> = [
         "--no-default-config",
         &format!("--target={}", settings.target_triple()),
         settings.optimization_flag(),
@@ -171,7 +171,15 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
     ]
     .into_iter()
     .map(OsString::from)
-    .collect()
+    .collect();
+    if settings.execution().heap_limit() != super::build_config::ExecutionPolicy::DEFAULT_HEAP_LIMIT
+    {
+        arguments.push(OsString::from(format!(
+            "-DOXID_BYTEBUF_LIMIT={}ULL",
+            settings.execution().heap_limit()
+        )));
+    }
+    arguments
 }
 
 /// Publish a project-owned native output without destroying the previous build

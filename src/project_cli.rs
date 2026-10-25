@@ -70,8 +70,13 @@ fn execution_policy(
     manifest: &runtime::ProjectManifest,
 ) -> Result<frontend::ExecutionPolicy, String> {
     let name = manifest.execution_policy.as_deref().unwrap_or("bounded");
-    frontend::ExecutionPolicy::from_name(name)
-        .ok_or_else(|| format!("unknown execution policy `{name}`; expected bounded or hosted"))
+    let policy = frontend::ExecutionPolicy::from_name(name)
+        .ok_or_else(|| format!("unknown execution policy `{name}`; expected bounded or hosted"))?;
+    match manifest.heap_limit {
+        Some(limit) if policy.hosted() => Ok(frontend::ExecutionPolicy::HostedWithHeapLimit(limit)),
+        Some(_) => Err("execution heap-limit requires policy = \"hosted\"".into()),
+        None => Ok(policy),
+    }
 }
 
 /// The doctor integration can admit the complete workspace without routing a

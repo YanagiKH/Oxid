@@ -42,6 +42,48 @@ fn main()->i32{
         GrowStatus::AllocationFailed=>{return -4;},
     }
 }"#;
+const HEAP_GROWTH: &str = r#"
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+use alloc::bytes::try_reserve;
+use alloc::bytes::len;
+use alloc::bytes::capacity;
+fn main()->i32{
+    let mut bytes=new();
+    let initial=try_resize(&mut bytes,8,7u8);
+    match initial{
+        GrowStatus::Ok=>{},GrowStatus::MemoryLimit=>{return 1;},
+        GrowStatus::CapacityOverflow=>{return -1;},GrowStatus::AllocationFailed=>{return -2;},
+    }
+    let grown=try_reserve(&mut bytes,1);
+    match grown{
+        GrowStatus::Ok=>{if len(&bytes)==8 && capacity(&bytes)==16{return 2;}return -3;},
+        GrowStatus::MemoryLimit=>{},
+        GrowStatus::CapacityOverflow=>{return -4;},GrowStatus::AllocationFailed=>{return -5;},
+    }
+    if len(&bytes)!=8 || capacity(&bytes)!=8{return -6;}
+    let mut other=new();
+    let allocated=try_resize(&mut other,8,9u8);
+    match allocated{
+        GrowStatus::Ok=>{return 3;},GrowStatus::MemoryLimit=>{return 4;},
+        GrowStatus::CapacityOverflow=>{return -7;},GrowStatus::AllocationFailed=>{return -8;},
+    }
+}"#;
+const LARGE_HEAP: &str = r#"
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+use alloc::bytes::len;
+use alloc::bytes::capacity;
+fn main()->i32{
+    let mut bytes=new();let status=try_resize(&mut bytes,20971520,7u8);
+    match status{
+        GrowStatus::MemoryLimit=>{if len(&bytes)==0 && capacity(&bytes)==0{return 42;}return -1;},
+        GrowStatus::Ok=>{if len(&bytes)==20971520 && capacity(&bytes)==20971520{return 43;}return -2;},
+        GrowStatus::CapacityOverflow=>{return -3;},GrowStatus::AllocationFailed=>{return -4;},
+    }
+}"#;
 #[cfg(all(
     target_os = "linux",
     target_pointer_width = "64",
@@ -75,6 +117,12 @@ fn main()->i32{
 
 struct Project(PathBuf);
 impl Project {
+    fn heap_limit(&self, limit: &str) {
+        self.manifest(Some("hosted"), false);
+        let path = self.0.join("oxid.toml");
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(path, format!("{text}heap-limit = {limit}\n")).unwrap();
+    }
     fn new(source: &str, policy: Option<&str>, process: bool) -> Self {
         let root = std::env::temp_dir().join(format!(
             "oxid-hosted-{}-{}",
@@ -143,6 +191,245 @@ fn hosted_growth_preserves_the_live_heap_limit_and_the_original_buffer_on_refusa
     success(project.command(&["run"]), b"42\n");
     project.manifest(Some("bounded"), false);
     success(project.command(&["run"]), b"42\n");
+}
+
+#[test]
+fn hosted_heap_settings_account_for_headers_growth_peaks_and_failed_allocation_rollback() {
+    let project = Project::new(HEAP_GROWTH, Some("hosted"), false);
+    for (limit, expected) in [
+        ("0", "1\n"),
+        ("39", "1\n"),
+        ("40", "4\n"),
+        ("79", "4\n"),
+        ("80", "3\n"),
+        ("87", "3\n"),
+        ("88", "2\n"),
+        ("18446744073709551615", "2\n"),
+    ] {
+        project.heap_limit(limit);
+        success(project.command(&["run"]), expected.as_bytes());
+    }
+    let project = Project::new(MEMORY, Some("hosted"), false);
+    for (limit, expected) in [
+        ("16777247", "42\n"),
+        ("16777248", "-2\n"),
+        ("67108864", "-2\n"),
+    ] {
+        project.heap_limit(limit);
+        success(project.command(&["run"]), expected.as_bytes());
+    }
+    let project = Project::new(LARGE_HEAP, Some("hosted"), false);
+    for (limit, expected) in [
+        ("20971551", "42\n"),
+        ("20971552", "43\n"),
+        ("67108864", "43\n"),
+    ] {
+        project.heap_limit(limit);
+        success(project.command(&["run"]), expected.as_bytes());
+    }
+}
+
+#[test]
+fn invalid_heap_settings_fail_before_tools_or_modifying_previous_outputs() {
+    for value in [
+        "-1",
+        "1.5",
+        "true",
+        "\"40\"",
+        "18446744073709551616",
+        "1 0",
+        "",
+        "+40",
+    ] {
+        let project = Project::new("fn main()->i32{return 0;}", Some("hosted"), false);
+        project.heap_limit(value);
+        fs::create_dir_all(project.0.join(".oxid/bin")).unwrap();
+        let artifact = project.0.join(".oxid/bin/app");
+        fs::write(&artifact, b"previous executable").unwrap();
+        for command in ["check", "run", "build", "test"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .arg(command)
+                .current_dir(&project.0)
+                .env("OXID_LLVM_BIN", project.0.join("missing-llvm"))
+                .env("PATH", project.0.join("missing-path"))
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1), "{value:?}: {output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("heap-limit"),
+                "{output:?}"
+            );
+            assert_eq!(fs::read(&artifact).unwrap(), b"previous executable");
+            assert!(!project.0.join("oxid.lock").exists());
+        }
+    }
+    for settings in [
+        "[execution]\nheap-limit=40\n",
+        "[execution]\npolicy=\"bounded\"\nheap-limit=40\n",
+        "[execution]\npolicy=\"hosted\"\nheap-limit=40\nheap-limit=41\n",
+    ] {
+        let project = Project::new("fn main()->i32{return 0;}", None, false);
+        let path = project.0.join("oxid.toml");
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(path, text + settings).unwrap();
+        let result = project.command(&["check"]);
+        assert!(!result.status.success(), "{result:?}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("heap-limit"),
+            "{result:?}"
+        );
+        assert!(!project.0.join("oxid.lock").exists());
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn workspace_members_and_declared_tests_use_their_own_heap_budgets() {
+    let project = Project::new("fn main()->i32{return 0;}", None, false);
+    let workspace = "[workspace]\nedition=\"typed-preview\"\nmembers=[\"small\",\"large\"]\n";
+    fs::write(project.0.join("oxid.toml"), workspace).unwrap();
+    for (name, limit, expected) in [("small", 0, 1), ("large", 88, 2)] {
+        let root = project.0.join(name);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/main.ox"), HEAP_GROWTH).unwrap();
+        let probe = HEAP_GROWTH.replace("fn main()", "fn probe()");
+        fs::write(root.join("src/check.ox"), format!("{probe}\nfn main()->i32{{let actual=probe();if actual=={expected}{{return 0;}}return 1;}}\n")).unwrap();
+        fs::write(root.join("oxid.toml"), format!("[project]\nname=\"{name}\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[build]\nentry-mode=\"result\"\n[tests]\nheap=\"src/check.ox\"\n[execution]\npolicy=\"hosted\"\nheap-limit={limit}\n")).unwrap();
+    }
+    for (name, expected) in [("small", 1), ("large", 2)] {
+        success(
+            project.command(&["run", "--package", name]),
+            format!("{expected}\n").as_bytes(),
+        );
+    }
+    let result = project.command(&["test", "--workspace", "--message-format=json"]);
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout)
+            .matches("\"kind\":\"test-result\"")
+            .count(),
+        2
+    );
+    let previous_lock = fs::read(project.0.join("oxid.lock")).ok();
+    fs::write(
+        project.0.join("oxid.toml"),
+        format!("{workspace}[execution]\npolicy=\"hosted\"\nheap-limit=999\n"),
+    )
+    .unwrap();
+    let refused = project.command(&["check", "--workspace"]);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("virtual workspace"),
+        "{refused:?}"
+    );
+    assert_eq!(fs::read(project.0.join("oxid.lock")).ok(), previous_lock);
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn a_library_cannot_increase_its_calling_binary_heap_budget() {
+    let project = Project::new(
+        "use crate::library::probe;fn main()->i32{return probe();}",
+        Some("hosted"),
+        false,
+    );
+    fs::create_dir_all(project.0.join("library/src")).unwrap();
+    fs::write(
+        project.0.join("library/src/lib.ox"),
+        HEAP_GROWTH.replace("fn main()", "pub fn probe()"),
+    )
+    .unwrap();
+    fs::write(project.0.join("library/oxid.toml"), "[project]\nname=\"library\"\nkind=\"lib\"\nedition=\"typed-preview\"\nentry=\"src/lib.ox\"\n[execution]\npolicy=\"hosted\"\nheap-limit=67108864\n").unwrap();
+    for (limit, expected) in [("0", "1\n"), ("87", "3\n"), ("88", "2\n")] {
+        project.heap_limit(limit);
+        let path = project.0.join("oxid.toml");
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(path, text + "[dependencies]\nlibrary=\"library\"\n").unwrap();
+        success(project.command(&["run"]), expected.as_bytes());
+    }
+}
+
+#[test]
+#[ignore = "requires native Linux and LLVM 19.1.7"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+fn native_heap_settings_apply_after_cache_hits_and_source_free_deployment() {
+    for profile in ["dev", "release"] {
+        let project = Project::new(HEAP_GROWTH, Some("hosted"), false);
+        for (index, (limit, expected)) in
+            [("87", "3\n"), ("88", "2\n"), ("0", "1\n"), ("87", "3\n")]
+                .into_iter()
+                .enumerate()
+        {
+            project.heap_limit(limit);
+            let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
+            command
+                .args([
+                    "build",
+                    "--incremental",
+                    "--profile",
+                    profile,
+                    "--message-format=json",
+                ])
+                .current_dir(&project.0);
+            if let Some(llvm) = std::env::var_os("OXID_TEST_LLVM_BIN") {
+                command.env("OXID_LLVM_BIN", llvm);
+            }
+            let built = command.output().unwrap();
+            assert!(built.status.success(), "{built:?}");
+            let expected_status = if index == 0 { "miss" } else { "hit" };
+            assert!(
+                String::from_utf8_lossy(&built.stdout)
+                    .contains(&format!("\"status\":\"{expected_status}\"")),
+                "{built:?}"
+            );
+            success(
+                Command::new(project.0.join(".oxid/bin/app"))
+                    .env_clear()
+                    .output()
+                    .unwrap(),
+                expected.as_bytes(),
+            );
+        }
+        let deployed = project.0.join("deployed");
+        fs::copy(project.0.join(".oxid/bin/app"), &deployed).unwrap();
+        fs::remove_dir_all(project.0.join("src")).unwrap();
+        fs::remove_dir_all(project.0.join(".oxid")).unwrap();
+        fs::remove_file(project.0.join("oxid.toml")).unwrap();
+        if project.0.join("oxid.lock").exists() {
+            fs::remove_file(project.0.join("oxid.lock")).unwrap();
+        }
+        success(Command::new(deployed).env_clear().output().unwrap(), b"3\n");
+        let project = Project::new(LARGE_HEAP, Some("hosted"), false);
+        for (limit, expected) in [
+            ("20971551", "42\n"),
+            ("20971552", "43\n"),
+            ("67108864", "43\n"),
+            ("18446744073709551615", "43\n"),
+        ] {
+            project.heap_limit(limit);
+            let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
+            command
+                .args(["build", "--profile", profile])
+                .current_dir(&project.0);
+            if let Some(llvm) = std::env::var_os("OXID_TEST_LLVM_BIN") {
+                command.env("OXID_LLVM_BIN", llvm);
+            }
+            let built = command.output().unwrap();
+            assert!(built.status.success(), "{built:?}");
+            success(
+                Command::new(project.0.join(".oxid/bin/app"))
+                    .env_clear()
+                    .output()
+                    .unwrap(),
+                expected.as_bytes(),
+            );
+        }
+    }
 }
 
 #[test]

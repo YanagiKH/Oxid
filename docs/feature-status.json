@@ -1222,7 +1222,7 @@
       "edition": "typed-preview",
       "backend": "Bounded reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Byte-buffer reference execution on supported compiler hosts; process I/O and native execution on Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
-      "limitations": "A 16 MiB normalized live heap limit includes allocation headers and the simultaneous growth peak. Lengths are i32 and bytes use explicit conversions. Whole-root call-only loans remain; no escaping views, partial moves, generic containers, text semantics, user destructors, stable ABI or additional native targets. Existing execution and compiler limits apply.",
+      "limitations": "The shared normalized heap budget defaults to 16 MiB and includes allocation headers and the simultaneous growth peak; hosted projects can configure it with heap-limit. Lengths are i32 and bytes use explicit conversions. Whole-root call-only loans remain; no escaping views, partial moves, generic containers, text semantics, user destructors, stable ABI or additional native targets. Existing execution and compiler limits apply.",
       "spec": [
         "rfcs/0043-growable-byte-buffers.md",
         "spec/typed-preview.md",
@@ -1630,7 +1630,7 @@
       "edition": "typed-preview",
       "backend": "Ordinary Oxid local package using reference execution and LLVM native builds at O0/O2.",
       "target_scope": "Reference compiler hosts; native verification on Linux x86_64 with LLVM 19.1.7.",
-      "limitations": "f64 elements only, i32 lengths and the existing shared 16 MiB live allocation limit. Indexed values are copied; no borrowed f64 views or generic collection type.",
+      "limitations": "f64 elements only, i32 lengths and the shared allocation budget (16 MiB by default; configurable in hosted projects). Indexed values are copied; no borrowed f64 views or generic collection type.",
       "spec": [
         "packages/float_vector/README.md"
       ],
@@ -1681,7 +1681,7 @@
       "edition": "typed-preview",
       "backend": "Ordinary Oxid package over float_vector; reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Reference compiler hosts; native verification on Linux x86_64 with LLVM 19.1.7.",
-      "limitations": "Two-dimensional f64 only; i32 dimensions, at most 268435455 elements and the existing shared 16 MiB live allocation limit. Sequential multiplication, with each f64 operation separately rounded.",
+      "limitations": "Two-dimensional f64 only; i32 dimensions, at most 268435455 elements and the shared allocation budget (16 MiB by default; configurable in hosted projects). Sequential multiplication, with each f64 operation separately rounded.",
       "spec": [
         "packages/matrix/README.md"
       ],
@@ -1704,7 +1704,7 @@
       "edition": "typed-preview",
       "backend": "Reference execution and LLVM native project builds at O0/O2.",
       "target_scope": "Native execution on Linux x86_64 with LLVM 19.1.7.",
-      "limitations": "Hosted compilation permits 1,024 functions, 32,768 scalar slots, 16,384 blocks and 65,536 compiler inventory items/owner width cells, subject to existing verification and metadata limits. Runtime limits remain 1,024 live calls, 200,000 scalar slots, 1 MiB native frame/runtime storage and a separate 16 MiB buffer heap. Bounded native calls remain acyclic.",
+      "limitations": "Hosted compilation permits 1,024 functions, 32,768 scalar slots, 16,384 blocks and 65,536 compiler inventory items/owner width cells, subject to existing verification and metadata limits. Runtime limits remain 1,024 live calls, 200,000 scalar slots, 1 MiB native frame/runtime storage and a separate shared heap budget, defaulting to 16 MiB and configurable through hosted heap-limit. Bounded native calls remain acyclic.",
       "spec": [
         "rfcs/0058-hosted-native-recursion.md",
         "rfcs/0062-hosted-native-program-size.md"
@@ -1962,7 +1962,7 @@
       "evidence": [
         "apps/cpu-training/README.md"
       ],
-      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Data and sessions are held in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler and 16 MiB heap limits apply."
+      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Data and sessions are held in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
     }
   ]
 }
