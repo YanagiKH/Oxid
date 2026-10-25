@@ -1049,6 +1049,57 @@ fn conflict(kind: BorrowKind, access: Access) -> bool {
         _ => true,
     }
 }
+
+// Only shape-checked nominal paths can establish that two regions differ.
+// Empty paths include the whole owner and overlap every descendant.
+fn access_region<'a>(
+    f: &'a RawOwnedFunction,
+    instruction: &'a OwnedInstruction,
+    role: DeniedRole,
+) -> &'a [FieldId] {
+    match (instruction, role) {
+        (
+            OwnedInstruction::ReadField { field, .. } | OwnedInstruction::WriteField { field, .. },
+            DeniedRole::FieldBase,
+        ) => std::slice::from_ref(field),
+        (
+            OwnedInstruction::ReadProjection { path, .. }
+            | OwnedInstruction::WriteProjection { path, .. }
+            | OwnedInstruction::ProjectionLength { path, .. },
+            DeniedRole::FieldBase,
+        ) => path,
+        (
+            OwnedInstruction::PrepareBorrow { loan, .. }
+            | OwnedInstruction::PrepareBorrowRange { loan, .. },
+            DeniedRole::BorrowAuthority,
+        ) => &f.loans[loan.0].projection,
+        _ => &[],
+    }
+}
+
+fn regions_overlap(
+    left: &[FieldId],
+    right: &[FieldId],
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    let mut pairs = left.iter().zip(right);
+    let Some((left, right)) = pairs.next() else {
+        return Ok(true);
+    };
+    // The statement visit already pays for the first fixed-size comparison.
+    if left != right {
+        return Ok(false);
+    }
+    for (left, right) in pairs {
+        // The existing loan-count times projection-field budget covers these
+        // additional visits without changing old single-field work charges.
+        meter.visit()?;
+        if left != right {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
     for b in &f.blocks {
         for i in &b.statements {
@@ -1095,6 +1146,24 @@ fn exact(
     initial: usize,
     meter: &mut Meter,
     mut statement: impl FnMut(usize, &OwnedStatement) -> Result<usize, OwnedFailure>,
+    terminator: impl FnMut(usize, &OwnedTerminator) -> Result<usize, OwnedFailure>,
+    kind: Violation,
+) -> Result<(), OwnedFailure> {
+    exact_metered(
+        f,
+        initial,
+        meter,
+        |state, instruction, _| statement(state, instruction),
+        terminator,
+        kind,
+    )
+}
+
+fn exact_metered(
+    f: &RawOwnedFunction,
+    initial: usize,
+    meter: &mut Meter,
+    mut statement: impl FnMut(usize, &OwnedStatement, &mut Meter) -> Result<usize, OwnedFailure>,
     mut terminator: impl FnMut(usize, &OwnedTerminator) -> Result<usize, OwnedFailure>,
     kind: Violation,
 ) -> Result<(), OwnedFailure> {
@@ -1110,7 +1179,7 @@ fn exact(
         let mut s = state[b];
         for i in &f.blocks[b].statements {
             meter.visit()?;
-            s = statement(s, i)?;
+            s = statement(s, i, meter)?;
         }
         let end = f.blocks[b]
             .terminator
@@ -1139,11 +1208,11 @@ fn loans(
 ) -> Result<(), OwnedFailure> {
     let l = &f.loans[id];
     let cause = shape.acquisition_cause(f, LoanId(id))?;
-    exact(
+    exact_metered(
         f,
         0,
         meter,
-        |mut state, i| {
+        |mut state, i, meter| {
             if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} if loan.0==id)
             {
                 if state != 0 {
@@ -1156,7 +1225,10 @@ fn loans(
                 state = 1;
             } else if state == 1 {
                 accesses(f, &i.kind, |base, access, role| {
-                    if overlap(f, l.authority, base) && conflict(l.kind, access) {
+                    if overlap(f, l.authority, base)
+                        && conflict(l.kind, access)
+                        && regions_overlap(&l.projection, access_region(f, &i.kind, role), meter)?
+                    {
                         let mut e = OwnedFailure::violation(
                             Violation::LoanConflict,
                             i.primary_span(),

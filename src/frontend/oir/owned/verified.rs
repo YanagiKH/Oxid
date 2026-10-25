@@ -11,7 +11,449 @@ pub(super) struct VerifiedOwnedProgram {
 }
 #[derive(Debug)]
 struct OwnershipSeal;
+
+/// Requests identify the exact immutable instruction whose region was checked.
+/// A consumer can request a permission, but cannot manufacture its proof.
+pub(super) enum ProjectionRequest<'a> {
+    Field {
+        base: AccessBase,
+        field: FieldId,
+        write: bool,
+    },
+    Path {
+        base: AccessBase,
+        path: &'a [FieldId],
+        write: bool,
+    },
+    Borrow(LoanId),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ProjectionAccess {
+    Read,
+    Write,
+    Borrow(BorrowKind),
+}
+
+pub(super) struct ProjectionPermission<'a> {
+    witness: &'a VerifiedOwnedProgram,
+    function: hir::DefId,
+    block: BlockId,
+    statement: usize,
+    base: AccessBase,
+    access: ProjectionAccess,
+}
+
+impl ProjectionPermission<'_> {
+    pub(super) fn permits(
+        &self,
+        witness: &VerifiedOwnedProgram,
+        function: hir::DefId,
+        block: BlockId,
+        statement: usize,
+        base: AccessBase,
+        access: ProjectionAccess,
+    ) -> bool {
+        std::ptr::eq(self.witness, witness)
+            && self.function == function
+            && self.block == block
+            && self.statement == statement
+            && self.base == base
+            && self.access == access
+    }
+}
+
+#[cfg(test)]
+mod projection_permission_tests {
+    use super::*;
+
+    fn field(index: usize) -> FieldId {
+        FieldId {
+            record: RecordId(1),
+            index,
+        }
+    }
+
+    fn sibling_loans() -> (SourceMap, RawOwnedProgram) {
+        use consumer_fixtures as fixture;
+        let (sources, mut raw, _) = fixture::shared_read();
+        let span = raw.functions[0].span;
+        let inner = AggregateTy::Record(RecordId(0));
+        raw.records.push(RawRecordDecl {
+            id: RecordId(1),
+            span,
+            fields: (0..2)
+                .map(|index| RawFieldDecl {
+                    id: field(index),
+                    ty: ParameterTy::Value(ValueTy::Owned(inner)),
+                    span,
+                })
+                .collect(),
+        });
+        let main = &mut raw.functions[0];
+        main.owners[0].aggregate =
+            AggregateSlot::try_from_aggregate(AggregateTy::Record(RecordId(1))).unwrap();
+        main.owners[0].kind = OwnerKind::Local { mutable: true };
+        for _ in 0..2 {
+            main.owners.push(fixture::owner(OwnerKind::Temporary, span));
+        }
+        let initial = main.blocks[0].statements.remove(2);
+        assert!(matches!(initial.kind, OwnedInstruction::Construct { .. }));
+        let mut construction = Vec::new();
+        for owner in 1..=2 {
+            construction.push(fixture::instruction(
+                OwnedInstruction::StorageLive(OwnerPlaceId(owner)),
+                span,
+            ));
+            construction.push(fixture::instruction(
+                OwnedInstruction::Construct {
+                    destination: OwnerPlaceId(owner),
+                    fields: vec![(
+                        FieldId {
+                            record: RecordId(0),
+                            index: 0,
+                        },
+                        fixture::operand(0, span),
+                    )],
+                },
+                span,
+            ));
+        }
+        construction.push(fixture::instruction(
+            OwnedInstruction::ConstructComposite {
+                destination: OwnerPlaceId(0),
+                fields: vec![
+                    (field(0), FieldInitializer::Owned(OwnerPlaceId(1))),
+                    (field(1), FieldInitializer::Owned(OwnerPlaceId(2))),
+                ],
+            },
+            span,
+        ));
+        for owner in 1..=2 {
+            construction.push(fixture::instruction(
+                OwnedInstruction::StorageEnd(OwnerPlaceId(owner)),
+                span,
+            ));
+        }
+        main.blocks[0].statements.splice(2..2, construction);
+        main.loans[0].projection = vec![field(0)];
+        main.loans[0].kind = BorrowKind::Exclusive;
+        main.loans.push(LoanDecl {
+            projection: vec![field(1)],
+            call: CallSiteId(0),
+            argument: 1,
+            authority: AccessBase::Owner(OwnerPlaceId(0)),
+            kind: BorrowKind::Exclusive,
+            referent: BorrowedSlot::check(BorrowedTy::Exact(inner)).unwrap(),
+            span,
+        });
+        main.calls[0]
+            .arguments
+            .push(ArgumentSlot::Borrow(LoanId(1)));
+        main.blocks[0].statements.push(fixture::instruction(
+            OwnedInstruction::PrepareBorrow {
+                call: CallSiteId(0),
+                argument: 1,
+                loan: LoanId(1),
+            },
+            span,
+        ));
+        let callee = &mut raw.functions[1];
+        callee.references[0].kind = BorrowKind::Exclusive;
+        callee.references.push(ReferenceDecl {
+            referent: BorrowedSlot::check(BorrowedTy::Exact(inner)).unwrap(),
+            kind: BorrowKind::Exclusive,
+            position: 1,
+            span,
+        });
+        callee
+            .parameters
+            .push(ParameterBinding::Reference(ReferenceParamId(1)));
+        (sources, raw)
+    }
+
+    #[test]
+    fn independent_raw_sibling_loans_require_nominal_paths_and_sufficient_work() {
+        let (sources, raw) = sibling_loans();
+        let witness = verify_owned(raw, &sources).unwrap();
+        assert_eq!(
+            execute::run(&witness, Some(hir::DefId(0))),
+            Ok(Scalar::I32(-47))
+        );
+        for (pc, statement) in witness.functions()[0].blocks[0]
+            .statements
+            .iter()
+            .enumerate()
+        {
+            if let OwnedInstruction::PrepareBorrow { loan, .. } = statement.kind {
+                let proof = witness
+                    .projection_permission(
+                        hir::DefId(0),
+                        BlockId(0),
+                        pc,
+                        ProjectionRequest::Borrow(loan),
+                    )
+                    .unwrap();
+                assert!(proof.permits(
+                    &witness,
+                    hir::DefId(0),
+                    BlockId(0),
+                    pc,
+                    AccessBase::Owner(OwnerPlaceId(0)),
+                    ProjectionAccess::Borrow(BorrowKind::Exclusive)
+                ));
+                assert!(witness
+                    .projection_permission(
+                        hir::DefId(0),
+                        BlockId(0),
+                        pc,
+                        ProjectionRequest::Borrow(LoanId(1 - loan.0))
+                    )
+                    .is_none());
+            }
+        }
+        let (sources, raw) = sibling_loans();
+        let failure = verify_with_limits(
+            raw,
+            &sources,
+            budget::Limits {
+                work: witness.usage().work - 1,
+                ..budget::Limits::DEFAULT
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(failure.kind, OwnedFailureKind::Resource(_)));
+        for mutation in 0..5 {
+            let (sources, mut raw) = sibling_loans();
+            match mutation {
+                0 => raw.functions[0].loans[1].projection = vec![field(0)],
+                1 => raw.functions[0].loans[1].projection[0].record = RecordId(0),
+                2 => raw.functions[0].loans[1].projection[0].index = usize::MAX,
+                3 => raw.functions[0].owners[0].kind = OwnerKind::Local { mutable: false },
+                _ => raw.functions[0].loans[1].projection.clear(),
+            }
+            let failure = verify_owned(raw, &sources).unwrap_err();
+            if mutation == 0 {
+                assert_eq!(
+                    failure.kind,
+                    OwnedFailureKind::Ownership(Violation::LoanConflict)
+                );
+            } else if mutation == 3 {
+                assert_eq!(
+                    failure.kind,
+                    OwnedFailureKind::Ownership(Violation::Permission)
+                );
+            } else {
+                assert!(matches!(failure.kind, OwnedFailureKind::Malformed(_)));
+            }
+        }
+    }
+
+    #[test]
+    fn projected_permission_is_bound_to_witness_instruction_base_and_mode() {
+        let (sources, raw, _) = consumer_fixtures::shared_read();
+        let first = verify_owned(raw, &sources).unwrap();
+        let (sources, raw, _) = consumer_fixtures::shared_read();
+        let other = verify_owned(raw, &sources).unwrap();
+        let function = hir::DefId(1);
+        let block = BlockId(0);
+        let base = AccessBase::Parameter(ReferenceParamId(0));
+        let field = FieldId {
+            record: RecordId(0),
+            index: 0,
+        };
+        let request = || ProjectionRequest::Field {
+            base,
+            field,
+            write: false,
+        };
+        let proof = first
+            .projection_permission(function, block, 0, request())
+            .unwrap();
+        assert!(proof.permits(&first, function, block, 0, base, ProjectionAccess::Read));
+        assert!(!proof.permits(&other, function, block, 0, base, ProjectionAccess::Read));
+        assert!(!proof.permits(
+            &first,
+            hir::DefId(0),
+            block,
+            0,
+            base,
+            ProjectionAccess::Read
+        ));
+        assert!(!proof.permits(
+            &first,
+            function,
+            BlockId(1),
+            0,
+            base,
+            ProjectionAccess::Read
+        ));
+        assert!(!proof.permits(&first, function, block, 1, base, ProjectionAccess::Read));
+        assert!(!proof.permits(
+            &first,
+            function,
+            block,
+            0,
+            AccessBase::Owner(OwnerPlaceId(0)),
+            ProjectionAccess::Read
+        ));
+        for access in [
+            ProjectionAccess::Write,
+            ProjectionAccess::Borrow(BorrowKind::Shared),
+            ProjectionAccess::Borrow(BorrowKind::Exclusive),
+        ] {
+            assert!(!proof.permits(&first, function, block, 0, base, access));
+        }
+        assert!(first
+            .projection_permission(hir::DefId(usize::MAX), block, 0, request())
+            .is_none());
+        assert!(first
+            .projection_permission(function, BlockId(usize::MAX), 0, request())
+            .is_none());
+        assert!(first
+            .projection_permission(function, block, usize::MAX, request())
+            .is_none());
+        for request in [
+            ProjectionRequest::Field {
+                base,
+                field,
+                write: true,
+            },
+            ProjectionRequest::Field {
+                base,
+                field: FieldId { index: 1, ..field },
+                write: false,
+            },
+            ProjectionRequest::Borrow(LoanId(0)),
+        ] {
+            assert!(first
+                .projection_permission(function, block, 0, request)
+                .is_none());
+        }
+        // The caller's whole-record loan cannot suspend the whole-root checks.
+        assert!(first
+            .projection_permission(
+                hir::DefId(0),
+                block,
+                4,
+                ProjectionRequest::Borrow(LoanId(0))
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn projection_paths_require_the_actual_immutable_instruction_slice() {
+        let (sources, raw) = composition_reference_tests::batch();
+        let witness = verify_owned(raw, &sources).unwrap();
+        let mut checked = 0;
+        for f in witness.functions() {
+            for (block, body) in f.blocks.iter().enumerate() {
+                for (pc, statement) in body.statements.iter().enumerate() {
+                    if let OwnedInstruction::ReadProjection { base, path, .. } = &statement.kind {
+                        let request = |path| ProjectionRequest::Path {
+                            base: *base,
+                            path,
+                            write: false,
+                        };
+                        assert!(witness
+                            .projection_permission(f.id, BlockId(block), pc, request(path))
+                            .is_some());
+                        let copied = path.clone();
+                        assert!(witness
+                            .projection_permission(f.id, BlockId(block), pc, request(&copied))
+                            .is_none());
+                        assert!(witness
+                            .projection_permission(f.id, BlockId(block), pc, request(&[]))
+                            .is_none());
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0);
+    }
+}
+
 impl VerifiedOwnedProgram {
+    pub(super) fn projection_permission(
+        &self,
+        function: hir::DefId,
+        block: BlockId,
+        statement: usize,
+        request: ProjectionRequest<'_>,
+    ) -> Option<ProjectionPermission<'_>> {
+        let f = self
+            .program
+            .functions
+            .get(function.0)
+            .filter(|f| f.id == function)?;
+        let instruction = &f.blocks.get(block.0)?.statements.get(statement)?.kind;
+        let (base, access) = match (instruction, request) {
+            (
+                OwnedInstruction::ReadField { base, field, .. },
+                ProjectionRequest::Field {
+                    base: requested,
+                    field: target,
+                    write: false,
+                },
+            ) if *base == requested && *field == target => (*base, ProjectionAccess::Read),
+            (
+                OwnedInstruction::WriteField { base, field, .. },
+                ProjectionRequest::Field {
+                    base: requested,
+                    field: target,
+                    write: true,
+                },
+            ) if *base == requested && *field == target => (*base, ProjectionAccess::Write),
+            (
+                OwnedInstruction::ReadProjection { base, path, .. }
+                | OwnedInstruction::ProjectionLength { base, path, .. },
+                ProjectionRequest::Path {
+                    base: requested,
+                    path: target,
+                    write: false,
+                },
+            ) if *base == requested
+                && !path.is_empty()
+                && std::ptr::eq(path.as_slice(), target) =>
+            {
+                (*base, ProjectionAccess::Read)
+            }
+            (
+                OwnedInstruction::WriteProjection { base, path, .. },
+                ProjectionRequest::Path {
+                    base: requested,
+                    path: target,
+                    write: true,
+                },
+            ) if *base == requested
+                && !path.is_empty()
+                && std::ptr::eq(path.as_slice(), target) =>
+            {
+                (*base, ProjectionAccess::Write)
+            }
+            (
+                OwnedInstruction::PrepareBorrow { loan, .. }
+                | OwnedInstruction::PrepareBorrowRange { loan, .. },
+                ProjectionRequest::Borrow(requested),
+            ) if *loan == requested => {
+                let loan = f.loans.get(loan.0)?;
+                if loan.projection.is_empty() {
+                    return None;
+                }
+                (loan.authority, ProjectionAccess::Borrow(loan.kind))
+            }
+            _ => return None,
+        };
+        Some(ProjectionPermission {
+            witness: self,
+            function,
+            block,
+            statement,
+            base,
+            access,
+        })
+    }
     pub(super) fn experimental_function(
         &self,
         item: crate::frontend::builtin_catalog::experimental::Function,

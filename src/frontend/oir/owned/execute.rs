@@ -2,7 +2,7 @@
 use super::{
     plan::{self, ExecutionPlan},
     storage::*,
-    verified::VerifiedOwnedProgram,
+    verified::{ProjectionAccess, ProjectionPermission, ProjectionRequest, VerifiedOwnedProgram},
     *,
 };
 use crate::frontend::build_config::{ExecutionPolicy, HOSTED_FUEL};
@@ -478,14 +478,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         access: Access,
         span: Span,
     ) -> Result<OwnerKey> {
-        self.owner(handle.root, span)?;
-        let l = self.loan(handle.permission, span)?;
-        if l.view != handle.view {
-            return Err(bad("loan view mismatch", span));
-        }
-        if l.root != handle.root {
-            return Err(bad("loan root mismatch", span));
-        }
+        let l = self.validate_handle_identity(handle, span)?;
         let shared_access = matches!(access, Access::Read | Access::Borrow(BorrowKind::Shared));
         if l.exclusive_children != 0 || (!shared_access && l.shared_children != 0) {
             return Err(bad("suspended parent permission", span));
@@ -495,15 +488,116 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         }
         Ok(handle.root)
     }
+    fn validate_handle_identity(
+        &self,
+        handle: ReferenceHandle,
+        span: Span,
+    ) -> Result<&LoanRuntime> {
+        self.owner(handle.root, span)?;
+        let loan = self.loan(handle.permission, span)?;
+        if loan.view != handle.view {
+            return Err(bad("loan view mismatch", span));
+        }
+        if loan.root != handle.root {
+            return Err(bad("loan root mismatch", span));
+        }
+        Ok(loan)
+    }
+    fn reference_extents_overlap(
+        &self,
+        left: ReferenceHandle,
+        right: ReferenceHandle,
+        span: Span,
+    ) -> Result<bool> {
+        let extent = |handle: ReferenceHandle| -> Result<(u64, u64)> {
+            let aggregate = handle
+                .view
+                .aggregate
+                .ok_or_else(|| bad("alias view type", span))?
+                .aggregate();
+            let size = match aggregate {
+                AggregateTy::FixedArray(array) if array.length() == 0 => 0,
+                _ => self
+                    .plan
+                    .witness()
+                    .declarations()
+                    .aggregate_layout(aggregate)
+                    .map_err(|_| bad("alias view layout", span))?
+                    .size() as u64,
+            };
+            let end = handle
+                .view
+                .offset
+                .checked_add(size)
+                .ok_or_else(|| bad("alias view extent", span))?;
+            Ok((handle.view.offset, end))
+        };
+        let (left_start, left_end) = extent(left)?;
+        let (right_start, right_end) = extent(right)?;
+        Ok(left_start < right_end && right_start < left_end)
+    }
     fn base(&self, frame: usize, base: AccessBase, access: Access, span: Span) -> Result<OwnerKey> {
+        self.base_with_permission(frame, base, access, span, None)
+    }
+    fn projected_base(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        access: Access,
+        span: Span,
+        request: ProjectionRequest<'_>,
+    ) -> Result<OwnerKey> {
+        let current = &self.frames[frame];
+        // Only a function with local loans can hold children while preparing
+        // another argument. A leaf callee cannot explain a suspended incoming
+        // permission and must retain the original immediate rejection.
+        if self.function(current.function).loans.is_empty() {
+            return self.base(frame, base, access, span);
+        }
+        let permission = self.plan.witness().projection_permission(
+            current.function,
+            current.block,
+            current.next,
+            request,
+        );
+        self.base_with_permission(frame, base, access, span, permission.as_ref())
+    }
+    fn base_with_permission(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        access: Access,
+        span: Span,
+        permission: Option<&ProjectionPermission<'_>>,
+    ) -> Result<OwnerKey> {
         let active = &self.frames[frame];
+        let granted = permission.is_some_and(|permission| {
+            let requested = match access {
+                Access::Read => ProjectionAccess::Read,
+                Access::Write => ProjectionAccess::Write,
+                Access::Borrow(kind) => ProjectionAccess::Borrow(kind),
+                Access::Consume => return false,
+            };
+            permission.permits(
+                self.plan.witness(),
+                active.function,
+                active.block,
+                active.next,
+                base,
+                requested,
+            )
+        });
         match base {
             AccessBase::Owner(id) => {
                 let key = self.owner_key(frame, id, span)?;
                 let state = self.owner(key, span)?;
-                if state.exclusive_children != 0
-                    || (state.shared_children != 0
-                        && !matches!(access, Access::Read | Access::Borrow(BorrowKind::Shared)))
+                if !granted
+                    && (state.exclusive_children != 0
+                        || (state.shared_children != 0
+                            && !matches!(
+                                access,
+                                Access::Read | Access::Borrow(BorrowKind::Shared)
+                            )))
                 {
                     return Err(bad("owner has conflicting loan", span));
                 }
@@ -522,7 +616,18 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     .references
                     .get(id.0)
                     .ok_or_else(|| bad("reference parameter", span))?;
-                self.validate_handle(handle, access, span)
+                if !granted {
+                    return self.validate_handle(handle, access, span);
+                }
+                // The current verified field access can coexist with disjoint
+                // children. Epochs, views and exclusive authority still apply.
+                self.validate_handle_identity(handle, span)?;
+                if !matches!(access, Access::Read | Access::Borrow(BorrowKind::Shared))
+                    && self.loan_kind(handle.permission, span)? != BorrowKind::Exclusive
+                {
+                    return Err(bad("shared permission upgrade", span));
+                }
+                Ok(handle.root)
             }
         }
     }
@@ -1040,7 +1145,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         path: &[FieldId],
         span: Span,
     ) -> Result<(OwnerKey, ValueTy, usize)> {
-        let key = self.base(frame, base, access, span)?;
+        let key = self.projected_base(
+            frame,
+            base,
+            access,
+            span,
+            ProjectionRequest::Path {
+                base,
+                path,
+                write: matches!(access, Access::Write),
+            },
+        )?;
         let function = self.function(self.frames[frame].function);
         let expected = match base {
             AccessBase::Owner(owner) => BorrowedTy::Exact(function.owners[owner.0].aggregate()),
@@ -1646,11 +1761,12 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
     ) -> Result<()> {
         let f = self.function(self.frames[frame].function);
         let descriptor = &f.loans[id.0];
-        let root = self.base(
+        let root = self.projected_base(
             frame,
             descriptor.authority,
             Access::Borrow(descriptor.kind),
             span,
+            ProjectionRequest::Borrow(id),
         )?;
         let mut view = self.base_view(frame, descriptor.authority, root, span)?;
         let mut actual = view
@@ -1765,7 +1881,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         };
         if match kind {
             BorrowKind::Shared => counts.0 == 0,
-            BorrowKind::Exclusive => counts.1 != 1,
+            BorrowKind::Exclusive => counts.1 == 0,
         } {
             return Err(bad("release counter", span));
         }
@@ -3027,12 +3143,32 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 base,
                 field,
             } => {
-                let key = self.base(frame, *base, Access::Read, span)?;
+                let key = self.projected_base(
+                    frame,
+                    *base,
+                    Access::Read,
+                    span,
+                    ProjectionRequest::Field {
+                        base: *base,
+                        field: *field,
+                        write: false,
+                    },
+                )?;
                 let value = self.load_field(frame, *base, key, *field, span)?;
                 self.write(frame, *destination, value, span)?;
             }
             OwnedInstruction::WriteField { base, field, value } => {
-                let key = self.base(frame, *base, Access::Write, span)?;
+                let key = self.projected_base(
+                    frame,
+                    *base,
+                    Access::Write,
+                    span,
+                    ProjectionRequest::Field {
+                        base: *base,
+                        field: *field,
+                        write: true,
+                    },
+                )?;
                 let value = self.read(frame, *value)?;
                 let (offset, ty) = self.accessed_field(frame, *base, key, *field, span)?;
                 if ty != value.ty() {
@@ -3139,6 +3275,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             self.expect_owner(frame, owner, &[AVAILABLE], span)?;
         }
         // No transient argument Vec: fixed scalar snapshots and loan records are the inputs.
+        // Separate fields can share an owner. Composed views are re-derived
+        // from immutable paths below before any child frame is installed.
         for (i, &loan) in self
             .plan
             .function(f.id)
@@ -3152,6 +3290,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 if a.root == b.root
                     && (self.loan_kind(a.permission, span)? == BorrowKind::Exclusive
                         || self.loan_kind(b.permission, span)? == BorrowKind::Exclusive)
+                    && self.reference_extents_overlap(a, b, span)?
                 {
                     return Err(bad("incoming reference alias contract", span));
                 }

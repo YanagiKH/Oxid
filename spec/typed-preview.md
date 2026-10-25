@@ -416,14 +416,16 @@ move an explicitly annotated zero-length local; `field: []` does not infer a typ
 
 Named-root paths may copy or write a scalar leaf, index a contained fixed scalar
 array, or call its `len()`. Visibility is checked at every intermediate and final
-field. The root must remain available and its existing whole-root permissions
-must allow the access. A shared/exclusive helper borrows the complete outer
-record; explicit reborrows keep existing parent-suspension rules.
+field. The root must remain available. A helper may borrow a whole record or a
+record field; active field loans permit access to different fields under the
+[field borrowing rules](../rfcs/0067-disjoint-field-borrows.md). Whole-record
+access retains the existing parent-suspension rules.
 
 Individual aggregate fields cannot be moved or independently replaced.
 Use a complete record pattern below to transfer fields into new bindings,
 or replace the complete outer record.
-The call-only fixed-array-field slice exception below retains whole-root authority. Partial initialization, arrays of records,
+Call-only field and contained-array slice borrows retain the outer owner's
+lifetime and cleanup authority. Partial initialization, arrays of records,
 nested arrays, stored references and temporary/grouped path roots remain
 excluded. Subobjects never gain independent ownership or loan authority.
 
@@ -438,7 +440,9 @@ transfer initialized leaves and empty sentinels without copying padding.
 
 Record fields can also be borrowed by their exact record type with
 `&value.field`, `&mut value.field`, and explicit parameter reborrows such as
-`&mut *parameter.field`. Nested paths retain a loan on the whole outer owner.
+`&mut *parameter.field`. Nested paths keep the outer owner alive, but distinct
+field paths may be borrowed together. Equal paths and parent/child paths
+overlap; a whole-record borrow overlaps every field.
 See [borrowing record fields](../rfcs/0057-record-field-borrows.md).
 
 [RFC 0022](../rfcs/0022-projected-array-slices.md) permits `sum(&batch.samples)`

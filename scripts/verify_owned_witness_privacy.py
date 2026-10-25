@@ -167,6 +167,22 @@ PROBES = [
             let _ = (w.functions(), w.declarations(), w.usage());
         }
     """),
+    ("projected-permission-derived-from-witness", True, (), """
+        fn inspect(w: &VerifiedOwnedProgram) {
+            let _ = w.projection_permission(hir::DefId(0), BlockId(0), 0,
+                verified::ProjectionRequest::Borrow(LoanId(0)));
+        }
+    """),
+    ("projected-permission-cannot-rebind-instruction", False, ("E0451",), """
+        fn forge(base: verified::ProjectionPermission<'_>) -> verified::ProjectionPermission<'_> {
+            verified::ProjectionPermission { statement: 0, ..base }
+        }
+    """),
+    ("projected-permission-private-witness", False, ("E0616",), """
+        fn rebind<'a>(proof: &mut verified::ProjectionPermission<'a>, replacement: &'a VerifiedOwnedProgram) {
+            proof.witness = replacement;
+        }
+    """),
     ("replace-program-using-struct-update", False, ("E0451",), """
         fn forge(base: VerifiedOwnedProgram, replacement: RawOwnedProgram) -> VerifiedOwnedProgram {
             VerifiedOwnedProgram { program: replacement, ..base }
