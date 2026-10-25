@@ -204,6 +204,227 @@ mod native {
         assert!(result.stderr.is_empty(), "{result:?}");
     }
 
+    fn debugger_script(project: &Project, commands: &[&str]) -> String {
+        let gdb = std::env::var_os("OXID_TEST_GDB").unwrap_or_else(|| "gdb".into());
+        let mut command = Command::new(gdb);
+        command.current_dir(&project.0).args([
+            "--batch",
+            "--quiet",
+            "-nx",
+            "-iex",
+            "set auto-load off",
+            "-ex",
+            "set disable-randomization off",
+            "-ex",
+            "set debuginfod enabled off",
+        ]);
+        for instruction in commands {
+            command.args(["-ex", instruction]);
+        }
+        let result = success(
+            command
+                .arg("--args")
+                .arg(project.binary())
+                .stdin(Stdio::null())
+                .output()
+                .unwrap(),
+        );
+        let text = String::from_utf8(result.stdout).unwrap();
+        assert!(text.contains("exited normally"), "{text}");
+        println!("{text}");
+        text
+    }
+
+    #[test]
+    #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
+    fn scalar_parameters_mutation_and_nested_scope_are_visible_in_gdb() {
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new();
+            project.write("src/main.ox", "fn inspect(input:i32,flag:bool)->i32{\n    let base=input+2;\n    let mut total=base;\n    total=total+3;\n    if flag{\n        let inside=7;\n        total=total+inside;\n    }\n    total=total+1;\n    return total;\n}\nfn main()->i32{return inspect(29,true);}\n");
+            project.manifest(&format!(
+                "debug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n"
+            ));
+            success(project.run(&["build"]));
+            dwarf(&project.binary(), "--verify");
+            let text = debugger_script(
+                &project,
+                &[
+                    "break src/main.ox:7",
+                    "run",
+                    "echo INNER_START\\n",
+                    "info args",
+                    "info locals",
+                    "echo INNER_END\\n",
+                    "break src/main.ox:9",
+                    "continue",
+                    "echo OUTER_START\\n",
+                    "info locals",
+                    "echo OUTER_END\\n",
+                    "continue",
+                ],
+            );
+            let inner = text
+                .split_once("INNER_START\n")
+                .unwrap()
+                .1
+                .split_once("INNER_END\n")
+                .unwrap()
+                .0;
+            for value in ["input = 29", "flag = true", "total = 34", "inside = 7"] {
+                assert!(inner.contains(value), "{value}: {text}");
+            }
+            let outer = text
+                .split_once("OUTER_START\n")
+                .unwrap()
+                .1
+                .split_once("OUTER_END\n")
+                .unwrap()
+                .0;
+            assert!(
+                outer.contains("total = 41") && !outer.contains("inside ="),
+                "{text}"
+            );
+            output(&project.binary());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
+    fn range_bindings_leave_scope_and_compiler_cursors_are_hidden() {
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new();
+            project.write("src/main.ox", "fn main()->i32{\n    let mut total=0;\n    for n in 0..3{\n        let doubled=n*2;\n        total=total+doubled;\n    }\n    return total;\n}\n");
+            project.manifest(&format!(
+                "debug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n"
+            ));
+            success(project.run(&["build"]));
+            dwarf(&project.binary(), "--verify");
+            let text = debugger_script(
+                &project,
+                &[
+                    "break src/main.ox:5",
+                    "run",
+                    "echo LOOP_START\\n",
+                    "info locals",
+                    "echo LOOP_END\\n",
+                    "disable 1",
+                    "break src/main.ox:7",
+                    "continue",
+                    "echo AFTER_START\\n",
+                    "info locals",
+                    "echo AFTER_END\\n",
+                    "continue",
+                ],
+            );
+            let body = text
+                .split_once("LOOP_START\n")
+                .unwrap()
+                .1
+                .split_once("LOOP_END\n")
+                .unwrap()
+                .0;
+            for value in ["n = 0", "doubled = 0", "total = 0"] {
+                assert!(body.contains(value), "{text}");
+            }
+            let after = text
+                .split_once("AFTER_START\n")
+                .unwrap()
+                .1
+                .split_once("AFTER_END\n")
+                .unwrap()
+                .0;
+            assert!(
+                after.contains("total = 6")
+                    && !after.contains("n =")
+                    && !after.contains("doubled ="),
+                "{text}"
+            );
+            assert!(
+                !body.contains("for n in") && !after.contains("for n in"),
+                "{text}"
+            );
+            let result = success(Command::new(project.binary()).env_clear().output().unwrap());
+            assert_eq!(result.stdout, b"6\n");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
+    fn debugger_reads_all_scalar_widths_without_exposing_wider_storage_slots() {
+        let source = "fn inspect(number:i64)->i32{\n    let boolean=true;\n    let signed8=-8i8;\n    let unsigned8=250u8;\n    let signed16=-1600i16;\n    let unsigned16=65000u16;\n    let signed32=-320000;\n    let unsigned32=4000000000u32;\n    let signed64=-9223372036854775807i64;\n    let unsigned64=18446744073709551615u64;\n    let pointer_signed=-123isize;\n    let pointer_unsigned=456usize;\n    let signed128=-170141183460469231731687303715884105727i128;\n    let unsigned128=340282366920938463463374607431768211455u128;\n    let float32=1.25f32;\n    let float64=2.5;\n    let character='雪';\n    let mut total=40;\n    total=total+2;\n    return total;\n}\nfn main()->i32{return inspect(17i64);}\n";
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new();
+            project.write("src/main.ox", source);
+            project.manifest(&format!(
+                "debug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n"
+            ));
+            for profile in ["dev", "release"] {
+                success(project.run(&["build", "--profile", profile]));
+                dwarf(&project.binary(), "--verify");
+                output(&project.binary());
+                if profile == "dev" {
+                    let text = debugger_script(
+                        &project,
+                        &[
+                            "break src/main.ox:19",
+                            "run",
+                            "info args",
+                            "info locals",
+                            "print/x character",
+                            "ptype unsigned128",
+                            "continue",
+                        ],
+                    );
+                    for value in [
+                        "number = 17",
+                        "boolean = true",
+                        "signed8 = -8",
+                        "unsigned8 = 250",
+                        "signed16 = -1600",
+                        "unsigned16 = 65000",
+                        "signed32 = -320000",
+                        "unsigned32 = 4000000000",
+                        "signed64 = -9223372036854775807",
+                        "unsigned64 = 18446744073709551615",
+                        "pointer_signed = -123",
+                        "pointer_unsigned = 456",
+                        "signed128 = -170141183460469231731687303715884105727",
+                        "unsigned128 = 340282366920938463463374607431768211455",
+                        "float32 = 1.25",
+                        "float64 = 2.5",
+                        "total = 40",
+                        "0x96ea",
+                        "type = u128",
+                    ] {
+                        assert!(text.contains(value), "{value}: {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
+    fn scalar_record_patterns_and_enum_payload_bindings_use_source_names() {
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new();
+            project.write("src/main.ox", "struct Pair{left:i64,right:i32}\nenum Choice{Number(i32),Empty}\nfn inspect(pair:Pair,choice:Choice)->i32{\n    let Pair{left:weight,right:bias}=pair;\n    match choice{\n        Choice::Number(payload)=>{\n            let combined=weight.to_i32_checked()+bias+payload;\n            return combined;\n        },\n        Choice::Empty=>{return 0;}\n    }\n}\nfn main()->i32{return inspect(Pair{left:30i64,right:5},Choice::Number(7));}\n");
+            project.manifest(&format!(
+                "debug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n"
+            ));
+            success(project.run(&["build"]));
+            dwarf(&project.binary(), "--verify");
+            let text = debugger_script(
+                &project,
+                &["break src/main.ox:8", "run", "info locals", "continue"],
+            );
+            for value in ["weight = 30", "bias = 5", "payload = 7", "combined = 42"] {
+                assert!(text.contains(value), "{text}");
+            }
+            output(&project.binary());
+        }
+    }
+
     #[test]
     #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
     fn source_breakpoints_stacks_cache_and_relocation_use_real_debug_information() {

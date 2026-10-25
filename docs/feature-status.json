@@ -1883,7 +1883,7 @@
     },
     {
       "id": "native-source-debug-information",
-      "summary": "Optional native function names and source line tables for GDB breakpoints, stepping and call stacks",
+      "summary": "Optional native source locations, call stacks and scalar parameter/local inspection in GDB",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1893,23 +1893,27 @@
       "reviewer": "unassigned",
       "spec": [
         "rfcs/0061-native-debug-information.md",
-        "docs/TYPED_PROJECTS.md"
+        "docs/TYPED_PROJECTS.md",
+        "rfcs/0064-native-debug-variables.md"
       ],
       "implementation": [
         "src/frontend/native_debug.rs",
         "src/frontend/driver.rs",
         "src/frontend/build_config.rs",
-        "src/project_cli.rs"
+        "src/project_cli.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/native.rs"
       ],
       "tests": [
         "tests/native_debug_info.rs",
         "scripts/test_native_debug_compatibility.py",
-        "scripts/test_linux_arm64_native.py"
+        "scripts/test_linux_arm64_native.py",
+        "scripts/test_debug_variables_compatibility.py"
       ],
       "evidence": [
         "rfcs/0061-native-debug-information.md"
       ],
-      "limitations": "No debugger local/parameter/aggregate type information. Optimization can remove source lines or functions. LLVM 19.1.7 and the existing native execution/resource limits apply."
+      "limitations": "References, unit values and owned aggregates have no variable descriptions. Values without a recoverable location may appear optimized out, including SSA values in dev; optimization can remove source code. LLVM 19.1.7 and existing native execution/resource limits apply."
     },
     {
       "id": "native-cpu-tensor-training",

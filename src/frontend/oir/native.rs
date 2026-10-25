@@ -1408,6 +1408,17 @@ fn emit(
         for (i, place) in f.places.iter().enumerate() {
             writeln!(out, "  %p{i} = alloca {}", ty(place.ty)).unwrap();
         }
+        if out.debug {
+            for (i, parameter) in f.locals.iter().take(f.param_count).enumerate() {
+                crate::frontend::native_debug::variable(
+                    out,
+                    parameter.span,
+                    parameter.ty,
+                    i + 1,
+                    crate::frontend::native_debug::VariableValue::Value(&format!("%v{i}")),
+                );
+            }
+        }
         writeln!(out, "  br label %b{}", f.entry.0).unwrap();
         // Checked arithmetic splits an OIR block. Phi edges depart from its
         // last successful LLVM block, not necessarily the original bN label.
@@ -1480,6 +1491,19 @@ fn emit(
                             place.id.0
                         )
                         .unwrap();
+                        if out.debug && matches!(statement, Statement::Initialize { .. }) {
+                            let declaration = &f.places[place.id.0];
+                            crate::frontend::native_debug::variable(
+                                out,
+                                declaration.span,
+                                declaration.ty,
+                                0,
+                                crate::frontend::native_debug::VariableValue::Address(
+                                    &format!("%p{}", place.id.0),
+                                    0,
+                                ),
+                            );
+                        }
                         continue;
                     }
                 };
@@ -1683,6 +1707,21 @@ fn emit(
                     _ => unreachable!("native admission allowlist"),
                 };
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
+                if out.debug {
+                    let declaration = &f.locals[a.destination.0];
+                    if declaration.kind == LocalKind::Binding {
+                        crate::frontend::native_debug::variable(
+                            out,
+                            declaration.span,
+                            declaration.ty,
+                            0,
+                            crate::frontend::native_debug::VariableValue::Value(&format!(
+                                "%v{}",
+                                a.destination.0
+                            )),
+                        );
+                    }
+                }
             }
             let terminator = b.terminator.as_ref().expect("verified terminator");
             if out.debug {

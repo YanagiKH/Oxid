@@ -129,3 +129,6 @@ literal OS arguments through `std::env::arg_count` and `arg_bytes`.
 
 [API documentation](0063-typed-api-documentation.md) generates a checked public
 reference from ordinary typed projects and selected workspace members.
+
+[Scalar debug variables](0064-native-debug-variables.md) adds GDB inspection of
+typed function parameters and local values in their source block scopes.

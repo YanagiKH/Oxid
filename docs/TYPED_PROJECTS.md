@@ -109,12 +109,17 @@ gdb .oxid/bin/hello
 In GDB, use `break main`, `break src/main.ox:2`, `run`, `next` and `backtrace`
 to stop in Oxid source and inspect the call stack. Source files must be available
 to show their text. The executable still runs after those files are removed.
+Use `info args`, `info locals` and `print name` to inspect scalar parameters and
+initialized local variables. This includes integer widths, floating-point values,
+booleans and characters. Variables follow their source block's scope.
 
 Set `debug-info = true` under `[build]` to keep line information enabled.
 `--debug-info` and `--no-debug-info` override the selected package's setting;
 workspace builds apply the command-line choice to every selected member.
 Both `dev` and `release` support it. Optimized builds can fold or remove source
-lines and functions. Local and aggregate variable inspection is not yet available.
+lines, functions and values. A value without a recoverable machine location
+appears as `<optimized out>`; this can also happen to an SSA value in `dev`.
+References and owned aggregates are not yet described for variable inspection.
 
 `--reproducible` keeps debug paths relative to the project or workspace root.
 Run the debugger from that root after moving the project, or configure its source

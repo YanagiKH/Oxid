@@ -3928,6 +3928,37 @@ fn emit_function(
         )
         .unwrap();
     }
+    if out.debug {
+        // Describe existing activation storage at its dominating definition.
+        // A range binding is initialized before its body; a declaration there
+        // would lose its location across the generated cursor-update blocks.
+        for (i, declaration) in f.locals.iter().enumerate() {
+            if declaration.kind == LocalKind::Binding {
+                crate::frontend::native_debug::variable(
+                    out,
+                    declaration.span,
+                    declaration.ty,
+                    0,
+                    crate::frontend::native_debug::VariableValue::Address(
+                        "%scalars",
+                        storage.scalar_offset(i),
+                    ),
+                );
+            }
+        }
+        for (i, declaration) in f.places.iter().enumerate() {
+            crate::frontend::native_debug::variable(
+                out,
+                declaration.span,
+                declaration.ty,
+                0,
+                crate::frontend::native_debug::VariableValue::Address(
+                    "%scalars",
+                    storage.scalar_offset(storage.place_slot(PlaceId(i))),
+                ),
+            );
+        }
+    }
     for i in 0..f.owners.len() {
         if out.exceeded {
             return;
@@ -3981,6 +4012,23 @@ fn emit_function(
                 (&format!("%arg{i}"), &format!("%o{}", o.0)),
                 (diagnostics, f.span),
             ),
+        }
+    }
+    if out.debug {
+        for (i, parameter) in f.parameters.iter().enumerate() {
+            if let ParameterBinding::Scalar(local) = parameter {
+                let declaration = &f.locals[local.0];
+                crate::frontend::native_debug::variable(
+                    out,
+                    declaration.span,
+                    declaration.ty,
+                    i + 1,
+                    crate::frontend::native_debug::VariableValue::Address(
+                        "%scalars",
+                        storage.scalar_offset(local.0),
+                    ),
+                );
+            }
         }
     }
     writeln!(out, "  br label %b{}", f.entry.0).unwrap();
