@@ -17,11 +17,6 @@ case "$(uname -m)" in
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-if [ "$PLATFORM" = "linux" ] && [ "$ARCH" != "x86_64" ]; then
-  echo "Linux release binaries currently support x86_64. Build from source for ${ARCH}." >&2
-  exit 1
-fi
-
 ASSET="oxid-${PLATFORM}-${ARCH}.tar.gz"
 if [ "$VERSION" = "latest" ]; then
   BASE_URL="https://github.com/${REPOSITORY}/releases/latest/download"
