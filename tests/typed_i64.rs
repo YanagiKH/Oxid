@@ -246,8 +246,13 @@ fn formatter_preserves_suffixes_and_checked_conversion_semantics() {
 }
 
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_full_width_layouts_run_without_sources_in_both_policies_and_profiles() {
     for policy in ["bounded", "hosted"] {
         for profile in ["dev", "release"] {

@@ -307,7 +307,12 @@ fn source_native_i64_prices_the_full_output_frames_before_emission() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the source resource native gate"]
 fn source_native_actual_slot_and_cell_boundaries_use_real_llvm() {

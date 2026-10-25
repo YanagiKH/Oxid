@@ -163,11 +163,11 @@ fn escaped(value: &str) -> String {
 
 pub(crate) fn run() -> Report {
     let mut report = Report::pending();
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if !super::NativeBuildSettings::host_supported() {
         report.set(
             "host",
             Err(format!(
-                "native preview requires a Linux x86_64 build host; current host is {} {}",
+                "native builds require a Linux x86_64 or ARM64 host; current host is {} {}",
                 std::env::consts::OS,
                 std::env::consts::ARCH
             )),
@@ -182,12 +182,22 @@ pub(crate) fn run() -> Report {
             std::env::consts::ARCH
         )),
     );
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     supported::probe(&mut report);
     report
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 mod supported {
     use super::super::{
         resolve_tool, runtime_compile_args, tool, validate_version_output, Workspace, LLVM_VERSION,
@@ -423,11 +433,13 @@ mod supported {
             .map_err(|error| format!("cannot read probe ELF header: {error}"))?;
         if &header[..7] != b"\x7fELF\x02\x01\x01"
             || u16::from_le_bytes([header[16], header[17]]) != kind
-            || u16::from_le_bytes([header[18], header[19]]) != 62
+            || u16::from_le_bytes([header[18], header[19]])
+                != super::super::NativeBuildSettings::elf_machine()
         {
-            return Err(
-                "probe artifact is not the required ELF64 little-endian x86_64 target".into(),
-            );
+            return Err(format!(
+                "probe artifact is not the required ELF64 little-endian {} target",
+                std::env::consts::ARCH
+            ));
         }
         Ok(())
     }
@@ -488,10 +500,10 @@ mod supported {
                 TOOL_TIMEOUT,
             )?;
             elf(&workspace.0.join("runtime.o"), 1)?;
-            Ok(
-                "production C runtime compiled against target SDK headers to an x86_64 object"
-                    .into(),
-            )
+            Ok(format!(
+                "production C runtime compiled against target SDK headers to an {} object",
+                std::env::consts::ARCH
+            ))
         })();
         let sdk_ok = sdk.is_ok();
         report.set("sdk", sdk);
@@ -520,7 +532,7 @@ mod supported {
                 BUILD_TIMEOUT,
             )?;
             elf(&executable, 3)?;
-            Ok(format!("{} compiled, verified and linked a fixed Oxid program with the production runtime and target libraries (ELF64 x86_64 PIE)", compiler.display()))
+            Ok(format!("{} compiled, verified and linked a fixed Oxid program with the production runtime and target libraries (ELF64 {} PIE)", compiler.display(),std::env::consts::ARCH))
         })();
         let link_ok = linked.is_ok();
         report.set("compile-link", linked);

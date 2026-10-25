@@ -1,5 +1,10 @@
 //! f32/f64 values through ordinary project commands and deployed native programs.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use std::process::Stdio;
 use std::{
     fs,
@@ -162,9 +167,14 @@ fn invalid_literals_and_mixed_types_fail_during_checking() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_float_output_survives_source_removal_and_reports_broken_pipes() {
     for policy in ["bounded", "hosted"] {
         for (ty, bits, expected) in [
@@ -235,9 +245,14 @@ fn formatting_preserves_scientific_literals_and_qualified_bit_constructors() {
     assert!(repeated.status.success(), "{repeated:?}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_float_aggregates_and_quad_conversions_keep_their_values() {
     for policy in ["bounded", "hosted"] {
         for (source, expected) in [

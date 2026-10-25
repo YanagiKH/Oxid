@@ -20,7 +20,12 @@ fn float_cells_and_mixed_quad_cells_keep_the_existing_carrier_sizes() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn float_exact_memory_admission_precedes_any_argument_delivery() {
     use super::super::binary_io;

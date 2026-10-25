@@ -1771,7 +1771,7 @@
     },
     {
       "id": "inferred-generic-functions",
-      "summary": "Generic functions, structs and enums with recursive type inference, explicit constructors, scalar Copy bounds and concrete native specialization.",
+      "summary": "Generic functions, structs and enums with type inference from call arguments, record fields and enum payloads, scalar Copy bounds and concrete native specialization.",
       "status": "experimental",
       "classification": "production-path",
       "owner": "unassigned",
@@ -1779,7 +1779,7 @@
       "edition": "typed-preview",
       "backend": "Owned typed frontend, reference execution and native builds.",
       "target_scope": "Linux x86_64 with LLVM 19.1.7 for native execution.",
-      "limitations": "Value type arguments and owned reference referents only. Explicit calls and nominal constructors must name every type parameter. Record operations retain whole-owner moves and borrows. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
+      "limitations": "Unconstrained constructor type parameters require explicit arguments. Record operations retain whole-owner moves and borrows. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
       "spec": [
         "spec/typed-preview.md",
         "docs/TYPED_PROJECTS.md"
@@ -1793,7 +1793,8 @@
         "src/frontend/oir/owned/source/resolve.rs",
         "src/frontend/oir/owned/source/association.rs",
         "src/frontend/declaration_index/generics/nominal.rs",
-        "src/frontend/declaration_index/enum_views.rs"
+        "src/frontend/declaration_index/enum_views.rs",
+        "src/frontend/declaration_index/generics/inference.rs"
       ],
       "tests": [
         "tests/typed_generics.rs",
@@ -1801,7 +1802,43 @@
         "scripts/test_explicit_generic_arguments_compatibility.py",
         "src/frontend/oir/owned/source/association.rs",
         "tests/typed_nominal_generics.rs",
-        "scripts/test_nominal_generics_compatibility.py"
+        "scripts/test_nominal_generics_compatibility.py",
+        "tests/typed_constructor_inference.rs",
+        "tests/typed_record_patterns.rs",
+        "tests/typed_record_enum_fields.rs"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "linux-native-hosts",
+      "summary": "Build and run native Linux executables on x86_64 and ARM64, with host-specific targets, SDK checks and object-cache validation.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "LLVM 19.1.7, project development/release profiles and bounded/hosted execution.",
+      "target_scope": "Linux x86_64 and ARM64, 64-bit little-endian GNU targets. Hardware ARM64 regression runs are required in repository CI.",
+      "limitations": "Builds select the current host; cross-compilation and other operating systems are unavailable. Existing compiler and native storage limits apply. Historical certificates retain their original platform scope.",
+      "spec": [
+        "spec/native-preview.md",
+        "docs/NATIVE_DOCTOR.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "build.rs",
+        "src/frontend/build_config.rs",
+        "src/frontend/native.rs",
+        "src/frontend/native/doctor.rs",
+        "src/frontend/native_cache.rs"
+      ],
+      "tests": [
+        "tests/native_doctor.rs",
+        "tests/native_profiles.rs",
+        "tests/native_incremental.rs",
+        "scripts/test_linux_native_target.py",
+        "scripts/test_linux_arm64_native.py",
+        "scripts/verify_linux_arm64_native.py"
       ],
       "evidence": []
     }

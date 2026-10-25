@@ -123,12 +123,22 @@ impl Heap {
         if path.contains(&0) {
             return Ok(OpenValue::Error(22));
         }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(not(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let _ = create;
             return Ok(OpenValue::Error(38));
         }
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             let mut terminated = [0u8; PATH_BYTES];
             terminated[..path.len()].copy_from_slice(path);
@@ -228,7 +238,12 @@ impl Heap {
         let Some(fd) = self.file_fd(value)? else {
             return Ok(Err(9));
         };
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             // SAFETY: The live registry exclusively owns this OS descriptor.
             Ok(if unsafe { libc::fsync(fd) } < 0 {
@@ -237,7 +252,12 @@ impl Heap {
                 Ok(())
             })
         }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(not(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let _ = fd;
             Ok(Err(38))
@@ -271,7 +291,12 @@ pub(super) unsafe fn close_node(header: &Header) -> std::result::Result<(), i32>
     if header.initialized == u32::MAX {
         return Ok(());
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     {
         // SAFETY: The registry owns this descriptor; no retry is performed.
         if unsafe { libc::close(header.initialized as i32) } < 0 {
@@ -280,7 +305,12 @@ pub(super) unsafe fn close_node(header: &Header) -> std::result::Result<(), i32>
             Ok(())
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
     {
         Err(38)
     }
@@ -304,7 +334,12 @@ impl FileAccess {
         if bytes.is_empty() {
             return Ok(Ok(0));
         }
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             // SAFETY: The entire uniquely borrowed output extent is writable.
             let count = unsafe { libc::read(fd, bytes.as_mut_ptr().cast(), bytes.len()) };
@@ -314,7 +349,12 @@ impl FileAccess {
                 Ok(count as usize)
             })
         }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(not(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let _ = fd;
             Ok(Err(38))
@@ -333,7 +373,12 @@ impl FileAccess {
         if bytes.is_empty() {
             return Ok(Ok(0));
         }
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             // SAFETY: The borrowed input extent is initialized and readable.
             let count = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
@@ -343,7 +388,12 @@ impl FileAccess {
                 Ok(count as usize)
             })
         }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(not(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let _ = fd;
             Ok(Err(38))

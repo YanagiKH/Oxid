@@ -1,7 +1,12 @@
 //! Real LLVM acceptance for opt-in program-object reuse. These tests observe
 //! execve calls as well as executing the resulting ELF; a cache status alone
 //! cannot prove that verification, runtime compilation or linking still ran.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use sha2::{Digest, Sha256};
 use std::{
@@ -315,7 +320,14 @@ fn valid_blob(path: &Path) -> Vec<u8> {
     );
     assert_eq!(&bytes[56..88], &Sha256::digest(&bytes[HEADER..])[..]);
     assert_eq!(&bytes[HEADER..HEADER + 7], b"\x7fELF\x02\x01\x01");
-    assert_eq!(&bytes[HEADER + 16..HEADER + 20], &[1, 0, 62, 0]);
+    assert_eq!(
+        &bytes[HEADER + 16..HEADER + 20],
+        if cfg!(target_arch = "aarch64") {
+            &[1, 0, 183, 0]
+        } else {
+            &[1, 0, 62, 0]
+        }
+    );
     bytes
 }
 

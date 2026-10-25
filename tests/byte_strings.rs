@@ -120,7 +120,12 @@ fn literals_follow_existing_array_moves_mutation_and_nested_borrowing() {
     success(project.command(&["run"]), b"4\n");
 }
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn literal_data_reaches_binary_output_without_encoding_or_nul_changes() {
     let project = Project::new(OUTPUT, true);
     let expected = ["Hello, Oxid 👋\n".as_bytes(), &[0, 255]].concat();
@@ -214,11 +219,12 @@ fn byte_literal_formatting_preserves_values_and_reaches_a_fixed_point() {
     success(project.command(&["run"]), b"14\n");
 }
 #[test]
-#[ignore = "requires Linux x86_64 LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
 #[cfg(all(
     target_os = "linux",
-    target_arch = "x86_64",
-    target_pointer_width = "64"
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 fn native_byte_literals_preserve_binary_and_utf8_data_at_both_optimizations() {
     let stream = ["Hello, Oxid 👋\n".as_bytes(), &[0, 255]].concat();

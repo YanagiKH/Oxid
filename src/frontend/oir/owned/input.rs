@@ -11,22 +11,24 @@ pub(super) enum Attempt {
 pub(super) const fn supported_host() -> bool {
     cfg!(all(
         target_os = "linux",
-        target_arch = "x86_64",
-        target_pointer_width = "64"
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
     ))
 }
 
 #[cfg(all(
     target_os = "linux",
-    target_arch = "x86_64",
-    target_pointer_width = "64"
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 pub(super) fn read_one() -> Attempt {
     unsafe extern "C" {
         fn read(fd: std::ffi::c_int, buffer: *mut std::ffi::c_void, count: usize) -> isize;
     }
     let mut byte = 0u8;
-    // SAFETY: This is the Linux x86_64 read ABI. fd 0 is inherited stdin;
+    // SAFETY: This is the 64-bit Linux read C ABI. fd 0 is inherited stdin;
     // the live, writable byte is valid for the exact count 1. The unbuffered
     // call makes one attempt; this adapter never retries or changes signals.
     let result = unsafe { read(0, (&mut byte as *mut u8).cast(), 1) };
@@ -45,8 +47,9 @@ pub(super) fn read_one() -> Attempt {
 
 #[cfg(not(all(
     target_os = "linux",
-    target_arch = "x86_64",
-    target_pointer_width = "64"
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
 )))]
 pub(super) fn read_one() -> Attempt {
     // Input-bearing execution is rejected before activation on these hosts.

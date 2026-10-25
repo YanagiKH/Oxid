@@ -451,7 +451,12 @@ fn call_results_are_storable_only_after_the_call_continuation() {
 
 // The raw-ID variant exercises the entry alloca dominance independently of the
 // source producer's entry=0 ordering. Explicit invocation requires real LLVM.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run in the native CI job"]
 fn raw_mutable_places_use_real_llvm() {

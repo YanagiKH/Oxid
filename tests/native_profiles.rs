@@ -1,6 +1,11 @@
 //! Public profile admission and real LLVM optimization/semantic acceptance.
 //! Rust's cargo profile does not select Oxid's native optimization profile.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use sha2::{Digest, Sha256};
 use std::{
@@ -192,7 +197,11 @@ impl Fixture {
                 .collect();
             assert_eq!(options, [*expected], "{line}");
             assert!(
-                line.contains("\"--target=x86_64-unknown-linux-gnu\""),
+                line.contains(if cfg!(target_arch = "aarch64") {
+                    "\"--target=aarch64-unknown-linux-gnu\""
+                } else {
+                    "\"--target=x86_64-unknown-linux-gnu\""
+                }),
                 "{line}"
             );
         }
@@ -256,7 +265,14 @@ impl Fixture {
                 );
                 assert_eq!(&bytes[56..88], &Sha256::digest(&bytes[88..])[..]);
                 assert_eq!(&bytes[88..95], b"\x7fELF\x02\x01\x01");
-                assert_eq!(&bytes[104..108], &[1, 0, 62, 0]);
+                assert_eq!(
+                    &bytes[104..108],
+                    if cfg!(target_arch = "aarch64") {
+                        &[1, 0, 183, 0]
+                    } else {
+                        &[1, 0, 62, 0]
+                    }
+                );
                 bytes[88..].to_vec()
             })
             .collect();

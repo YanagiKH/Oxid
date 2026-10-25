@@ -110,7 +110,12 @@ fn builtin_source_private_no_import_control_uses_paid_path() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn builtin_source_aliases_trailing_ids_zero_capacity_vertical() {
     let fixture = ProjectFixture::new(ZERO);
     let project = fixture.load();
@@ -279,7 +284,12 @@ fn main() -> i32 {
 /// not select it or read stdin. Only scalar facts and bounded module text cross
 /// the fresh source-owned continuation; compilation uses the real native API.
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn builtin_source_input_subprocess_child() {
     if std::env::var("OXID_PRIVATE_SOURCE_STDIN").as_deref() != Ok("1") {
         return;

@@ -178,8 +178,13 @@ fn byte_arithmetic_stays_strict_and_process_entries_still_require_i32() {
 }
 
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn byte_result_modules_execute_after_removing_the_project() {
     for policy in ["bounded", "hosted"] {
         for profile in ["dev", "release"] {

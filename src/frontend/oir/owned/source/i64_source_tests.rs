@@ -204,7 +204,12 @@ fn i64_source_primitive_type_names_cannot_be_rebound_but_value_names_remain_avai
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn i64_source_memory_boundary_precedes_argument_delivery() {
     use super::super::super::binary_io;

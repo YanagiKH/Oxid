@@ -180,9 +180,14 @@ fn recursive_nominal_layouts_are_rejected_without_instantiating_a_function() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_nominal_instances_survive_source_removal_in_both_profiles() {
     for (source, policy) in [
         ("struct Cell<T>{value:T}enum Option<T>{None,Some(T)}fn wrap<T>(value:T)->Option<Cell<T>>{return Option::<Cell<T>>::Some(Cell::<T>{value:value});}fn read<T:Copy>(value:&Cell<T>)->T{return value.value;}fn main()->i32{let value=wrap(42);match value{Option::None=>{return 1;},Option::Some(cell)=>{return read(&cell);},}}", "hosted"),

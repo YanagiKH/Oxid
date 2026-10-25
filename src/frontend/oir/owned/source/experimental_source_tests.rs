@@ -1,6 +1,11 @@
 //! Ordinary source acceptance for the experimental resource, through the same
 //! checked source owner used by the public compiler and both consumers.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use super::super::super::binary_io;
 use super::super::super::byte_buffer;
 use super::*;
@@ -44,7 +49,12 @@ fn bytebuf_source_minimal_no_status_imports() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn bytebuf_source_empty_binary_array_views_have_no_transport_effect() {
     let project = project("use std::io::read_some;use std::io::write_some;
 use std::io::ReadSomeStatus;use std::io::WriteSomeStatus;
@@ -134,7 +144,12 @@ GrowStatus::CapacityOverflow=>{return 1;},GrowStatus::MemoryLimit=>{return 2;},}
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn application() -> Vec<crate::frontend::project::packages::PackageSpec> {
     use crate::frontend::project::packages::{PackageDependency, PackageSpec};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("apps/byte-reverse");
@@ -170,7 +185,12 @@ fn application() -> Vec<crate::frontend::project::packages::PackageSpec> {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn bytebuf_source_binary_loops_short_interrupt_eof_error_zero_and_growth() {
     let specs = application();
     let project = crate::frontend::project::packages::PackageSources::load(
@@ -480,7 +500,12 @@ fn main()->i32{let mut b=new();return hold(&b,grow(&mut b));}",
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn file_source_exact_memory_boundary_refuses_before_truncation() {
     use std::os::unix::ffi::OsStrExt;
     let target = std::env::temp_dir().join(format!(

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Check byte-reverse against Python's independent bytes[::-1] oracle.
 
-Reference mode needs no native tools. Native mode requires Linux x86_64 and
+Reference mode needs no native tools. Native mode requires Linux x86_64 or ARM64 and
 LLVM 19.1.7, retaining untouched ELF files and exact command streams. Raw ELF
 equality is checked within each optimization profile, under one SDK/environment
 and the same relative source layout; this is not a performance measurement.
 """
+import linux_native_target as native_target
 import argparse
 import copy
 import fcntl
@@ -228,8 +229,8 @@ class ReverseOracle(Oracle):
         shutil.copyfile(project / "app/.oxid/bin/byte-reverse", artifact)
         artifact.chmod(0o555)
         body = artifact.read_bytes()
-        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == b"\x03\x00\x3e\x00",
-                "output is not an x86_64 PIE ELF")
+        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == native_target.elf_identity(3),
+                "output is not a host PIE ELF")
         require(str(self.output).encode() not in body and str(project).encode() not in body,
                 "reproducible ELF embeds an absolute fixture path")
         require(all(name.encode() in body for name in
@@ -331,7 +332,7 @@ class ReverseOracle(Oracle):
 
 
 def verify(args):
-    require(platform.system() == "Linux" and platform.machine() == "x86_64", "requires Linux x86_64")
+    require(native_target.host() is not None, "requires Linux x86_64 or ARM64")
     output = args.output.resolve()
     require(not output.exists() and not args.output.is_symlink() and output != ROOT and ROOT not in output.parents,
             "output must be a new directory outside the repository")

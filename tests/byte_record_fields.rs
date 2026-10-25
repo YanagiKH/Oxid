@@ -143,7 +143,12 @@ fn byte_record_projected_bounds_are_signed_and_use_field_length() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[ignore = "requires LLVM 19.1.7; executes dev and release native profiles"]
 fn byte_records_native_matches_fixed_reference_oracles() {
     for profile in ["dev", "release"] {
@@ -216,7 +221,12 @@ fn byte_record_bad_field_type_preserves_existing_managed_artifact() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM 19.1.7; executes all octets and narrowing failures at O0/O2"]
 fn byte_record_native_octets_and_checked_narrowing_in_both_profiles() {

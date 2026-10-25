@@ -192,9 +192,14 @@ fn formatting_preserves_quotes_escapes_and_character_conversions() {
     project.text("A");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_characters_preserve_utf8_without_sources_and_report_closed_output() {
     use std::{os::fd::OwnedFd, os::unix::net::UnixStream, process::Stdio};
     for policy in ["bounded", "hosted"] {
@@ -243,9 +248,14 @@ fn native_characters_preserve_utf8_without_sources_and_report_closed_output() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_checked_conversions_match_runtime_errors_and_aggregate_values() {
     for policy in ["bounded", "hosted"] {
         for source in [

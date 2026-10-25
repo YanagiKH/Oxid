@@ -142,9 +142,14 @@ fn enum_fields_keep_their_defining_module_and_field_privacy() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_enum_fields_keep_active_payloads_after_source_removal() {
     for source in [
         "enum Choice{Empty,Value(i32)}struct State{choice:Choice}fn main()->i32{let state=State{choice:Choice::Empty};let State{choice}=state;match choice{Choice::Empty=>{return 42;},Choice::Value(n)=>{return n;},}}",
@@ -174,9 +179,14 @@ fn native_enum_fields_keep_active_payloads_after_source_removal() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "requires Linux x86_64 and LLVM 19.1.7"]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
 fn native_enum_field_resources_are_cleaned_up_after_a_later_trap() {
     let source = "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;enum Option<T>{None,Some(T)}struct Pair{first:Option<ByteBuf>,second:Option<ByteBuf>}fn make(n:u8)->ByteBuf{let mut bytes=new();try_push(&mut bytes,n);return bytes;}fn main()->i32{let pair=Pair{first:Option::<ByteBuf>::Some(make(7u8)),second:Option::<ByteBuf>::Some(make(9u8))};let Pair{first:a,second:b}=pair;let zero=0;return 1/zero;}";
     for policy in ["bounded", "hosted"] {

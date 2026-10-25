@@ -174,11 +174,12 @@ fn transfers_require_exclusive_live_owners_before_tools_or_output_replacement() 
     }
 }
 #[test]
-#[ignore = "requires Linux x86_64 LLVM 19.1.7 in OXID_LLVM_BIN"]
+#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
 #[cfg(all(
     target_os = "linux",
-    target_arch = "x86_64",
-    target_pointer_width = "64"
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 fn native_transfers_preserve_owners_without_allocating_at_both_optimizations() {
     for (source, expected) in [

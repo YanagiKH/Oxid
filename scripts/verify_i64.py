@@ -5,6 +5,7 @@ Python computes every expected result without importing compiler internals.
 Operands arrive through OS arguments after compilation, including for -O2.
 All commands and exact output bytes are retained in commands.jsonl.
 """
+import linux_native_target as native_target
 import argparse
 import hashlib
 import json
@@ -178,7 +179,7 @@ def main():
     parser.add_argument("--llvm-bin", type=Path)
     parser.add_argument("--reference-only", action="store_true")
     args = parser.parse_args()
-    require(sys.platform == "linux" and os.uname().machine == "x86_64", "argument execution requires Linux x86_64")
+    require(native_target.host() is not None, "argument execution requires Linux x86_64 or ARM64")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     compilers = [Path(path).resolve(strict=True) for path in args.compilers]

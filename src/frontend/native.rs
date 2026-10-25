@@ -12,13 +12,23 @@ use std::{
 };
 
 const LLVM_VERSION: &str = "19.1.7";
-const TARGET: &str = "x86_64-unknown-linux-gnu";
+const TARGET: &str = NativeBuildSettings::new(false).target_triple();
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
 const CHARACTER_RUNTIME: &str = include_str!("../../native/typed_character.c");
 const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 const FLOAT_FORMAT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/float_format.a"));
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
 const FLOAT_FORMAT: &[u8] = &[];
 const INTEGER128_RUNTIME: &str = include_str!("../../native/typed_integer128.c");
 const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
@@ -200,8 +210,10 @@ fn managed(
     incremental: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err(failure("native preview requires a Linux x86_64 build host"));
+    if !NativeBuildSettings::host_supported() {
+        return Err(failure(
+            "native builds require a Linux x86_64 or ARM64 host",
+        ));
     }
     let output = Path::new(output);
     let parent = output
@@ -291,8 +303,10 @@ fn compile_inner(
     cache_root: Option<&Path>,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err(failure("native preview requires a Linux x86_64 build host"));
+    if !NativeBuildSettings::host_supported() {
+        return Err(failure(
+            "native builds require a Linux x86_64 or ARM64 host",
+        ));
     }
     // Path::file_name normalizes trailing separators and `.` components.
     // Preserve the caller's file-vs-directory intent before that normalization.

@@ -1236,7 +1236,7 @@ fn emit(
     fuel: usize,
     out: &mut Emission,
 ) {
-    out.push_str("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
+    out.push_str(if cfg!(all(target_os="linux",target_arch="aarch64")) { "; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"aarch64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" } else { "; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" });
     // Diagnostics are pre-rendered with the reference renderer. Every UTF-8
     // byte is escaped as LLVM constant data; no source path can become syntax.
     if out.policy.process() {
@@ -2008,6 +2008,14 @@ mod tests {
                 "  %value = call i32 @__oxid_fn_0()\n",
                 "  %status = call i32 @__oxid_print_i32(i32 %value)\n",
                 "  ret i32 %status\n}\n",
+            )
+            .replace(
+                "x86_64-unknown-linux-gnu",
+                if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+                    "aarch64-unknown-linux-gnu"
+                } else {
+                    "x86_64-unknown-linux-gnu"
+                }
             )
         );
     }

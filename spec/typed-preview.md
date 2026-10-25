@@ -210,7 +210,7 @@ are unchanged; native limits can reject a source-legal large program.
 require an original zero-argument bool/i32/unit root main, rejecting other
 entries with E0600/E0700. The [three-module sample](../fixtures/typed-array-samples/README.md)
 returns 5325. Declared-child loading remains Linux-only; native compilation
-remains Linux x86_64 with LLVM 19.1.7 at O0. See [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md)
+supports Linux x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2. See [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md)
 for exact diagnostics, costs and exclusions, and the
 [public-route validation](../docs/architecture/fixed-array-public-validation.md)
 for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
@@ -278,7 +278,7 @@ Physical standalone byte array storage uses stride/alignment1 and max(1,N)
 bytes. Logical width remains max(1,N), preserving all expanded-cell and fuel
 charges. Source/reference and native caps are unchanged; a legal N=1024 source
 constructor can exceed the narrower native per-function slot cap and be refused
-before tools/output. Native project builds support Linux x86_64 LLVM19.1.7 at
+before tools/output. Native project builds support Linux x86_64 and ARM64 with LLVM19.1.7 at
 O0 and O2.
 
 ## Growable byte buffers and partial binary I/O
@@ -306,7 +306,7 @@ normal scope cleanup releases initialized owners. Replacement validates the
 incoming value before releasing the previous one.
 
 `std::io::read_some` and `write_some` accept byte slices in process entry mode
-on Linux x86_64. They expose partial progress, EOF and immediate errno without
+on Linux x86_64 and ARM64. They expose partial progress, EOF and immediate errno without
 retrying. Their distinct `ReadSomeStatus` and `WriteSomeStatus` enums preserve
 the existing bounded `ReadStatus`/`WriteStatus` identities. Immediate result
 delivery is admitted before transport; later user failures preserve completed
@@ -315,7 +315,7 @@ shows workspace packages, growth and partial I/O together.
 
 ## Native files
 
-On Linux x86_64, `std::fs::open_read` and `create` return an `OpenResult`:
+On Linux x86_64 and ARM64, `std::fs::open_read` and `create` return an `OpenResult`:
 `Opened(File)`, `Error(errno)`, `MemoryLimit` or `AllocationFailed`. A `File`
 is move-only and closes automatically when its owner leaves scope.
 
@@ -334,7 +334,7 @@ error contracts.
 
 ## Program arguments
 
-On Linux x86_64, `std::env::arg_count()` includes the executable at index 0.
+On Linux x86_64 and ARM64, `std::env::arg_count()` includes the executable at index 0.
 `std::env::arg_bytes(index, &mut bytes)` returns `ArgStatus::Copied(length)`,
 `TooSmall(required)`, `Missing` or `TooLong`. It preserves raw OS bytes and
 empty arguments. Only a successful copy modifies the destination's prefix;
@@ -492,7 +492,7 @@ The [three-module sample](../fixtures/typed-slice-samples/README.md) uses shared
 [`tests/typed_slices.rs`](../tests/typed_slices.rs) for the public acceptance
 controls. Test definitions are not current hosted-CI receipts; historical
 source-bound ledgers keep their original qualification identities. Declared-child
-loading remains Linux-only; native scope remains Linux x86_64 with
+loading remains Linux-only; native builds support Linux x86_64 and ARM64 with
 LLVM/Clang/LLD 19.1.7 at O0 and the existing admission gates. Default/legacy and
 OXBC behavior are unchanged. This remains experimental, with no stable slice
 ABI, general lifetime inference or milestone-completion claim.
@@ -579,7 +579,7 @@ character codes, a separate mutable cursor with a private field, and an imported
 `Token` alias. Input `12 + 3` returns 115 (12 + 100 + 3). Decimal accumulation
 uses checked i32 arithmetic, so overflow remains the ordinary arithmetic failure.
 Run it with `oxid run tests/fixtures/bounded_enum_scanner/main.ox --edition typed-preview`.
-Declared-child loading remains Linux-only; native scope remains Linux x86_64
+Declared-child loading remains Linux-only; native builds support Linux x86_64 and ARM64
 with LLVM/Clang/LLD 19.1.7. Native project profiles support O0 and O2. This fixed-input compiler-component example
 makes no production-provider or self-hosting claim. The
 [public acceptance controls](../src/frontend/enum_public_tests.rs) cover the
@@ -658,8 +658,8 @@ store, commit and result materialization contain no fallible helper, allocation,
 validation or extra fuel debit. A later builtin return or caller operation can
 still exhaust fuel after the successful commit; earlier effects remain.
 
-Input-bearing reference execution is Linux x86_64 only. Other hosts report
-E0608/oir-owned-run, exactly `bounded stdin execution requires Linux x86_64`, at
+Input-bearing reference execution supports Linux x86_64 and ARM64. Other hosts report
+E0608/oir-owned-run, exactly `bounded stdin execution requires Linux x86_64 or ARM64`, at
 the admitted input import before entry validation or activation. This applies
 to unused function imports and zero-capacity calls. `ReadStatus`-only use remains
 portable under the existing project-loading rules; native compilation retains
@@ -715,7 +715,7 @@ values on typed Run also use that text-only channel. `--` and script forwarding
 retain their existing boundaries. Compile JSON remains a compiler build report;
 Check, Fmt and Compile never establish process signal policy or execute I/O.
 
-Runtime execution is qualified on Linux x86_64. Process Run establishes ignored
+Runtime execution supports Linux x86_64 and ARM64. Process Run establishes ignored
 SIGPIPE before source loading, diagnostic rendering, activation or fuel checks.
 Setup failure returns silent 74. Terminal stderr retries Interrupted/positive
 short writes and returns 74 on zero/error, preserving any prefix without a
@@ -818,7 +818,7 @@ Declared-child filesystem loading currently admits Linux only; non-Linux hosts
 reject it with E0005/source. Linux x86_64 has the predecessor filesystem evidence;
 other Linux architectures are not qualified. A module-free root has no discovery
 host gate, including root-only visibility/import/absolute-path syntax. Native
-remains Linux x86_64 with LLVM 19.1.7 at O0. The loader checks a stable filesystem;
+supports Linux x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2. The loader checks a stable filesystem;
 it does not promise a concurrent-filesystem snapshot or sandbox.
 
 Source bytes (1 MiB), non-EOF tokens including trivia (100,000), syntax nodes

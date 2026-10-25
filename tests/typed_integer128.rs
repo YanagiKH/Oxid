@@ -254,7 +254,12 @@ fn mixed_types_invalid_literals_and_non_i32_process_entries_are_rejected() {
     assert_eq!(project.invoke(&["run"]).status.code(), Some(1));
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM 19.1.7"]
 fn native_full_width_aggregates_remain_source_free_in_both_build_profiles() {

@@ -41,8 +41,10 @@ apply to bounded execution. Hosted recursion checks live call storage at each
 call; see [its limits and errors](../rfcs/0058-hosted-native-recursion.md).
 
 
-The only build host is Linux x86_64 and the only target is
-`x86_64-unknown-linux-gnu` (also the default). Generated files are ELF PIE
+Build hosts are Linux x86_64 and Linux ARM64, using
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` respectively.
+The current host's target is the default; an explicit `--target` must name that
+same target. Cross-compilation is not available. Generated files are ELF PIE
 executables, not OXBC. They depend on the host-compatible libc and ELF loader;
 they do not depend on Oxid, Rust, LLVM shared libraries, Python, or source files.
 This is not a portable-binary or minimum-glibc-version promise.
@@ -143,7 +145,7 @@ Reads use fd 0 at operation time; startup may repair a descriptor closed before
 launch, so such a launch is not a cross-runtime IoError guarantee. Check, format
 and compile consume no program stdin. The native host/toolchain/target policy
 and zero-argument scalar main are unchanged. Reference input execution also
-requires Linux x86_64 and otherwise reports E0608 before activation, including
+requires Linux x86_64 or ARM64 and otherwise reports E0608 before activation, including
 unused input imports and zero-capacity calls; importing ReadStatus alone has no
 input host gate. The [stdin expression application](../fixtures/typed-expression-samples/README.md#bounded-stdin-entry)
 has passed the local 28-case reference/native runner, including 39 and 63 from
@@ -171,7 +173,7 @@ introduced. Source effects cannot be rolled back after bytes are accepted.
 
 Run/Compile share the source-level zero-argument i32 entry rule. Check remains
 library-capable. Process Compile executes no signal setup or source I/O, and JSON
-remains its ordinary build report. Execution still targets Linux x86_64; other
+remains its ordinary build report. Execution targets Linux x86_64 and ARM64; other
 Process Compile hosts report E0608 before source loading/output creation.
 Process Run terminal portability is narrower and explicitly specified in the
 [typed contract](typed-preview.md#bounded-stdout-and-process-entry).
@@ -484,9 +486,9 @@ and [mutable-local evidence](../docs/architecture/mutable-locals-validation.md).
 contract. [Owned source qualification](../docs/architecture/owned-source-validation.md)
 records actual production CLI and reference/native evidence separately from
 preactivation candidate results.
-Linux x86_64, pinned LLVM 19.1.7 and O0 remain the only native qualification
-target; O2, LTO, other targets, heap/drop safety and a completed roadmap milestone
-are outside this increment.
+Native builds use LLVM 19.1.7 on Linux x86_64 or ARM64. File compilation uses
+O0; project builds select O0 or O2. LTO, stored references and general heap
+containers remain unavailable.
 
 The [fixed-array public-route evidence](../docs/architecture/fixed-array-public-validation.md)
 records real source-file CLI compilation and source-free native execution.
