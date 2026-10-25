@@ -91,16 +91,21 @@ TYPED_MANIFEST_PROJECTS = {
     "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
     "apps/cpu-training": (
         'apps/cpu-training/checkpoint/src/lib.ox',
+        'apps/cpu-training/checkpoint/src/training.ox',
         'apps/cpu-training/tensor/src/codec.ox',
         'apps/cpu-training/tensor/src/graph.ox',
         'apps/cpu-training/tensor/src/lib.ox',
         'apps/cpu-training/tensor/src/model.ox',
         'apps/cpu-training/tensor/src/model/checkpoint.ox',
+        'apps/cpu-training/tensor/src/model/session.ox',
+        'apps/cpu-training/tensor/src/optimizer.ox',
+        'apps/cpu-training/tensor/src/optimizer/checkpoint.ox',
         'apps/cpu-training/trainer/src/main.ox',
         'apps/cpu-training/trainer/src/options.ox',
         'apps/cpu-training/trainer/src/report.ox',
         'apps/cpu-training/trainer/src/training.ox',
         'apps/cpu-training/trainer/tests/tensor.ox',
+        'apps/cpu-training/trainer/tests/optimizers.ox',
     ),
 }
 # Library roots have no executable entry point; their dependent applications

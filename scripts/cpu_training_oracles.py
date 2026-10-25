@@ -67,7 +67,7 @@ fn nonfinite(error:Error)->bool{
   Error::AllocationFailed=>{return false;},Error::MemoryLimit=>{return false;},
   Error::InvalidStorage=>{return false;},Error::EmptyReduction=>{return false;},
   Error::InvalidNode=>{return false;},Error::GraphCapacity=>{return false;},
-  Error::InvalidRate=>{return false;},Error::StepOverflow=>{return false;},
+  Error::InvalidRate=>{return false;},Error::InvalidOptimizer=>{return false;},Error::StepOverflow=>{return false;},
   Error::InvalidCheckpoint=>{return false;},Error::IoError(code)=>{return false;},
   Error::WriteZero=>{return false;}
  }
