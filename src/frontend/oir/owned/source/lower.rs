@@ -663,6 +663,224 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         Ok(())
     }
+    fn range_loop(
+        &mut self,
+        statement: &source::Stmt,
+        frames: &mut Stack<BodyFrame, BODY_FRAMES>,
+        loops: &mut Stack<LoopTargets, LOOP_FRAMES>,
+    ) -> Result<()> {
+        let source::StmtKind::ForRange {
+            loop_id,
+            binding,
+            start,
+            end,
+            body,
+        } = statement.kind
+        else {
+            return Err(invariant(statement.span));
+        };
+        let s = statement.span;
+        let f = self.view.hir();
+        let ValueTy::Scalar(ty) = self.view.expression_ty(start) else {
+            return Err(invariant(s));
+        };
+        require(
+            ty.integer_bits().is_some() && self.view.expression_ty(end) == ValueTy::Scalar(ty),
+            s,
+        )?;
+        require(loop_id.0 == body.0 && !f.bindings[binding.0].mutable, s)?;
+        // Evaluate both source expressions once before creating the loop head.
+        self.expression(start, s)?;
+        self.expression(end, s)?;
+        let first = self.operand(start)?;
+        let limit = self.operand(end)?;
+        let prefix = self.active;
+        let cursor = PlaceId(self.counts.places);
+        self.counts.places = budget::add(self.counts.places, 1)?;
+        if let Some(out) = &mut self.output {
+            budget::append(
+                &mut out.raw.places,
+                PlaceDecl { ty, span: s },
+                out.expected.places,
+                s,
+            )?;
+        }
+        self.check_counts()?;
+        let current = self.local(ty, LocalKind::Temporary, s)?;
+        let condition = self.local(hir::Ty::Bool, LocalKind::Temporary, s)?;
+        let one = self.local(ty, LocalKind::Temporary, s)?;
+        let next = self.local(ty, LocalKind::Temporary, s)?;
+        self.statement(
+            OwnedInstruction::Scalar(Statement::Initialize {
+                place: Place {
+                    id: cursor,
+                    span: s,
+                },
+                value: first,
+                span: s,
+            }),
+            s,
+            s,
+            s,
+        )?;
+        let unit = match ty {
+            hir::Ty::I32 => Rvalue::I32(1),
+            hir::Ty::I64 => Rvalue::I64(1),
+            hir::Ty::U8 => Rvalue::U8(1),
+            ty if ty.quad_integer() => Rvalue::Integer128 {
+                ty,
+                low: 1,
+                high: 0,
+            },
+            ty => Rvalue::Integer { ty, bits: 1 },
+        };
+        self.scalar_assign(one, unit, s, s)?;
+        let header = self.block(s)?;
+        let entry = self.block(f.blocks[body.0].span)?;
+        let exit = self.block(s)?;
+        loops.push(
+            LoopTargets {
+                id: loop_id,
+                header,
+                exit,
+                prefix,
+            },
+            s,
+        )?;
+        self.close(OwnedTerminatorKind::Goto(header), s, s)?;
+        self.enter(Some(header), s)?;
+        self.scalar_assign(
+            current,
+            Rvalue::Load(Place {
+                id: cursor,
+                span: s,
+            }),
+            s,
+            s,
+        )?;
+        self.scalar_assign(
+            condition,
+            Rvalue::CompareScalar {
+                op: hir::ComparisonOp::Less,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: limit,
+                operator_span: s,
+            },
+            s,
+            s,
+        )?;
+        self.close(
+            OwnedTerminatorKind::Branch {
+                condition: Operand {
+                    local: condition,
+                    span: s,
+                },
+                then_block: entry,
+                else_block: exit,
+            },
+            s,
+            s,
+        )?;
+        self.enter(Some(entry), s)?;
+        let BindingLocation::ScalarValue(index) = self.location(binding, s)? else {
+            return Err(invariant(s));
+        };
+        self.scalar_assign(
+            index,
+            Rvalue::Copy(Operand {
+                local: current,
+                span: s,
+            }),
+            s,
+            s,
+        )?;
+        // current < limit <= the type's maximum proves the step cannot overflow.
+        // Advancing before the user body also gives continue its normal target.
+        let step = match ty {
+            hir::Ty::I32 => Rvalue::CheckedI32 {
+                op: hir::ArithmeticOp::Add,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: Operand {
+                    local: one,
+                    span: s,
+                },
+                operator_span: s,
+            },
+            hir::Ty::I64 => Rvalue::CheckedI64 {
+                op: hir::ArithmeticOp::Add,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: Operand {
+                    local: one,
+                    span: s,
+                },
+                operator_span: s,
+            },
+            _ => Rvalue::CheckedInteger {
+                op: hir::ArithmeticOp::Add,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: Operand {
+                    local: one,
+                    span: s,
+                },
+                operator_span: s,
+            },
+        };
+        self.scalar_assign(next, step, s, s)?;
+        self.statement(
+            OwnedInstruction::Scalar(Statement::Store {
+                place: Place {
+                    id: cursor,
+                    span: s,
+                },
+                value: Operand {
+                    local: next,
+                    span: s,
+                },
+                operator_span: s,
+                span: s,
+            }),
+            s,
+            s,
+            s,
+        )?;
+        frames.push(
+            BodyFrame::LoopEnd {
+                id: loop_id,
+                exit,
+                span: s,
+                prefix,
+            },
+            s,
+        )?;
+        frames.push(
+            BodyFrame::Finish {
+                end: f.blocks[body.0].end,
+                join: Some(header),
+                prefix,
+            },
+            s,
+        )?;
+        frames.push(
+            BodyFrame::Body {
+                block: body,
+                next: 0,
+            },
+            s,
+        )?;
+        Ok(())
+    }
     fn scalar_assign(
         &mut self,
         destination: LocalId,
@@ -1977,6 +2195,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                 }
             };
             let s = statement.span;
+            if matches!(statement.kind, source::StmtKind::ForRange { .. }) {
+                self.range_loop(statement, &mut frames, &mut loops)?;
+                continue;
+            }
             if let source::StmtKind::While {
                 loop_id,
                 condition,
@@ -2395,7 +2617,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                         s,
                     )?;
                 }
-                source::StmtKind::While { .. } => return Err(invariant(s)),
+                source::StmtKind::While { .. } | source::StmtKind::ForRange { .. } => {
+                    return Err(invariant(s))
+                }
             }
         }
         require(

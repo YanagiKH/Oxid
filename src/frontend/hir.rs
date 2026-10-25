@@ -651,6 +651,14 @@ impl<'a> Resolver<'_, 'a> {
             };
             frames.push(Frame::Next(block, index + 1));
             let kind = match &statement.kind {
+                ast::StmtKind::ForRange { .. } => {
+                    return Err(Diagnostic::new(
+                        "E0101",
+                        "resolve",
+                        "range loops require the owned source pipeline",
+                        Some(statement.span),
+                    ));
+                }
                 ast::StmtKind::DestructureRecord { .. } => {
                     return Err(Diagnostic::new(
                         "E0101",

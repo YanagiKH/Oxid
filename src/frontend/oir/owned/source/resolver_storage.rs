@@ -492,7 +492,7 @@ impl PaidScope {
                             });
                         }
                     }
-                    ast::StmtKind::Let { name, .. } => {
+                    ast::StmtKind::Let { name, .. } | ast::StmtKind::ForRange { name, .. } => {
                         room(&names, names.capacity(), true, *name)?;
                         names.push(ScopeName {
                             name: *name,

@@ -175,6 +175,27 @@ Try [UTF-8 normalize](../apps/utf8-normalize/README.md) to validate and transfor
 text using a shared [owned UTF-8 library](../packages/utf8_text/README.md).
 See the [language reference](../spec/typed-preview.md) for supported syntax.
 
+## Range loops
+
+Use `for` to visit each integer before the end of a range:
+
+```oxid
+fn main() -> i32 {
+    let values = [10, 20, 12];
+    let mut total = 0;
+    for index in 0..values.len() {
+        total = total + values[index];
+    }
+    return total;
+}
+```
+
+Both bounds must have the same integer type. Oxid evaluates them once, from
+left to right. The index is immutable and available inside the loop body.
+Empty and reversed ranges run no iterations. `break`, `continue` and `return`
+perform the usual resource cleanup. Inclusive ranges and general iterators
+are not available yet.
+
 ## Generic functions
 
 Write a function once and let its arguments choose the type:

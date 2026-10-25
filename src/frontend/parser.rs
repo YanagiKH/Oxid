@@ -1482,6 +1482,51 @@ impl Parser<'_> {
         if self.enum_keyword("match") {
             return self.match_statement(blocks, depth, start);
         }
+        if self.enum_keyword("for")
+            && self.tokens[self.cursor + 1..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Ident)
+        {
+            self.bump();
+            let name = self
+                .expect(Kind::Ident, "expected range loop binding")?
+                .span;
+            let keyword = self.expect(Kind::Ident, "range loop requires `in`")?;
+            if self.source.text_at(keyword.span) != "in" {
+                return Err(self.diagnostic(
+                    "E0100",
+                    "parse",
+                    "range loop requires `in`",
+                    Some(keyword.span),
+                ));
+            }
+            let first = self.expression(0, LiteralContext::ConditionRoot)?;
+            if !self.double_dot() {
+                return Err(self.error("range loop requires an exclusive `start..end` range"));
+            }
+            self.bump();
+            self.bump();
+            let end = self.expression(0, LiteralContext::ConditionRoot)?;
+            if depth >= MAX_BLOCK_NESTING {
+                return Err(self.diagnostic(
+                    "E0400",
+                    "parse",
+                    "statement block nesting limit exceeded",
+                    Some(self.peek().span),
+                ));
+            }
+            let body = self.block(blocks, depth, "expected range loop body `{`")?;
+            return Ok(Stmt {
+                kind: StmtKind::ForRange {
+                    name,
+                    start: first,
+                    end,
+                    body,
+                },
+                span: self.source.span(start, blocks[body.0].end.end),
+            });
+        }
         if self.take(Kind::While).is_some() {
             let condition = self.expression(0, LiteralContext::ConditionRoot)?;
             if depth >= MAX_BLOCK_NESTING {

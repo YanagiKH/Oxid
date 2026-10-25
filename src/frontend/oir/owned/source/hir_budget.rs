@@ -902,7 +902,11 @@ pub(super) fn count_function(
             count_statement(ast, statement, work, c)?;
         }
         let child = match &statement.kind {
-            ast::StmtKind::While { body, .. } if cursor.child == 0 => Some(*body),
+            ast::StmtKind::While { body, .. } | ast::StmtKind::ForRange { body, .. }
+                if cursor.child == 0 =>
+            {
+                Some(*body)
+            }
             ast::StmtKind::If {
                 then_block,
                 else_block,
@@ -970,6 +974,11 @@ fn count_statement(
         ast::StmtKind::Let { init, .. } => {
             increment(&mut c.bindings, 1, at)?;
             count_expression(ast, *init, at, work, c)?;
+        }
+        ast::StmtKind::ForRange { start, end, .. } => {
+            increment(&mut c.bindings, 1, at)?;
+            count_expression(ast, *start, at, work, c)?;
+            count_expression(ast, *end, at, work, c)?;
         }
         ast::StmtKind::DestructureRecord { fields, init, .. } => {
             visit(work, fields.len(), at)?;

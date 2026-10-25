@@ -33,7 +33,7 @@ pub(super) fn with_typed(
     .unwrap()
     .finish(&work, &mut allocator)
     .unwrap();
-    let typed = if index.enum_count() == 0 {
+    let typed = if !resolve::requires_paid_source(&index) {
         typeck::check(resolve::resolve_project(&index, &work).unwrap()).unwrap()
     } else {
         resolve::type_enum_source(&index, &work, &mut allocator).unwrap()

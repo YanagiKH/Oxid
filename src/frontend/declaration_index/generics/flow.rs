@@ -36,7 +36,7 @@ impl Walker<'_, '_> {
 
     pub(super) fn check_loop(
         &mut self,
-        condition: ExprId,
+        condition: Option<ExprId>,
         body: ast::BodyBlockId,
         loops: usize,
         at: Span,
@@ -61,8 +61,10 @@ impl Walker<'_, '_> {
             self.storage
                 .push(&mut self.loop_frames, frame, self.allocator, self.work, at)?;
             self.reachable = reachable;
-            let condition = self.expression(condition)?;
-            self.expect(condition, Type::scalar(Ty::Bool), at)?;
+            if let Some(condition) = condition {
+                let condition = self.expression(condition)?;
+                self.expect(condition, Type::scalar(Ty::Bool), at)?;
+            }
             let mut exit = self.snapshot()?;
             let flow = self.block(body, loops + 1)?;
             let frame = self.loop_frames.pop().ok_or_else(|| bad(at))?;

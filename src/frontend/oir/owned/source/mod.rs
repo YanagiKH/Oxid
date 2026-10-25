@@ -20,6 +20,8 @@ mod type_storage;
 pub(in crate::frontend::oir) mod typeck;
 pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
 mod diagnostic;
+#[cfg(test)]
+mod range_for_tests;
 
 /// Test subprocesses reuse the authoritative denial presentation. This exposes
 /// no source producer, owner, proof or execution capability.

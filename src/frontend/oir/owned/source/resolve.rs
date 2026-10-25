@@ -23,7 +23,9 @@ use std::collections::HashMap;
 /// Canonical resources need the paid source lane even when their minimal
 /// imports introduce no enum (for example only `new` and `len`).
 pub(in crate::frontend::oir) fn requires_paid_source(index: &DeclarationIndex<'_>) -> bool {
-    index.enum_count() != 0 || !index.builtin_set().experimental().is_empty()
+    index.enum_count() != 0
+        || !index.builtin_set().experimental().is_empty()
+        || index.has_range_for()
 }
 
 /// Construction policy, retained even for array-free inputs. No executable
@@ -2675,6 +2677,56 @@ impl<'a> Resolver<'_, 'a> {
                         StmtKind::Break { target }
                     } else {
                         StmtKind::Continue { target }
+                    }
+                }
+                ast::StmtKind::ForRange {
+                    name,
+                    start,
+                    end,
+                    body,
+                } => {
+                    // Bounds resolve in the outer scope before the index exists.
+                    let start = self.expression(*start)?;
+                    let end = self.expression(*end)?;
+                    if let Some(scope) = &mut self.storage.scope {
+                        scope.enter(function.blocks[body.0].span)?;
+                    } else {
+                        scopes.push(Vec::new());
+                    }
+                    let binding = self.bind(*name, None, false, BodyBlockId(body.0), None)?;
+                    if self.storage.paid.is_none() {
+                        scopes
+                            .last_mut()
+                            .expect("active range scope")
+                            .push(self.text(*name));
+                    }
+                    let loop_id = LoopId(body.0);
+                    storage::room(
+                        &loops,
+                        loops.capacity(),
+                        self.storage.paid.is_some(),
+                        statement.span,
+                    )?;
+                    loops.push(loop_id);
+                    for frame in [
+                        ResolveFrame::LeaveLoop,
+                        ResolveFrame::Leave,
+                        ResolveFrame::Next(*body, 0),
+                    ] {
+                        storage::room(
+                            &frames,
+                            frames.capacity(),
+                            self.storage.paid.is_some(),
+                            statement.span,
+                        )?;
+                        frames.push(frame);
+                    }
+                    StmtKind::ForRange {
+                        loop_id,
+                        binding,
+                        start,
+                        end,
+                        body: BodyBlockId(body.0),
                     }
                 }
                 ast::StmtKind::While { condition, body } => {
