@@ -370,6 +370,33 @@ pub(super) fn native_module_with_execution(
     )
 }
 
+pub(super) fn native_debug_module_with_execution(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    process: bool,
+    execution: crate::frontend::build_config::ExecutionPolicy,
+    names: Option<&NativeSourceNames<'_>>,
+) -> Result<String, Box<Diagnostic>> {
+    let policy = match (process, execution.hosted()) {
+        (false, false) => NativeEntryPolicy::TypedResult,
+        (true, false) => NativeEntryPolicy::Process,
+        (false, true) => NativeEntryPolicy::HostedTypedResult,
+        (true, true) => NativeEntryPolicy::HostedProcess,
+    };
+    native_module_policy_accounted_with_source_names_debug(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::DEFAULT,
+        policy,
+        &mut Accounting::default(),
+        names,
+        true,
+    )
+}
+
 pub(super) fn native_process_module_with_fuel(
     witness: &VerifiedOwnedProgram,
     entry: hir::DefId,
@@ -498,6 +525,23 @@ fn native_module_policy_accounted_with_source_names(
     policy: NativeEntryPolicy,
     accounting: &mut Accounting,
     names: Option<&NativeSourceNames<'_>>,
+) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_source_names_debug(
+        witness, entry, sources, fuel, limits, policy, accounting, names, false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_module_policy_accounted_with_source_names_debug(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    fuel: usize,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    names: Option<&NativeSourceNames<'_>>,
+    debug: bool,
 ) -> Result<String, Box<Diagnostic>> {
     if let Some(names) = names {
         names.validate(sources)?;
@@ -639,6 +683,7 @@ fn native_module_policy_accounted_with_source_names(
     let storage = NativeStoragePlan::checked(&plan, guarded).map_err(|e| mismatch(e.name))?;
     let mut count = Emission {
         policy,
+        debug,
         ..Emission::count(limits.ir_bytes)
     };
     emit(
@@ -676,6 +721,7 @@ fn native_module_policy_accounted_with_source_names(
     let mut output = Emission {
         text: Some(text),
         policy,
+        debug,
         ..Emission::count(count.len)
     };
     emit(
@@ -1056,6 +1102,7 @@ enum Expansion {
     Diagnostic = 2,
 }
 struct Emission {
+    debug: bool,
     len: usize,
     text: Option<String>,
     maximum: usize,
@@ -1098,6 +1145,7 @@ impl Emission {
             exceeded: false,
             policy: NativeEntryPolicy::Result,
             resources: false,
+            debug: false,
             call_scratch_peak: 0,
             expansions: 0,
             expansion_kinds: [0; 3],
@@ -3700,6 +3748,9 @@ fn emit_function(
     let guarded = module_storage.guarded();
     let storage = module_storage.function(id);
     let f = storage.raw();
+    if out.debug {
+        crate::frontend::native_debug::function(out, f.span);
+    }
     write!(
         out,
         "\ndefine internal {} @__oxid_owned_fn_{}(",
@@ -3737,6 +3788,9 @@ fn emit_function(
         separator = ", ";
     }
     out.write_str(") noinline {\nentry:\n").unwrap();
+    if out.debug {
+        crate::frontend::native_debug::location(out, f.span);
+    }
     if storage.scalar_width() == 16 {
         out.write_str("  %integer128_scratch = alloca [4 x i64], align 8\n")
             .unwrap();
@@ -3899,6 +3953,9 @@ fn emit_function(
         out.ordinary_visits += 1;
         writeln!(out, "b{b}:").unwrap();
         if let Some(m) = &block.merge {
+            if out.debug {
+                crate::frontend::native_debug::location(out, m.span);
+            }
             let name = format!("f{}_b{b}_merge", id.0);
             let [left, right] = m.incoming;
             // Select storage, then read exactly the taken input after charging.
@@ -3928,6 +3985,9 @@ fn emit_function(
                 return;
             }
             out.ordinary_visits += 1;
+            if out.debug {
+                crate::frontend::native_debug::location(out, plan::instruction_span(statement));
+            }
             let name = format!("f{}_b{b}_i{i}", id.0);
             if guarded
                 && !matches!(
@@ -3949,6 +4009,9 @@ fn emit_function(
             return;
         }
         let term = block.terminator.as_ref().expect("verified terminator");
+        if out.debug {
+            crate::frontend::native_debug::location(out, term.span);
+        }
         if guarded
             && plan.binary_delivery_cost(id).is_none()
             && plan.file_delivery_cost(id).is_none()

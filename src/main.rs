@@ -125,6 +125,7 @@ pub(crate) struct ProjectManifest {
     pub(crate) target: Option<String>,
     pub(crate) profile: Option<String>,
     pub(crate) reproducible: Option<bool>,
+    pub(crate) debug_info: Option<bool>,
     pub(crate) entry_mode: Option<String>,
     pub(crate) execution_policy: Option<String>,
     pub(crate) scripts: HashMap<String, String>,
@@ -1755,6 +1756,14 @@ fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool,
                     manifest.configuration_error = Some(format!("duplicate build setting `{}` in {}", key, path.display()));
                 }
             }
+            ("build", "debug-info") => {
+                let boolean = value_raw.split('#').next().unwrap_or("").trim();
+                if !matches!(boolean, "true" | "false") {
+                    manifest.configuration_error = Some("build debug-info requires an unquoted boolean true or false".into());
+                } else if manifest.debug_info.replace(boolean == "true").is_some() {
+                    manifest.configuration_error = Some(format!("duplicate build setting `debug-info` in {}", path.display()));
+                }
+            }
             ("build", "reproducible") => {
                 let boolean = value_raw.split('#').next().unwrap_or("").trim();
                 if !matches!(boolean, "true" | "false") {
@@ -3053,6 +3062,7 @@ fn help() {
     println!("  oxid build --profile dev          Build without optimization");
     println!("  oxid build --profile release      Build with optimization");
     println!("  oxid build --reproducible         Use relative runtime error locations");
+    println!("  oxid build --debug-info           Include source line information for debuggers");
     println!("  oxid build --incremental          Reuse matching native objects");
     println!("  oxid fmt <file.ox>                Print formatted source");
     println!("  oxid doctor --native              Check native build tools");

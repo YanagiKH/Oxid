@@ -68,7 +68,7 @@ oxid build --profile release
 `dev` builds without optimization (`-O0`); `release` enables optimization
 (`-O2`) for both the program and its runtime. Both preserve checked arithmetic,
 bounds checks and the selected execution policy. `bounded` is an alias for `dev`.
-These profiles do not add source-level debugger information.
+Source-level line information can be enabled separately with `--debug-info`.
 
 The command-line profile overrides `[build] profile` in the selected package.
 Omitting both uses `dev`. A workspace uses each selected member's setting;
@@ -80,6 +80,27 @@ Profiles also work with `--incremental` and `--reproducible`. Switching between
 `dev` and `release` selects a different cached program object. Switching between
 `dev` and `bounded` can reuse the same object.
 [Build profile details](../rfcs/0040-native-build-profiles.md).
+
+## Debug a program
+
+```sh
+oxid build --debug-info
+gdb .oxid/bin/hello
+```
+
+In GDB, use `break main`, `break src/main.ox:2`, `run`, `next` and `backtrace`
+to stop in Oxid source and inspect the call stack. Source files must be available
+to show their text. The executable still runs after those files are removed.
+
+Set `debug-info = true` under `[build]` to keep line information enabled.
+`--debug-info` and `--no-debug-info` override the selected package's setting;
+workspace builds apply the command-line choice to every selected member.
+Both `dev` and `release` support it. Optimized builds can fold or remove source
+lines and functions. Local and aggregate variable inspection is not yet available.
+
+`--reproducible` keeps debug paths relative to the project or workspace root.
+Run the debugger from that root after moving the project, or configure its source
+search path. Debug and non-debug builds use different cached program objects.
 
 ## Local dependencies
 

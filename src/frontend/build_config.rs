@@ -76,6 +76,7 @@ pub(crate) struct NativeBuildSettings {
     optimization: NativeOptimization,
     execution: ExecutionPolicy,
     source_paths: SourcePaths,
+    debug_info: bool,
 }
 
 impl NativeBuildSettings {
@@ -92,6 +93,7 @@ impl NativeBuildSettings {
             target: Target::Host,
             optimization,
             execution: ExecutionPolicy::Bounded,
+            debug_info: false,
             source_paths: if reproducible {
                 SourcePaths::ProjectRelative
             } else {
@@ -157,6 +159,19 @@ impl NativeBuildSettings {
 
     pub(crate) const fn execution(self) -> ExecutionPolicy {
         self.execution
+    }
+
+    pub(crate) const fn with_debug_info(mut self, enabled: bool) -> Self {
+        self.debug_info = enabled;
+        self
+    }
+
+    pub(crate) const fn debug_info(self) -> bool {
+        self.debug_info
+    }
+
+    pub(crate) const fn optimized(self) -> bool {
+        matches!(self.optimization, NativeOptimization::O2)
     }
 
     pub(crate) const fn reproducible(self) -> bool {

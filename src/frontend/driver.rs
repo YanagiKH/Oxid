@@ -391,17 +391,28 @@ impl PreparedPackageProject<'_> {
         settings: &NativeBuildSettings,
         logical_root: &Path,
     ) -> Result<String, Box<Diagnostic>> {
-        if !settings.reproducible() {
-            return checked.native_module_with_execution(process, settings.execution(), None);
-        }
-        if process {
-            // Preserve the existing host and checked-entry guards before the
-            // additional presentation allocation. The sealed emitter repeats
-            // these guards for every caller of its new entry point.
+        if process && (settings.reproducible() || settings.debug_info()) {
             checked.process_preflight()?;
         }
-        let names = self.native_source_names(logical_root)?;
-        checked.native_module_with_execution(process, settings.execution(), Some(&names))
+        let names = if settings.reproducible() {
+            Some(self.native_source_names(logical_root)?)
+        } else {
+            None
+        };
+        if settings.debug_info() {
+            let marked = checked.native_debug_module_with_execution(
+                process,
+                settings.execution(),
+                names.as_ref(),
+            )?;
+            return super::native_debug::add(
+                &marked,
+                self.project(),
+                names.as_ref(),
+                settings.optimized(),
+            );
+        }
+        checked.native_module_with_execution(process, settings.execution(), names.as_ref())
     }
 
     /// Native workspace preflight uses the same retained inputs, presentation,
@@ -413,7 +424,7 @@ impl PreparedPackageProject<'_> {
         settings: &NativeBuildSettings,
         logical_root: &Path,
     ) -> i32 {
-        if !settings.reproducible() && !settings.execution().hosted() {
+        if !settings.reproducible() && !settings.execution().hosted() && !settings.debug_info() {
             return self.workspace_preflight(json, process, true, false);
         }
         let admitted = self.checked().and_then(|checked| {
@@ -1531,6 +1542,59 @@ mod tests {
             oir::Scalar::I32(42)
         );
         assert_eq!(prepared.execute(PackageCommand::Check, false, false), 0);
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn optional_debug_metadata_preserves_every_instruction_and_uses_retained_sources() {
+        fn instructions(text: &str) -> Vec<String> {
+            text.lines()
+                .filter(|line| !line.trim().is_empty() && !line.starts_with('!'))
+                .map(|line| {
+                    if let Some((before, _)) = line
+                        .strip_prefix("define ")
+                        .and_then(|_| line.split_once(" !dbg !"))
+                    {
+                        format!("{before} {{")
+                    } else {
+                        line.split_once(", !dbg !")
+                            .map_or(line, |(before, _)| before)
+                            .to_owned()
+                    }
+                })
+                .collect()
+        }
+        for source in [
+            "fn main()->i32{return 40+2;}",
+            "use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;enum Decision<T>{Keep(T),Empty}fn main()->i32{let mut bytes=new();for index in 0..3{try_push(&mut bytes,index.to_u8_checked());}let value=Decision::Keep(bytes);match value{Decision::Keep(b)=>{return len(&b);},Decision::Empty=>{return 0;}}}",
+        ] {
+            let fixture = PreparedFixture::new();
+            fixture.write("app/src/main.ox", source);
+            let specs = [fixture.spec("app", "src/main.ox", &[])];
+            let prepared = prepare_package_project(&specs, None).unwrap();
+            let checked = prepared.checked().unwrap();
+            let usage = prepared.project().usage();
+            for relative in [false, true] {
+                for policy in [ExecutionPolicy::Bounded, ExecutionPolicy::Hosted] {
+                    for process in [false, true] {
+                        let settings = NativeBuildSettings::new(relative).with_execution(policy);
+                        let plain = prepared.native_module_with_settings(&checked, process, &settings, &specs[0].root).unwrap();
+                        let settings = settings.with_debug_info(true);
+                        let debug = prepared.native_module_with_settings(&checked, process, &settings, &specs[0].root).unwrap();
+                        assert_eq!(instructions(&debug), instructions(&plain));
+                        assert!(debug.contains("!DICompileUnit") && debug.contains("!DISubprogram(name: \"main\""));
+                        if specs[0].root.exists() { std::fs::remove_dir_all(&specs[0].root).unwrap(); }
+                        assert_eq!(prepared.native_module_with_settings(&checked, process, &settings, &specs[0].root).unwrap(), debug);
+                    }
+                }
+            }
+            assert_eq!(prepared.project().usage(), usage);
+        }
     }
 
     #[test]

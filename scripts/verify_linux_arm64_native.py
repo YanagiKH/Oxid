@@ -25,7 +25,7 @@ PUBLIC_TESTS = (
     "typed_integer128", "typed_integer_bits", "typed_floats", "typed_characters",
     "record_field_borrows", "typed_git_dependencies", "hosted_recursion",
     "typed_generics", "typed_nominal_generics", "typed_record_patterns",
-    "typed_record_enum_fields", "typed_constructor_inference", "typed_range_for",
+    "typed_record_enum_fields", "typed_constructor_inference", "typed_range_for", "native_debug_info",
 )
 
 
@@ -74,7 +74,7 @@ def verify(args):
             argv = ["cargo", "test", "--locked", *flags]
             for name in PUBLIC_TESTS:
                 argv += ["--test", name]
-            selected = runner.command(profile + "-public-native", [*argv, "--", "--ignored", "--test-threads=1"])
+            selected = runner.command(profile + "-public-native", [*argv, "--", "--include-ignored", "--test-threads=1"])
             report["public_test_functions"][profile] = public_results((selected / "stdout").read_text())
             evidence = output / profile
             evidence.mkdir()
