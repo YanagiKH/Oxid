@@ -420,6 +420,10 @@ jobs:
             --output "$RUNNER_TEMP/current-float-vector-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify native CPU training, gradients and checkpoint recovery
+        run: |
+          python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-cpu-training" --llvm-bin "$OXID_LLVM_BIN"
       - name: Check buffer runtime components at O0 and O2 with memory checking
         run: |
           python3 -B scripts/test_bytebuf_runtime.py
@@ -481,6 +485,7 @@ jobs:
             ${{ runner.temp }}/current-utf8-characters-native
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files
+            ${{ runner.temp }}/current-cpu-training
           if-no-files-found: warn
           retention-days: 14
 

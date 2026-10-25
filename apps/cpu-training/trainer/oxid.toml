@@ -1,0 +1,19 @@
+[project]
+name = "cpu-training"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+profile = "release"
+entry-mode = "process"
+
+[execution]
+policy = "hosted"
+
+[dependencies]
+tensor = "../tensor"
+checkpoint="../checkpoint"
+
+[tests]
+tensor = "tests/tensor.ox"

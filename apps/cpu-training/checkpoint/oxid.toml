@@ -1,0 +1,7 @@
+[project]
+name="checkpoint"
+edition="typed-preview"
+kind="lib"
+entry="src/lib.ox"
+[dependencies]
+tensor="../tensor"

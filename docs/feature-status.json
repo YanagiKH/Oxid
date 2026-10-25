@@ -339,7 +339,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "check-only",
-      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment’s CI",
+      "target_scope": "Local x86_64-unknown-linux-gnu evidence only; other hosts await this increment\u2019s CI",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
@@ -1901,6 +1901,38 @@
         "rfcs/0061-native-debug-information.md"
       ],
       "limitations": "No debugger local/parameter/aggregate type information. Optimization can remove source lines or functions. LLVM 19.1.7 and the existing native execution/resource limits apply."
+    },
+    {
+      "id": "native-cpu-tensor-training",
+      "summary": "Checked f64 CPU tensors, reverse-mode gradients, full-batch SGD and a checkpointed XOR training application",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "AST interpreter and LLVM native",
+      "target_scope": "Linux x86_64 and ARM64 implementation; independent numerical and deployment verification via the CPU training controller",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "apps/cpu-training/README.md",
+        "apps/cpu-training/tensor/README.md"
+      ],
+      "implementation": [
+        "apps/cpu-training/tensor/src/lib.ox",
+        "apps/cpu-training/tensor/src/graph.ox",
+        "apps/cpu-training/tensor/src/model.ox",
+        "apps/cpu-training/tensor/src/model/checkpoint.ox",
+        "apps/cpu-training/checkpoint/src/lib.ox",
+        "apps/cpu-training/trainer/src/main.ox"
+      ],
+      "tests": [
+        "apps/cpu-training/trainer/tests/tensor.ox",
+        "scripts/verify_cpu_training.py",
+        "scripts/test_cpu_training_oracles.py"
+      ],
+      "evidence": [
+        "apps/cpu-training/README.md"
+      ],
+      "limitations": "Row-major f64 matrices and row-bias broadcasting only. Configurable two-layer ReLU MLP with full-batch fixed-rate SGD; no general layouts, Adam, dataset pipeline or larger-model qualification. Existing compiler and 16MiB heap limits apply. This does not complete G9."
     }
   ]
 }

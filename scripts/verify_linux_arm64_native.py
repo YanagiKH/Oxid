@@ -8,6 +8,7 @@ import argparse
 import math
 from pathlib import Path
 import re
+import sys
 
 import linux_native_target as target
 import verify_current_native as common
@@ -92,6 +93,9 @@ def verify(args):
                               ["frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal",
                                "--ignored", "--exact"],
                               exact="frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal")
+        runner.command("cpu-training-application", [sys.executable, "-B", "scripts/verify_cpu_training.py",
+                       report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
+                       "--output", output / "cpu-training", "--llvm-bin", args.llvm_bin])
         common.require(runner.checkout("after") == head, "compiler checkout changed during qualification")
         for row in report["binaries"].values():
             common.require(common.digest(row["compiler"]) == row["compiler_sha256"]
