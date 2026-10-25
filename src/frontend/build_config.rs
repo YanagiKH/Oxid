@@ -34,6 +34,7 @@ impl NativeOptimization {
 pub(crate) enum ExecutionPolicy {
     Bounded,
     Hosted,
+    HostedWithHeapLimit(u64),
 }
 
 impl ExecutionPolicy {
@@ -46,7 +47,16 @@ impl ExecutionPolicy {
     }
 
     pub(crate) const fn hosted(self) -> bool {
-        matches!(self, Self::Hosted)
+        matches!(self, Self::Hosted | Self::HostedWithHeapLimit(_))
+    }
+
+    pub(crate) const DEFAULT_HEAP_LIMIT: u64 = 16 * 1024 * 1024;
+
+    pub(crate) const fn heap_limit(self) -> u64 {
+        match self {
+            Self::HostedWithHeapLimit(limit) => limit,
+            Self::Bounded | Self::Hosted => Self::DEFAULT_HEAP_LIMIT,
+        }
     }
 
     pub(in crate::frontend) const fn initial_fuel(self, bounded: usize) -> usize {

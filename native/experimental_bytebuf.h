@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef OXID_BYTEBUF_LIMIT
 #define OXID_BYTEBUF_LIMIT UINT64_C(16777216)
+#endif
 #define OXID_BYTEBUF_HEADER UINT64_C(32)
 enum oxid_grow_status {
     OXID_GROW_OK = 0, OXID_CAPACITY_OVERFLOW = 1,

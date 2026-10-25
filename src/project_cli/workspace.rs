@@ -140,6 +140,7 @@ pub(super) fn load_roster(
             || snapshot.manifest.reproducible.is_some()
             || snapshot.manifest.debug_info.is_some()
             || snapshot.manifest.entry_mode.is_some()
+            || snapshot.manifest.heap_limit.is_some()
             || !snapshot.manifest.scripts.is_empty()
             || !snapshot.manifest.features.is_empty())
     {

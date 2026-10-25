@@ -4217,7 +4217,7 @@ fn execute_plan_policy<V: StoredValue>(
                 },
             )
         })?,
-        heap: byte_buffer::Heap::for_execution(),
+        heap: byte_buffer::Heap::for_execution(execution.heap_limit()),
         #[cfg(test)]
         events: Vec::new(),
         #[cfg(test)]

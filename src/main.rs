@@ -128,6 +128,7 @@ pub(crate) struct ProjectManifest {
     pub(crate) debug_info: Option<bool>,
     pub(crate) entry_mode: Option<String>,
     pub(crate) execution_policy: Option<String>,
+    pub(crate) heap_limit: Option<u64>,
     pub(crate) scripts: HashMap<String, String>,
     pub(crate) dependencies: HashMap<String, String>,
     pub(crate) features: HashMap<String, bool>,
@@ -1777,6 +1778,18 @@ fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool,
                     manifest.configuration_error = Some("execution policy requires a quoted bounded or hosted name".into());
                 } else if manifest.execution_policy.replace(value).is_some() {
                     manifest.configuration_error = Some(format!("duplicate execution policy in {}", path.display()));
+                }
+            }
+            ("execution", "heap-limit") => {
+                let raw = value_raw.split('#').next().unwrap_or("").trim();
+                let limit = (!raw.is_empty() && raw.bytes().all(|byte| byte.is_ascii_digit()))
+                    .then(|| raw.parse::<u64>().ok()).flatten();
+                match limit {
+                    None => manifest.configuration_error = Some("execution heap-limit requires an unquoted nonnegative decimal integer in bytes (at most 18446744073709551615)".into()),
+                    Some(limit) if manifest.heap_limit.replace(limit).is_some() => {
+                        manifest.configuration_error = Some(format!("duplicate execution heap-limit in {}", path.display()));
+                    }
+                    Some(_) => {}
                 }
             }
             ("execution", _) => {

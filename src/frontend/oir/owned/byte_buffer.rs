@@ -16,7 +16,7 @@ pub(super) const fn file_helper_control_bytes() -> usize {
     files::helper_control_bytes()
 }
 
-pub(super) const LIMIT: u64 = 16 * 1024 * 1024;
+pub(super) const LIMIT: u64 = crate::frontend::build_config::ExecutionPolicy::DEFAULT_HEAP_LIMIT;
 pub(super) const ALLOCATION_CHARGE: u64 = 32;
 
 /// Move-only host carrier. Its identity is private to a single execution.
@@ -142,14 +142,17 @@ impl Default for Heap {
 }
 
 impl Heap {
-    pub(super) fn for_execution() -> Self {
+    pub(super) fn for_execution(limit: u64) -> Self {
         #[cfg(test)]
         {
-            testing::heap()
+            testing::heap(limit)
         }
         #[cfg(not(test))]
         {
-            Self::default()
+            Self {
+                limit,
+                ..Self::default()
+            }
         }
     }
     /// Decoding an activation does not grant allocation authority: membership
@@ -535,11 +538,14 @@ pub(super) mod testing {
     thread_local! {
         static ACTIVE: RefCell<Option<(Control, Observation)>> = const { RefCell::new(None) };
     }
-    pub(super) fn heap() -> Heap {
+    pub(super) fn heap(limit: u64) -> Heap {
         let control = ACTIVE.with(|active| active.borrow().as_ref().map(|(control, _)| *control));
-        let mut heap = Heap::default();
+        let mut heap = Heap {
+            limit,
+            ..Heap::default()
+        };
         if let Some(control) = control {
-            heap.limit = control.limit.unwrap_or(LIMIT).min(LIMIT);
+            heap.limit = control.limit.unwrap_or(limit).min(limit);
             heap.fault = control.fault;
         }
         heap

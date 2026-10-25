@@ -1,8 +1,8 @@
 # Project execution policy
 
 Status: experimental. Typed projects can choose how execution work is limited.
-Reference execution supports both policies; native compilation remains limited
-to Linux x86_64 with LLVM/Clang/LLD 19.1.7.
+Reference execution supports both policies; native compilation supports
+Linux x86_64 and ARM64 with LLVM/Clang/LLD 19.1.7.
 
 ## Project setting
 
@@ -37,8 +37,38 @@ allocation, live heap limits and resource cleanup retain their contracts.
 
 Hosted execution removes cumulative fuel debits and the native static fuel
 upper-bound check. Source-size, compiler memory, layout, call-depth and live
-storage limits remain. This change does not add recursive native calls,
-cancellation or additional native targets.
+storage limits remain.
+
+### Heap budget
+
+Hosted programs can choose their shared allocation budget:
+
+```toml
+[execution]
+policy = "hosted"
+heap-limit = 67108864 # 64 MiB
+```
+
+`heap-limit` is one unquoted decimal integer from `0` through
+`18446744073709551615`, measured in bytes. It requires `policy = "hosted"`.
+Both policies default to 16 MiB when this field is absent. Duplicate or invalid
+values fail before execution or native tools. Virtual workspace roots cannot
+declare this setting; each binary or declared-test owner selects its own
+budget. A library's setting does not override its caller.
+
+The budget counts requested allocation capacity and 32 bytes per live
+allocation. Growth counts the old allocation and the complete replacement
+until the replacement succeeds. A rejected growth preserves the existing
+buffer and releases any partial allocation. Empty buffers and operations
+that allocate nothing remain available with a zero budget. Existing length,
+capacity, arithmetic and descriptor checks still apply. Operating-system
+allocation failures retain their existing status.
+
+Reference execution and native runtime compilation use the same budget.
+Native object reuse can retain code independent of that budget; every build
+recompiles and links the runtime with the current value. Source packages retain
+the owning manifest's setting. Process memory also includes allocator
+bookkeeping, code, stacks and other runtime storage.
 
 Binary I/O still validates the entire input range and reserves direct status
 delivery before transport. A partial read/write, EOF or OS error is returned to

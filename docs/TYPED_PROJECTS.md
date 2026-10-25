@@ -300,6 +300,22 @@ caller's policy. Both choices retain arithmetic, bounds, ownership, allocation
 and live-memory checks. Current compiler, storage and call-depth limits remain.
 See the [execution policy contract](../rfcs/0044-project-execution-policy.md).
 
+Hosted projects can set the shared allocation budget in bytes:
+
+```toml
+[execution]
+policy = "hosted"
+heap-limit = 67108864 # 64 MiB
+```
+
+The default is 16 MiB. The budget counts buffer capacity and allocation metadata,
+including both buffers during growth. It applies to byte buffers and the
+collections built from them, across dependencies in the same program. A value
+of `0` prevents nonempty allocations. `run`, project tests and native builds use
+the same setting; libraries do not override the calling program's budget.
+Process memory also includes code, stacks and other runtime storage. Allocation
+can still fail when the operating system cannot provide memory.
+
 ## Program arguments
 
 ```sh
