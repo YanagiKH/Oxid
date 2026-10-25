@@ -36,8 +36,11 @@ oxid check --edition typed-preview -- --dash-prefixed.ox
 oxid run input.ox --edition typed-preview
 ```
 
-With no edition option, existing commands retain their legacy behavior.
-`--edition legacy-0.9` explicitly selects that same route. Both `--option value`
+Without an edition option or a manifest edition, commands retain legacy behavior.
+Otherwise, commands use the applicable manifest's edition unless an edition is
+selected explicitly. File commands discover the manifest above their source;
+source-less project commands discover it above the working directory.
+`--edition legacy-0.9` explicitly selects the legacy route. Both `--option value`
 and `--option=value` work for edition and message format. These two options may
 appear before the command, between the command and source, or after the source.
 Duplicate, missing, empty, or unknown values fail; they are never ignored.
@@ -54,9 +57,12 @@ passed through. To select an Oxid edition for a script command, place the option
 before its name. An explicit typed selection there is rejected before launching
 anything. This prevents accidentally consuming an external process's options.
 
-The preview supports `check`, explicit `run`, syntax-only `fmt`, and the separately specified
+With an explicit source path and edition, the preview supports `check`, `run`,
+syntax-only `fmt`, and the separately specified
 [native `compile --backend llvm`](native-preview.md). Direct-file invocation,
-`ast`, project commands, and every other operation fail before legacy dispatch. The gate runs before interpreter construction, preprocessing,
+`ast`, and unsupported operations fail before legacy dispatch. Manifest project
+commands follow the project workflow described below. The gate runs before
+interpreter construction, preprocessing,
 dependency resolution, script execution, cache writes, or artifact generation.
 Checking and reference running read the entry and its explicitly declared modules
 and create no output/cache files. Native compilation has its own explicit artifact boundary.
@@ -79,10 +85,12 @@ Native project builds also support [workspaces](../rfcs/0035-typed-workspaces.md
 [source packages](../rfcs/0038-typed-source-packages.md),
 [relative diagnostic paths](../rfcs/0039-reproducible-native-builds.md), and
 [`dev`/`release` profiles](../rfcs/0040-native-build-profiles.md).
+[`oxid doc`](../rfcs/0063-typed-api-documentation.md) generates public API
+documentation using the same manifest, workspace selection, and dependency locks.
 Typed Git dependencies require pinned complete commit hashes; see the project
 workflow. Registry dependencies remain unimplemented.
-Explicitly choosing a legacy command on a source remains possible; the selector
-is not a file-carried or project-wide edition marker.
+An explicit edition option applies to the current invocation; it does not alter
+source files or the manifest's default edition.
 
 ## 64-bit signed integers
 
