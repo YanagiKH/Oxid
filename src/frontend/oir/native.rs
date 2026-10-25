@@ -230,6 +230,36 @@ impl VerifiedProgram {
             _ => unreachable!("default native allocation has no private failure"),
         })
     }
+    pub(in crate::frontend) fn native_debug_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        let policy = match (process, execution.hosted()) {
+            (false, false) => EntryPolicy::Result,
+            (true, false) => EntryPolicy::Process,
+            (false, true) => EntryPolicy::HostedResult,
+            (true, true) => EntryPolicy::HostedProcess,
+        };
+        self.native_module_policy_limits_mode_with_source_names_debug(
+            entry,
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            policy,
+            OutputMode::Default,
+            names,
+            true,
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
     pub(in crate::frontend) fn native_module(
         &self,
         entry: Option<hir::DefId>,
@@ -414,6 +444,32 @@ impl VerifiedProgram {
         mode: OutputMode<'_>,
         names: Option<&NativeSourceNames<'_>>,
     ) -> Result<String, EmitFailure> {
+        self.native_module_policy_limits_mode_with_source_names_debug(
+            entry,
+            sources,
+            fuel,
+            diagnostic_limit,
+            ir_limit,
+            policy,
+            mode,
+            names,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn native_module_policy_limits_mode_with_source_names_debug(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
+        policy: EntryPolicy,
+        mode: OutputMode<'_>,
+        names: Option<&NativeSourceNames<'_>>,
+        debug: bool,
+    ) -> Result<String, EmitFailure> {
         if let Some(names) = names {
             names.validate(sources)?;
         }
@@ -487,6 +543,7 @@ impl VerifiedProgram {
         // text buffer. Inherited native metadata/temporary Strings still allocate.
         let mut count = Emission {
             policy,
+            debug,
             ..Emission::default()
         };
         #[cfg(test)]
@@ -503,10 +560,11 @@ impl VerifiedProgram {
         );
         #[cfg(test)]
         emit_observation::finish_pass(false, &count);
-        if guarded || policy.process() || policy.hosted() {
+        if debug || guarded || policy.process() || policy.hosted() {
             limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
         }
         let mut output = mode.allocate(count.len, policy)?;
+        output.debug = debug;
         #[cfg(test)]
         emit_observation::start_pass(true, &output);
         emit(
@@ -809,6 +867,7 @@ fn successors(kind: &TerminatorKind) -> impl Iterator<Item = BlockId> {
 
 #[derive(Default)]
 struct Emission {
+    debug: bool,
     len: usize,
     text: Option<String>,
     policy: EntryPolicy,
@@ -1303,6 +1362,9 @@ fn emit(
         }
     }
     for f in &program.functions {
+        if out.debug {
+            crate::frontend::native_debug::function(out, f.span);
+        }
         // Source names and paths never enter LLVM symbol syntax. Deterministic
         // numeric DefIds avoid collisions with main, libc and runtime symbols.
         write!(
@@ -1322,6 +1384,9 @@ fn emit(
             write!(out, "{} %v{i}", ty(p.ty)).unwrap();
         }
         out.push_str(") noinline {\nentry:\n");
+        if out.debug {
+            crate::frontend::native_debug::location(out, f.span);
+        }
         for (i, place) in f.places.iter().enumerate() {
             writeln!(out, "  %p{i} = alloca {}", ty(place.ty)).unwrap();
         }
@@ -1352,6 +1417,9 @@ fn emit(
         for (i, b) in f.blocks.iter().enumerate() {
             writeln!(out, "b{i}:").unwrap();
             if let Some(merge) = &b.merge {
+                if out.debug {
+                    crate::frontend::native_debug::location(out, merge.span);
+                }
                 let [left, right] = merge.incoming;
                 writeln!(
                     out,
@@ -1369,6 +1437,9 @@ fn emit(
                 emit_guard(out, diagnostics, &format!("g{i}_0"), 1, merge.span);
             }
             for (j, statement) in b.statements.iter().enumerate() {
+                if out.debug {
+                    crate::frontend::native_debug::location(out, statement.span());
+                }
                 if guarded {
                     let diagnostics = diagnostics.expect("guarded diagnostics");
                     emit_guard(
@@ -1596,6 +1667,9 @@ fn emit(
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
             }
             let terminator = b.terminator.as_ref().expect("verified terminator");
+            if out.debug {
+                crate::frontend::native_debug::location(out, terminator.span);
+            }
             if guarded {
                 let diagnostics = diagnostics.expect("guarded diagnostics");
                 let cost = match &terminator.kind {

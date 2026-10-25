@@ -282,6 +282,27 @@ impl SourceProgram {
         )
     }
 
+    pub(in crate::frontend::oir) fn native_debug_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !process {
+            self.require_result_entry_policy(sources)?;
+        }
+        native::native_debug_module_with_execution(
+            &self.witness,
+            entry,
+            sources,
+            process,
+            execution,
+            names,
+        )
+    }
+
     pub(in crate::frontend::oir) fn native_module(
         &self,
         entry: Option<hir::DefId>,

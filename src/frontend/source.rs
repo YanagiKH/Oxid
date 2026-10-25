@@ -270,6 +270,12 @@ impl SourceFile {
         }
     }
 
+    /// One-based line lookup without scanning the line for a column.
+    pub(super) fn line_number(&self, offset: usize) -> usize {
+        self.validate_offset(offset);
+        self.line_starts.partition_point(|&start| start <= offset)
+    }
+
     /// Convert a byte offset to one-based line and Unicode scalar column.
     /// LF starts a new line, including in CRLF. At the LF byte of a CRLF pair,
     /// the preceding CR counts as a scalar on the old line. Tabs, combining

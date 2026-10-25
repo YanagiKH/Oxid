@@ -39,6 +39,7 @@ struct Options {
 struct BuildOptions {
     incremental: bool,
     reproducible: Option<bool>,
+    debug_info: Option<bool>,
     optimization: Option<frontend::NativeOptimization>,
 }
 
@@ -54,7 +55,8 @@ impl BuildOptions {
                 .or(manifest_optimization)
                 .unwrap_or(frontend::NativeOptimization::O0),
         )
-        .with_execution(execution_policy(manifest)?))
+        .with_execution(execution_policy(manifest)?)
+        .with_debug_info(self.debug_info.or(manifest.debug_info).unwrap_or(false)))
     }
 }
 
@@ -1232,6 +1234,12 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
             result.incremental = true;
             continue;
         }
+        if matches!(word.as_str(), "--debug-info" | "--no-debug-info") {
+            if result.debug_info.replace(word == "--debug-info").is_some() {
+                return Err("select --debug-info or --no-debug-info only once".into());
+            }
+            continue;
+        }
         if matches!(word.as_str(), "--reproducible" | "--no-reproducible") {
             if result
                 .reproducible
@@ -1415,7 +1423,7 @@ fn scaffold(options: &Options) -> Result<(), String> {
     write("src/main.ox", "fn main() -> i32 {\n    return 0;\n}\n")?;
     write("tests/smoke.ox", "fn double(value: i32) -> i32 {\n    return value * 2;\n}\n\nfn main() -> i32 {\n    if double(21) == 42 {\n        return 0;\n    } else {\n        return 1;\n    }\n}\n")?;
     write(".gitignore", ".oxid/\n")?;
-    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
+    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 or ARM64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"new-summary\",\"success\":true,\"path\":{}}}", json_string(&root.to_string_lossy()));
     } else {
@@ -1494,6 +1502,32 @@ mod profile_tests {
         assert!(validate_settings(&manifest).unwrap_err().contains("target"));
         let option = format!("--target={foreign}");
         assert!(validate_build_options(&options(&["build", &option])).is_err());
+    }
+
+    #[test]
+    fn debug_info_resolves_per_member_and_cli_overrides_without_changing_optimization() {
+        for inherited in [None, Some(false), Some(true)] {
+            let manifest = runtime::ProjectManifest {
+                debug_info: inherited,
+                profile: Some("release".into()),
+                ..Default::default()
+            };
+            let setting = validate_build_options(&options(&["build"]))
+                .unwrap()
+                .resolve(&manifest)
+                .unwrap();
+            assert_eq!(setting.debug_info(), inherited.unwrap_or(false));
+            assert_eq!(setting.optimization_flag(), "-O2");
+            for (flag, enabled) in [("--debug-info", true), ("--no-debug-info", false)] {
+                let setting = validate_build_options(&options(&["build", flag, "--profile=dev"]))
+                    .unwrap()
+                    .resolve(&manifest)
+                    .unwrap();
+                assert_eq!(setting.debug_info(), enabled);
+                assert_eq!(setting.optimization_flag(), "-O0");
+                assert!(!setting.reproducible());
+            }
+        }
     }
 
     #[test]

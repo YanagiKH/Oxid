@@ -143,6 +143,7 @@ fn private_emit_sink_rejects_underrun_capacity_and_count_mismatch() {
         // Synthetic sink fixtures exercise invariant failures only. They are
         // not native modules or allocation-admission substitutes.
         let mut output = Emission {
+            debug: false,
             len: 0,
             text: Some(String::with_capacity(capacity)),
             policy: EntryPolicy::Result,
@@ -166,6 +167,7 @@ fn private_emit_sink_rejects_underrun_capacity_and_count_mismatch() {
     missing.write_str("x").unwrap();
     assert!(matches!(missing.finish(1), Err(Failure::Invariant)));
     let mut overflow = Emission {
+        debug: false,
         len: usize::MAX,
         text: Some(String::new()),
         policy: EntryPolicy::Result,
