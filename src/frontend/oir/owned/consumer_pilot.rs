@@ -675,6 +675,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record(&[I32, I32, I32, Bool], main.span)],

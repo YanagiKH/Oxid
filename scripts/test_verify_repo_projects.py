@@ -97,19 +97,35 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.root = Path(temporary.name)
         for data in (Path('tests/fixtures/fixed_array_source_unit3'),
                      Path('tests/qualification/bounded_u8_current'),
-                     Path('tests/qualification/byte_storage_current')):
+                     Path('tests/qualification/byte_storage_current'),
+                     Path('tests/fixtures/typed_vectors')):
             shutil.copytree(verify_repo.ROOT / data, self.root / data)
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
+        vector_data = verify_repo.typed_vector_fixture_data_sources(self.root)
+        expected_vectors = {self.root / 'tests/fixtures/typed_vectors' / group / (name + '.ox')
+                            for group, names in (
+            ('accept', ('bool', 'i8', 'i16', 'i32', 'i64', 'i128', 'u8', 'u16', 'u32', 'u64',
+                        'u128', 'isize', 'usize', 'char', 'f32', 'f64', 'unit')),
+            ('reject', ('moved_owner', 'wrong_element', 'owned_element', 'unused_unconstrained_generic',
+                        'bare_vector_type', 'wrong_type_arity', 'missing_new_type', 'vector_is_not_byte_buffer',
+                        'overlapping_call_loans', 'vector_not_copy')),
+            ('scenarios', ('projected-vector', 'dynamic-range', 'array-ranges')),
+        ) for name in names}
+        self.assertEqual(vector_data, expected_vectors)
+        self.assertEqual(len(vector_data), 30)
+        self.assertTrue(vector_data <= set(self.data_sources))
+        predecessor_data = set(self.data_sources) - vector_data
         byte_data = verify_repo.byte_storage_fixture_data_sources(self.root)
+        self.assertFalse(vector_data & byte_data)
         self.assertEqual(len(byte_data), 325)
-        self.assertEqual(len(self.data_sources), 188 + 325)
-        self.assertEqual(len(set(self.data_sources) - byte_data), 188)
+        self.assertEqual(len(predecessor_data), 188 + 325)
+        self.assertEqual(len(predecessor_data - byte_data), 188)
         u8_root = self.root / 'tests/qualification/bounded_u8_current/oracle'
         u8_expected = {u8_root / ('pairs-' + mode + '-' + format(index, '02d') + '.ox')
                        for mode in ('owned', 'scalar') for index in range(32)}
         u8_expected |= {u8_root / 'roundtrip-owned.ox', u8_root / 'roundtrip-scalar.ox'}
         self.assertEqual({path for path in self.data_sources if u8_root in path.parents}, u8_expected)
-        self.assertEqual(len(set(self.data_sources) - u8_expected - byte_data), 122)
+        self.assertEqual(len(predecessor_data - u8_expected - byte_data), 122)
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]

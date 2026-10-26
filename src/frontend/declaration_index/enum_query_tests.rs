@@ -1205,7 +1205,7 @@ fn enum_query_complete_return_carriers_fit_the_explicit_fixed_ledger() {
     let collector_query_phase_savings =
         size_of::<BuiltinAdmission>().min(size_of::<QuerySession<'_, '_>>());
     assert_eq!(
-        FIXED_SCRATCH,
+        FIXED_SCRATCH + VECTOR_INDEX_HEADER_GROWTH,
         3968 + added + table_growth + builtin - names_saved - collector_query_phase_savings
     );
     println!("builtin-index-fixed-breakdown baseline=4088 table_growth={table_growth} new_carriers={builtin} name_savings={names_saved} collector_query_phase_savings={collector_query_phase_savings} complete={FIXED_SCRATCH}");

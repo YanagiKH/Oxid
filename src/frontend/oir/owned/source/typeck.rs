@@ -302,6 +302,7 @@ impl Label for Box<Diagnostic> {
 enum TypeName<'a> {
     ByteBuf,
     File,
+    Vector(Ty),
     Scalar(Ty),
     Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
@@ -311,6 +312,7 @@ impl std::fmt::Display for TypeName<'_> {
         match self {
             Self::ByteBuf => write!(f, "alloc::bytes::ByteBuf"),
             Self::File => write!(f, "std::fs::File"),
+            Self::Vector(element) => write!(f, "alloc::vec::Vec<{element}>"),
             Self::Scalar(ty) => write!(f, "{ty}"),
             Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
@@ -326,6 +328,7 @@ fn type_name<'a>(
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
         ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
         ValueTy::Owned(AggregateTy::File) => Ok(TypeName::File),
+        ValueTy::Owned(AggregateTy::Vector(element)) => Ok(TypeName::Vector(element)),
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
@@ -2221,15 +2224,16 @@ fn projected_array_access(
     {
         ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.element()),
         ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(Ty::U8),
+        ValueTy::Owned(AggregateTy::Vector(element)) => Some(element),
         ValueTy::Owned(AggregateTy::File) if borrow => None,
         ValueTy::Owned(AggregateTy::Record(_)) if borrow => None,
         _ => {
             return Err(error(
                 "E0305",
                 if borrow {
-                    "projected borrowing requires a record, fixed scalar array, ByteBuf or File field"
+                    "projected borrowing requires a record, fixed scalar array, ByteBuf, Vec or File field"
                 } else {
-                    "indexed access requires a fixed scalar array field"
+                    "indexed access requires a fixed scalar array or Vec field"
                 },
                 base_span,
             ))
@@ -2248,6 +2252,9 @@ fn array_access(
     match bindings[binding.0].expect("resolved array base initialized") {
         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
             Ok((AccessBase::Owner(binding), array.element()))
+        }
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::Vector(element))) => {
+            Ok((AccessBase::Owner(binding), element))
         }
         ParameterTy::Reference { referent, kind }
             if referent.element().is_some()
@@ -2761,6 +2768,7 @@ fn expression_type(
                                     ValueTy::Owned(
                                         resource @ (AggregateTy::Record(_)
                                         | AggregateTy::ByteBuf
+                                        | AggregateTy::Vector(_)
                                         | AggregateTy::File),
                                     ) => BorrowedTy::Exact(resource),
                                     _ => BorrowedTy::ScalarSlice(
@@ -2782,10 +2790,26 @@ fn expression_type(
                                         kind,
                                     }
                                 }
+                                ParameterTy::Reference {
+                                    referent: BorrowedTy::Exact(AggregateTy::Vector(element))
+                                        | BorrowedTy::ScalarSlice(element),
+                                    kind,
+                                } if crate::frontend::builtin_catalog::vector::scalar_admitted(element) => {
+                                    ParameterTy::Reference {
+                                        referent: BorrowedTy::ScalarSlice(element), kind,
+                                    }
+                                }
+                                ParameterTy::Reference {
+                                    referent: BorrowedTy::Exact(AggregateTy::FixedArray(array)), kind,
+                                } if crate::frontend::builtin_catalog::vector::scalar_admitted(array.element()) => {
+                                    ParameterTy::Reference {
+                                        referent: BorrowedTy::ScalarSlice(array.element()), kind,
+                                    }
+                                }
                                 _ => {
                                     return Err(error(
                                         "E0300",
-                                        "byte subranges require a byte buffer or byte slice",
+                                        "element subranges require a scalar array, scalar slice, Vec or ByteBuf",
                                         *span,
                                     ))
                                 }

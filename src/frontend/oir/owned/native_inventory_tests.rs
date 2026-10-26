@@ -105,6 +105,7 @@ pub(in super::super::super) fn item_boundary(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![fixtures::record(&[], s(0))],
@@ -127,6 +128,7 @@ pub(in super::super::super) fn width_boundary(extra: bool) -> (SourceMap, RawOwn
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -418,6 +420,7 @@ fn native_inventory_raw_empty_and_enum_widths_keep_existing_sentinels() {
         fixtures::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(3)), s(0)),
     ]);
     let raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![enums::enumeration(&[None], s(0))],
         records: vec![fixtures::record(&[], s(0))],

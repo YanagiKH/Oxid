@@ -287,11 +287,25 @@ impl HirPlan {
         at: Span,
         experimental_functions: usize,
     ) -> Result<Self, Box<Diagnostic>> {
+        Self::calculate_with_vectors(c, at, experimental_functions, 0)
+    }
+
+    /// The vector count comes from actual authenticated Plan keys, separately
+    /// from both source bodies and the fixed experimental function catalog.
+    fn calculate_with_vectors(
+        c: HirCounts,
+        at: Span,
+        experimental_functions: usize,
+        vector_functions: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
         if experimental_functions
             > crate::frontend::builtin_catalog::experimental::Function::ALL.len()
+            || vector_functions
+                > crate::frontend::builtin_catalog::vector::Operation::ALL.len() * 17
             || c.signatures
                 .checked_sub(c.functions)
                 .and_then(|suffix| suffix.checked_sub(experimental_functions))
+                .and_then(|suffix| suffix.checked_sub(vector_functions))
                 .is_none_or(|legacy_suffix| legacy_suffix > 2)
         {
             return Err(invalid(at));
@@ -653,6 +667,11 @@ impl HirPlan {
         // Fresh production typed-owner returns are their own actual surfaces,
         // independent of private statistics/artifact output envelopes.
         increment(&mut fixed, resolve::production_source_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            resolve::element_range_routing_carrier_bytes(),
+            at,
+        )?;
         increment(&mut fixed, typeck::production_type_carrier_bytes(), at)?;
         increment(
             &mut fixed,
@@ -818,8 +837,25 @@ fn preflight_hir(
             increment(&mut counts.parameters, signature.parameters().len(), anchor)?;
         }
     }
+    for (rank, key) in index.vector_functions().iter().copied().enumerate() {
+        let selected = super::vector_source::signature(index, work, rank, key)?;
+        visit(
+            work,
+            1 + selected.signature.parameters().len(),
+            selected.anchor,
+        )?;
+        increment(&mut counts.signatures, 1, selected.anchor)?;
+        increment(
+            &mut counts.parameters,
+            selected.signature.parameters().len(),
+            selected.anchor,
+        )?;
+    }
     let experimental_functions = index.builtin_set().experimental().functions();
-    let mut plan = if experimental_functions == 0 {
+    let vectors = index.vector_functions().len();
+    let mut plan = if vectors != 0 {
+        HirPlan::calculate_with_vectors(counts, at, experimental_functions, vectors)?
+    } else if experimental_functions == 0 {
         HirPlan::calculate(counts, at)?
     } else {
         HirPlan::calculate_with_experimental(counts, at, experimental_functions)?
@@ -827,6 +863,20 @@ fn preflight_hir(
     if !index.builtin_set().experimental().is_empty() {
         let extra = crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes();
         plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
+    if vectors != 0 {
+        let extra = super::vector_source::carrier_bytes();
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
+    if index.has_element_ranges() {
+        let extra = mul(
+            counts.borrow_arguments,
+            super::vector_source::range_carrier_bytes(),
+            at,
+        )?;
+        plan.typeck_scratch = add(plan.typeck_scratch, extra, at)?;
         plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
     }
     if index.has_owned_enum_payloads(work)? {

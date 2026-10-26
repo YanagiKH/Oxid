@@ -27,8 +27,14 @@ struct ReferenceWalkCarriers {
     descriptor_return: std::result::Result<byte_buffer::Descriptor, byte_buffer::Failure>,
     file_descriptor: byte_buffer::FileDescriptor,
     file_descriptor_return: std::result::Result<byte_buffer::FileDescriptor, byte_buffer::Failure>,
+    vector_element: byte_buffer::VectorElement,
+    vector_descriptor: byte_buffer::VectorDescriptor,
+    vector_descriptor_return:
+        std::result::Result<byte_buffer::VectorDescriptor, byte_buffer::Failure>,
+    vector_validation_return: std::result::Result<(), byte_buffer::Failure>,
     mapped_descriptor_return: Result<byte_buffer::Descriptor>,
     mapped_file_descriptor_return: Result<byte_buffer::FileDescriptor>,
+    mapped_vector_descriptor_return: Result<byte_buffer::VectorDescriptor>,
     mapped_leaf_result: Result<ResourceLeaf>,
     mapped_release_result: Result<()>,
     mapped_file_close_result: Result<std::result::Result<(), i32>>,
@@ -94,6 +100,14 @@ pub(super) fn preflight(
                 heap.file_descriptor(&source[source_extent])
                     .map_err(|_| bad("file descriptor", span))?;
             }
+            ResourceKind::Vector(ty) => {
+                let element = super::super::vector_type::element(ty);
+                let value = heap
+                    .vector_descriptor(&source[source_extent], element)
+                    .map_err(|_| bad("resource descriptor", span))?;
+                heap.vector_validate(&value, element)
+                    .map_err(|_| bad("resource descriptor", span))?;
+            }
         }
     }
     Ok(())
@@ -131,20 +145,31 @@ pub(super) fn release(
     for leaf in leaves(declarations, aggregate, bytes).map_err(|_| bad("resource layout", span))? {
         let leaf = leaf.map_err(|_| bad("resource active alternative", span))?;
         let range = extent(leaf.offset, bytes.len(), span)?;
-        if leaf.kind == ResourceKind::File {
-            let mut value = heap
-                .file_descriptor(&bytes[range])
-                .map_err(|_| bad("file descriptor", span))?;
-            let _ = heap
-                .file_close(&mut value)
-                .map_err(|_| bad("file release", span))?;
-            continue;
+        match leaf.kind {
+            ResourceKind::ByteBuf => {
+                let mut value = heap
+                    .descriptor(&bytes[range])
+                    .map_err(|_| bad("resource descriptor", span))?;
+                heap.release(&mut value)
+                    .map_err(|_| bad("resource release", span))?;
+            }
+            ResourceKind::File => {
+                let mut value = heap
+                    .file_descriptor(&bytes[range])
+                    .map_err(|_| bad("file descriptor", span))?;
+                let _ = heap
+                    .file_close(&mut value)
+                    .map_err(|_| bad("file release", span))?;
+            }
+            ResourceKind::Vector(ty) => {
+                let element = super::super::vector_type::element(ty);
+                let mut value = heap
+                    .vector_descriptor(&bytes[range], element)
+                    .map_err(|_| bad("resource descriptor", span))?;
+                heap.vector_release(&mut value, element)
+                    .map_err(|_| bad("resource release", span))?;
+            }
         }
-        let mut value = heap
-            .descriptor(&bytes[range])
-            .map_err(|_| bad("resource descriptor", span))?;
-        heap.release(&mut value)
-            .map_err(|_| bad("resource release", span))?;
     }
     Ok(())
 }
@@ -152,3 +177,7 @@ pub(super) fn release(
 #[cfg(test)]
 #[path = "execute_resource_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "execute_vector_resource_tests.rs"]
+mod vector_tests;

@@ -320,7 +320,7 @@ fn rejection_cases() -> Vec<(&'static str, &'static str, &'static str)> {
         ("fn local(p:&[i32])->(){let q=p;return;}", "E0312", "type"),
         ("struct Saved{p:&[i32]} fn main()->(){return;}", "E0101", "parse"),
         ("fn read(p:&[[i32;2]])->(){return;}", "E0101", "parse"),
-        ("struct R{x:i32} fn read(p:&[R])->(){return;}", "E0101", "parse"),
+        ("struct R{x:i32} fn read(p:&[R])->(){return;}", "E0300", "generics"),
         ("fn read(p:&[&i32])->(){return;}", "E0101", "parse"),
         ("fn read(p:&[i32])->i32{return p[0..1];}", "E0101", "parse"),
         ("fn read(p:&[i32])->i32{return p[..];}", "E0101", "parse"),

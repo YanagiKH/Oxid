@@ -276,6 +276,11 @@ impl<'a> Fingerprint<'a> {
                     ArrayElementTypeSyntax::Unit => "unit",
                 });
             }
+            TypeSyntaxKind::GenericSliceReference { mutable, element } => {
+                self.tag("generic-slice-reference-type");
+                self.flag(mutable);
+                self.path(element);
+            }
             TypeSyntaxKind::ArrayReference { mutable, array } => {
                 self.tag("array-reference-type");
                 self.flag(mutable);
@@ -2053,4 +2058,58 @@ fn record_pattern_formatter_preserves_field_names_bindings_and_origins() {
     let after = output.get(id);
     assert_eq!(before, fingerprint(after, &parse(after)));
     assert_eq!(format_source(after).unwrap(), after.text());
+}
+
+#[test]
+fn generic_scalar_slice_formatting_preserves_source_authenticated_types() {
+    fn parse_current(source: &SourceFile) -> Program {
+        let (program, _) = parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap();
+        assert_expression_source_order(&program);
+        program
+    }
+    for text in [
+        "fn pick<T:Copy>(values:& /* before */ [ /* element */ T ])->T{return values[0];}",
+        "use alloc::vec::Vec;pub struct Bag<T:Copy>{values:Vec<T>}fn pick<T:Copy>(values:&mut[T])->T{return values[0];}",
+    ] {
+        let mut sources = SourceMap::new();
+        let id = sources.add("generic-slice-format.ox".into(), text.into());
+        let source = sources.get(id);
+        let before = parse_current(source);
+        let mut features = SyntaxFeatures::default();
+        assert!(before.validate_spans_and_ids_counted_with_features(
+            Some(source),
+            |span| span.is_none_or(|span| source.try_text(span).is_some()),
+            &mut None,
+            parser::StdImportPolicy::Enabled,
+            &mut false,
+            &mut features,
+        ));
+        assert!(features.generic_slices);
+        let expected = fingerprint(source, &before);
+        let output = format_source(source).unwrap();
+        let mut formatted = SourceMap::new();
+        formatted.add("unrelated.ox".into(), "".into());
+        let id = formatted.add("generic-slice-after.ox".into(), output);
+        let after = formatted.get(id);
+        let reparsed = parse_current(after);
+        let mut features = SyntaxFeatures::default();
+        assert!(reparsed.validate_spans_and_ids_counted_with_features(
+            Some(after),
+            |span| span.is_none_or(|span| after.try_text(span).is_some()),
+            &mut None,
+            parser::StdImportPolicy::Enabled,
+            &mut false,
+            &mut features,
+        ));
+        assert!(features.generic_slices);
+        assert_eq!(expected, fingerprint(after, &reparsed));
+    }
 }

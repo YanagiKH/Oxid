@@ -1,0 +1,1 @@
+use alloc::vec::Vec;use alloc::vec::new;use alloc::vec::try_push;fn overlap(view:&[i32],values:&mut Vec<i32>)->i32{return view[0];}fn main()->i32{let mut values=new::<i32>();try_push(&mut values,42);return overlap(&values,&mut values);}

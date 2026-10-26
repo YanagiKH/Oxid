@@ -1,4 +1,5 @@
 //! Independent Unit4B raw metadata, authority, and resource qualification.
+use super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH;
 use super::*;
 use std::cell::Cell;
 thread_local! {
@@ -104,6 +105,7 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
     (
         sm,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![RawRecordDecl {
@@ -348,7 +350,7 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
             1,
             1,
             262,
-            320 + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
+            320 + 2 * std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH,
             33
         )
     );
@@ -372,7 +374,8 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         work: 262,
         metadata: 296
             + std::mem::size_of::<Vec<RawEnumDecl>>()
-            + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
+            + 2 * std::mem::size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH,
         scratch: 33,
     };
     assert!(verify_with_limits(clone_raw(&p), &sm, exact).is_ok());
@@ -387,7 +390,8 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
             budget::Limits {
                 metadata: 295
                     + std::mem::size_of::<Vec<RawEnumDecl>>()
-                    + 2 * std::mem::size_of::<Vec<MatchDecl>>(),
+                    + 2 * std::mem::size_of::<Vec<MatchDecl>>()
+                    + VECTOR_RAW_HEADER_GROWTH,
                 ..exact
             },
             "ownership metadata",
@@ -514,6 +518,7 @@ fn heldout_origins_preserve_all_frozen_reference_fuel_and_native_modules() {
 
 fn clone_raw(p: &RawOwnedProgram) -> RawOwnedProgram {
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: p.enums.clone(),
         records: p

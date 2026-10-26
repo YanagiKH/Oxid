@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from legacy_scalar_observer_local_references import adapt_wrapper as _adapt_wrapper, SCHEMA
+from legacy_scalar_observer_vectors import adapt_wrapper as _adapt_wrapper, SCHEMA
 
 
 def adapt_wrapper(name, original):
@@ -22,7 +22,7 @@ def adapt_wrapper(name, original):
 SOURCE_FILES = (
     "lexer.rs", "diagnostic.rs", "source.rs", "project/budget.rs",
     "ast.rs", "ast/generic_syntax.rs", "byte_strings.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs", "parser/characters.rs",
-    "owned_diagnostic.rs", "builtin_catalog.rs", "experimental_builtins.rs", "hir.rs",
+    "owned_diagnostic.rs", "builtin_catalog.rs", "experimental_builtins.rs", "vector_builtins.rs", "hir.rs",
     "declaration_index.rs", "declaration_index/generics.rs",
     "declaration_index/generics/flow.rs", "declaration_index/generics/nominal.rs",
     "declaration_index/generics/inference.rs",

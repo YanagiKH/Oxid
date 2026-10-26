@@ -64,3 +64,36 @@ scripts/test_typed_project_source_binding.py -text
 
 # Preserve the supplied roadmap's original CRLF bytes.
 docs/ROADMAP_V2.md -text
+
+# Exact vector DATA and expectation bytes remain identical across checkouts.
+tests/fixtures/typed_vectors/accept/bool.ox -text
+tests/fixtures/typed_vectors/accept/char.ox -text
+tests/fixtures/typed_vectors/accept/f32.ox -text
+tests/fixtures/typed_vectors/accept/f64.ox -text
+tests/fixtures/typed_vectors/accept/i128.ox -text
+tests/fixtures/typed_vectors/accept/i16.ox -text
+tests/fixtures/typed_vectors/accept/i32.ox -text
+tests/fixtures/typed_vectors/accept/i64.ox -text
+tests/fixtures/typed_vectors/accept/i8.ox -text
+tests/fixtures/typed_vectors/accept/isize.ox -text
+tests/fixtures/typed_vectors/accept/u128.ox -text
+tests/fixtures/typed_vectors/accept/u16.ox -text
+tests/fixtures/typed_vectors/accept/u32.ox -text
+tests/fixtures/typed_vectors/accept/u64.ox -text
+tests/fixtures/typed_vectors/accept/u8.ox -text
+tests/fixtures/typed_vectors/accept/unit.ox -text
+tests/fixtures/typed_vectors/accept/usize.ox -text
+tests/fixtures/typed_vectors/cases.json -text
+tests/fixtures/typed_vectors/reject/bare_vector_type.ox -text
+tests/fixtures/typed_vectors/reject/missing_new_type.ox -text
+tests/fixtures/typed_vectors/reject/moved_owner.ox -text
+tests/fixtures/typed_vectors/reject/overlapping_call_loans.ox -text
+tests/fixtures/typed_vectors/reject/owned_element.ox -text
+tests/fixtures/typed_vectors/reject/unused_unconstrained_generic.ox -text
+tests/fixtures/typed_vectors/reject/vector_is_not_byte_buffer.ox -text
+tests/fixtures/typed_vectors/reject/vector_not_copy.ox -text
+tests/fixtures/typed_vectors/reject/wrong_element.ox -text
+tests/fixtures/typed_vectors/reject/wrong_type_arity.ox -text
+tests/fixtures/typed_vectors/scenarios/array-ranges.ox -text
+tests/fixtures/typed_vectors/scenarios/dynamic-range.ox -text
+tests/fixtures/typed_vectors/scenarios/projected-vector.ox -text

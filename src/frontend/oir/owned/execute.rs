@@ -23,6 +23,8 @@ mod integers;
 
 #[path = "execute_experimental.rs"]
 mod experimental;
+#[path = "execute_vector.rs"]
+mod vector;
 pub(super) fn binary_delivery_control_bytes() -> usize {
     experimental::binary_delivery_control_bytes()
 }
@@ -519,6 +521,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         right: ReferenceHandle,
         span: Span,
     ) -> Result<bool> {
+        if matches!(
+            left.view.aggregate.map(AggregateSlot::aggregate),
+            Some(AggregateTy::Vector(_))
+        ) || matches!(
+            right.view.aggregate.map(AggregateSlot::aggregate),
+            Some(AggregateTy::Vector(_))
+        ) {
+            return self.vector_reference_overlap(left, right, span);
+        }
         let extent = |handle: ReferenceHandle| -> Result<(u64, u64)> {
             let aggregate = handle
                 .view
@@ -749,7 +760,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             AggregateTy::Record(_)
             | AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
-            | AggregateTy::File => Err(bad("array aggregate type", span)),
+            | AggregateTy::File
+            | AggregateTy::Vector(_) => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -776,6 +788,14 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             && (view.offset != 0 || root_type != aggregate)
         {
             return Err(bad("view root type", span));
+        }
+        if matches!(root_type, AggregateTy::Vector(_))
+            && (view.offset != 0 || root_type != aggregate)
+        {
+            // Dynamic scalar slices take their checked packed-range path in
+            // checked_handle_view. A vector descriptor cannot become a fixed
+            // activation array, even when the forged extent fits 16 bytes.
+            return Err(bad("vector view root type", span));
         }
         let size = match aggregate {
             AggregateTy::FixedArray(array) if array.length() == 0 => 0,
@@ -837,7 +857,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         aggregate @ (AggregateTy::Record(_)
                         | AggregateTy::FixedArray(_)
                         | AggregateTy::ByteBuf
-                        | AggregateTy::File),
+                        | AggregateTy::File
+                        | AggregateTy::Vector(_)),
                     ),
                     relative,
                 ) = self
@@ -896,6 +917,12 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .loans
             .get(index(handle.permission.loan, span)?)
             .ok_or_else(|| bad("view loan descriptor", span))?;
+        if let AggregateTy::Vector(element) = actual {
+            if loan.referent() == BorrowedTy::ScalarSlice(element) {
+                self.vector_slice(handle, element, span)?;
+                return Ok(actual);
+            }
+        }
         if actual == AggregateTy::ByteBuf && loan.referent() == BorrowedTy::ScalarSlice(hir::Ty::U8)
         {
             self.buffer_slice(handle, span)?;
@@ -904,16 +931,13 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let root_type = self.aggregate(handle.root, span)?;
         if let (AggregateTy::FixedArray(root), AggregateTy::FixedArray(view)) = (root_type, actual)
         {
-            if root.element() == hir::Ty::U8
-                && view.element() == hir::Ty::U8
-                && (handle.view.offset != 0 || root != view)
-            {
+            if root.element() == view.element() && (handle.view.offset != 0 || root != view) {
                 self.checked_byte_array_provenance(handle, span)?;
                 handle
                     .view
                     .offset
-                    .checked_add(view.length() as u64)
-                    .filter(|end| *end <= root.length() as u64)
+                    .checked_add(view.length() as u64 * view.stride() as u64)
+                    .filter(|end| *end <= root.length() as u64 * root.stride() as u64)
                     .ok_or_else(|| bad("view root type", span))?;
             } else {
                 self.view_extent(handle.root, handle.view, span)?;
@@ -924,15 +948,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         if matches!(self.aggregate(handle.root, span)?, AggregateTy::Record(_))
             && (matches!(
                 actual,
-                AggregateTy::FixedArray(_) | AggregateTy::ByteBuf | AggregateTy::File
+                AggregateTy::FixedArray(_)
+                    | AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
             ) || (matches!(actual, AggregateTy::Record(_))
                 && (actual != root_type || handle.view.offset != 0)))
         {
             let original = self.projected_view(handle.permission, handle.root, span)?;
             match (original.aggregate.map(AggregateSlot::aggregate), actual) {
                 (Some(AggregateTy::FixedArray(original_array)), AggregateTy::FixedArray(array))
-                    if original_array.element() == hir::Ty::U8
-                        && array.element() == hir::Ty::U8 =>
+                    if original_array.element() == array.element() =>
                 {
                     self.checked_byte_array_provenance(handle, span)?;
                     let relative = handle
@@ -940,11 +966,13 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         .offset
                         .checked_sub(original.offset)
                         .ok_or_else(|| bad("projected range start", span))?;
-                    if relative
-                        .checked_add(array.length() as u64 * array.stride() as u64)
-                        .is_none_or(|end| {
-                            end > original_array.length() as u64 * original_array.stride() as u64
-                        })
+                    if !relative.is_multiple_of(array.stride() as u64)
+                        || relative
+                            .checked_add(array.length() as u64 * array.stride() as u64)
+                            .is_none_or(|end| {
+                                end > original_array.length() as u64
+                                    * original_array.stride() as u64
+                            })
                     {
                         return Err(bad("projected range end", span));
                     }
@@ -955,7 +983,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         }
         Ok(actual)
     }
-    /// Only a byte-slice loan may retain a subrange. Re-derive its root from
+    /// Only a checked scalar-slice loan may retain a subrange. Re-derive its root from
     /// immutable owner/parameter authority and require each retained child view
     /// to stay inside its parent. A matching element type alone is no proof.
     fn checked_byte_array_provenance(&self, mut handle: ReferenceHandle, span: Span) -> Result<()> {
@@ -975,12 +1003,12 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 .aggregate
                 .map(AggregateSlot::aggregate)
                 .ok_or_else(|| bad("view root type", span))?;
-            if declaration.referent() != BorrowedTy::ScalarSlice(hir::Ty::U8)
-                && declaration.referent() != BorrowedTy::Exact(actual)
-            {
+            let scalar_slice = matches!(actual, AggregateTy::FixedArray(array)
+                if declaration.referent() == BorrowedTy::ScalarSlice(array.element()));
+            if !scalar_slice && declaration.referent() != BorrowedTy::Exact(actual) {
                 return Err(bad("view root type", span));
             }
-            if declaration.referent() != BorrowedTy::ScalarSlice(hir::Ty::U8) {
+            if !scalar_slice {
                 self.view_extent(handle.root, handle.view, span)?;
             }
             match declaration.authority {
@@ -1021,7 +1049,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                                 projected @ (AggregateTy::Record(_)
                                 | AggregateTy::FixedArray(_)
                                 | AggregateTy::ByteBuf
-                                | AggregateTy::File),
+                                | AggregateTy::File
+                                | AggregateTy::Vector(_)),
                             ),
                             offset,
                         ) = self
@@ -1044,14 +1073,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     }
                     match (actual, base_view.aggregate.map(AggregateSlot::aggregate)) {
                         (AggregateTy::FixedArray(child), Some(AggregateTy::FixedArray(base)))
-                            if child.element() == hir::Ty::U8 && base.element() == hir::Ty::U8 =>
+                            if child.element() == base.element() =>
                         {
                             if handle
                                 .view
                                 .offset
                                 .checked_sub(base_view.offset)
-                                .and_then(|start| start.checked_add(child.length() as u64))
-                                .is_none_or(|end| end > base.length() as u64)
+                                .filter(|start| start.is_multiple_of(child.stride() as u64))
+                                .and_then(|start| {
+                                    start.checked_add(child.length() as u64 * child.stride() as u64)
+                                })
+                                .is_none_or(|end| end > base.length() as u64 * base.stride() as u64)
                             {
                                 return Err(bad("view root type", span));
                             }
@@ -1812,7 +1844,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     projected @ (AggregateTy::Record(_)
                     | AggregateTy::FixedArray(_)
                     | AggregateTy::ByteBuf
-                    | AggregateTy::File),
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)),
                 ),
                 relative,
             ) = self
@@ -1839,7 +1872,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .declarations()
             .check_borrowed_view(BorrowedTy::Exact(actual), descriptor.referent())
             .map_err(|_| bad("loan borrowed view", span))?;
-        view = self.stage_byte_view(frame, descriptor, root, view, range, span)?;
+        view = if matches!(actual, AggregateTy::Vector(_)) {
+            self.stage_vector_view(frame, descriptor, root, view, range, span)?
+        } else if matches!(actual, AggregateTy::FixedArray(array) if array.element() != hir::Ty::U8)
+            && range.is_some()
+        {
+            self.stage_typed_array_view(descriptor, view, range.unwrap(), span)?
+        } else {
+            self.stage_byte_view(frame, descriptor, root, view, range, span)?
+        };
         let parent = match descriptor.authority {
             AccessBase::Owner(_) => LoanKey::default(),
             AccessBase::Parameter(p) => self.frames[frame].references[p.0].permission,
@@ -2494,6 +2535,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 operation,
                 destination,
             } => self.experimental(frame, *operation, *destination, span)?,
+            OwnedInstruction::Vector { .. } => {
+                return Err(bad("vector operation requires prepared delivery", span));
+            }
             OwnedInstruction::ReadStdin {
                 buffer,
                 destination,
@@ -2901,6 +2945,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             } => {
                 let (key, ty, relative) =
                     self.projection_base(frame, *base, Access::Read, path, span)?;
+                if let (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) = (ty, *index) {
+                    return self.vector_projection_read(
+                        frame,
+                        *destination,
+                        key,
+                        element,
+                        relative,
+                        index,
+                        span,
+                    );
+                }
                 let (leaf, _ordinal) = self.projection_leaf(frame, ty, relative, *index, span)?;
                 if f.locals.get(destination.0).map(|local| local.ty) != Some(leaf.ty) {
                     return Err(bad("projection read type", span));
@@ -2920,6 +2975,11 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             } => {
                 let (key, ty, relative) =
                     self.projection_base(frame, *base, Access::Write, path, span)?;
+                if let (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) = (ty, *index) {
+                    return self.vector_projection_write(
+                        frame, key, element, relative, index, *value, span,
+                    );
+                }
                 let value = self.read(frame, *value)?;
                 let expected = match (ty, index) {
                     (ValueTy::Scalar(ty), None) => ty,
@@ -2946,7 +3006,18 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 base,
                 path,
             } => {
-                let (_key, ty, _) = self.projection_base(frame, *base, Access::Read, path, span)?;
+                let (_key, ty, relative) =
+                    self.projection_base(frame, *base, Access::Read, path, span)?;
+                if let ValueTy::Owned(AggregateTy::Vector(element)) = ty {
+                    return self.vector_projection_length(
+                        frame,
+                        *destination,
+                        _key,
+                        element,
+                        relative,
+                        span,
+                    );
+                }
                 let ValueTy::Owned(AggregateTy::FixedArray(array)) = ty else {
                     return Err(bad("projection length type", span));
                 };
@@ -2994,6 +3065,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 base,
                 index,
             } => {
+                if self.vector_view(frame, *base) {
+                    return self.vector_index_read(frame, *destination, *base, *index, span);
+                }
                 if self.dynamic_byte_view(frame, *base) {
                     return self.dynamic_index_read(frame, *destination, *base, *index, span);
                 }
@@ -3021,6 +3095,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 self.record_event(Event::ReadIndex(key, ordinal, value));
             }
             OwnedInstruction::WriteIndex { base, index, value } => {
+                if self.vector_view(frame, *base) {
+                    return self.vector_index_write(frame, *base, *index, *value, span);
+                }
                 if self.dynamic_byte_view(frame, *base) {
                     return self.dynamic_index_write(frame, *base, *index, *value, span);
                 }
@@ -3054,6 +3131,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 }
             }
             OwnedInstruction::ArrayLength { destination, base } => {
+                if self.vector_view(frame, *base) {
+                    return self.vector_length(frame, *destination, *base, span);
+                }
                 if self.dynamic_byte_view(frame, *base) {
                     return self.dynamic_length(frame, *destination, *base, span);
                 }
@@ -3662,6 +3742,14 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         continue;
                     }
                 }
+                if let OwnedInstruction::Vector {
+                    operation,
+                    destination,
+                } = statement.kind
+                {
+                    self.vector_delivery(frame, operation, destination, span)?;
+                    continue;
+                }
                 self.statement(frame, &statement.kind, span)?;
                 self.frames[frame].next += 1;
                 continue;
@@ -3796,7 +3884,9 @@ impl<V: StoredValue> Iterator for ValueCells<'_, V> {
             })),
             // Resource identities are never scalar cells. A separate checked
             // traversal validates and transfers their allocation obligations.
-            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File) => None,
+            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)) => {
+                None
+            }
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                 let result = (|| {
                     let leaf = ScalarLeaf {
@@ -4334,6 +4424,12 @@ fn execute_plan_policy<V: StoredValue>(
                     experimental::file_delivery_control_bytes()
                 } else {
                     0
+                } + if plan.uses_vectors() {
+                    vector::control_bytes::<V>()
+                } else if plan.uses_typed_ranges() {
+                    vector::range_control_bytes()
+                } else {
+                    0
                 } + if plan.has_program_arguments() {
                     plan::add(
                         crate::program_arguments::control_bytes(),
@@ -4594,7 +4690,8 @@ fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
         AggregateTy::FixedArray(_)
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
-        | AggregateTy::File => Err(bad("unsupported aggregate carrier", span)),
+        | AggregateTy::File
+        | AggregateTy::Vector(_) => Err(bad("unsupported aggregate carrier", span)),
     }
 }
 
@@ -4904,6 +5001,7 @@ pub(super) mod owned_enum_payload_tests {
         (
             sources,
             RawOwnedProgram {
+                vector_functions: Vec::new(),
                 builtins: BuiltinOrigins::None,
                 records: vec![raw::record(&[hir::Ty::Bool, hir::Ty::I32], span(0))],
                 enums,

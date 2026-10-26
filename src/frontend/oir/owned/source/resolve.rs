@@ -26,6 +26,7 @@ pub(in crate::frontend::oir) fn requires_paid_source(index: &DeclarationIndex<'_
     index.enum_count() != 0
         || !index.builtin_set().experimental().is_empty()
         || index.has_range_for()
+        || index.has_element_ranges()
 }
 
 /// Construction policy, retained even for array-free inputs. No executable
@@ -348,6 +349,24 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 return Err(invalid_signature_identity(anchor));
             }
         }
+        for (rank, key) in index.vector_functions().iter().copied().enumerate() {
+            let selected = super::vector_source::signature(index, self.work(), rank, key)?;
+            let actual = self
+                .signatures
+                .get(selected.id.0)
+                .ok_or_else(|| invalid_signature_identity(selected.anchor))?;
+            self.work().debit(
+                (4 + selected.signature.parameters().len()) as u64,
+                selected.anchor,
+                "vector signature identity",
+            )?;
+            if actual.params != selected.signature.parameters()
+                || actual.result != selected.signature.result
+                || actual.span != selected.anchor
+            {
+                return Err(invalid_signature_identity(selected.anchor));
+            }
+        }
         Ok(())
     }
 }
@@ -382,6 +401,7 @@ fn value_annotation(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
             | ast::TypeSyntaxKind::AppliedReference { .. }
             | ast::TypeSyntaxKind::ArrayReference { .. }
             | ast::TypeSyntaxKind::SliceReference { .. }
+            | ast::TypeSyntaxKind::GenericSliceReference { .. }
     ) {
         Err(error(
             "E0202",
@@ -1573,6 +1593,7 @@ fn resolve_index_impl(
                 let nominal = match payload {
                     Some(ValueTy::Owned(AggregateTy::ByteBuf)) => NominalId::ByteBuf,
                     Some(ValueTy::Owned(AggregateTy::File)) => NominalId::File,
+                    Some(ValueTy::Owned(AggregateTy::Vector(_))) => NominalId::Vector,
                     Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
                     Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
                     Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
@@ -1692,6 +1713,40 @@ fn resolve_index_impl(
         };
         append().map_err(|error| vec![*error])?;
     }
+    for (rank, key) in index.vector_functions().iter().copied().enumerate() {
+        let mut append = || -> Result<(), Box<Diagnostic>> {
+            let selected = super::vector_source::signature(index, work, rank, key)?;
+            if selected.id.0 != signatures.len() {
+                return Err(invalid_signature_identity(selected.anchor));
+            }
+            let paid = paid
+                .as_deref_mut()
+                .ok_or_else(|| invalid_signature_identity(selected.anchor))?;
+            work.debit(
+                (1 + selected.signature.parameters().len()) as u64,
+                selected.anchor,
+                "vector signature construction",
+            )?;
+            let mut params = paid.reserve(
+                allocator,
+                Kind::Parameters,
+                selected.signature.parameters().len(),
+                selected.anchor,
+            )?;
+            for parameter in selected.signature.parameters() {
+                storage::room(&params, params.capacity(), true, selected.anchor)?;
+                params.push(*parameter);
+            }
+            storage::room(&signatures, signatures.capacity(), true, selected.anchor)?;
+            signatures.push(Signature {
+                params,
+                result: selected.signature.result,
+                span: selected.anchor,
+            });
+            Ok(())
+        };
+        append().map_err(|error| vec![*error])?;
+    }
     if super::record_enum_layouts::needed(&records) {
         super::record_enum_layouts::inventory(index, &records, work, &mut Allocator::default())
             .map_err(|error| vec![*error])?;
@@ -1757,6 +1812,11 @@ fn resolve_index_impl(
                             referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
                             ..
                         } => Some(NominalId::ByteBuf),
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Vector(_)))
+                        | ParameterTy::Reference {
+                            referent: BorrowedTy::Exact(AggregateTy::Vector(_)),
+                            ..
+                        } => Some(NominalId::Vector),
                         ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
                         | ParameterTy::Reference {
                             referent: BorrowedTy::Exact(AggregateTy::Record(r)),
@@ -1774,6 +1834,7 @@ fn resolve_index_impl(
             match signature.result {
                 ValueTy::Owned(AggregateTy::ByteBuf) => Some(NominalId::ByteBuf),
                 ValueTy::Owned(AggregateTy::File) => Some(NominalId::File),
+                ValueTy::Owned(AggregateTy::Vector(_)) => Some(NominalId::Vector),
                 ValueTy::Owned(AggregateTy::Record(r)) => Some(NominalId::Record(r)),
                 ValueTy::Owned(AggregateTy::Enum(e)) => Some(NominalId::Enum(e)),
                 _ => None,
@@ -1792,7 +1853,10 @@ fn resolve_index_impl(
                 .template_for_instance(DefId(id))
                 .map_err(|e| vec![*e])?;
             let at = match ty.kind {
-                ast::TypeSyntaxKind::Reference { referent, .. } => sources
+                ast::TypeSyntaxKind::Reference { referent, .. }
+                | ast::TypeSyntaxKind::GenericSliceReference {
+                    element: referent, ..
+                } => sources
                     .path_span(ItemPathRef {
                         file: ty.span.file,
                         path: referent,
@@ -1809,25 +1873,27 @@ fn resolve_index_impl(
                         .map_err(|e| vec![*e])?,
                     at,
                 ),
-                NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => index
-                    .query(work)
-                    .nominal_signature_exposure(
-                        definition,
-                        index
-                            .template_nominal_for_instance(nominal)
-                            .map_err(|error| vec![*error])?,
-                        at,
-                    )
-                    .map(|exposure| match exposure {
-                        NominalExposure::Allowed => Exposure::Allowed,
-                        NominalExposure::Denied {
-                            declaration,
-                            restrictor,
-                        } => Exposure::Denied {
-                            record: declaration,
-                            restrictor,
-                        },
-                    }),
+                NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File | NominalId::Vector => {
+                    index
+                        .query(work)
+                        .nominal_signature_exposure(
+                            definition,
+                            index
+                                .template_nominal_for_instance(nominal)
+                                .map_err(|error| vec![*error])?,
+                            at,
+                        )
+                        .map(|exposure| match exposure {
+                            NominalExposure::Allowed => Exposure::Allowed,
+                            NominalExposure::Denied {
+                                declaration,
+                                restrictor,
+                            } => Exposure::Denied {
+                                record: declaration,
+                                restrictor,
+                            },
+                        })
+                }
             }
             .map_err(|e| vec![*e])?;
             match exposure {
@@ -4038,6 +4104,31 @@ pub(super) const fn production_source_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionSourceCarriers>()
 }
 
+/// New constant-time summary-query roles at the production routing
+/// families. Existing requires_paid_source inputs are in their caller models;
+/// each method receiver, return, and caller-held boolean is additional.
+#[allow(dead_code)]
+struct ElementRangeQueryCarriers {
+    receiver: &'static DeclarationIndex<'static>,
+    returned: bool,
+    caller: bool,
+}
+#[allow(dead_code)]
+struct ElementRangeRoutingCarriers {
+    source_facade: ElementRangeQueryCarriers,
+    resolver_legacy_fence: ElementRangeQueryCarriers,
+    resolver_production_entry: ElementRangeQueryCarriers,
+    hir_preflight: ElementRangeQueryCarriers,
+    hir_range_budget: ElementRangeQueryCarriers,
+    typed_storage_accessor: ElementRangeQueryCarriers,
+    checker_legacy_fence: ElementRangeQueryCarriers,
+    checker_production_completion: ElementRangeQueryCarriers,
+    checker_body_admission: ElementRangeQueryCarriers,
+}
+pub(super) const fn element_range_routing_carrier_bytes() -> usize {
+    std::mem::size_of::<ElementRangeRoutingCarriers>()
+}
+
 /// New signature construction roles. The pending Vec<ParameterTy> is already
 /// priced by HirCounts.signatures; the retained header lives inside Signature.
 /// The complete constructed Signature is separate from both named headers.
@@ -4108,6 +4199,8 @@ pub(super) const fn signature_identity_carrier_bytes() -> usize {
 #[cfg(test)]
 #[path = "builtin_signature_tests.rs"]
 mod builtin_signature_tests;
+#[cfg(test)]
+mod vector_signature_tests;
 
 #[cfg(test)]
 #[path = "output_typing_tests.rs"]

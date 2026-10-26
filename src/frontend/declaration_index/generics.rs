@@ -3,8 +3,11 @@
 mod flow;
 mod inference;
 mod nominal;
+#[cfg(test)]
+mod vector_tests;
 use super::*;
 use crate::frontend::ast::{self, Argument, ExprId, ExprKind, StmtKind, TypeSyntaxKind};
+use crate::frontend::builtin_catalog::vector;
 use crate::frontend::lexer::{Kind as TokenKind, Token};
 use crate::frontend::oir::owned_types::FixedArrayTy;
 use nominal::Nominals;
@@ -59,7 +62,7 @@ fn reject_parameter_base(
 #[derive(Default)]
 struct Storage {
     bytes: usize,
-    // Constructor frames coexist with retained type metadata. Account their
+    // Constructor/vector frames coexist with retained type metadata. Account their
     // live controls in the same ceiling, releasing them on every Result path.
     constructor_scratch: usize,
 }
@@ -120,12 +123,69 @@ enum Value {
     Parameter { position: usize, copy: bool },
     Record(usize),
     Enumeration(usize),
+    Vector(Element),
+}
+
+/// Scalar storage only. Copy parameters retain their position until concrete
+/// substitution; an owned Copy candidate never becomes a scalar element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Element {
+    Concrete(Ty),
+    CopyParameter(usize),
+}
+impl Element {
+    fn check(value: Value, at: Span) -> Result<Self, Box<Diagnostic>> {
+        match value {
+            Value::Concrete(ValueTy::Scalar(ty)) if vector::scalar_admitted(ty) => {
+                Ok(Self::Concrete(ty))
+            }
+            Value::Parameter {
+                position,
+                copy: true,
+            } => Ok(Self::CopyParameter(position)),
+            _ => Err(error(
+                "vector and slice elements require a scalar or Copy-bound parameter",
+                at,
+            )),
+        }
+    }
+    fn value(self) -> Value {
+        match self {
+            Self::Concrete(ty) => Value::Concrete(ValueTy::Scalar(ty)),
+            Self::CopyParameter(position) => Value::Parameter {
+                position,
+                copy: true,
+            },
+        }
+    }
+    fn scalar(self, at: Span) -> Result<Ty, Box<Diagnostic>> {
+        match self {
+            Self::Concrete(ty) if vector::scalar_admitted(ty) => Ok(ty),
+            _ => Err(bad(at)),
+        }
+    }
+}
+impl Value {
+    fn concrete(ty: ValueTy) -> Self {
+        match ty {
+            ValueTy::Owned(AggregateTy::Vector(element)) => {
+                Self::Vector(Element::Concrete(element))
+            }
+            _ => Self::Concrete(ty),
+        }
+    }
+    fn vector_element(self) -> Option<Element> {
+        match self {
+            Self::Vector(element) => Some(element),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Type {
     Value(Value),
     Reference { value: Value, kind: BorrowKind },
-    Slice { element: Ty, kind: BorrowKind },
+    Slice { element: Element, kind: BorrowKind },
 }
 impl Type {
     fn scalar(ty: Ty) -> Self {
@@ -133,18 +193,21 @@ impl Type {
     }
     fn concrete(ty: ParameterTy) -> Self {
         match ty {
-            ParameterTy::Value(ty) => Self::Value(Value::Concrete(ty)),
+            ParameterTy::Value(ty) => Self::Value(Value::concrete(ty)),
             ParameterTy::Reference {
                 referent: BorrowedTy::Exact(ty),
                 kind,
             } => Self::Reference {
-                value: Value::Concrete(ValueTy::Owned(ty)),
+                value: Value::concrete(ValueTy::Owned(ty)),
                 kind,
             },
             ParameterTy::Reference {
                 referent: BorrowedTy::ScalarSlice(element),
                 kind,
-            } => Self::Slice { element, kind },
+            } => Self::Slice {
+                element: Element::Concrete(element),
+                kind,
+            },
         }
     }
     fn parameter(self, at: Span) -> Result<ParameterTy, Box<Diagnostic>> {
@@ -167,7 +230,7 @@ impl Type {
                 kind,
             },
             Self::Slice { element, kind } => ParameterTy::Reference {
-                referent: BorrowedTy::ScalarSlice(element),
+                referent: BorrowedTy::ScalarSlice(element.scalar(at)?),
                 kind,
             },
             _ => {
@@ -186,11 +249,151 @@ impl Type {
     }
 }
 
+/// Complete additional synchronous roles for vector syntax, call typing,
+/// specialization lookup/registration, and freeze. Sequential roles are summed;
+/// nested vector calls and constructor frames remain live independently.
+#[allow(dead_code)]
+struct VectorFrame {
+    operation: vector::Operation,
+    function: vector::Function,
+    pending: Option<vector::Function>,
+    signature: vector::Signature,
+    abstract_signature: ([Type; 3], Type),
+    type_inputs: [Type; 3],
+    type_results: [Result<Type, Box<Diagnostic>>; 3],
+    actuals: [Option<Type>; 3],
+    elements: [Element; 2],
+    element_result: Result<Element, Box<Diagnostic>>,
+    scalar_result: Result<Ty, Box<Diagnostic>>,
+    value: Value,
+    value_result: Result<Value, Box<Diagnostic>>,
+    syntax: ast::TypeSyntax,
+    explicit: Option<&'static [ast::TypeSyntax]>,
+    arguments: &'static [Argument],
+    argument_iterator: std::slice::Iter<'static, Argument>,
+    argument: Option<&'static Argument>,
+    keys: &'static [vector::Function],
+    key_iterator: std::iter::Enumerate<std::slice::Iter<'static, vector::Function>>,
+    selected_key: Option<(usize, &'static vector::Function)>,
+    instance_iterator: std::slice::IterMut<'static, Instance>,
+    selected_instance: Option<&'static mut Instance>,
+    call_iterator: std::slice::IterMut<'static, Call>,
+    selected_call: Option<&'static mut Call>,
+    rank: Option<usize>,
+    rank_lookup_result: Result<Option<usize>, Box<Diagnostic>>,
+    rank_result: Result<usize, Box<Diagnostic>>,
+    id: DefId,
+    id_result: Result<DefId, Box<Diagnostic>>,
+    checked_ids: [Option<usize>; 2],
+    enum_result: Result<EnumId, Box<Diagnostic>>,
+    call: Call,
+    paths: [ItemPathRef; 2],
+    source_span: Result<Span, Box<Diagnostic>>,
+    parameters: &'static [ast::GenericParam],
+    parameter_iterator: std::iter::Enumerate<std::slice::Iter<'static, ast::GenericParam>>,
+    origins: [Span; 3],
+    counts: [usize; 4],
+    unit_result: Result<(), Box<Diagnostic>>,
+}
+const VECTOR_FRAME_BYTES: usize = size_of::<VectorFrame>();
+
+impl Storage {
+    fn enter_vector(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
+        if self
+            .live_after(VECTOR_FRAME_BYTES)
+            .is_none_or(|bytes| bytes > MAX_STORAGE)
+        {
+            return Err(exhausted(at));
+        }
+        self.constructor_scratch = self
+            .constructor_scratch
+            .checked_add(VECTOR_FRAME_BYTES)
+            .ok_or_else(|| exhausted(at))?;
+        Ok(())
+    }
+    fn leave_vector(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
+        self.constructor_scratch = self
+            .constructor_scratch
+            .checked_sub(VECTOR_FRAME_BYTES)
+            .ok_or_else(|| bad(at))?;
+        Ok(())
+    }
+}
+
+fn vector_rank(
+    functions: &[vector::Function],
+    key: vector::Function,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<Option<usize>, Box<Diagnostic>> {
+    for (rank, candidate) in functions.iter().enumerate() {
+        work.debit(1, at, "vector specialization lookup")?;
+        if *candidate == key {
+            return Ok(Some(rank));
+        }
+    }
+    Ok(None)
+}
+
+fn vector_id(users: usize, fixed: usize, rank: usize, at: Span) -> Result<DefId, Box<Diagnostic>> {
+    users
+        .checked_add(fixed)
+        .and_then(|base| base.checked_add(rank))
+        .map(DefId)
+        .ok_or_else(|| exhausted(at))
+}
+
+/// The source checker's abstract relation. Concrete instances are independently
+/// compared with the closed catalog by the downstream descriptor proof.
+fn vector_signature(
+    operation: vector::Operation,
+    element: Element,
+    grow: EnumId,
+) -> ([Type; 3], Type) {
+    use vector::Operation::*;
+    let unit = Type::scalar(Ty::Unit);
+    let count = Type::scalar(Ty::I32);
+    let shared = Type::Reference {
+        value: Value::Vector(element),
+        kind: BorrowKind::Shared,
+    };
+    let exclusive = Type::Reference {
+        value: Value::Vector(element),
+        kind: BorrowKind::Exclusive,
+    };
+    let value = Type::Value(element.value());
+    let elements = Type::Slice {
+        element,
+        kind: BorrowKind::Shared,
+    };
+    let parameters = match operation {
+        New => [unit; 3],
+        Len | Capacity => [shared, unit, unit],
+        Take => [exclusive, unit, unit],
+        TryReserve | Truncate => [exclusive, count, unit],
+        TryPush => [exclusive, value, unit],
+        TryExtend => [exclusive, elements, unit],
+        TryResize => [exclusive, count, value],
+    };
+    let result = match operation {
+        New | Take => Type::Value(Value::Vector(element)),
+        Len | Capacity => count,
+        Truncate => unit,
+        TryReserve | TryPush | TryExtend | TryResize => {
+            Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::Enum(grow))))
+        }
+    };
+    (parameters, result)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct Call {
     expression: ExprId,
     template: DefId,
     target: DefId,
+    // Keep the imported template independently of its eventual executable ID.
+    // A pending vector target is rewritten only after user discovery freezes.
+    vector: Option<vector::Function>,
 }
 #[derive(Debug, PartialEq, Eq)]
 struct Instance {
@@ -208,8 +411,24 @@ pub(super) struct Plan {
     ordinary: Vec<Option<DefId>>,
     template_count: usize,
     nominals: Nominals,
+    vector_functions: Vec<vector::Function>,
 }
 impl Plan {
+    pub(super) fn vector_functions(&self) -> &[vector::Function] {
+        &self.vector_functions
+    }
+    // Read-only observation; paid query callers must debit each comparison.
+    pub(super) fn vector_function_rank(&self, key: vector::Function) -> Option<usize> {
+        self.vector_functions
+            .iter()
+            .position(|candidate| *candidate == key)
+    }
+    pub(super) fn vector_count(&self) -> usize {
+        self.vector_functions.len()
+    }
+    pub(super) fn vector_function(&self, rank: usize) -> Option<vector::Function> {
+        self.vector_functions.get(rank).copied()
+    }
     pub(super) fn enum_count(&self) -> usize {
         self.nominals.enum_count()
     }
@@ -250,6 +469,7 @@ impl Plan {
             ordinary: Vec::new(),
             template_count: index.template_function_count(),
             nominals: Nominals::default(),
+            vector_functions: Vec::new(),
         };
         let mut nominals = Nominals::default();
         nominals.template_enum_count = index.template_enum_count();
@@ -296,6 +516,7 @@ impl Plan {
                     value,
                     Value::Record(_)
                         | Value::Enumeration(_)
+                        | Value::Vector(_)
                         | Value::Concrete(ValueTy::Owned(
                             AggregateTy::Record(_)
                                 | AggregateTy::Enum(_)
@@ -460,17 +681,90 @@ impl Plan {
             plan.instances[next].matches = checked.matches;
             next += 1;
         }
-        let count = plan.instances.len();
-        for instance in &mut plan.instances {
-            for call in &mut instance.calls {
-                if call.template.0 >= plan.template_count {
-                    call.target = DefId(count + call.template.0 - plan.template_count);
-                }
-            }
-        }
+        plan.freeze_calls(index, &mut storage, work)?;
         nominals.finish(&mut storage, allocator, work, index.sources().eof())?;
         plan.nominals = nominals;
         Ok(plan)
+    }
+    fn register_vector(
+        &mut self,
+        key: vector::Function,
+        storage: &mut Storage,
+        allocator: &mut Allocator,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<usize, Box<Diagnostic>> {
+        storage.enter_vector(at)?;
+        let result = (|| {
+            work.debit(1, at, "vector specialization admission")?;
+            if !vector::scalar_admitted(key.element) {
+                return Err(error("vector specialization requires a scalar element", at));
+            }
+            if let Some(rank) = vector_rank(&self.vector_functions, key, work, at)? {
+                return Ok(rank);
+            }
+            let rank = self.vector_functions.len();
+            storage.push(&mut self.vector_functions, key, allocator, work, at)?;
+            Ok(rank)
+        })();
+        storage.leave_vector(at)?;
+        result
+    }
+    fn freeze_calls(
+        &mut self,
+        index: &DeclarationIndex<'_>,
+        storage: &mut Storage,
+        work: &WorkMeter,
+    ) -> Result<(), Box<Diagnostic>> {
+        let at = index.sources().eof();
+        // The existing fixed-builtin rewrite does not reserve vector controls
+        // or spend vector freeze work when no concrete vector key exists.
+        if self.vector_functions.is_empty() {
+            let count = self.instances.len();
+            for instance in &mut self.instances {
+                for call in &mut instance.calls {
+                    if call.vector.is_some() {
+                        return Err(bad(at));
+                    }
+                    if call.template.0 >= self.template_count {
+                        call.target = DefId(count + call.template.0 - self.template_count);
+                    }
+                }
+            }
+            return Ok(());
+        }
+        storage.enter_vector(at)?;
+        let result = (|| {
+            let users = self.instances.len();
+            let fixed = index.builtin_set().extra_functions();
+            let functions = &self.vector_functions;
+            for instance in &mut self.instances {
+                for call in &mut instance.calls {
+                    work.debit(1, at, "vector call identity freeze")?;
+                    if let Some(key) = call.vector {
+                        if index.vector_template(call.template, work, at)? != Some(key.operation) {
+                            return Err(bad(at));
+                        }
+                        let rank = vector_rank(functions, key, work, at)?.ok_or_else(|| bad(at))?;
+                        call.target = vector_id(users, fixed, rank, at)?;
+                    } else if call.template.0 >= self.template_count {
+                        let rank = call.template.0 - self.template_count;
+                        if rank >= fixed
+                            || index.vector_template(call.template, work, at)?.is_some()
+                        {
+                            return Err(bad(at));
+                        }
+                        call.target = users
+                            .checked_add(rank)
+                            .map(DefId)
+                            .ok_or_else(|| exhausted(at))?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        storage.leave_vector(at)?;
+        result
     }
     // Keep the caller's shared storage budget, failure seam and work meter explicit.
     #[allow(clippy::too_many_arguments)]
@@ -602,6 +896,32 @@ fn syntax_type(
     arguments: &[Value],
     syntax: ast::TypeSyntax,
 ) -> Result<Type, Box<Diagnostic>> {
+    if let TypeSyntaxKind::GenericSliceReference { mutable, element } = syntax.kind {
+        let span = index.sources().path_span(ItemPathRef {
+            file: syntax.span.file,
+            path: element,
+        })?;
+        let value = syntax_type(
+            index,
+            work,
+            module,
+            declaration,
+            arguments,
+            ast::TypeSyntax {
+                kind: TypeSyntaxKind::Name(element),
+                span,
+            },
+        )?
+        .value(span)?;
+        return Ok(Type::Slice {
+            element: Element::check(value, span)?,
+            kind: if mutable {
+                BorrowKind::Exclusive
+            } else {
+                BorrowKind::Shared
+            },
+        });
+    }
     let parameters = index.sources().ast(module)?.generic_parameters(declaration);
     let path = match syntax.kind {
         TypeSyntaxKind::Name(path) => Some((path, None)),
@@ -946,7 +1266,9 @@ impl DeclarationIndex<'_> {
         let (key, module) = self.function(function)?;
         let program = self.sources().ast(module)?;
         let path = match syntax.kind {
-            TypeSyntaxKind::Name(path) | TypeSyntaxKind::Reference { referent: path, .. } => path,
+            TypeSyntaxKind::Name(path)
+            | TypeSyntaxKind::Reference { referent: path, .. }
+            | TypeSyntaxKind::GenericSliceReference { element: path, .. } => path,
             _ => return Ok(false),
         };
         let ast::ItemPath::Unqualified(name) = path else {
@@ -1336,7 +1658,10 @@ impl<'a, 's> Walker<'a, 's> {
     fn copy(&self, value: Value) -> bool {
         match value {
             Value::Concrete(ValueTy::Scalar(_)) => true,
-            Value::Concrete(ValueTy::Owned(_)) | Value::Record(_) | Value::Enumeration(_) => false,
+            Value::Concrete(ValueTy::Owned(_))
+            | Value::Record(_)
+            | Value::Enumeration(_)
+            | Value::Vector(_) => false,
             Value::Parameter { copy, .. } => copy,
         }
     }
@@ -1409,7 +1734,7 @@ impl<'a, 's> Walker<'a, 's> {
                     kind: expected,
                 },
             ) => {
-                array.element() == element
+                Element::Concrete(array.element()) == element
                     && (kind == BorrowKind::Exclusive || expected == BorrowKind::Shared)
             }
             (
@@ -1418,10 +1743,23 @@ impl<'a, 's> Walker<'a, 's> {
                     kind,
                 },
                 Type::Slice {
-                    element: Ty::U8,
+                    element: Element::Concrete(Ty::U8),
                     kind: expected,
                 },
             ) => kind == BorrowKind::Exclusive || expected == BorrowKind::Shared,
+            (
+                Type::Reference {
+                    value: Value::Vector(element),
+                    kind,
+                },
+                Type::Slice {
+                    element: expected_element,
+                    kind: expected,
+                },
+            ) => {
+                element == expected_element
+                    && (kind == BorrowKind::Exclusive || expected == BorrowKind::Shared)
+            }
             (
                 Type::Slice { element, kind },
                 Type::Slice {
@@ -2160,7 +2498,7 @@ impl<'a, 's> Walker<'a, 's> {
                 let element = self.element(*base)?;
                 let index = self.expression(*index)?;
                 self.expect(index, Type::scalar(Ty::I32), expression.span)?;
-                Type::scalar(element)
+                Type::Value(element.value())
             }
             ExprKind::ArrayLength { base } => {
                 self.element(*base)?;
@@ -2477,7 +2815,7 @@ impl<'a, 's> Walker<'a, 's> {
         )?;
         Ok((position, ty))
     }
-    fn element(&self, base: Span) -> Result<Ty, Box<Diagnostic>> {
+    fn element(&self, base: Span) -> Result<Element, Box<Diagnostic>> {
         let (position, ty) = self.place(base)?;
         if self.exclusive_loan(position, base)? {
             return Err(error(
@@ -2491,13 +2829,21 @@ impl<'a, 's> Walker<'a, 's> {
             | Type::Reference {
                 value: Value::Concrete(ValueTy::Owned(AggregateTy::FixedArray(array))),
                 ..
-            } => Ok(array.element()),
+            } => Ok(Element::Concrete(array.element())),
             Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::ByteBuf)))
             | Type::Reference {
                 value: Value::Concrete(ValueTy::Owned(AggregateTy::ByteBuf)),
                 ..
-            } => Ok(Ty::U8),
-            _ => Err(error("indexing requires an array or byte buffer", base)),
+            } => Ok(Element::Concrete(Ty::U8)),
+            Type::Value(Value::Vector(element))
+            | Type::Reference {
+                value: Value::Vector(element),
+                ..
+            } => Ok(element),
+            _ => Err(error(
+                "indexing requires an array, slice, byte buffer or vector",
+                base,
+            )),
         }
     }
     fn argument(&mut self, argument: &Argument) -> Result<Type, Box<Diagnostic>> {
@@ -2547,6 +2893,15 @@ impl<'a, 's> Walker<'a, 's> {
             return Err(error("exclusive borrow requires mutable access", *span));
         }
         if let Some((start, end)) = range {
+            // Forwarding belongs to the root binding, including a projected
+            // vector field. Check unused definitions before this early return;
+            // keep the existing non-range loan/diagnostic order below.
+            if forwarded != matches!(binding.ty, Type::Reference { .. } | Type::Slice { .. }) {
+                return Err(error(
+                    "borrow requires an owned value or forwarded reference",
+                    *span,
+                ));
+            }
             let element = self.element(name)?;
             let start = self.expression(start)?;
             self.expect(start, Type::scalar(Ty::I32), *span)?;
@@ -2704,6 +3059,11 @@ impl<'a, 's> Walker<'a, 's> {
         arguments: &[Argument],
         at: Span,
     ) -> Result<Type, Box<Diagnostic>> {
+        if self.index.builtin_set().contains_vector(vector::Item::Vec) {
+            if let Some(operation) = self.index.vector_template(definition, self.work, at)? {
+                return self.vector_call(expression, definition, operation, arguments, at);
+            }
+        }
         let explicit = self.program.generic_arguments(at);
         if definition.0 >= self.index.template_function_count() {
             if explicit.is_some() {
@@ -2724,6 +3084,7 @@ impl<'a, 's> Walker<'a, 's> {
                         expression,
                         template: definition,
                         target: definition,
+                        vector: None,
                     },
                     self.allocator,
                     self.work,
@@ -2825,6 +3186,103 @@ impl<'a, 's> Walker<'a, 's> {
                     expression,
                     template: definition,
                     target,
+                    vector: None,
+                },
+                self.allocator,
+                self.work,
+                at,
+            )?;
+        }
+        Ok(result)
+    }
+    fn vector_call(
+        &mut self,
+        expression: ExprId,
+        template: DefId,
+        operation: vector::Operation,
+        arguments: &[Argument],
+        at: Span,
+    ) -> Result<Type, Box<Diagnostic>> {
+        self.storage.enter_vector(at)?;
+        let result = self.vector_call_inner(expression, template, operation, arguments, at);
+        self.storage.leave_vector(at)?;
+        result
+    }
+    fn vector_call_inner(
+        &mut self,
+        expression: ExprId,
+        template: DefId,
+        operation: vector::Operation,
+        arguments: &[Argument],
+        at: Span,
+    ) -> Result<Type, Box<Diagnostic>> {
+        self.work.debit(1, at, "vector template call")?;
+        if arguments.len() != operation.parameter_count() {
+            return Err(error("function argument count mismatch", at));
+        }
+        let explicit = self.program.generic_arguments(at);
+        if explicit.is_some_and(|types| types.len() != 1) {
+            return Err(error(
+                "vector function requires one element type argument",
+                at,
+            ));
+        }
+        let mut element = if let Some(types) = explicit {
+            Some(Element::check(
+                self.ty(types[0])?.value(types[0].span)?,
+                types[0].span,
+            )?)
+        } else {
+            None
+        };
+        let mut actuals = [None; 3];
+        if operation != vector::Operation::New {
+            let actual = self.argument(&arguments[0])?;
+            let Type::Reference { value, .. } = actual else {
+                return Err(error("vector function requires a vector reference", at));
+            };
+            let inferred = value
+                .vector_element()
+                .ok_or_else(|| error("vector function requires a vector reference", at))?;
+            if element.is_some_and(|explicit| explicit != inferred) {
+                return Err(error(
+                    "vector element type argument does not match its vector",
+                    at,
+                ));
+            }
+            element = Some(inferred);
+            actuals[0] = Some(actual);
+        }
+        let element =
+            element.ok_or_else(|| error("cannot infer new element; specify new::<T>", at))?;
+        let grow = if operation.requires_grow_status() {
+            let id = self
+                .index
+                .experimental_enum_id(experimental::Enumeration::Grow)?;
+            self.index.template_enum_for_instance(id)?
+        } else {
+            // The selected operation never reads a status identity.
+            EnumId(0)
+        };
+        let (parameters, result) = vector_signature(operation, element, grow);
+        for (position, argument) in arguments.iter().enumerate() {
+            let actual = match actuals[position] {
+                Some(actual) => actual,
+                None => self.argument(argument)?,
+            };
+            self.expect(actual, parameters[position], at)?;
+        }
+        if let Some(plan) = self.plan.as_deref_mut() {
+            let key =
+                vector::Function::new(operation, element.scalar(at)?).ok_or_else(|| bad(at))?;
+            plan.register_vector(key, self.storage, self.allocator, self.work, at)?;
+            self.storage.push(
+                &mut self.calls,
+                Call {
+                    expression,
+                    template,
+                    target: DefId(usize::MAX),
+                    vector: Some(key),
                 },
                 self.allocator,
                 self.work,
@@ -2856,6 +3314,64 @@ impl<'a, 's> Walker<'a, 's> {
             ) if kind == BorrowKind::Exclusive || expected == BorrowKind::Shared => {
                 self.infer_value(formal, actual, inferred, at, 0)
             }
+            (
+                Type::Slice {
+                    element: formal,
+                    kind: expected,
+                },
+                Type::Slice {
+                    element: actual,
+                    kind,
+                },
+            ) if kind == BorrowKind::Exclusive || expected == BorrowKind::Shared => {
+                self.infer_value(formal.value(), actual.value(), inferred, at, 0)
+            }
+            (
+                Type::Slice {
+                    element: formal,
+                    kind: expected,
+                },
+                Type::Reference {
+                    value: Value::Vector(actual),
+                    kind,
+                },
+            ) if kind == BorrowKind::Exclusive || expected == BorrowKind::Shared => {
+                self.infer_value(formal.value(), actual.value(), inferred, at, 0)
+            }
+            (
+                Type::Slice {
+                    element: formal,
+                    kind: expected,
+                },
+                Type::Reference {
+                    value: Value::Concrete(ValueTy::Owned(AggregateTy::FixedArray(array))),
+                    kind,
+                },
+            ) if kind == BorrowKind::Exclusive || expected == BorrowKind::Shared => self
+                .infer_value(
+                    formal.value(),
+                    Value::Concrete(ValueTy::Scalar(array.element())),
+                    inferred,
+                    at,
+                    0,
+                ),
+            (
+                Type::Slice {
+                    element: formal,
+                    kind: expected,
+                },
+                Type::Reference {
+                    value: Value::Concrete(ValueTy::Owned(AggregateTy::ByteBuf)),
+                    kind,
+                },
+            ) if kind == BorrowKind::Exclusive || expected == BorrowKind::Shared => self
+                .infer_value(
+                    formal.value(),
+                    Value::Concrete(ValueTy::Scalar(Ty::U8)),
+                    inferred,
+                    at,
+                    0,
+                ),
             _ => self.expect(actual, formal, at),
         }
     }
@@ -2878,6 +3394,9 @@ impl<'a, 's> Walker<'a, 's> {
                 }
                 inferred[position] = Some(value);
                 Ok(())
+            }
+            (Value::Vector(formal), Value::Vector(actual)) => {
+                self.infer_value(formal.value(), actual.value(), inferred, at, depth + 1)
             }
             (Value::Record(formal), Value::Record(actual)) => {
                 let formal = &self.nominals.records[formal];

@@ -1648,6 +1648,63 @@ mod tests {
 
     static NEXT_PREPARED: AtomicUsize = AtomicUsize::new(0);
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn import_free_scalar_ranges_use_fresh_typing_in_both_driver_flavors() {
+        // Independent results exercise direct owners, projected owners and
+        // forwarded exclusive slices without enums, generics or Vec imports.
+        for (text, expected, functions) in [
+            (
+                "fn score(p:&[i32])->i32{let a=p[0];let b=p[1];return a+b+p.len();}fn main()->i32{let a=[10,20,30,40];return score(&a[1..3]);}",
+                52,
+                2,
+            ),
+            (
+                "struct R{values:[i32;4]}fn score(p:&[i32])->i32{let a=p[0];let b=p[1];return a+b+p.len();}fn projected(p:&R)->i32{return score(&*p.values[1..3]);}fn main()->i32{let r=R{values:[1,2,3,4]};return projected(&r);}",
+                7,
+                3,
+            ),
+            (
+                "fn put(p:&mut[i32])->(){p[0]=77;return;}fn forward(p:&mut[i32])->(){put(&mut *p[1..2]);return;}fn main()->i32{let mut a=[10,20,30,40];forward(&mut a[1..4]);let x=a[2];let y=a[1];return x+y;}",
+                97,
+                3,
+            ),
+            (
+                "struct R{values:[i32;4]}fn put(p:&mut[i32])->(){p[0]=77;return;}fn projected(p:&mut R)->(){put(&mut *p.values[1..3]);return;}fn main()->i32{let mut r=R{values:[1,2,3,4]};projected(&mut r);let x=r.values[1];let y=r.values[2];return x+y;}",
+                80,
+                3,
+            ),
+        ] {
+            for project_syntax in [false, true] {
+                let fixture = PreparedFixture::new();
+                let source = if project_syntax {
+                    fixture.write("app/src/child.ox", "fn unused()->(){return;}");
+                    format!("mod child;{text}")
+                } else {
+                    text.to_owned()
+                };
+                fixture.write("app/src/main.ox", &source);
+                let entry = fixture.0.join("app/src/main.ox");
+                let project = ProjectSources::load_typed(
+                    entry.to_str().unwrap(),
+                    ProjectLimits::default(),
+                )
+                .unwrap();
+                assert_eq!(
+                    project.syntax_flavor(),
+                    if project_syntax { SyntaxFlavor::ProjectSyntax }
+                    else { SyntaxFlavor::OriginalSingleFile },
+                );
+                // Call the actual production selector used by file commands
+                // and manifest builds; do not duplicate its dispatch here.
+                let checked = check_loaded_project(&project).unwrap();
+                assert_eq!(checked.route(), oir::project::ProjectRoute::Owned);
+                assert_eq!(checked.function_count(), functions + usize::from(project_syntax));
+                assert_eq!(checked.run().unwrap(), oir::Scalar::I32(expected), "{source}");
+            }
+        }
+    }
+
     struct PreparedFixture(PathBuf);
     impl PreparedFixture {
         fn new() -> Self {

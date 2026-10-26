@@ -58,7 +58,9 @@ impl<'a, V: StoredValue> Cells<'a, V> {
                         })
                         .map(Some);
                 }
-                ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File) => self.length -= 1,
+                ValueTy::Owned(
+                    AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_),
+                ) => self.length -= 1,
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {
                         self.stack[position] = Some((value, relative, next + 1));

@@ -7,13 +7,14 @@ pub(in crate::frontend) enum NominalId {
     Enum(EnumId),
     ByteBuf,
     File,
+    Vector,
 }
 #[cfg(test)]
 impl NominalId {
     pub(super) fn legacy_record(self) -> RecordId {
         match self {
             Self::Record(record) => record,
-            Self::Enum(_) | Self::ByteBuf | Self::File => {
+            Self::Enum(_) | Self::ByteBuf | Self::File | Self::Vector => {
                 panic!("legacy index observation excludes enum projection")
             }
         }

@@ -390,6 +390,31 @@ impl<'s> SourceOwner<'s> {
         work.preflight(ty.span)?;
         match ty.kind {
             ast::TypeSyntaxKind::Unit => Ok(false),
+            ast::TypeSyntaxKind::GenericSliceReference { element, .. } => {
+                match element {
+                    ast::ItemPath::Unqualified(name) => {
+                        work.preflight(name)?;
+                        self.text(name)?;
+                    }
+                    ast::ItemPath::Absolute(id) => {
+                        work.preflight(ty.span)?;
+                        let path = self.qualified_path(QualifiedPathRef {
+                            file: ty.span.file,
+                            path: id,
+                        })?;
+                        if path.root() != ast::PathRoot::Crate {
+                            return Err(bad(ty.span));
+                        }
+                        for &segment in path.segments() {
+                            work.preflight(segment)?;
+                            self.text(segment)?;
+                        }
+                    }
+                }
+                // Routing inspects syntax only. A name never admits an owned
+                // slice element; scalar/Copy checks belong to type resolution.
+                Ok(true)
+            }
             ast::TypeSyntaxKind::Reference { .. }
             | ast::TypeSyntaxKind::Applied(_)
             | ast::TypeSyntaxKind::AppliedReference { .. }

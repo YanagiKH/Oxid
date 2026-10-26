@@ -462,14 +462,21 @@ impl VerifiedOwnedProgram {
     ) -> Option<hir::DefId> {
         let rank = self.program.builtins.experimental_function_rank(item)?;
         self.program
-            .functions
-            .len()
-            .checked_sub(self.program.builtins.extra_functions())?
+            .fixed_builtin_base()?
             .checked_add(rank)
             .map(hir::DefId)
     }
+    /// Only the exact concrete suffix survives both descriptor and ownership
+    /// proof. A matching ordinary body never acquires vector identity.
+    pub(super) fn vector_operation(
+        &self,
+        id: hir::DefId,
+    ) -> Option<crate::frontend::builtin_catalog::vector::Function> {
+        self.program.vector_operation_claim(id)
+    }
     pub(super) fn has_experimental_operations(&self) -> bool {
         self.program.builtins.experimental().functions() != 0
+            || !self.program.vector_functions.is_empty()
     }
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
         let rank = self
@@ -477,9 +484,7 @@ impl VerifiedOwnedProgram {
             .builtins
             .function_rank(BuiltinFunction::ReadStdin)?;
         self.program
-            .functions
-            .len()
-            .checked_sub(self.program.builtins.extra_functions())?
+            .fixed_builtin_base()?
             .checked_add(rank)
             .map(hir::DefId)
     }
@@ -498,9 +503,7 @@ impl VerifiedOwnedProgram {
             .builtins
             .function_rank(BuiltinFunction::WriteStdout)?;
         self.program
-            .functions
-            .len()
-            .checked_sub(self.program.builtins.extra_functions())?
+            .fixed_builtin_base()?
             .checked_add(rank)
             .map(hir::DefId)
     }
@@ -581,6 +584,9 @@ fn prepare(
         ceiling: usage.work,
     };
     for _ in 0..builtins::descriptor_visits(raw.builtins) {
+        meter.visit()?;
+    }
+    for _ in 0..builtins::vector_descriptor_visits(&raw.vector_functions)? {
         meter.visit()?;
     }
     Ok((usage, declarations, meter))
@@ -826,4 +832,14 @@ fn owned_u8_raw_proof_dispatch_carriers_are_separate_from_payload_limits() {
     println!("RFC0030 owned raw proof dispatch inline_bytes={} align={} raw_scratch_scope=requested_vector_payload raw_metadata_scope=requested_table_payload",
         std::mem::size_of::<ConversionProofDispatchCarriers>(), std::mem::align_of::<ConversionProofDispatchCarriers>());
     assert!(std::mem::size_of::<ConversionProofDispatchCarriers>() > 0);
+}
+
+#[test]
+fn vector_descriptor_preflight_visits_are_debited_by_the_actual_meter() {
+    let (sources, raw) = super::vector_raw_tests::one_element_program(hir::Ty::I64);
+    let (_, _, meter) = prepare(&raw, &sources, budget::Limits::DEFAULT).unwrap();
+    // Nine independently authored vector bodies: 106 descriptor visits and
+    // 36 prior-key comparisons. GrowStatus adds a header plus its four variants
+    // and the existing fixed-inventory header: six more visits.
+    assert_eq!(meter.visits, 148);
 }

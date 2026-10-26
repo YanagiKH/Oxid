@@ -5,6 +5,10 @@ actionlint remains the YAML and GitHub Actions syntax validator.
 """
 from pathlib import Path
 import re
+import shlex
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -63,11 +67,12 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_macos_native_compatibility.py', current)
+        self.assertIn('scripts/verify_typed_vector_compatibility.py', current)
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_float_roots.py', current)
         self.assertIn('scripts/verify_characters.py', current)
         self.assertIn('scripts/verify_float_vector.py', current)
+        self.assertIn('scripts/verify_typed_vectors.py', current)
         self.assertIn('scripts/verify_matrices.py', current)
         self.assertIn('scripts/verify_i64.py', current)
         self.assertIn('scripts/verify_integer_widths.py', current)
@@ -126,6 +131,69 @@ class CiTriggerPolicyTests(unittest.TestCase):
         for workflow in (self.ci, self.release, self.historical):
             self.assertIn('actions: read', block(workflow, 'permissions'))
         self.assertNotRegex(self.historical, r'(?m)^\s*GITHUB_SHA:|GITHUB_SHA=|GITHUB_EVENT_PATH=')
+
+
+    def exercise_cross_platform_exit_propagation(self, name):
+        ci = block(self.ci, 'cross-platform', 2)
+        steps = re.findall(
+            rf'^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)',
+            ci, re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(steps), 1, name)
+        self.assertRegex(steps[0], r'(?m)^        shell: bash$')
+        run = re.search(r'^        run: \|\n((?:          .*\n?)+)',
+                        steps[0], re.MULTILINE)
+        self.assertIsNotNone(run, name)
+        body = '\n'.join(line[10:] for line in run.group(1).splitlines()) + '\n'
+        lines = body.splitlines()
+        self.assertEqual(lines[0], 'set -euo pipefail')
+        commands = [shlex.split(line) for line in lines[1:]]
+        self.assertGreater(len(commands), 1)
+        self.assertTrue(all(command and command[0] in ('cargo', 'python')
+                            for command in commands))
+        bash = shutil.which('bash')
+        self.assertIsNotNone(bash, 'CI exit controls require Bash')
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            tools = directory / 'bin'
+            tools.mkdir()
+            trace = directory / 'commands.tsv'
+            stub = f'#!{bash}\n' + r'''
+set -u
+count=0
+while IFS= read -r previous; do count=$((count + 1)); done < "$CI_TRACE"
+printf '%s\t' "${0##*/}" "$@" >> "$CI_TRACE"
+printf '\n' >> "$CI_TRACE"
+if test "$((count + 1))" = "$CI_FAIL_AT"; then exit 47; fi
+exit 0
+'''
+            for command in ('cargo', 'python'):
+                executable = tools / command
+                executable.write_text(stub, encoding='utf-8')
+                executable.chmod(0o755)
+            script = directory / 'actual-ci-step.bash'
+            script.write_text(body, encoding='utf-8')
+            for failed in range(len(commands) + 1):
+                with self.subTest(step=name, failed_command=failed):
+                    trace.write_text('', encoding='utf-8')
+                    result = subprocess.run(
+                        [bash, '--noprofile', '--norc', str(script)],
+                        cwd=directory,
+                        env={'PATH': str(tools), 'CI_TRACE': str(trace),
+                             'CI_FAIL_AT': str(failed)},
+                        capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(result.returncode, 47 if failed else 0,
+                                     (result.stdout, result.stderr))
+                    observed = [line.split('\t')[:-1]
+                                for line in trace.read_text(encoding='utf-8').splitlines()]
+                    self.assertEqual(observed, commands[:failed] if failed else commands)
+
+    def test_cross_platform_compiler_step_propagates_every_failed_command(self):
+        self.exercise_cross_platform_exit_propagation('Build and test current compiler')
+
+    def test_cross_platform_benchmark_step_propagates_every_failed_command(self):
+        self.exercise_cross_platform_exit_propagation('Exercise current benchmark reporting')
 
 
 if __name__ == '__main__':

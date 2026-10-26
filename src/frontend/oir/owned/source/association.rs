@@ -192,7 +192,7 @@ fn function(
                     visitor.span(start.span)?;
                     visitor.span(end.span)?;
                 }
-                OwnedInstruction::Experimental { .. } => {
+                OwnedInstruction::Experimental { .. } | OwnedInstruction::Vector { .. } => {
                     if matches!(source, FunctionSource::Original(..)) {
                         return Err(bad());
                     }
@@ -490,6 +490,29 @@ fn check_impl(
     allow_builtins: bool,
     typed: Option<&super::typeck::TypedOwnedProgram<'_>>,
 ) -> Result<BindUsage, Box<Diagnostic>> {
+    let expected_vectors = index.vector_functions();
+    if raw.vector_functions.len() != expected_vectors.len()
+        || raw.vector_functions.capacity() != expected_vectors.len()
+    {
+        return Err(bad());
+    }
+    if !expected_vectors.is_empty() {
+        let typed = typed.ok_or_else(bad)?;
+        if !allow_builtins || !index.has_generic_instances() {
+            return Err(bad());
+        }
+        for (actual, expected) in raw.vector_functions.iter().zip(expected_vectors) {
+            typed
+                .work()
+                .debit(1, index.sources().eof(), "vector raw source key identity")?;
+            if actual != expected {
+                return Err(bad());
+            }
+        }
+        // A retained table is not its own source authority. Rebuild from the
+        // immutable authenticated templates before trusting its concrete keys.
+        index.validate_generic_source(typed.work())?;
+    }
     // Public association already requires Current. The shared helper retains
     // an independent exact-origin check for output claims; the older private
     // input candidate may never acquire output merely by changing raw shapes.
@@ -564,6 +587,18 @@ fn check_impl(
                 }
             }
         }
+        if !expected_vectors.is_empty() {
+            let typed = typed.ok_or_else(bad)?;
+            for (rank, key) in expected_vectors.iter().copied().enumerate() {
+                let (expected, anchor) =
+                    super::vector_source::function(index, typed.work(), rank, key)?;
+                let actual = ids.vector_function_at(rank).ok_or_else(bad)?;
+                if actual != expected || raw.functions.get(actual.0).ok_or_else(bad)?.span != anchor
+                {
+                    return Err(bad());
+                }
+            }
+        }
         let first_kind = if raw.builtins.contains_function(BuiltinFunction::ReadStdin) {
             BuiltinFunction::ReadStdin
         } else {
@@ -581,6 +616,9 @@ fn check_impl(
         return Err(bad());
     }
     let mut count = Visitor::count();
+    for _ in &raw.vector_functions {
+        count.declaration()?;
+    }
     for declaration in &raw.enums {
         enumeration(declaration, &mut count)?;
     }
@@ -602,6 +640,12 @@ fn check_impl(
         )?;
     }
     let mut visitor = Visitor::validate(sources);
+    if !raw.vector_functions.is_empty() {
+        visitor.dimension(raw.vector_functions.len(), expected_vectors.len())?;
+        for _ in &raw.vector_functions {
+            visitor.declaration()?;
+        }
+    }
     let mut seen = if count.has_conversions() {
         let owners = index.sources().count();
         let mut expressions = 0usize;
@@ -1322,6 +1366,31 @@ mod output_layout_feasibility {
         function_base: hir::DefId,
         inventory: Inventory,
     }
+    // Exact pre-vector compact inventory shape, including its enum niche.
+    // Preserve the old transport receipt separately from the current extension.
+    enum PreVectorInventory {
+        None,
+        ReadStatus,
+        ReadStdin,
+        WriteStatus,
+        WriteStdout,
+        ReadStatusWriteStatus,
+        ReadStatusWriteStdout,
+        ReadStdinWriteStatus,
+        ReadStdinWriteStdout,
+        Extended([u8; 4]),
+    }
+    struct PreVectorIds {
+        enumeration_base: EnumId,
+        function_base: hir::DefId,
+        inventory: PreVectorInventory,
+    }
+    struct VectorSuffixIds {
+        enumeration_base: EnumId,
+        function_base: hir::DefId,
+        inventory: BuiltinOrigins,
+        vector_count: usize,
+    }
     enum Family {
         Input,
         Output,
@@ -1380,7 +1449,9 @@ mod output_layout_feasibility {
     }
     family_carriers!(ExplicitFamilyCarriers, ExplicitIds);
     family_carriers!(SuffixFamilyCarriers, SuffixIds);
-    carriers!(ClosedTransportCarriers, builtins::BuiltinIds, BuiltinOrigins;
+    macro_rules! closed_transport {
+        ($name:ident, $ids:ty, $inventory:ty) => {
+            carriers!($name, $ids, $inventory;
         enumeration_kind: BuiltinEnum,
         function_kind: BuiltinFunction,
         enumeration_rank: Option<usize>,
@@ -1390,8 +1461,20 @@ mod output_layout_feasibility {
         enumeration_id_return: Option<EnumId>,
         function_id_return: Option<hir::DefId>,
         input_function: Option<hir::DefId>,
-        enumeration_ids_borrow: &'static builtins::BuiltinIds,
-        function_ids_borrow: &'static builtins::BuiltinIds,
+        enumeration_ids_borrow: &'static $ids,
+        function_ids_borrow: &'static $ids,
+            );
+        };
+    }
+    closed_transport!(
+        PreVectorClosedTransportCarriers,
+        PreVectorIds,
+        PreVectorInventory
+    );
+    closed_transport!(
+        ClosedTransportCarriers,
+        builtins::BuiltinIds,
+        BuiltinOrigins
     );
     carriers!(ClosedSourceCarriers, builtins::BuiltinIds, BuiltinOrigins;
         enumeration_kind: BuiltinEnum,
@@ -1449,7 +1532,8 @@ mod output_layout_feasibility {
 
     #[test]
     fn bounded_stdout_association_disconnected_layout_feasibility() {
-        same_layout::<SuffixIds, builtins::BuiltinIds>();
+        same_layout::<SuffixIds, PreVectorIds>();
+        same_layout::<VectorSuffixIds, builtins::BuiltinIds>();
         // Retain the closed predecessor as a distinct measured receipt; the
         // activated association adds its complete independent origin guard.
         assert_eq!(
@@ -1457,11 +1541,15 @@ mod output_layout_feasibility {
             size_of::<ClosedSourceCarriers>() + size_of::<OutputOriginGuardCarriers>()
         );
         #[cfg(target_pointer_width = "64")]
-        assert_eq!(size_of::<ClosedTransportCarriers>(), 568);
-        same_layout::<Result<SuffixIds, OwnedFailure>, Result<builtins::BuiltinIds, OwnedFailure>>(
-        );
+        assert_eq!(size_of::<PreVectorClosedTransportCarriers>(), 568);
+        same_layout::<Result<SuffixIds, OwnedFailure>, Result<PreVectorIds, OwnedFailure>>();
+        same_layout::<Result<SuffixIds, Box<Diagnostic>>, Result<PreVectorIds, Box<Diagnostic>>>();
         same_layout::<
-            Result<SuffixIds, Box<Diagnostic>>,
+            Result<VectorSuffixIds, OwnedFailure>,
+            Result<builtins::BuiltinIds, OwnedFailure>,
+        >();
+        same_layout::<
+            Result<VectorSuffixIds, Box<Diagnostic>>,
             Result<builtins::BuiltinIds, Box<Diagnostic>>,
         >();
         assert_eq!(
@@ -1503,6 +1591,7 @@ mod output_layout_feasibility {
             ExplicitFamilyCarriers,
             SuffixFamilyCarriers,
             ClosedTransportCarriers,
+            PreVectorClosedTransportCarriers,
             ClosedSourceCarriers,
             OutputOriginGuardCarriers,
         );
@@ -1510,6 +1599,8 @@ mod output_layout_feasibility {
         id_transports!(BaselineIds);
         id_transports!(ExplicitIds);
         id_transports!(SuffixIds);
+        id_transports!(PreVectorIds);
+        id_transports!(VectorSuffixIds);
         candidate::<ExplicitSubstitutionCarriers>("four_optional_ids_substitution_only");
         candidate::<SuffixSubstitutionCarriers>("suffix_bases_substitution_only");
         candidate::<ExplicitFamilyCarriers>("four_optional_ids_with_family_roles");
@@ -1814,6 +1905,7 @@ mod enum_tests {
         let span = ast.functions[0].name;
         let mut raw = RawOwnedProgram {
             builtins: BuiltinOrigins::None,
+            vector_functions: Vec::new(),
             enums: vec![RawEnumDecl {
                 id: EnumId(0),
                 span: declaration.name,

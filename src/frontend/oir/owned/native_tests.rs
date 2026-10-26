@@ -229,6 +229,7 @@ fn native_owned_entry_denial_precedes_plan_allocation() {
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -821,6 +822,7 @@ fn overflow_before_field(overflow: bool) -> (SourceMap, RawOwnedProgram) {
         s(11),
     )];
     let mut raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(&[hir::Ty::I32], s(0))],
@@ -1103,6 +1105,7 @@ fn scalar_call_chain(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1378,6 +1381,7 @@ fn looping_merge(reversed: bool) -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1568,6 +1572,7 @@ fn native_owned_extended_storage_every_budget_uses_real_llvm() {
         if name != "owner-loop" && name != "later-argument-loop" {
             let unguarded = verified::verify_owned(
                 RawOwnedProgram {
+                    vector_functions: Vec::new(),
                     builtins: BuiltinOrigins::None,
                     enums: raw.enums.clone(),
                     records: raw
@@ -1722,6 +1727,7 @@ fn expanded_depth_boundary(extra_field: bool) -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![big, small],
@@ -2078,6 +2084,7 @@ fn empty_adjacent_sentinels() -> (SourceMap, RawOwnedProgram, fixtures::Schedule
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![empty, mixed],
@@ -2223,6 +2230,7 @@ fn native_owned_actual_representation_caps_precede_text_allocation() {
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -2284,6 +2292,7 @@ fn native_owned_actual_representation_caps_precede_text_allocation() {
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record(&[hir::Ty::I32; 1024], s(0))],
@@ -2439,6 +2448,7 @@ fn wide_replacement_count_fixture(replacements: usize) -> (SourceMap, VerifiedOw
     ));
     let witness = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record(&[hir::Ty::I32; 64], s(0))],

@@ -352,6 +352,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![
@@ -532,6 +533,7 @@ pub(super) fn empty_composition() -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![

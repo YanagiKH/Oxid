@@ -1,4 +1,5 @@
 //! Raw provenance is diagnostic metadata, never ownership authority.
+use super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH;
 use super::*;
 
 pub(super) fn context() -> (SourceMap, Span) {
@@ -75,6 +76,7 @@ pub(super) fn function(id: usize, s: Span) -> RawOwnedFunction {
 }
 pub(super) fn raw(s: Span) -> RawOwnedProgram {
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![RawRecordDecl {
@@ -162,7 +164,8 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
         scratch: 0,
         metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
-            + std::mem::size_of::<Vec<MatchDecl>>()),
+            + std::mem::size_of::<Vec<MatchDecl>>())
+            + VECTOR_RAW_HEADER_GROWTH,
     };
     assert!(verify_with_limits(raw(s), &sources, zero).is_ok());
     let build = || {
@@ -179,6 +182,7 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
             metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
                 + std::mem::size_of::<usize>()
                 + std::mem::size_of::<Vec<MatchDecl>>())
+                + VECTOR_RAW_HEADER_GROWTH
                 + 2 * std::mem::size_of::<Option<DiagnosticOrigins>>(),
             ..OwnershipUsage::default()
         }
@@ -228,6 +232,7 @@ fn active_metadata_charges_all_embedded_fields_and_some_adds_four_checks() {
         (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
             + std::mem::size_of::<Vec<MatchDecl>>())
+            + VECTOR_RAW_HEADER_GROWTH
             + std::mem::size_of::<shape::OwnerSites>()
             + 4 * std::mem::size_of::<Option<DiagnosticOrigins>>()
     );
@@ -519,7 +524,7 @@ fn maximum_block_some_origins_retain_linear_scratch_and_exact_work() {
     assert_eq!(usage.work, 33_600_192);
     assert_eq!(
         usage.metadata_bytes,
-        16_800_248 + std::mem::size_of::<Vec<MatchDecl>>()
+        16_800_248 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
     );
     assert_eq!(usage.scratch_bytes, 9_900_000);
     let w = verify_owned(p, &sources).unwrap();

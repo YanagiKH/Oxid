@@ -172,6 +172,7 @@ fn byte_storage_raw_record_byte_fields_are_checked_even_unused_and_nested() {
                 });
             }
             let raw = RawOwnedProgram {
+                vector_functions: Vec::new(),
                 builtins: BuiltinOrigins::None,
                 enums: vec![],
                 records,

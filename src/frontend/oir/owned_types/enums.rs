@@ -132,6 +132,7 @@ enum PayloadSlot {
     Array(super::FixedArrayTy),
     ByteBuf,
     File,
+    Vector(hir::Ty),
     AlignedScalar(hir::Ty),
     AlignedRecord(u32),
     AlignedEnum(u32),
@@ -142,6 +143,7 @@ enum PayloadSlot {
     DoubleAlignedArray(super::FixedArrayTy),
     DoubleAlignedByteBuf,
     DoubleAlignedFile,
+    DoubleAlignedVector(hir::Ty),
 }
 impl PayloadSlot {
     fn check(ty: ValueTy, alignment: usize) -> Result<Self, DeclarationError> {
@@ -157,9 +159,13 @@ impl PayloadSlot {
             ValueTy::Owned(AggregateTy::FixedArray(array)) => Self::Array(array),
             ValueTy::Owned(AggregateTy::ByteBuf) => Self::ByteBuf,
             ValueTy::Owned(AggregateTy::File) => Self::File,
+            ValueTy::Owned(AggregateTy::Vector(element)) => {
+                super::check_vector_element(element)?;
+                Self::Vector(element)
+            }
         };
         match alignment {
-            4 if !matches!(payload, Self::ByteBuf | Self::File) => Ok(payload),
+            4 if !matches!(payload, Self::ByteBuf | Self::File | Self::Vector(_)) => Ok(payload),
             8 => Ok(match payload {
                 Self::Scalar(ty) => Self::AlignedScalar(ty),
                 Self::Record(id) => Self::AlignedRecord(id),
@@ -167,6 +173,7 @@ impl PayloadSlot {
                 Self::Array(array) => Self::AlignedArray(array),
                 Self::ByteBuf => Self::ByteBuf,
                 Self::File => Self::File,
+                Self::Vector(element) => Self::Vector(element),
                 _ => unreachable!("fresh compact payload"),
             }),
             16 => Ok(match payload {
@@ -176,6 +183,7 @@ impl PayloadSlot {
                 Self::Array(array) => Self::DoubleAlignedArray(array),
                 Self::ByteBuf => Self::DoubleAlignedByteBuf,
                 Self::File => Self::DoubleAlignedFile,
+                Self::Vector(element) => Self::DoubleAlignedVector(element),
                 _ => unreachable!("fresh compact payload"),
             }),
             _ => Err(DeclarationError::LayoutOverflow),
@@ -198,6 +206,9 @@ impl PayloadSlot {
             }
             Self::ByteBuf | Self::DoubleAlignedByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
             Self::File | Self::DoubleAlignedFile => ValueTy::Owned(AggregateTy::File),
+            Self::Vector(element) | Self::DoubleAlignedVector(element) => {
+                ValueTy::Owned(AggregateTy::Vector(element))
+            }
         }
     }
     fn offset(self) -> usize {
@@ -208,7 +219,8 @@ impl PayloadSlot {
             | Self::DoubleAlignedEnum(_)
             | Self::DoubleAlignedArray(_)
             | Self::DoubleAlignedByteBuf
-            | Self::DoubleAlignedFile => 16,
+            | Self::DoubleAlignedFile
+            | Self::DoubleAlignedVector(_) => 16,
             _ => 8,
         }
     }
@@ -769,6 +781,14 @@ fn owned_summaries(
                         width: 3,
                         depth: 0,
                     },
+                    Some(ValueTy::Owned(AggregateTy::Vector(element))) => {
+                        super::check_vector_element(element)?;
+                        ContainmentSummary {
+                            layout: Layout { size: 16, align: 8 },
+                            width: 3,
+                            depth: 0,
+                        }
+                    }
                 };
                 bytes = bytes.max(child.layout.size);
                 alignment = alignment.max(child.layout.align);

@@ -231,8 +231,8 @@ from a call, return or replacement context. Length spellings may have leading
 zeros but not signs, separators, names or expressions. Nested/reference/record
 elements, repeated-element syntax, temporary or grouped
 index bases, element borrowing/moving and array equality/printing remain
-unavailable. Call-only whole-array slice views are the bounded exception described
-below; owned unsized values, ranges and subslices remain unavailable.
+unavailable. Call-only scalar slices may borrow complete arrays or initialized
+ranges, as described below; owned unsized values remain unavailable.
 Existing source, ownership, runtime fuel and native admission limits
 are unchanged; native limits can reject a source-legal large program.
 
@@ -300,9 +300,9 @@ writes, array indexing, length and projected array/slice call borrows follow
 the existing whole-root ownership rules. Bind a field or indexed byte to a
 local before widening it. A direct scalar u8 enum payload remains excluded;
 byte arrays and records can be finite enum payloads. There are no element
-references, partial field moves, subslices, heap buffers, I/O signature changes
-or provider wire expansions. Existing
-stdin/stdout builtins continue to use i32 arrays/slices.
+references or partial field moves. Scalar slice ranges and growable collections
+are described below. The original stdin/stdout builtins continue to use i32
+arrays/slices; binary I/O accepts byte slices.
 
 Physical standalone byte array storage uses stride/alignment1 and max(1,N)
 bytes. Logical width remains max(1,N), preserving all expanded-cell and fuel
@@ -310,6 +310,26 @@ charges. Source/reference and native caps are unchanged; a legal N=1024 source
 constructor can exceed the narrower native per-function slot cap and be refused
 before tools/output. Native project builds support Linux and macOS on x86_64 and ARM64 with LLVM19.1.7 at
 O0 and O2.
+
+## Growable scalar vectors
+
+`alloc::vec::Vec<T>` owns a growable collection of one scalar `Copy` element type.
+The type is affine; moving a vector transfers its allocation, and destruction
+releases it. Records and finite enum payloads may contain vectors. `Vec<u8>` is
+a distinct type from `alloc::bytes::ByteBuf`.
+
+`new::<T>()` creates an empty vector without allocating. `len` and `capacity`
+inspect element counts; `try_reserve`, `try_push`, `try_extend` and `try_resize`
+return the canonical `GrowStatus` enumeration. Failure preserves the vector's
+values, length and capacity. `truncate` shortens without shrinking capacity;
+`take` transfers ownership and resets its source to an empty vector. Indices,
+lengths and capacity arguments are i32 element counts. Reads and writes require
+an initialized element and obey the existing whole-owner loan rules.
+
+Shared or exclusive scalar slices borrow matching arrays, vectors or existing
+slices, including call-only ranges. Elements cannot be owned aggregates or
+references. The vector API, supported scalar types and examples are documented
+in [Growable vectors](../docs/VECTORS.md).
 
 ## Growable byte buffers and partial binary I/O
 
@@ -462,8 +482,8 @@ A view exposes only the selected complete array, while its loan covers the
 entire root record. Different fields therefore still conflict for exclusive
 borrows; shared/shared loans may coexist. Parent permissions restore on return.
 Array views cannot escape, grant field ownership, borrow scalar fields,
-supply an exact fixed-array formal, or enable element references. Byte views
-also support the ranges described under [growable byte buffers](#growable-byte-buffers-and-partial-binary-io).
+supply an exact fixed-array formal, or enable element references. Scalar views
+also support call-only `start..end` ranges, including projected arrays.
 
 Runtime and native consumers preserve field offsets, actual lengths, argument
 staging, RHS/index/fuel/bounds/store order and neighboring fields. Retained view
@@ -474,10 +494,12 @@ other-platform or exact-head hosted CI claims do not transfer automatically.
 ## Call-only borrowed scalar slices
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` also
-accept shared `&[T]` and exclusive `&mut [T]` function parameters, where T is
-exactly bool, i32 or unit. Each view borrows one complete existing fixed array
-of length 0..1024. This lets one helper process different array lengths without
-allocating or owning a collection:
+accept shared `&[T]` and exclusive `&mut [T]` function parameters for all supported
+scalar element types. A generic element parameter requires `T: Copy`. Views can
+borrow fixed arrays of length0..1024, existing scalar slices and `Vec<T>`; byte
+slices can also borrow `ByteBuf`. A call may borrow the complete initialized
+contents or a `start..end` range. This lets one helper process different lengths
+without allocating or owning a collection:
 
 ```text
 fn sum(p: &[i32]) -> i32 {
@@ -503,8 +525,12 @@ does not implicitly match a shared formal. Element types and borrow modes must
 match, including for empty arrays. A fixed-array reference may explicitly
 reborrow as a slice, and a slice may reborrow as the same scalar slice type.
 A slice cannot supply a fixed-array formal, even when its runtime length matches.
-Bare reference forwarding, arbitrary dereferences, ranges, subslices, element
-borrows, stored/returned references and heap collections remain unavailable.
+Forward a subrange with `&*p[start..end]` or `&mut *p[start..end]`; direct owners
+use `&a[start..end]` or `&mut a[start..end]`. Bounds use i32 element indices and
+exclude the end. Element types must match exactly, including for an empty range.
+Negative, reversed or out-of-bounds ranges fail at runtime. Bare reference
+forwarding, arbitrary dereferences, element borrows and stored/returned references
+remain unavailable.
 
 Every loan still covers the whole backing owner. Shared views may coexist;
 exclusive loans conflict with overlapping fixed-array and slice loans alike.
@@ -889,8 +915,10 @@ Concrete specializations are shared for the same declaration and ordered type
 arguments. Name resolution stays in the definition's module and package.
 Reference parameters `&T` and `&mut T` infer a supported owned referent; references
 cannot be returned or stored as values. Other trait bounds remain unavailable.
-Function type arguments cannot be applied to enum variants, ordinary functions
-or builtin functions. Enum type arguments precede the variant name instead.
+Function type arguments cannot be applied to enum variants or functions without
+type parameters. Vector builtin operations accept their scalar element argument;
+`alloc::vec::new::<T>()` requires it explicitly. Enum type arguments precede the
+variant name instead.
 
 A project may create at most 1,024 generic function specializations, with at most
 64 newly created instances along an instantiation chain. Each nominal family
@@ -1008,11 +1036,13 @@ type_arguments := "::" nominal_arguments
 nominal_arguments := "<" value_type ("," value_type)* ","? ">"
 applied_type   := item_path nominal_arguments
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
-scalar_type    := "bool" | "i32" | "u8" | "(" ")"
-array_element_type := "bool" | "i32" | "u8" | "(" ")"
+scalar_type    := "bool" | "char" | "(" ")" | "f32" | "f64"
+               | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+               | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+array_element_type := scalar_type
 enum_payload_type := "bool" | "i32" | "(" ")" | item_path | applied_type | fixed_array_type
 fixed_array_type := "[" array_element_type ";" decimal "]"
-slice_type     := "[" array_element_type "]"
+slice_type     := "[" (scalar_type | item_path) "]"
 value_type     := scalar_type | item_path | applied_type | fixed_array_type
 referent_type  := item_path | applied_type | fixed_array_type | slice_type
 parameter_type := value_type | "&" referent_type | "&" "mut" referent_type

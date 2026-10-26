@@ -137,6 +137,7 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
         OwnedInstruction::PrepareBorrowRange { .. }
         | OwnedInstruction::Experimental { .. }
+        | OwnedInstruction::Vector { .. }
         | OwnedInstruction::ReadStdin { .. }
         | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")

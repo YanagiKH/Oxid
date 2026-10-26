@@ -359,7 +359,7 @@ fn enum_carrier_path_state_shifts_exact_scratch_admission_before_reservation() {
     let before = IndexPlan::calculate(
         plan.counts,
         size_of::<DeclarationIndex<'_>>(),
-        FIXED_SCRATCH - added,
+        CURRENT_BASE_SCRATCH - added,
         IndexLimits::default(),
         sources.sources().get(SourceFileId(0)).span(0, 0),
     )

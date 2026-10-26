@@ -234,6 +234,13 @@ pub(super) fn preflight(
     let mut bytes = size_of::<RawOwnedProgram>();
     bytes = add(
         bytes,
+        mul(
+            typed.index().vector_functions().len(),
+            size_of::<crate::frontend::builtin_catalog::vector::Function>(),
+        )?,
+    )?;
+    bytes = add(
+        bytes,
         mul(declarations.records, size_of::<RawRecordDecl>())?,
     )?;
     bytes = add(bytes, mul(declarations.fields, size_of::<RawFieldDecl>())?)?;
@@ -246,6 +253,11 @@ pub(super) fn preflight(
     raw_budget::account_enum_declarations(enums, raw_budget::Limits::DEFAULT, &mut counts)?;
     raw_budget::account_builtin_descriptors(
         typed.index().builtin_set(),
+        raw_budget::Limits::DEFAULT,
+        &mut counts,
+    )?;
+    raw_budget::account_vector_descriptors(
+        typed.index().vector_functions(),
         raw_budget::Limits::DEFAULT,
         &mut counts,
     )?;
@@ -292,6 +304,21 @@ pub(super) fn preflight(
                 "source raw payload",
             )?;
         }
+    }
+    for key in typed.index().vector_functions() {
+        let count = super::vector_lower::counts(*key);
+        raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+        bytes = cap(
+            add(bytes, function_bytes(count)?)?,
+            ceiling,
+            "source raw payload",
+        )?;
+    }
+    if !typed.index().vector_functions().is_empty() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::vector_lower::extra_bytes(),
+        )?);
     }
     if !typed.index().builtin_set().experimental().is_empty() {
         scratch = scratch.max(add(

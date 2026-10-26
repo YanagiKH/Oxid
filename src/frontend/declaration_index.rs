@@ -22,7 +22,8 @@ mod tests;
 use super::{
     ast,
     builtin_catalog::{
-        experimental, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet, DeclarationOrigin,
+        experimental, vector, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet,
+        DeclarationOrigin,
     },
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
@@ -273,6 +274,7 @@ struct Tables<'s> {
     alias_order: Vec<u32>,
     root_main: u32,
     candidate_source_origin: CandidateOrigin,
+    has_element_ranges: bool,
     builtins: BuiltinAdmission<'s>,
 }
 #[derive(Debug)]
@@ -322,10 +324,59 @@ const ADMISSION_OR_QUERY_SESSION: usize = {
         query
     }
 };
+// Preserve the pre-vector carrier bank and price complete current header growth
+// separately. These mirrors are accounting types, never constructor authority.
+#[allow(dead_code)]
+#[repr(C, align(8))]
+struct PreVectorBuiltinAdmission<'s> {
+    anchors: [u32; 9],
+    experimental: [u8; 4],
+    source: std::marker::PhantomData<&'s Span>,
+}
+#[allow(dead_code)]
+struct PreVectorTables<'s> {
+    sources: SourceOwner<'s>,
+    originals: Vec<OriginalRow>,
+    original_order: Vec<u32>,
+    functions: Vec<FunctionRow>,
+    records: Vec<RecordRow>,
+    fields: Vec<FieldRow>,
+    enums: Vec<EnumRow>,
+    variants: Vec<VariantRow>,
+    modules: Vec<ModuleRow>,
+    children: Vec<u32>,
+    imports: Vec<ImportRow>,
+    aliases: Vec<AliasCell>,
+    alias_order: Vec<u32>,
+    root_main: u32,
+    candidate_source_origin: CandidateOrigin,
+    builtins: PreVectorBuiltinAdmission<'s>,
+}
+const PRE_VECTOR_ADMISSION_OR_QUERY: usize = {
+    let admission = size_of::<PreVectorBuiltinAdmission<'static>>();
+    let query = size_of::<QuerySession<'static, 'static>>();
+    if admission > query {
+        admission
+    } else {
+        query
+    }
+};
+const VECTOR_INDEX_HEADER_GROWTH: usize = size_of::<Tables<'static>>()
+    - size_of::<PreVectorTables<'static>>()
+    + ADMISSION_OR_QUERY_SESSION
+    - PRE_VECTOR_ADMISSION_OR_QUERY;
+// New counted syntax controls have a separate exact typed row. The historical
+// 4096-byte bank is not enlarged or treated as spare room for these roles. The
+// source-authentication cursor is added only when the same paid walk reports a
+// source-backed slice; both additions remain subject to the unchanged IndexLimits.
+const SYNTAX_FEATURE_CONTROL_BYTES: usize = ast::SYNTAX_FEATURE_CONTROL_BYTES
+    + size_of::<usize>() // supplemental syntax_scratch subtotal
+    + size_of::<usize>() // combined fixed_scratch subtotal
+    + size_of::<[Option<usize>; 2]>(); // checked subtotal result transports
 const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<IndexPlan>()
     + size_of::<Counts>()
-    + size_of::<Tables<'static>>()
+    + size_of::<PreVectorTables<'static>>()
     + size_of::<[u32; 33]>() * 3
     + size_of::<ImportTxn>()
     + PREPARED_OR_RESERVATION
@@ -367,7 +418,7 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // The shared nominal helper borrows a handle rather than making a fifth copy.
     + size_of::<&ItemPathRef>()
     // Complete collector/query carriers share only their disjoint phase slot.
-    + ADMISSION_OR_QUERY_SESSION
+    + PRE_VECTOR_ADMISSION_OR_QUERY
     + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
     + size_of::<Result<Option<DeclarationHandle>, Box<Diagnostic>>>()
     + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
@@ -389,7 +440,14 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // transports in production index queries. No transport savings are credited.
     + size_of::<BuiltinEnum>()
     + size_of::<BuiltinFunction>();
+#[cfg(test)]
+const CURRENT_BASE_SCRATCH: usize = FIXED_SCRATCH
+    + VECTOR_INDEX_HEADER_GROWTH
+    + SYNTAX_FEATURE_CONTROL_BYTES
+    + super::builtin_catalog::builtin_set_control_bytes();
 const _: () = {
+    assert!(size_of::<Tables<'static>>() >= size_of::<PreVectorTables<'static>>());
+    assert!(ADMISSION_OR_QUERY_SESSION >= PRE_VECTOR_ADMISSION_OR_QUERY);
     assert!(FIXED_SCRATCH <= 4096);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
     assert!(ITEM_HANDLE_WORDS <= 128);
@@ -518,6 +576,17 @@ impl<'s> Tables<'s> {
                     }
             }
             BuiltinItem::Experimental(item) => self.experimental_rank(item)?,
+            BuiltinItem::Vector(item) if self.builtins.set().contains_vector(item) => {
+                let set = self.builtins.set();
+                set.extra_enums()
+                    + set.extra_functions()
+                    + usize::from(set.experimental().contains(experimental::Item::ByteBuf))
+                    + usize::from(set.experimental().contains(experimental::Item::File))
+                    + set
+                        .experimental()
+                        .vector_item_rank(item)
+                        .ok_or_else(|| bad(self.sources.eof()))?
+            }
             _ => return Err(bad(self.sources.eof())),
         };
         let target = self
@@ -579,6 +648,19 @@ impl<'s> Tables<'s> {
                 BuiltinFunction::WriteStdout,
             )));
         }
+        let set = self.builtins.set();
+        let vector_base = self.originals.len()
+            + set.extra_enums()
+            + set.extra_functions()
+            + usize::from(set.experimental().contains(experimental::Item::ByteBuf))
+            + usize::from(set.experimental().contains(experimental::Item::File));
+        if let Some(rank) = (handle.0 as usize).checked_sub(vector_base) {
+            let item = set
+                .experimental()
+                .vector_item_at(rank)
+                .ok_or_else(|| bad(self.sources.eof()))?;
+            return Ok(DeclarationProjection::Builtin(BuiltinItem::Vector(item)));
+        }
         for item in experimental::Item::ALL {
             if self.builtins.set().experimental().contains(item)
                 && handle == self.builtin_handle(BuiltinItem::Experimental(item))?
@@ -614,6 +696,9 @@ impl<'s> Tables<'s> {
                         .ok_or_else(|| bad(self.sources.eof()))
                 }
             }
+            DeclarationProjection::Builtin(BuiltinItem::Vector(vector::Item::Vec)) => {
+                Ok(NominalId::Vector)
+            }
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -648,6 +733,11 @@ impl<'s> Tables<'s> {
             DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => item
                 .function()
                 .and_then(|item| self.builtins.set().experimental_function_rank(item))
+                .map(|rank| DefId(self.functions.len() + rank))
+                .ok_or_else(|| bad(self.sources.eof())),
+            DeclarationProjection::Builtin(BuiltinItem::Vector(item)) => item
+                .operation()
+                .and_then(|operation| self.builtins.set().vector_template_rank(operation))
                 .map(|rank| DefId(self.functions.len() + rank))
                 .ok_or_else(|| bad(self.sources.eof())),
             _ => Err(bad(self.sources.eof())),
@@ -721,6 +811,9 @@ impl<'s> Tables<'s> {
         if nominal == NominalId::File {
             return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::File));
         }
+        if nominal == NominalId::Vector {
+            return self.builtin_handle(BuiltinItem::Vector(vector::Item::Vec));
+        }
         if nominal == NominalId::ByteBuf {
             return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::ByteBuf));
         }
@@ -735,7 +828,7 @@ impl<'s> Tables<'s> {
             }
         }
         let original = match nominal {
-            NominalId::ByteBuf | NominalId::File => None,
+            NominalId::ByteBuf | NominalId::File | NominalId::Vector => None,
             NominalId::Record(id) => self.records.get(id.0).map(|row| row.original),
             NominalId::Enum(id) => self.enums.get(id.0).map(|row| row.original),
         }
@@ -1306,7 +1399,8 @@ impl<'i, 's> QuerySession<'i, 's> {
             ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
             ast::TypeSyntaxKind::Reference { .. }
             | ast::TypeSyntaxKind::ArrayReference { .. }
-            | ast::TypeSyntaxKind::SliceReference { .. } => Err(diagnostic(
+            | ast::TypeSyntaxKind::SliceReference { .. }
+            | ast::TypeSyntaxKind::GenericSliceReference { .. } => Err(diagnostic(
                 if matches!(context, TypeContext::Scalar) {
                     "E0500"
                 } else {
@@ -1374,13 +1468,21 @@ impl<'i, 's> QuerySession<'i, 's> {
                     context,
                     NominalTypeFilter::Values,
                 )
-                .map(|nominal| {
-                    ValueTy::Owned(match nominal {
+                .and_then(|nominal| {
+                    Ok(ValueTy::Owned(match nominal {
                         NominalId::ByteBuf => AggregateTy::ByteBuf,
                         NominalId::File => AggregateTy::File,
+                        NominalId::Vector => {
+                            return Err(diagnostic(
+                                "E0300",
+                                "generics",
+                                "Vec requires exactly one scalar element type argument",
+                                ty.span,
+                            ))
+                        }
                         NominalId::Record(record) => AggregateTy::Record(record),
                         NominalId::Enum(enumeration) => AggregateTy::Enum(enumeration),
-                    })
+                    }))
                 })
             }
         }
@@ -1414,6 +1516,37 @@ impl<'i, 's> QuerySession<'i, 's> {
         ty: ast::TypeSyntax,
     ) -> Result<ParameterTy, Box<Diagnostic>> {
         let (mutable, referent) = match ty.kind {
+            ast::TypeSyntaxKind::GenericSliceReference { mutable, element } => {
+                let span = self.tables.sources.path_span(ItemPathRef {
+                    file: ty.span.file,
+                    path: element,
+                })?;
+                let element = self.value_type(
+                    requester,
+                    ast::TypeSyntax {
+                        span,
+                        kind: ast::TypeSyntaxKind::Name(element),
+                    },
+                    TypeContext::Value,
+                )?;
+                let ValueTy::Scalar(element) = element else {
+                    return Err(diagnostic(
+                        "E0300",
+                        "type",
+                        "slice elements must be scalar Copy types",
+                        ty.span,
+                    ));
+                };
+                if !vector::scalar_admitted(element) {
+                    return Err(diagnostic(
+                        "E0300",
+                        "type",
+                        "slice elements must be scalar Copy types",
+                        ty.span,
+                    ));
+                }
+                (mutable, BorrowedTy::ScalarSlice(element))
+            }
             ast::TypeSyntaxKind::Reference { mutable, referent } => {
                 let nominal = self.lookup_nominal_type(
                     requester,
@@ -1428,6 +1561,14 @@ impl<'i, 's> QuerySession<'i, 's> {
                     NominalId::Record(record) => AggregateTy::Record(record),
                     NominalId::ByteBuf => AggregateTy::ByteBuf,
                     NominalId::File => AggregateTy::File,
+                    NominalId::Vector => {
+                        return Err(diagnostic(
+                            "E0300",
+                            "generics",
+                            "Vec requires exactly one scalar element type argument",
+                            ty.span,
+                        ))
+                    }
                     NominalId::Enum(_) => return Err(bad(ty.span)),
                 };
                 (mutable, BorrowedTy::Exact(aggregate))
@@ -1477,7 +1618,7 @@ impl<'i, 's> QuerySession<'i, 's> {
     ) -> Result<RecordId, Box<Diagnostic>> {
         match self.lookup_nominal_type(requester, &path, context, NominalTypeFilter::Records)? {
             NominalId::Record(record) => Ok(record),
-            NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => {
+            NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File | NominalId::Vector => {
                 Err(bad(self.tables.sources.eof()))
             }
         }
@@ -1517,6 +1658,13 @@ impl<'i, 's> QuerySession<'i, 's> {
                     filter == NominalTypeFilter::Values
                 }
                 DeclarationProjection::Builtin(BuiltinItem::Function(_)) => false,
+                DeclarationProjection::Builtin(BuiltinItem::Vector(item)) => {
+                    item == vector::Item::Vec
+                        && matches!(
+                            filter,
+                            NominalTypeFilter::Values | NominalTypeFilter::References
+                        )
+                }
                 DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => {
                     item.function().is_none()
                         && (filter == NominalTypeFilter::Values
@@ -1538,13 +1686,14 @@ impl<'i, 's> QuerySession<'i, 's> {
                     },
                     origin: at,
                     kind: match nominal {
-                        NominalId::ByteBuf | NominalId::File => "resource",
+                        NominalId::ByteBuf | NominalId::File | NominalId::Vector => "resource",
                         NominalId::Record(_) => "record",
                         NominalId::Enum(_) => "enum",
                     },
                     id: match nominal {
                         NominalId::ByteBuf => 0,
                         NominalId::File => 1,
+                        NominalId::Vector => 2,
                         NominalId::Record(id) => id.0,
                         NominalId::Enum(id) => id.0,
                     },
@@ -1683,9 +1832,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                 }
                 match self.tables.nominal_handle(original)? {
                     NominalId::Enum(enumeration) => enumeration,
-                    NominalId::Record(_) | NominalId::ByteBuf | NominalId::File => {
-                        return Err(bad(prefix))
-                    }
+                    NominalId::Record(_)
+                    | NominalId::ByteBuf
+                    | NominalId::File
+                    | NominalId::Vector => return Err(bad(prefix)),
                 }
             }
             ast::PathRoot::Crate => match self
@@ -1695,9 +1845,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                 AbsolutePrefix::Enumeration(original) => {
                     match self.tables.nominal_original(original)? {
                         NominalId::Enum(enumeration) => enumeration,
-                        NominalId::Record(_) | NominalId::ByteBuf | NominalId::File => {
-                            return Err(bad(member))
-                        }
+                        NominalId::Record(_)
+                        | NominalId::ByteBuf
+                        | NominalId::File
+                        | NominalId::Vector => return Err(bad(member)),
                     }
                 }
                 AbsolutePrefix::Module(owner) => {
@@ -2016,7 +2167,13 @@ impl<'i, 's> QuerySession<'i, 's> {
         let handle = self.tables.original_for_nominal(nominal, at)?;
         let id = match self.tables.project_handle(handle)? {
             DeclarationProjection::Builtin(item) => {
-                let prefix = if item.path()[0] == "alloc" { 14 } else { 9 };
+                let prefix = if matches!(item, BuiltinItem::Vector(_)) {
+                    12
+                } else if item.path()[0] == "alloc" {
+                    14
+                } else {
+                    9
+                };
                 self.work.debit(
                     (prefix + item.name().len()) as u64,
                     at,
@@ -2031,6 +2188,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                         NominalId::Enum(id) => id.0,
                         NominalId::ByteBuf => 0,
                         NominalId::File => 1,
+                        NominalId::Vector => 2,
                         _ => unreachable!("checked builtin nominal"),
                     },
                     total: prefix + item.name().len(),
@@ -2094,6 +2252,7 @@ impl<'i, 's> QuerySession<'i, 's> {
             ordinal: match nominal {
                 NominalId::ByteBuf => 0,
                 NominalId::File => 1,
+                NominalId::Vector => 2,
                 NominalId::Record(id) => id.0,
                 NominalId::Enum(id) => id.0,
             },
@@ -2123,7 +2282,9 @@ impl fmt::Display for PreparedTypeName<'_> {
             return write!(
                 f,
                 "{}::{}",
-                if experimental::Item::ALL
+                if self.terminal == "Vec" {
+                    "alloc::vec"
+                } else if experimental::Item::ALL
                     .into_iter()
                     .any(|item| item.name() == self.terminal && item.path()[0] == "alloc")
                 {

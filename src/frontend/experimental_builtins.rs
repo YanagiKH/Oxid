@@ -364,26 +364,100 @@ impl Signature {
 /// each actual iterator are included in compiler_carrier_bytes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(transparent)]
-pub(in crate::frontend) struct Inventory([u8; 4]);
-impl Inventory {
-    fn bits(self) -> u32 {
-        u32::from_le_bytes(self.0)
+pub(in crate::frontend) struct Inventory([u8; 8]);
+struct VectorItemCursor {
+    mask: u16,
+    wanted: usize,
+    offset: usize,
+}
+impl VectorItemCursor {
+    fn split(&mut self, width: usize) {
+        let lower = self.mask & ((1u16 << width) - 1);
+        let count = lower.count_ones() as usize;
+        if self.wanted >= count {
+            self.wanted -= count;
+            self.mask >>= width;
+            self.offset += width;
+        } else {
+            self.mask = lower;
+        }
     }
-    // Nine legacy states need four bits; all 27 extension identities fit in
-    // the remaining 28. Only dependency-complete inventories reach this path.
-    pub(super) fn pack(self, legacy: u8) -> [u8; 4] {
+}
+impl Inventory {
+    fn bits(self) -> u64 {
+        u64::from_le_bytes(self.0)
+    }
+    // Four legacy bits and the two closed item catalogs fit in one u64.
+    // Only dependency-complete inventories reach this path.
+    pub(super) fn pack(self, legacy: u8) -> [u8; 8] {
         const {
-            assert!(Item::ALL.len() <= 28);
+            assert!(Item::ALL.len() + super::vector::Item::ALL.len() <= 60);
         }
         debug_assert!(legacy < 9);
-        ((self.bits() << 4) | u32::from(legacy)).to_le_bytes()
+        ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
     }
-    pub(super) fn unpack(packed: [u8; 4]) -> (Self, u8) {
-        let bits = u32::from_le_bytes(packed);
+    pub(super) fn unpack(packed: [u8; 8]) -> (Self, u8) {
+        let bits = u64::from_le_bytes(packed);
         (Self((bits >> 4).to_le_bytes()), (bits & 15) as u8)
     }
     pub fn contains(self, item: Item) -> bool {
         self.bits() & (1 << item as u8) != 0
+    }
+    pub fn contains_vector(self, item: super::vector::Item) -> bool {
+        let bit = Item::ALL.len() + item as usize;
+        self.bits() & (1u64 << bit) != 0
+    }
+    pub fn admit_vector(self, item: super::vector::Item) -> Self {
+        let mut inventory = self;
+        if item
+            .operation()
+            .is_some_and(|operation| operation.requires_grow_status())
+        {
+            inventory = inventory.admit(Item::GrowStatus);
+        }
+        let bit = Item::ALL.len() + item as usize;
+        let vector = Item::ALL.len() + super::vector::Item::Vec as usize;
+        Self((inventory.bits() | (1u64 << bit) | (1u64 << vector)).to_le_bytes())
+    }
+    /// Import templates do not create executable functions. Concrete vector
+    /// keys are retained and charged by the authenticated generic plan.
+    pub fn vector_templates(self) -> usize {
+        let start = Item::ALL.len() + super::vector::Item::New as usize;
+        ((self.bits() >> start) & 0x1ff).count_ones() as usize
+    }
+    pub fn vector_template_rank(self, operation: super::vector::Operation) -> Option<usize> {
+        let start = Item::ALL.len() + super::vector::Item::New as usize;
+        let bit = Item::ALL.len() + operation.item() as usize;
+        self.contains_vector(operation.item()).then(|| {
+            let preceding = ((1u64 << bit) - 1) & !((1u64 << start) - 1);
+            (self.bits() & preceding).count_ones() as usize
+        })
+    }
+    pub fn vector_item_rank(self, item: super::vector::Item) -> Option<usize> {
+        let start = Item::ALL.len();
+        let bit = start + item as usize;
+        self.contains_vector(item).then(|| {
+            let preceding = ((1u64 << bit) - 1) & !((1u64 << start) - 1);
+            (self.bits() & preceding).count_ones() as usize
+        })
+    }
+    /// Select an imported item with four fixed-width bit partitions. This
+    /// inspects one catalog row, without scanning the other imported rows.
+    pub fn vector_item_at(self, rank: usize) -> Option<super::vector::Item> {
+        let mask = ((self.bits() >> Item::ALL.len()) & 0x3ff) as u16;
+        if rank >= mask.count_ones() as usize {
+            return None;
+        }
+        let mut cursor = VectorItemCursor {
+            mask,
+            wanted: rank,
+            offset: 0,
+        };
+        cursor.split(8);
+        cursor.split(4);
+        cursor.split(2);
+        cursor.split(1);
+        super::vector::Item::ALL.get(cursor.offset).copied()
     }
     pub fn admit(self, item: Item) -> Self {
         let mut bits = self.bits() | (1 << item as u8);
@@ -444,6 +518,24 @@ impl Inventory {
 /// across collection, typing, descriptor validation, and association.
 #[allow(dead_code)]
 struct CompilerCarriers {
+    vector_cursor: VectorItemCursor,
+    vector_cursor_receiver: &'static mut VectorItemCursor,
+    vector_split_width: usize,
+    vector_lower_bits: u16,
+    vector_count: usize,
+    vector_mask: u64,
+    vector_preceding_mask: u64,
+    vector_rank_return: Option<usize>,
+    vector_selected: Option<super::vector::Item>,
+    vector_caller_selected: Option<super::vector::Item>,
+    template_operations: std::array::IntoIter<super::vector::Operation, 9>,
+    template_next_operation: Option<super::vector::Operation>,
+    template_selected: Option<super::vector::Operation>,
+    template_selector_return:
+        Result<Option<super::vector::Operation>, Box<crate::frontend::diagnostic::Diagnostic>>,
+    template_caller_return:
+        Result<Option<super::vector::Operation>, Box<crate::frontend::diagnostic::Diagnostic>>,
+    template_caller_selected: Option<super::vector::Operation>,
     signatures: [Signature; 4],
     signature_results: [Result<Signature, Box<crate::frontend::diagnostic::Diagnostic>>; 4],
     item_iterations: [std::array::IntoIter<Item, 27>; 4],
@@ -464,21 +556,21 @@ struct CompilerCarriers {
 #[allow(dead_code)]
 struct PackedInventoryCarriers {
     inventory: Inventory,
-    encoded: [u8; 4],
+    encoded: [u8; 8],
     returned: (Inventory, u8),
-    words: [u32; 3],
+    words: [u64; 3],
     legacy: u8,
 }
 /// Independent complete conversion roles for bits(), admit(), and union().
-/// Iterator growth cannot pay for these new u32 and four-byte transports.
+/// Iterator growth does not account for the independent u64 conversions.
 #[allow(dead_code)]
 struct BitConversionCarriers {
-    operands: [u32; 2],
-    mask: u32,
-    combined: u32,
-    returned_bits: u32,
-    decoded: [u8; 4],
-    encoded: [u8; 4],
+    operands: [u64; 2],
+    mask: u64,
+    combined: u64,
+    returned_bits: u64,
+    decoded: [u8; 8],
+    encoded: [u8; 8],
     returned_inventory: Inventory,
 }
 pub(in crate::frontend) const fn compiler_carrier_bytes() -> usize {
@@ -488,6 +580,78 @@ pub(in crate::frontend) const fn compiler_carrier_bytes() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn vector_catalog_selection_and_ranks_cover_all_operation_subsets() {
+        for mask in 0usize..512 {
+            let mut inventory = Inventory::default();
+            for (bit, operation) in super::super::vector::Operation::ALL.into_iter().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    inventory = inventory.admit_vector(operation.item());
+                }
+            }
+            let expected: Vec<_> = super::super::vector::Item::ALL
+                .into_iter()
+                .filter(|item| inventory.contains_vector(*item))
+                .collect();
+            assert_eq!(inventory.vector_templates(), mask.count_ones() as usize);
+            for (rank, item) in expected.iter().copied().enumerate() {
+                assert_eq!(inventory.vector_item_rank(item), Some(rank));
+                assert_eq!(inventory.vector_item_at(rank), Some(item));
+            }
+            assert_eq!(inventory.vector_item_at(expected.len()), None);
+            assert_eq!(inventory.vector_item_at(usize::MAX), None);
+            let operations: Vec<_> = super::super::vector::Operation::ALL
+                .into_iter()
+                .filter(|operation| inventory.contains_vector(operation.item()))
+                .collect();
+            for operation in super::super::vector::Operation::ALL {
+                assert_eq!(
+                    inventory.vector_template_rank(operation),
+                    operations
+                        .iter()
+                        .position(|candidate| *candidate == operation)
+                );
+            }
+        }
+    }
+    #[test]
+    fn vector_templates_do_not_create_concrete_functions_or_change_status_identity() {
+        use super::super::vector::{Item as VectorItem, Operation};
+        let empty = Inventory::default();
+        let new = empty.admit_vector(VectorItem::New);
+        assert!(new.contains_vector(VectorItem::Vec));
+        assert!(new.contains_vector(VectorItem::New));
+        assert!(!new.contains(Item::ByteBuf));
+        assert_eq!(
+            (new.enums(), new.functions(), new.vector_templates()),
+            (0, 0, 1)
+        );
+        let push = empty.admit_vector(VectorItem::TryPush);
+        assert!(push.contains(Item::GrowStatus));
+        assert_eq!(push.enum_rank(Enumeration::Grow), Some(0));
+        assert_eq!(
+            (push.enums(), push.functions(), push.vector_templates()),
+            (1, 0, 1)
+        );
+        let both = new.union(push);
+        assert_eq!(both.vector_template_rank(Operation::New), Some(0));
+        assert_eq!(both.vector_template_rank(Operation::TryPush), Some(1));
+        assert_eq!(both.vector_template_rank(Operation::TryResize), None);
+        for legacy in 0..9 {
+            assert_eq!(Inventory::unpack(both.pack(legacy)), (both, legacy));
+        }
+        let old = empty.admit(Item::New).admit(Item::WriteSome);
+        let union = old.union(both);
+        assert_eq!(union.functions(), 2);
+        assert!(union.contains(Item::New));
+        assert!(union.contains(Item::WriteSome));
+        assert!(union.contains_vector(VectorItem::New));
+        assert!(union.contains_vector(VectorItem::TryPush));
+        assert!(!union.contains_vector(VectorItem::Truncate));
+        for legacy in 0..9 {
+            assert_eq!(Inventory::unpack(union.pack(legacy)), (union, legacy));
+        }
+    }
     #[test]
     fn experimental_catalog_dependencies_and_signatures() {
         for item in Item::ALL {
@@ -516,7 +680,7 @@ mod tests {
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }
-        assert_eq!(std::mem::size_of::<Inventory>(), 4);
+        assert_eq!(std::mem::size_of::<Inventory>(), 8);
         assert_eq!(std::mem::align_of::<Inventory>(), 1);
     }
 }

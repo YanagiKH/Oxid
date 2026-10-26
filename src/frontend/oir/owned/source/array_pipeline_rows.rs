@@ -74,7 +74,10 @@ impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
-            AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File => {
+            AggregateTy::Enum(_)
+            | AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_) => {
                 unreachable!("aggregate source gate")
             }
             AggregateTy::FixedArray(array) => write!(
@@ -1042,6 +1045,7 @@ impl fmt::Display for Instruction<'_> {
             I::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             I::PrepareBorrowRange { .. }
             | I::Experimental { .. }
+            | I::Vector { .. }
             | I::ReadStdin { .. }
             | I::WriteStdout { .. } => {
                 unreachable!("builtin effect source gate")

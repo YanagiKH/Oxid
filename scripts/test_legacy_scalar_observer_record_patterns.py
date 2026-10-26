@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
+import legacy_scalar_observer_vectors as successor
 import legacy_scalar_observer_record_patterns as adapter
 import legacy_scalar_observer_local_references as current
 
@@ -58,10 +59,13 @@ class RecordPatternObserverAdapterTests(unittest.TestCase):
         name = "declaration_index/generics/nominal.rs"
         for kind, builder in (("parser", parser), ("static", static)):
             self.assertEqual(builder.SOURCE_FILES.count(name), 1)
-            self.assertEqual(builder.SCHEMA, current.SCHEMA)
+            self.assertEqual(successor.PARENT_SCHEMA, current.SCHEMA)
+            self.assertEqual(builder.SCHEMA, successor.SCHEMA)
             for filename, _ in builder.WRAPPER_FILES:
                 original = self.original(kind, filename)
-                self.assertEqual(builder.adapt_wrapper(filename, original),
+                result = builder.adapt_wrapper(filename, original)
+                self.assertEqual(result, successor.adapt_wrapper(kind, filename, original))
+                self.assertEqual(successor.reverse_wrapper(kind, filename, result),
                                  current.adapt_wrapper(kind, filename, original))
 
 

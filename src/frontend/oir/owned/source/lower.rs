@@ -2920,9 +2920,40 @@ pub(super) fn lower_with_limits(
     if typed.index().builtin_set() != BuiltinOrigins::None {
         super::builtin_lower::check_capacity(&functions, typed.index().function_count())?;
     }
+    let keys = typed.index().vector_functions();
+    let mut vector_functions = if keys.is_empty() {
+        Vec::new()
+    } else {
+        let values = budget::reserve(keys.len())?;
+        super::builtin_lower::check_capacity(&values, keys.len())?;
+        values
+    };
+    for key in keys {
+        typed
+            .work()
+            .debit(
+                1,
+                typed.index().sources().eof(),
+                "vector raw key claim copy",
+            )
+            .map_err(super::vector_source::lower_error)?;
+        budget::append(
+            &mut vector_functions,
+            *key,
+            keys.len(),
+            typed.index().sources().eof(),
+        )?;
+    }
     let mut bytes = budget::add(
         size_of::<RawOwnedProgram>(),
         budget::mul(records.len(), size_of::<RawRecordDecl>())?,
+    )?;
+    bytes = budget::add(
+        bytes,
+        budget::mul(
+            vector_functions.len(),
+            size_of::<crate::frontend::builtin_catalog::vector::Function>(),
+        )?,
     )?;
     bytes = budget::add(bytes, budget::mul(enums.len(), size_of::<RawEnumDecl>())?)?;
     for enumeration in &enums {
@@ -3046,6 +3077,24 @@ pub(super) fn lower_with_limits(
             )?;
         }
     }
+    for (rank, key) in keys.iter().copied().enumerate() {
+        // The supplied canonical producer queries ID once directly and once
+        // through vector_signature. Both actual concrete-key prefixes are paid.
+        super::vector_source::lookup_work(typed.work(), rank, 2, typed.index().sources().eof())
+            .map_err(super::vector_source::lower_error)?;
+        let function = super::vector_lower::function(typed.index(), key)?;
+        require(function.id.0 == functions.len(), function.span)?;
+        bytes = budget::add(
+            bytes,
+            budget::function_bytes(super::vector_lower::counts(key))?,
+        )?;
+        budget::append(
+            &mut functions,
+            function,
+            typed.index().function_count(),
+            typed.index().sources().eof(),
+        )?;
+    }
     if bytes != expected.raw_bytes {
         let mut error = OwnedFailure::resource("source count mismatch");
         error.kind = OwnedFailureKind::Malformed(Malformed::CanonicalSite);
@@ -3053,6 +3102,7 @@ pub(super) fn lower_with_limits(
     }
     Ok(RawOwnedProgram {
         builtins: typed.index().builtin_set(),
+        vector_functions,
         enums,
         records,
         functions,
@@ -3139,6 +3189,16 @@ pub(super) const fn fixed_carrier_bytes() -> [usize; 5] {
 /// Nested raw payload is separately priced by source::budget::function_bytes.
 #[allow(dead_code)]
 struct InvocationControls {
+    vector_keys: &'static [crate::frontend::builtin_catalog::vector::Function],
+    vector_claim: Vec<crate::frontend::builtin_catalog::vector::Function>,
+    vector_claim_reservation: (
+        Vec<crate::frontend::builtin_catalog::vector::Function>,
+        Result<Vec<crate::frontend::builtin_catalog::vector::Function>>,
+    ),
+    vector_key_iteration:
+        std::slice::Iter<'static, crate::frontend::builtin_catalog::vector::Function>,
+    vector_key_next: Option<&'static crate::frontend::builtin_catalog::vector::Function>,
+    selected_vector_key: crate::frontend::builtin_catalog::vector::Function,
     // Preflight and direct emission each perform the provenance/admission
     // predicate before the first raw reservation. Keep both complete roles.
     admission_guards: [super::resolve::PaidSourceAdmissionCarriers; 2],

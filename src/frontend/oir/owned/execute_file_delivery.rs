@@ -257,7 +257,8 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 // Activation paths pay the same public work model.
                 let length = match &region {
                     ByteRegion::Activation { bytes, .. } => bytes.len(),
-                    ByteRegion::Buffer { start, end, .. } => (*end - *start) as usize,
+                    ByteRegion::Buffer { start, end, .. }
+                    | ByteRegion::Vector { start, end, .. } => (*end - *start) as usize,
                 };
                 if length < 4096 {
                     fuel = fuel.checked_sub(length).ok_or(RunFailure::Fuel(span))?;
@@ -273,6 +274,23 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                         let bytes = self
                             .heap
                             .range(&value, start, end)
+                            .map_err(|failure| heap_failure(failure, span))?;
+                        if bytes.len() >= copied.len() {
+                            Ok(byte_buffer::OpenValue::Error(36))
+                        } else {
+                            let length = bytes.len();
+                            copied[..length].copy_from_slice(bytes);
+                            self.heap.file_open(
+                                &copied[..length],
+                                operation == Function::Create,
+                                &mut fuel,
+                            )
+                        }
+                    }
+                    ByteRegion::Vector { value, start, end } => {
+                        let bytes = self
+                            .heap
+                            .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
                             .map_err(|failure| heap_failure(failure, span))?;
                         if bytes.len() >= copied.len() {
                             Ok(byte_buffer::OpenValue::Error(36))
@@ -313,22 +331,51 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     if reading { Access::Write } else { Access::Read },
                     span,
                 )?;
-                let bytes = match region {
-                    ByteRegion::Activation { frame, bytes } => {
-                        &mut self.frames[frame].payload[bytes]
+                let (empty, result) = match region {
+                    ByteRegion::Vector { value, start, end } => {
+                        if reading {
+                            // SAFETY: the U8 class/initialized extent and the
+                            // exclusive language loan were validated above.
+                            // Every byte returned by read is a valid u8.
+                            let bytes = unsafe {
+                                self.heap.vector_range_mut(
+                                    &value,
+                                    byte_buffer::VectorElement::U8,
+                                    start,
+                                    end,
+                                )
+                            }
+                            .map_err(|failure| heap_failure(failure, span))?;
+                            (bytes.is_empty(), access.read(bytes, &mut fuel))
+                        } else {
+                            let bytes = self
+                                .heap
+                                .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
+                                .map_err(|failure| heap_failure(failure, span))?;
+                            (bytes.is_empty(), access.write(bytes, &mut fuel))
+                        }
                     }
-                    ByteRegion::Buffer { value, start, end } => self
-                        .heap
-                        .range_mut(&value, start, end)
-                        .map_err(|failure| heap_failure(failure, span))?,
+                    region => {
+                        let bytes = match region {
+                            ByteRegion::Activation { frame, bytes } => {
+                                &mut self.frames[frame].payload[bytes]
+                            }
+                            ByteRegion::Buffer { value, start, end } => self
+                                .heap
+                                .range_mut(&value, start, end)
+                                .map_err(|failure| heap_failure(failure, span))?,
+                            ByteRegion::Vector { .. } => unreachable!("handled vector byte region"),
+                        };
+                        let empty = bytes.is_empty();
+                        let result = if reading {
+                            access.read(bytes, &mut fuel)
+                        } else {
+                            access.write(bytes, &mut fuel)
+                        };
+                        (empty, result)
+                    }
                 };
-                let empty = bytes.is_empty();
-                let result = if reading {
-                    access.read(bytes, &mut fuel)
-                } else {
-                    access.write(bytes, &mut fuel)
-                }
-                .map_err(|failure| heap_failure(failure, span))?;
+                let result = result.map_err(|failure| heap_failure(failure, span))?;
                 match result {
                     Ok(0) if reading && !empty => Value::status(1, None, 0),
                     Ok(count) => Value::status(0, Some(count as i32), 4),

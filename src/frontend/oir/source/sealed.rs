@@ -38,22 +38,18 @@ pub(in crate::frontend) fn check_source<'s>(
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
     let owner =
         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
-    let (body, entry) = if !ast.enums.is_empty() || ast.has_range_for() {
-        let (program, entry) = owned::source::check_enum_source(owner)?;
-        (CheckedBody::Owned(program), entry)
-    } else if ast.uses_owned_syntax(source)
+    let (body, entry) = if !ast.enums.is_empty()
+        || ast.has_range_for()
+        || ast.uses_owned_syntax(source)
         || ast.uses_byte_scalars(source)
         || ast.uses_bitwise_syntax()
         || ast.uses_float_syntax(source)
         || ast.uses_character_syntax(source)
     {
-        let resolved = owned::source::resolve::resolve_sources(owner)?;
-        let typed = owned::source::typeck::check(resolved)?;
-        let entry = typed.entry();
-        (
-            CheckedBody::Owned(owned::source::check_typed(&typed)?),
-            entry,
-        )
+        // The freshly frozen index selects paid typing for every owned source
+        // feature. AST routing chooses only the scalar/owned producer family.
+        let (program, entry) = owned::source::check_enum_source(owner)?;
+        (CheckedBody::Owned(program), entry)
     } else {
         // Preserve the original scalar schedule and diagnostic adapters exactly.
         let resolved = hir::resolve(source, ast)?;
@@ -580,7 +576,16 @@ fn bounded_enum_sealed_source_carrier_measurements() {
     // enclosing wrappers neither duplicate it nor introduce a heap allocation.
     // Closed builtin origins add one measured padded header word. None
     // still denies every builtin entry; this is physical carrier accounting.
-    let growth = size_of::<Vec<RawEnumDecl>>() + size_of::<EnumDeclarations>() + size_of::<usize>();
+    // The vector successor embeds one more Vec and grows the closed catalog
+    // from five to nine bytes. Round each catalog independently to the inline
+    // Vec alignment, without deriving the expected delta from SourceProgram.
+    let header_alignment = align_of::<Vec<()>>();
+    let padded_catalog = |bytes: usize| bytes.div_ceil(header_alignment) * header_alignment;
+    let vector_header_growth = size_of::<Vec<()>>() + padded_catalog(9) - padded_catalog(5);
+    let growth = size_of::<Vec<RawEnumDecl>>()
+        + size_of::<EnumDeclarations>()
+        + size_of::<usize>()
+        + vector_header_growth;
     macro_rules! measured {
         ($($ty:ty => $baseline:expr),+ $(,)?) => { $(
             println!(
@@ -599,6 +604,10 @@ fn bounded_enum_sealed_source_carrier_measurements() {
     );
     #[cfg(target_pointer_width = "64")]
     {
+        assert_eq!(size_of::<crate::frontend::builtin_catalog::BuiltinSet>(), 9);
+        assert_eq!(padded_catalog(5), 8);
+        assert_eq!(padded_catalog(9), 16);
+        assert_eq!(vector_header_growth, 32);
         assert_eq!(size_of::<Vec<RawEnumDecl>>(), 24);
         assert_eq!(size_of::<EnumDeclarations>(), 80);
         assert_eq!(size_of::<VerifiedProgram>(), 24);

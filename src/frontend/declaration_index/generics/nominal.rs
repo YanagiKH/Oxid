@@ -37,6 +37,7 @@ impl Nominals {
     pub(super) fn concrete(&self, value: Value) -> bool {
         match value {
             Value::Concrete(_) => true,
+            Value::Vector(element) => matches!(element, Element::Concrete(_)),
             Value::Parameter { .. } => false,
             Value::Enumeration(id) => self.enumerations[id].concrete,
             Value::Record(id) => self.records[id].concrete,
@@ -121,6 +122,45 @@ impl Nominals {
                 },
                 TypeContext::Value,
             )?;
+            if nominal == NominalId::Vector {
+                if application.arguments.len() != 1 {
+                    return Err(error(
+                        "Vec requires exactly one element type argument",
+                        syntax.span,
+                    ));
+                }
+                storage.enter_vector(syntax.span)?;
+                let result = (|| {
+                    let argument = application.arguments[0];
+                    let value = self
+                        .syntax(
+                            index,
+                            work,
+                            storage,
+                            allocator,
+                            module,
+                            declaration,
+                            arguments,
+                            argument,
+                            depth + 1,
+                        )?
+                        .value(argument.span)?;
+                    let value = Value::Vector(Element::check(value, argument.span)?);
+                    Ok(match syntax.kind {
+                        TypeSyntaxKind::AppliedReference { mutable, .. } => Type::Reference {
+                            value,
+                            kind: if mutable {
+                                BorrowKind::Exclusive
+                            } else {
+                                BorrowKind::Shared
+                            },
+                        },
+                        _ => Type::Value(value),
+                    })
+                })();
+                storage.leave_vector(syntax.span)?;
+                return result;
+            }
             let mut values = Vec::new();
             for argument in &application.arguments {
                 let value = self
@@ -179,7 +219,15 @@ impl Nominals {
                 _ => Type::Value(value),
             });
         }
-        let ty = syntax_type(index, work, module, declaration, arguments, syntax)?;
+        let vector_frame = matches!(syntax.kind, TypeSyntaxKind::GenericSliceReference { .. });
+        if vector_frame {
+            storage.enter_vector(syntax.span)?;
+        }
+        let result = syntax_type(index, work, module, declaration, arguments, syntax);
+        if vector_frame {
+            storage.leave_vector(syntax.span)?;
+        }
+        let ty = result?;
         Ok(match ty {
             Type::Value(Value::Concrete(ValueTy::Owned(AggregateTy::Record(record)))) => {
                 Type::Value(self.record(
@@ -446,6 +494,9 @@ impl Nominals {
             Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id))) => (NominalId::Enum(id), &[]),
             Value::Concrete(ValueTy::Owned(AggregateTy::ByteBuf)) => (NominalId::ByteBuf, &[]),
             Value::Concrete(ValueTy::Owned(AggregateTy::File)) => (NominalId::File, &[]),
+            Value::Vector(_) | Value::Concrete(ValueTy::Owned(AggregateTy::Vector(_))) => {
+                (NominalId::Vector, &[])
+            }
             _ => return Ok(()),
         };
         let exposure =
@@ -609,6 +660,7 @@ impl Nominals {
                 .map(|id| ValueTy::Owned(AggregateTy::Record(id)))
                 .ok_or_else(|| bad(at)),
             Value::Parameter { .. } => Err(bad(at)),
+            Value::Vector(element) => Ok(ValueTy::Owned(AggregateTy::Vector(element.scalar(at)?))),
         }
     }
 

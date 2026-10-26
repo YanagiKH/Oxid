@@ -12,6 +12,12 @@ struct EmitterWalkCarriers {
     descriptor_cells: usize,
     emission_names: [String; 4],
     descriptor_kind: ResourceKind,
+    vector_type: hir::Ty,
+    vector_element: byte_buffer::VectorElement,
+    vector_tag: u32,
+    vector_validation_format: FormatCallsiteBacking<3>,
+    vector_drop_format: FormatCallsiteBacking<2>,
+    vector_writes: [std::fmt::Result; 2],
     enumeration_next: Option<(usize, Result<ResourceLeaf, DeclarationError>)>,
     enumeration_item: (usize, Result<ResourceLeaf, DeclarationError>),
 }
@@ -69,7 +75,7 @@ pub(super) fn leaves(
     for (index, leaf) in walk().enumerate() {
         let leaf = leaf.expect("enum alternatives handled by the enclosing emitter");
         let descriptor_cells = match leaf.kind {
-            ResourceKind::ByteBuf => 3,
+            ResourceKind::ByteBuf | ResourceKind::Vector(_) => 3,
             ResourceKind::File => 2,
         };
         for _ in 0..descriptor_cells {
@@ -79,12 +85,31 @@ pub(super) fn leaves(
         }
         let cell = format!("{name}_resource{index}");
         let input = field_pointer(out, &cell, source, leaf.offset);
-        let valid = if leaf.kind == ResourceKind::File {
-            "__oxid_file_valid"
-        } else {
-            "__oxid_bytebuf_valid"
-        };
-        writeln!(out, "  %{cell}_status = call i32 @{valid}(ptr {input})\n  %{cell}_valid = icmp eq i32 %{cell}_status, 0\n  br i1 %{cell}_valid, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+        match leaf.kind {
+            ResourceKind::ByteBuf => {
+                writeln!(
+                    out,
+                    "  %{cell}_status = call i32 @__oxid_bytebuf_valid(ptr {input})"
+                )
+                .unwrap();
+            }
+            ResourceKind::File => {
+                writeln!(
+                    out,
+                    "  %{cell}_status = call i32 @__oxid_file_valid(ptr {input})"
+                )
+                .unwrap();
+            }
+            ResourceKind::Vector(ty) => {
+                let tag = super::super::vector_type::element(ty).tag();
+                writeln!(
+                    out,
+                    "  %{cell}_status = call i32 @__oxid_vector_valid(ptr {input}, i32 {tag})"
+                )
+                .unwrap();
+            }
+        }
+        writeln!(out, "  %{cell}_valid = icmp eq i32 %{cell}_status, 0\n  br i1 %{cell}_valid, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
         emit_failure(out, failure.0, FailureKind::ResourceDescriptor, failure.1);
         writeln!(out, "{cell}_ok:").unwrap();
     }
@@ -96,23 +121,30 @@ pub(super) fn leaves(
         let cell = format!("{name}_resource{index}");
         let input = format!("%{cell}_ptr");
         match action {
-            Action::Release => {
-                let drop = if leaf.kind == ResourceKind::File {
-                    "__oxid_file_drop"
-                } else {
-                    "__oxid_bytebuf_drop"
-                };
-                writeln!(out, "  call void @{drop}(ptr {input})").unwrap()
-            }
+            Action::Release => match leaf.kind {
+                ResourceKind::ByteBuf => {
+                    writeln!(out, "  call void @__oxid_bytebuf_drop(ptr {input})").unwrap();
+                }
+                ResourceKind::File => {
+                    writeln!(out, "  call void @__oxid_file_drop(ptr {input})").unwrap();
+                }
+                ResourceKind::Vector(ty) => {
+                    let tag = super::super::vector_type::element(ty).tag();
+                    writeln!(
+                        out,
+                        "  call void @__oxid_vector_drop(ptr {input}, i32 {tag})"
+                    )
+                    .unwrap();
+                }
+            },
             Action::Move(destination) => {
                 let output = field_pointer(out, &format!("{cell}_out"), destination, leaf.offset);
                 // A descriptor is a resource, not a ScalarLeaf or scalar value.
                 // The old bytes become empty while the destination acquires the
                 // single obligation. The payload allocation is never copied.
-                let carrier = if leaf.kind == ResourceKind::File {
-                    "{ i64, i64 }"
-                } else {
-                    "{ i64, i32, i32 }"
+                let carrier = match leaf.kind {
+                    ResourceKind::ByteBuf | ResourceKind::Vector(_) => "{ i64, i32, i32 }",
+                    ResourceKind::File => "{ i64, i64 }",
                 };
                 writeln!(out, "  %{cell}_descriptor = load {carrier}, ptr {input}, align 8\n  store {carrier} %{cell}_descriptor, ptr {output}, align 8\n  store {carrier} zeroinitializer, ptr {input}, align 8").unwrap();
             }

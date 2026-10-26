@@ -15,6 +15,7 @@ from unittest.mock import patch
 import build_hir_producers_v2
 import verify_fixture_data
 import verify_repo
+import verify_typed_vector_fixture_data
 
 ENUM_PROJECTS = {
     "apps/frame-filter": (
@@ -64,6 +65,22 @@ VECTOR_PROJECTS = {
     ),
 }
 VECTOR_MEMBERS = {member for members in VECTOR_PROJECTS.values() for member in members}
+GROWABLE_VECTOR_PROJECTS = {
+    "examples/typed-vectors": (
+        "examples/typed-vectors/src/main.ox", "examples/typed-vectors/tests/vectors.ox",
+    ),
+}
+GROWABLE_VECTOR_MEMBERS = {member for members in GROWABLE_VECTOR_PROJECTS.values() for member in members}
+VECTOR_DATA = Path("tests/fixtures/typed_vectors")
+VECTOR_DATA_SOURCES = tuple((VECTOR_DATA / group / (name + ".ox")).as_posix()
+                           for group, names in (
+    ("accept", ("bool", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64",
+                "u128", "isize", "usize", "char", "f32", "f64", "unit")),
+    ("reject", ("moved_owner", "wrong_element", "owned_element", "unused_unconstrained_generic",
+                "bare_vector_type", "wrong_type_arity", "missing_new_type", "vector_is_not_byte_buffer",
+                "overlapping_call_loans", "vector_not_copy")),
+    ("scenarios", ("projected-vector", "dynamic-range", "array-ranges")),
+) for name in names)
 MATRIX_PROJECTS = {
     "packages/matrix": ("packages/matrix/src/lib.ox",),
     "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
@@ -247,12 +264,31 @@ class PublishedRegistrationTests(unittest.TestCase):
         byte_data = verify_repo.byte_storage_fixture_data_sources(root)
         self.assertEqual(len(byte_data), 325)
         self.assertFalse(data_sources & byte_data)
-        self.assertEqual(verify_repo.fixture_data_sources(root), data_sources | byte_data)
+        vector_data = verify_repo.typed_vector_fixture_data_sources(root)
+        self.assertEqual(vector_data, {root / name for name in VECTOR_DATA_SOURCES})
+        self.assertEqual(len(vector_data), 17 + 10 + 3)
+        self.assertFalse(vector_data & (data_sources | byte_data))
+        self.assertEqual(verify_repo.fixture_data_sources(root), data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
         language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources | byte_data]
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Authenticate the new DATA separately, then project only that exact
+        # registration out before every historical language/count fingerprint.
+        self.assertEqual([name for name in language if name in VECTOR_DATA_SOURCES], sorted(VECTOR_DATA_SOURCES))
+        self.assertFalse(any(name in VECTOR_DATA_SOURCES for name, _ in check_inventory + run_inventory))
+        language = [name for name in language if name not in VECTOR_DATA_SOURCES]
+        self.assertEqual([name for name in language if name in GROWABLE_VECTOR_MEMBERS], sorted(GROWABLE_VECTOR_MEMBERS))
+        self.assertEqual([row for row in check_inventory if row[0] in GROWABLE_VECTOR_PROJECTS], [("examples/typed-vectors", True)])
+        self.assertEqual([row for row in run_inventory if row[0] in GROWABLE_VECTOR_PROJECTS], [("examples/typed-vectors", True)])
+        self.assertFalse(any(name in GROWABLE_VECTOR_MEMBERS for name, _ in check_inventory + run_inventory))
+        self.assertEqual(len(GROWABLE_VECTOR_MEMBERS), 2)
+        language = [name for name in language if name not in GROWABLE_VECTOR_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in GROWABLE_VECTOR_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in GROWABLE_VECTOR_PROJECTS]
+        typed_members -= len(GROWABLE_VECTOR_MEMBERS)
+        typed_entries = [path for path in typed_entries if path.relative_to(root).as_posix() not in GROWABLE_VECTOR_PROJECTS]
         # The real package application is checked through its manifest. Retain
         # every historical fixture count below after removing only this addition.
         application = "apps/byte-count"
@@ -261,7 +297,7 @@ class PublishedRegistrationTests(unittest.TestCase):
             application + "/packages/counts/src/lib.ox", application + "/packages/report/src/lib.ox",
         )
         self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS,
-                         {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS})
+                         {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
         self.assertEqual(len(CPU_MEMBERS), 32)
@@ -538,7 +574,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         for name in TEXT_PROJECTS | UNICODE_PROJECTS:
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
             self.assertEqual([call.args[0] for call in calls], [[str(Path(sys.executable).resolve()), "check"]])
-        for name in VECTOR_PROJECTS | MATRIX_PROJECTS:
+        for name in VECTOR_PROJECTS | MATRIX_PROJECTS | GROWABLE_VECTOR_PROJECTS:
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
             expected_commands = ("check",) if name in ("packages/float_vector", "packages/matrix") else ("check", "run", "test")
             self.assertEqual([call.args[0] for call in calls],
@@ -546,8 +582,11 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
         cpu_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/cpu-training"]
         self.assertEqual([call.args[0] for call in cpu_calls], [[str(Path(sys.executable).resolve()), "check"]])
-        manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS | BUFFER_PROJECTS | TEXT_PROJECTS | UNICODE_PROJECTS | VECTOR_PROJECTS | MATRIX_PROJECTS | CPU_PROJECTS}
+        manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS | BUFFER_PROJECTS | TEXT_PROJECTS | UNICODE_PROJECTS | VECTOR_PROJECTS | MATRIX_PROJECTS | CPU_PROJECTS | GROWABLE_VECTOR_PROJECTS}
         commands = [call.args[0] for call in run.call_args_list if call.kwargs.get("cwd") not in manifest_roots]
+        self.assertFalse(any(str(verify_repo.ROOT / name) in command
+                             for name in VECTOR_DATA_SOURCES + tuple(GROWABLE_VECTOR_MEMBERS)
+                             for command in commands))
         byte_pilot = str(verify_repo.ROOT / BYTE_PILOT)
         self.assertEqual([command[1] for command in commands if byte_pilot in command], ["check", "run"])
         self.assertFalse(any(str(path) in command for path in verify_repo.byte_storage_fixture_data_sources(verify_repo.ROOT)
@@ -607,18 +646,21 @@ class PublishedRegistrationTests(unittest.TestCase):
                              for name in U8_SOURCES for command in commands))
         for relative in PARSER_ADDED_FILES[1:] + tuple(name for name in STATIC_ADDED_FILES if name not in STATIC_ROOTS):
             self.assertFalse(any(str(verify_repo.ROOT / relative) in command for command in commands))
-        self.assertIn("fixture-data validation passed: 513 source-only files", output.getvalue())
+        vector_data = verify_repo.typed_vector_fixture_data_sources(verify_repo.ROOT)
+        self.assertEqual(vector_data, {verify_repo.ROOT / name for name in VECTOR_DATA_SOURCES})
+        self.assertIn(f"fixture-data validation passed: {513 + len(vector_data)} source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
         application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
-        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
-                      f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
-                      "83 runnable programs", output.getvalue())
-        self.assertIn("17 manifest projects checked; 7 run; 4 tested", output.getvalue())
+        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
+                      f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(GROWABLE_VECTOR_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
+                      f"{83 + len(GROWABLE_VECTOR_PROJECTS)} runnable programs", output.getvalue())
+        self.assertIn(f"{17 + len(GROWABLE_VECTOR_PROJECTS)} manifest projects checked; "
+                      f"{7 + len(GROWABLE_VECTOR_PROJECTS)} run; {4 + len(GROWABLE_VECTOR_PROJECTS)} tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(additional_members)} typed source members / "
-                      "16 typed entry runs", output.getvalue())
+                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(additional_members)} typed source members / "
+                      f"{16 + len(GROWABLE_VECTOR_PROJECTS)} typed entry runs", output.getvalue())
         self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
                       output.getvalue())
@@ -701,6 +743,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
         copy_u8_data(self.root)
         shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
+        shutil.copytree(verify_repo.ROOT / VECTOR_DATA, self.root / VECTOR_DATA)
         self.manifest = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[0][0]
         self.document = json.loads(self.manifest.read_bytes())
         self.source = next(self.manifest.parent / name for name in self.document["files"] if name.endswith(".ox"))
@@ -844,6 +887,60 @@ class FixtureAdmissionTests(unittest.TestCase):
         self.assertIn((extra, False), checks)
         self.assertNotIn(extra, entries)
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in U8_SOURCES))
+
+    def test_vector_data_is_authenticated_before_any_compiler_call(self):
+        source = self.root / VECTOR_DATA_SOURCES[0]
+        body = source.read_bytes()
+        source.write_bytes(bytes([body[0] ^ 1]) + body[1:])
+        self.assert_no_compiler("vector fixture-data body identity mismatch")
+        source.write_bytes(body)
+        manifest = self.root / verify_typed_vector_fixture_data.MANIFEST
+        document = json.loads(manifest.read_bytes())
+        document["cases"][0]["expected_result"] = 41
+        manifest.write_text(json.dumps(document))
+        self.assert_no_compiler("vector fixture-data manifest digest mismatch")
+
+    def test_vector_missing_discovery_rejects_and_unlisted_neighbours_remain_legacy(self):
+        source = self.root / VECTOR_DATA_SOURCES[0]
+        with self.assertRaisesRegex(RuntimeError, "data missing from discovery"):
+            verify_repo.source_plan([path for path in discover(self.root) if path != source], self.root)
+        extras = [self.write(VECTOR_DATA / "accept/unlisted.ox", b"invalid candidate\n"),
+                  self.write("tests/fixtures/typed_vectors_neighbour/main.ox", b"invalid candidate\n")]
+        checks, entries, _ = verify_repo.source_plan(discover(self.root), self.root)
+        for extra in extras:
+            self.assertIn((extra, False), checks)
+            self.assertNotIn(extra, entries)
+        self.assertFalse(any(path == self.root / name for path, _ in checks for name in VECTOR_DATA_SOURCES))
+
+    def test_vector_example_adds_one_typed_root_and_exactly_two_members(self):
+        before_checks, before_entries, before_count = verify_repo.source_plan(discover(self.root), self.root)
+        project = "examples/typed-vectors"
+        shutil.copytree(verify_repo.ROOT / project, self.root / project)
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertEqual([row for row in checks if row[0] == self.root / project], [(self.root / project, True)])
+        self.assertEqual([row for row in checks if row[0] != self.root / project], before_checks)
+        self.assertEqual(entries, before_entries + [self.root / project])
+        self.assertEqual(count - before_count, len(GROWABLE_VECTOR_MEMBERS))
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[project],
+                         (project + "/src/main.ox", project + "/tests/vectors.ox"))
+        self.assertIn(project, verify_repo.TYPED_TESTED_MANIFEST_PROJECTS)
+        self.assertNotIn(project, verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        extra = self.write(project + "/tests/unlisted.ox", b"invalid neighbour\n")
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertIn((extra, False), checks)
+        self.assertNotIn(extra, entries)
+        self.assertEqual(count - before_count, len(GROWABLE_VECTOR_MEMBERS))
+
+    def test_vector_example_missing_member_or_manifest_rejects_before_compiler(self):
+        project = "examples/typed-vectors"
+        shutil.copytree(verify_repo.ROOT / project, self.root / project)
+        for relative in (project + "/oxid.toml", *GROWABLE_VECTOR_PROJECTS[project]):
+            path = self.root / relative
+            body = path.read_bytes()
+            with self.subTest(missing=relative):
+                path.unlink()
+                self.assert_no_compiler("typed manifest application missing from discovery")
+                path.write_bytes(body)
 
     def test_changed_source_even_same_size_fails_before_compiler(self):
         body = self.source.read_bytes()
@@ -1019,6 +1116,7 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         shutil.copytree(verify_repo.ROOT / DATA, self.root / DATA)
         copy_u8_data(self.root)
         shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
+        shutil.copytree(verify_repo.ROOT / VECTOR_DATA, self.root / VECTOR_DATA)
         members = set(verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES)
         members.update(name for project in verify_repo.TYPED_PROJECTS.values() for name in project)
         members.update(V2_OVERLAY_FILES)

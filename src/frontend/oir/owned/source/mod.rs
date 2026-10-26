@@ -18,6 +18,10 @@ mod resolver_storage;
 mod tests;
 mod type_storage;
 pub(in crate::frontend::oir) mod typeck;
+mod vector_lower;
+mod vector_source;
+#[cfg(test)]
+mod vector_source_tests;
 pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
 mod diagnostic;
 #[cfg(test)]

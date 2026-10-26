@@ -94,6 +94,7 @@ pub(super) fn inventory(inventory: BuiltinOrigins) -> (SourceMap, RawOwnedProgra
         BuiltinOrigins::ReadStdinWriteStdout => (true, true, true, true),
     };
     let mut raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: inventory,
         records: vec![],
         enums: vec![enumeration(0, 2, s(10))],

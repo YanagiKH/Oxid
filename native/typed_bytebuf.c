@@ -1,6 +1,7 @@
 /* Private generated-program adapter. One process entry owns one execution.
  * Included only when a sealed native module declares resource operations. */
 #include "experimental_bytebuf.c"
+#include "experimental_vector.h"
 
 static oxid_byte_heap execution_heap;
 #include "experimental_files.c"
@@ -19,6 +20,16 @@ int32_t __oxid_bytebuf_valid(const oxid_bytebuf *value) {
 void __oxid_bytebuf_drop(oxid_bytebuf *value) {
     (void)oxid_bytebuf_release(&execution_heap, value);
 }
+
+/* The element tag comes from the checked resource leaf, never source integers.
+ * Validate every active leaf before invoking any physical move or release. */
+int32_t __oxid_vector_valid(const oxid_vector *value, uint32_t element) {
+    return oxid_vector_validate(&execution_heap, value, element);
+}
+void __oxid_vector_drop(oxid_vector *value, uint32_t element) {
+    (void)oxid_vector_release(&execution_heap, value, element);
+}
+#include "typed_vector.c"
 
 /* Canonical operation numbers are private to the verified emitter. A single
  * fixed helper performs one primitive only; no source loop lives here. */

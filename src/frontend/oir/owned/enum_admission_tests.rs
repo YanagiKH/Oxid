@@ -2,6 +2,61 @@ use super::consumer_fixtures as f;
 use super::*;
 use std::mem::size_of;
 
+// Independent footprint models for the frozen pre-vector raw header and the
+// vector successor. These byte arrays model catalog representation only; they
+// are not builtin authority and never enter production admission or execution.
+#[repr(C)]
+#[allow(dead_code)]
+struct PreVectorRawHeader {
+    builtins: [u8; 5],
+    enums: Vec<RawEnumDecl>,
+    records: Vec<RawRecordDecl>,
+    functions: Vec<RawOwnedFunction>,
+}
+#[repr(C)]
+#[allow(dead_code)]
+struct VectorRawHeader {
+    builtins: [u8; 9],
+    vector_functions: Vec<crate::frontend::builtin_catalog::vector::Function>,
+    enums: Vec<RawEnumDecl>,
+    records: Vec<RawRecordDecl>,
+    functions: Vec<RawOwnedFunction>,
+}
+
+// One new Vec header plus the independently modeled catalog padding growth.
+// Old literal measurements below remain visible and acquire this term once per
+// program, including empty catalogs. Function/event/work ledgers do not grow.
+pub(super) const VECTOR_RAW_HEADER_GROWTH: usize =
+    size_of::<VectorRawHeader>() - size_of::<PreVectorRawHeader>();
+
+#[test]
+fn vector_raw_header_growth_is_one_descriptor_header_and_catalog_padding() {
+    let header = size_of::<Vec<()>>();
+    let alignment = std::mem::align_of::<Vec<()>>();
+    let padded_catalog = |bytes: usize| bytes.div_ceil(alignment) * alignment;
+    assert_eq!(
+        size_of::<PreVectorRawHeader>(),
+        3 * header + padded_catalog(5)
+    );
+    assert_eq!(size_of::<VectorRawHeader>(), 4 * header + padded_catalog(9));
+    assert_eq!(size_of::<BuiltinOrigins>(), 9);
+    assert_eq!(std::mem::align_of::<BuiltinOrigins>(), 1);
+    assert_eq!(size_of::<RawOwnedProgram>(), size_of::<VectorRawHeader>());
+    assert_eq!(
+        VECTOR_RAW_HEADER_GROWTH,
+        header + padded_catalog(9) - padded_catalog(5)
+    );
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(header, 24);
+        assert_eq!(padded_catalog(5), 8);
+        assert_eq!(padded_catalog(9), 16);
+        assert_eq!(size_of::<PreVectorRawHeader>(), 80);
+        assert_eq!(size_of::<RawOwnedProgram>(), 112);
+        assert_eq!(VECTOR_RAW_HEADER_GROWTH, 32);
+    }
+}
+
 fn enumeration(span: Span) -> RawEnumDecl {
     RawEnumDecl {
         id: EnumId(0),
@@ -26,6 +81,7 @@ fn raw(span: Span) -> RawOwnedProgram {
         terminator: f::end(OwnedTerminatorKind::ReturnScalar(f::operand(0, span)), span),
     });
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
@@ -160,6 +216,7 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
     assert_eq!(
         empty.metadata_bytes,
         (size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>())
+            + VECTOR_RAW_HEADER_GROWTH
     );
     p.enums.push(enumeration(span));
     let usage = budget::fail_allocation_after(0, || budget::preflight(&p, budget::Limits::DEFAULT))
@@ -167,6 +224,7 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
     assert_eq!(
         usage.metadata_bytes,
         (size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>())
+            + VECTOR_RAW_HEADER_GROWTH
             + size_of::<RawEnumDecl>()
             + size_of::<RawVariantDecl>()
     );
@@ -193,11 +251,12 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
             metadata: (size_of::<Vec<RawEnumDecl>>()
                 + size_of::<usize>()
                 + size_of::<Vec<MatchDecl>>())
+                + VECTOR_RAW_HEADER_GROWTH
                 - 1,
             ..budget::Limits::DEFAULT
         }
     )
     .is_err());
     #[cfg(target_pointer_width = "64")]
-    assert_eq!(size_of::<RawOwnedProgram>(), 80);
+    assert_eq!(size_of::<RawOwnedProgram>(), 80 + VECTOR_RAW_HEADER_GROWTH);
 }
