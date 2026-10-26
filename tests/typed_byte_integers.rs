@@ -27,6 +27,23 @@ impl Project {
             .output()
             .unwrap()
     }
+    fn refused_modules(&self) {
+        let before = fs::read(self.0.join("src/main.ox")).unwrap();
+        for operation in ["check", "run"] {
+            let out = self.invoke(&[operation, "--message-format=json"]);
+            assert_eq!(out.status.code(), Some(1), "{out:?}");
+            assert!(out.stderr.is_empty(), "{out:?}");
+            let text = String::from_utf8(out.stdout).unwrap();
+            assert!(
+                text.contains("\"code\":\"E0005\"")
+                    && text.contains("module source policy is not qualified on this host"),
+                "{text}"
+            );
+        }
+        assert_eq!(fs::read(self.0.join("src/main.ox")).unwrap(), before);
+        assert!(!self.0.join(".oxid").exists());
+        assert!(!self.0.join("oxid.lock").exists());
+    }
     fn result(&self, expected: u8) {
         let checked = self.invoke(&["check", "--message-format=json"]);
         assert!(checked.status.success(), "{checked:?}");
@@ -133,7 +150,11 @@ fn linked_scalar_byte_modules_and_inferred_wide_temporaries_use_the_typed_checke
             "pub fn answer()->u8{let n=250u8;return n+5u8;}",
         )
         .unwrap();
-        p.result(255);
+        if cfg!(target_os = "linux") {
+            p.result(255);
+        } else {
+            p.refused_modules();
+        }
         let p = Project::new(
             "mod data;fn main()->i32{return crate::data::answer();}",
             policy,
@@ -143,11 +164,15 @@ fn linked_scalar_byte_modules_and_inferred_wide_temporaries_use_the_typed_checke
             "pub fn answer()->i32{let n=7;let wide=n.to_i64();return wide.to_i32_checked();}",
         )
         .unwrap();
-        let out = p.invoke(&["run"]);
-        assert_eq!(
-            (out.status.code(), out.stdout, out.stderr),
-            (Some(0), b"7\n".to_vec(), Vec::new())
-        );
+        if cfg!(target_os = "linux") {
+            let out = p.invoke(&["run"]);
+            assert_eq!(
+                (out.status.code(), out.stdout, out.stderr),
+                (Some(0), b"7\n".to_vec(), Vec::new())
+            );
+        } else {
+            p.refused_modules();
+        }
     }
 }
 
@@ -171,10 +196,19 @@ fn byte_arithmetic_stays_strict_and_process_entries_still_require_i32() {
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(out.stdout.is_empty());
     let error = String::from_utf8(out.stderr).unwrap();
-    assert!(
-        error.contains("[E0600]") && error.contains("fn main() -> i32"),
-        "{error}"
-    );
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        assert!(
+            error.contains("[E0600]") && error.contains("fn main() -> i32"),
+            "{error}"
+        );
+    } else {
+        assert!(error.contains("[E0608]"), "{error}");
+    }
 }
 
 #[test]
