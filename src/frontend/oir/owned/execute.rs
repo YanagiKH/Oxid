@@ -887,7 +887,7 @@ impl<'p, 'w> Machine<'p, 'w> {
     /// The checked nominal table is the only tag/type authority. Dispatch uses
     /// this tag-only operation, so neither a failed nor a successful test exposes
     /// the payload before ConsumeVariant has paid its separate charge.
-    fn enum_tag(&mut self, key: OwnerKey, span: Span) -> Result<(VariantId, Option<hir::Ty>)> {
+    fn enum_tag(&mut self, key: OwnerKey, span: Span) -> Result<(VariantId, Option<ValueTy>)> {
         let AggregateTy::Enum(enumeration) = self.aggregate(key, span)? else {
             return Err(bad("enum type", span));
         };
@@ -907,7 +907,7 @@ impl<'p, 'w> Machine<'p, 'w> {
             .enums()
             .variant_for_tag(enumeration, tag as usize)
             .map_err(|_| bad("enum tag", span))?;
-        Ok((variant.id(), variant.payload()))
+        Ok((variant.id(), variant.value_payload()))
     }
     fn load_enum(
         &mut self,
@@ -919,7 +919,7 @@ impl<'p, 'w> Machine<'p, 'w> {
         if expected.is_some_and(|expected| expected != variant) {
             return Err(bad("enum tag", span));
         }
-        let payload = if let Some(ty) = payload_ty {
+        let payload = if let Some(ValueTy::Scalar(ty)) = payload_ty {
             let extent = self.owner_extent(key, span)?;
             let offset = scalar_offset(extent, 4, ty, span)?;
             #[cfg(test)]
@@ -928,8 +928,10 @@ impl<'p, 'w> Machine<'p, 'w> {
                 decode(&self.frames[key.frame as usize].payload, offset, ty, span)
                     .map_err(|_| bad("enum payload", span))?,
             )
-        } else {
+        } else if payload_ty.is_none() {
             None
+        } else {
+            return Err(bad("scalar enum payload", span));
         };
         Ok(EnumValue {
             tag: variant.index as u32,
@@ -996,6 +998,18 @@ impl<'p, 'w> Machine<'p, 'w> {
         }
         // Sums have no static leaves. Snapshot only the checked active value,
         // before any destination write; caller state/epoch preflights precede us.
+        if self.owned_enum(record) {
+            self.preflight_active(from, source.clone(), record, destination.clone(), span)?;
+            #[cfg(test)]
+            let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
+            self.copy_active(from, source, to, destination, record, span)?;
+            #[cfg(test)]
+            {
+                self.record_event(Event::Transfer(from, initialized_destination));
+                self.observe_end(observation);
+            }
+            return Ok(());
+        }
         if matches!(record, AggregateTy::Enum(_)) {
             let value = self.load_enum(from, None, span)?;
             enum_offsets(destination.clone(), value, span)?;
@@ -1043,6 +1057,137 @@ impl<'p, 'w> Machine<'p, 'w> {
             self.observe_end(observation);
         }
         Ok(())
+    }
+    /// Scalar-only sums keep their original snapshot and event path. An owned
+    /// alternative requires tag-directed traversal even when another arm is active.
+    fn owned_enum(&self, aggregate: AggregateTy) -> bool {
+        let AggregateTy::Enum(enumeration) = aggregate else {
+            return false;
+        };
+        self.plan
+            .witness()
+            .declarations()
+            .enums()
+            .variants(enumeration)
+            .expect("verified enum")
+            .iter()
+            .any(|variant| matches!(variant.value_payload(), Some(ValueTy::Owned(_))))
+    }
+    fn preflight_active(
+        &self,
+        from: OwnerKey,
+        source: std::ops::Range<usize>,
+        aggregate: AggregateTy,
+        destination: std::ops::Range<usize>,
+        span: Span,
+    ) -> Result<()> {
+        let declarations = self.plan.witness().declarations();
+        for cell in ActiveCells::new(
+            declarations,
+            &self.frames[from.frame as usize].payload,
+            source,
+            aggregate,
+            span,
+        ) {
+            let (leaf, _) = cell?;
+            scalar_offset(destination.clone(), leaf.offset, leaf.ty, span)?;
+        }
+        Ok(())
+    }
+    /// The caller validates every active cell and both ownership transitions
+    /// before entering here. Source and destination have disjoint storage, so
+    /// this second bounded traversal cannot invalidate a later source read.
+    fn copy_active(
+        &mut self,
+        from: OwnerKey,
+        source: std::ops::Range<usize>,
+        to: OwnerKey,
+        destination: std::ops::Range<usize>,
+        aggregate: AggregateTy,
+        span: Span,
+    ) -> Result<()> {
+        let declarations = self.plan.witness().declarations();
+        let source_frame = from.frame as usize;
+        let destination_frame = to.frame as usize;
+        if source_frame == destination_frame {
+            let bytes = &mut self.frames[source_frame].payload;
+            if source.end <= destination.start {
+                let (before, after) = bytes.split_at_mut(destination.start);
+                copy_active_bytes(
+                    declarations,
+                    aggregate,
+                    &before[source],
+                    &mut after[..destination.len()],
+                    span,
+                )
+            } else if destination.end <= source.start {
+                let (before, after) = bytes.split_at_mut(source.start);
+                copy_active_bytes(
+                    declarations,
+                    aggregate,
+                    &after[..source.len()],
+                    &mut before[destination],
+                    span,
+                )
+            } else {
+                Err(bad("overlapping whole transfer", span))
+            }
+        } else if source_frame < destination_frame {
+            let (before, after) = self.frames.split_at_mut(destination_frame);
+            copy_active_bytes(
+                declarations,
+                aggregate,
+                &before[source_frame].payload[source],
+                &mut after[0].payload[destination],
+                span,
+            )
+        } else {
+            let (before, after) = self.frames.split_at_mut(source_frame);
+            copy_active_bytes(
+                declarations,
+                aggregate,
+                &after[0].payload[source],
+                &mut before[destination_frame].payload[destination],
+                span,
+            )
+        }
+    }
+    fn owned_variant_extent(
+        &self,
+        key: OwnerKey,
+        variant: VariantId,
+        aggregate: AggregateTy,
+        span: Span,
+    ) -> Result<std::ops::Range<usize>> {
+        let AggregateTy::Enum(enumeration) = self.aggregate(key, span)? else {
+            return Err(bad("enum type", span));
+        };
+        let declarations = self.plan.witness().declarations();
+        let declaration = declarations
+            .enums()
+            .variant(enumeration, variant)
+            .map_err(|_| bad("enum tag", span))?;
+        if declaration.value_payload() != Some(ValueTy::Owned(aggregate)) {
+            return Err(bad("enum construction type", span));
+        }
+        let extent = self.owner_extent(key, span)?;
+        let offset = extent
+            .start
+            .checked_add(
+                declaration
+                    .payload_offset()
+                    .ok_or_else(|| bad("enum payload offset", span))?,
+            )
+            .ok_or_else(|| bad("enum payload range", span))?;
+        let size = declarations
+            .aggregate_layout(aggregate)
+            .map_err(|_| bad("enum payload layout", span))?
+            .size();
+        let end = offset
+            .checked_add(size)
+            .filter(|end| *end <= extent.end)
+            .ok_or_else(|| bad("enum payload range", span))?;
+        Ok(offset..end)
     }
     fn raw_key(&self, frame: usize, owner: OwnerPlaceId) -> OwnerKey {
         OwnerKey {
@@ -1676,6 +1821,104 @@ impl<'p, 'w> Machine<'p, 'w> {
             } => {
                 self.write_stdout(frame, *buffer, *destination, span)?;
             }
+            OwnedInstruction::ConstructOwnedEnum {
+                destination,
+                variant,
+                payload,
+            } => {
+                self.expect_owner(frame, *destination, &[UNINITIALIZED], span)?;
+                self.expect_owner(frame, *payload, &[AVAILABLE], span)?;
+                let from = self.base(frame, AccessBase::Owner(*payload), Access::Consume, span)?;
+                let to = self.raw_key(frame, *destination);
+                let aggregate = self.aggregate(from, span)?;
+                let source = self.owner_extent(from, span)?;
+                let destination_extent =
+                    self.owned_variant_extent(to, *variant, aggregate, span)?;
+                if source.start < destination_extent.end && destination_extent.start < source.end {
+                    return Err(bad("overlapping whole transfer", span));
+                }
+                let tag_offset =
+                    scalar_offset(self.owner_extent(to, span)?, 0, hir::Ty::I32, span)?;
+                self.preflight_active(
+                    from,
+                    source.clone(),
+                    aggregate,
+                    destination_extent.clone(),
+                    span,
+                )?;
+                #[cfg(test)]
+                let observation =
+                    self.observe_begin(to, StorageObservationKind::Construction, true, span);
+                self.copy_active(from, source, to, destination_extent, aggregate, span)?;
+                self.frames[frame].payload[tag_offset..tag_offset + 4]
+                    .copy_from_slice(&(variant.index as u32).to_le_bytes());
+                self.change_owner(frame, *payload, MOVED, span)?;
+                self.change_owner(frame, *destination, AVAILABLE, span)?;
+                #[cfg(test)]
+                self.observe_end(observation);
+            }
+            OwnedInstruction::ConsumeOwnedVariant {
+                match_id,
+                arm,
+                destination,
+            } => {
+                let descriptor = f
+                    .matches
+                    .get(match_id.0)
+                    .ok_or_else(|| bad("enum match", span))?;
+                let selected = descriptor
+                    .arms
+                    .get(*arm)
+                    .ok_or_else(|| bad("enum arm", span))?;
+                let from = self.base(
+                    frame,
+                    AccessBase::Owner(descriptor.source),
+                    Access::Consume,
+                    span,
+                )?;
+                self.expect_owner(frame, descriptor.source, &[AVAILABLE], span)?;
+                self.expect_owner(frame, *destination, &[DEAD], span)?;
+                let destination_generation = epoch(
+                    epoch(self.frames[frame].owners[destination.0].generation, span)?,
+                    span,
+                )?;
+                let to = self.raw_key(frame, *destination);
+                let aggregate = self.aggregate(to, span)?;
+                let (variant, _) = self.enum_tag(from, span)?;
+                if variant != selected.variant {
+                    return Err(bad("enum tag", span));
+                }
+                let source = self.owned_variant_extent(from, selected.variant, aggregate, span)?;
+                let destination_extent = self.owner_extent(to, span)?;
+                if source.start < destination_extent.end && destination_extent.start < source.end {
+                    return Err(bad("overlapping whole transfer", span));
+                }
+                self.preflight_active(
+                    from,
+                    source.clone(),
+                    aggregate,
+                    destination_extent.clone(),
+                    span,
+                )?;
+                #[cfg(test)]
+                let observation =
+                    self.observe_begin(to, StorageObservationKind::Transfer, true, span);
+                self.copy_active(from, source, to, destination_extent, aggregate, span)?;
+                self.change_owner(frame, descriptor.source, MOVED, span)?;
+                self.frames[frame].owners[destination.0].generation = destination_generation;
+                self.frames[frame].owners[destination.0].state = AVAILABLE;
+                #[cfg(test)]
+                {
+                    self.record_event(Event::Transfer(
+                        from,
+                        OwnerKey {
+                            generation: destination_generation,
+                            ..to
+                        },
+                    ));
+                    self.observe_end(observation);
+                }
+            }
             OwnedInstruction::ConstructEnum {
                 destination,
                 variant,
@@ -2041,7 +2284,11 @@ impl<'p, 'w> Machine<'p, 'w> {
             OwnedInstruction::Discard(o) => {
                 let key = self.base(frame, AccessBase::Owner(*o), Access::Consume, span)?;
                 self.expect_owner(frame, *o, &[AVAILABLE], span)?;
-                if matches!(self.aggregate(key, span)?, AggregateTy::Enum(_)) {
+                let aggregate = self.aggregate(key, span)?;
+                if self.owned_enum(aggregate) {
+                    let extent = self.owner_extent(key, span)?;
+                    self.preflight_active(key, extent.clone(), aggregate, extent, span)?;
+                } else if matches!(aggregate, AggregateTy::Enum(_)) {
                     self.load_enum(key, None, span)?;
                 }
                 self.change_owner(frame, *o, MOVED, span)?;
@@ -2281,7 +2528,25 @@ impl<'p, 'w> Machine<'p, 'w> {
                         .checked_add(size)
                         .filter(|end| *end <= child.payload.len())
                         .ok_or_else(|| bad("incoming aggregate range", span))?;
-                    let active = if matches!(record, AggregateTy::Enum(_)) {
+                    let owned_enum = self.owned_enum(record);
+                    let active = if owned_enum {
+                        self.preflight_active(
+                            key,
+                            self.owner_extent(key, span)?,
+                            record,
+                            offset..end,
+                            callee.span,
+                        )?;
+                        let owner = child
+                            .owners
+                            .get(destination.0)
+                            .ok_or_else(|| bad("incoming owner", span))?;
+                        if owner.state != DEAD || owner.generation != 0 {
+                            return Err(bad("incoming owner state", span));
+                        }
+                        epoch(owner.generation, span)?;
+                        None
+                    } else if matches!(record, AggregateTy::Enum(_)) {
                         let value = self.load_enum(key, None, callee.span)?;
                         enum_offsets(offset..end, value, span)?;
                         let owner = child
@@ -2322,7 +2587,16 @@ impl<'p, 'w> Machine<'p, 'w> {
                         } else {
                             None
                         };
-                    if let Some(value) = active {
+                    if owned_enum {
+                        let source_extent = self.owner_extent(key, span)?;
+                        copy_active_bytes(
+                            declarations,
+                            record,
+                            &self.frames[frame].payload[source_extent],
+                            &mut child.payload[offset..end],
+                            span,
+                        )?;
+                    } else if let Some(value) = active {
                         encode_enum(&mut child.payload, offset..end, value, span)?;
                     } else {
                         for leaf in declarations
@@ -2568,6 +2842,119 @@ impl<'p, 'w> Machine<'p, 'w> {
         }
     }
 }
+/// An enum has one active containment chain. Once that chain reaches a record
+/// or fixed array, the checked static leaf iterator handles its remaining shape.
+/// This retains no expanded value and never reads padding or inactive arms.
+struct ActiveCells<'a> {
+    declarations: &'a Declarations,
+    bytes: &'a [u8],
+    extent: std::ops::Range<usize>,
+    pending: Option<(ValueTy, usize)>,
+    leaves: Option<ScalarLeaves<'a>>,
+    leaf_base: usize,
+    span: Span,
+}
+impl<'a> ActiveCells<'a> {
+    fn new(
+        declarations: &'a Declarations,
+        bytes: &'a [u8],
+        extent: std::ops::Range<usize>,
+        aggregate: AggregateTy,
+        span: Span,
+    ) -> Self {
+        Self {
+            declarations,
+            bytes,
+            extent,
+            pending: Some((ValueTy::Owned(aggregate), 0)),
+            leaves: None,
+            leaf_base: 0,
+            span,
+        }
+    }
+    fn read(&self, leaf: ScalarLeaf) -> Result<(ScalarLeaf, Scalar)> {
+        let offset = scalar_offset(self.extent.clone(), leaf.offset, leaf.ty, self.span)?;
+        Ok((
+            leaf,
+            decode(self.bytes, offset, leaf.ty, self.span)
+                .map_err(|_| bad("enum payload", self.span))?,
+        ))
+    }
+}
+impl Iterator for ActiveCells<'_> {
+    type Item = Result<(ScalarLeaf, Scalar)>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(leaves) = &mut self.leaves {
+            let mut leaf = leaves.next()?;
+            leaf.offset = match self.leaf_base.checked_add(leaf.offset) {
+                Some(offset) => offset,
+                None => return Some(Err(bad("enum payload range", self.span))),
+            };
+            return Some(self.read(leaf));
+        }
+        let (value, relative) = self.pending.take()?;
+        match value {
+            ValueTy::Scalar(ty) => Some(self.read(ScalarLeaf {
+                offset: relative,
+                ty,
+            })),
+            ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
+                let result = (|| {
+                    let leaf = ScalarLeaf {
+                        offset: relative,
+                        ty: hir::Ty::I32,
+                    };
+                    let offset =
+                        scalar_offset(self.extent.clone(), relative, hir::Ty::I32, self.span)?;
+                    let Scalar::I32(tag) = decode(self.bytes, offset, hir::Ty::I32, self.span)?
+                    else {
+                        unreachable!()
+                    };
+                    let variant = self
+                        .declarations
+                        .enums()
+                        .variant_for_tag(enumeration, tag as u32 as usize)
+                        .map_err(|_| bad("enum tag", self.span))?;
+                    if let Some(payload) = variant.value_payload() {
+                        let offset = relative
+                            .checked_add(
+                                variant
+                                    .payload_offset()
+                                    .ok_or_else(|| bad("enum payload offset", self.span))?,
+                            )
+                            .ok_or_else(|| bad("enum payload range", self.span))?;
+                        self.pending = Some((payload, offset));
+                    }
+                    Ok((leaf, Scalar::I32(tag)))
+                })();
+                Some(result)
+            }
+            ValueTy::Owned(aggregate) => match self.declarations.leaves(aggregate) {
+                Ok(leaves) => {
+                    self.leaves = Some(leaves);
+                    self.leaf_base = relative;
+                    self.next()
+                }
+                Err(_) => Some(Err(bad("enum payload leaves", self.span))),
+            },
+        }
+    }
+}
+fn copy_active_bytes(
+    declarations: &Declarations,
+    aggregate: AggregateTy,
+    source: &[u8],
+    destination: &mut [u8],
+    span: Span,
+) -> Result<()> {
+    for cell in ActiveCells::new(declarations, source, 0..source.len(), aggregate, span) {
+        let (leaf, value) = cell?;
+        let offset = scalar_offset(0..destination.len(), leaf.offset, leaf.ty, span)?;
+        encode(destination, offset, value, span)?;
+    }
+    Ok(())
+}
+
 /// Validate every destination byte range before the first write. The snapshot
 /// contains no inactive bytes and encoding cannot inspect them.
 fn enum_offsets(
@@ -3080,3 +3467,462 @@ fn owned_u8_runtime_containing_transport_layouts() {
 #[cfg(test)]
 #[path = "byte_storage_codec_tests.rs"]
 mod byte_storage_codec_tests;
+
+#[cfg(test)]
+pub(super) mod owned_enum_payload_tests {
+    use super::*;
+    use crate::frontend::oir::owned::consumer_fixtures as raw;
+
+    pub(in crate::frontend::oir::owned) fn fixture() -> (SourceMap, RawOwnedProgram, Span, Span) {
+        let (sources, span) = raw::context();
+        let record = AggregateTy::Record(RecordId(0));
+        let inner = AggregateTy::Enum(EnumId(0));
+        let outer = AggregateTy::Enum(EnumId(1));
+        let mut function = raw::function(0, ValueTy::Scalar(hir::Ty::I32), span(0));
+        function.locals = vec![
+            raw::scalar(hir::Ty::Bool, span(1)),
+            raw::scalar(hir::Ty::I32, span(2)),
+        ];
+        function.owners = [record, inner, outer, outer]
+            .into_iter()
+            .enumerate()
+            .map(|(index, aggregate)| OwnerDecl {
+                aggregate: AggregateSlot::try_from_aggregate(aggregate).unwrap(),
+                kind: if index < 2 {
+                    OwnerKind::Temporary
+                } else {
+                    OwnerKind::Local { mutable: false }
+                },
+                span: span(0),
+            })
+            .collect();
+        let variant = |enumeration| VariantId {
+            enumeration: EnumId(enumeration),
+            index: 0,
+        };
+        let statements = vec![
+            raw::assign(0, Rvalue::Bool(true), span(1)),
+            raw::assign(1, Rvalue::I32(42), span(2)),
+            raw::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(0)), span(3)),
+            raw::instruction(
+                OwnedInstruction::Construct {
+                    destination: OwnerPlaceId(0),
+                    fields: (0..2)
+                        .map(|index| {
+                            (
+                                FieldId {
+                                    record: RecordId(0),
+                                    index,
+                                },
+                                raw::operand(index, span(index + 1)),
+                            )
+                        })
+                        .collect(),
+                },
+                span(4),
+            ),
+            raw::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(1)), span(5)),
+            raw::instruction(
+                OwnedInstruction::ConstructOwnedEnum {
+                    destination: OwnerPlaceId(1),
+                    variant: variant(0),
+                    payload: OwnerPlaceId(0),
+                },
+                span(6),
+            ),
+            raw::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(2)), span(7)),
+            raw::instruction(
+                OwnedInstruction::ConstructOwnedEnum {
+                    destination: OwnerPlaceId(2),
+                    variant: variant(1),
+                    payload: OwnerPlaceId(1),
+                },
+                span(8),
+            ),
+            raw::instruction(OwnedInstruction::StorageLive(OwnerPlaceId(3)), span(9)),
+            raw::instruction(
+                OwnedInstruction::MoveInitialize {
+                    destination: OwnerPlaceId(3),
+                    source: OwnerPlaceId(2),
+                },
+                span(10),
+            ),
+            raw::instruction(OwnedInstruction::Discard(OwnerPlaceId(3)), span(11)),
+            raw::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(3)), span(12)),
+            raw::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(2)), span(13)),
+            raw::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(1)), span(14)),
+            raw::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(0)), span(15)),
+        ];
+        function.blocks = vec![OwnedBlock {
+            merge: None,
+            span: span(0),
+            statements,
+            terminator: raw::end(
+                OwnedTerminatorKind::ReturnScalar(raw::operand(1, span(16))),
+                span(16),
+            ),
+        }];
+        let enums = [record, inner]
+            .into_iter()
+            .enumerate()
+            .map(|(id, aggregate)| RawEnumDecl {
+                id: EnumId(id),
+                span: span(0),
+                variants: vec![
+                    RawVariantDecl {
+                        id: variant(id),
+                        payload: Some(ParameterTy::Value(ValueTy::Owned(aggregate))),
+                        span: span(0),
+                    },
+                    RawVariantDecl {
+                        id: VariantId {
+                            enumeration: EnumId(id),
+                            index: 1,
+                        },
+                        payload: None,
+                        span: span(0),
+                    },
+                ],
+            })
+            .collect();
+        (
+            sources,
+            RawOwnedProgram {
+                builtins: BuiltinOrigins::None,
+                records: vec![raw::record(&[hir::Ty::Bool, hir::Ty::I32], span(0))],
+                enums,
+                functions: vec![function],
+            },
+            span(8),
+            span(10),
+        )
+    }
+
+    pub(in crate::frontend::oir::owned) fn late_leaf_fixture(
+        extraction: bool,
+    ) -> (SourceMap, RawOwnedProgram, [Span; 3]) {
+        let (sources, mut program, construction, transfer) = fixture();
+        program.records[0].fields[0].ty = ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32));
+        program.records[0].fields[1].ty = ParameterTy::Value(ValueTy::Scalar(hir::Ty::Bool));
+        let OwnedInstruction::Construct { fields, .. } =
+            &mut program.functions[0].blocks[0].statements[3].kind
+        else {
+            unreachable!()
+        };
+        fields[0].1.local = LocalId(1);
+        fields[1].1.local = LocalId(0);
+        let span = program.functions[0].span;
+        let at = Span {
+            start: span.start + 40,
+            end: span.end + 40,
+            ..span
+        };
+        if extraction {
+            program.enums[1].variants.truncate(1);
+            let function = &mut program.functions[0];
+            function.owners.push(OwnerDecl {
+                aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Enum(EnumId(0))).unwrap(),
+                kind: OwnerKind::Local { mutable: false },
+                span: at,
+            });
+            function.matches = vec![MatchDecl {
+                source: OwnerPlaceId(3),
+                arms: vec![MatchArm {
+                    variant: VariantId {
+                        enumeration: EnumId(1),
+                        index: 0,
+                    },
+                    dispatch: BlockId(0),
+                    entry: BlockId(1),
+                }],
+                span: at,
+            }];
+            function.blocks[0].statements.truncate(10);
+            function.blocks[0].terminator = raw::end(
+                OwnedTerminatorKind::MatchDispatch {
+                    match_id: MatchId(0),
+                    arm: 0,
+                },
+                at,
+            );
+            let mut statements = vec![
+                raw::instruction(
+                    OwnedInstruction::ConsumeOwnedVariant {
+                        match_id: MatchId(0),
+                        arm: 0,
+                        destination: OwnerPlaceId(4),
+                    },
+                    at,
+                ),
+                raw::instruction(OwnedInstruction::Discard(OwnerPlaceId(4)), span),
+            ];
+            statements.extend((0..5).rev().map(|owner| {
+                raw::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(owner)), span)
+            }));
+            function.blocks.push(OwnedBlock {
+                merge: None,
+                span,
+                statements,
+                terminator: raw::end(
+                    OwnedTerminatorKind::ReturnScalar(raw::operand(1, span)),
+                    span,
+                ),
+            });
+        }
+        (sources, program, [construction, transfer, at])
+    }
+
+    #[test]
+    fn owned_enum_reference_late_invalid_leaf_preserves_all_destination_bytes_and_state() {
+        // R { first:i32, last:bool } makes the valid first leaf observable.
+        // A validate-and-copy-per-leaf implementation would write 42 before
+        // discovering the noncanonical final bool in each of these operations.
+        for (site, owner, destination, offset, state, generation) in [
+            (0, 1, 2, 8, UNINITIALIZED, 1),
+            (1, 2, 3, 12, UNINITIALIZED, 1),
+            (2, 3, 4, 12, DEAD, 0),
+        ] {
+            let (sources, raw, spans) = late_leaf_fixture(site == 2);
+            let witness = verified::verify_owned(raw, &sources).unwrap();
+            assert_eq!(run(&witness, Some(hir::DefId(0))), Ok(Scalar::I32(42)));
+            let at = spans[site];
+            let observed = run_array_observed(
+                &witness,
+                Some(hir::DefId(0)),
+                Limits::default(),
+                ObservationControl {
+                    poison_destinations: true,
+                    fault: Some(FaultInjection {
+                        at,
+                        kind: FaultKind::EnumOwnerByte {
+                            owner: OwnerPlaceId(owner),
+                            offset,
+                            byte: 2,
+                        },
+                    }),
+                    ..Default::default()
+                },
+            );
+            assert!(observed.fault_applied);
+            assert!(!observed.truncated);
+            assert_eq!(observed.result, Err(bad("enum payload", at)));
+            let snapshot = |id| {
+                observed
+                    .storage
+                    .iter()
+                    .find(|snapshot| {
+                        snapshot.kind == StorageObservationKind::Failure
+                            && snapshot.key.owner == id as u64
+                    })
+                    .unwrap()
+            };
+            let destination = snapshot(destination);
+            assert_eq!(
+                (destination.state, destination.key.generation),
+                (state, generation)
+            );
+            assert!(destination.bytes.iter().all(|byte| *byte == 0));
+            assert_eq!(destination.guards_before, destination.guards_after);
+            let source = snapshot(owner);
+            assert_eq!((source.state, source.key.generation), (AVAILABLE, 2));
+            assert_eq!(&source.bytes[offset - 4..offset], &[42, 0, 0, 0]);
+            assert_eq!(source.bytes[offset], 2);
+            assert_eq!(source.guards_before, source.guards_after);
+        }
+    }
+
+    #[test]
+    fn owned_enum_reference_consume_validates_before_starting_arm_owner() {
+        let (sources, mut raw, _, _) = fixture();
+        let span = raw.functions[0].span;
+        let at = Span {
+            start: span.start + 40,
+            end: span.end + 40,
+            ..span
+        };
+        raw.enums[1].variants.truncate(1);
+        let function = &mut raw.functions[0];
+        function.owners.push(OwnerDecl {
+            aggregate: AggregateSlot::try_from_aggregate(AggregateTy::Enum(EnumId(0))).unwrap(),
+            kind: OwnerKind::Local { mutable: false },
+            span: at,
+        });
+        function.matches = vec![MatchDecl {
+            source: OwnerPlaceId(3),
+            arms: vec![MatchArm {
+                variant: VariantId {
+                    enumeration: EnumId(1),
+                    index: 0,
+                },
+                dispatch: BlockId(0),
+                entry: BlockId(1),
+            }],
+            span: at,
+        }];
+        function.blocks[0].statements.truncate(10);
+        function.blocks[0].terminator = raw::end(
+            OwnedTerminatorKind::MatchDispatch {
+                match_id: MatchId(0),
+                arm: 0,
+            },
+            at,
+        );
+        let mut statements = vec![
+            raw::instruction(
+                OwnedInstruction::ConsumeOwnedVariant {
+                    match_id: MatchId(0),
+                    arm: 0,
+                    destination: OwnerPlaceId(4),
+                },
+                at,
+            ),
+            raw::instruction(OwnedInstruction::Discard(OwnerPlaceId(4)), span),
+        ];
+        statements.extend((0..5).rev().map(|owner| {
+            raw::instruction(OwnedInstruction::StorageEnd(OwnerPlaceId(owner)), span)
+        }));
+        function.blocks.push(OwnedBlock {
+            merge: None,
+            span,
+            statements,
+            terminator: raw::end(
+                OwnedTerminatorKind::ReturnScalar(raw::operand(1, span)),
+                span,
+            ),
+        });
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let observed = run_array_observed(
+            &witness,
+            Some(hir::DefId(0)),
+            Limits::default(),
+            ObservationControl {
+                poison_destinations: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(observed.result, Ok(Scalar::I32(42)));
+        assert!(observed.events.iter().any(
+            |event| matches!(event, Event::Transfer(_, to) if to.owner == 4 && to.generation == 2)
+        ));
+        for (offset, byte, invariant) in [(4, 255, "enum tag"), (8, 2, "enum payload")] {
+            let observed = run_array_observed(
+                &witness,
+                Some(hir::DefId(0)),
+                Limits::default(),
+                ObservationControl {
+                    fault: Some(FaultInjection {
+                        at,
+                        kind: FaultKind::EnumOwnerByte {
+                            owner: OwnerPlaceId(3),
+                            offset,
+                            byte,
+                        },
+                    }),
+                    ..Default::default()
+                },
+            );
+            assert!(observed.fault_applied);
+            assert_eq!(observed.result, Err(bad(invariant, at)));
+            let destination = observed
+                .storage
+                .iter()
+                .find(|snapshot| {
+                    snapshot.kind == StorageObservationKind::Failure && snapshot.key.owner == 4
+                })
+                .unwrap();
+            assert_eq!((destination.state, destination.key.generation), (DEAD, 0));
+            assert!(destination.bytes.iter().all(|byte| *byte == 0));
+            let source = observed
+                .storage
+                .iter()
+                .find(|snapshot| {
+                    snapshot.kind == StorageObservationKind::Failure && snapshot.key.owner == 3
+                })
+                .unwrap();
+            assert_eq!((source.state, source.key.generation), (AVAILABLE, 2));
+        }
+    }
+
+    #[test]
+    fn owned_enum_reference_nested_transfer_preserves_only_active_cells() {
+        let (sources, raw, _, _) = fixture();
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let observed = run_array_observed(
+            &witness,
+            Some(hir::DefId(0)),
+            Limits::default(),
+            ObservationControl {
+                poison_destinations: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(observed.result, Ok(Scalar::I32(42)));
+        assert!(!observed.truncated);
+        let transfer = observed
+            .storage
+            .iter()
+            .find(|snapshot| {
+                snapshot.kind == StorageObservationKind::Transfer && snapshot.key.owner == 3
+            })
+            .unwrap();
+        assert_eq!(
+            transfer.bytes,
+            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0xa5, 0xa5, 0xa5, 42, 0, 0, 0]
+        );
+        assert_eq!(transfer.guards_before, transfer.guards_after);
+    }
+
+    #[test]
+    fn owned_enum_reference_invalid_nested_values_leave_destination_and_owners_unchanged() {
+        let (sources, raw, construction, transfer) = fixture();
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        for (at, owner, destination, offset, byte, invariant) in [
+            (construction, 1, 2, 0, 255, "enum tag"),
+            (construction, 1, 2, 4, 2, "enum payload"),
+            (transfer, 2, 3, 4, 255, "enum tag"),
+            (transfer, 2, 3, 8, 2, "enum payload"),
+        ] {
+            let observed = run_array_observed(
+                &witness,
+                Some(hir::DefId(0)),
+                Limits::default(),
+                ObservationControl {
+                    poison_destinations: true,
+                    fault: Some(FaultInjection {
+                        at,
+                        kind: FaultKind::EnumOwnerByte {
+                            owner: OwnerPlaceId(owner),
+                            offset,
+                            byte,
+                        },
+                    }),
+                    ..Default::default()
+                },
+            );
+            assert!(observed.fault_applied);
+            assert!(!observed.truncated);
+            assert_eq!(observed.result, Err(bad(invariant, at)));
+            let destination = observed
+                .storage
+                .iter()
+                .find(|snapshot| {
+                    snapshot.kind == StorageObservationKind::Failure
+                        && snapshot.key.owner == destination as u64
+                })
+                .unwrap();
+            assert_eq!(destination.state, UNINITIALIZED);
+            assert_eq!(destination.key.generation, 1);
+            assert!(destination.bytes.iter().all(|byte| *byte == 0));
+            let source = observed
+                .storage
+                .iter()
+                .find(|snapshot| {
+                    snapshot.kind == StorageObservationKind::Failure
+                        && snapshot.key.owner == owner as u64
+                })
+                .unwrap();
+            assert_eq!(source.state, AVAILABLE);
+            assert_eq!(source.key.generation, 2);
+        }
+    }
+}

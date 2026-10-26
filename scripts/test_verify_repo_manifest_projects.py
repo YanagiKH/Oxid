@@ -43,6 +43,30 @@ class ManifestApplications(unittest.TestCase):
                 with self.subTest(members=members), self.assertRaisesRegex(RuntimeError, "invalid"):
                     verify_repo.manifest_project_members(self.members, self.root, required=True)
 
+    def test_new_enum_projects_cannot_hide_missing_members_or_neighbors(self):
+        projects = ("apps/frame-filter",
+                    "examples/projects/owned_enum_payload_acceptance/ready",
+                    "examples/projects/owned_enum_payload_acceptance/failed",
+                    "examples/projects/owned_enum_payload_acceptance/values",
+                    "examples/projects/owned_enum_payload_acceptance/library")
+        selected = set(self.members)
+        entries = [self.root / self.application]
+        for project in projects:
+            members = [self.root / name for name in verify_repo.TYPED_MANIFEST_PROJECTS[project]]
+            manifest = self.root / project / "oxid.toml"
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text('[project]\nedition="typed-preview"\n')
+            selected.update(members)
+            entries.append(self.root / project)
+        neighbor = self.root / "apps/frame-filter/unregistered.ox"
+        admitted, roots = verify_repo.manifest_project_members(list(selected) + [neighbor], self.root, required=True)
+        self.assertEqual(admitted, selected)
+        self.assertEqual(roots, entries)
+        self.assertNotIn(neighbor, admitted)
+        for missing in selected - set(self.members):
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
+                verify_repo.manifest_project_members(list(selected - {missing}), self.root, required=True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -62,6 +62,7 @@ class TestFixtureRegistrationTests(unittest.TestCase):
                             verify_repo.verify_test_fixture_registration(root)
 
     @patch.object(verify_repo, "TYPED_PROJECTS", {})
+    @patch.object(verify_repo, "TYPED_MANIFEST_PROJECTS", {})
     def test_paths_are_relative_to_the_verifier_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -76,6 +77,7 @@ class TestFixtureRegistrationTests(unittest.TestCase):
             root = Path(directory)
             members = ("tests/typed/main.ox", "tests/typed/child.ox")
             with patch.object(verify_repo, "fixture_data_sources", return_value=set()), \
+                    patch.object(verify_repo, "TYPED_MANIFEST_PROJECTS", {}), \
                     patch.object(verify_repo, "TYPED_PROJECTS", {members[0]: members}):
                 exact = "[test-fixtures]\n" + "".join(f'"{name}" = true\n' for name in members)
                 (root / "oxid.toml").write_text(exact)

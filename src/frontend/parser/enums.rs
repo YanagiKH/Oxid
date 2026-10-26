@@ -240,6 +240,22 @@ impl Parser<'_> {
                 self.bump();
                 (ScalarTypeSyntax::I32, start.end)
             }
+            Kind::Ident if self.source.text_at(start) != "u8" => {
+                let (path, span) = self.item_path("expected enum payload type", true)?;
+                let kind = match path {
+                    ItemPath::Unqualified(_) => ScalarTypeSyntax::Name,
+                    ItemPath::Absolute(path) => {
+                        ScalarTypeSyntax::Absolute(u32::try_from(path.0).map_err(|_| {
+                            reserve_error(start, "enum payload path index overflow")
+                        })?)
+                    }
+                };
+                (kind, span.end)
+            }
+            _ if self.arrays_enabled() && self.array_punctuation("[") => {
+                let (array, end) = self.array_type()?;
+                (ScalarTypeSyntax::Array(array), end)
+            }
             Kind::LParen => {
                 self.bump();
                 let end = self

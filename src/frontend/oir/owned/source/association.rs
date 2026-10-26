@@ -205,7 +205,9 @@ fn function(
                         visitor.span(payload.span)?;
                     }
                 }
-                OwnedInstruction::ConsumeVariant { .. } => {
+                OwnedInstruction::ConsumeVariant { .. }
+                | OwnedInstruction::ConstructOwnedEnum { .. }
+                | OwnedInstruction::ConsumeOwnedVariant { .. } => {
                     if !allow_enums {
                         return Err(bad());
                     }
@@ -604,9 +606,15 @@ fn check_impl(
             if variant.id != id
                 || variant.span != expected.diagnostic_span()
                 || variant.payload
-                    != expected
-                        .payload()
-                        .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty)))
+                    != if expected.has_owned_payload() {
+                        expected
+                            .value_payload(typed.ok_or_else(bad)?.work())?
+                            .map(ParameterTy::Value)
+                    } else {
+                        expected
+                            .payload()
+                            .map(|ty| ParameterTy::Value(ValueTy::Scalar(ty)))
+                    }
             {
                 return Err(bad());
             }
@@ -1104,6 +1112,83 @@ mod enum_tests {
         project::budget::Allocator,
         source::SourceView,
     };
+
+    #[test]
+    fn owned_enum_association_binds_payload_identity_and_new_instruction_origins() {
+        let text = "struct R{x:i32} struct S{x:i32} enum First{V(R)} enum Second{V(S)} enum Wrap{A([i32;2]),N(First)} fn main()->i32{let e=First::V(R{x:42});match e{First::V(r)=>{return r.x;},}}";
+        let mut sources = SourceMap::new();
+        let file = sources.add("owned-enum-origin.ox".into(), text.into());
+        let foreign = sources.add("other-owned-enum-origin.ox".into(), text.into());
+        let source = sources.get(file);
+        let (ast, _) = parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap();
+        let owner = SourceOwner::original(source, &ast, SourceView::Map(&sources)).unwrap();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = declaration_index::collect_originals(
+            owner,
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        let typed = super::super::resolve::type_enum_source(&index, &work, &mut allocator).unwrap();
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        let check =
+            |raw: &RawOwnedProgram| check_impl(raw, &index, &sources, true, false, Some(&typed));
+        assert!(check(&raw).is_ok());
+        // These are valid declaration shapes with different nominal or
+        // structural payload identities; none can inherit the source index.
+        for (enumeration, variant, payload) in [
+            (0, 0, AggregateTy::Record(RecordId(1))),
+            (
+                2,
+                0,
+                AggregateTy::FixedArray(FixedArrayTy::check(hir::Ty::I32, 3).unwrap()),
+            ),
+            (2, 1, AggregateTy::Enum(EnumId(1))),
+        ] {
+            let previous = raw.enums[enumeration].variants[variant].payload;
+            raw.enums[enumeration].variants[variant].payload =
+                Some(ParameterTy::Value(ValueTy::Owned(payload)));
+            Declarations::check_combined(&raw.records, &raw.enums, &sources).unwrap();
+            let error = check(&raw).unwrap_err();
+            assert_eq!((error.code, error.stage), ("E0500", "oir-project-bind"));
+            raw.enums[enumeration].variants[variant].payload = previous;
+        }
+        let mut visited = 0;
+        for block in 0..raw.functions[0].blocks.len() {
+            for statement in 0..raw.functions[0].blocks[block].statements.len() {
+                if !matches!(
+                    raw.functions[0].blocks[block].statements[statement].kind,
+                    OwnedInstruction::ConstructOwnedEnum { .. }
+                        | OwnedInstruction::ConsumeOwnedVariant { .. }
+                ) {
+                    continue;
+                }
+                let previous = raw.functions[0].blocks[block].statements[statement].span;
+                raw.functions[0].blocks[block].statements[statement].span = Span {
+                    file: foreign,
+                    ..previous
+                };
+                let error = check(&raw).unwrap_err();
+                assert_eq!((error.code, error.stage), ("E0500", "oir-project-bind"));
+                raw.functions[0].blocks[block].statements[statement].span = previous;
+                visited += 1;
+            }
+        }
+        assert_eq!(visited, 2);
+        assert!(check(&raw).is_ok());
+    }
 
     #[test]
     fn enum_association_checks_unused_payload_identity_and_every_new_span() {

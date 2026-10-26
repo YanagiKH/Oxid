@@ -5,6 +5,7 @@ mod builtin_lower;
 pub(super) mod hir;
 mod hir_budget;
 pub(super) mod lower;
+mod owned_enum_resources;
 mod program;
 pub(in crate::frontend::oir) mod resolve;
 mod resolver_storage;

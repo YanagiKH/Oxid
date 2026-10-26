@@ -1,0 +1,9 @@
+[project]
+name = "frame-output"
+version = "0.1.0"
+kind = "lib"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+codec = "../codec"

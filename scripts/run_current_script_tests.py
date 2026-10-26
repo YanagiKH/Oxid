@@ -17,6 +17,9 @@ HISTORICAL_REVISION = "9ff8ef90a26f003f4616838dfc186fa3bfb6845c"
 # SHA-256 of each complete file from git show HISTORICAL_REVISION:scripts/NAME.py.
 # A changed module cannot be delegated to a checkout that only tests old bytes.
 HISTORICAL_ONLY = {
+    "test_bounded_byte_storage": (
+        "459c88202ada5bbd4bcb7a54ca13a54092d8f9ab91e9e2addae0d70eeb1ec71d",
+        "binds the frozen byte-storage source registry and pre-extension enum exclusions"),
     "test_lexer_current_ci": (
         "ed412ef926631af68d17b6a339598bb34df13ac5b48275b4a264c58f6922931c",
         "asserts the frozen compiler and CI source descriptors"),
