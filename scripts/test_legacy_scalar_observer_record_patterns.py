@@ -7,7 +7,7 @@ from unittest.mock import patch
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
 import legacy_scalar_observer_record_patterns as adapter
-import legacy_scalar_observer_range_for as current
+import legacy_scalar_observer_local_references as current
 
 ROOT = Path(__file__).resolve().parents[1]
 
