@@ -1322,3 +1322,141 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
         println!("RFC0031 independent frozen native N={} plan={} I={} W=2 native={} cost={} diagnostic={} LLVM={} metadata={} transfer_visits={} ordinary_visits={} plan_sites=5 including_zero=3 native_sites={} all_exact_and_one_short_pass", oracle.length, plan_bytes, scalar + 2, oracle.native_bytes, oracle.cost, oracle.diagnostic_bytes, oracle.text_bytes, oracle.metadata_bytes, oracle.roster.len() + 3, oracle.ordinary_visits, 4 + unique);
     }
 }
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires LLVM 19.1.7; executes byte record corruption controls at O0 and O2"]
+fn byte_record_native_late_bool_failure_preserves_destination_at_both_optimizations() {
+    use crate::frontend::build_config::{NativeBuildSettings, NativeOptimization};
+    use sha2::{Digest, Sha256};
+    let (sources, witness, entry) = source::byte_storage_native_fixture::byte_record_enum();
+    let (index, statement, source, destination) = witness.functions()[entry.0].blocks[0]
+        .statements
+        .iter()
+        .enumerate()
+        .find_map(|(index, statement)| {
+            if let OwnedInstruction::ConstructOwnedEnum {
+                payload,
+                destination,
+                ..
+            } = statement.kind
+            {
+                Some((index, statement, payload.0, destination.0))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let prefix = format!("f{}_b0_i{index}_owned", entry.0);
+    let needle = format!("  %{prefix}_validate0_ptr = getelementptr i8, ptr %o{source}, i64 0\n");
+    let marker = format!("{prefix}_validate2_error:\n");
+    let module = native_module(&witness, Some(entry), &sources).unwrap();
+    assert_eq!(module.matches(&needle).count(), 1);
+    assert_eq!(module.matches(&marker).count(), 1);
+    let mut observe = String::new();
+    for byte in 0..16 {
+        observe.push_str(&format!("  %observe_ptr{byte} = getelementptr i8, ptr %o{destination}, i64 {byte}\n  %observe_byte{byte} = load volatile i8, ptr %observe_ptr{byte}, align 1\n  %observe_value{byte} = zext i8 %observe_byte{byte} to i32\n  %observe_print{byte} = call i32 @__oxid_print_i32(i32 %observe_value{byte})\n"));
+    }
+    let module = module.replacen(&marker, &format!("{marker}{observe}"), 1);
+    let directory = std::env::temp_dir().join(format!(
+        "oxid-byte-record-fault-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let evidence = std::env::var_os("OXID_OWNED_NATIVE_EVIDENCE").map(std::path::PathBuf::from);
+    if let Some(evidence) = &evidence {
+        std::fs::create_dir_all(evidence).unwrap();
+        std::fs::write(
+            evidence.join("byte-record-source.ox"),
+            sources.get(SourceFileId(0)).text(),
+        )
+        .unwrap();
+    }
+    for optimization in [NativeOptimization::O0, NativeOptimization::O2] {
+        for (control, last, partial) in [
+            ("valid", 1, false),
+            ("late-bool", 2, false),
+            ("partial-copy-control", 2, true),
+        ] {
+            let mut insert = String::new();
+            for byte in 0..16 {
+                insert.push_str(&format!("  %seed_ptr{byte} = getelementptr i8, ptr %o{destination}, i64 {byte}\n  store i8 165, ptr %seed_ptr{byte}, align 1\n"));
+            }
+            insert.push_str(&format!("  %corrupt = getelementptr i8, ptr %o{source}, i64 8\n  store i8 {last}, ptr %corrupt, align 1\n"));
+            if partial {
+                insert.push_str(&format!("  %partial = getelementptr i8, ptr %o{destination}, i64 4\n  store i8 255, ptr %partial, align 1\n"));
+            }
+            let harness = module.replacen(&needle, &format!("{insert}{needle}"), 1);
+            let output = directory.join(format!("byte-record-{optimization:?}-{control}"));
+            crate::frontend::native::compile_with_settings(
+                &harness,
+                output.to_str().unwrap(),
+                &NativeBuildSettings::with_optimization(false, optimization),
+            )
+            .unwrap();
+            let result = std::process::Command::new(&output)
+                .current_dir(&directory)
+                .env_clear()
+                .output()
+                .unwrap();
+            if let Some(evidence) = &evidence {
+                let name = format!("byte-record-{optimization:?}-{control}");
+                let executable = std::fs::read(&output).unwrap();
+                std::fs::copy(&output, evidence.join(format!("{name}.elf"))).unwrap();
+                for (suffix, body) in [
+                    ("ll", harness.as_bytes()),
+                    ("stdout", result.stdout.as_slice()),
+                    ("stderr", result.stderr.as_slice()),
+                ] {
+                    std::fs::write(evidence.join(format!("{name}.{suffix}")), body).unwrap();
+                }
+                let status = result
+                    .status
+                    .code()
+                    .map_or_else(|| "signal".into(), |code| code.to_string());
+                std::fs::write(
+                    evidence.join(format!("{name}.status")),
+                    format!("{status}\n"),
+                )
+                .unwrap();
+                std::fs::write(
+                    evidence.join(format!("{name}.run.txt")),
+                    format!("source-free working directory; env_clear; argv=[]; native optimization={optimization:?}; exit={status}\nLLVM sha256={:x}\nELF sha256={:x}\nstdout sha256={:x}\nstderr sha256={:x}\n", Sha256::digest(harness.as_bytes()), Sha256::digest(&executable), Sha256::digest(&result.stdout), Sha256::digest(&result.stderr)),
+                )
+                .unwrap();
+            }
+            if last == 1 {
+                assert_eq!(
+                    (result.status.code(), result.stdout, result.stderr),
+                    (Some(0), b"255\n".to_vec(), vec![])
+                );
+            } else {
+                let mut expected = [165; 16];
+                if partial {
+                    expected[4] = 255;
+                }
+                assert_eq!(result.status.code(), Some(1));
+                assert_eq!(
+                    result.stdout,
+                    expected
+                        .iter()
+                        .map(|b| format!("{b}\n"))
+                        .collect::<String>()
+                        .as_bytes()
+                );
+                assert_eq!(
+                    result.stderr,
+                    execute::OwnedRunFailure::Invariant("enum payload", Some(statement.span))
+                        .diagnostic(&sources)
+                        .render_human(&sources)
+                        .as_bytes()
+                );
+            }
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

@@ -123,14 +123,7 @@ fn owned_u8_source_static_rejections_byte_storage_successor() {
         (legacy[0].code, legacy[0].stage, legacy[0].message.as_str()),
         ("E0300", "type", "equality requires i32 or bool operands")
     );
-    let text = "struct R { x: u8 } fn main()->(){return;}";
-    let e = errors(text);
-    assert_eq!(e.len(), 1);
-    assert_eq!(
-        (e[0].code, e[0].stage, e[0].message.as_str()),
-        ("E0202", "resolve", "u8 record fields are not supported")
-    );
-    assert_eq!(e[0].primary.unwrap().start, text.find("u8").unwrap());
+    assert_eq!(run("struct R{x:u8}fn main()->i32{let n=255;let r=R{x:n.to_u8_checked()};let b=r.x;return b.to_i32();}"), Scalar::I32(255));
     for expression in [
         "b+ b",
         "b-b",

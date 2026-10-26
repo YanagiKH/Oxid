@@ -113,3 +113,6 @@ release native builds with the same language checks and execution limits.
 [RFC 0041](0041-owned-enum-payloads.md) extends consuming enum matches to
 finite record, fixed-array and nested enum payloads, with whole-value ownership
 and bounded containment analysis.
+
+[RFC 0042](0042-byte-record-fields.md) admits byte and byte-array record fields
+through the existing checked layouts, whole-value transfers and projected loans.

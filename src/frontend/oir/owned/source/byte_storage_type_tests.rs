@@ -19,39 +19,17 @@ fn check(text: &str) -> Result<(), Vec<Diagnostic>> {
 }
 
 #[test]
-fn byte_storage_source_unused_nested_and_empty_record_fields_stay_closed() {
-    for n in [0, 1, 1024] {
-        let ty = format!("[u8;{n}]");
+fn byte_storage_source_unused_nested_and_empty_record_fields_are_admitted() {
+    for ty in ["u8", "[u8;0]", "[u8;1]", "[u8;1024]"] {
         for declarations in [
             format!("struct Unused {{ bytes:{ty} }}"),
             format!("struct Outer {{ inner:Inner }} struct Inner {{ bytes:{ty} }}"),
             format!("struct Inner {{ bytes:{ty} }} struct Outer {{ inner:Inner }}"),
         ] {
             let text = format!("{declarations} fn main()->i32{{return 0;}}");
-            let errors = check(&text).unwrap_err();
-            assert_eq!(errors.len(), 1);
-            let error = &errors[0];
-            assert_eq!(
-                (error.code, error.stage, error.message.as_str()),
-                (
-                    "E0202",
-                    "resolve",
-                    "u8 array record fields are not supported"
-                )
-            );
-            let start = text.find(&ty).unwrap();
-            assert_eq!(
-                error.primary.map(|s| (s.start, s.end)),
-                Some((start, start + ty.len()))
-            );
-            assert!(error.secondary.is_empty());
+            assert!(check(&text).is_ok(), "{text}");
         }
     }
-    let errors = check("struct Unused { byte:u8 } fn main()->i32{return 0;}").unwrap_err();
-    assert_eq!(
-        (errors[0].code, errors[0].stage, errors[0].message.as_str()),
-        ("E0202", "resolve", "u8 record fields are not supported")
-    );
     let errors = check("enum E { V(u8) } fn main()->i32{return 0;}").unwrap_err();
     assert_eq!(
         (errors[0].code, errors[0].stage, errors[0].message.as_str()),
@@ -131,7 +109,7 @@ fn byte_storage_source_literal_inference_is_exact_and_empty_context_is_local_onl
 
 #[test]
 fn byte_storage_source_scalar_record_controls_and_standalone_signatures_coexist() {
-    for element in ["bool", "i32", "()"] {
+    for element in ["bool", "i32", "u8", "()"] {
         let text = format!("struct R{{a:[{element};0]}} fn take(a:[u8;0])->[u8;0]{{return a;}} fn read(a:&[u8])->i32{{return a.len();}} fn exact(a:&[u8;0])->i32{{return a.len();}} fn main()->i32{{let a:[u8;0]=[];return read(&a)+exact(&a);}}");
         assert!(check(&text).is_ok(), "{element}");
     }
@@ -140,41 +118,26 @@ fn byte_storage_source_scalar_record_controls_and_standalone_signatures_coexist(
 #[test]
 fn byte_storage_imported_record_fence_uses_complete_child_type_origin() {
     let root = "mod child; use crate::child::Inner; struct Outer { inner:Inner } fn main()->i32{return 0;}";
-    for n in [0, 1, 1024] {
-        let field_type = format!("[u8;{n}]");
+    for field_type in ["u8", "[u8;0]", "[u8;1]", "[u8;1024]"] {
         let text = format!("pub struct Inner {{ pub bytes:{field_type} }}");
         for project in super::super::byte_storage_tests::module_sources(&[
             ("main.ox", root),
             ("child.ox", &text),
         ]) {
             assert!(project.uses_owned_syntax());
-            let errors = resolve_sources(SourceOwner::project(&project)).unwrap_err();
-            assert_eq!(errors.len(), 1);
-            let error = &errors[0];
-            assert_eq!(
-                (error.code, error.stage, error.message.as_str()),
-                (
-                    "E0202",
-                    "resolve",
-                    "u8 array record fields are not supported"
-                )
-            );
-            let primary = error.primary.unwrap();
-            assert_eq!(primary.file, crate::frontend::source::SourceFileId(1));
-            let start = text.find(&field_type).unwrap();
-            assert_eq!(
-                (primary.start, primary.end),
-                (start, start + field_type.len())
-            );
-            assert!(error.secondary.is_empty());
-            assert!(error.notes.is_empty());
-            assert_eq!(
-                std::path::Path::new(project.sources().get(primary.file).path())
-                    .file_name()
-                    .unwrap(),
-                "child.ox"
-            );
-            assert_eq!(project.sources().get(primary.file).text(), text);
+            let resolved = resolve_sources(SourceOwner::project(&project)).unwrap();
+            let field = resolved
+                .records()
+                .iter()
+                .flat_map(|record| &record.fields)
+                .find(|field| field.span.file == crate::frontend::source::SourceFileId(1))
+                .unwrap();
+            assert!(project
+                .sources()
+                .get(field.span.file)
+                .text_at(field.span)
+                .contains(field_type));
+            assert!(super::super::typeck::check(resolved).is_ok());
         }
     }
 }
@@ -183,24 +146,25 @@ fn byte_storage_imported_record_fence_uses_complete_child_type_origin() {
 fn byte_storage_new_fence_format_backing_and_failure_roles_are_bounded() {
     use std::mem::{align_of, size_of};
     let mut sources = SourceMap::new();
-    let file = sources.add("byte-error.ox".into(), "[u8;0]".into());
-    let span = sources.get(file).span(0, 6);
-    let ty = ValueTy::Owned(AggregateTy::FixedArray(
-        FixedArrayTy::check(Ty::U8, 0).unwrap(),
+    let file = sources.add("byte-error.ox".into(), "field".into());
+    let span = sources.get(file).span(0, 5);
+    // Byte fields now pass this gate; the independent enum-field fence stays.
+    let ty = ValueTy::Owned(AggregateTy::Enum(
+        crate::frontend::oir::owned_types::EnumId(0),
     ));
-    let literal = format_args!("u8 array record fields are not supported");
+    let literal = format_args!("enum values cannot be record fields");
     // The new branch passes a static literal: there is no interpolated
     // argument array or source-sized name backing to add to fmt::Arguments.
     assert_eq!(
         literal.as_str(),
-        Some("u8 array record fields are not supported")
+        Some("enum values cannot be record fields")
     );
     let (error, metrics) =
         owned_diagnostic::measure_formatting(|| record_field_type(ty, span).unwrap_err());
     assert_eq!(metrics.allocations, 1);
     assert_eq!(
         metrics.copied_bytes,
-        "u8 array record fields are not supported".len()
+        "enum values cannot be record fields".len()
     );
     assert_eq!(metrics.displayed_names, 0);
     assert_eq!(
@@ -219,7 +183,7 @@ fn byte_storage_new_fence_format_backing_and_failure_roles_are_bounded() {
         assert_eq!(metrics.allocations, 1);
         assert_eq!(error.primary, Some(span));
         assert_eq!(error.stage, "resolve");
-        assert_eq!(error.code, if fail_after == 0 { "E0400" } else { "E0202" });
+        assert_eq!(error.code, if fail_after == 0 { "E0400" } else { "E0300" });
     }
     macro_rules! role {
         ($label:literal,$ty:ty) => {

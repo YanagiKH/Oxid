@@ -21,6 +21,7 @@ The native project workflow adds:
 
 - Explicit types and static ownership checks for the supported language subset.
 - Move-only records, fixed scalar arrays and finite nested enum payloads.
+- Byte fields and byte-array fields with checked conversion and borrowing.
 - Native executables on Linux x86_64 using LLVM/Clang/LLD 19.1.7.
 - Development and optimized release builds with the same runtime checks.
 - Local package dependencies, workspaces, and shared dependency locks.

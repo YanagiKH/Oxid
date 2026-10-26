@@ -160,25 +160,30 @@ existing whole-owner loans, explicit reborrows and evaluation/fuel order.
 An indexed byte must first be bound to a local before widening; `a[i].to_i32()`
 is not a supported receiver.
 
-Byte arrays cannot be record fields, including unused/nested/imported fields
-and N=0. Such fields fail E0202/resolve at the complete field type with
-`u8 array record fields are not supported`. Direct u8 fields and enum payloads
-remain excluded. Predecessor bool/i32/unit record arrays and projections stay
-available. There are no byte-record projections, element references, subslices,
-heap buffers, I/O signature changes or provider wire expansions. Existing
+Record fields also admit `u8` and `[u8; N]`, including unused, nested and
+imported declarations and N=0, under
+[byte record fields](../rfcs/0042-byte-record-fields.md). Named-root byte reads,
+writes, array indexing, length and projected array/slice call borrows follow
+the existing whole-root ownership rules. Bind a field or indexed byte to a
+local before widening it. A direct scalar u8 enum payload remains excluded;
+byte arrays and records can be finite enum payloads. There are no element
+references, partial field moves, subslices, heap buffers, I/O signature changes
+or provider wire expansions. Existing
 stdin/stdout builtins continue to use i32 arrays/slices.
 
 Physical standalone byte array storage uses stride/alignment1 and max(1,N)
 bytes. Logical width remains max(1,N), preserving all expanded-cell and fuel
 charges. Source/reference and native caps are unchanged; a legal N=1024 source
 constructor can exceed the narrower native per-function slot cap and be refused
-before tools/output. Native qualification remains Linux x86_64 LLVM19.1.7 O0.
+before tools/output. Native project builds support Linux x86_64 LLVM19.1.7 at
+O0 and O2.
 
 ## Bounded owned record composition
 
 [RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold
-bool/i32/unit, another nominal record, or a fixed bool/i32/unit array. Standalone
-byte arrays are excluded from record fields. Forward type
+bool/i32/unit, another nominal record, or a fixed bool/i32/unit array.
+[Byte fields](../rfcs/0042-byte-record-fields.md) add u8 scalars and arrays to
+that same contract. Forward type
 references are allowed, but by-value containment must be acyclic even in unused
 declarations. Records remain nominal and move-only. Containment and named-root
 field paths are bounded to 64 levels, with the existing byte and work ceilings.

@@ -140,7 +140,7 @@ fn byte_storage_raw_array_identity_scalar_tags_and_lengths_are_rechecked() {
 }
 
 #[test]
-fn byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested() {
+fn byte_storage_raw_record_byte_fields_are_checked_even_unused_and_nested() {
     use crate::frontend::oir::owned_types::{RawFieldDecl, RawRecordDecl};
     let (sources, s) = super::super::consumer_fixtures::context();
     for n in [0, 1, 1024] {
@@ -178,7 +178,7 @@ fn byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested() {
                 functions: vec![],
             };
             assert!(
-                verified::verify_owned(raw, &sources).is_err(),
+                verified::verify_owned(raw, &sources).is_ok(),
                 "N={n}, nested={nested}"
             );
         }
