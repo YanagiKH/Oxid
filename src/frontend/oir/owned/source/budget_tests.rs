@@ -80,6 +80,72 @@ fn source_payload_exact_count_and_one_under_precede_every_reservation() {
 }
 
 #[test]
+fn local_reference_descriptors_cleanup_and_limits_are_paid_before_reservation() {
+    let baseline = with_typed("struct T{}fn main()->(){let x=T{};return;}", |typed, _| {
+        let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
+        let view = typed.functions().next().unwrap();
+        (usage, lower::count_preflight_function(&view).unwrap())
+    });
+    with_typed(
+        "struct T{}fn main()->(){let x=T{};let a=&x;let b=&*a;return;}",
+        |typed, sources| {
+            let usage = budget::fail_allocation_after(0, || {
+                budget::preflight(typed, budget::Limits::DEFAULT)
+            })
+            .unwrap();
+            let view = typed.functions().next().unwrap();
+            let counts = lower::count_preflight_function(&view).unwrap();
+            assert_eq!(counts.owners, baseline.1.owners);
+            assert_eq!(counts.locals, baseline.1.locals);
+            assert_eq!(counts.references, 0);
+            assert_eq!(counts.loans, 2);
+            assert_eq!(counts.statements, baseline.1.statements + 4);
+            assert_eq!(
+                usage.raw_bytes,
+                baseline.0.raw_bytes
+                    + 2 * std::mem::size_of::<LoanDecl>()
+                    + 4 * std::mem::size_of::<OwnedStatement>()
+            );
+            // Each reference adds one binding location and one machine-word cleanup slot.
+            assert_eq!(
+                usage.scratch_bytes,
+                baseline.0.scratch_bytes
+                    + 2 * (std::mem::size_of::<Option<lower::BindingLocation>>()
+                        + std::mem::size_of::<usize>())
+            );
+            let raw = lower::lower_with_limits(
+                typed,
+                budget::Limits {
+                    raw_bytes: usage.raw_bytes,
+                },
+            )
+            .unwrap();
+            let witness = verified::verify_owned(raw, sources).unwrap();
+            assert_eq!(
+                execute::run(&witness, Some(hir::DefId(0))),
+                Ok(Scalar::Unit)
+            );
+            let error = budget::fail_allocation_after(0, || {
+                lower::lower_with_limits(
+                    typed,
+                    budget::Limits {
+                        raw_bytes: usage.raw_bytes - 1,
+                    },
+                )
+            })
+            .unwrap_err();
+            assert_eq!(error.kind, OwnedFailureKind::Resource("source raw payload"));
+            assert_eq!(
+                budget::fail_allocation_after(0, || lower::lower(typed))
+                    .unwrap_err()
+                    .kind,
+                OwnedFailureKind::Resource("injected source allocation failure")
+            );
+        },
+    );
+}
+
+#[test]
 fn source_scalar_origin_only_output_is_counted_without_ownership_flow() {
     with_typed(
         "struct T {} fn main() -> () { return; }",

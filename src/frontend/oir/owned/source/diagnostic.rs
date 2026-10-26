@@ -115,6 +115,9 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                     DeniedSubject::Reference {
                         granted: BorrowKind::Shared,
                         ..
+                    } | DeniedSubject::LocalReference {
+                        granted: BorrowKind::Shared,
+                        ..
                     }
                 )
                 && ((field && facts.operation == Op::WriteField)

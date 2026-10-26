@@ -26,6 +26,34 @@ pub(super) enum BindingLocation {
     ScalarPlace(PlaceId),
     Owner(OwnerPlaceId),
     Reference(ReferenceParamId),
+    LocalReference(LoanId),
+}
+// Cleanup entries carry bounded indices only; the raw verifier independently
+// checks the resulting owner/loan instructions. Keep one machine word per entry.
+#[derive(Clone, Copy)]
+struct LexicalSlot(usize);
+impl LexicalSlot {
+    fn instruction(self) -> OwnedInstruction {
+        if self.0 & 1 == 0 {
+            OwnedInstruction::StorageEnd(OwnerPlaceId(self.0 / 2))
+        } else {
+            OwnedInstruction::ReleaseLocalBorrow(LoanId(self.0 / 2))
+        }
+    }
+}
+fn lexical_capacity(view: &TypedOwnedFunction<'_>, count: Counts) -> Result<usize> {
+    if count.local_loan_depth_bound == 0 {
+        return Ok(count.owners);
+    }
+    let references = (view.signature().params.len()..view.hir().bindings.len())
+        .filter(|&id| {
+            matches!(
+                view.binding_ty(source::BindingId(id)),
+                ParameterTy::Reference { .. }
+            )
+        })
+        .count();
+    budget::add(count.owners, references)
 }
 #[derive(Clone, Copy)]
 pub(super) enum EvaluatedValue {
@@ -148,7 +176,7 @@ struct Output {
     raw: RawOwnedFunction,
     bindings: Vec<Option<BindingLocation>>,
     expressions: Vec<Option<EvaluatedValue>>,
-    lexical: Vec<OwnerPlaceId>,
+    lexical: Vec<LexicalSlot>,
     expected: Counts,
 }
 struct Walk<'a, 'b> {
@@ -199,7 +227,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 },
                 bindings: budget::filled(f.bindings.len(), None)?,
                 expressions: budget::filled(f.expressions.len(), None)?,
-                lexical: budget::reserve(c.owners)?,
+                lexical: budget::reserve(lexical_capacity(view, c)?)?,
                 expected: c,
             })
         } else {
@@ -277,7 +305,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                     BindingLocation::ScalarValue(id) => ParameterBinding::Scalar(id),
                     BindingLocation::Owner(id) => ParameterBinding::Owned(id),
                     BindingLocation::Reference(id) => ParameterBinding::Reference(id),
-                    BindingLocation::ScalarPlace(_) => return Err(invariant(binding.span)),
+                    BindingLocation::ScalarPlace(_) | BindingLocation::LocalReference(_) => {
+                        return Err(invariant(binding.span))
+                    }
                 };
                 budget::append(
                     &mut out.raw.parameters,
@@ -289,6 +319,12 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         for (index, binding) in f.bindings.iter().enumerate().skip(signature.params.len()) {
             require(binding.parameter_position.is_none(), binding.span)?;
+            if matches!(
+                self.view.binding_ty(source::BindingId(index)),
+                ParameterTy::Reference { .. }
+            ) {
+                continue;
+            }
             let ParameterTy::Value(ty) = self.view.binding_ty(source::BindingId(index)) else {
                 return Err(invariant(binding.span));
             };
@@ -405,9 +441,13 @@ impl<'a, 'b> Walk<'a, 'b> {
         Ok(id)
     }
     fn register(&mut self, owner: OwnerPlaceId, span: Span) -> Result<()> {
+        self.register_slot(LexicalSlot(budget::mul(owner.0, 2)?), span)
+    }
+    fn register_slot(&mut self, slot: LexicalSlot, span: Span) -> Result<()> {
         self.active = budget::add(self.active, 1)?;
         if let Some(out) = &mut self.output {
-            budget::append(&mut out.lexical, owner, out.expected.owners, span)?;
+            let capacity = out.lexical.capacity();
+            budget::append(&mut out.lexical, slot, capacity, span)?;
         }
         Ok(())
     }
@@ -434,6 +474,11 @@ impl<'a, 'b> Walk<'a, 'b> {
             }
             ParameterTy::Value(ValueTy::Scalar(_)) => BindingLocation::ScalarValue(LocalId(0)),
             ParameterTy::Value(ValueTy::Owned(_)) => BindingLocation::Owner(OwnerPlaceId(0)),
+            ParameterTy::Reference { .. }
+                if self.view.hir().bindings[id.0].parameter_position.is_none() =>
+            {
+                BindingLocation::LocalReference(LoanId(0))
+            }
             ParameterTy::Reference { .. } => BindingLocation::Reference(ReferenceParamId(0)),
         })
     }
@@ -485,6 +530,7 @@ impl<'a, 'b> Walk<'a, 'b> {
         match self.location(id, span)? {
             BindingLocation::Owner(id) => Ok(AccessBase::Owner(id)),
             BindingLocation::Reference(id) => Ok(AccessBase::Parameter(id)),
+            BindingLocation::LocalReference(id) => Ok(AccessBase::Loan(id)),
             _ => Err(invariant(span)),
         }
     }
@@ -658,8 +704,8 @@ impl<'a, 'b> Walk<'a, 'b> {
             return Ok(());
         }
         for index in (prefix..self.active).rev() {
-            let owner = self.output.as_ref().ok_or_else(|| invariant(span))?.lexical[index];
-            self.statement(OwnedInstruction::StorageEnd(owner), span, span, span)?;
+            let slot = self.output.as_ref().ok_or_else(|| invariant(span))?.lexical[index];
+            self.statement(slot.instruction(), span, span, span)?;
         }
         Ok(())
     }
@@ -2388,6 +2434,59 @@ impl<'a, 'b> Walk<'a, 'b> {
                     )?;
                     self.end_value(source, s, f.expressions[init.0].span, s)?;
                 }
+                source::StmtKind::BorrowLet {
+                    binding,
+                    kind,
+                    place,
+                    borrow_span,
+                    ..
+                } => {
+                    let root = match place {
+                        source::BorrowPlace::Owner(id) | source::BorrowPlace::Forwarded(id) => id,
+                    };
+                    let authority = self.base(root, borrow_span)?;
+                    let ParameterTy::Reference {
+                        referent,
+                        kind: granted,
+                    } = self.view.binding_ty(binding)
+                    else {
+                        return Err(invariant(s));
+                    };
+                    require(kind == granted, s)?;
+                    let loan = LoanId(self.counts.loans);
+                    self.counts.loans = budget::add(self.counts.loans, 1)?;
+                    self.counts.local_loan_depth_bound = self
+                        .counts
+                        .local_loan_depth_bound
+                        .saturating_add(1)
+                        .min(MAX_LOCAL_REFERENCE_DEPTH as u8);
+                    self.counts.ownership_active = true;
+                    if let Some(out) = &mut self.output {
+                        budget::append(
+                            &mut out.raw.loans,
+                            LoanDecl {
+                                region: LoanRegion::Local,
+                                authority,
+                                projection: Vec::new(),
+                                kind,
+                                referent: BorrowedSlot::check(referent)?,
+                                span: borrow_span,
+                            },
+                            out.expected.loans,
+                            borrow_span,
+                        )?;
+                        require(out.bindings[binding.0].is_none(), s)?;
+                        out.bindings[binding.0] = Some(BindingLocation::LocalReference(loan));
+                    }
+                    self.statement(
+                        OwnedInstruction::AcquireLocalBorrow(loan),
+                        borrow_span,
+                        borrow_span,
+                        borrow_span,
+                    )?;
+                    let tag = budget::add(budget::mul(loan.0, 2)?, 1)?;
+                    self.register_slot(LexicalSlot(tag), s)?;
+                }
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
                         BindingLocation::ScalarValue(destination) => {
@@ -2700,7 +2799,7 @@ pub(super) fn scratch_bytes(view: &TypedOwnedFunction<'_>, count: Counts) -> Res
             view.hir().expressions.len(),
             size_of::<Option<EvaluatedValue>>(),
         ),
-        (count.owners, size_of::<OwnerPlaceId>()),
+        (lexical_capacity(view, count)?, size_of::<LexicalSlot>()),
     ] {
         bytes = budget::add(bytes, budget::mul(n, width)?)?;
     }

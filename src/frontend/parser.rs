@@ -1622,7 +1622,7 @@ impl Parser<'_> {
                     ));
                 };
                 let annotation = if self.take(Kind::Colon).is_some() {
-                    Some(self.ty()?)
+                    Some(self.parameter_ty()?)
                 } else {
                     None
                 };
@@ -1631,7 +1631,11 @@ impl Parser<'_> {
                     mutable,
                     name,
                     annotation,
-                    init: self.expression(0, LiteralContext::Allowed)?,
+                    init: if self.mode.owned() && self.peek().kind == Kind::Ampersand {
+                        self.local_reference_initializer()?
+                    } else {
+                        self.expression(0, LiteralContext::Allowed)?
+                    },
                 }
             }
         } else if self.take(Kind::Break).is_some() {
@@ -1750,6 +1754,29 @@ impl Parser<'_> {
             Kind::GreaterEqual => ComparisonOp::GreaterEqual,
             _ => return None,
         })
+    }
+    fn local_reference_initializer(&mut self) -> Result<ExprId, Box<Diagnostic>> {
+        self.node()?;
+        let start = self
+            .expect(Kind::Ampersand, "reference requires `&`")?
+            .span
+            .start;
+        let mutable = self.take(Kind::Mut).is_some();
+        let forwarded = self.take(Kind::Star).is_some();
+        let name = self
+            .expect(Kind::Ident, "reference requires a binding name")?
+            .span;
+        if self.peek().kind != Kind::Semi {
+            return Err(self.error("local reference initializer must borrow a whole binding"));
+        }
+        self.push_expr(
+            ExprKind::Borrow {
+                mutable,
+                name,
+                forwarded,
+            },
+            self.source.span(start, name.end),
+        )
     }
     fn expression(
         &mut self,

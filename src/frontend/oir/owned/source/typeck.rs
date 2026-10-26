@@ -2296,7 +2296,7 @@ fn borrow_type(
                 ParameterTy::Reference { .. } => {
                     return Err(error(
                         "E0312",
-                        "reference parameters require explicit &*p or &mut *p forwarding",
+                        "references require explicit &*p or &mut *p forwarding",
                         span,
                     ))
                 }
@@ -2310,7 +2310,7 @@ fn borrow_type(
                 ParameterTy::Value(_) => {
                     return Err(error(
                         "E0312",
-                        "explicit reborrow requires a reference parameter",
+                        "explicit reborrow requires a reference binding",
                         span,
                     ))
                 }
@@ -2416,16 +2416,18 @@ fn expression_type(
         | ExprKind::Integer { ty, .. }
         | ExprKind::Integer128 { ty, .. } => scalar(*ty),
         ExprKind::Unit => scalar(Ty::Unit),
-        ExprKind::Binding(binding) => match bindings[binding.0]
-            .expect("resolved binding initialized")
-        {
-            ParameterTy::Value(ty) => ty,
-            ParameterTy::Reference { .. } => return Err(error(
-                "E0312",
-                "reference parameter cannot be used as a value; use a field or explicit reborrow",
-                expr.span,
-            )),
-        },
+        ExprKind::Binding(binding) => {
+            match bindings[binding.0].expect("resolved binding initialized") {
+                ParameterTy::Value(ty) => ty,
+                ParameterTy::Reference { .. } => {
+                    return Err(error(
+                        "E0312",
+                        "reference cannot be used as a value; use a field or explicit reborrow",
+                        expr.span,
+                    ))
+                }
+            }
+        }
         ExprKind::Conversion { op, operand, .. } => {
             let actual = child!(*operand)?;
             let (accepted, input, output) = match op {
@@ -3542,6 +3544,7 @@ fn check_body(
             ));
         }
         let root = match statement.kind {
+            StmtKind::BorrowLet { .. } => None,
             StmtKind::Match { .. } => None,
             StmtKind::ForRange { start, end, .. } => {
                 for root in [start, end] {
@@ -3700,6 +3703,42 @@ fn check_body(
                 });
                 continue;
             }
+            StmtKind::BorrowLet {
+                binding,
+                kind,
+                place,
+                borrow_span,
+                annotation,
+            } => {
+                let actual = borrow_type(function, kind, place, borrow_span, &bindings)?;
+                if let ParameterTy::Reference {
+                    referent: BorrowedTy::ScalarSlice(_),
+                    ..
+                } = actual
+                {
+                    return Err(error(
+                        "E0300",
+                        "local references require a complete value",
+                        borrow_span,
+                    ));
+                }
+                if annotation.is_some_and(|expected| expected != actual) {
+                    return Err(error(
+                        "E0300",
+                        "reference annotation does not match its initializer",
+                        borrow_span,
+                    ));
+                }
+                bindings[binding.0] = Some(actual);
+                #[cfg(test)]
+                program
+                    .work()
+                    .observe(crate::frontend::declaration_index::Observation::Binding {
+                        function: function.id,
+                        origin: function.bindings[binding.0].span,
+                        ty: actual,
+                    });
+            }
             StmtKind::Let { binding, init } => {
                 let actual = expressions[init.0].expect("typed initializer");
                 if let Some(expected) = function.bindings[binding.0].annotation {
@@ -3747,7 +3786,7 @@ fn check_body(
                 let ParameterTy::Value(expected) = expected else {
                     return Err(error(
                         "E0312",
-                        "reference parameters cannot be assigned",
+                        "reference bindings cannot be assigned",
                         target_span,
                     ));
                 };

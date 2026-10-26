@@ -388,7 +388,7 @@ fn bytebuf_source_rejects_conflicting_staged_views_moves_and_wrong_signatures() 
 #[test]
 fn bytebuf_source_rejects_stored_escaping_views_and_user_resource_spelling() {
     for text in [
-        "use alloc::bytes::new; fn main()->i32{let b=new();let view=&b;return 0;}",
+        "use alloc::bytes::new; fn main()->i32{let b=new();let view=&b;let alias=view;return 0;}",
         "use alloc::bytes::ByteBuf; fn escape(b:&ByteBuf)->&[u8]{return b;}",
         "use alloc::bytes::ByteBuf; struct Stored{view:&ByteBuf} fn main()->i32{return 0;}",
     ] {

@@ -78,8 +78,11 @@ costs and using checked subtraction from zero only after operand evaluation. Boo
 follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports nominal structs containing scalars,
 records and fixed scalar arrays under [RFC 0020](../rfcs/0020-owned-record-composition.md),
 whole-value transfers/replacement, bounded scalar leaf access, owned helper returns and
-explicit call-only shared/exclusive loans and reborrows through its sealed
-witness. Fixed scalar arrays also support complete construction/transfers,
+explicit shared/exclusive loans and reborrows through its sealed witness.
+[Local reference bindings](../rfcs/0068-local-reference-bindings.md) retain a
+whole-value loan across statements and release it on scope exits. Field and
+slice borrows keep their existing call lifetimes.
+Fixed scalar arrays also support complete construction/transfers,
 checked signed indexing and `len()` under [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).
 Their private positive storage includes initialized zero-length sentinels; no
 array ABI, element references or heap allocation is exposed. Record-contained
@@ -490,7 +493,7 @@ contract. [Owned source qualification](../docs/architecture/owned-source-validat
 records actual production CLI and reference/native evidence separately from
 preactivation candidate results.
 Native builds use LLVM 19.1.7 on Linux x86_64 or ARM64. File compilation uses
-O0; project builds select O0 or O2. LTO, stored references and general heap
+O0; project builds select O0 or O2. LTO, references stored inside values and general heap
 containers remain unavailable.
 
 The [fixed-array public-route evidence](../docs/architecture/fixed-array-public-validation.md)

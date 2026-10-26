@@ -24,7 +24,7 @@ PUBLIC_TESTS = (
     "hosted_execution", "byte_buffer_transfer", "byte_strings", "native_files",
     "process_arguments", "typed_i64", "typed_integer_widths", "typed_byte_integers",
     "typed_integer128", "typed_integer_bits", "typed_floats", "typed_float_roots", "typed_characters",
-    "record_field_borrows", "typed_git_dependencies", "hosted_recursion",
+    "record_field_borrows", "local_references", "typed_git_dependencies", "hosted_recursion",
     "typed_generics", "typed_nominal_generics", "typed_record_patterns",
     "typed_record_enum_fields", "typed_constructor_inference", "typed_range_for", "native_debug_info",
 )

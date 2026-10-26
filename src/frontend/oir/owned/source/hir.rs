@@ -208,6 +208,13 @@ pub(super) enum StmtKind {
         binding: BindingId,
         init: ExprId,
     },
+    BorrowLet {
+        binding: BindingId,
+        kind: BorrowKind,
+        place: BorrowPlace,
+        borrow_span: Span,
+        annotation: Option<ParameterTy>,
+    },
     Assign {
         binding: BindingId,
         target_span: Span,

@@ -296,7 +296,11 @@ fn function(
                 }
                 OwnedInstruction::ProjectionLength { .. } => (),
                 OwnedInstruction::AcquireLocalBorrow(_)
-                | OwnedInstruction::ReleaseLocalBorrow(_) => return Err(bad()),
+                | OwnedInstruction::ReleaseLocalBorrow(_) => {
+                    if matches!(source, FunctionSource::Synthetic) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::ConstructArray { elements, .. } => {
                     for operand in elements {
                         visitor.span(operand.span)?;
@@ -948,7 +952,128 @@ fn check_impl(
                 }
             }
         }
+        let mut local_declarations = 0usize;
         for statement in original.blocks.iter().flat_map(|block| &block.body) {
+            if let crate::frontend::ast::StmtKind::Let { init, .. } = statement.kind {
+                if let crate::frontend::ast::ExprKind::Borrow { .. } = ast.expressions[init.0].kind
+                {
+                    local_declarations = local_declarations.checked_add(1).ok_or_else(bad)?;
+                    let typed = typed.ok_or_else(bad)?;
+                    let view = typed.functions().nth(ordinal).ok_or_else(bad)?;
+                    let borrow_span = ast.expressions[init.0].span;
+                    let mut found = 0usize;
+                    for (loan_id, loan) in declaration.loans.iter().enumerate() {
+                        typed.work().debit(
+                            1,
+                            borrow_span,
+                            "local reference source correspondence",
+                        )?;
+                        if loan.region != LoanRegion::Local || loan.span != borrow_span {
+                            continue;
+                        }
+                        found += 1;
+                        typed.work().debit(
+                            u64::try_from(view.hir().blocks.len()).map_err(|_| bad())?,
+                            borrow_span,
+                            "local reference block inventory",
+                        )?;
+                        let rows = view
+                            .hir()
+                            .blocks
+                            .iter()
+                            .try_fold(0usize, |sum, block| sum.checked_add(block.body.len()))
+                            .ok_or_else(bad)?;
+                        let scans = rows
+                            .checked_mul(2)
+                            .and_then(|sum| sum.checked_add(1))
+                            .ok_or_else(bad)?;
+                        typed.work().debit(
+                            u64::try_from(scans).map_err(|_| bad())?,
+                            borrow_span,
+                            "local reference declaration lookup",
+                        )?;
+                        let source_binding = view
+                            .hir()
+                            .blocks
+                            .iter()
+                            .flat_map(|block| &block.body)
+                            .find_map(|row| {
+                                if let super::hir::StmtKind::BorrowLet {
+                                    binding,
+                                    kind,
+                                    place,
+                                    borrow_span: origin,
+                                    ..
+                                } = row.kind
+                                {
+                                    (origin == borrow_span).then_some((binding, kind, place))
+                                } else {
+                                    None
+                                }
+                            })
+                            .ok_or_else(bad)?;
+                        let (binding, kind, place) = source_binding;
+                        if view.binding_ty(binding)
+                            != (ParameterTy::Reference {
+                                referent: loan.referent(),
+                                kind: loan.kind,
+                            })
+                            || kind != loan.kind
+                            || !loan.projection.is_empty()
+                        {
+                            return Err(bad());
+                        }
+                        let root = match place {
+                            super::hir::BorrowPlace::Owner(id)
+                            | super::hir::BorrowPlace::Forwarded(id) => id,
+                        };
+                        let origin = view.hir().bindings[root.0].span;
+                        match loan.authority {
+                            AccessBase::Owner(owner)
+                                if declaration
+                                    .owners
+                                    .get(owner.0)
+                                    .is_some_and(|row| row.span == origin) => {}
+                            AccessBase::Parameter(parameter)
+                                if declaration
+                                    .references
+                                    .get(parameter.0)
+                                    .is_some_and(|row| row.span == origin) => {}
+                            AccessBase::Loan(parent) => {
+                                if parent.0 == loan_id {
+                                    return Err(bad());
+                                }
+                                let parent = declaration.loans.get(parent.0).ok_or_else(bad)?;
+                                let binding = view
+                                    .hir()
+                                    .blocks
+                                    .iter()
+                                    .flat_map(|block| &block.body)
+                                    .find_map(|row| {
+                                        if let super::hir::StmtKind::BorrowLet {
+                                            binding,
+                                            borrow_span,
+                                            ..
+                                        } = row.kind
+                                        {
+                                            (binding == root).then_some(borrow_span)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .ok_or_else(bad)?;
+                                if parent.region != LoanRegion::Local || parent.span != binding {
+                                    return Err(bad());
+                                }
+                            }
+                            _ => return Err(bad()),
+                        }
+                    }
+                    if found != 1 {
+                        return Err(bad());
+                    }
+                }
+            }
             if !matches!(
                 statement.kind,
                 crate::frontend::ast::StmtKind::DestructureRecord { .. }
@@ -973,6 +1098,15 @@ fn check_impl(
             if count != 1 {
                 return Err(bad());
             }
+        }
+        if declaration
+            .loans
+            .iter()
+            .filter(|loan| loan.region == LoanRegion::Local)
+            .count()
+            != local_declarations
+        {
+            return Err(bad());
         }
         visitor.file(original.name.file);
         function(

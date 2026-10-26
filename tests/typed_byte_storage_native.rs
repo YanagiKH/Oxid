@@ -239,28 +239,34 @@ fn byte_storage_public_identical_module_text_keeps_runtime_file_identity() {
 
 #[test]
 fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() {
-    // All five exact diagnostic templates and selected token ranges were
-    // independently replayed on b5455ad bool-slice analogues before execution.
-    for (source, marker, offset, length, message) in [
+    // Reference annotations now parse; assigning an ordinary value to one
+    // remains a source error before native tools or output changes.
+    for (source, marker, offset, length, code, stage, message) in [
         (
             "fn f(p:&[u8])->&[u8]{return p;}",
             ")->&",
             3,
             1,
+            "E0101",
+            "parse",
             "unsupported typed-preview construct `&`",
         ),
         (
             "fn f(p:&[u8])->i32{let q:&[u8]=p;return 0;}",
             "q:&",
             2,
-            1,
-            "unsupported typed-preview construct `&`",
+            5,
+            "E0202",
+            "resolve",
+            "reference annotation requires a borrowed initializer",
         ),
         (
             "struct R{p:&[u8]}fn main()->i32{return 0;}",
             "p:&",
             2,
             1,
+            "E0101",
+            "parse",
             "unsupported typed-preview construct `&`",
         ),
         (
@@ -268,6 +274,8 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
             "0..1",
             0,
             4,
+            "E0101",
+            "parse",
             "unsupported numeric spelling; expected ASCII decimal literal digits",
         ),
         (
@@ -275,15 +283,17 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
             "p[0]",
             1,
             1,
+            "E0101",
+            "parse",
             "unsupported typed-preview construct `[`",
         ),
     ] {
         let case = Case::new(source);
         let start = source.find(marker).unwrap() + offset;
         let end = start + length;
-        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0101\",\"stage\":\"parse\",\"message\":\"{message}\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"{code}\",\"stage\":\"{stage}\",\"message\":\"{message}\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
         for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), "E0101", "parse");
+            let text = diagnostic(case.compile(output, &[]), code, stage);
             assert_eq!(text.lines().count(), 2);
             assert_eq!(text.lines().next(), Some(expected.as_str()));
             case.unchanged();

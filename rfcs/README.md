@@ -1,5 +1,8 @@
 # Oxid RFCs
 
+[Local reference bindings](0068-local-reference-bindings.md) keep shared or
+exclusive borrows alive across statements and release them at scope exits.
+
 Use an RFC to propose a language or toolchain contract before changing its
 semantics. Record the acceptance decision explicitly; an implementation alone
 does not imply approval.

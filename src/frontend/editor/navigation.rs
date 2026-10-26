@@ -156,7 +156,37 @@ fn local_definition(
         .expressions
         .iter()
         .find_map(|expression| match expression.kind {
-            ast::ExprKind::Name(name) if contains(name, offset) => Some(name),
+            ast::ExprKind::Name(name) | ast::ExprKind::Borrow { name, .. }
+                if contains(name, offset) =>
+            {
+                Some(name)
+            }
+            ast::ExprKind::FieldRead { base, .. }
+            | ast::ExprKind::IndexRead { base, .. }
+            | ast::ExprKind::ArrayLength { base }
+                if contains(base, offset) =>
+            {
+                Some(base)
+            }
+            ast::ExprKind::Call { ref args, .. }
+            | ast::ExprKind::QualifiedValue {
+                args: Some(ref args),
+                ..
+            }
+            | ast::ExprKind::GenericVariant {
+                args: Some(ref args),
+                ..
+            } => args.iter().find_map(|argument| {
+                let ast::Argument::Borrow { place, .. } = argument else {
+                    return None;
+                };
+                let name = match *place {
+                    ast::BorrowPlace::OwnerName(name)
+                    | ast::BorrowPlace::ForwardedParameter { name, .. }
+                    | ast::BorrowPlace::Range { name, .. } => name,
+                };
+                contains(name, offset).then_some(name)
+            }),
             _ => None,
         })
         .or_else(|| {
@@ -166,6 +196,7 @@ fn local_definition(
                 .flat_map(|block| &block.body)
                 .find_map(|statement| match statement.kind {
                     ast::StmtKind::Assign { name, .. } if contains(name, offset) => Some(name),
+                    ast::StmtKind::FieldAssign { base, .. } if contains(base, offset) => Some(base),
                     _ => None,
                 })
         })?;

@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_local_references_compatibility.py \
+          python3 -B scripts/verify_local_reference_bindings_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -364,6 +364,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Run public native tests in both compiler profiles
+        env:
+          OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/current-local-reference-bindings
         shell: bash
         run: |
           for profile in debug release; do
@@ -372,13 +374,13 @@ jobs:
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test typed_git_dependencies --test hosted_recursion
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test typed_git_dependencies --test hosted_recursion --test typed_generics --test typed_nominal_generics --test typed_record_patterns --test typed_record_enum_fields --test typed_constructor_inference --test typed_range_for --test native_debug_info -- --include-ignored
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion --test typed_generics --test typed_nominal_generics --test typed_record_patterns --test typed_record_enum_fields --test typed_constructor_inference --test typed_range_for --test native_debug_info -- --include-ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
@@ -519,6 +521,7 @@ jobs:
             ${{ runner.temp }}/current-owned-enum-application
             ${{ runner.temp }}/current-local-references-debug
             ${{ runner.temp }}/current-local-references-release
+            ${{ runner.temp }}/current-local-reference-bindings
             ${{ runner.temp }}/current-byte-storage-debug
             ${{ runner.temp }}/current-byte-storage-release
             ${{ runner.temp }}/current-byte-fields-debug
@@ -572,6 +575,7 @@ jobs:
           cargo test --locked --all-targets --all-features
       - name: Verify native ARM64 builds and source-free execution
         env:
+          OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"

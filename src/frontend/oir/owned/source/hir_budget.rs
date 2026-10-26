@@ -973,7 +973,11 @@ fn count_statement(
     match &statement.kind {
         ast::StmtKind::Let { init, .. } => {
             increment(&mut c.bindings, 1, at)?;
-            count_expression(ast, *init, at, work, c)?;
+            if matches!(ast.expressions[init.0].kind, ast::ExprKind::Borrow { .. }) {
+                visit(work, 1, at)?;
+            } else {
+                count_expression(ast, *init, at, work, c)?;
+            }
         }
         ast::StmtKind::ForRange { start, end, .. } => {
             increment(&mut c.bindings, 1, at)?;
