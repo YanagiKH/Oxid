@@ -240,7 +240,7 @@ mod native {
     fn scalar_parameters_mutation_and_nested_scope_are_visible_in_gdb() {
         for policy in ["bounded", "hosted"] {
             let project = Project::new();
-            project.write("src/main.ox", "fn inspect(input:i32,flag:bool)->i32{\n    let base=input+2;\n    let mut total=base;\n    total=total+3;\n    if flag{\n        let inside=7;\n        total=total+inside;\n    }\n    total=total+1;\n    return total;\n}\nfn main()->i32{return inspect(29,true);}\n");
+            project.write("src/main.ox", "fn inspect(input:i32,flag:bool,spare:i32)->i32{\n    let base=input+2;\n    let mut total=base;\n    total=total+3;\n    if flag{\n        let inside=7;\n        total=total+inside;\n    }\n    total=total+1;\n    return total;\n}\nfn main()->i32{return inspect(29,true,99);}\n");
             project.manifest(&format!(
                 "debug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n"
             ));
@@ -270,7 +270,14 @@ mod native {
                 .split_once("INNER_END\n")
                 .unwrap()
                 .0;
-            for value in ["input = 29", "flag = true", "total = 34", "inside = 7"] {
+            for value in [
+                "input = 29",
+                "flag = true",
+                "spare = 99",
+                "base = 31",
+                "total = 34",
+                "inside = 7",
+            ] {
                 assert!(inner.contains(value), "{value}: {text}");
             }
             let outer = text
@@ -284,6 +291,34 @@ mod native {
                 outer.contains("total = 41") && !outer.contains("inside ="),
                 "{text}"
             );
+            output(&project.binary());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
+    fn unused_scalar_boolean_parameters_keep_both_values_in_gdb() {
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new();
+            project.write("src/main.ox", "fn inspect(first:bool,second:bool)->i32{\n    let value=42;\n    return value;\n}\nfn main()->i32{return inspect(false,true);}\n");
+            project.manifest(&format!(
+                "debug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n"
+            ));
+            success(project.run(&["build"]));
+            dwarf(&project.binary(), "--verify");
+            let text = debugger_script(
+                &project,
+                &[
+                    "break src/main.ox:3",
+                    "run",
+                    "info args",
+                    "info locals",
+                    "continue",
+                ],
+            );
+            for value in ["first = false", "second = true", "value = 42"] {
+                assert!(text.contains(value), "{value}: {text}");
+            }
             output(&project.binary());
         }
     }

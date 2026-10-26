@@ -35,7 +35,7 @@
         "General hosted execution without demonstration fuel limits, verified optimization and realistic multi-module clean/incremental builds."
       ],
       "remaining": [
-        "Native project compilation supports Linux x86_64 and ARM64 using LLVM 19.1.7 at O0/O2 with optional hosted execution; repository CI verifies the supported hosts. Windows/macOS native targets, source debugging, larger compiler/storage limits and full-scale build acceptance remain incomplete."
+        "Native project compilation supports Linux x86_64 and ARM64 using LLVM 19.1.7 at O0/O2 with optional hosted execution; repository CI verifies the supported hosts. Windows/macOS native targets, aggregate-value debugging, larger compiler/storage limits and full-scale build acceptance remain incomplete."
       ]
     },
     {
@@ -107,7 +107,7 @@
         "Fixed workload comparisons preserve equivalent outputs and safety semantics, with raw measurements, environment, uncertainty and upgrade/recovery results."
       ],
       "remaining": [
-        "Native f64 matrix/autograd training includes SGD, Adam, AdamW, deterministic paired batches and checkpoint recovery verification; general tensor layouts, streaming data loading, larger models and complete performance acceptance remain incomplete.",
+        "Native f64 matrix/autograd training includes SGD, Adam, AdamW, deterministic paired batches and checkpoint recovery verification; sequential binary dataset streaming is implemented, while general tensor layouts, shuffled or parallel data loading, larger models and complete performance acceptance remain incomplete.",
         "The six complete applications and comparative performance acceptance corpus remain incomplete."
       ]
     },

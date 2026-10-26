@@ -40,12 +40,11 @@ const TYPES: &[(Ty, &str, &str, usize, &str)] = &[
 
 pub(super) enum VariableValue<'a> {
     Address(&'a str, usize),
-    Value(&'a str),
 }
 
-/// These private markers come only from admitted source bindings. They never
-/// require extra program storage, loads or stores; unit and temporary values
-/// are not source variables.
+/// These private markers identify admitted source bindings. Their owning
+/// emitter must admit and initialize the described storage. Unit and temporary
+/// values are not source variables.
 pub(super) fn variable(
     out: &mut impl Write,
     span: Span,
@@ -56,10 +55,8 @@ pub(super) fn variable(
     let Some(ty) = TYPES.iter().position(|entry| entry.0 == ty) else {
         return;
     };
-    let (kind, operand, offset) = match value {
-        VariableValue::Address(value, offset) => ("address", value, offset),
-        VariableValue::Value(value) => ("value", value, 0),
-    };
+    let VariableValue::Address(operand, offset) = value;
+    let kind = "address";
     writeln!(
         out,
         "{VARIABLE}{} {} {} {ty} {argument} {offset} {kind} {operand}",

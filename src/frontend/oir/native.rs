@@ -1302,6 +1302,43 @@ fn emit_arithmetic_failure_with_source_names(
     }
     writeln!(out, "  unreachable").unwrap();
 }
+fn scalar_debug_slot(function: &Function, index: usize) -> bool {
+    let local = &function.locals[index];
+    local.ty != hir::Ty::Unit && (index < function.param_count || local.kind == LocalKind::Binding)
+}
+
+fn scalar_frame_usage(function: &Function, debug: bool) -> hosted_frames::Usage {
+    let slots = function.slot_count();
+    // Debug addresses have their own physical storage in addition to SSA
+    // values. Charge four bytes per scalar, including one-byte booleans.
+    let debug_slots = if debug {
+        (0..function.locals.len())
+            .filter(|&index| scalar_debug_slot(function, index))
+            .count()
+    } else {
+        0
+    };
+    hosted_frames::Usage {
+        slots,
+        bytes: (slots + debug_slots) * 4,
+    }
+}
+
+fn scalar_debug_store(out: &mut Emission, index: usize, value_ty: hir::Ty) {
+    if value_ty == hir::Ty::Bool {
+        // DWARF describes a full byte. Define its padding bits rather than
+        // exposing the unspecified high bits of an LLVM i1 store.
+        writeln!(out, "  %debug_bool_v{index} = zext i1 %v{index} to i8\n  store i8 %debug_bool_v{index}, ptr %debug_v{index}, align 4").unwrap();
+    } else {
+        writeln!(
+            out,
+            "  store {} %v{index}, ptr %debug_v{index}, align 4",
+            ty(value_ty)
+        )
+        .unwrap();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit(
     program: &Program,
@@ -1409,13 +1446,30 @@ fn emit(
             writeln!(out, "  %p{i} = alloca {}", ty(place.ty)).unwrap();
         }
         if out.debug {
+            for (i, local) in f.locals.iter().enumerate() {
+                if scalar_debug_slot(f, i) {
+                    let storage_ty = if local.ty == hir::Ty::Bool {
+                        "i8"
+                    } else {
+                        ty(local.ty)
+                    };
+                    writeln!(out, "  %debug_v{i} = alloca {storage_ty}, align 4").unwrap();
+                }
+            }
             for (i, parameter) in f.locals.iter().take(f.param_count).enumerate() {
+                if !scalar_debug_slot(f, i) {
+                    continue;
+                }
+                scalar_debug_store(out, i, parameter.ty);
                 crate::frontend::native_debug::variable(
                     out,
                     parameter.span,
                     parameter.ty,
                     i + 1,
-                    crate::frontend::native_debug::VariableValue::Value(&format!("%v{i}")),
+                    crate::frontend::native_debug::VariableValue::Address(
+                        &format!("%debug_v{i}"),
+                        0,
+                    ),
                 );
             }
         }
@@ -1709,16 +1763,17 @@ fn emit(
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
                 if out.debug {
                     let declaration = &f.locals[a.destination.0];
-                    if declaration.kind == LocalKind::Binding {
+                    if declaration.kind == LocalKind::Binding && declaration.ty != hir::Ty::Unit {
+                        scalar_debug_store(out, a.destination.0, declaration.ty);
                         crate::frontend::native_debug::variable(
                             out,
                             declaration.span,
                             declaration.ty,
                             0,
-                            crate::frontend::native_debug::VariableValue::Value(&format!(
-                                "%v{}",
-                                a.destination.0
-                            )),
+                            crate::frontend::native_debug::VariableValue::Address(
+                                &format!("%debug_v{}", a.destination.0),
+                                0,
+                            ),
                         );
                     }
                 }
@@ -1768,11 +1823,7 @@ fn emit(
                     destination,
                     continuation,
                 } => {
-                    let frame_slots = program.functions[target.0].slot_count();
-                    let usage = hosted_frames::Usage {
-                        slots: frame_slots,
-                        bytes: frame_slots * 4,
-                    };
+                    let usage = scalar_frame_usage(&program.functions[target.0], out.debug);
                     if out.policy.recursive() {
                         let frame_name = format!("f{}_b{}_call", f.id.0, i);
                         emit_frame_enter(
@@ -1822,11 +1873,7 @@ fn emit(
         let root = &program.functions[entry.0];
         emit_guard(out, diagnostics, "root", 1 + root.slot_count(), root.span);
     }
-    let frame_slots = program.functions[entry.0].slot_count();
-    let usage = hosted_frames::Usage {
-        slots: frame_slots,
-        bytes: frame_slots * 4,
-    };
+    let usage = scalar_frame_usage(&program.functions[entry.0], out.debug);
     if out.policy.recursive() {
         hosted_frames::reset(out, hosted_frames::COUNTER_BYTES);
         emit_frame_enter(
@@ -1907,6 +1954,41 @@ mod tests {
     }
     fn verified(text: &str) -> VerifiedProgram {
         verified_with_sources(text).0
+    }
+
+    #[test]
+    fn scalar_debug_addresses_charge_each_recursive_call_without_changing_value_slots() {
+        use crate::frontend::build_config::ExecutionPolicy;
+        let (program, sources) = verified_with_sources("fn count(n:i32)->i32{let observed=n;if n==0{return observed;}else{return count(n-1);}}fn main()->i32{return count(2);}");
+        let entry = Some(hir::DefId(1));
+        let plain = program
+            .native_module_with_execution(entry, &sources, false, ExecutionPolicy::Hosted, None)
+            .unwrap();
+        let debug = program
+            .native_debug_module_with_execution(
+                entry,
+                &sources,
+                false,
+                ExecutionPolicy::Hosted,
+                None,
+            )
+            .unwrap();
+        let charges = |text: &str, counter: &str| -> Vec<usize> {
+            text.lines()
+                .filter(|line| line.contains(&format!("_{counter}_next = add nuw i64 ")))
+                .map(|line| line.rsplit_once(", ").unwrap().1.parse().unwrap())
+                .collect()
+        };
+        let before = charges(&plain, "bytes");
+        let after = charges(&debug, "bytes");
+        assert_eq!(before.len(), 3);
+        // Two call sites enter count. Its parameter and observed binding each
+        // need a four-byte debug slot. The wrapper enters a binding-free main.
+        assert_eq!(after, vec![before[0] + 8, before[1] + 8, before[2]]);
+        assert_eq!(charges(&plain, "slots"), charges(&debug, "slots"));
+        assert!(!plain.contains("%debug_v"));
+        assert_eq!(debug.matches(" = alloca i32, align 4").count(), 2);
+        assert_eq!(debug.matches("address %debug_v").count(), 2);
     }
 
     fn source_name_paths(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
