@@ -21,8 +21,11 @@ mod integer128;
 mod integers;
 #[path = "native_numeric.rs"]
 mod numeric;
+#[path = "native_reachability.rs"]
+mod reachability;
 #[path = "native_resources.rs"]
 mod resources;
+use reachability::EmittedFunctions;
 
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
@@ -422,6 +425,34 @@ pub(super) fn native_debug_module_with_execution(
     )
 }
 
+pub(super) fn native_optimized_module_with_execution(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    process: bool,
+    execution: crate::frontend::build_config::ExecutionPolicy,
+    names: Option<&NativeSourceNames<'_>>,
+    debug: bool,
+) -> Result<String, Box<Diagnostic>> {
+    let policy = match (process, execution.hosted()) {
+        (false, false) => NativeEntryPolicy::TypedResult,
+        (true, false) => NativeEntryPolicy::Process,
+        (false, true) => NativeEntryPolicy::HostedTypedResult,
+        (true, true) => NativeEntryPolicy::HostedProcess,
+    };
+    native_module_policy_accounted_with_selection::<reachability::Reachable>(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::for_policy(policy),
+        policy,
+        &mut Accounting::default(),
+        names,
+        debug,
+    )
+}
+
 pub(super) fn native_process_module_with_fuel(
     witness: &VerifiedOwnedProgram,
     entry: hir::DefId,
@@ -568,6 +599,23 @@ fn native_module_policy_accounted_with_source_names_debug(
     names: Option<&NativeSourceNames<'_>>,
     debug: bool,
 ) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_selection::<reachability::Full>(
+        witness, entry, sources, fuel, limits, policy, accounting, names, debug,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
+    witness: &VerifiedOwnedProgram,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    fuel: usize,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    names: Option<&NativeSourceNames<'_>>,
+    debug: bool,
+) -> Result<String, Box<Diagnostic>> {
     if let Some(names) = names {
         names.validate(sources)?;
     }
@@ -659,7 +707,7 @@ fn native_module_policy_accounted_with_source_names_debug(
         accounting,
         names,
     )?;
-    let emitter_transient = add(
+    let inherited_emitter_transient = add(
         if plan.uses_enum_record_nesting() {
             composition::control_bytes()
         } else {
@@ -681,6 +729,7 @@ fn native_module_policy_accounted_with_source_names_debug(
             },
         )?,
     )?;
+    let emitter_transient = add(inherited_emitter_transient, R::CONTROL_BYTES)?;
     let emission_metadata = add(
         add(
             add(
@@ -702,21 +751,24 @@ fn native_module_policy_accounted_with_source_names_debug(
         "emission metadata bytes",
         root.span,
     )?;
-    let (transfer_cells, transfer_visits) = transfer_inventory(&plan)?;
+    let selected = R::build(&plan, id)?;
+    let (transfer_cells, transfer_visits) = transfer_inventory_selected(&plan, selected)?;
     accounting.metrics.transfer_cells = transfer_cells;
     accounting.metrics.transfer_inventory_visits = transfer_visits;
     let storage = NativeStoragePlan::checked(&plan, guarded).map_err(|e| mismatch(e.name))?;
     let mut count = Emission {
         policy,
         debug,
+        ordinary_visits: selected.work(),
         ..Emission::count(limits.ir_bytes)
     };
-    emit(
+    emit_selected(
         &storage,
         id,
         &diagnostics,
         fuel.min(plan::MAX_FUEL),
         &mut count,
+        selected,
     );
     accounting.metrics.count_bytes = count.len;
     accounting.metrics.count_expansions = count.expansions;
@@ -747,14 +799,16 @@ fn native_module_policy_accounted_with_source_names_debug(
         text: Some(text),
         policy,
         debug,
+        ordinary_visits: selected.work(),
         ..Emission::count(count.len)
     };
-    emit(
+    emit_selected(
         &storage,
         id,
         &diagnostics,
         fuel.min(plan::MAX_FUEL),
         &mut output,
+        selected,
     );
     accounting.metrics.render_bytes = output.len;
     accounting.metrics.render_expansions = output.expansions;
@@ -2305,11 +2359,22 @@ fn index_pointer(
 
 /// Counts raw sites and active enum branch trees without expanding static
 /// record or array leaves during inventory.
+#[cfg(test)]
 fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Diagnostic>> {
+    transfer_inventory_selected(plan, reachability::Full)
+}
+
+fn transfer_inventory_selected<R: EmittedFunctions>(
+    plan: &ExecutionPlan<'_>,
+    selected: R,
+) -> Result<(usize, usize), Box<Diagnostic>> {
     let mut visits = 0;
     let mut cells = composition::helper_inventory(plan, &mut visits)?;
     for f in plan.witness().functions() {
         visits = add(visits, 1)?;
+        if !selected.contains(f.id) {
+            continue;
+        }
         for parameter in &f.parameters {
             visits = add(visits, 1)?;
             if let ParameterBinding::Owned(owner) = parameter {
@@ -2462,6 +2527,9 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
     // Resource preflight and release add no user fuel. All of their generated
     // tag/leaf checks still belong to the native text expansion inventory.
     for function in plan.witness().functions() {
+        if !selected.contains(function.id) {
+            continue;
+        }
         for block in &function.blocks {
             for statement in &block.statements {
                 match &statement.kind {
@@ -3435,12 +3503,24 @@ fn admit_inventory_policy_with_execution(
     Ok(counts)
 }
 
+#[cfg(test)]
 fn emit(
     storage: &NativeStoragePlan<'_, '_>,
     entry: hir::DefId,
     diagnostics: &Diagnostics,
     fuel: usize,
     out: &mut Emission,
+) {
+    emit_selected(storage, entry, diagnostics, fuel, out, reachability::Full);
+}
+
+fn emit_selected<R: EmittedFunctions>(
+    storage: &NativeStoragePlan<'_, '_>,
+    entry: hir::DefId,
+    diagnostics: &Diagnostics,
+    fuel: usize,
+    out: &mut Emission,
+    selected: R,
 ) {
     let plan = storage.execution();
     out.resources = plan.uses_dynamic_resources();
@@ -3543,6 +3623,9 @@ fn emit(
             return;
         }
         out.ordinary_visits += 1;
+        if !selected.contains(f.id) {
+            continue;
+        }
         emit_function(storage, f.id, diagnostics, out);
     }
     if out.exceeded {

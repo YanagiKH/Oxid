@@ -303,6 +303,29 @@ impl SourceProgram {
         )
     }
 
+    pub(in crate::frontend::oir) fn native_optimized_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+        debug: bool,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !process {
+            self.require_result_entry_policy(sources)?;
+        }
+        native::native_optimized_module_with_execution(
+            &self.witness,
+            entry,
+            sources,
+            process,
+            execution,
+            names,
+            debug,
+        )
+    }
+
     pub(in crate::frontend::oir) fn native_module(
         &self,
         entry: Option<hir::DefId>,

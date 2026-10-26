@@ -2066,6 +2066,37 @@
       ],
       "evidence": [],
       "limitations": "Call-only aggregate field references. Same-field and parent/child paths overlap. Whole-owner moves, replacement and destruction remain forbidden during a field borrow. No stored or returned references, partial moves, scalar-place borrowing or disjoint ranges within one array field."
+    },
+    {
+      "id": "optimized-native-function-selection",
+      "summary": "Release builds emit owned function bodies reachable from the entry point",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "LLVM native",
+      "target_scope": "Linux x86_64 and ARM64",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0071-native-release-function-selection.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/driver.rs",
+        "src/frontend/oir/source/sealed.rs",
+        "src/frontend/oir/owned/source/program.rs",
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/oir/owned/native_reachability.rs"
+      ],
+      "tests": [
+        "tests/native_profiles.rs",
+        "src/frontend/oir/owned/native_reachability.rs",
+        "scripts/test_native_reachability_compatibility.py"
+      ],
+      "evidence": [
+        "rfcs/0071-native-release-function-selection.md"
+      ],
+      "limitations": "Static direct-call reachability for owned programs in release builds. All declarations and native resource admission remain complete; diagnostic and runtime-helper inventories are retained. Dev and scalar output are unchanged. Module admission and LLVM output limits still apply."
     }
   ]
 }

@@ -133,6 +133,10 @@ oxid build --profile release
 bounds checks and the selected execution policy. `bounded` is an alias for `dev`.
 Source-level line information can be enabled separately with `--debug-info`.
 
+For programs using owned values, `release` omits function bodies that cannot be
+reached from the entry point. Every declared function still undergoes the full
+type, ownership and native resource checks. `dev` retains the complete output.
+
 The command-line profile overrides `[build] profile` in the selected package.
 Omitting both uses `dev`. A workspace uses each selected member's setting;
 `--profile` overrides every selected member. Dependency settings do not change

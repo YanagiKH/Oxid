@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_editor_completion_compatibility.py \
+          python3 -B scripts/verify_native_reachability_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -367,6 +367,7 @@ jobs:
         env:
           OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/current-local-reference-bindings
           OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/current-generic-field-borrows
+          OXID_NATIVE_REACHABILITY_EVIDENCE: ${{ runner.temp }}/current-native-reachability
         shell: bash
         run: |
           for profile in debug release; do
@@ -526,6 +527,7 @@ jobs:
             ${{ runner.temp }}/current-local-references-release
             ${{ runner.temp }}/current-local-reference-bindings
             ${{ runner.temp }}/current-generic-field-borrows
+            ${{ runner.temp }}/current-native-reachability
             ${{ runner.temp }}/current-byte-storage-debug
             ${{ runner.temp }}/current-byte-storage-release
             ${{ runner.temp }}/current-byte-fields-debug
@@ -582,6 +584,7 @@ jobs:
         env:
           OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
           OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/generic-field-borrows
+          OXID_NATIVE_REACHABILITY_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/native-reachability
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"

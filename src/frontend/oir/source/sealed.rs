@@ -346,6 +346,35 @@ impl CheckedSourceProgram<'_> {
         }
     }
 
+    pub(in crate::frontend) fn native_optimized_module_with_execution(
+        &self,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+        debug: bool,
+    ) -> Result<String, Box<Diagnostic>> {
+        if process {
+            self.process_preflight()?;
+        }
+        match &self.body {
+            CheckedBody::Scalar(_) => {
+                if debug {
+                    self.native_debug_module_with_execution(process, execution, names)
+                } else {
+                    self.native_module_with_execution(process, execution, names)
+                }
+            }
+            CheckedBody::Owned(program) => program.native_optimized_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+                debug,
+            ),
+        }
+    }
+
     pub(in crate::frontend) fn native_debug_module_with_execution(
         &self,
         process: bool,

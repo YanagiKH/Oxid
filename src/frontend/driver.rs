@@ -530,11 +530,20 @@ impl PreparedPackageProject<'_> {
             None
         };
         if settings.debug_info() {
-            let marked = checked.native_debug_module_with_execution(
-                process,
-                settings.execution(),
-                names.as_ref(),
-            )?;
+            let marked = if settings.optimized() {
+                checked.native_optimized_module_with_execution(
+                    process,
+                    settings.execution(),
+                    names.as_ref(),
+                    true,
+                )?
+            } else {
+                checked.native_debug_module_with_execution(
+                    process,
+                    settings.execution(),
+                    names.as_ref(),
+                )?
+            };
             return super::native_debug::add(
                 &marked,
                 self.project(),
@@ -542,7 +551,16 @@ impl PreparedPackageProject<'_> {
                 settings.optimized(),
             );
         }
-        checked.native_module_with_execution(process, settings.execution(), names.as_ref())
+        if settings.optimized() {
+            checked.native_optimized_module_with_execution(
+                process,
+                settings.execution(),
+                names.as_ref(),
+                false,
+            )
+        } else {
+            checked.native_module_with_execution(process, settings.execution(), names.as_ref())
+        }
     }
 
     /// Native workspace preflight uses the same retained inputs, presentation,
