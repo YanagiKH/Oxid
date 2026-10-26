@@ -491,7 +491,12 @@ mod tests {
             } else {
                 ("x86_64-unknown-linux-gnu", 62, "ld-linux-x86-64.so.2")
             };
-            assert_eq!(settings.target_triple(), expected.0);
+            let expected_target = match (std::env::consts::OS, std::env::consts::ARCH) {
+                ("macos", "aarch64") => "aarch64-apple-darwin",
+                ("macos", "x86_64") => "x86_64-apple-darwin",
+                _ => expected.0,
+            };
+            assert_eq!(settings.target_triple(), expected_target);
             assert_eq!(NativeBuildSettings::elf_machine(), expected.1);
             #[cfg(all(
                 target_os = "linux",
