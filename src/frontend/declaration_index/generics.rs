@@ -1312,6 +1312,9 @@ impl<'a, 's> Walker<'a, 's> {
         )
     }
     fn mutable_place(&self, position: usize, at: Span) -> Result<(), Box<Diagnostic>> {
+        if self.borrow_conflict(position, true, at)? {
+            return Err(error("cannot write a borrowed value", at));
+        }
         let binding = self.bindings[position];
         if matches!(
             binding.ty,
@@ -1452,6 +1455,7 @@ impl<'a, 's> Walker<'a, 's> {
     fn block(&mut self, id: ast::BodyBlockId, loops: usize) -> Result<Flow, Box<Diagnostic>> {
         let block = &self.function.blocks[id.0];
         let base = self.bindings.len();
+        let loan_base = self.loans.len();
         let inherited_reachable = self.reachable;
         let mut flow = Flow::FALL;
         let mut terminal_state = None;
@@ -1579,7 +1583,14 @@ impl<'a, 's> Walker<'a, 's> {
                     } else {
                         self.expression(*init)?
                     };
-                    ty.value(statement.span)?;
+                    if !matches!(
+                        self.program.expressions[init.0].kind,
+                        ExprKind::Borrow { .. }
+                    ) {
+                        ty.value(statement.span)?;
+                    } else if *mutable {
+                        return Err(error("reference bindings cannot be reassigned", *name));
+                    }
                     if let Some(annotation) = annotation {
                         let expected = self.ty(*annotation)?;
                         self.expect(ty, expected, annotation.span)?;
@@ -1600,6 +1611,9 @@ impl<'a, 's> Walker<'a, 's> {
                     let target = self.bindings[position];
                     if !target.mutable {
                         return Err(error("assignment requires a mutable binding", *name));
+                    }
+                    if self.borrow_conflict(position, true, *name)? {
+                        return Err(error("cannot replace a borrowed value", *name));
                     }
                     let actual = self.expression(*value)?;
                     self.expect(actual, target.ty, *name)?;
@@ -1821,6 +1835,7 @@ impl<'a, 's> Walker<'a, 's> {
             }
         }
         self.bindings.truncate(base);
+        self.loans.truncate(loan_base);
         self.reachable = inherited_reachable;
         Ok(flow)
     }
@@ -1859,16 +1874,47 @@ impl<'a, 's> Walker<'a, 's> {
                     expression.span,
                 )?
             }
+            ExprKind::Borrow {
+                mutable,
+                name,
+                forwarded,
+            } => {
+                let place = if *forwarded {
+                    ast::BorrowPlace::ForwardedParameter {
+                        name: *name,
+                        star_span: expression.span,
+                    }
+                } else {
+                    ast::BorrowPlace::OwnerName(*name)
+                };
+                let borrowed = self.argument(&Argument::Borrow {
+                    mutable: *mutable,
+                    place,
+                    span: expression.span,
+                })?;
+                if matches!(
+                    borrowed,
+                    Type::Reference {
+                        value: Value::Concrete(
+                            ValueTy::Scalar(_) | ValueTy::Owned(AggregateTy::Enum(_))
+                        ),
+                        ..
+                    } | Type::Slice { .. }
+                ) {
+                    return Err(error(
+                        "local references require a complete owned value",
+                        expression.span,
+                    ));
+                }
+                borrowed
+            }
             ExprKind::Name(name) => {
                 let position = self.local(*name)?;
                 let ty = self.bindings[position].ty;
                 if let Type::Value(value) = ty {
                     if self.abstract_body && self.reachable {
-                        if self.loans.iter().any(|loan| {
-                            loan.binding == position
-                                && (loan.kind == BorrowKind::Exclusive || !self.copy(value))
-                        }) {
-                            return Err(error("value is borrowed during this call", *name));
+                        if self.borrow_conflict(position, !self.copy(value), *name)? {
+                            return Err(error("value is borrowed", *name));
                         }
                         if !self.copy(value) {
                             self.bindings[position].moved = true;
@@ -2531,13 +2577,25 @@ impl<'a, 's> Walker<'a, 's> {
         self.loans.truncate(before);
         result
     }
-    fn exclusive_loan(&self, binding: usize, _path: Span) -> Result<bool, Box<Diagnostic>> {
-        Ok(self.abstract_body
-            && self.reachable
-            && self
-                .loans
-                .iter()
-                .any(|loan| loan.binding == binding && loan.kind == BorrowKind::Exclusive))
+    fn borrow_conflict(
+        &self,
+        binding: usize,
+        write: bool,
+        at: Span,
+    ) -> Result<bool, Box<Diagnostic>> {
+        if self.abstract_body && self.reachable {
+            for loan in &self.loans {
+                self.work
+                    .debit(1, at, "generic active reference comparison")?;
+                if loan.binding == binding && (write || loan.kind == BorrowKind::Exclusive) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+    fn exclusive_loan(&self, binding: usize, path: Span) -> Result<bool, Box<Diagnostic>> {
+        self.borrow_conflict(binding, false, path)
     }
     fn loan(&mut self, name: Span, kind: BorrowKind, at: Span) -> Result<(), Box<Diagnostic>> {
         if !self.abstract_body || !self.reachable {
@@ -2545,10 +2603,12 @@ impl<'a, 's> Walker<'a, 's> {
         }
         let binding = self.place(name)?.0;
         for loan in &self.loans {
+            self.work
+                .debit(1, at, "generic reference acquisition comparison")?;
             if loan.binding == binding
                 && (loan.kind == BorrowKind::Exclusive || kind == BorrowKind::Exclusive)
             {
-                return Err(error("conflicting borrows in generic function call", at));
+                return Err(error("conflicting borrows of the same value", at));
             }
         }
         self.storage.push(

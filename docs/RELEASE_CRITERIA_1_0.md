@@ -25,7 +25,7 @@ GPU／分散式訓練、完整 Rust crate／procedural macro 相容、完整 Pyt
 | 關卡 | 必要技術驗收 | 現況與剩餘工作 |
 |---|---|---|
 | **G1 語言穩定** | 版本化規格、支援矩陣、相容性／棄用／遷移政策與 conformance tests 相互對應；相容版本維持公開語意與 API，破壞性變更經 edition 或 major policy 處理。 | 未達。`typed-preview` 仍為 experimental；未指定 edition 的舊專案保留 legacy 行為。尚缺完整穩定規格與驗收套件。 |
-| **G2 安全核心** | 一般堆積配置、字串、可成長容器、借用、析構與並行安全契約可用；正向、compile-fail、邊界及組合案例覆蓋資源生命週期。 | 未達。目前以 bounded records、固定陣列、不同 record 欄位的 call-only borrowing、slice 與部分 enum／match 為主；一般容器、析構、儲存／回傳參考及並行安全仍不完整。 |
+| **G2 安全核心** | 一般堆積配置、字串、可成長容器、借用、析構與並行安全契約可用；正向、compile-fail、邊界及組合案例覆蓋資源生命週期。 | 未達。目前支援 bounded records、固定陣列、完整值的區域參照、不同 record 欄位的 call-only borrowing、slice 與部分 enum／match；一般容器、析構、值內儲存／回傳參照及並行安全仍不完整。 |
 | **G3 正式原生編譯** | 五平台 native 建置、執行與除錯；可用的 debug/release profile、最佳化正確性、executable／static／shared library、可重現 clean／incremental build，以及一般 hosted execution policy。規模驗收建議採用十萬行有效、非重複填充的多模組專案。 | 未達。現有 native 專案已實作 Linux x86_64／ARM64 的 LLVM `-O0`／`-O2` 與選用的來源行號資訊；ARM64 實機驗證、固定資源限制、其餘 targets、完整除錯與一般增量建置驗收仍待完成。五個編譯器 host 的 CI 不構成五平台 native 驗收。 |
 | **G4 完整 Runtime** | typed-native 檔案／二進位串流、程序、執行緒、同步、非同步 I/O、取消與資源釋放具有正式契約；HTTPS／資料庫服務通過負載測試（建議 48 小時）及逾時、取消、斷線、連線耗盡、部分寫入、重啟與正常關閉測試。 | 未達。legacy 的檔案、程序、網路與 lazy task 功能尚未形成完整 typed-native runtime；一般 I/O、真正並行及取消契約仍有缺口。 |
 | **G5 套件與建置** | 同一套設定貫通 `new → build → run → test → package`；typed dependency graph、workspace、多版本依賴、registry、鎖檔、offline/frozen/vendor、完整性驗證與 cache invalidation 可用。fixture 之外的多套件應用須完成修改模組、增量建置、測試與乾淨部署。 | 進行中，未達。experimental 單套件流程已接入 manifest；Linux typed path dependencies 已接入同一 compiler session，驗證範圍依實際結果記錄。bounded workspace 的成員流程、共享鎖定與逐 binary 原生 object reuse 已有 experimental 實作；本地來源封裝已有 experimental 實作；registry、多版本解析及完整增量流程尚未完成。legacy 的套件與 SHA-256 功能只證明其既有範圍。 |

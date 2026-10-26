@@ -341,6 +341,16 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::Borrow {
+                mutable,
+                name,
+                forwarded,
+            } => {
+                self.tag("local-reference");
+                self.flag(*mutable);
+                self.spelling(*name);
+                self.flag(*forwarded);
+            }
             ExprKind::GenericVariant {
                 application,
                 variant,
@@ -996,6 +1006,7 @@ fn normalized(text: &str) -> Vec<Part> {
 // runtime fixtures. No packages or unrelated language proposals are needed.
 const CORPUS: &[(&str, &str)] = &[
     ("empty", ""),
+    ("local-references", "struct R{x:i32}fn f(value:&mut R)->i32{let parent:&mut R=&mut *value;if true{let shared:&R=&*parent;let n=shared.x;}parent.x=42;return parent.x;}"),
     ("named-byte-conversions", "// 雪\r\nfn f(x:i32,b:u8)->i32{x /*é*/ . /*dot*/ to_u8_checked /*name*/ ( /*empty*/ );return (b . to_i32 ());}fn u8(x:i32)->i32{return - -x.to_i32()+x.to_i32()*2;}"),
     ("projected-borrow-paths", "fn use_paths()->(){f(&batch /* root */ . inner . samples,&mut batch.inner.samples,&*p . inner . samples,&mut *p /* ref */ .inner.samples);return;}"),
     ("comments-only", "// 雪\r\n/* é\n braces { } and punctuation :: */\r\n"),

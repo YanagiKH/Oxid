@@ -461,6 +461,23 @@ fn roles_with_syntax(
     }
     for expression in &program.expressions {
         match &expression.kind {
+            ExprKind::Borrow {
+                forwarded: true,
+                name,
+                ..
+            } => {
+                let first = program
+                    .tokens
+                    .partition_point(|token| token.span.end <= expression.span.start);
+                for token in program.tokens[first..]
+                    .iter()
+                    .take_while(|token| token.span.end <= name.start)
+                {
+                    if token.kind == Kind::Star {
+                        roles[token.span.start] |= TIGHT_AFTER;
+                    }
+                }
+            }
             ExprKind::BitNot { operator_span, .. } => roles[operator_span.start] |= TIGHT_AFTER,
             ExprKind::Bitwise {
                 op, operator_span, ..

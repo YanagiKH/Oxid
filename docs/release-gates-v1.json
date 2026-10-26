@@ -23,7 +23,7 @@
         "No known blocking miscompilation, soundness, data-corruption or security defect in the supported scope; applicable fuzzing and dynamic checks."
       ],
       "remaining": [
-        "Ownership supports bounded records, fixed arrays and call-only borrowing of distinct record fields; general containers, heap/destructor semantics and stored or returned references are incomplete."
+        "Ownership supports bounded records, fixed arrays, local references to whole values and call-only borrowing of distinct record fields; general containers, heap/destructor semantics and references stored in values or returned from functions are incomplete."
       ]
     },
     {

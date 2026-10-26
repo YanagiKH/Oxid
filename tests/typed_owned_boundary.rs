@@ -131,7 +131,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
 #[test]
 fn source_errors_precede_native_tools_and_preserve_existing_outputs() {
     let cases = [
-        ("struct T {} fn main() -> () { let x = T {}; let p = &x; return; }", "E0101", "parse"),
+        ("struct T {} fn main() -> () { let x = T {}; let p = &x; p = &x; return; }", "E0101", "parse"),
         ("struct T {} fn main() -> Missing { return T {}; }", "E0202", "resolve"),
         ("struct T { n: i32 } fn main() -> () { let x = T { n: true }; return; }", "E0300", "type"),
         ("struct T {} fn unused(x: T) -> () { x; x; return; } fn main() -> () { return; }", "E0310", "ownership"),

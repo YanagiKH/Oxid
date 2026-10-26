@@ -200,6 +200,12 @@ pub enum LogicalOp {
 }
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExprKind {
+    /// A local reference initializer. Borrowed values are not ordinary values.
+    Borrow {
+        mutable: bool,
+        name: Span,
+        forwarded: bool,
+    },
     BitNot {
         operand: ExprId,
         operator_span: Span,
@@ -1289,6 +1295,12 @@ impl Program {
             }
             let earlier = |id: ExprId| visit() && id.0 < index;
             let ok = match &expression.kind {
+                ExprKind::Borrow { name, .. } => {
+                    valid(*name)
+                        && name.file == expression.span.file
+                        && name.start >= expression.span.start
+                        && name.end <= expression.span.end
+                }
                 // Structural ID/span admission shares the established unary
                 // traversal. The source-association witness independently checks
                 // the named receiver, operation and exact authenticated origins.
@@ -1548,6 +1560,7 @@ impl Program {
                     })
             })
             || self.expressions.iter().any(|e| match &e.kind {
+                ExprKind::Borrow { .. } => true,
                 ExprKind::StructLiteral { .. }
                 | ExprKind::GenericVariant { .. }
                 | ExprKind::FieldRead { .. }

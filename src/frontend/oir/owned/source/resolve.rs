@@ -375,6 +375,23 @@ fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
         format_args!("first declared here"),
     )
 }
+fn value_annotation(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
+    if matches!(
+        ty.kind,
+        ast::TypeSyntaxKind::Reference { .. }
+            | ast::TypeSyntaxKind::AppliedReference { .. }
+            | ast::TypeSyntaxKind::ArrayReference { .. }
+            | ast::TypeSyntaxKind::SliceReference { .. }
+    ) {
+        Err(error(
+            "E0202",
+            format_args!("reference annotation requires a borrowed initializer"),
+            ty.span,
+        ))
+    } else {
+        Ok(())
+    }
+}
 fn value_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
@@ -1480,10 +1497,19 @@ fn resolve_index_impl(
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
                         annotation: Some(ty),
+                        init,
                         ..
                     } = statement.kind
                     {
-                        index.instantiated_value(DefId(id), ty, work)?;
+                        if matches!(
+                            sources.ast(module)?.expressions[init.0].kind,
+                            ast::ExprKind::Borrow { .. }
+                        ) {
+                            index.instantiated_parameter(DefId(id), ty, work)?;
+                        } else {
+                            value_annotation(ty)?;
+                            index.instantiated_value(DefId(id), ty, work)?;
+                        }
                     } else if index.enum_count() == 0
                         && matches!(statement.kind, ast::StmtKind::Match { .. })
                     {
@@ -2456,24 +2482,77 @@ impl<'a> Resolver<'_, 'a> {
                     annotation,
                     init,
                 } => {
-                    let init = self.expression(*init)?;
-                    let annotation = annotation
-                        .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
-                            self.index
-                                .instantiated_value(self.context.function(), ty, self.work)
-                        })
-                        .transpose()?;
-                    let local =
-                        self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
-                    if self.storage.paid.is_none() {
-                        scopes
-                            .last_mut()
-                            .expect("active body scope")
-                            .push(self.text(*name));
-                    }
-                    StmtKind::Let {
-                        binding: local,
-                        init,
+                    if let ast::ExprKind::Borrow {
+                        mutable: exclusive,
+                        name: target,
+                        forwarded,
+                    } = &self.ast.expressions[init.0].kind
+                    {
+                        if *mutable {
+                            return Err(error(
+                                "E0304",
+                                format_args!("reference bindings cannot be reassigned"),
+                                *name,
+                            ));
+                        }
+                        let root = self.lookup(*target)?;
+                        let annotation = annotation
+                            .map(|ty| {
+                                self.index.instantiated_parameter(
+                                    self.context.function(),
+                                    ty,
+                                    self.work,
+                                )
+                            })
+                            .transpose()?;
+                        let local = self.bind(*name, None, false, BodyBlockId(block.0), None)?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(*name));
+                        }
+                        StmtKind::BorrowLet {
+                            binding: local,
+                            kind: if *exclusive {
+                                BorrowKind::Exclusive
+                            } else {
+                                BorrowKind::Shared
+                            },
+                            place: if *forwarded {
+                                BorrowPlace::Forwarded(root)
+                            } else {
+                                BorrowPlace::Owner(root)
+                            },
+                            borrow_span: self.ast.expressions[init.0].span,
+                            annotation,
+                        }
+                    } else {
+                        if let Some(annotation) = annotation {
+                            value_annotation(*annotation)?;
+                        }
+                        let init = self.expression(*init)?;
+                        let annotation = annotation
+                            .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
+                                self.index.instantiated_value(
+                                    self.context.function(),
+                                    ty,
+                                    self.work,
+                                )
+                            })
+                            .transpose()?;
+                        let local =
+                            self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(*name));
+                        }
+                        StmtKind::Let {
+                            binding: local,
+                            init,
+                        }
                     }
                 }
                 ast::StmtKind::Assign {
@@ -2880,6 +2959,13 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::Borrow { .. } => {
+                return Err(error(
+                    "E0300",
+                    format_args!("reference initializer requires a local declaration"),
+                    expr.span,
+                ))
+            }
             ast::ExprKind::GenericVariant {
                 application,
                 variant,

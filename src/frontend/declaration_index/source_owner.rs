@@ -349,7 +349,8 @@ impl<'s> SourceOwner<'s> {
             for expression in &program.expressions {
                 work.preflight(expression.span)?;
                 match &expression.kind {
-                    ast::ExprKind::StructLiteral { .. }
+                    ast::ExprKind::Borrow { .. }
+                    | ast::ExprKind::StructLiteral { .. }
                     | ast::ExprKind::FieldRead { .. }
                     | ast::ExprKind::ArrayLiteral { .. }
                     | ast::ExprKind::IndexRead { .. }

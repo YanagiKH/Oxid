@@ -347,7 +347,11 @@ its match binding. Reading a generic scalar field requires `T: Copy`; record
 fields otherwise keep the existing move rules. Different record fields may be
 [borrowed together](../rfcs/0067-disjoint-field-borrows.md), including nested
 fields and fields that own buffers. The whole record cannot move while a field
-is borrowed; references remain call-only.
+is borrowed. Whole values can also have [local reference bindings](../rfcs/0068-local-reference-bindings.md)
+such as `let current = &mut value;`. A local reference lasts until its declaring
+block ends; `return`, `break` and `continue` also end the scopes they leave.
+Forward it to a helper with `&*current` or `&mut *current`. References cannot
+yet be returned from functions or stored in records.
 
 ## Long-running programs
 

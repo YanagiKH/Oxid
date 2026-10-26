@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
-import legacy_scalar_observer_range_for as adapter
+import legacy_scalar_observer_local_references as adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +80,18 @@ class ByteRangeObserverTests(unittest.TestCase):
                                      ("outside_subset", "byte_string"))
                     self.assertEqual(value["span"], {"file_id": 0, "start": source.index(literal),
                                                      "end": source.index(literal) + len(literal)})
+                    self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
+
+    def test_local_reference_initializers_stay_outside_every_scalar_schema(self):
+        for borrow in ("&value", "&mut value", "&*value", "&mut *value"):
+            source = "fn f()->(){let reference=" + borrow + ";return;}"
+            for kind, args in MODES:
+                with self.subTest(borrow=borrow, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]),
+                                     ("outside_subset", "local_reference"))
+                    self.assertEqual(value["span"], {"file_id": 0, "start": source.index(borrow),
+                                                     "end": source.index(borrow) + len(borrow)})
                     self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
 
     def test_parent_scalar_and_borrow_wire_outputs_remain_byte_identical(self):
@@ -211,6 +223,42 @@ class ByteRangeObserverTests(unittest.TestCase):
                         copied.write_bytes(original_source)
                 finally:
                     path.write_bytes(original_manifest)
+
+
+
+
+class LocalReferenceAdapterTests(unittest.TestCase):
+    def test_parent_adapter_is_pinned_and_all_original_wrappers_remain_unchanged(self):
+        self.assertEqual(hashlib.sha256((ROOT / 'scripts' / adapter.PARENT).read_bytes()).hexdigest(), adapter.PARENT_SHA)
+        for key, digest in adapter.PINS.items():
+            kind, name = key.split('/')
+            original = (ROOT / f'tests/fixtures/bounded_typed_{kind}/observer' / name).read_bytes()
+            self.assertEqual(hashlib.sha256(original).hexdigest(), digest)
+            actual = adapter.adapt_wrapper(kind, name, original)
+            self.assertEqual(hashlib.sha256(actual).hexdigest(), adapter.DERIVED_PINS[key])
+            restored = actual
+            if name == 'frontend_mod.rs':
+                for before, after in reversed(adapter.EDITS):
+                    self.assertEqual(restored.count(after), 1)
+                    restored = restored.replace(after, before, 1)
+            self.assertEqual(restored, adapter.predecessor.adapt_wrapper(kind, name, original))
+
+    def test_changed_originals_and_new_compile_time_wrapper_members_are_rejected(self):
+        for key in adapter.PINS:
+            kind, name = key.split('/')
+            original = (ROOT / f'tests/fixtures/bounded_typed_{kind}/observer' / name).read_bytes()
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                adapter.adapt_wrapper(kind, name, original + b'\n')
+        with self.assertRaises(ValueError):
+            adapter.adapt_wrapper('parser', 'extra.rs', b'')
+
+    def test_edit_roster_and_derived_identity_cannot_drift(self):
+        original = (ROOT / 'tests/fixtures/bounded_typed_parser/observer/frontend_mod.rs').read_bytes()
+        for edits in ((), adapter.EDITS + adapter.EDITS[:1], ((b'absent seam', b'changed seam'), adapter.EDITS[1])):
+            with self.subTest(edits=edits), patch.object(adapter, 'EDITS', edits), self.assertRaises(ValueError):
+                adapter.adapt_wrapper('parser', 'frontend_mod.rs', original)
+        with patch.dict(adapter.DERIVED_PINS, {'parser/frontend_mod.rs': '0' * 64}), self.assertRaises(ValueError):
+            adapter.adapt_wrapper('parser', 'frontend_mod.rs', original)
 
 
 if __name__ == "__main__":

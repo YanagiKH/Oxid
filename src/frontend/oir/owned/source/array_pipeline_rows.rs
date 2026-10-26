@@ -474,6 +474,33 @@ impl fmt::Display for HirStatement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::StmtKind as S;
         match self.0 {
+            S::BorrowLet {
+                binding,
+                kind,
+                place,
+                borrow_span,
+                annotation,
+            } => {
+                let (mode, root) = match place {
+                    source_hir::BorrowPlace::Owner(id) => ("owner", id.0),
+                    source_hir::BorrowPlace::Forwarded(id) => ("forwarded", id.0),
+                };
+                write!(
+                    f,
+                    "[\"borrow-let\",{},{},\"{}\",{},{},",
+                    binding.0,
+                    Borrow(*kind),
+                    mode,
+                    root,
+                    SpanRow(*borrow_span)
+                )?;
+                if let Some(ty) = annotation {
+                    ParameterType(*ty).fmt(f)?;
+                } else {
+                    f.write_str("null")?;
+                }
+                f.write_str("]")
+            }
             S::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             S::Match { .. } => unreachable!("enum source gate"),
             S::Let { binding, init } => write!(f, "[\"let\",{},{}]", binding.0, init.0),

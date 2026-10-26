@@ -658,6 +658,56 @@ fn position_at(text: &str, needle: &str) -> Value {
 }
 
 #[test]
+fn local_reference_navigation_follows_borrows_fields_calls_and_scope() {
+    let p = Project::new();
+    let text = "struct V{x:i32}\nfn bump(v:&mut V)->(){v.x=v.x+1;return;}\nfn relay(input:&mut V)->i32{\nlet parent=&mut *input;\nif true{\nlet child=&mut *parent;\nbump(&mut *child);\nchild.x=42;\n}\nreturn parent.x;\n}\nfn main()->i32{let mut value=V{x:0};let local=&mut value;return relay(&mut *local);}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    c.clean(&path);
+    for (use_site, declaration, width) in [
+        ("input;", "input:", 5),
+        ("parent;", "parent=", 6),
+        ("child);", "child=", 5),
+        ("child.x=", "child=", 5),
+        ("parent.x;", "parent=", 6),
+        ("value;", "value=", 5),
+        ("local);", "local=", 5),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(text,use_site)}),
+        );
+        let start = position_at(text, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":path,"range":{"start":start,"end":end}}]),
+            "{use_site}: {result}"
+        );
+    }
+    let invalid = text.replace("return parent.x;", "return child.x;");
+    c.change(&path, 2, json!([{"text":invalid}]));
+    let mut position = position_at(&invalid, "return child.x;");
+    position["character"] = json!(position["character"].as_u64().unwrap() + 7);
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position}),
+    );
+    assert!(result.get("error").is_none(), "{result}");
+    assert_eq!(result.get("result"), Some(&Value::Null));
+    assert!(!c.diagnostics[&path]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
 fn definition_navigation_distinguishes_parameters_locals_and_function_calls() {
     let p = Project::new();
     let text="fn square(value:i32)->i32 {\nlet c='🦀';\nlet mut total=value;\ntotal=total+1;\nreturn total;\n}\nfn main()->i32{return square(41);}";
