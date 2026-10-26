@@ -71,6 +71,18 @@ class MacosNativeAdmission(unittest.TestCase):
                     self.capture()
                 self.put(name, self.parent[name])
 
+    def test_retained_integration_test_changes_require_exact_reviewed_pins(self):
+        name = "tests/typed_project_dispatch.rs"
+        manifest = (ROOT / gate.BINDING / "current-source.json").read_bytes()
+        self.assertEqual(gate.sha(manifest), gate.BASELINE_SOURCE_SHA)
+        retained = {row["path"] for row in json.loads(manifest)["files"]} | gate.PREDECESSOR_ADDED
+        self.assertIn(name, retained)
+        self.assertIn(name, gate.MACOS_NATIVE_CHANGED)
+        self.assertIn(name, gate.MACOS_NATIVE_INPUTS)
+        self.put(name, self.current[name] + b"// changed retained integration input\n")
+        with self.assertRaisesRegex(ValueError, "reviewed input"):
+            self.capture()
+
     def test_reviewed_lengths_hashes_and_exact_roster_are_all_required(self):
         name = "src/frontend/oir/native.rs"
         original = gate.MACOS_NATIVE_INPUTS[name]
@@ -209,7 +221,7 @@ class MacosNativePolicyAuthority(unittest.TestCase):
         for name in ("extract_baseline", "checkout_identity", "verify_materialized",
                      "verify_current_observer", "run_byte_buffer_observer_controls"):
             self.assertIs(getattr(gate, name), getattr(gate.library, name))
-        self.assertEqual(gate.MACOS_NATIVE_CHANGED, {'src/frontend/oir/owned/byte_storage_native_tests.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/project/filesystem.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/oir/project_execution_tests.rs', 'src/frontend/project/tests.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/driver.rs', 'src/frontend/project/packages/tests.rs', 'src/frontend/project/unit2_tests.rs', 'src/frontend/build_config.rs', 'src/frontend/oir/owned/file_resources.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/project/packages.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/binary_io.rs', 'native/experimental_files.c', 'src/frontend/native/doctor.rs', 'src/frontend/native.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/project_cli.rs', 'src/frontend/oir/owned/input.rs', 'build.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs'})
+        self.assertEqual(gate.MACOS_NATIVE_CHANGED, {'src/frontend/oir/owned/byte_storage_native_tests.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/project/filesystem.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/oir/project_execution_tests.rs', 'src/frontend/project/tests.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/driver.rs', 'src/frontend/project/packages/tests.rs', 'src/frontend/project/unit2_tests.rs', 'src/frontend/build_config.rs', 'src/frontend/oir/owned/file_resources.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/project/packages.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/binary_io.rs', 'native/experimental_files.c', 'src/frontend/native/doctor.rs', 'src/frontend/native.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/project_cli.rs', 'src/frontend/oir/owned/input.rs', 'build.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs', 'tests/typed_project_dispatch.rs'})
         self.assertEqual(len(gate.MACOS_NATIVE_ADDED), 0)
         self.assertIs(gate.run_character_observer_controls, gate.library.run_character_observer_controls)
         self.assertEqual(set(gate.MACOS_NATIVE_INPUTS), gate.MACOS_NATIVE_CHANGED | gate.MACOS_NATIVE_ADDED)

@@ -20,7 +20,7 @@ PREDECESSOR = 'b40dfdf471331863b1b77204f95aa6263b18172d'
 PREDECESSOR_POLICY = 'scripts/verify_scalar_debug_storage_compatibility.py'
 PREDECESSOR_POLICY_SHA = 'a33e700c9b9a5fe5673ddd97e0f5a0f3a764db294bd6194b07b77b168b042487'
 PREDECESSOR_POLICY_BYTES = 20564
-MACOS_NATIVE_CHANGED = frozenset({'src/frontend/oir/owned/byte_storage_native_tests.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/project/filesystem.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/oir/project_execution_tests.rs', 'src/frontend/project/tests.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/driver.rs', 'src/frontend/project/packages/tests.rs', 'src/frontend/project/unit2_tests.rs', 'src/frontend/build_config.rs', 'src/frontend/oir/owned/file_resources.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/project/packages.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/binary_io.rs', 'native/experimental_files.c', 'src/frontend/native/doctor.rs', 'src/frontend/native.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/project_cli.rs', 'src/frontend/oir/owned/input.rs', 'build.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs'})
+MACOS_NATIVE_CHANGED = frozenset({'src/frontend/oir/owned/byte_storage_native_tests.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/project/filesystem.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/oir/project_execution_tests.rs', 'src/frontend/project/tests.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/driver.rs', 'src/frontend/project/packages/tests.rs', 'src/frontend/project/unit2_tests.rs', 'src/frontend/build_config.rs', 'src/frontend/oir/owned/file_resources.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/project/packages.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/binary_io.rs', 'native/experimental_files.c', 'src/frontend/native/doctor.rs', 'src/frontend/native.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/project_cli.rs', 'src/frontend/oir/owned/input.rs', 'build.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs', 'tests/typed_project_dispatch.rs'})
 MACOS_NATIVE_ADDED = frozenset()
 MACOS_NATIVE_INPUTS = {'build.rs': (1896, 'a079492b9533e8283959b87048019e3ac90cbdf0550ca527322bae16c5075539'),
  'native/experimental_files.c': (7168,
@@ -91,7 +91,9 @@ MACOS_NATIVE_INPUTS = {'build.rs': (1896, 'a079492b9533e8283959b87048019e3ac90cb
                                          '95a92ad4c295f6e8ea56314c5bfe9e7a1ac728c74a0ed6eb6b99cd20f96dd7ee'),
  'src/frontend/stdin_public_tests.rs': (5154,
                                         '3ca59074780eed91432246f11a17aa9976a9b46c0b2c2d674ce69fde49233930'),
- 'src/project_cli.rs': (63112, 'd6c92fd940aa559bed135a771adff7b2dcc81226fc6cd907579d812974728597')}
+ 'src/project_cli.rs': (63112, 'd6c92fd940aa559bed135a771adff7b2dcc81226fc6cd907579d812974728597'),
+ 'tests/typed_project_dispatch.rs': (5888,
+                                       'b24162962f6149422ebe38f58f6fe05d16de71ea06d81aa809df6b979035666d')}
 REVIEWED_DIRECTIVES = {'build.rs': ([], []),
  'native/experimental_files.c': ([], []),
  'src/frontend/build_config.rs': ([], []),
@@ -205,7 +207,8 @@ REVIEWED_DIRECTIVES = {'build.rs': ([], []),
  'src/frontend/project/tests.rs': ([], []),
  'src/frontend/project/unit2_tests.rs': ([], []),
  'src/frontend/stdin_public_tests.rs': ([], []),
- 'src/project_cli.rs': ([], [])}
+ 'src/project_cli.rs': ([], []),
+ 'tests/typed_project_dispatch.rs': ([], [])}
 
 
 def require(condition, message):
