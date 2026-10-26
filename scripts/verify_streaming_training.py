@@ -163,7 +163,7 @@ def verify(args):
             for limit in [16384, 1024]:
                 (probe/'oxid.toml').write_text('[project]\nname="reader-probe"\nedition="typed-preview"\nentry="main.ox"\n'
                     '[build]\nentry-mode="process"\n[execution]\npolicy="hosted"\nheap-limit='+str(limit)+'\n'
-                    '[dependencies]\ntensor="../cpu-training/tensor"\n')
+                    '[dependencies]\ntensor="../cpu-training/tensor"\nreader="../streaming-training/reader"\n')
                 if limit == 16384:
                     for name, payload, expected, rows, size in oracle.reader_cases():
                         if name == 'larger-than-heap':

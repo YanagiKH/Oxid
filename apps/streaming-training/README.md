@@ -54,7 +54,7 @@ Each epoch reads rows in file order. Keep the dataset unchanged during the run. 
 
 ## Use the reader in Oxid
 
-Add the [tensor package](../cpu-training/tensor/README.md) as a path dependency. `tensor::data::stream::open(path, batch_size)` returns a reader; `next(&mut reader)` returns owned input and target tensors for the next batch. The final batch may contain fewer rows.
+Add the [reader package](reader/README.md) and [tensor package](../cpu-training/tensor/README.md) as path dependencies. `reader::open(path, batch_size)` returns a reader; `next(&mut reader)` returns owned input and target tensors for the next batch. The final batch may contain fewer rows.
 
 `row_count`, `feature_count`, `target_count`, `position` and `remaining` report dimensions and progress. A reader uses a 4 KiB input buffer plus its current batch. Keeping previously returned batches also keeps their memory allocated.
 

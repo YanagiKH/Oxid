@@ -1948,7 +1948,7 @@
         "apps/cpu-training/tensor/src/data/session.ox",
         "apps/cpu-training/checkpoint/src/pipeline.ox",
         "apps/minibatch-training/src/main.ox",
-        "apps/cpu-training/tensor/src/data/stream.ox",
+        "apps/streaming-training/reader/src/lib.ox",
         "apps/streaming-training/src/main.ox"
       ],
       "tests": [

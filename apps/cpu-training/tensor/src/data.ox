@@ -9,7 +9,6 @@ use crate::Error;
 pub mod checkpoint;
 pub mod sampler_checkpoint;
 pub mod session;
-pub mod stream;
 
 pub struct Dataset { inputs: Tensor, targets: Tensor }
 pub struct Sampler { rows: i32, size: i32, shuffle: bool, rng: u32, cursor: i32, epoch: u64, batches: u64, order: ByteBuf }

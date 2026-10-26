@@ -74,7 +74,7 @@ CPU_PROJECTS = {
     "apps/cpu-training": tuple("apps/cpu-training/" + name for name in (
         "checkpoint/src/lib.ox", "checkpoint/src/pipeline.ox", "checkpoint/src/training.ox",
         "tensor/src/codec.ox", "tensor/src/data.ox", "tensor/src/data/checkpoint.ox",
-        "tensor/src/data/sampler_checkpoint.ox", "tensor/src/data/session.ox", "tensor/src/data/stream.ox", "tensor/src/graph.ox",
+        "tensor/src/data/sampler_checkpoint.ox", "tensor/src/data/session.ox", "tensor/src/graph.ox",
         "tensor/src/lib.ox", "tensor/src/model.ox", "tensor/src/model/checkpoint.ox",
         "tensor/src/model/session.ox", "tensor/src/optimizer.ox", "tensor/src/optimizer/checkpoint.ox",
         "trainer/src/main.ox", "trainer/src/options.ox", "trainer/src/report.ox", "trainer/src/training.ox",
@@ -84,7 +84,7 @@ CPU_PROJECTS = {
         "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/data.ox",
     )),
     "apps/streaming-training": tuple("apps/streaming-training/" + name for name in (
-        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox",
+        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox", "reader/src/lib.ox",
     )),
 }
 

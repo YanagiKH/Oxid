@@ -98,7 +98,6 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/cpu-training/tensor/src/data/checkpoint.ox',
         'apps/cpu-training/tensor/src/data/sampler_checkpoint.ox',
         'apps/cpu-training/tensor/src/data/session.ox',
-        'apps/cpu-training/tensor/src/data/stream.ox',
         'apps/cpu-training/tensor/src/graph.ox',
         'apps/cpu-training/tensor/src/lib.ox',
         'apps/cpu-training/tensor/src/model.ox',
@@ -126,6 +125,7 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/streaming-training/src/report.ox',
         'apps/streaming-training/src/training.ox',
         'apps/streaming-training/tests/reader.ox',
+        'apps/streaming-training/reader/src/lib.ox',
     ),
 }
 # Library roots have no executable entry point; their dependent applications

@@ -54,6 +54,4 @@ An update checks every candidate parameter and moment before committing any chan
 
 ## Streaming datasets
 
-`data::stream::open(path, batch_size)` reads sequential input/target batches with a fixed 4 KiB buffer. Call `next` until `remaining` is zero. Each returned batch owns its tensors. Invalid headers, truncated or trailing payloads, non-finite values and I/O errors close the file and return an error. Failed readers reject later reads with `Poisoned`; completed readers return `End`.
-
-See [streaming training](../../streaming-training/README.md) for file format, progress queries and a runnable example.
+The separate [reader package](../../streaming-training/reader/README.md) reads finite input/target batches with a fixed 4 KiB buffer and returns owned tensors. See [streaming training](../../streaming-training/README.md) for the file format and a runnable example.

@@ -1,4 +1,7 @@
 use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
 use std::fs::File;
 use std::fs::OpenResult;
 use std::fs::FileStatus;
@@ -6,14 +9,52 @@ use std::fs::open_read;
 use std::fs::read_some;
 use std::fs::close;
 use std::io::ReadSomeStatus;
-use crate::Tensor;
-use crate::TensorResult;
-use crate::Error as TensorError;
-use crate::data::Batch;
+use crate::tensor::Tensor;
+use crate::tensor::TensorResult;
+use crate::tensor::Error as TensorError;
+use crate::tensor::data::Batch;
 
 pub enum Error { Tensor(TensorError), Io(i32), InvalidHeader, Truncated, TrailingData, InvalidBatchSize, Poisoned, End }
 pub enum Result<T> { Ok(T), Err(Error) }
 pub struct Reader { file: File, scratch: ByteBuf, offset: i32, available: i32, rows: i32, features: i32, targets: i32, size: i32, cursor: i32, failed: bool }
+
+fn allocate(size: i32) -> TensorResult<ByteBuf>{
+    let mut bytes = new();
+    let grown = try_resize(&mut bytes, size, 0u8);
+    match grown {
+        GrowStatus::Ok => { return TensorResult::Ok(bytes); },
+        GrowStatus::CapacityOverflow => { return TensorResult::<ByteBuf>:: Err(TensorError::SizeOverflow); },
+        GrowStatus::MemoryLimit => { return TensorResult::<ByteBuf>:: Err(TensorError::MemoryLimit); },
+        GrowStatus::AllocationFailed => { return TensorResult::<ByteBuf>:: Err(TensorError::AllocationFailed); },
+    }
+}
+fn read_u32(bytes: &[u8], start: i32) -> u32 {
+    let mut number = 0u32;
+    for offset in 0..4 { let byte = bytes[start + offset]; number = number | (byte.to_u32_checked() << (offset * 8)); }
+    return number;
+}
+fn read_value(reader: &mut Reader) -> Result<f64>{
+    let mut bytes = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let read = read_exact(&mut *reader, &mut bytes);
+    match read { Result::Ok(done) => {}, Result::Err(error) => { return Result::<f64>:: Err(error); } }
+    let mut bits = 0u64;
+    for offset in 0..8 { let byte = bytes[offset]; bits = bits | (byte.to_u64_checked() << (offset * 8)); }
+    if ((bits >> 52) & 2047u64) == 2047u64 { return Result::<f64>:: Err(Error::Tensor(TensorError::NonFinite)); }
+    return Result::Ok(f64::from_bits(bits));
+}
+fn read_row(reader: &mut Reader, target: &mut Tensor, row: i32, columns: i32) -> Result<()>{
+    for column in 0..columns {
+        let read = read_value(&mut *reader);
+        match read {
+            Result::Ok(number) => {
+                let stored = crate::tensor::set(&mut *target, row, column, number);
+                match stored { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return Result::<()>:: Err(Error::Tensor(error)); } }
+            },
+            Result::Err(error) => { return Result::<()>:: Err(error); }
+        }
+    }
+    return Result::Ok(());
+}
 
 fn reject<T>(reader: &mut Reader, error: Error) -> Result<T>{
     reader.failed = true;
@@ -61,7 +102,7 @@ fn read_exact(reader: &mut Reader, target: &mut [u8]) -> Result<()>{
 
 pub fn open(path: &[u8], size: i32) -> Result<Reader>{
     if size <= 0 { return Result::<Reader>:: Err(Error::InvalidBatchSize); }
-    let made = crate::data::allocate(4096);
+    let made = allocate(4096);
     match made {
         TensorResult::Ok(buffer) => {
             let opened = open_read(&*path);
@@ -73,10 +114,10 @@ pub fn open(path: &[u8], size: i32) -> Result<Reader>{
                     match read { Result::Ok(done) => {}, Result::Err(error) => { return reject::<Reader>(&mut reader, error); } }
                     let magic = b"OXDS0001";
                     for index in 0..8 { if header[index] != magic[index] { return reject::<Reader>(&mut reader, Error::InvalidHeader); } }
-                    let rows = crate::codec::get32(&header, 8);
-                    let features = crate::codec::get32(&header, 12);
-                    let targets = crate::codec::get32(&header, 16);
-                    let reserved = crate::codec::get32(&header, 20);
+                    let rows = read_u32(&header, 8);
+                    let features = read_u32(&header, 12);
+                    let targets = read_u32(&header, 16);
+                    let reserved = read_u32(&header, 20);
                     if rows == 0u32 || rows > 2147483647u32 || features == 0u32 || features > 268435455u32 || targets == 0u32 || targets > 268435455u32 || reserved != 0u32 { return reject::<Reader>(&mut reader, Error::InvalidHeader); }
                     if features + targets > 268435455u32 { return reject::<Reader>(&mut reader, Error::InvalidHeader); }
                     reader.rows = rows.to_i32_checked();
@@ -107,41 +148,30 @@ fn finish(reader: &mut Reader) -> Result<()>{
     match closed { FileStatus::Ok => { return Result::Ok(()); }, FileStatus::Error(code) => { return Result::<()>:: Err(Error::Io(code)); } }
 }
 
-fn finite_tensor(value: &Tensor) -> bool {
-    for index in 0..value.rows * value.columns {
-        let number = crate::codec::load(&*value.data, index);
-        if ((number.to_bits() >> 52) & 2047u64) == 2047u64 { return false; }
-    }
-    return true;
-}
-
 pub fn next(reader: &mut Reader) -> Result<Batch>{
     if reader.failed { return Result::<Batch>:: Err(Error::Poisoned); }
     if reader.cursor == reader.rows { return Result::<Batch>:: Err(Error::End); }
     reader.failed = true;
     let mut count = reader.rows - reader.cursor;
     if count > reader.size { count = reader.size; }
-    let input = crate::filled(count, reader.features, 0.0);
+    let input = crate::tensor::filled(count, reader.features, 0.0);
     match input {
         TensorResult::Ok(inputs) => {
             let mut first = inputs;
-            let output = crate::filled(count, reader.targets, 0.0);
+            let output = crate::tensor::filled(count, reader.targets, 0.0);
             match output {
                 TensorResult::Ok(targets) => {
                     let mut second = targets;
                     let mut row = 0;
                     while row < count {
-                        let input_start = row * reader.features * 8;
-                        let input_end = input_start + reader.features * 8;
-                        let read = read_exact(&mut *reader, &mut first.data[input_start..input_end]);
+                        let features = reader.features;
+                        let target_columns = reader.targets;
+                        let read = read_row(&mut *reader, &mut first, row, features);
                         match read { Result::Ok(done) => {}, Result::Err(error) => { return reject::<Batch>(&mut *reader, error); } }
-                        let target_start = row * reader.targets * 8;
-                        let target_end = target_start + reader.targets * 8;
-                        let target_read = read_exact(&mut *reader, &mut second.data[target_start..target_end]);
+                        let target_read = read_row(&mut *reader, &mut second, row, target_columns);
                         match target_read { Result::Ok(done) => {}, Result::Err(error) => { return reject::<Batch>(&mut *reader, error); } }
                         row = row + 1;
                     }
-                    if !finite_tensor(&first) || !finite_tensor(&second) { return reject::<Batch>(&mut *reader, Error::Tensor(TensorError::NonFinite)); }
                     if reader.cursor + count == reader.rows {
                         let ended = finish(&mut *reader);
                         match ended { Result::Ok(done) => {}, Result::Err(error) => { return reject::<Batch>(&mut *reader, error); } }

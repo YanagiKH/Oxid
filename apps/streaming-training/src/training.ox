@@ -1,14 +1,14 @@
 use crate::tensor::TensorResult;
 use crate::tensor::Error;
 use crate::tensor::model::Model;
-use crate::tensor::data::stream::Result as StreamResult;
-use crate::tensor::data::stream::Error as StreamError;
-use crate::tensor::data::stream::open;
-use crate::tensor::data::stream::next;
-use crate::tensor::data::stream::remaining;
-use crate::tensor::data::stream::feature_count;
-use crate::tensor::data::stream::target_count;
-use crate::tensor::data::stream::row_count;
+use crate::reader::Result as StreamResult;
+use crate::reader::Error as StreamError;
+use crate::reader::open;
+use crate::reader::next;
+use crate::reader::remaining;
+use crate::reader::feature_count;
+use crate::reader::target_count;
+use crate::reader::row_count;
 pub struct Summary { pub epochs: i32, pub rows: i32, pub batches: u64, pub initial_loss: f64, pub final_loss: f64 }
 fn converted(problem: StreamError) -> Error { match problem { StreamError::Tensor(cause) => { return cause; }, StreamError::Io(code) => { return Error::IoError(code); }, StreamError::InvalidHeader => { return Error::InvalidStorage; }, StreamError::Truncated => { return Error::InvalidStorage; }, StreamError::TrailingData => { return Error::InvalidStorage; }, StreamError::InvalidBatchSize => { return Error::NegativeShape; }, StreamError::Poisoned => { return Error::InvalidStorage; }, StreamError::End => { return Error::InvalidStorage; }, } }
 fn create_model(path: &[u8], size: i32) -> TensorResult<Model>{ let opened = open(&*path, size); match opened { StreamResult::Ok(reader) => { return crate::tensor::model::initialize(feature_count(&reader), 8, target_count(&reader), 42u32); }, StreamResult::Err(problem) => { return TensorResult::<Model>:: Err(converted(problem)); }, } }
