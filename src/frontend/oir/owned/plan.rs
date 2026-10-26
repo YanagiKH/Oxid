@@ -759,7 +759,7 @@ mod tests {
             shape::MatchBlockRole => 24,
             OwnerDecl => 56,
             ReferenceDecl => 48,
-            LoanDecl => 96,
+            LoanDecl => 104,
             CallDecl => 96,
             OwnedInstruction => 128,
             OwnedStatement => 208,

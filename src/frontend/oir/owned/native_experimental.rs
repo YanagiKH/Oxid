@@ -233,6 +233,7 @@ pub(super) fn operation(
     } else {
         base_pointer(
             out,
+            f,
             &format!("{name}_buffer"),
             AccessBase::Parameter(ReferenceParamId(0)),
         )
@@ -270,6 +271,7 @@ pub(super) fn operation(
         (
             base_pointer(
                 out,
+                f,
                 &format!("{name}_source"),
                 AccessBase::Parameter(ReferenceParamId(1)),
             ),
@@ -362,6 +364,7 @@ fn argument_operation(
     );
     let bytes = base_pointer(
         out,
+        f,
         &format!("{name}_bytes"),
         AccessBase::Parameter(ReferenceParamId(0)),
     );
@@ -423,7 +426,7 @@ pub(super) fn borrow(
     let plan = storage.execution();
     let f = &plan.witness().functions()[storage.id().0];
     let declaration = &f.loans[loan.0];
-    let base = base_pointer(out, name, declaration.authority);
+    let base = base_pointer(out, f, name, declaration.authority);
     let (pointer, actual) = if declaration.projection.is_empty() {
         (base, indexed_base(f, declaration.authority))
     } else {
@@ -512,6 +515,7 @@ fn file_operation(
     } else {
         base_pointer(
             out,
+            f,
             &format!("{name}_file"),
             AccessBase::Parameter(ReferenceParamId(0)),
         )
@@ -521,6 +525,7 @@ fn file_operation(
         (
             base_pointer(
                 out,
+                f,
                 &format!("{name}_bytes"),
                 AccessBase::Parameter(parameter),
             ),

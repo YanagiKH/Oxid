@@ -2,6 +2,110 @@ use super::super::consumer_fixtures as fixtures;
 use super::super::execute;
 type Fixture = fn() -> (SourceMap, RawOwnedProgram, fixtures::Schedule);
 
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+#[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
+fn native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm() {
+    let scratch = Scratch::new();
+    for (depth, exclusive) in [(1, false), (1, true), (4, true), (64, false)] {
+        let (sources, raw) = super::super::tests::local_reference_chain(depth, exclusive);
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let module = native_module(&witness, Some(hir::DefId(0)), &sources).unwrap();
+        let binary = scratch.compile(&module, &format!("local-reference-{depth}-{exclusive}"));
+        assert_result(scratch.run(&binary, &[]), b"-47\n", b"", 0);
+    }
+    for (name, (sources, raw)) in [
+        (
+            "local-reference-loop",
+            super::super::tests::local_reference_loop(),
+        ),
+        (
+            "local-reference-parameter",
+            super::super::tests::local_reference_from_parameter(),
+        ),
+        (
+            "local-reference-diamond-true",
+            super::super::tests::local_reference_diamond(true, false),
+        ),
+        (
+            "local-reference-diamond-false",
+            super::super::tests::local_reference_diamond(false, false),
+        ),
+        (
+            "local-reference-early-return",
+            super::super::tests::local_reference_diamond(false, true),
+        ),
+    ] {
+        let witness = verified::verify_owned(raw, &sources).unwrap();
+        let module = native_module(&witness, Some(hir::DefId(0)), &sources).unwrap();
+        let binary = scratch.compile(&module, name);
+        assert_result(scratch.run(&binary, &[]), b"-47\n", b"", 0);
+    }
+    let mut admitted_sequences = 0;
+    for (case, (chain, exclusive0, exclusive1)) in [
+        (false, false, false),
+        (false, false, true),
+        (false, true, false),
+        (false, true, true),
+        (true, false, false),
+        (true, false, true),
+        (true, true, false),
+        (true, true, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for ordinal in 0..5040 {
+            let actions = super::super::tests::local_reference_permutation(ordinal);
+            if !super::super::tests::local_reference_sequence_allowed(
+                &actions,
+                chain,
+                [exclusive0, exclusive1],
+            ) {
+                continue;
+            }
+            let (sources, raw) = super::super::tests::local_reference_sequence(
+                &actions, chain, exclusive0, exclusive1,
+            );
+            let witness = verified::verify_owned(raw, &sources).unwrap();
+            let module = native_module(&witness, Some(hir::DefId(0)), &sources).unwrap();
+            let binary = scratch.compile(
+                &module,
+                &format!("local-reference-sequence-{case}-{ordinal}"),
+            );
+            assert_result(scratch.run(&binary, &[]), b"-94\n", b"", 0);
+            admitted_sequences += 1;
+        }
+    }
+    assert_eq!(admitted_sequences, 36);
+    let (sources, mut raw) = super::super::tests::local_reference_program();
+    let schedule = super::super::tests::local_reference_schedule(&sources);
+    append_cycle(&mut raw);
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let module = native_module_with_fuel(&witness, schedule.entry, &sources, 66).unwrap();
+    let binary = scratch.compile(
+        &argv_fuel_harness(&module, 66),
+        "local-reference-every-fuel",
+    );
+    for fuel in 0..=66 {
+        let actual = scratch.run(&binary, &[fuel.to_string()]);
+        match schedule.failure(fuel) {
+            Some(span) => {
+                let expected = RunFailure::Fuel(span)
+                    .diagnostic(&sources)
+                    .render_human(&sources);
+                assert_result(actual, b"", expected.as_bytes(), 1);
+            }
+            None => assert_result(actual, b"-47\n", b"", 0),
+        }
+    }
+}
+
 fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span) -> OwnedBlock {
     OwnedBlock {
         merge: None,

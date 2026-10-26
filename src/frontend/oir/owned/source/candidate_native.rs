@@ -173,6 +173,8 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         OwnedInstruction::StorageEnd(_) => "StorageEnd",
         OwnedInstruction::Discard(_) => "Discard",
         OwnedInstruction::OpenCall(_) => "OpenCall",
+        OwnedInstruction::AcquireLocalBorrow(_) => "AcquireLocalBorrow",
+        OwnedInstruction::ReleaseLocalBorrow(_) => "ReleaseLocalBorrow",
     }
 }
 

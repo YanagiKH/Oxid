@@ -32,7 +32,7 @@ impl Shape {
     ) -> Result<Span, OwnedFailure> {
         let instruction = self.acquisitions.get(loan.0).and_then(|site| *site)
             .and_then(|site| f.blocks.get(site.block)?.statements.get(site.statement))
-            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } | OwnedInstruction::PrepareBorrowRange { loan: actual, .. } if actual == loan))
+            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } | OwnedInstruction::PrepareBorrowRange { loan: actual, .. } | OwnedInstruction::AcquireLocalBorrow(actual) if actual == loan))
             .ok_or_else(|| bad(Malformed::CanonicalSite, f.span))?;
         Ok(instruction.cause_span())
     }
@@ -152,6 +152,13 @@ pub(super) fn base(
         AccessBase::Parameter(id) => {
             let r = reference(f, id, s)?;
             Ok((r.referent(), r.kind == BorrowKind::Exclusive))
+        }
+        AccessBase::Loan(id) => {
+            let loan = loan(f, id, s)?;
+            if loan.region != LoanRegion::Local {
+                return Err(bad(Malformed::Binding, s));
+            }
+            Ok((loan.referent(), loan.kind == BorrowKind::Exclusive))
         }
     }
 }
@@ -410,7 +417,7 @@ pub(super) fn check_with_conversion_authority(
                     },
                 ) => {
                     let loan = loan(f, *l, c.span)?;
-                    if loan.call != CallSiteId(id) || loan.argument != arg {
+                    if loan.call_binding() != Some((CallSiteId(id), arg)) {
                         return Err(bad(Malformed::Binding, c.span));
                     }
                     d.same_borrowed_type(loan.referent(), record)
@@ -440,9 +447,27 @@ pub(super) fn check_with_conversion_authority(
     }
     for (id, l) in f.loans.iter().enumerate() {
         span(sources, l.span)?;
-        let c = call(f, l.call, l.span)?;
-        if c.arguments.get(l.argument) != Some(&ArgumentSlot::Borrow(LoanId(id))) {
-            return Err(bad(Malformed::Binding, l.span));
+        if let Some((binding, argument)) = l.call_binding() {
+            let c = call(f, binding, l.span)?;
+            if c.arguments.get(argument) != Some(&ArgumentSlot::Borrow(LoanId(id))) {
+                return Err(bad(Malformed::Binding, l.span));
+            }
+        } else if !l.projection.is_empty() || !matches!(l.referent(), BorrowedTy::Exact(_)) {
+            return Err(bad(Malformed::Type, l.span));
+        }
+        let mut authority = l.authority;
+        let mut depth = 0;
+        while let AccessBase::Loan(parent) = authority {
+            meter.visit()?;
+            depth += 1;
+            if depth > MAX_LOCAL_REFERENCE_DEPTH || depth > f.loans.len() {
+                return Err(OwnedFailure::resource("local reference ancestry"));
+            }
+            let parent = loan(f, parent, l.span)?;
+            if parent.region != LoanRegion::Local {
+                return Err(bad(Malformed::Binding, l.span));
+            }
+            authority = parent.authority;
         }
         let (record, _) = base(f, l.authority, l.span)?;
         let record = if l.projection.is_empty() {
@@ -1055,6 +1080,21 @@ pub(super) fn check_with_conversion_authority(
                         site,
                         s,
                     )?;
+                }
+                OwnedInstruction::AcquireLocalBorrow(l) => {
+                    let declaration = loan(f, *l, s)?;
+                    if declaration.region != LoanRegion::Local {
+                        return Err(bad(Malformed::Binding, s));
+                    }
+                    if declaration.span != s {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    slot(&mut acquisitions, l.0, site, s)?;
+                }
+                OwnedInstruction::ReleaseLocalBorrow(l) => {
+                    if loan(f, *l, s)?.region != LoanRegion::Local {
+                        return Err(bad(Malformed::Binding, s));
+                    }
                 }
                 OwnedInstruction::PrepareBorrow {
                     call: c,

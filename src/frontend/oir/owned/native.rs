@@ -1627,6 +1627,7 @@ fn diagnostic_occurrences(
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?
                     }
                     OwnedInstruction::PrepareBorrow { loan, .. }
+                    | OwnedInstruction::AcquireLocalBorrow(loan)
                         if experimental::resource_borrow(plan, f, *loan) =>
                     {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?
@@ -2131,8 +2132,17 @@ fn load_operand(out: &mut Emission, f: &RawOwnedFunction, name: &str, value: Ope
         f.locals[value.local.0].ty,
     )
 }
-fn base_pointer(out: &mut Emission, name: &str, base: AccessBase) -> String {
+fn base_pointer(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
     match base {
+        AccessBase::Loan(loan) => {
+            writeln!(
+                out,
+                "  %{name}_base = load ptr, ptr %r{}, align 8",
+                f.references.len() + loan.0
+            )
+            .unwrap();
+            format!("%{name}_base")
+        }
         AccessBase::Owner(o) => format!("%o{}", o.0),
         AccessBase::Parameter(p) => {
             writeln!(out, "  %{name}_base = load ptr, ptr %r{}, align 8", p.0).unwrap();
@@ -2158,6 +2168,7 @@ fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
     match base {
         AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
         AccessBase::Parameter(reference) => f.references[reference.0].referent(),
+        AccessBase::Loan(loan) => f.loans[loan.0].referent(),
     }
 }
 fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
@@ -2279,7 +2290,7 @@ fn index_pointer(
     );
     writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", element_stride(element)).unwrap();
     // Even resolving a reference base happens only on the successful edge.
-    let base = base_pointer(out, name, base);
+    let base = base_pointer(out, f, name, base);
     let base = match projection_offset {
         Some(offset) => field_pointer(out, &format!("{name}_projection"), &base, offset),
         None => base,
@@ -3747,7 +3758,9 @@ fn continuation(
         | OwnedInstruction::ArrayLength { .. }
         | OwnedInstruction::OpenCall(_)
         | OwnedInstruction::PrepareScalar { .. }
-        | OwnedInstruction::PrepareBorrow { .. } => Continuation::Unsplit,
+        | OwnedInstruction::PrepareBorrow { .. }
+        | OwnedInstruction::AcquireLocalBorrow(_)
+        | OwnedInstruction::ReleaseLocalBorrow(_) => Continuation::Unsplit,
     }
 }
 fn exit_label(
@@ -4673,7 +4686,7 @@ fn emit_statement(
             let ValueTy::Scalar(scalar) = value else {
                 unreachable!("verified scalar projection")
             };
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, offset);
             writeln!(
                 out,
@@ -4700,7 +4713,7 @@ fn emit_statement(
                 unreachable!("verified scalar projection")
             };
             let value = load_operand(out, f, &format!("{name}_value"), *value);
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, offset);
             writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(scalar)).unwrap();
         }
@@ -4937,7 +4950,7 @@ fn emit_statement(
                 .declarations()
                 .field(field.record, *field)
                 .expect("verified field");
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, field.offset());
             writeln!(
                 out,
@@ -4960,7 +4973,7 @@ fn emit_statement(
                 .field(field.record, *field)
                 .expect("verified field");
             let value = load_operand(out, f, &format!("{name}_value"), *value);
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, field.offset());
             writeln!(
                 out,
@@ -5013,7 +5026,8 @@ fn emit_statement(
             plan::instruction_span(statement),
             out,
         ),
-        OwnedInstruction::PrepareBorrow { loan, .. } => {
+        OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::AcquireLocalBorrow(loan) => {
             if experimental::resource_borrow(plan, f, *loan) {
                 experimental::borrow(
                     storage,
@@ -5027,7 +5041,7 @@ fn emit_statement(
                 return;
             }
             let declaration = &f.loans[loan.0];
-            let base = base_pointer(out, name, declaration.authority);
+            let base = base_pointer(out, f, name, declaration.authority);
             if out.exceeded {
                 return;
             }
@@ -5086,7 +5100,7 @@ fn emit_statement(
                 (diagnostics, plan::instruction_span(statement)),
             );
         }
-        OwnedInstruction::OpenCall(_) => {}
+        OwnedInstruction::OpenCall(_) | OwnedInstruction::ReleaseLocalBorrow(_) => {}
     }
 }
 fn emit_scalar(

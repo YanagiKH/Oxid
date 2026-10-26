@@ -72,8 +72,10 @@ pub(super) fn program(
         span: s(6),
     }];
     main.loans = vec![LoanDecl {
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         projection: vec![],
         kind: BorrowKind::Exclusive,
@@ -515,8 +517,10 @@ pub(super) fn forwarded_program(
         span: s(1),
     }];
     forward.loans = vec![LoanDecl {
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         projection: vec![],
         kind: BorrowKind::Exclusive,

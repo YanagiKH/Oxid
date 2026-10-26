@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_disjoint_fields_compatibility.py \
+          python3 -B scripts/verify_local_references_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -382,6 +382,7 @@ jobs:
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
               byte_storage_native_source_free_ -- --ignored --test-threads=1
@@ -516,6 +517,8 @@ jobs:
             ${{ runner.temp }}/current-reproducible-native
             ${{ runner.temp }}/current-native-profiles
             ${{ runner.temp }}/current-owned-enum-application
+            ${{ runner.temp }}/current-local-references-debug
+            ${{ runner.temp }}/current-local-references-release
             ${{ runner.temp }}/current-byte-storage-debug
             ${{ runner.temp }}/current-byte-storage-release
             ${{ runner.temp }}/current-byte-fields-debug
@@ -576,6 +579,15 @@ jobs:
           python3 -B scripts/verify_linux_arm64_native.py \
             --repo . --expected-head "$EXPECTED_HEAD" \
             --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
+      - name: Verify local reference lifetimes on ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/linux-arm64-native/local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
+          done
       - name: Retain ARM64 native results
         if: always()
         uses: actions/upload-artifact@v4

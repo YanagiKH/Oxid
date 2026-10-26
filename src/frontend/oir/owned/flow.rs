@@ -37,12 +37,20 @@ pub(super) enum DeniedSubject {
         granted: BorrowKind,
         declaration: Span,
     },
+    LocalReference {
+        id: LoanId,
+        referent: BorrowedSlot,
+        granted: BorrowKind,
+        declaration: Span,
+    },
 }
 impl DeniedSubject {
     pub(super) fn referent(self) -> BorrowedTy {
         match self {
             Self::Owner(owner) => BorrowedTy::Exact(owner.aggregate()),
-            Self::Reference { referent, .. } => referent.referent(),
+            Self::Reference { referent, .. } | Self::LocalReference { referent, .. } => {
+                referent.referent()
+            }
         }
     }
 }
@@ -116,6 +124,15 @@ impl DenialContext {
                     referent: r.referent,
                     granted: r.kind,
                     declaration: r.span,
+                }
+            }
+            AccessBase::Loan(id) => {
+                let loan = f.loans.get(id.0)?;
+                DeniedSubject::LocalReference {
+                    id,
+                    referent: loan.referent,
+                    granted: loan.kind,
+                    declaration: loan.span,
                 }
             }
         })
@@ -229,7 +246,7 @@ impl DenialContext {
             (OwnedInstruction::ArrayLength { base: actual, .. }, ArrayBase) if base == *actual => {
                 DeniedOperation::ArrayLength
             }
-            (OwnedInstruction::PrepareBorrow { loan, .. } | OwnedInstruction::PrepareBorrowRange { loan, .. }, BorrowAuthority) => {
+            (OwnedInstruction::PrepareBorrow { loan, .. } | OwnedInstruction::PrepareBorrowRange { loan, .. } | OwnedInstruction::AcquireLocalBorrow(loan), BorrowAuthority) => {
                 let loan = f.loans.get(loan.0)?;
                 if base != loan.authority {
                     return None;
@@ -513,6 +530,7 @@ fn step(
         }
         OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::PrepareBorrowRange { loan, .. }
+        | OwnedInstruction::AcquireLocalBorrow(loan)
             if f.loans[loan.0].authority == AccessBase::Owner(owner) =>
         {
             event = true;
@@ -839,8 +857,41 @@ enum Access {
 fn views_may_alias(a: BorrowedTy, b: BorrowedTy) -> bool {
     a.accepts(b) || b.accepts(a)
 }
-fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
-    match (a, b) {
+fn root_base(
+    f: &RawOwnedFunction,
+    mut base: AccessBase,
+    meter: &mut Meter,
+) -> Result<AccessBase, OwnedFailure> {
+    while let AccessBase::Loan(id) = base {
+        meter.visit()?;
+        base = f.loans[id.0].authority;
+    }
+    Ok(base)
+}
+fn through_loan(
+    f: &RawOwnedFunction,
+    mut base: AccessBase,
+    loan: usize,
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    while let AccessBase::Loan(id) = base {
+        meter.visit()?;
+        if id.0 == loan {
+            return Ok(true);
+        }
+        base = f.loans[id.0].authority;
+    }
+    Ok(false)
+}
+fn overlap(
+    f: &RawOwnedFunction,
+    a: AccessBase,
+    b: AccessBase,
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    let a = root_base(f, a, meter)?;
+    let b = root_base(f, b, meter)?;
+    Ok(match (a, b) {
         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
             a == b
@@ -849,7 +900,7 @@ fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
                     && f.references[b.0].kind == BorrowKind::Shared)
         }
         _ => false,
-    }
+    })
 }
 fn accesses(
     f: &RawOwnedFunction,
@@ -1030,7 +1081,13 @@ fn accesses(
         OwnedInstruction::StorageEnd(o) => {
             visit(AccessBase::Owner(*o), Access::End, DeniedRole::Storage)?
         }
-        OwnedInstruction::PrepareBorrow { loan, .. }
+        OwnedInstruction::ReleaseLocalBorrow(loan) => visit(
+            AccessBase::Loan(*loan),
+            Access::End,
+            DeniedRole::BorrowAuthority,
+        )?,
+        OwnedInstruction::AcquireLocalBorrow(loan)
+        | OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::PrepareBorrowRange { loan, .. } => {
             let l = &f.loans[loan.0];
             visit(
@@ -1070,7 +1127,8 @@ fn access_region<'a>(
         ) => path,
         (
             OwnedInstruction::PrepareBorrow { loan, .. }
-            | OwnedInstruction::PrepareBorrowRange { loan, .. },
+            | OwnedInstruction::PrepareBorrowRange { loan, .. }
+            | OwnedInstruction::AcquireLocalBorrow(loan),
             DeniedRole::BorrowAuthority,
         ) => &f.loans[loan.0].projection,
         _ => &[],
@@ -1123,7 +1181,8 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                     Some((base, DeniedRole::ArrayBase, None))
                 }
                 OwnedInstruction::PrepareBorrow { loan, .. }
-                | OwnedInstruction::PrepareBorrowRange { loan, .. } => {
+                | OwnedInstruction::PrepareBorrowRange { loan, .. }
+                | OwnedInstruction::AcquireLocalBorrow(loan) => {
                     let l = &f.loans[loan.0];
                     (l.kind == BorrowKind::Exclusive && !shape::base(f, l.authority, i.span)?.1)
                         .then_some((l.authority, DeniedRole::BorrowAuthority, Some(l.span)))
@@ -1146,7 +1205,7 @@ fn exact(
     initial: usize,
     meter: &mut Meter,
     mut statement: impl FnMut(usize, &OwnedStatement) -> Result<usize, OwnedFailure>,
-    terminator: impl FnMut(usize, &OwnedTerminator) -> Result<usize, OwnedFailure>,
+    mut terminator: impl FnMut(usize, &OwnedTerminator) -> Result<usize, OwnedFailure>,
     kind: Violation,
 ) -> Result<(), OwnedFailure> {
     exact_metered(
@@ -1154,7 +1213,7 @@ fn exact(
         initial,
         meter,
         |state, instruction, _| statement(state, instruction),
-        terminator,
+        |state, end, _| terminator(state, end),
         kind,
     )
 }
@@ -1164,7 +1223,7 @@ fn exact_metered(
     initial: usize,
     meter: &mut Meter,
     mut statement: impl FnMut(usize, &OwnedStatement, &mut Meter) -> Result<usize, OwnedFailure>,
-    mut terminator: impl FnMut(usize, &OwnedTerminator) -> Result<usize, OwnedFailure>,
+    mut terminator: impl FnMut(usize, &OwnedTerminator, &mut Meter) -> Result<usize, OwnedFailure>,
     kind: Violation,
 ) -> Result<(), OwnedFailure> {
     let mut state = filled(f.blocks.len(), usize::MAX)?;
@@ -1186,7 +1245,7 @@ fn exact_metered(
             .as_ref()
             .ok_or_else(|| OwnedFailure::malformed(Malformed::MissingTerminator, f.span))?;
         meter.visit()?;
-        s = terminator(s, end)?;
+        s = terminator(s, end, meter)?;
         for to in f.successors(b)?.into_iter().flatten() {
             meter.visit()?;
             let old = &mut state[to.0];
@@ -1213,7 +1272,7 @@ fn loans(
         0,
         meter,
         |mut state, i, meter| {
-            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} if loan.0==id)
+            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} | OwnedInstruction::AcquireLocalBorrow(loan) if loan.0==id)
             {
                 if state != 0 {
                     return Err(OwnedFailure::violation(
@@ -1223,9 +1282,41 @@ fn loans(
                     ));
                 }
                 state = 1;
-            } else if state == 1 {
+            } else if matches!(i.kind, OwnedInstruction::ReleaseLocalBorrow(loan) if loan.0==id) {
+                if state != 1 {
+                    return Err(OwnedFailure::violation(
+                        Violation::LoanRegion,
+                        i.primary_span(),
+                        Some(l.span),
+                    ));
+                }
+                state = 0;
+            } else {
                 accesses(f, &i.kind, |base, access, role| {
-                    if overlap(f, l.authority, base)
+                    if l.region == LoanRegion::Local && through_loan(f, base, id, meter)? {
+                        if state == 0 {
+                            return Err(OwnedFailure::violation(
+                                Violation::Unavailable,
+                                i.primary_span(),
+                                Some(l.span),
+                            ));
+                        }
+                        return Ok(());
+                    }
+                    if let OwnedInstruction::ReleaseLocalBorrow(released) = i.kind {
+                        // Ending a loan changes no sibling's storage or lifetime.
+                        // Only a live descendant depends on the released loan.
+                        if state == 1 && through_loan(f, l.authority, released.0, meter)? {
+                            return Err(OwnedFailure::violation(
+                                Violation::LoanConflict,
+                                i.primary_span(),
+                                Some(l.span),
+                            ));
+                        }
+                        return Ok(());
+                    }
+                    if state == 1
+                        && overlap(f, l.authority, base, meter)?
                         && conflict(l.kind, access)
                         && regions_overlap(&l.projection, access_region(f, &i.kind, role), meter)?
                     {
@@ -1249,8 +1340,10 @@ fn loans(
             }
             Ok(state)
         },
-        |state, e| match e.kind {
-            OwnedTerminatorKind::Invoke { call, .. } if call == l.call => {
+        |state, e, meter| match e.kind {
+            OwnedTerminatorKind::Invoke { call, .. }
+                if l.call_binding().is_some_and(|(owner, _)| owner == call) =>
+            {
                 if state != 1 {
                     return Err(OwnedFailure::violation(
                         Violation::LoanRegion,
@@ -1263,7 +1356,7 @@ fn loans(
             OwnedTerminatorKind::ReturnOwned(o) => {
                 if state == 1 {
                     let mut error = OwnedFailure::violation(
-                        if overlap(f, l.authority, AccessBase::Owner(o)) {
+                        if overlap(f, l.authority, AccessBase::Owner(o), meter)? {
                             Violation::LoanConflict
                         } else {
                             Violation::ActiveAtExit

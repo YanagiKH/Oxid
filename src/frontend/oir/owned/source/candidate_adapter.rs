@@ -165,6 +165,10 @@ fn field_id(value: FieldId) -> String {
 
 fn access_base(base: AccessBase) -> String {
     match base {
+        AccessBase::Loan(id) => object([
+            ("mode", json_string("local-reference")),
+            ("id", id.0.to_string()),
+        ]),
         AccessBase::Owner(id) => object([("mode", json_string("owner")), ("id", id.0.to_string())]),
         AccessBase::Parameter(id) => {
             object([("mode", json_string("reference")), ("id", id.0.to_string())])
@@ -399,6 +403,14 @@ fn instruction(value: &OwnedInstruction) -> String {
             ("field", field_id(*field)),
             ("value", operand(*value)),
         ]),
+        OwnedInstruction::AcquireLocalBorrow(id) => object([
+            ("operation", json_string("AcquireLocalBorrow")),
+            ("loan", id.0.to_string()),
+        ]),
+        OwnedInstruction::ReleaseLocalBorrow(id) => object([
+            ("operation", json_string("ReleaseLocalBorrow")),
+            ("loan", id.0.to_string()),
+        ]),
         OwnedInstruction::OpenCall(id) => object([
             ("operation", json_string("OpenCall")),
             ("call", id.0.to_string()),
@@ -604,8 +616,16 @@ fn raw_function(value: &RawOwnedFunction) -> String {
             array(value.loans.iter().enumerate().map(|(id, loan)| {
                 object([
                     ("id", id.to_string()),
-                    ("call", loan.call.0.to_string()),
-                    ("argument", loan.argument.to_string()),
+                    (
+                        "call",
+                        loan.call_binding()
+                            .map_or_else(|| "null".into(), |(call, _)| call.0.to_string()),
+                    ),
+                    (
+                        "argument",
+                        loan.call_binding()
+                            .map_or_else(|| "null".into(), |(_, argument)| argument.to_string()),
+                    ),
                     ("authority", access_base(loan.authority)),
                     ("mode", borrow_kind(loan.kind)),
                     ("record", borrowed_record_id(loan.referent()).0.to_string()),

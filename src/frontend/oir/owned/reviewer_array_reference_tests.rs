@@ -879,8 +879,10 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
         });
         f.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(j),
-            argument: 0,
+            region: LoanRegion::Call {
+                call: CallSiteId(j),
+                argument: 0,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
             referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
@@ -1567,8 +1569,10 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
         .push(ArgumentSlot::Borrow(LoanId(1)));
     raw.functions[0].loans.push(LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 1,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 1,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(1)),
         kind: BorrowKind::Exclusive,
         referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),

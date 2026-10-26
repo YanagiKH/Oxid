@@ -817,6 +817,7 @@ impl fmt::Display for Base {
         match self.0 {
             AccessBase::Owner(id) => write!(f, "[\"owner\",{}]", id.0),
             AccessBase::Parameter(id) => write!(f, "[\"reference\",{}]", id.0),
+            AccessBase::Loan(id) => write!(f, "[\"local-reference\",{}]", id.0),
         }
     }
 }
@@ -1009,6 +1010,8 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
+            I::AcquireLocalBorrow(id) => write!(f, "[\"acquire-local-borrow\",{}]", id.0),
+            I::ReleaseLocalBorrow(id) => write!(f, "[\"release-local-borrow\",{}]", id.0),
             I::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             I::PrepareBorrowRange { .. }
             | I::Experimental { .. }
@@ -1299,18 +1302,31 @@ pub(super) fn raw(out: &mut Output, raw: &RawOwnedProgram) -> ObservationResult<
             }
         }
         for (loan, l) in function.loans.iter().enumerate() {
-            out.row(
-                "raw-loan",
-                format_args!(
-                    "{id},{loan},{},{},{},{},{},{}",
-                    l.call.0,
-                    l.argument,
-                    Base(l.authority),
-                    Borrow(l.kind),
-                    Borrowed(l.referent()),
-                    SpanRow(l.span)
-                ),
-            )?;
+            if let Some((call, argument)) = l.call_binding() {
+                out.row(
+                    "raw-loan",
+                    format_args!(
+                        "{id},{loan},{},{},{},{},{},{}",
+                        call.0,
+                        argument,
+                        Base(l.authority),
+                        Borrow(l.kind),
+                        Borrowed(l.referent()),
+                        SpanRow(l.span)
+                    ),
+                )?;
+            } else {
+                out.row(
+                    "raw-local-loan",
+                    format_args!(
+                        "{id},{loan},{},{},{},{}",
+                        Base(l.authority),
+                        Borrow(l.kind),
+                        Borrowed(l.referent()),
+                        SpanRow(l.span)
+                    ),
+                )?;
+            }
         }
         for (block, b) in function.blocks.iter().enumerate() {
             out.row(

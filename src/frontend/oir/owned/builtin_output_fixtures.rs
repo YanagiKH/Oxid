@@ -150,8 +150,10 @@ pub(super) fn program(capacity: usize) -> (SourceMap, RawOwnedProgram, hir::DefI
         span: s(4),
     }];
     main.loans = vec![LoanDecl {
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         projection: vec![],
         kind: BorrowKind::Shared,

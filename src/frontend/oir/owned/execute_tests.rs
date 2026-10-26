@@ -1,6 +1,83 @@
 use super::super::consumer_fixtures::*;
 use super::*;
 
+#[test]
+fn local_reference_every_fuel_boundary_matches_an_independent_schedule() {
+    let (sources, raw) = super::super::tests::local_reference_program();
+    let schedule = super::super::tests::local_reference_schedule(&sources);
+    assert_eq!(schedule.fuel(), 66);
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    for fuel in 0..=66 {
+        let mut events = vec![];
+        let result = run_observed(
+            &witness,
+            schedule.entry,
+            Limits {
+                fuel,
+                ..Limits::default()
+            },
+            &mut events,
+        );
+        match schedule.failure(fuel) {
+            Some(span) => assert_eq!(
+                result,
+                Err(OwnedRunFailure::Scalar(RunFailure::Fuel(span))),
+                "fuel {fuel}"
+            ),
+            None => assert_eq!(result, Ok(Scalar::I32(-47))),
+        }
+        let charges: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Charge(span, cost) => Some((*span, *cost)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(charges, schedule.events[..charges.len()], "fuel {fuel}");
+    }
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    // Acquisition and release have no effect until their one fuel unit is paid.
+    for (fuel, active, children) in [(40, 0, 0), (41, 1, 1), (58, 1, 1), (59, 0, 0)] {
+        let machine = stopped_machine(&plan, fuel);
+        assert_eq!(machine.frames[0].loans[0].state, active, "fuel {fuel}");
+        assert_eq!(
+            machine.frames[0].owners[0].shared_children, children,
+            "fuel {fuel}"
+        );
+        assert_eq!(machine.frames[0].loans[0].shared_children, 0, "fuel {fuel}");
+    }
+}
+
+#[test]
+fn local_reference_runtime_rejects_stale_epochs_and_failed_release_without_mutation() {
+    let (sources, raw) = super::super::tests::local_reference_program();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let span = witness.functions()[0].loans[0].span;
+    for mutation in 0..5 {
+        let mut machine = stopped_machine(&plan, 58);
+        let handle = machine.reference_from_loan(0, LoanId(0), span).unwrap();
+        match mutation {
+            0 => machine.frames[0].loans[0].shared_children = 1,
+            1 => machine.frames[0].loans[0].exclusive_children = 1,
+            2 => machine.frames[0].owners[0].shared_children = 0,
+            3 => machine.frames[0].owners[0].generation += 1,
+            4 => machine.frames[0].loans[0].instance += 1,
+            _ => unreachable!(),
+        }
+        let before = (machine.frames[0].loans[0], machine.frames[0].owners[0]);
+        assert!(
+            machine.release(handle.permission, span).is_err(),
+            "mutation {mutation}"
+        );
+        assert_eq!(
+            (machine.frames[0].loans[0], machine.frames[0].owners[0]),
+            before,
+            "mutation {mutation}"
+        );
+    }
+}
+
 #[path = "source/runtime_resource_tests.rs"]
 mod source_resources;
 
@@ -1035,8 +1112,10 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     }];
     main.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -1101,8 +1180,10 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     }];
     recursive.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),

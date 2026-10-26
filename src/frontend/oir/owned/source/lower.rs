@@ -1878,8 +1878,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                         budget::append(
                             &mut out.raw.loans,
                             LoanDecl {
-                                call,
-                                argument,
+                                region: LoanRegion::Call { call, argument },
                                 authority,
                                 projection,
                                 kind: *kind,
