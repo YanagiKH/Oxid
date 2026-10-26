@@ -140,8 +140,10 @@ mod projection_permission_tests {
         main.loans[0].kind = BorrowKind::Exclusive;
         main.loans.push(LoanDecl {
             projection: vec![field(1)],
-            call: CallSiteId(0),
-            argument: 1,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 1,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
             referent: BorrowedSlot::check(BorrowedTy::Exact(inner)).unwrap(),

@@ -295,6 +295,8 @@ fn function(
                     visitor.span(value.span)?;
                 }
                 OwnedInstruction::ProjectionLength { .. } => (),
+                OwnedInstruction::AcquireLocalBorrow(_)
+                | OwnedInstruction::ReleaseLocalBorrow(_) => return Err(bad()),
                 OwnedInstruction::ConstructArray { elements, .. } => {
                     for operand in elements {
                         visitor.span(operand.span)?;

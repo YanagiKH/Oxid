@@ -103,6 +103,9 @@ pub(super) struct FunctionCounts {
     pub max_constructor_fields: usize,
     pub ownership_active: bool,
     pub destructured_fields: u32,
+    // Only the bounded ancestry multiplier is retained, not a second exact
+    // declaration count. Every descriptor is still independently inventoried.
+    pub local_loan_depth_bound: u8,
 }
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProgramCounts {
@@ -270,6 +273,12 @@ pub(super) fn account_function(
         }
         let multiplier = add(add(add(mul(4, c.owners)?, c.loans)?, c.calls)?, 32)?;
         work = add(work, mul(multiplier, n)?)?;
+        if c.local_loan_depth_bound != 0 {
+            // Each local authority chain is bounded before flow. Pay for both
+            // root comparisons and parent-use checks in every loan walk.
+            let ancestry = usize::from(c.local_loan_depth_bound).min(MAX_LOCAL_REFERENCE_DEPTH);
+            work = add(work, mul(mul(mul(8, c.loans)?, ancestry)?, n)?)?;
+        }
         // Retained acquisition sites are included here once. Their lifetime
         // extends through flow; no duplicate loan-origin vector is allocated.
         for (count, size) in [
@@ -391,6 +400,12 @@ pub(super) fn preflight(
             c.max_match_arms = c.max_match_arms.max(descriptor.arms.len());
         }
         for loan in &f.loans {
+            if loan.region == LoanRegion::Local {
+                c.local_loan_depth_bound = c
+                    .local_loan_depth_bound
+                    .saturating_add(1)
+                    .min(MAX_LOCAL_REFERENCE_DEPTH as u8);
+            }
             cap(
                 loan.projection.len(),
                 MAX_CONTAINMENT_DEPTH,

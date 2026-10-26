@@ -451,6 +451,16 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .kind)
     }
     fn handle(&self, frame: usize, loan: LoanId, span: Span) -> Result<ReferenceHandle> {
+        let result = self.reference_from_loan(frame, loan, span)?;
+        self.validate_handle(result, Access::Read, span)?;
+        Ok(result)
+    }
+    fn reference_from_loan(
+        &self,
+        frame: usize,
+        loan: LoanId,
+        span: Span,
+    ) -> Result<ReferenceHandle> {
         let active = self
             .frames
             .get(frame)
@@ -469,7 +479,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 instance: state.instance,
             },
         };
-        self.validate_handle(result, Access::Read, span)?;
+        self.validate_handle_identity(result, span)?;
         Ok(result)
     }
     fn validate_handle(
@@ -611,11 +621,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 }
                 Ok(key)
             }
-            AccessBase::Parameter(id) => {
-                let handle = *active
-                    .references
-                    .get(id.0)
-                    .ok_or_else(|| bad("reference parameter", span))?;
+            AccessBase::Parameter(_) | AccessBase::Loan(_) => {
+                let handle = match base {
+                    AccessBase::Parameter(id) => *active
+                        .references
+                        .get(id.0)
+                        .ok_or_else(|| bad("reference parameter", span))?,
+                    AccessBase::Loan(id) => self.reference_from_loan(frame, id, span)?,
+                    AccessBase::Owner(_) => return Err(bad("reference base", span)),
+                };
                 if !granted {
                     return self.validate_handle(handle, access, span);
                 }
@@ -782,7 +796,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
     }
     /// Re-derive projected storage from immutable nominal paths, rather than
     /// trusting a retained offset/extent. Slice reborrows may cross frames; the
-    /// existing activation limit bounds this allocation-free parent walk.
+    /// activation and local reference depth limits bound this parent walk.
     fn projected_view(
         &self,
         permission: LoanKey,
@@ -792,7 +806,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let mut permission = permission;
         let mut offset = 0u64;
         let mut selected = None;
-        for _ in 0..plan::MAX_FRAMES {
+        for _ in 0..plan::MAX_FRAMES * (MAX_LOCAL_REFERENCE_DEPTH + 1) {
             let loan = self.loan(permission, span)?;
             if loan.root != root {
                 return Err(bad("view ancestry root", span));
@@ -812,6 +826,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         .references
                         .get(parameter.0)
                         .map(ReferenceDecl::referent),
+                    AccessBase::Loan(loan) => function.loans.get(loan.0).map(LoanDecl::referent),
                 }
                 .ok_or_else(|| bad("view projection authority", span))?;
                 let BorrowedTy::Exact(base) = base else {
@@ -944,7 +959,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
     /// immutable owner/parameter authority and require each retained child view
     /// to stay inside its parent. A matching element type alone is no proof.
     fn checked_byte_array_provenance(&self, mut handle: ReferenceHandle, span: Span) -> Result<()> {
-        for _ in 0..plan::MAX_FRAMES {
+        for _ in 0..plan::MAX_FRAMES * (MAX_LOCAL_REFERENCE_DEPTH + 1) {
             let row = self.loan(handle.permission, span)?;
             if row.root != handle.root || row.view != handle.view {
                 return Err(bad("view root type", span));
@@ -979,11 +994,19 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     }
                     return Ok(());
                 }
-                AccessBase::Parameter(parameter) => {
-                    let parent = *frame
-                        .references
-                        .get(parameter.0)
-                        .ok_or_else(|| bad("view parent reference", span))?;
+                AccessBase::Parameter(_) | AccessBase::Loan(_) => {
+                    let parent = match declaration.authority {
+                        AccessBase::Parameter(parameter) => *frame
+                            .references
+                            .get(parameter.0)
+                            .ok_or_else(|| bad("view parent reference", span))?,
+                        AccessBase::Loan(loan) => self.reference_from_loan(
+                            index(handle.permission.frame, span)?,
+                            loan,
+                            span,
+                        )?,
+                        AccessBase::Owner(_) => return Err(bad("view parent reference", span)),
+                    };
                     if row.parent != parent.permission || row.root != parent.root {
                         return Err(bad("view root type", span));
                     }
@@ -1052,17 +1075,22 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let view = match base {
             AccessBase::Owner(_) => self.whole_view(key, span)?,
             AccessBase::Parameter(id) => self.frames[frame].references[id.0].view,
+            AccessBase::Loan(id) => self.reference_from_loan(frame, id, span)?.view,
         };
         let actual = match base {
             AccessBase::Owner(_) => self.view_extent(key, view, span)?,
             AccessBase::Parameter(id) => {
                 self.checked_handle_view(self.frames[frame].references[id.0], span)?
             }
+            AccessBase::Loan(id) => {
+                self.checked_handle_view(self.reference_from_loan(frame, id, span)?, span)?
+            }
         };
         let f = self.function(self.frames[frame].function);
         let expected = match base {
             AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
             AccessBase::Parameter(reference) => f.references[reference.0].referent(),
+            AccessBase::Loan(loan) => f.loans[loan.0].referent(),
         };
         self.plan
             .witness()
@@ -1163,6 +1191,11 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 .references
                 .get(reference.0)
                 .ok_or_else(|| bad("projection reference declaration", span))?
+                .referent(),
+            AccessBase::Loan(loan) => function
+                .loans
+                .get(loan.0)
+                .ok_or_else(|| bad("projection local reference declaration", span))?
                 .referent(),
         };
         let view = self
@@ -1810,6 +1843,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let parent = match descriptor.authority {
             AccessBase::Owner(_) => LoanKey::default(),
             AccessBase::Parameter(p) => self.frames[frame].references[p.0].permission,
+            AccessBase::Loan(loan) => self.reference_from_loan(frame, loan, span)?.permission,
         };
         let previous = self.frames[frame].loans[id.0];
         if previous.state != 0 {
@@ -3219,6 +3253,11 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 self.change_owner(frame, *source, MOVED, span)?;
                 self.change_owner(frame, destination, AVAILABLE, span)?;
                 self.frames[frame].calls[call.0].next_argument += 1;
+            }
+            OwnedInstruction::AcquireLocalBorrow(loan) => self.acquire(frame, *loan, span)?,
+            OwnedInstruction::ReleaseLocalBorrow(loan) => {
+                let handle = self.reference_from_loan(frame, *loan, span)?;
+                self.release(handle.permission, span)?;
             }
             OwnedInstruction::PrepareBorrowRange {
                 call,

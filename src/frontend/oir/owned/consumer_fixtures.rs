@@ -281,8 +281,10 @@ pub(super) fn shared_read() -> (SourceMap, RawOwnedProgram, Schedule) {
     }];
     f.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -400,8 +402,10 @@ pub(super) fn shared_children(exclusive: bool) -> (SourceMap, RawOwnedProgram, S
     parent.loans = (0..2)
         .map(|i| LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: i,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: i,
+            },
             authority: AccessBase::Parameter(ReferenceParamId(0)),
             kind: BorrowKind::Shared,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -1239,8 +1243,10 @@ pub(super) fn later_argument_loop() -> (SourceMap, RawOwnedProgram, Schedule) {
     ];
     main.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(1),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(1),
+            argument: 0,
+        },
         authority: root,
         kind: BorrowKind::Exclusive,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),

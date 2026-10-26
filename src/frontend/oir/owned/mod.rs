@@ -125,18 +125,38 @@ impl ReferenceDecl {
 enum AccessBase {
     Owner(OwnerPlaceId),
     Parameter(ReferenceParamId),
+    Loan(LoanId),
 }
+const MAX_LOCAL_REFERENCE_DEPTH: usize = 64;
+const _: () = assert!(MAX_LOCAL_REFERENCE_DEPTH <= u8::MAX as usize);
 #[derive(Clone, Debug)]
 struct LoanDecl {
-    call: CallSiteId,
-    argument: usize,
+    region: LoanRegion,
     authority: AccessBase,
     projection: Vec<FieldId>,
     kind: BorrowKind,
     referent: BorrowedSlot,
     span: Span,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoanRegion {
+    Call { call: CallSiteId, argument: usize },
+    Local,
+}
 impl LoanDecl {
+    fn call_binding(&self) -> Option<(CallSiteId, usize)> {
+        match self.region {
+            LoanRegion::Call { call, argument } => Some((call, argument)),
+            LoanRegion::Local => None,
+        }
+    }
+    #[cfg(test)]
+    fn call_binding_mut(&mut self) -> Option<(&mut CallSiteId, &mut usize)> {
+        match &mut self.region {
+            LoanRegion::Call { call, argument } => Some((call, argument)),
+            LoanRegion::Local => None,
+        }
+    }
     fn referent(&self) -> BorrowedTy {
         self.referent.referent()
     }
@@ -328,6 +348,8 @@ enum OwnedInstruction {
         argument: usize,
         loan: LoanId,
     },
+    AcquireLocalBorrow(LoanId),
+    ReleaseLocalBorrow(LoanId),
 }
 #[derive(Clone, Debug)]
 struct OwnedTerminator {

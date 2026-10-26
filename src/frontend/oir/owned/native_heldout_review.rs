@@ -78,8 +78,10 @@ fn mixed_parameter_fixture(
     caller.loans = vec![
         LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: 4,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 4,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Shared,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -88,8 +90,10 @@ fn mixed_parameter_fixture(
         },
         LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: 1,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 1,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Shared,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))

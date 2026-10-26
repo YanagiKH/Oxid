@@ -1247,8 +1247,10 @@ impl Effects {
         });
         caller.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: 0,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 0,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
             referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),

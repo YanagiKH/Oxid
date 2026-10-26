@@ -1,4 +1,664 @@
 use super::*;
+
+#[test]
+fn local_reference_regions_cannot_impersonate_call_argument_loans() {
+    let (sources, mut raw, _) = consumer_fixtures::shared_read();
+    assert_eq!(
+        raw.functions[0].loans[0].call_binding(),
+        Some((CallSiteId(0), 0))
+    );
+    raw.functions[0].loans[0].region = LoanRegion::Local;
+    assert_eq!(raw.functions[0].loans[0].call_binding(), None);
+    assert_eq!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Malformed(Malformed::Binding)
+    );
+}
+
+pub(super) fn local_reference_program() -> (SourceMap, RawOwnedProgram) {
+    let (sources, mut raw, _) = consumer_fixtures::shared_read();
+    let main = &mut raw.functions[0];
+    let mut call_loan = main.loans.remove(0);
+    call_loan.authority = AccessBase::Loan(LoanId(0));
+    let local_span = Span {
+        start: 120,
+        end: 121,
+        ..main.span
+    };
+    main.loans = vec![
+        LoanDecl {
+            region: LoanRegion::Local,
+            authority: AccessBase::Owner(OwnerPlaceId(0)),
+            projection: Vec::new(),
+            kind: BorrowKind::Shared,
+            referent: call_loan.referent,
+            span: local_span,
+        },
+        call_loan,
+    ];
+    main.calls[0].arguments[0] = ArgumentSlot::Borrow(LoanId(1));
+    let OwnedInstruction::PrepareBorrow { loan, .. } = &mut main.blocks[0].statements[4].kind
+    else {
+        panic!()
+    };
+    *loan = LoanId(1);
+    main.blocks[0].statements.insert(
+        3,
+        consumer_fixtures::instruction(OwnedInstruction::AcquireLocalBorrow(LoanId(0)), local_span),
+    );
+    let span = Span {
+        start: 122,
+        end: 123,
+        ..main.span
+    };
+    main.locals
+        .push(consumer_fixtures::scalar(hir::Ty::I32, span));
+    main.blocks[1].terminator.as_mut().unwrap().kind =
+        OwnedTerminatorKind::ReturnScalar(consumer_fixtures::operand(2, span));
+    main.blocks[1].statements.splice(
+        0..0,
+        [
+            consumer_fixtures::instruction(
+                OwnedInstruction::ReadField {
+                    destination: LocalId(2),
+                    base: AccessBase::Loan(LoanId(0)),
+                    field: FieldId {
+                        record: RecordId(0),
+                        index: 0,
+                    },
+                },
+                span,
+            ),
+            consumer_fixtures::instruction(OwnedInstruction::ReleaseLocalBorrow(LoanId(0)), span),
+        ],
+    );
+    (sources, raw)
+}
+
+pub(super) fn local_reference_schedule(sources: &SourceMap) -> consumer_fixtures::Schedule {
+    assert_eq!(sources.files().len(), 1);
+    let file = crate::frontend::source::SourceFileId(0);
+    let s = |i: usize| Span {
+        file,
+        start: i * 2,
+        end: i * 2 + 1,
+    };
+    let local = Span {
+        file,
+        start: 120,
+        end: 121,
+    };
+    let read = Span {
+        file,
+        start: 122,
+        end: 123,
+    };
+    // Entry: 1 + 3 scalars + 1 argument + 1 payload + 4 owner cells
+    // + 2*12 logical loan cells + 2 call cells = 36. The callee costs 11
+    // at invocation; returning from main visits both loan descriptors.
+    consumer_fixtures::Schedule {
+        entry: hir::DefId(0),
+        result: Scalar::I32(-47),
+        events: vec![
+            (s(0), 36),
+            (s(1), 1),
+            (s(2), 1),
+            (s(3), 2),
+            (local, 1),
+            (s(4), 1),
+            (s(5), 1),
+            (s(6), 11),
+            (s(7), 1),
+            (s(8), 2),
+            (read, 1),
+            (read, 1),
+            (s(9), 2),
+            (s(10), 5),
+        ],
+    }
+}
+
+#[test]
+fn local_reference_lifetime_spans_statements_and_a_checked_call() {
+    let (sources, raw) = local_reference_program();
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(
+        execute::run(&witness, Some(hir::DefId(0))),
+        Ok(Scalar::I32(-47))
+    );
+}
+
+#[test]
+fn local_reference_lifetimes_reject_missing_acquisition_release_and_parent_conflicts() {
+    for mutation in 0..7 {
+        let (sources, mut raw) = local_reference_program();
+        let main = &mut raw.functions[0];
+        let span = main.loans[0].span;
+        match mutation {
+            0 => {
+                main.blocks[0].statements.remove(3);
+            }
+            1 => {
+                main.blocks[0].statements.insert(
+                    4,
+                    consumer_fixtures::instruction(
+                        OwnedInstruction::AcquireLocalBorrow(LoanId(0)),
+                        span,
+                    ),
+                );
+            }
+            2 => {
+                main.blocks[1].statements.remove(1);
+            }
+            3 => {
+                main.blocks[0].statements.insert(
+                    3,
+                    consumer_fixtures::instruction(
+                        OwnedInstruction::ReleaseLocalBorrow(LoanId(0)),
+                        span,
+                    ),
+                );
+            }
+            4 => {
+                main.blocks[1].statements.swap(0, 1);
+            }
+            5 => {
+                main.blocks[1].statements.insert(
+                    1,
+                    consumer_fixtures::instruction(
+                        OwnedInstruction::Discard(OwnerPlaceId(0)),
+                        span,
+                    ),
+                );
+            }
+            _ => {
+                main.blocks[1].statements.remove(1);
+                main.blocks[0]
+                    .statements
+                    .push(consumer_fixtures::instruction(
+                        OwnedInstruction::ReleaseLocalBorrow(LoanId(0)),
+                        span,
+                    ));
+            }
+        }
+        let failure = verify_owned(raw, &sources).unwrap_err();
+        if mutation < 2 {
+            assert!(
+                matches!(failure.kind, OwnedFailureKind::Malformed(_)),
+                "mutation {mutation}: {failure:?}"
+            );
+        } else {
+            assert!(
+                matches!(failure.kind, OwnedFailureKind::Ownership(_)),
+                "mutation {mutation}: {failure:?}"
+            );
+        }
+    }
+}
+
+pub(super) fn local_reference_chain(depth: usize, exclusive: bool) -> (SourceMap, RawOwnedProgram) {
+    assert!(depth > 0);
+    let (sources, mut raw) = local_reference_program();
+    let main = &mut raw.functions[0];
+    let local = main.loans.remove(0);
+    let mut call = main.loans.remove(0);
+    call.authority = AccessBase::Loan(LoanId(depth - 1));
+    for id in 0..depth {
+        main.loans.push(LoanDecl {
+            region: LoanRegion::Local,
+            authority: if id == 0 {
+                AccessBase::Owner(OwnerPlaceId(0))
+            } else {
+                AccessBase::Loan(LoanId(id - 1))
+            },
+            projection: Vec::new(),
+            kind: if exclusive {
+                BorrowKind::Exclusive
+            } else {
+                BorrowKind::Shared
+            },
+            referent: local.referent,
+            span: local.span,
+        });
+    }
+    main.loans.push(call);
+    main.owners[0].kind = OwnerKind::Local { mutable: exclusive };
+    main.calls[0].arguments[0] = ArgumentSlot::Borrow(LoanId(depth));
+    main.blocks[0].statements.splice(
+        3..4,
+        (0..depth).map(|id| {
+            consumer_fixtures::instruction(
+                OwnedInstruction::AcquireLocalBorrow(LoanId(id)),
+                local.span,
+            )
+        }),
+    );
+    let OwnedInstruction::PrepareBorrow { loan, .. } =
+        &mut main.blocks[0].statements.last_mut().unwrap().kind
+    else {
+        panic!()
+    };
+    *loan = LoanId(depth);
+    let OwnedInstruction::ReadField { base, .. } = &mut main.blocks[1].statements[0].kind else {
+        panic!()
+    };
+    *base = AccessBase::Loan(LoanId(depth - 1));
+    let release_span = main.blocks[1].statements[1].span;
+    main.blocks[1].statements.splice(
+        1..2,
+        (0..depth).rev().map(|id| {
+            consumer_fixtures::instruction(
+                OwnedInstruction::ReleaseLocalBorrow(LoanId(id)),
+                release_span,
+            )
+        }),
+    );
+    (sources, raw)
+}
+
+#[test]
+fn local_reference_ancestry_preserves_live_parents_and_checks_its_bound() {
+    for (depth, exclusive) in [(1, true), (4, false), (4, true), (64, false)] {
+        let (sources, raw) = local_reference_chain(depth, exclusive);
+        let witness = verify_owned(raw, &sources).unwrap();
+        assert_eq!(
+            execute::run(&witness, Some(hir::DefId(0))),
+            Ok(Scalar::I32(-47)),
+            "depth {depth}, exclusive {exclusive}"
+        );
+    }
+    let (sources, raw) = local_reference_chain(65, false);
+    assert_eq!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Resource("local reference ancestry")
+    );
+    for cycle in [0, 1] {
+        let (sources, mut raw) = local_reference_chain(2, false);
+        raw.functions[0].loans[0].authority = AccessBase::Loan(LoanId(cycle));
+        assert_eq!(
+            error(raw, &sources).kind,
+            OwnedFailureKind::Resource("local reference ancestry")
+        );
+    }
+}
+
+fn local_reference_block(
+    statements: Vec<OwnedStatement>,
+    kind: OwnedTerminatorKind,
+    span: Span,
+) -> OwnedBlock {
+    OwnedBlock {
+        span,
+        merge: None,
+        statements,
+        terminator: consumer_fixtures::end(kind, span),
+    }
+}
+
+pub(super) fn local_reference_diamond(
+    condition: bool,
+    early_return: bool,
+) -> (SourceMap, RawOwnedProgram) {
+    let (sources, mut raw) = local_reference_program();
+    let f = &mut raw.functions[0];
+    let span = f.blocks[1].span;
+    f.locals
+        .push(consumer_fixtures::scalar(hir::Ty::Bool, span));
+    let finish = f.blocks[1].clone();
+    f.blocks[1] = local_reference_block(
+        vec![consumer_fixtures::assign(3, Rvalue::Bool(condition), span)],
+        OwnedTerminatorKind::Branch {
+            condition: consumer_fixtures::operand(3, span),
+            then_block: BlockId(2),
+            else_block: BlockId(3),
+        },
+        span,
+    );
+    f.blocks.push(local_reference_block(
+        vec![],
+        OwnedTerminatorKind::Goto(BlockId(4)),
+        span,
+    ));
+    f.blocks.push(if early_return {
+        local_reference_block(
+            finish.statements[1..].to_vec(),
+            OwnedTerminatorKind::ReturnScalar(consumer_fixtures::operand(1, span)),
+            span,
+        )
+    } else {
+        local_reference_block(vec![], OwnedTerminatorKind::Goto(BlockId(4)), span)
+    });
+    f.blocks.push(finish);
+    (sources, raw)
+}
+
+#[test]
+fn local_reference_cfg_joins_and_early_returns_preserve_the_lifetime() {
+    for early in [false, true] {
+        for condition in [false, true] {
+            let (sources, raw) = local_reference_diamond(condition, early);
+            let witness = verify_owned(raw, &sources).unwrap();
+            assert_eq!(
+                execute::run(&witness, Some(hir::DefId(0))),
+                Ok(Scalar::I32(-47))
+            );
+        }
+    }
+    let (sources, mut raw) = local_reference_diamond(true, false);
+    let span = raw.functions[0].loans[0].span;
+    raw.functions[0].blocks[3]
+        .statements
+        .push(consumer_fixtures::instruction(
+            OwnedInstruction::ReleaseLocalBorrow(LoanId(0)),
+            span,
+        ));
+    assert!(matches!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Ownership(_)
+    ));
+    let (sources, mut raw) = local_reference_diamond(false, true);
+    raw.functions[0].blocks[3].statements.clear();
+    assert!(matches!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Ownership(Violation::ActiveAtExit)
+    ));
+}
+
+pub(super) fn local_reference_from_parameter() -> (SourceMap, RawOwnedProgram) {
+    let (sources, mut raw) = local_reference_program();
+    let f = &mut raw.functions[1];
+    let span = f.blocks[0].statements[0].span;
+    f.loans.push(LoanDecl {
+        region: LoanRegion::Local,
+        authority: AccessBase::Parameter(ReferenceParamId(0)),
+        projection: Vec::new(),
+        kind: BorrowKind::Shared,
+        referent: f.references[0].referent,
+        span,
+    });
+    let OwnedInstruction::ReadField { base, .. } = &mut f.blocks[0].statements[0].kind else {
+        panic!()
+    };
+    *base = AccessBase::Loan(LoanId(0));
+    f.blocks[0].statements.insert(
+        0,
+        consumer_fixtures::instruction(OwnedInstruction::AcquireLocalBorrow(LoanId(0)), span),
+    );
+    f.blocks[0].statements.push(consumer_fixtures::instruction(
+        OwnedInstruction::ReleaseLocalBorrow(LoanId(0)),
+        span,
+    ));
+    (sources, raw)
+}
+
+#[test]
+fn local_reference_reborrows_incoming_parameters_and_rejects_shared_upgrades() {
+    let (sources, mut raw) = local_reference_program();
+    raw.functions[0].loans[0].kind = BorrowKind::Exclusive;
+    assert_eq!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Ownership(Violation::Permission)
+    );
+    let (sources, raw) = local_reference_from_parameter();
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(
+        execute::run(&witness, Some(hir::DefId(0))),
+        Ok(Scalar::I32(-47))
+    );
+    let (sources, mut raw) = local_reference_from_parameter();
+    raw.functions[1].loans[0].kind = BorrowKind::Exclusive;
+    assert_eq!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Ownership(Violation::Permission)
+    );
+    let (sources, mut raw) = local_reference_chain(2, false);
+    raw.functions[0].loans[1].kind = BorrowKind::Exclusive;
+    assert_eq!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Ownership(Violation::Permission)
+    );
+}
+
+#[test]
+fn local_reference_resource_limits_are_paid_before_shape_allocation() {
+    for depth in [1, 4, 64] {
+        let (sources, raw) = local_reference_chain(depth, false);
+        let usage =
+            budget::fail_allocation_after(0, || budget::preflight(&raw, budget::Limits::DEFAULT))
+                .unwrap();
+        let exact = budget::Limits {
+            owners: usage.owners,
+            events: usage.expanded_events,
+            work: usage.work,
+            scratch: usage.scratch_bytes,
+            metadata: usage.metadata_bytes,
+        };
+        let (_, candidate) = local_reference_chain(depth, false);
+        assert!(verify_with_limits(candidate, &sources, exact).is_ok());
+        for (limits, name) in [
+            (
+                budget::Limits {
+                    work: exact.work - 1,
+                    ..exact
+                },
+                "ownership work",
+            ),
+            (
+                budget::Limits {
+                    scratch: exact.scratch - 1,
+                    ..exact
+                },
+                "ownership scratch",
+            ),
+            (
+                budget::Limits {
+                    metadata: exact.metadata - 1,
+                    ..exact
+                },
+                "ownership metadata",
+            ),
+        ] {
+            let (_, candidate) = local_reference_chain(depth, false);
+            let failure = budget::fail_allocation_after(0, || {
+                verify_with_limits(candidate, &sources, limits)
+            })
+            .unwrap_err();
+            assert_eq!(
+                failure.kind,
+                OwnedFailureKind::Resource(name),
+                "depth {depth}"
+            );
+        }
+    }
+}
+
+pub(super) fn local_reference_loop() -> (SourceMap, RawOwnedProgram) {
+    let (sources, mut raw) = local_reference_program();
+    let f = &mut raw.functions[0];
+    let span = f.span;
+    for ty in [
+        hir::Ty::I32,
+        hir::Ty::I32,
+        hir::Ty::Bool,
+        hir::Ty::I32,
+        hir::Ty::I32,
+        hir::Ty::I32,
+    ] {
+        f.locals.push(consumer_fixtures::scalar(ty, span));
+    }
+    f.places.push(PlaceDecl {
+        ty: hir::Ty::I32,
+        span,
+    });
+    let place = Place {
+        id: PlaceId(0),
+        span,
+    };
+    let operand = |id| consumer_fixtures::operand(id, span);
+    let acquisition = f.blocks[0].statements.split_off(3);
+    let invoke = f.blocks[0].terminator.take().unwrap().kind;
+    f.blocks[0].statements.extend([
+        consumer_fixtures::assign(6, Rvalue::I32(3), span),
+        consumer_fixtures::assign(7, Rvalue::I32(1), span),
+        consumer_fixtures::assign(8, Rvalue::I32(0), span),
+        consumer_fixtures::instruction(
+            OwnedInstruction::Scalar(Statement::Initialize {
+                place,
+                value: operand(8),
+                span,
+            }),
+            span,
+        ),
+    ]);
+    f.blocks[0].terminator = consumer_fixtures::end(OwnedTerminatorKind::Goto(BlockId(2)), span);
+    f.blocks
+        .push(local_reference_block(acquisition, invoke, span));
+    let end = f.blocks[1].statements.pop().unwrap();
+    let result = f.blocks[1].terminator.take().unwrap().kind;
+    f.blocks[1].statements.extend([
+        consumer_fixtures::assign(3, Rvalue::Load(place), span),
+        consumer_fixtures::assign(
+            4,
+            Rvalue::CheckedI32 {
+                op: hir::ArithmeticOp::Add,
+                left: operand(3),
+                right: operand(7),
+                operator_span: span,
+            },
+            span,
+        ),
+        consumer_fixtures::instruction(
+            OwnedInstruction::Scalar(Statement::Store {
+                place,
+                value: operand(4),
+                operator_span: span,
+                span,
+            }),
+            span,
+        ),
+        consumer_fixtures::assign(
+            5,
+            Rvalue::CompareScalar {
+                op: hir::ComparisonOp::Less,
+                left: operand(4),
+                right: operand(6),
+                operator_span: span,
+            },
+            span,
+        ),
+    ]);
+    f.blocks[1].terminator = consumer_fixtures::end(
+        OwnedTerminatorKind::Branch {
+            condition: operand(5),
+            then_block: BlockId(2),
+            else_block: BlockId(3),
+        },
+        span,
+    );
+    f.blocks
+        .push(local_reference_block(vec![end], result, span));
+    (sources, raw)
+}
+
+#[test]
+fn local_reference_loops_reacquire_distinct_epochs_and_require_release_on_backedges() {
+    let (sources, raw) = local_reference_loop();
+    let witness = verify_owned(raw, &sources).unwrap();
+    let mut events = Vec::new();
+    assert_eq!(
+        execute::run_observed(
+            &witness,
+            hir::DefId(0),
+            execute::Limits::default(),
+            &mut events
+        ),
+        Ok(Scalar::I32(-47))
+    );
+    let instances: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            execute::Event::Acquire(key, _, _) if key.frame == 0 && key.loan == 0 => {
+                Some(key.instance)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(instances, [1, 2, 3]);
+    let (sources, mut raw) = local_reference_loop();
+    raw.functions[0].blocks[1].statements.remove(1);
+    assert!(matches!(
+        error(raw, &sources).kind,
+        OwnedFailureKind::Ownership(_)
+    ));
+}
+
+#[test]
+fn local_reference_child_loans_suspend_only_conflicting_parent_accesses() {
+    for (exclusive_child, write, allowed) in [
+        (false, false, true),
+        (false, true, false),
+        (true, false, false),
+        (true, true, false),
+    ] {
+        let (sources, mut raw) = local_reference_chain(1, true);
+        let kind = if exclusive_child {
+            BorrowKind::Exclusive
+        } else {
+            BorrowKind::Shared
+        };
+        raw.functions[1].references[0].kind = kind;
+        let f = &mut raw.functions[0];
+        f.loans[1].kind = kind;
+        let span = f.loans[0].span;
+        let field = FieldId {
+            record: RecordId(0),
+            index: 0,
+        };
+        let base = AccessBase::Loan(LoanId(0));
+        let operation = if write {
+            OwnedInstruction::WriteField {
+                base,
+                field,
+                value: consumer_fixtures::operand(0, span),
+            }
+        } else {
+            f.locals.push(consumer_fixtures::scalar(hir::Ty::I32, span));
+            OwnedInstruction::ReadField {
+                destination: LocalId(3),
+                base,
+                field,
+            }
+        };
+        f.blocks[0]
+            .statements
+            .push(consumer_fixtures::instruction(operation, span));
+        if allowed {
+            let witness = verify_owned(raw, &sources).unwrap();
+            assert_eq!(
+                execute::run(&witness, Some(hir::DefId(0))),
+                Ok(Scalar::I32(-47))
+            );
+        } else {
+            assert_eq!(
+                error(raw, &sources).kind,
+                OwnedFailureKind::Ownership(Violation::LoanConflict)
+            );
+        }
+    }
+    let (sources, mut raw) = local_reference_program();
+    let f = &mut raw.functions[0];
+    let span = f.blocks[1].span;
+    f.blocks[1].statements.insert(
+        2,
+        consumer_fixtures::instruction(OwnedInstruction::Discard(OwnerPlaceId(0)), span),
+    );
+    let witness = verify_owned(raw, &sources).unwrap();
+    assert_eq!(
+        execute::run(&witness, Some(hir::DefId(0))),
+        Ok(Scalar::I32(-47))
+    );
+}
+
 fn context() -> (SourceMap, Span) {
     let mut sources = SourceMap::new();
     let file = sources.add("owned-raw.ox".into(), "x".repeat(200));
@@ -179,8 +839,10 @@ fn borrowed(span: Span, kind: BorrowKind) -> RawOwnedProgram {
     });
     f.loans.push(LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -529,7 +1191,7 @@ fn raw_type_binding_span_and_canonical_mutants_cannot_get_a_witness() {
     raw.functions[0].loans[0].span.start = 1;
     cases.push(raw);
     let mut raw = borrowed(s, BorrowKind::Shared);
-    raw.functions[0].loans[0].argument = usize::MAX;
+    *raw.functions[0].loans[0].call_binding_mut().unwrap().1 = usize::MAX;
     cases.push(raw);
     let mut raw = borrowed(s, BorrowKind::Shared);
     raw.functions[0].loans[0].authority = AccessBase::Parameter(ReferenceParamId(0));
@@ -1152,8 +1814,10 @@ fn reborrows(s: Span, parent: BorrowKind, children: [BorrowKind; 2]) -> RawOwned
     f.calls[0].arguments.push(ArgumentSlot::Borrow(LoanId(1)));
     f.loans.push(LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 1,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 1,
+        },
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: children[1],
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -1329,8 +1993,10 @@ fn production_array_carriers_require_consistent_signatures_and_loans() {
                         projection: Vec::new(),
                         referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
                         kind: BorrowKind::Shared,
-                        call: CallSiteId(0),
-                        argument: 0,
+                        region: LoanRegion::Call {
+                            call: CallSiteId(0),
+                            argument: 0,
+                        },
                         authority: AccessBase::Owner(OwnerPlaceId(0)),
                         span: s,
                     }),
@@ -1436,8 +2102,8 @@ fn unit2a_malformed_record_sites_preserve_categories_and_origins() {
         f.loans[0].referent = BorrowedSlot::check(BorrowedTy::Exact(invalid.aggregate())).unwrap();
         match defect {
             0 => (),
-            1 => f.loans[0].call = CallSiteId(4096),
-            2 => f.loans[0].argument = 4096,
+            1 => *f.loans[0].call_binding_mut().unwrap().0 = CallSiteId(4096),
+            2 => *f.loans[0].call_binding_mut().unwrap().1 = 4096,
             3 => f.loans[0].kind = BorrowKind::Exclusive,
             4 => f.loans[0].span = Span { end: 201, ..s },
             5 => f.loans[0].authority = AccessBase::Owner(OwnerPlaceId(4096)),
@@ -1505,10 +2171,10 @@ fn unit2b_promoted_record_loan_defects_preserve_all_short_circuits() {
                         .unwrap();
             }
             if defects & 2 != 0 {
-                f.loans[0].call = CallSiteId(4096);
+                *f.loans[0].call_binding_mut().unwrap().0 = CallSiteId(4096);
             }
             if defects & 4 != 0 {
-                f.loans[0].argument = 4096;
+                *f.loans[0].call_binding_mut().unwrap().1 = 4096;
             }
             if defects & 8 != 0 {
                 f.loans[0].kind = if kind == BorrowKind::Shared {
@@ -1542,5 +2208,192 @@ fn unit2b_promoted_record_loan_defects_preserve_all_short_circuits() {
             );
             assert_eq!(e.primary.get(), Some(origin));
         }
+    }
+}
+
+pub(super) fn local_reference_sequence(
+    actions: &[usize; 7],
+    chain: bool,
+    exclusive0: bool,
+    exclusive1: bool,
+) -> (SourceMap, RawOwnedProgram) {
+    let (sources, mut raw, _) = consumer_fixtures::shared_read();
+    raw.functions.truncate(1);
+    let f = &mut raw.functions[0];
+    let s = |n: usize| Span {
+        file: f.span.file,
+        start: 120 + 2 * n,
+        end: 121 + 2 * n,
+    };
+    let referent = f.loans[0].referent;
+    f.owners[0].kind = OwnerKind::Local { mutable: true };
+    f.locals.push(consumer_fixtures::scalar(hir::Ty::I32, s(7)));
+    f.locals.push(consumer_fixtures::scalar(hir::Ty::I32, s(8)));
+    f.calls.clear();
+    f.loans = vec![
+        LoanDecl {
+            region: LoanRegion::Local,
+            authority: AccessBase::Owner(OwnerPlaceId(0)),
+            projection: Vec::new(),
+            kind: if exclusive0 {
+                BorrowKind::Exclusive
+            } else {
+                BorrowKind::Shared
+            },
+            referent,
+            span: s(0),
+        },
+        LoanDecl {
+            region: LoanRegion::Local,
+            authority: if chain {
+                AccessBase::Loan(LoanId(0))
+            } else {
+                AccessBase::Owner(OwnerPlaceId(0))
+            },
+            projection: Vec::new(),
+            kind: if exclusive1 {
+                BorrowKind::Exclusive
+            } else {
+                BorrowKind::Shared
+            },
+            referent,
+            span: s(1),
+        },
+    ];
+    f.blocks.truncate(1);
+    f.blocks[0].statements.truncate(3);
+    let field = FieldId {
+        record: RecordId(0),
+        index: 0,
+    };
+    for &action in actions {
+        let kind = match action {
+            0 | 1 => OwnedInstruction::AcquireLocalBorrow(LoanId(action)),
+            2 | 3 => OwnedInstruction::ReadField {
+                destination: LocalId(action - 1),
+                base: AccessBase::Loan(LoanId(action - 2)),
+                field,
+            },
+            4 | 5 => OwnedInstruction::ReleaseLocalBorrow(LoanId(action - 4)),
+            6 => OwnedInstruction::Discard(OwnerPlaceId(0)),
+            _ => unreachable!(),
+        };
+        f.blocks[0]
+            .statements
+            .push(consumer_fixtures::instruction(kind, s(action)));
+    }
+    f.blocks[0].statements.push(consumer_fixtures::assign(
+        3,
+        Rvalue::CheckedI32 {
+            op: hir::ArithmeticOp::Add,
+            left: consumer_fixtures::operand(1, s(8)),
+            right: consumer_fixtures::operand(2, s(8)),
+            operator_span: s(8),
+        },
+        s(8),
+    ));
+    f.blocks[0].statements.push(consumer_fixtures::instruction(
+        OwnedInstruction::StorageEnd(OwnerPlaceId(0)),
+        s(7),
+    ));
+    f.blocks[0].terminator = consumer_fixtures::end(
+        OwnedTerminatorKind::ReturnScalar(consumer_fixtures::operand(3, s(8))),
+        s(8),
+    );
+    (sources, raw)
+}
+
+pub(super) fn local_reference_permutation(mut ordinal: usize) -> [usize; 7] {
+    let mut remaining = vec![0, 1, 2, 3, 4, 5, 6];
+    let mut result = [0; 7];
+    for (position, factorial) in [720, 120, 24, 6, 2, 1, 1].into_iter().enumerate() {
+        result[position] = remaining.remove(ordinal / factorial);
+        ordinal %= factorial;
+    }
+    assert_eq!(ordinal, 0);
+    result
+}
+
+// A two-node capability model, independent of raw types, verifier regions,
+// runtime counters, access paths and operation-cost helpers.
+pub(super) fn local_reference_sequence_allowed(
+    actions: &[usize; 7],
+    child: bool,
+    exclusive: [bool; 2],
+) -> bool {
+    let mut live = [false; 2];
+    let mut owner_alive = true;
+    for &action in actions {
+        match action {
+            0 | 1 => {
+                if !owner_alive {
+                    return false;
+                }
+                if action == 1 && child {
+                    if !live[0] || (exclusive[1] && !exclusive[0]) {
+                        return false;
+                    }
+                } else if live[1 - action] && (exclusive[0] || exclusive[1]) {
+                    return false;
+                }
+                live[action] = true;
+            }
+            2 | 3 => {
+                let reference = action - 2;
+                if !live[reference] || (reference == 0 && child && live[1] && exclusive[1]) {
+                    return false;
+                }
+            }
+            4 | 5 => {
+                let reference = action - 4;
+                if !live[reference] || (reference == 0 && child && live[1]) {
+                    return false;
+                }
+                live[reference] = false;
+            }
+            6 => {
+                if live.into_iter().any(|active| active) || !owner_alive {
+                    return false;
+                }
+                owner_alive = false;
+            }
+            _ => unreachable!(),
+        }
+    }
+    !owner_alive && live == [false; 2]
+}
+
+#[test]
+fn local_reference_all_40320_action_orders_match_an_independent_capability_model() {
+    for (chain, exclusive0, exclusive1, count) in [
+        (false, false, false, 20),
+        (false, false, true, 2),
+        (false, true, false, 2),
+        (false, true, true, 2),
+        (true, false, false, 4),
+        (true, false, true, 0),
+        (true, true, false, 4),
+        (true, true, true, 2),
+    ] {
+        let mut admitted = 0;
+        for ordinal in 0..5040 {
+            let actions = local_reference_permutation(ordinal);
+            let expected =
+                local_reference_sequence_allowed(&actions, chain, [exclusive0, exclusive1]);
+            let (sources, raw) = local_reference_sequence(&actions, chain, exclusive0, exclusive1);
+            let actual = verify_owned(raw, &sources);
+            assert_eq!(actual.is_ok(), expected, "actions {actions:?}, child {chain}, exclusive {exclusive0}/{exclusive1}, actual {actual:?}");
+            if let Ok(witness) = actual {
+                admitted += 1;
+                assert_eq!(
+                    execute::run(&witness, Some(hir::DefId(0))),
+                    Ok(Scalar::I32(-94))
+                );
+            }
+        }
+        assert_eq!(
+            admitted, count,
+            "child {chain}, kinds {exclusive0}/{exclusive1}"
+        );
     }
 }

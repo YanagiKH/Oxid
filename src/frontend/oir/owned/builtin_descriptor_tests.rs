@@ -418,8 +418,10 @@ fn builtin_descriptor_rejects_extra_function_rows() {
         }),
         ("loan", |f| {
             f.loans.push(LoanDecl {
-                call: CallSiteId(0),
-                argument: 0,
+                region: LoanRegion::Call {
+                    call: CallSiteId(0),
+                    argument: 0,
+                },
                 authority: AccessBase::Parameter(ReferenceParamId(0)),
                 projection: vec![],
                 kind: BorrowKind::Exclusive,
