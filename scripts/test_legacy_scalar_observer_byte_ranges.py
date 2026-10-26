@@ -12,10 +12,11 @@ from unittest.mock import patch
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
 import legacy_scalar_observer_local_references as adapter
+import legacy_scalar_observer_vectors as vector_adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-ADDED_SOURCES = ("experimental_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs", "project/editor_sources.rs")
+ADDED_SOURCES = ("experimental_builtins.rs", "vector_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs", "project/editor_sources.rs")
 MODES = (("parser", ()), ("static", ()), ("static", ("--resolve-only",)))
 
 # Raw stdout hashes from separately built, unchanged parent158 observers
@@ -160,13 +161,42 @@ class ByteRangeObserverTests(unittest.TestCase):
                                  "end": source.index(statement) + len(statement)})
                 self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
 
+    def test_named_slice_parameters_stay_outside_every_scalar_projection(self):
+        for annotation in ("&[T]", "&mut [T]", "&[crate::Element]"):
+            source = "fn f(values:" + annotation + ")->(){return;}"
+            for kind, args in MODES:
+                with self.subTest(annotation=annotation, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]),
+                                     ("outside_subset", "named_slice_reference_type"))
+                    start = source.index(annotation)
+                    self.assertEqual(value["span"], {"file_id": 0, "start": start,
+                                                     "end": start + len(annotation)})
+                    self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
+
+    def test_vector_type_applications_keep_the_existing_nominal_refusal(self):
+        # The parser projection does not resolve/import Vec or credit its
+        # semantics. These applications must remain outside the scalar wire.
+        for annotation in ("Vec<i32>", "&Vec<u8>", "&mut Vec<bool>"):
+            source = "fn f(value:" + annotation + ")->(){return;}"
+            for kind, args in MODES:
+                with self.subTest(annotation=annotation, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]),
+                                     ("outside_subset", "nominal_type"))
+                    start = source.index(annotation)
+                    self.assertEqual(value["span"], {"file_id": 0, "start": start,
+                                                     "end": start + len(annotation)})
+                    self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
+
     def test_new_modules_are_exact_copies_and_wrapper_pins_are_unchanged(self):
         for kind, builder in (("parser", parser), ("static", static)):
             binary = self.binaries[kind]
             manifest = json.loads((binary.parent / "source-manifest.json").read_text())
             gate.observer_identity(binary, builder, kind)
             self.assertEqual(manifest["source_patches"], [])
-            self.assertEqual(manifest["wrapper_adaptation"], adapter.SCHEMA)
+            self.assertEqual(manifest["wrapper_adaptation"], vector_adapter.SCHEMA)
+            self.assertEqual(vector_adapter.PARENT_SCHEMA, adapter.SCHEMA)
             for name in ADDED_SOURCES:
                 self.assertEqual(builder.SOURCE_FILES.count(name), 1)
                 row, = [entry for entry in manifest["files"]
@@ -177,7 +207,12 @@ class ByteRangeObserverTests(unittest.TestCase):
                 self.assertIs(row["unchanged"], True)
             for row, (name, _) in zip(manifest["wrappers"], builder.WRAPPER_FILES):
                 self.assertEqual(row["original_sha256"], adapter.PINS[kind + "/" + name])
-                self.assertEqual(row["sha256"], adapter.DERIVED_PINS[kind + "/" + name])
+                derived = (binary.parent / row["copied_path"]).read_bytes()
+                predecessor = vector_adapter.reverse_wrapper(kind, name, derived)
+                original = (ROOT / row["original_path"]).read_bytes()
+                self.assertEqual(predecessor, adapter.adapt_wrapper(kind, name, original))
+                self.assertEqual(hashlib.sha256(predecessor).hexdigest(), adapter.DERIVED_PINS[kind + "/" + name])
+                self.assertEqual(row["sha256"], vector_adapter.DERIVED_PINS[kind + "/" + name])
 
     def test_missing_each_new_module_fails_real_rustc(self):
         for kind, builder in (("parser", parser), ("static", static)):

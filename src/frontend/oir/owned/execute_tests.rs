@@ -1052,6 +1052,7 @@ fn default_200000_expanded_cell_boundary_is_real_and_precedes_activation_allocat
         .push(assign(1, Rvalue::Unit, span));
     let p = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records,
@@ -1075,6 +1076,7 @@ fn default_200000_expanded_cell_boundary_is_real_and_precedes_activation_allocat
     }
     let p = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records,
@@ -1221,6 +1223,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     ];
     let p = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record(&[], s(0))],

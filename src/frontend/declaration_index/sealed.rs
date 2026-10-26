@@ -9,14 +9,14 @@ use super::*;
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub(super) struct BuiltinAdmission<'s> {
-    anchors: [u32; 9],
+    anchors: [u32; 10],
     experimental: super::super::builtin_catalog::experimental::Inventory,
     source: std::marker::PhantomData<&'s Span>,
 }
 impl<'s> BuiltinAdmission<'s> {
     fn none() -> Self {
         Self {
-            anchors: [NONE; 9],
+            anchors: [NONE; 10],
             experimental: Default::default(),
             source: std::marker::PhantomData,
         }
@@ -66,6 +66,17 @@ impl<'s> BuiltinAdmission<'s> {
                 }
                 4 + item.family()
             }
+            BuiltinItem::Vector(item) => {
+                self.experimental = self.experimental.admit_vector(item);
+                if item
+                    .operation()
+                    .is_some_and(|operation| operation.requires_grow_status())
+                    && self.anchors[4] == NONE
+                {
+                    self.anchors[4] = import;
+                }
+                9
+            }
         };
         if self.anchors[slot] == NONE {
             self.anchors[slot] = import;
@@ -87,6 +98,12 @@ impl<'s> BuiltinAdmission<'s> {
         self.experimental
             .contains(item)
             .then(|| self.anchor(4 + item.family()))
+            .flatten()
+    }
+    fn vector_anchor(&self, item: vector::Item) -> Option<u32> {
+        self.experimental
+            .contains_vector(item)
+            .then(|| self.anchor(9))
             .flatten()
     }
     fn anchor(&self, slot: usize) -> Option<u32> {
@@ -232,6 +249,16 @@ fn experimental_endpoint(
     at: Span,
 ) -> Result<BuiltinItem, Box<Diagnostic>> {
     if segments.len() == 3 {
+        let mut alias = true;
+        for (name, segment) in ["alloc", "vec", "GrowStatus"].into_iter().zip(segments) {
+            if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal {
+                alias = false;
+                break;
+            }
+        }
+        if alias {
+            return Ok(BuiltinItem::Experimental(experimental::Item::GrowStatus));
+        }
         for item in experimental::Item::ALL {
             let mut matches = true;
             for (name, segment) in item.path().into_iter().zip(segments) {
@@ -243,6 +270,19 @@ fn experimental_endpoint(
             }
             if matches {
                 return Ok(BuiltinItem::Experimental(item));
+            }
+        }
+        for item in vector::Item::ALL {
+            let mut matches = true;
+            for (name, segment) in item.path().into_iter().zip(segments) {
+                if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
+                return Ok(BuiltinItem::Vector(item));
             }
         }
     }
@@ -506,6 +546,8 @@ fn collect<'s>(
     if syntax == CollectionSyntax::OutputCandidate {
         candidate_source_origin = CandidateOrigin::Output(CompactSpan::new(at)?);
     }
+    let mut has_element_ranges = false;
+    let mut has_source_slices = false;
     let mut c = Counts {
         modules: u64::try_from(sources.count()).map_err(|_| overflow(at))?,
         ..Counts::default()
@@ -521,7 +563,9 @@ fn collect<'s>(
         let mut failure = None;
         let mut enum_syntax = None;
         let mut std_syntax = false;
-        let valid = ast.validate_spans_and_ids_counted_with_syntax(
+        let mut features = ast::SyntaxFeatures::default();
+        let valid = ast.validate_spans_and_ids_counted_with_features(
+            Some(file),
             |span| {
                 if let Err(error) = work.preflight(span.unwrap_or(at)) {
                     failure = Some(error);
@@ -534,6 +578,7 @@ fn collect<'s>(
             &mut enum_syntax,
             syntax.std_policy(),
             &mut std_syntax,
+            &mut features,
         );
         if let Some(error) = failure {
             return Err(error);
@@ -541,6 +586,8 @@ fn collect<'s>(
         if !valid {
             return Err(bad(at));
         }
+        has_element_ranges |= features.element_ranges;
+        has_source_slices |= features.source_slices;
         if ast.has_range_for() && matches!(candidate_source_origin, CandidateOrigin::Current) {
             candidate_source_origin = CandidateOrigin::CurrentRanges;
         }
@@ -665,9 +712,11 @@ fn collect<'s>(
                         .set()
                         .experimental()
                         .contains(experimental::Item::File),
-                ),
+                )
+                + builtins.set().vector_templates()
+                + usize::from(builtins.set().contains_vector(vector::Item::Vec)),
         ),
-        (c.functions, builtins.set().extra_functions()),
+        (c.functions, builtins.set().extra_template_functions()),
         (c.enums, builtins.set().extra_enums()),
     ] {
         let total = prefix
@@ -677,16 +726,31 @@ fn collect<'s>(
             return Err(bad(at));
         }
     }
+    let syntax_scratch = SYNTAX_FEATURE_CONTROL_BYTES
+        .checked_add(if has_source_slices {
+            ast::SLICE_SOURCE_CONTROL_BYTES
+        } else {
+            0
+        })
+        .ok_or_else(|| overflow(at))?;
+    let fixed_scratch = FIXED_SCRATCH
+        .checked_add(VECTOR_INDEX_HEADER_GROWTH)
+        .and_then(|bytes| {
+            bytes.checked_add(super::super::builtin_catalog::builtin_set_control_bytes())
+        })
+        .and_then(|bytes| bytes.checked_add(syntax_scratch))
+        .and_then(|bytes| {
+            bytes.checked_add(if builtins.set().experimental().is_empty() {
+                0
+            } else {
+                experimental::compiler_carrier_bytes()
+            })
+        })
+        .ok_or_else(|| overflow(at))?;
     let plan = IndexPlan::calculate(
         c,
         size_of::<DeclarationIndex<'s>>(),
-        if builtins.set().experimental().is_empty() {
-            FIXED_SCRATCH
-        } else {
-            FIXED_SCRATCH
-                .checked_add(experimental::compiler_carrier_bytes())
-                .ok_or_else(|| overflow(at))?
-        },
+        fixed_scratch,
         limits,
         at,
     )?;
@@ -798,6 +862,7 @@ fn collect<'s>(
         )?,
         root_main: NONE,
         candidate_source_origin,
+        has_element_ranges,
         builtins,
     };
     let mut scratch = Scratch {
@@ -1383,12 +1448,19 @@ impl<'s> DeclarationFacts<'s> {
             return Err(errors);
         }
         let mut index = CleanOriginals { facts: self }.freeze(work)?;
-        let has_generics = (0..index.sources().count()).any(|module| {
-            index
-                .sources()
-                .ast(ModuleId(module))
-                .is_ok_and(|program| program.has_generics() || program.has_record_patterns())
-        });
+        // A bare vector call can omit generic syntax altogether. The sealed
+        // import inventory is a constant-time activation bit, so new() still
+        // reaches the planner's explicit/inferred element checks. Likewise, an
+        // immutable parse fact forces full syntax authentication for named
+        // slices even if all their mutable AST kinds have been replaced.
+        let has_generics = index.builtin_set().contains_vector(vector::Item::Vec)
+            || (0..index.sources().count()).any(|module| {
+                index.sources().ast(ModuleId(module)).is_ok_and(|program| {
+                    program.has_generics()
+                        || program.has_parsed_named_slice()
+                        || program.has_record_patterns()
+                })
+            });
         if has_generics {
             index
                 .require_current_source_pipeline()
@@ -1557,6 +1629,13 @@ fn stage_import(
         match item {
             BuiltinItem::Enum(_) => (Some(handle), None),
             BuiltinItem::Function(_) => (None, Some(handle)),
+            BuiltinItem::Vector(item) => {
+                if item.operation().is_some() {
+                    (None, Some(handle))
+                } else {
+                    (Some(handle), None)
+                }
+            }
             BuiltinItem::Experimental(item) => {
                 if item.function().is_some() {
                     (None, Some(handle))
@@ -1721,6 +1800,10 @@ impl<'s> DeclarationIndex<'s> {
                 | CandidateOrigin::CurrentRanges
                 | CandidateOrigin::CurrentGenericRanges(_)
         )
+    }
+    /// Independently collected during the counted source argument walk.
+    pub fn has_element_ranges(&self) -> bool {
+        self.tables.has_element_ranges
     }
     pub fn has_range_for(&self) -> bool {
         matches!(
@@ -1960,6 +2043,15 @@ impl<'s> DeclarationIndex<'s> {
                 )));
             }
         }
+        let base = self.source_function_count() + self.builtin_set().extra_functions();
+        if let Some(key) =
+            id.0.checked_sub(base)
+                .and_then(|rank| self.vector_functions().get(rank))
+        {
+            // The sealed ordered Plan already authenticates this indexed key.
+            // No second linear key search is required to name its origin.
+            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Vector(key.item())));
+        }
         Err(bad(self.sources().eof()))
     }
     // Only checked view constructors use these narrow immutable projections.
@@ -2072,7 +2164,71 @@ impl<'s> DeclarationIndex<'s> {
         self.tables.sources
     }
     pub fn function_count(&self) -> usize {
-        self.source_function_count() + self.builtin_set().extra_functions()
+        self.source_function_count()
+            + self.builtin_set().extra_functions()
+            + self.vector_functions().len()
+    }
+    pub fn vector_functions(&self) -> &[vector::Function] {
+        self.generic_plan()
+            .map_or(&[], |plan| plan.vector_functions())
+    }
+    /// Interpret source-template IDs only. Executable specialization IDs are
+    /// assigned after the generic worklist and use vector_function_id instead.
+    pub(super) fn vector_template(
+        &self,
+        id: DefId,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<Option<vector::Operation>, Box<Diagnostic>> {
+        let Some(wanted) =
+            id.0.checked_sub(self.template_function_count() + self.builtin_set().extra_functions())
+        else {
+            return Ok(None);
+        };
+        let mut rank = 0;
+        for operation in vector::Operation::ALL {
+            work.debit(1, at, "vector template selection")?;
+            if self.builtin_set().contains_vector(operation.item()) {
+                if rank == wanted {
+                    return Ok(Some(operation));
+                }
+                rank += 1;
+            }
+        }
+        Ok(None)
+    }
+    pub fn vector_function_id(&self, key: vector::Function) -> Result<DefId, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Vector(key.item()))?;
+        self.generic_plan()
+            .and_then(|plan| plan.vector_function_rank(key))
+            .map(|rank| {
+                DefId(self.source_function_count() + self.builtin_set().extra_functions() + rank)
+            })
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn vector_anchor(&self, item: vector::Item) -> Result<Span, Box<Diagnostic>> {
+        self.tables.builtin_handle(BuiltinItem::Vector(item))?;
+        self.tables
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .vector_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
+    }
+    pub fn vector_signature(
+        &self,
+        key: vector::Function,
+    ) -> Result<vector::Signature, Box<Diagnostic>> {
+        self.vector_function_id(key)?;
+        let status = if key.operation.requires_grow_status() {
+            self.experimental_enum_id(experimental::Enumeration::Grow)?
+        } else {
+            EnumId(0)
+        };
+        Ok(key.signature(status))
     }
     pub fn source_function_count(&self) -> usize {
         self.generic_plan()
@@ -2456,5 +2612,332 @@ impl DeclarationIndex<'_> {
         } else {
             self.tables.modules[0].import_start = NONE;
         }
+    }
+}
+
+#[cfg(test)]
+mod vector_source_authority_tests {
+    use super::*;
+    use crate::frontend::project::ProjectLimits;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering as AtomicOrdering},
+    };
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new(source: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "oxid-vector-source-authority-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, AtomicOrdering::Relaxed),
+            ));
+            fs::create_dir(&root).unwrap();
+            fs::write(root.join("main.ox"), source).unwrap();
+            Self(root)
+        }
+        fn load(&self) -> ProjectSources {
+            ProjectSources::load_typed(
+                self.0.join("main.ox").to_str().unwrap(),
+                ProjectLimits::default(),
+            )
+            .unwrap()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn imported_vector_new_without_generic_syntax_reaches_element_validation() {
+        for text in [
+            "use alloc::vec::new;fn main()->i32{new();return 0;}",
+            "use alloc::vec::new;fn main()->i32{let values=new();return 0;}",
+            "use alloc::vec::new as create;fn main()->i32{create();return 0;}",
+        ] {
+            let fixture = Fixture::new(text);
+            let project = fixture.load();
+            let owner = SourceOwner::project(&project);
+            let program = owner.ast(ModuleId(0)).unwrap();
+            assert!(!program.has_generics());
+            assert!(!program.has_record_patterns());
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let facts =
+                collect_originals(owner, IndexLimits::default(), &work, &mut allocator).unwrap();
+            let errors = facts.finish(&work, &mut allocator).unwrap_err();
+            assert_eq!(errors.len(), 1, "{text}: {errors:?}");
+            assert_eq!((errors[0].code, errors[0].stage), ("E0300", "generics"));
+            assert_eq!(
+                errors[0].message,
+                "cannot infer new element; specify new::<T>"
+            );
+        }
+        for (imports, planned) in [("", false), ("use alloc::vec::new;", true)] {
+            let fixture = Fixture::new(&format!("{imports}fn main()->i32{{return 0;}}"));
+            let project = fixture.load();
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let index = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &work,
+                &mut allocator,
+            )
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
+            assert_eq!(index.generic_plan().is_some(), planned);
+            if let Some(plan) = index.generic_plan() {
+                assert!(
+                    plan.vector_functions().is_empty(),
+                    "unused imports cannot manufacture instances"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn primitive_and_named_slice_authentication_share_an_enforced_scratch_row() {
+        let mut scratch = [0; 3];
+        for (position, parameter) in ["i32", "&[i32]", "&[T]"].into_iter().enumerate() {
+            let fixture = Fixture::new(&format!(
+                "fn f<T:Copy>(items:{parameter})->i32{{return 0;}}fn main()->i32{{return 0;}}"
+            ));
+            let project = fixture.load();
+            let facts = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
+            .unwrap();
+            scratch[position] = facts.plan().scratch;
+            let limits = IndexLimits {
+                scratch: scratch[position] - 1,
+                ..IndexLimits::default()
+            };
+            let error = collect_originals(
+                SourceOwner::project(&project),
+                limits,
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
+            .unwrap_err();
+            assert_eq!(error.code, "E0400");
+            assert!(error.message.contains("scratch"), "{error:?}");
+        }
+        assert_eq!(
+            scratch[1] - scratch[0],
+            ast::SLICE_SOURCE_CONTROL_BYTES as u64
+        );
+        assert_eq!(scratch[2], scratch[1]);
+    }
+
+    #[test]
+    fn original_adapter_refuses_nongeneric_named_slice_relabelled_as_primitive() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        let mut map = SourceMap::new();
+        let file = map.add(
+            "relabelled-slice.ox".into(),
+            "struct T{x:i32} fn f(p:&[T])->i32{return 0;} fn main()->i32{let a=[1];return f(&a);}"
+                .into(),
+        );
+        let source = map.get(file);
+        let (mut program, _) = parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap();
+        assert!(!program.has_generics());
+        assert!(!program.has_record_patterns());
+        assert!(!program.uses_project_syntax());
+        let parameter = program.functions[0].params[0].ty;
+        assert!(matches!(
+            parameter.kind,
+            ast::TypeSyntaxKind::GenericSliceReference { .. }
+        ));
+        {
+            // The original source's record element is semantically inadmissible.
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+            let facts =
+                collect_originals(owner, IndexLimits::default(), &work, &mut allocator).unwrap();
+            let error = facts
+                .signature_view(&work)
+                .parameter_type(ModuleId(0), parameter)
+                .unwrap_err();
+            assert_eq!(error.code, "E0300");
+            assert_eq!(error.message, "slice elements must be scalar Copy types");
+            // The immutable parse fact now also rejects this semantic error
+            // while finishing, rather than returning an unchecked index.
+            let errors = facts.finish(&work, &mut allocator).unwrap_err();
+            assert_eq!(errors[0].code, "E0300");
+        }
+        program.functions[0].params[0].ty.kind = ast::TypeSyntaxKind::SliceReference {
+            mutable: false,
+            element: ast::ArrayElementTypeSyntax::I32,
+        };
+        assert!(program.belongs_to(source), "cheap provenance is unchanged");
+        assert_eq!(program.functions[0].params[0].ty.span, parameter.span);
+        let mut features = ast::SyntaxFeatures::default();
+        assert!(!program.validate_spans_and_ids_counted_with_features(
+            Some(source),
+            |at| at.is_none_or(|at| source.try_text(at).is_some()),
+            &mut None,
+            parser::StdImportPolicy::Enabled,
+            &mut false,
+            &mut features,
+        ));
+        assert!(features.source_slices);
+        assert!(
+            !features.generic_slices,
+            "forged variant cannot select its authentication budget"
+        );
+        let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+        let mut allocator = Allocator::default();
+        let error = collect_originals(
+            owner,
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut allocator,
+        )
+        .unwrap_err();
+        assert_eq!((error.code, error.stage), ("E0500", "resolve-project"));
+        assert_eq!(allocator.attempts, 0, "reject before allocating index rows");
+    }
+
+    #[test]
+    fn nongeneric_named_slice_relabels_cannot_remove_paid_full_authentication() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        for mixed in [false, true] {
+            let parameters = if mixed { "p:&[T],q:&[T]" } else { "p:&[T]" };
+            for replacement in 0..7 {
+                let mut map = SourceMap::new();
+                let file = map.add(
+                    "relabelled-named-slice.ox".into(),
+                    format!(
+                        "struct T{{x:i32}} fn f({parameters})->i32{{return 0;}} fn main()->i32{{return 0;}}"
+                    ),
+                );
+                let source = map.get(file);
+                let (mut program, _) = parser::parse_typed_counted(
+                    source,
+                    lexer::lex(source).unwrap(),
+                    parser::SourceMode::ProjectCandidate,
+                    parser::MAX_NODES,
+                    &mut Allocator::default(),
+                    &mut Default::default(),
+                )
+                .unwrap();
+                assert!(!program.has_generics());
+                assert!(!program.has_record_patterns());
+                assert!(!program.uses_project_syntax());
+                assert!(program.has_parsed_named_slice());
+                let parameter = program.functions[0].params[0].ty;
+                let ast::TypeSyntaxKind::GenericSliceReference { element, .. } = parameter.kind
+                else {
+                    panic!("expected the source's named slice");
+                };
+                let array = ast::FixedArraySyntax {
+                    element: ast::ArrayElementTypeSyntax::I32,
+                    length: 1,
+                };
+                program.functions[0].params[0].ty.kind = match replacement {
+                    0 | 1 => ast::TypeSyntaxKind::ArrayReference {
+                        mutable: replacement == 1,
+                        array,
+                    },
+                    2 | 3 => ast::TypeSyntaxKind::Reference {
+                        mutable: replacement == 3,
+                        referent: element,
+                    },
+                    4 => ast::TypeSyntaxKind::Unit,
+                    5 => ast::TypeSyntaxKind::Array(array),
+                    6 => ast::TypeSyntaxKind::Name(element),
+                    _ => unreachable!(),
+                };
+                assert_eq!(program.functions[0].params[0].ty.span, parameter.span);
+                assert!(program.belongs_to(source), "provenance remains cheap");
+                assert!(program.has_parsed_named_slice());
+                let mut features = ast::SyntaxFeatures::default();
+                assert!(program.validate_spans_and_ids_counted_with_features(
+                    Some(source),
+                    |at| at.is_none_or(|at| source.try_text(at).is_some()),
+                    &mut None,
+                    parser::StdImportPolicy::Enabled,
+                    &mut false,
+                    &mut features,
+                ));
+                // A single relabel can erase all mutable slice observations;
+                // leaving another named parameter cannot authorize this one.
+                assert_eq!(features.source_slices, mixed);
+                assert_eq!(features.generic_slices, mixed);
+                let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+                let work = WorkMeter::default();
+                work.enable_observation();
+                let mut allocator = Allocator::default();
+                let facts = collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+                    .unwrap();
+                let errors = facts.finish(&work, &mut allocator).unwrap_err();
+                assert_eq!(errors.len(), 1, "mixed={mixed} replacement={replacement}");
+                assert_eq!(
+                    (errors[0].code, errors[0].stage),
+                    ("E0500", "resolve-project"),
+                    "mixed={mixed} replacement={replacement}: {errors:?}"
+                );
+                assert!(work.events.borrow().iter().any(|event| {
+                    event.operation == "generic syntax authentication" && event.units > 0
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn original_primitive_slices_do_not_activate_named_slice_planning() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        let mut map = SourceMap::new();
+        let file = map.add(
+            "original-primitive-slices.ox".into(),
+            "fn f(p:&[i32],q:&mut[bool])->i32{return 0;} fn main()->i32{return 0;}".into(),
+        );
+        let source = map.get(file);
+        let (program, _) = parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap();
+        assert!(!program.has_parsed_named_slice());
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        let index = collect_originals(
+            SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap(),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        assert!(index.generic_plan().is_none());
+        assert!(work
+            .events
+            .borrow()
+            .iter()
+            .all(|event| { event.operation != "generic syntax authentication" }));
     }
 }

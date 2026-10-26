@@ -20,6 +20,13 @@ struct EmitterCarriers {
     captures: [FormatCallsiteBacking<8>; 4],
     writes: [std::fmt::Result; 4],
     caller_parameters: [&'static ExecutionPlan<'static>; 10],
+    vector_type: hir::Ty,
+    vector_element: byte_buffer::VectorElement,
+    vector_tag: u32,
+    vector_validation_format: FormatCallsiteBacking<3>,
+    vector_move_format: FormatCallsiteBacking<3>,
+    vector_drop_format: FormatCallsiteBacking<2>,
+    vector_writes: [std::fmt::Result; 3],
 }
 pub(super) const fn control_bytes() -> usize {
     size_of::<EmitterCarriers>() + 19 * NAME_BYTES
@@ -225,18 +232,35 @@ fn resource(
     destination: &str,
     mode: Mode,
 ) {
-    let file = aggregate == AggregateTy::File;
-    let family = if file { "file" } else { "bytebuf" };
+    let (family, carrier) = match aggregate {
+        AggregateTy::ByteBuf => ("bytebuf", "{ i64, i32, i32 }"),
+        AggregateTy::File => ("file", "{ i64, i64 }"),
+        AggregateTy::Vector(ty) => {
+            let tag = super::super::vector_type::element(ty).tag();
+            match mode {
+                Mode::Validate => {
+                    writeln!(out, "  %{name}_status = call i32 @__oxid_vector_valid(ptr {source}, i32 {tag})\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  ret i32 3\n{name}_ok:").unwrap();
+                }
+                Mode::Move => {
+                    writeln!(out, "  %{name}_descriptor = load {{ i64, i32, i32 }}, ptr {source}, align 1\n  store {{ i64, i32, i32 }} %{name}_descriptor, ptr {destination}, align 1\n  store {{ i64, i32, i32 }} zeroinitializer, ptr {source}, align 1").unwrap();
+                }
+                Mode::Drop => {
+                    writeln!(
+                        out,
+                        "  call void @__oxid_vector_drop(ptr {source}, i32 {tag})"
+                    )
+                    .unwrap();
+                }
+            }
+            return;
+        }
+        _ => unreachable!("verified resource aggregate"),
+    };
     match mode {
         Mode::Validate => {
             writeln!(out, "  %{name}_status = call i32 @__oxid_{family}_valid(ptr {source})\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  ret i32 3\n{name}_ok:").unwrap();
         }
         Mode::Move => {
-            let carrier = if file {
-                "{ i64, i64 }"
-            } else {
-                "{ i64, i32, i32 }"
-            };
             writeln!(out, "  %{name}_descriptor = load {carrier}, ptr {source}, align 1\n  store {carrier} %{name}_descriptor, ptr {destination}, align 1\n  store {carrier} zeroinitializer, ptr {source}, align 1").unwrap();
         }
         Mode::Drop => writeln!(out, "  call void @__oxid_{family}_drop(ptr {source})").unwrap(),
@@ -253,9 +277,9 @@ fn value(
 ) {
     match value {
         ValueTy::Scalar(ty) => scalar(out, name, ty, source, destination, mode),
-        ValueTy::Owned(aggregate @ (AggregateTy::ByteBuf | AggregateTy::File)) => {
-            resource(out, name, aggregate, source, destination, mode)
-        }
+        ValueTy::Owned(
+            aggregate @ (AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)),
+        ) => resource(out, name, aggregate, source, destination, mode),
         ValueTy::Owned(aggregate @ (AggregateTy::Record(_) | AggregateTy::Enum(_))) => {
             let function = helper(aggregate, mode);
             match mode {
@@ -413,6 +437,10 @@ pub(super) fn emit_helpers(out: &mut Emission, plan: &ExecutionPlan<'_>) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_vector_composition_tests.rs"]
+mod vector_tests;
 
 #[cfg(test)]
 mod tests {

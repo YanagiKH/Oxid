@@ -363,7 +363,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         self.slice_slots
     }
     pub(in super::super) fn native_bytes(&self) -> Result<usize, AdmissionFailure> {
-        add(
+        let ordinary = add(
             add(
                 add(
                     mul(self.scalar_slots, self.execution.native_scalar_bytes())?,
@@ -376,6 +376,13 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 },
             )?,
             add(mul(self.reference_slots, 8)?, mul(self.slice_slots, 4)?)?,
+        )?;
+        add(
+            ordinary,
+            super::native_vector_layout::frame_bytes(
+                self.execution.witness.declarations(),
+                self.raw(),
+            )?,
         )
     }
     pub(in super::super) fn scalar_width(&self) -> usize {

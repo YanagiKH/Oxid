@@ -130,8 +130,28 @@ def native_limits():
     resource.setrlimit(resource.RLIMIT_AS, (32 * 1024 * 1024,) * 2)
 
 
-def main_for_package(ROOT, EXAMPLE, SOURCES, executable_name, test_name, cases, statistics, controller):
-    parser = argparse.ArgumentParser(description=__doc__)
+def verify_policy_variation(artifacts, names, equivalent_cases=()):
+    names = tuple(names)
+    equivalent = set(equivalent_cases)
+    if not equivalent <= set(names):
+        raise ValueError("unknown policy-equivalent case")
+    identical = []
+    for name in names:
+        for profile in ("dev", "release"):
+            bounded = artifacts[("bounded", name, profile)]
+            if bounded == artifacts[("hosted", name, profile)]:
+                if name not in equivalent:
+                    raise ValueError("execution policy did not change native code")
+                identical.append({"case": name, "profile": profile, "sha256": bounded})
+    return identical
+
+
+def main_for_package(ROOT, EXAMPLE, SOURCES, executable_name, test_name, cases, statistics, controller,
+                     description=None, finalize=True, native_guard=None,
+                     warm_cache_status="hit", policy_equivalent_cases=()):
+    if warm_cache_status not in {"hit", "unavailable"}:
+        raise ValueError("unsupported repeated-build cache expectation")
+    parser = argparse.ArgumentParser(description=description or __doc__)
     parser.add_argument('compilers', nargs='+', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--llvm-bin', type=Path)
@@ -153,7 +173,7 @@ def main_for_package(ROOT, EXAMPLE, SOURCES, executable_name, test_name, cases, 
         def invoke(argv,cwd,kind,expected=None,native=False,expected_stderr=b''):
             result=subprocess.run([str(a) for a in argv],cwd=cwd,env={} if native else env,
                 stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-                preexec_fn=native_limits if native else None,timeout=90)
+                preexec_fn=(native_guard or native_limits) if native else None,timeout=90)
             transcript.write(json.dumps({'argv':[str(a) for a in argv],'cwd':str(cwd),'kind':kind,
                 'environment':{} if native else 'isolated compiler cache','status':result.returncode,
                 'stdout_hex':result.stdout.hex(),'stderr_hex':result.stderr.hex()},sort_keys=True)+'\n');transcript.flush()
@@ -180,7 +200,8 @@ def main_for_package(ROOT, EXAMPLE, SOURCES, executable_name, test_name, cases, 
                         for profile in ['dev','release']:
                             for cache in ['cold','warm']:
                                 built=invoke([compiler,'build','--profile',profile,'--incremental'],project,name+'-'+profile+'-'+cache)
-                                if cache=='warm' and b'typed-preview native object cache: hit' not in built.stdout.splitlines():raise ValueError('missing warm object-cache hit')
+                                expected_cache = ('typed-preview native object cache: ' + warm_cache_status).encode()
+                            if cache=='warm' and expected_cache not in built.stdout.splitlines():raise ValueError('unexpected repeated-build object-cache status')
                             executable=project/'.oxid/bin'/executable_name
                             dst=output/'executables'/f'compiler-{ci}'/policy/(name+'-'+profile);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(executable,dst)
                             key=(policy,name,profile);identity=digest(dst)
@@ -189,20 +210,23 @@ def main_for_package(ROOT, EXAMPLE, SOURCES, executable_name, test_name, cases, 
                     preserved=output/'preserved-sources'/f'compiler-{ci}'/policy;preserved.parent.mkdir(parents=True,exist_ok=True);shutil.move(graph,preserved)
                     if graph.exists():raise ValueError('source graph remains at its build path')
             if not args.reference_only:
-                for name,_,_ in cases:
-                    for profile in ['dev','release']:
-                        if artifacts[('bounded',name,profile)]==artifacts[('hosted',name,profile)]:raise ValueError('execution policy did not change native code')
+                identical = verify_policy_variation(artifacts, (name for name, _, _ in cases),
+                                                    policy_equivalent_cases)
+                if policy_equivalent_cases:
+                    receipt['policy_equivalent_cases'] = list(policy_equivalent_cases)
+                    receipt['policy_byte_identical_pairs'] = identical
                 for executable,expected in all_elfs:
                     invoke([executable],output,'source-free-native',expected,True);receipt['native_cases']+=1
             if {str(p):digest(ROOT/p) for p in SOURCES}!=source_pins:raise ValueError('library or example changed during verification')
             for pin in pins:
                 if digest(pin['path'])!=pin['sha256']:raise ValueError('compiler changed during verification')
-            receipt['status']='passed'
+            receipt['status']='passed' if finalize else 'positive-phase-passed'
         except BaseException as error:
             receipt.update(status='failed',failure=f'{type(error).__name__}: {error}');raise
         finally:
             receipt['commands_sha256']=digest(output/'commands.jsonl');(output/'result.json').write_text(json.dumps(receipt,indent=2)+'\n')
-    print(json.dumps({k:v for k,v in receipt.items() if k not in ['native_elfs','sources']},sort_keys=True))
+    if finalize:
+        print(json.dumps({k:v for k,v in receipt.items() if k not in ['native_elfs','sources']},sort_keys=True))
 
 
 def main():

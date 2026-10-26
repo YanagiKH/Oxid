@@ -107,6 +107,15 @@ pub(in crate::frontend) enum AggregateTy {
     FixedArray(FixedArrayTy),
     ByteBuf,
     File,
+    Vector(hir::Ty),
+}
+
+fn check_vector_element(element: hir::Ty) -> Result<(), DeclarationError> {
+    if crate::frontend::builtin_catalog::vector::scalar_admitted(element) {
+        Ok(())
+    } else {
+        Err(DeclarationError::TypeMismatch)
+    }
 }
 
 /// A call-only borrowed view. Unsized slices are never owned value types.
@@ -126,6 +135,9 @@ impl BorrowedTy {
                 array.element() == element
             }
             (Self::Exact(AggregateTy::ByteBuf), Self::ScalarSlice(hir::Ty::U8)) => true,
+            (Self::Exact(AggregateTy::Vector(actual)), Self::ScalarSlice(expected)) => {
+                actual == expected
+            }
             (Self::ScalarSlice(actual), Self::ScalarSlice(expected)) => actual == expected,
             _ => false,
         }
@@ -135,6 +147,7 @@ impl BorrowedTy {
             Self::Exact(AggregateTy::FixedArray(array)) => Some(array.element()),
             Self::ScalarSlice(element) => Some(element),
             Self::Exact(AggregateTy::ByteBuf) => Some(hir::Ty::U8),
+            Self::Exact(AggregateTy::Vector(element)) => Some(element),
             Self::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::File) => None,
         }
     }
@@ -150,6 +163,7 @@ enum BorrowedSlotRepr {
     ScalarSlice(hir::Ty),
     ByteBuf,
     File,
+    Vector(hir::Ty),
 }
 impl BorrowedSlot {
     pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
@@ -157,6 +171,10 @@ impl BorrowedSlot {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(AggregateTy::ByteBuf) => BorrowedSlotRepr::ByteBuf,
             BorrowedTy::Exact(AggregateTy::File) => BorrowedSlotRepr::File,
+            BorrowedTy::Exact(AggregateTy::Vector(element)) => {
+                check_vector_element(element)?;
+                BorrowedSlotRepr::Vector(element)
+            }
             BorrowedTy::Exact(AggregateTy::Record(id)) => BorrowedSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -189,6 +207,7 @@ impl BorrowedSlot {
         match self.0 {
             BorrowedSlotRepr::ByteBuf => BorrowedTy::Exact(AggregateTy::ByteBuf),
             BorrowedSlotRepr::File => BorrowedTy::Exact(AggregateTy::File),
+            BorrowedSlotRepr::Vector(element) => BorrowedTy::Exact(AggregateTy::Vector(element)),
             BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
             ))),
@@ -212,6 +231,7 @@ enum AggregateSlotRepr {
     FixedArray(FixedArrayTy),
     ByteBuf,
     File,
+    Vector(hir::Ty),
 }
 impl AggregateSlot {
     pub(in crate::frontend) fn try_from_aggregate(
@@ -220,6 +240,10 @@ impl AggregateSlot {
         Ok(Self(match ty {
             AggregateTy::ByteBuf => AggregateSlotRepr::ByteBuf,
             AggregateTy::File => AggregateSlotRepr::File,
+            AggregateTy::Vector(element) => {
+                check_vector_element(element)?;
+                AggregateSlotRepr::Vector(element)
+            }
             AggregateTy::Record(id) => AggregateSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -236,6 +260,7 @@ impl AggregateSlot {
         match self.0 {
             AggregateSlotRepr::ByteBuf => AggregateTy::ByteBuf,
             AggregateSlotRepr::File => AggregateTy::File,
+            AggregateSlotRepr::Vector(element) => AggregateTy::Vector(element),
             // All qualified hosts are 64-bit; no truncation on supported targets.
             AggregateSlotRepr::Record(id) => AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
@@ -616,8 +641,12 @@ impl Declarations {
                 check_span(sources, field.span)?;
                 let ty = value_field_with_enums(field, raw_enums.len())?;
                 enum_record_fields |= matches!(ty, ValueTy::Owned(AggregateTy::Enum(_)));
-                resource_declarations |=
-                    matches!(ty, ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File));
+                resource_declarations |= matches!(
+                    ty,
+                    ValueTy::Owned(
+                        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                    )
+                );
                 if let ValueTy::Owned(AggregateTy::Record(id)) = ty {
                     if id.0 >= raw.len() {
                         return Err(DeclarationError::InvalidRecordId(id));
@@ -673,7 +702,7 @@ impl Declarations {
                     matches!(
                         variant.payload,
                         Some(ParameterTy::Value(ValueTy::Owned(
-                            AggregateTy::ByteBuf | AggregateTy::File
+                            AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
                         )))
                     )
                 })
@@ -773,7 +802,9 @@ impl Declarations {
         let resources = raw.iter().flat_map(|record| &record.fields).any(|field| {
             matches!(
                 field.ty,
-                ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File))
+                ParameterTy::Value(ValueTy::Owned(
+                    AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                ))
             )
         }) || raw_enums
             .iter()
@@ -782,7 +813,7 @@ impl Declarations {
                 matches!(
                     variant.payload,
                     Some(ParameterTy::Value(ValueTy::Owned(
-                        AggregateTy::ByteBuf | AggregateTy::File
+                        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
                     )))
                 )
             });
@@ -882,7 +913,10 @@ impl Declarations {
         if self.has_enum_record_nesting(aggregate)?
             || matches!(
                 aggregate,
-                AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File
+                AggregateTy::Enum(_)
+                    | AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
             )
         {
             return Err(DeclarationError::TypeMismatch);
@@ -939,6 +973,7 @@ impl Declarations {
     pub(super) fn check_aggregate_type(&self, ty: AggregateTy) -> Result<(), DeclarationError> {
         match ty {
             AggregateTy::ByteBuf | AggregateTy::File => Ok(()),
+            AggregateTy::Vector(element) => check_vector_element(element),
             AggregateTy::Record(id) => self.record(id).map(|_| ()),
             AggregateTy::Enum(id) => self.enums.enumeration(id).map(|_| ()).map_err(Into::into),
             AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
@@ -947,6 +982,10 @@ impl Declarations {
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
         match ty {
             AggregateTy::ByteBuf | AggregateTy::File => Ok(Layout { size: 16, align: 8 }),
+            AggregateTy::Vector(element) => {
+                check_vector_element(element)?;
+                Ok(Layout { size: 16, align: 8 })
+            }
             AggregateTy::Record(id) => self.record(id).map(RecordDecl::layout),
             AggregateTy::Enum(id) => self
                 .enums
@@ -959,6 +998,10 @@ impl Declarations {
     pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
         match ty {
             AggregateTy::ByteBuf => Ok(3),
+            AggregateTy::Vector(element) => {
+                check_vector_element(element)?;
+                Ok(3)
+            }
             AggregateTy::File => Ok(2),
             AggregateTy::Record(id) => self.record(id).map(RecordDecl::width),
             AggregateTy::Enum(id) => self
@@ -1107,7 +1150,9 @@ impl Iterator for ScalarLeaves<'_> {
                 ValueTy::Owned(AggregateTy::Enum(_)) => {
                     unreachable!("enum excluded from static leaves")
                 }
-                ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File) => {
+                ValueTy::Owned(
+                    AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_),
+                ) => {
                     // Resources have their own checked traversal. A descriptor
                     // is never reinterpreted as scalar storage or a pointer leaf.
                     self.length -= 1;
@@ -1223,6 +1268,14 @@ fn value_summary(
             width: 3,
             depth: 0,
         },
+        ValueTy::Owned(AggregateTy::Vector(element)) => {
+            check_vector_element(element)?;
+            ContainmentSummary {
+                layout: Layout { size: 16, align: 8 },
+                width: 3,
+                depth: 0,
+            }
+        }
         ValueTy::Owned(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
         ValueTy::Owned(AggregateTy::Record(id)) => *summaries
             .get(id.0)

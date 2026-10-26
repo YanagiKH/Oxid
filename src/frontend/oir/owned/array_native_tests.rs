@@ -376,6 +376,7 @@ impl Core {
             s(50),
         ));
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -816,6 +817,7 @@ impl Transfer {
             s(61),
         ));
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1107,6 +1109,7 @@ impl Continuation {
             span: s(300),
         });
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1370,6 +1373,7 @@ impl Effects {
             s(16),
         ));
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],

@@ -5,6 +5,232 @@ use super::{budget, diagnostic, lower, resolve, typeck};
 use crate::frontend::{lexer, parser, source::SourceFileId};
 use std::cell::Cell;
 
+// Test-only predecessor projections. These models cannot mint source or raw
+// authority; each preserves complete pointer/Vec/Result roles rather than
+// replacing transports with byte arrays or assuming error payloads grow too.
+pub(super) const fn vector_association_successor_bytes() -> usize {
+    vector_fixture_ledger::components()[0]
+}
+pub(super) const fn vector_range_routing_bytes() -> usize {
+    vector_fixture_ledger::components()[5]
+}
+pub(super) fn vector_hir_fixed_successor_bytes() -> usize {
+    vector_fixture_ledger::components().into_iter().sum()
+}
+
+mod vector_fixture_ledger {
+    use super::*;
+    use crate::frontend::{
+        builtin_catalog::{experimental::Inventory, BuiltinSet},
+        declaration_index::{DeclarationIndex, SourceOwner, WorkMeter},
+        project::budget::Allocator,
+    };
+    use std::mem::{align_of, size_of};
+
+    // The accepted predecessor stored three Vec headers and a five-byte
+    // catalog. Preserve their niches when measuring complete Result envelopes.
+    #[repr(C)]
+    struct PreVectorRaw {
+        catalog: [u8; 5],
+        enums: Vec<RawEnumDecl>,
+        records: Vec<RawRecordDecl>,
+        functions: Vec<RawOwnedFunction>,
+    }
+    #[repr(C)]
+    struct PreVectorAssociated {
+        raw: PreVectorRaw,
+        sources: &'static SourceMap,
+    }
+    #[repr(C)]
+    struct PreVectorWitness {
+        raw: PreVectorRaw,
+        declarations: Declarations,
+        usage: OwnershipUsage,
+    }
+    #[repr(C)]
+    struct AssociationRoles<A, R> {
+        constructed: A,
+        returned: Result<A, Box<Diagnostic>>,
+        normalized: Result<A, Vec<Diagnostic>>,
+        caller: A,
+        consumer_argument: A,
+        consumed_tuple: (R, &'static SourceMap),
+    }
+    #[repr(C)]
+    struct PipelineRoles<R, W> {
+        raw_return: Result<R, OwnedFailure>,
+        raw_normalized: Result<R, Vec<Diagnostic>>,
+        raw: R,
+        witness_return: Result<W, OwnedFailure>,
+        witness_normalized: Result<W, Vec<Diagnostic>>,
+        witness: W,
+    }
+    #[repr(C)]
+    struct ProgramOutputRoles<P> {
+        program_return: Result<P, Vec<Diagnostic>>,
+        program: P,
+        tuple: (P, Option<hir::DefId>),
+        returned: Result<(P, Option<hir::DefId>), Vec<Diagnostic>>,
+    }
+    #[repr(C)]
+    struct SourceFacadeRoles<P> {
+        original_return: Result<(P, Option<hir::DefId>), Vec<Diagnostic>>,
+        original_program: P,
+    }
+    // Independently grouped members of PaidSourceAdmissionCarriers. Its
+    // complete catalog is embedded in both source and typecheck guard banks.
+    #[repr(C)]
+    struct AdmissionGuard<const CATALOG_BYTES: usize> {
+        index_receivers: [&'static DeclarationIndex<'static>; 4],
+        admission: resolve::SourceAdmission,
+        booleans: [bool; 9],
+        catalog: [u8; CATALOG_BYTES],
+    }
+    #[repr(C)]
+    struct RangeQuery {
+        receiver: &'static DeclarationIndex<'static>,
+        returned: bool,
+        caller: bool,
+    }
+    #[repr(C)]
+    struct RangeRouting {
+        source_facade: RangeQuery,
+        resolver_legacy_fence: RangeQuery,
+        resolver_production_entry: RangeQuery,
+        hir_preflight: RangeQuery,
+        hir_range_budget: RangeQuery,
+        typed_storage_accessor: RangeQuery,
+        checker_legacy_fence: RangeQuery,
+        checker_production_completion: RangeQuery,
+        checker_body_admission: RangeQuery,
+    }
+    // The new original-file selector adds these complete independent roles to
+    // ProductionProgramCarriers. Group by alignment to make the member sum
+    // explicit; it includes both BuiltinSet values and both Inventory values.
+    #[repr(C)]
+    struct OriginalFileRouting {
+        index_receivers: [&'static DeclarationIndex<'static>; 5],
+        enum_count: usize,
+        builtin_values: [BuiltinSet; 2],
+        experimental_values: [Inventory; 2],
+        booleans: [bool; 8],
+    }
+    // The exact previous entry carrier, using current unchanged member types.
+    // This is separate from its four affected SourceProgram output transports.
+    struct ProgramEntryBeforeRouting {
+        owner: SourceOwner<'static>,
+        work: WorkMeter,
+        allocator: Allocator,
+        index: DeclarationIndex<'static>,
+        index_borrow: &'static DeclarationIndex<'static>,
+        work_borrow: &'static WorkMeter,
+        allocator_borrow: &'static mut Allocator,
+        typed_return: Result<typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+        typed: typeck::TypedOwnedProgram<'static>,
+        typed_borrow: &'static typeck::TypedOwnedProgram<'static>,
+        entry: Option<hir::DefId>,
+        program_return: Result<super::super::program::SourceProgram, Vec<Diagnostic>>,
+        program: super::super::program::SourceProgram,
+        tuple: (super::super::program::SourceProgram, Option<hir::DefId>),
+        returned:
+            Result<(super::super::program::SourceProgram, Option<hir::DefId>), Vec<Diagnostic>>,
+    }
+
+    pub(super) const fn components() -> [usize; 7] {
+        type Associated = super::super::association::AssociatedOwned<'static>;
+        type Witness = verified::VerifiedOwnedProgram;
+        type Program = super::super::program::SourceProgram;
+        [
+            size_of::<AssociationRoles<Associated, RawOwnedProgram>>()
+                - size_of::<AssociationRoles<PreVectorAssociated, PreVectorRaw>>(),
+            size_of::<PipelineRoles<RawOwnedProgram, Witness>>()
+                - size_of::<PipelineRoles<PreVectorRaw, PreVectorWitness>>(),
+            size_of::<ProgramOutputRoles<Program>>()
+                - size_of::<ProgramOutputRoles<PreVectorWitness>>(),
+            size_of::<SourceFacadeRoles<Program>>()
+                - size_of::<SourceFacadeRoles<PreVectorWitness>>(),
+            2 * (size_of::<AdmissionGuard<9>>() - size_of::<AdmissionGuard<5>>()),
+            size_of::<RangeRouting>(),
+            size_of::<OriginalFileRouting>(),
+        ]
+    }
+
+    #[test]
+    fn vector_hir_successor_names_complete_owned_returns_and_routing_roles() {
+        let header_growth = super::super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH;
+        assert_eq!(
+            size_of::<RawOwnedProgram>() - size_of::<PreVectorRaw>(),
+            header_growth
+        );
+        assert_eq!(
+            size_of::<super::super::association::AssociatedOwned<'static>>()
+                - size_of::<PreVectorAssociated>(),
+            header_growth
+        );
+        assert_eq!(
+            size_of::<verified::VerifiedOwnedProgram>() - size_of::<PreVectorWitness>(),
+            header_growth
+        );
+        assert_eq!(
+            size_of::<super::super::program::SourceProgram>(),
+            size_of::<verified::VerifiedOwnedProgram>()
+        );
+        // OwnedFailure is larger than either raw header: this complete Result
+        // does not grow, while all five other pipeline payload/return roles do.
+        assert_eq!(
+            size_of::<Result<RawOwnedProgram, OwnedFailure>>(),
+            size_of::<Result<PreVectorRaw, OwnedFailure>>()
+        );
+        assert_eq!(
+            resolve::paid_source_admission_carrier_bytes(),
+            size_of::<AdmissionGuard<9>>()
+        );
+        assert_eq!(size_of::<BuiltinSet>(), 9);
+        assert_eq!(size_of::<Inventory>(), 8);
+        let query_members = size_of::<&DeclarationIndex<'static>>() + 2 * size_of::<bool>();
+        let query_alignment = align_of::<RangeQuery>();
+        assert_eq!(
+            size_of::<RangeQuery>(),
+            query_members.div_ceil(query_alignment) * query_alignment
+        );
+        assert_eq!(size_of::<RangeRouting>(), 9 * size_of::<RangeQuery>());
+        assert_eq!(
+            resolve::element_range_routing_carrier_bytes(),
+            size_of::<RangeRouting>()
+        );
+        let route_members = 5 * size_of::<&DeclarationIndex<'static>>()
+            + size_of::<usize>()
+            + 2 * size_of::<BuiltinSet>()
+            + 2 * size_of::<Inventory>()
+            + 8 * size_of::<bool>();
+        let route_alignment = align_of::<OriginalFileRouting>();
+        assert_eq!(
+            size_of::<OriginalFileRouting>(),
+            route_members.div_ceil(route_alignment) * route_alignment
+        );
+        assert_eq!(
+            super::super::program::production_program_carrier_bytes(),
+            size_of::<ProgramEntryBeforeRouting>() + size_of::<OriginalFileRouting>()
+        );
+        let c = components();
+        assert_eq!(c[0], 6 * header_growth);
+        assert_eq!(c[1], 5 * header_growth);
+        assert_eq!(c[2], 4 * header_growth);
+        assert_eq!(c[3], 2 * header_growth);
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(size_of::<PreVectorRaw>(), 80);
+            assert_eq!(size_of::<RawOwnedProgram>(), 112);
+            assert_eq!(size_of::<OwnedFailure>(), 240);
+            assert_eq!(size_of::<AdmissionGuard<5>>(), 48);
+            assert_eq!(size_of::<AdmissionGuard<9>>(), 56);
+            assert_eq!(c, [192, 160, 128, 64, 16, 144, 96]);
+            assert_eq!(c[..6].iter().sum::<usize>(), 704);
+            assert_eq!(super::vector_hir_fixed_successor_bytes(), 704 + 96);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct AllocationStats {
     calls: usize,
@@ -485,7 +711,11 @@ fn reviewer_source_physical_payload_includes_fields_operands_and_headers_once() 
             + 3 * size_of::<(FieldId, Operand)>();
         let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
         assert_eq!(usage.raw_bytes, expected);
-        assert_eq!(usage.raw_bytes, 3368 + size_of::<Vec<MatchDecl>>());
+        assert_eq!(
+            usage.raw_bytes,
+            3368 + size_of::<Vec<MatchDecl>>()
+                + super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH
+        );
         let denied = budget::fail_allocation_after(0, || {
             lower::lower_with_limits(
                 typed,

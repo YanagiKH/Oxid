@@ -99,7 +99,10 @@ class CurrentByteFixtureInventory(unittest.TestCase):
             previous = verify_repo.predecessor_fixture_data_sources(root)
             gate.require(len(cases) == 323 and len(current) == 325 and len(previous) == 188,
                          'portable fixture counts differ')
-            gate.require(not current & previous and verify_repo.fixture_data_sources(root) == current | previous,
+            vectors = verify_repo.typed_vector_fixture_data_sources(root)
+            gate.require(len(vectors) == 30 and not vectors & (current | previous),
+                         'portable vector fixture registration differs')
+            gate.require(not current & previous and verify_repo.fixture_data_sources(root) == current | previous | vectors,
                          'portable fixture registration differs')
             verify_repo.verify_test_fixture_registration(root)
             gate.require(not {'resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'} & sys.modules.keys(),

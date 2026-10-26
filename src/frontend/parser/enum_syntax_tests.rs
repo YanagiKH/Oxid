@@ -531,6 +531,7 @@ fn parser_for<'a>(
         std_imports: StdImportPolicy::Closed,
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
+        parsed_has_named_slice: false,
         tokens: lexer::lex(file).unwrap(),
         cursor: 0,
         pending_equal: None,

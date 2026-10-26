@@ -196,6 +196,7 @@ fn raw_prefix(index: &DeclarationIndex<'_>) -> RawOwnedProgram {
         })
         .collect();
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: index.builtin_set(),
         enums,
         records: vec![],

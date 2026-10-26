@@ -96,7 +96,25 @@ impl Parser<'_> {
         &mut self,
         mutable: bool,
     ) -> Result<(TypeSyntaxKind, usize), Box<Diagnostic>> {
-        let element = self.array_element_type()?;
+        self.bump(); // The caller checked the opening bracket.
+        let token = self.peek();
+        let Some(element) = self.scalar_array_element_type() else {
+            if !self.wide_scalars_enabled() || token.kind != Kind::Ident {
+                return Err(self.array_unsupported(token.span));
+            }
+            // Named elements are parameter slices only. Resolution must still
+            // prove an admitted scalar or a Copy-bound generic parameter.
+            let (element, _) = self.item_path("slice parameter requires an element type", true)?;
+            if self.peek().kind == Kind::Semi {
+                return Err(self.array_unsupported(token.span));
+            }
+            let end = self.array_close("slice parameter type requires `]`")?;
+            self.parsed_has_named_slice = true;
+            return Ok((
+                TypeSyntaxKind::GenericSliceReference { mutable, element },
+                end,
+            ));
+        };
         if self.array_punctuation("]") {
             let end = self.bump().span.end;
             Ok((TypeSyntaxKind::SliceReference { mutable, element }, end))
@@ -108,6 +126,14 @@ impl Parser<'_> {
 
     fn array_element_type(&mut self) -> Result<ArrayElementTypeSyntax, Box<Diagnostic>> {
         self.bump(); // The caller checked the opening bracket.
+        let token = self.peek();
+        self.scalar_array_element_type()
+            .ok_or_else(|| self.array_unsupported(token.span))
+    }
+
+    /// Preserve the existing concrete grammar without extending fixed arrays
+    /// when a current typed parameter permits a named slice element.
+    fn scalar_array_element_type(&mut self) -> Option<ArrayElementTypeSyntax> {
         let token = self.peek();
         let element = match token.kind {
             Kind::Ident if self.source.text_at(token.span) == "bool" => {
@@ -159,9 +185,9 @@ impl Parser<'_> {
                 self.bump();
                 ArrayElementTypeSyntax::Unit
             }
-            _ => return Err(self.array_unsupported(token.span)),
+            _ => return None,
         };
-        Ok(element)
+        Some(element)
     }
 
     fn fixed_array_type_tail(

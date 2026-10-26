@@ -144,6 +144,42 @@ pub(super) fn account_builtin_descriptors(
     )?;
     Ok(())
 }
+/// The raw carrier header is already charged by account_enum_declarations.
+/// Each producer establishes its own concrete keys; no descriptors are inferred.
+pub(super) fn account_vector_descriptors(
+    keys: &[crate::frontend::builtin_catalog::vector::Function],
+    limits: Limits,
+    program: &mut ProgramCounts,
+) -> Result<(), OwnedFailure> {
+    let limits = limits.bounded();
+    program.usage.metadata_bytes = cap(
+        add(
+            program.usage.metadata_bytes,
+            add(
+                mul(
+                    keys.len(),
+                    size_of::<crate::frontend::builtin_catalog::vector::Function>(),
+                )?,
+                if keys.is_empty() {
+                    0
+                } else {
+                    super::vector_descriptors::carrier_bytes()
+                },
+            )?,
+        )?,
+        limits.metadata,
+        "ownership metadata",
+    )?;
+    program.usage.work = cap(
+        add(
+            program.usage.work,
+            builtins::vector_descriptor_visits(keys)?,
+        )?,
+        limits.work,
+        "ownership work",
+    )?;
+    Ok(())
+}
 /// Additional raw declaration storage, independently inventoried from actual
 /// nested lengths. The enum vector header is retained even for old programs.
 /// Checked enum tables (including their headers) have their own 8 MiB gate.
@@ -356,6 +392,19 @@ pub(super) fn preflight(
     .map_err(DeclarationError::from)?;
     account_enum_declarations(enums, limits, &mut program)?;
     account_builtin_descriptors(raw.builtins, limits, &mut program)?;
+    account_vector_descriptors(&raw.vector_functions, limits, &mut program)?;
+    // Account allocator over-allocation as retained storage too.
+    program.usage.metadata_bytes = cap(
+        add(
+            program.usage.metadata_bytes,
+            mul(
+                raw.vector_functions.capacity() - raw.vector_functions.len(),
+                size_of::<crate::frontend::builtin_catalog::vector::Function>(),
+            )?,
+        )?,
+        limits.bounded().metadata,
+        "ownership metadata",
+    )?;
     for f in &raw.functions {
         // Preserve the original early general-cap ordering before nested scans.
         cap(

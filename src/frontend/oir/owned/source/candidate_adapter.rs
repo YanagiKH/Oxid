@@ -320,6 +320,7 @@ fn instruction(value: &OwnedInstruction) -> String {
     match value {
         OwnedInstruction::PrepareBorrowRange { .. }
         | OwnedInstruction::Experimental { .. }
+        | OwnedInstruction::Vector { .. }
         | OwnedInstruction::ReadStdin { .. }
         | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")
@@ -1167,7 +1168,8 @@ fn record_id(aggregate: AggregateTy) -> RecordId {
         AggregateTy::FixedArray(_)
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
-        | AggregateTy::File => {
+        | AggregateTy::File
+        | AggregateTy::Vector(_) => {
             panic!("source aggregate gate")
         }
     }

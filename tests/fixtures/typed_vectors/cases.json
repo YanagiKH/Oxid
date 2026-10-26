@@ -1,0 +1,274 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "name": "bool",
+      "source": "tests/fixtures/typed_vectors/accept/bool.ox",
+      "sha256": "b25b32efaee22bb31b4df0a921322cc2c98dce4f9335e370929ab7fe551e474d",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "i8",
+      "source": "tests/fixtures/typed_vectors/accept/i8.ox",
+      "sha256": "c283fc9ce5d8eb25401f553447b675ee4faf5fe45989823f5cfd8d49445ebc8e",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "i16",
+      "source": "tests/fixtures/typed_vectors/accept/i16.ox",
+      "sha256": "020a31c312c95200b5cffc03d2d1382a0079b259de6d0ecc5d4e89208789271a",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "i32",
+      "source": "tests/fixtures/typed_vectors/accept/i32.ox",
+      "sha256": "2f8b6d7e2e6ee06532dfffc4b79fbdc7c834440cf89980e555d002b5fc61fd4d",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "i64",
+      "source": "tests/fixtures/typed_vectors/accept/i64.ox",
+      "sha256": "7b40e0e4f50b8a11978ddca487686df0a93192a8928f6fe84a1797301f9061d2",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "i128",
+      "source": "tests/fixtures/typed_vectors/accept/i128.ox",
+      "sha256": "fa63051fb619fde020ee7d8a14931a3823972426734e54d5f4c2416035b020c7",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "u8",
+      "source": "tests/fixtures/typed_vectors/accept/u8.ox",
+      "sha256": "c2e85eb7bb4a840f1c21b486763f9b5c26d6de310229d675854457c1266e0c61",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "u16",
+      "source": "tests/fixtures/typed_vectors/accept/u16.ox",
+      "sha256": "c714ba324ede38a5c49ced6dad0727b64c5063fcb53638a09f778ea35ad8dcf8",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "u32",
+      "source": "tests/fixtures/typed_vectors/accept/u32.ox",
+      "sha256": "766aac15e6922ea2eac530f16b639d0b9ccaf0ab29f91bc7f66f07b192565e0e",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "u64",
+      "source": "tests/fixtures/typed_vectors/accept/u64.ox",
+      "sha256": "fd8c9dd2fb57044e1d761a6e84be9d2d56fd773eba3c9c8658c85dccf56f31b5",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "u128",
+      "source": "tests/fixtures/typed_vectors/accept/u128.ox",
+      "sha256": "7a3d2e933ef5f75bb81b25fbf6c3b8745aa01ac68eb6b73de9b1b968d09cd3a1",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "isize",
+      "source": "tests/fixtures/typed_vectors/accept/isize.ox",
+      "sha256": "71470a0a9e11869b9998dbe1c46298459fa3a48324e34f600eaeae5dfb232286",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "usize",
+      "source": "tests/fixtures/typed_vectors/accept/usize.ox",
+      "sha256": "a7aee3616eb247b59c74f53e2c2c13bbf32d44c082b1b69c68745932934b933f",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "char",
+      "source": "tests/fixtures/typed_vectors/accept/char.ox",
+      "sha256": "827210e0d720b240fd9bf7352c5778e8222dbb1e8ee0323c0c01d4144c162c8e",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "f32",
+      "source": "tests/fixtures/typed_vectors/accept/f32.ox",
+      "sha256": "ba39b2a5e829b16d7b515c6ff4c1b0113a04c097eaa0697a80c04e3c3105261e",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "f64",
+      "source": "tests/fixtures/typed_vectors/accept/f64.ox",
+      "sha256": "24e5c26d9b3d02b6a4b7d7ac6b49aea8154d6432abb39e81b532e4f9889754e9",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "unit",
+      "source": "tests/fixtures/typed_vectors/accept/unit.ox",
+      "sha256": "207f349146f9a738c1467cb9fc3d87a05b897f7eaadf7b57e9a490596e299a67",
+      "status": "accept",
+      "expected_result": 42
+    },
+    {
+      "name": "moved_owner",
+      "source": "tests/fixtures/typed_vectors/reject/moved_owner.ox",
+      "sha256": "151b613fecb5ae9b14598f3d106a13511e23e79912723b7e283eb56a086dc67e",
+      "status": "reject",
+      "requirement": "use after move",
+      "expected_diagnostics": [
+        {
+          "stage": "ownership",
+          "code": "E0310"
+        }
+      ]
+    },
+    {
+      "name": "wrong_element",
+      "source": "tests/fixtures/typed_vectors/reject/wrong_element.ox",
+      "sha256": "daaca09d50179b6e05774ef4f4225ddba60149aba0aafe5045fe557ead145412",
+      "status": "reject",
+      "requirement": "i32 vector rejects u8 push",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "owned_element",
+      "source": "tests/fixtures/typed_vectors/reject/owned_element.ox",
+      "sha256": "4559d3730686fe64297e4589ab33ed6e2f1f74f4a0fff33d2ea90202c2954826",
+      "status": "reject",
+      "requirement": "only scalar Copy elements in this increment",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "unused_unconstrained_generic",
+      "source": "tests/fixtures/typed_vectors/reject/unused_unconstrained_generic.ox",
+      "sha256": "8e40ebf8d67d080cf9ec3d37da9129781a328936ccb056d2e74a1adf572c721f",
+      "status": "reject",
+      "requirement": "validate unused generic definitions",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "bare_vector_type",
+      "source": "tests/fixtures/typed_vectors/reject/bare_vector_type.ox",
+      "sha256": "3b18b23a2dbcd3dce4a38d75665fa859f4789b68ed5b6059270fd7ba65da125e",
+      "status": "reject",
+      "requirement": "exactly one type argument",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "wrong_type_arity",
+      "source": "tests/fixtures/typed_vectors/reject/wrong_type_arity.ox",
+      "sha256": "8630a33714aec60e4939c988e1626af60aae8c0b6a9a25a96d446d76eade6b28",
+      "status": "reject",
+      "requirement": "exactly one type argument",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "missing_new_type",
+      "source": "tests/fixtures/typed_vectors/reject/missing_new_type.ox",
+      "sha256": "072df2974cfd0161fcc9043b03f1f19cf19d780222bd917bfa643300658f38b5",
+      "status": "reject",
+      "requirement": "new requires explicit element argument",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "vector_is_not_byte_buffer",
+      "source": "tests/fixtures/typed_vectors/reject/vector_is_not_byte_buffer.ox",
+      "sha256": "c6e513f12f4e0ca6d9696cb0de08c94466ca208edf2e03846e2256f9ee9d50de",
+      "status": "reject",
+      "requirement": "Vec<u8> remains distinct from ByteBuf",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    },
+    {
+      "name": "overlapping_call_loans",
+      "source": "tests/fixtures/typed_vectors/reject/overlapping_call_loans.ox",
+      "sha256": "a138e3d520b38da92ec882c8f06f7ecf7c6f19cf0c655f81cbc90ebf825038c3",
+      "status": "reject",
+      "requirement": "shared view prevents mutable owner loan",
+      "expected_diagnostics": [
+        {
+          "stage": "ownership",
+          "code": "E0311"
+        }
+      ]
+    },
+    {
+      "name": "vector_not_copy",
+      "source": "tests/fixtures/typed_vectors/reject/vector_not_copy.ox",
+      "sha256": "42a983d99c38d6e81f941bf25d87d4c4b2e418de95497ea572b838aaf0498e3a",
+      "status": "reject",
+      "requirement": "Copy applies to the element and does not make Vec Copy",
+      "expected_diagnostics": [
+        {
+          "stage": "generics",
+          "code": "E0300"
+        }
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "projected-vector",
+      "source": "tests/fixtures/typed_vectors/scenarios/projected-vector.ox",
+      "expected_result": 85,
+      "sha256": "4281a51972a085fc39b4c948e6f48d4bdfa7b8b0cb41977dd8b0c70b97e152ac"
+    },
+    {
+      "name": "dynamic-range",
+      "source": "tests/fixtures/typed_vectors/scenarios/dynamic-range.ox",
+      "expected_result": 32,
+      "sha256": "4e944191eabf90f908f03367ff43c9b2f62c6906e147a7944c90fc9ff8f2b92f"
+    },
+    {
+      "name": "array-ranges",
+      "source": "tests/fixtures/typed_vectors/scenarios/array-ranges.ox",
+      "expected_result": 205,
+      "sha256": "de5a6c3c216cc66b370d3a65c2c7385f2a44a97e986729e6a952b811c6d0ae3e"
+    }
+  ]
+}

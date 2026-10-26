@@ -2097,6 +2097,40 @@
         "rfcs/0071-native-release-function-selection.md"
       ],
       "limitations": "Static direct-call reachability for owned programs in release builds. All declarations and native resource admission remain complete; diagnostic and runtime-helper inventories are retained. Dev and scalar output are unchanged. Module admission and LLVM output limits still apply."
+    },
+    {
+      "id": "typed-scalar-vectors",
+      "summary": "Growable Vec<T> for all seventeen scalar types, with fallible growth and borrowed slices.",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and LLVM 19.1.7",
+      "target_scope": "Local native verification: Linux x86_64. Other native hosts require their platform tests.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/VECTORS.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/vector_builtins.rs",
+        "src/frontend/declaration_index/generics/nominal.rs",
+        "src/frontend/oir/owned/source/vector_source.rs",
+        "src/frontend/oir/owned/execute_vector.rs",
+        "src/frontend/oir/owned/native_vector.rs",
+        "src/frontend/oir/owned/vector_resources.rs",
+        "native/experimental_vector.c"
+      ],
+      "tests": [
+        "tests/fixtures/typed_vectors/cases.json",
+        "src/frontend/oir/owned/vector_raw_tests.rs",
+        "src/frontend/oir/owned/execute_vector_tests.rs",
+        "src/frontend/oir/owned/vector_resources_tests.rs",
+        "tests/native_vectors_runtime.c",
+        "scripts/verify_typed_vectors.py"
+      ],
+      "evidence": [],
+      "limitations": "Scalar elements only. Lengths and capacities use i32. Growth is fallible and shares configured heap and work limits with byte buffers and files. Vectors of owned elements, stored or returned references, partial moves and user destructors are unavailable. Vec<u8> and ByteBuf are distinct owned types."
     }
   ]
 }

@@ -25,6 +25,8 @@ mod numeric;
 mod reachability;
 #[path = "native_resources.rs"]
 mod resources;
+#[path = "native_vector.rs"]
+mod vector;
 use reachability::EmittedFunctions;
 
 const MAX_FUNCTIONS: usize = 256;
@@ -729,7 +731,16 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
             },
         )?,
     )?;
-    let emitter_transient = add(inherited_emitter_transient, R::CONTROL_BYTES)?;
+    let emitter_transient = add(
+        add(inherited_emitter_transient, R::CONTROL_BYTES)?,
+        if plan.uses_vectors() {
+            vector::control_bytes()
+        } else if plan.uses_typed_ranges() {
+            vector::range_control_bytes()
+        } else {
+            0
+        },
+    )?;
     let emission_metadata = add(
         add(
             add(
@@ -1099,6 +1110,10 @@ fn runtime_storage_bytes(
                 0
             } + if plan.has_program_arguments() {
                 experimental::ARGUMENT_DELIVERY_BYTES
+            } else {
+                0
+            } + if plan.uses_vectors() {
+                vector::RUNTIME_BYTES
             } else {
                 0
             } + if plan.uses_wide_scalars() {
@@ -1670,6 +1685,18 @@ fn diagnostic_occurrences(
                         value: Rvalue::CheckedI64ToU8 { name_span, .. },
                         ..
                     })) => visit(FailureKind::I64ToU8Range, *name_span)?,
+                    OwnedInstruction::Vector { .. } => {
+                        // The helper emits a fuel refusal label in hosted mode
+                        // too; its fresh budget does not remove that IR block.
+                        if !guarded {
+                            visit(FailureKind::Fuel, plan::instruction_span(statement))?;
+                        }
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                        visit(
+                            FailureKind::AllocationIdentity,
+                            plan::instruction_span(statement),
+                        )?;
+                    }
                     OwnedInstruction::Experimental { .. } => {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?;
                         visit(
@@ -1685,6 +1712,22 @@ fn diagnostic_occurrences(
                         if experimental::resource_borrow(plan, f, *loan) =>
                     {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?
+                    }
+                    OwnedInstruction::ArrayLength { base, .. }
+                        if matches!(
+                            indexed_base(f, *base),
+                            BorrowedTy::Exact(AggregateTy::Vector(_))
+                        ) =>
+                    {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                    }
+                    OwnedInstruction::ProjectionLength { base, path, .. }
+                        if matches!(
+                            projection(plan, f, *base, path).0,
+                            ValueTy::Owned(AggregateTy::Vector(_))
+                        ) =>
+                    {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
                     }
                     OwnedInstruction::ReadStdin { .. } => visit(
                         FailureKind::InputCapacity,
@@ -2229,22 +2272,29 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
     match indexed_base(f, base) {
         BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
         BorrowedTy::ScalarSlice(_) => {
-            let AccessBase::Parameter(reference) = base else {
-                unreachable!("slices are borrowed parameter views")
-            };
-            writeln!(
-                out,
-                "  %{name}_length = load i32, ptr %rl{}, align 4",
-                reference.0
-            )
-            .unwrap();
+            match base {
+                AccessBase::Parameter(reference) => writeln!(
+                    out,
+                    "  %{name}_length = load i32, ptr %rl{}, align 4",
+                    reference.0
+                )
+                .unwrap(),
+                AccessBase::Loan(loan) => writeln!(
+                    out,
+                    "  %{name}_length = load i32, ptr %ll{}, align 4",
+                    loan.0
+                )
+                .unwrap(),
+                AccessBase::Owner(_) => unreachable!("slices are borrowed views"),
+            }
             format!("%{name}_length")
         }
         BorrowedTy::Exact(
             AggregateTy::Record(_)
             | AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
-            | AggregateTy::File,
+            | AggregateTy::File
+            | AggregateTy::Vector(_),
         ) => {
             unreachable!("verified indexed base")
         }
@@ -2294,6 +2344,11 @@ fn index_pointer(
     out: &mut Emission,
 ) -> (hir::Ty, String) {
     let f = &plan.witness().functions()[id.0];
+    if plan.uses_vectors() {
+        if let Some(indexed) = vector::index_pointer(plan, f, name, statement, diagnostics, out) {
+            return indexed;
+        }
+    }
     let (base, index, element, length, projection_offset) = match &statement.kind {
         OwnedInstruction::ReadIndex { base, index, .. }
         | OwnedInstruction::WriteIndex { base, index, .. } => (
@@ -2515,6 +2570,7 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                 // the caller; its immediate return emits no transfer tree.
                 if plan.binary_delivery_cost(f.id).is_none()
                     && plan.file_delivery_cost(f.id).is_none()
+                    && !vector::delivery(plan, f.id)
                 {
                     cells = add(
                         cells,
@@ -2609,6 +2665,7 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                 block.terminator.as_ref().expect("verified terminator").kind,
                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
             ) && plan.file_delivery_cost(function.id).is_none()
+                && !vector::delivery(plan, function.id)
             {
                 for owner in &function.owners {
                     if resources::contains(plan, owner.aggregate()) {
@@ -3239,7 +3296,10 @@ fn active_transfer_with_intent(
         enum_transfer_with_intent(out, plan, name, enumeration, source, intent, failure);
         return;
     }
-    if !matches!(aggregate, AggregateTy::ByteBuf | AggregateTy::File) {
+    if !matches!(
+        aggregate,
+        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+    ) {
         for (index, leaf) in plan
             .witness()
             .declarations()
@@ -3361,7 +3421,7 @@ fn transfer(
     let record = match aggregate {
         AggregateTy::Record(record) => record,
         AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
-        AggregateTy::ByteBuf | AggregateTy::File => {
+        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_) => {
             resources::leaves(
                 out,
                 plan,
@@ -3445,7 +3505,10 @@ fn transfer_leaves(
         kind,
         failure,
     );
-    if matches!(aggregate, AggregateTy::ByteBuf | AggregateTy::File) {
+    if matches!(
+        aggregate,
+        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+    ) {
         return;
     }
     let leaves = plan
@@ -3575,6 +3638,12 @@ fn emit_selected<R: EmittedFunctions>(
     }
     if out.resources {
         out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
+        if plan.uses_vectors() {
+            out.write_str("declare i32 @__oxid_vector_valid(ptr, i32)\ndeclare void @__oxid_vector_drop(ptr, i32)\ndeclare i32 @__oxid_vector_operation(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_vector_view(ptr, i32, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_vector_index(ptr, i32, i32, ptr)\ndeclare i32 @__oxid_vector_length(ptr, i32, ptr)\n").unwrap();
+            if out.policy.hosted() {
+                out.write_str("declare i32 @__oxid_vector_operation_hosted(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\n").unwrap();
+            }
+        }
         if out.policy.hosted() {
             out.write_str("declare i32 @__oxid_file_delivery_hosted(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_bytebuf_operation_hosted(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery_hosted(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
         }
@@ -3729,6 +3798,8 @@ enum Continuation {
     Enum,
     Input,
     Output,
+    Vector,
+    VectorOperation,
 }
 impl Continuation {
     fn suffix(self) -> Option<&'static str> {
@@ -3741,6 +3812,8 @@ impl Continuation {
             Self::Enum => Some("enum_ok"),
             Self::Input => Some("input_ok"),
             Self::Output => Some("output_ok"),
+            Self::Vector => Some("vector_ok"),
+            Self::VectorOperation => Some("operation_ok"),
         }
     }
 }
@@ -3762,6 +3835,29 @@ fn continuation(
         }
     }
     match instruction {
+        OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::AcquireLocalBorrow(loan)
+            if vector::borrow_splits(plan, f, *loan) =>
+        {
+            Continuation::Bounds
+        }
+        OwnedInstruction::Vector { .. } => Continuation::VectorOperation,
+        OwnedInstruction::ArrayLength { base, .. }
+            if matches!(
+                indexed_base(f, *base),
+                BorrowedTy::Exact(AggregateTy::Vector(_))
+            ) =>
+        {
+            Continuation::Vector
+        }
+        OwnedInstruction::ProjectionLength { base, path, .. }
+            if matches!(
+                projection(plan, f, *base, path).0,
+                ValueTy::Owned(AggregateTy::Vector(_))
+            ) =>
+        {
+            Continuation::Vector
+        }
         OwnedInstruction::DestructureRecord { .. } => Continuation::Aggregate,
         OwnedInstruction::PrepareBorrowRange { .. } => Continuation::Bounds,
         OwnedInstruction::Experimental { .. } => Continuation::Unsplit,
@@ -3936,6 +4032,12 @@ fn emit_function(
             )
             .unwrap();
         }
+    }
+    if plan::native_vector_layout::frame_bytes(plan.witness().declarations(), f)
+        .expect("admitted vector index scratch")
+        != 0
+    {
+        writeln!(out, "  %vector_index_pointer = alloca ptr, align 8").unwrap();
     }
     let slots = storage.scalar_slots();
     if slots != 0 {
@@ -4197,6 +4299,7 @@ fn emit_function(
         if guarded
             && plan.binary_delivery_cost(id).is_none()
             && plan.file_delivery_cost(id).is_none()
+            && !vector::delivery(plan, id)
         {
             emit_guard(
                 out,
@@ -4446,6 +4549,18 @@ fn emit_statement(
     out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     match &statement.kind {
+        OwnedInstruction::Vector {
+            operation,
+            destination,
+        } => vector::operation(
+            storage,
+            name,
+            *operation,
+            *destination,
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
         OwnedInstruction::Experimental {
             operation,
             destination,
@@ -4733,6 +4848,20 @@ fn emit_statement(
             writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(element)).unwrap();
         }
         OwnedInstruction::ArrayLength { destination, base } => {
+            if let BorrowedTy::Exact(AggregateTy::Vector(element)) = indexed_base(f, *base) {
+                vector::length(
+                    out,
+                    f,
+                    name,
+                    *base,
+                    None,
+                    element,
+                    *destination,
+                    diagnostics,
+                    plan::instruction_span(statement),
+                );
+                return;
+            }
             let length = index_length(out, f, name, *base);
             store_slot(
                 out,
@@ -4747,7 +4876,21 @@ fn emit_statement(
             base,
             path,
         } => {
-            let (value, _) = projection(plan, f, *base, path);
+            let (value, offset) = projection(plan, f, *base, path);
+            if let ValueTy::Owned(AggregateTy::Vector(element)) = value {
+                vector::length(
+                    out,
+                    f,
+                    name,
+                    *base,
+                    Some(offset),
+                    element,
+                    *destination,
+                    diagnostics,
+                    plan::instruction_span(statement),
+                );
+                return;
+            }
             let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
                 unreachable!("verified projected array length")
             };
@@ -5639,7 +5782,10 @@ fn emit_terminator(
             writeln!(out, "  ret {t} {value}").unwrap();
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
-            if plan.binary_delivery_cost(id).is_some() || plan.file_delivery_cost(id).is_some() {
+            if plan.binary_delivery_cost(id).is_some()
+                || plan.file_delivery_cost(id).is_some()
+                || vector::delivery(plan, id)
+            {
                 // The canonical operation prepaid this exact return cost and
                 // already delivered into %result. It owns no resource leaves.
                 out.write_str("  ret void\n").unwrap();
@@ -5759,6 +5905,10 @@ mod builtin_output_tests;
 #[cfg(test)]
 #[path = "native_tests.rs"]
 mod tests;
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[path = "native_vector_tests.rs"]
+mod vector_emission_tests;
 
 #[cfg(test)]
 mod division_tests {

@@ -6,6 +6,9 @@ use std::mem::size_of;
 #[path = "native_storage.rs"]
 pub(super) mod native_storage;
 
+#[path = "native_vector_layout.rs"]
+pub(super) mod native_vector_layout;
+
 pub(super) const ENUM_VALUE_COST: usize = 3;
 pub(super) const MATCH_DISPATCH_COST: usize = 1;
 
@@ -138,6 +141,12 @@ const _: () = assert!(
         == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
 );
 impl<'a> ExecutionPlan<'a> {
+    pub(super) fn uses_vectors(&self) -> bool {
+        self.integer_extension & 32 != 0
+    }
+    pub(super) fn uses_typed_ranges(&self) -> bool {
+        self.integer_extension & 64 != 0
+    }
     pub(super) fn uses_enum_record_nesting(&self) -> bool {
         self.integer_extension & 16 != 0
     }
@@ -275,7 +284,7 @@ impl<'a> ExecutionPlan<'a> {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
             // The consumer charges the validated capacity and each I/O attempt.
-            OwnedInstruction::Experimental { .. } => 4,
+            OwnedInstruction::Experimental { .. } | OwnedInstruction::Vector { .. } => 4,
             OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
@@ -414,7 +423,36 @@ impl<'a> ExecutionPlan<'a> {
         } else {
             size_of::<Option<Scalar>>()
         };
-        let mut dynamic_resources = witness.has_experimental_operations()
+        let vectors = witness.declarations().has_vector_declarations()
+            || functions.iter().any(|f| {
+                f.owners
+                    .iter()
+                    .any(|o| matches!(o.aggregate(), AggregateTy::Vector(_)))
+                    || f.references
+                        .iter()
+                        .any(|r| matches!(r.referent(), BorrowedTy::Exact(AggregateTy::Vector(_))))
+                    || f.loans
+                        .iter()
+                        .any(|l| matches!(l.referent(), BorrowedTy::Exact(AggregateTy::Vector(_))))
+                    || f.blocks
+                        .iter()
+                        .flat_map(|b| &b.statements)
+                        .any(|s| matches!(s.kind, OwnedInstruction::Vector { .. }))
+            });
+        let typed_ranges = functions.iter().any(|f| {
+            f.blocks
+                .iter()
+                .flat_map(|b| &b.statements)
+                .any(|s| match s.kind {
+                    OwnedInstruction::PrepareBorrowRange { loan, .. } => {
+                        matches!(f.loans[loan.0].referent(),
+                            BorrowedTy::ScalarSlice(ty) if ty != hir::Ty::U8)
+                    }
+                    _ => false,
+                })
+        });
+        let mut dynamic_resources = vectors
+            || witness.has_experimental_operations()
             || witness.declarations().has_resource_declarations();
         let mut metadata_bytes = mul(functions.len(), size_of::<FunctionPlan>())?;
         let mut largest_frame = 0;
@@ -423,7 +461,9 @@ impl<'a> ExecutionPlan<'a> {
             dynamic_resources |= f.references.iter().any(|reference| {
                 matches!(
                     reference.referent(),
-                    BorrowedTy::Exact(AggregateTy::ByteBuf | AggregateTy::File)
+                    BorrowedTy::Exact(
+                        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                    )
                 )
             });
             metadata_bytes = add(metadata_bytes, mul(f.owners.len(), size_of::<usize>())?)?;
@@ -466,8 +506,10 @@ impl<'a> ExecutionPlan<'a> {
             let mut owner_offsets = reserve(f.owners.len())?;
             let mut next = 0;
             for owner in &f.owners {
-                dynamic_resources |=
-                    matches!(owner.aggregate(), AggregateTy::ByteBuf | AggregateTy::File);
+                dynamic_resources |= matches!(
+                    owner.aggregate(),
+                    AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                );
                 let layout = witness
                     .declarations()
                     .aggregate_layout(owner.aggregate())
@@ -542,7 +584,9 @@ impl<'a> ExecutionPlan<'a> {
                         .records()
                         .iter()
                         .any(|record| record.has_enum_record_nesting()),
-                ) << 4),
+                ) << 4)
+                | (u8::from(vectors) << 5)
+                | (u8::from(typed_ranges) << 6),
             quad_scalars,
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
@@ -679,6 +723,10 @@ fn frame_usage(
     if scalar_bytes == size_of::<Option<RuntimeValue>>() {
         u.native_bytes = add(u.native_bytes, 32)?;
     }
+    u.native_bytes = add(
+        u.native_bytes,
+        native_vector_layout::frame_bytes(declarations, f)?,
+    )?;
     Ok(u)
 }
 
@@ -752,7 +800,8 @@ mod tests {
             Option<ValueTy> => 16,
             ParameterTy => 24,
             Option<ParameterTy> => 24,
-            RawOwnedProgram => 56 + size_of::<Vec<RawEnumDecl>>(),
+            RawOwnedProgram => 56 + size_of::<Vec<RawEnumDecl>>()
+                + super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH,
             RawOwnedFunction => 248 + size_of::<Vec<MatchDecl>>(),
             MatchDecl => 56,
             MatchArm => 32,

@@ -19,6 +19,7 @@ fn bytebuf_resource_authority_rejects_unused_declarations_and_signatures() {
     let span = at(0);
     for case in 0..5 {
         let mut raw = RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],

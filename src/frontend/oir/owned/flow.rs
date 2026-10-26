@@ -415,6 +415,10 @@ fn step(
             destination: CallResult::Owned(destination),
             ..
         }
+        | OwnedInstruction::Vector {
+            destination: CallResult::Owned(destination),
+            ..
+        }
         | OwnedInstruction::Construct { destination, .. }
         | OwnedInstruction::ConstructArray { destination, .. }
         | OwnedInstruction::ConstructEnum { destination, .. }
@@ -908,7 +912,8 @@ fn accesses(
     mut visit: impl FnMut(AccessBase, Access, DeniedRole) -> Result<(), OwnedFailure>,
 ) -> Result<(), OwnedFailure> {
     match i {
-        OwnedInstruction::Experimental { destination, .. } => {
+        OwnedInstruction::Experimental { destination, .. }
+        | OwnedInstruction::Vector { destination, .. } => {
             for (index, reference) in f.references.iter().enumerate() {
                 visit(
                     AccessBase::Parameter(ReferenceParamId(index)),

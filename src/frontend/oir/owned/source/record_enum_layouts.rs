@@ -123,6 +123,9 @@ fn inventory_with_limit(
                     ValueTy::Owned(AggregateTy::File) => {
                         Some(crate::frontend::declaration_index::NominalId::File)
                     }
+                    ValueTy::Owned(AggregateTy::Vector(_)) => {
+                        Some(crate::frontend::declaration_index::NominalId::Vector)
+                    }
                     _ => None,
                 };
                 if let Some(nominal) = nominal {

@@ -336,6 +336,7 @@ pub(super) fn program(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::ReadStdin,
             enums: vec![e::enumeration(&[Some(hir::Ty::I32), None, None], anchor)],
             records: vec![],

@@ -148,6 +148,7 @@ fn reviewer_allocation_failures_have_activation_origin() {
     ));
     let w = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -297,6 +298,7 @@ fn rv_mixed(permutation: &[usize], a: i32, b: i32, flag: bool) -> (SourceMap, Ra
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![rv_record(
@@ -508,6 +510,7 @@ fn rv_alias(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![rv_record(&[hir::Ty::I32], s)],
@@ -926,6 +929,7 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![rv_record(&[hir::Ty::I32], s)],
@@ -1712,6 +1716,7 @@ fn rv_owned_chain(depth: usize, a: i32, b: i32) -> (SourceMap, RawOwnedProgram) 
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![rv_record(
@@ -1873,6 +1878,7 @@ fn reviewer_scalar_snapshot_and_owned_staging_are_independent_storage() {
     )];
     let w = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -2149,6 +2155,7 @@ fn reviewer_nonzero_entry_bool_merge_selects_only_taken_initialized_input() {
         });
         let w = verified::verify_owned(
             RawOwnedProgram {
+                vector_functions: Vec::new(),
                 builtins: BuiltinOrigins::None,
                 enums: vec![],
                 records: vec![rv_record(&[], s)],

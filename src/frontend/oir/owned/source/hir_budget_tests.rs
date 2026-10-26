@@ -13,8 +13,14 @@ use std::mem::{align_of, size_of};
 fn rfc0030_fixed_successor() -> usize {
     let bytes = super::super::u8_resources::fixed_bytes();
     #[cfg(target_pointer_width = "64")]
-    // The association plan and caller each gain one HirCounts word.
-    assert_eq!(bytes - 2 * size_of::<usize>(), 15_400 + 624 + 712);
+    // The association plan and caller each gain one HirCounts word. Six
+    // complete association transports also embed the larger raw header.
+    assert_eq!(
+        bytes
+            - 2 * size_of::<usize>()
+            - super::super::reviewer_source::vector_association_successor_bytes(),
+        15_400 + 624 + 712
+    );
     bytes
 }
 
@@ -126,6 +132,7 @@ fn pipeline_components() -> usize {
 }
 fn production_entry_components() -> usize {
     resolve::production_source_carrier_bytes()
+        + super::super::reviewer_source::vector_range_routing_bytes()
         + typeck::production_type_carrier_bytes()
         + super::super::program::production_program_carrier_bytes()
         + crate::frontend::oir::source::enum_facade_carrier_bytes()

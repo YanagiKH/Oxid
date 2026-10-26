@@ -24,6 +24,8 @@ pub(in crate::frontend) mod process;
 mod resource_gate_tests;
 mod shape;
 pub(super) mod source;
+mod vector_descriptors;
+mod vector_type;
 pub(super) use source::SourceProgram;
 mod storage;
 mod verified;
@@ -64,9 +66,30 @@ impl BuiltinOrigins {
 #[derive(Debug)]
 struct RawOwnedProgram {
     builtins: BuiltinOrigins,
+    vector_functions: Vec<crate::frontend::builtin_catalog::vector::Function>,
     enums: Vec<RawEnumDecl>,
     records: Vec<RawRecordDecl>,
     functions: Vec<RawOwnedFunction>,
+}
+impl RawOwnedProgram {
+    /// Untrusted ordinals only. The descriptor and ordinary proofs must still
+    /// succeed before these offsets can be exposed by a sealed witness.
+    fn fixed_builtin_base(&self) -> Option<usize> {
+        self.functions
+            .len()
+            .checked_sub(self.vector_functions.len())?
+            .checked_sub(self.builtins.extra_functions())
+    }
+    fn vector_operation_claim(
+        &self,
+        id: hir::DefId,
+    ) -> Option<crate::frontend::builtin_catalog::vector::Function> {
+        let base = self
+            .functions
+            .len()
+            .checked_sub(self.vector_functions.len())?;
+        self.vector_functions.get(id.0.checked_sub(base)?).copied()
+    }
 }
 #[derive(Clone, Debug)]
 struct RawOwnedFunction {
@@ -226,6 +249,11 @@ enum OwnedInstruction {
     /// spelling, producer layout, or arbitrary owner ID grants this authority.
     Experimental {
         operation: crate::frontend::builtin_catalog::experimental::Function,
+        destination: CallResult,
+    },
+    /// Confined to the independently checked concrete builtin suffix.
+    Vector {
+        operation: crate::frontend::builtin_catalog::vector::Function,
         destination: CallResult,
     },
     // Atomic input is confined to the verified canonical builtin body.
@@ -526,6 +554,8 @@ mod builtin_output_fixtures;
 mod builtin_output_process_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vector_raw_tests;
 
 #[cfg(test)]
 mod oracle_tests;

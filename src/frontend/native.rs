@@ -36,6 +36,9 @@ const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
 const FILE_CORE: &str = include_str!("../../native/experimental_files.c");
 const ARGUMENT_CORE: &str = include_str!("../../native/experimental_arguments.c");
 const BYTEBUF_HEADER: &str = include_str!("../../native/experimental_bytebuf.h");
+const VECTOR_CORE: &str = include_str!("../../native/experimental_vector.c");
+const VECTOR_HEADER: &str = include_str!("../../native/experimental_vector.h");
+const VECTOR_ADAPTER: &str = include_str!("../../native/typed_vector.c");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
@@ -409,6 +412,9 @@ fn compile_inner(
         // embedded in the compiler; the linked program needs no checkout.
         fs::write(workspace.0.join("experimental_bytebuf.h"), BYTEBUF_HEADER).map_err(io)?;
         fs::write(workspace.0.join("experimental_bytebuf.c"), BYTEBUF_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_vector.c"), VECTOR_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_vector.h"), VECTOR_HEADER).map_err(io)?;
+        fs::write(workspace.0.join("typed_vector.c"), VECTOR_ADAPTER).map_err(io)?;
         fs::write(workspace.0.join("experimental_files.c"), FILE_CORE).map_err(io)?;
         fs::write(workspace.0.join("experimental_arguments.c"), ARGUMENT_CORE).map_err(io)?;
         fs::write(workspace.0.join("typed_bytebuf.c"), BYTEBUF_RUNTIME).map_err(io)?;

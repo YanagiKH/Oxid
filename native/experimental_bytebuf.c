@@ -3,6 +3,7 @@
  * allocated metadata, implicit retries, or user-visible pointer/handle exists.
  */
 #include "experimental_bytebuf.h"
+#include "experimental_vector.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -63,12 +64,18 @@ static void unlink_node(oxid_byte_heap *heap, oxid_allocation *node) {
     if (node->previous) node->previous->next = node->next;
     else heap->head = node->next;
     if (node->next) node->next->previous = node->previous;
+    uint64_t charge;
     uint32_t capacity = node->capacity;
-    if (capacity == UINT32_MAX) {
-        if (node->initialized != UINT32_MAX) (void)close((int)node->initialized);
-        capacity = 0;
+    if (capacity == OXID_VECTOR_NODE) {
+        charge = oxid_vector_node_charge(node);
+    } else {
+        if (capacity == UINT32_MAX) {
+            if (node->initialized != UINT32_MAX) (void)close((int)node->initialized);
+            capacity = 0;
+        }
+        charge = (uint64_t)capacity + OXID_BYTEBUF_HEADER;
     }
-    heap->ledger.live_bytes -= (uint64_t)capacity + OXID_BYTEBUF_HEADER;
+    heap->ledger.live_bytes -= charge;
     --heap->ledger.live_allocations;
     ++heap->ledger.releases;
     free(node);
@@ -240,3 +247,5 @@ int32_t oxid_binary_write_some(const uint8_t *bytes, int32_t length, uint64_t *f
     *result = write_once(bytes, length);
     return 0;
 }
+
+#include "experimental_vector.c"

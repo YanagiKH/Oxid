@@ -7,6 +7,28 @@ use crate::frontend::builtin_catalog::{experimental, BuiltinEnum, BuiltinFunctio
 pub(super) const INPUT_SCRATCH_BYTES: usize = 1024;
 pub(super) const OUTPUT_SCRATCH_BYTES: usize = 1024;
 
+/// The closed scalar/operation domain bounds duplicate comparisons before
+/// any canonical row is inspected. This never synthesizes unused functions.
+pub(super) fn vector_descriptor_visits(
+    keys: &[crate::frontend::builtin_catalog::vector::Function],
+) -> Result<usize, OwnedFailure> {
+    if keys.len() > 9 * 17 {
+        return Err(missing());
+    }
+    let mut visits = keys.len() * keys.len().saturating_sub(1) / 2;
+    for key in keys {
+        let signature = key.signature(EnumId(0));
+        visits += 7
+            + 2 * signature.parameters().len()
+            + if matches!(signature.result, ValueTy::Owned(_)) {
+                2
+            } else {
+                1
+            };
+    }
+    Ok(visits)
+}
+
 /// Header + enum + three variants; the function adds its declaration,
 /// reference, owner, block, two statements and terminator. Work units count
 /// these fixed descriptor visits, not individual scalar comparisons. Each
@@ -43,8 +65,19 @@ pub(super) struct BuiltinIds {
     enumeration_base: EnumId,
     function_base: hir::DefId,
     inventory: BuiltinOrigins,
+    vector_count: usize,
 }
 impl BuiltinIds {
+    pub(super) fn vector_function_at(&self, rank: usize) -> Option<hir::DefId> {
+        if rank >= self.vector_count {
+            return None;
+        }
+        self.function_base
+            .0
+            .checked_add(self.inventory.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
+    }
     pub(super) fn experimental_enum(&self, kind: experimental::Enumeration) -> Option<EnumId> {
         self.enumeration_base
             .0
@@ -84,6 +117,7 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
 /// This cannot produce an executable witness or bypass ordinary proofs. The
 /// production entry above remains the sole builtin admission gate.
 pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
+    vector_descriptor_visits(&raw.vector_functions)?;
     let ids = BuiltinIds {
         enumeration_base: EnumId(
             raw.enums
@@ -91,15 +125,14 @@ pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, Owned
                 .checked_sub(raw.builtins.extra_enums())
                 .ok_or_else(missing)?,
         ),
-        function_base: hir::DefId(
-            raw.functions
-                .len()
-                .checked_sub(raw.builtins.extra_functions())
-                .ok_or_else(missing)?,
-        ),
+        function_base: hir::DefId(raw.fixed_builtin_base().ok_or_else(missing)?),
         inventory: raw.builtins,
+        vector_count: raw.vector_functions.len(),
     };
     if raw.builtins == BuiltinOrigins::None {
+        if !raw.vector_functions.is_empty() {
+            return Err(missing());
+        }
         return Ok(ids);
     }
 
@@ -125,6 +158,7 @@ pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, Owned
         }
     }
     super::experimental_descriptors::check(raw, &ids)?;
+    super::vector_descriptors::check(raw, &ids)?;
     Ok(ids)
 }
 
@@ -351,6 +385,7 @@ mod transport_tests {
                 enumeration_base: EnumId(11),
                 function_base: hir::DefId(23),
                 inventory,
+                vector_count: 0,
             };
             assert_eq!(
                 ids.enumeration(BuiltinEnum::ReadStatus),
@@ -379,6 +414,7 @@ mod transport_tests {
             enumeration_base: EnumId(usize::MAX),
             function_base: hir::DefId(usize::MAX),
             inventory: BuiltinOrigins::ReadStdinWriteStdout,
+            vector_count: 0,
         };
         assert_eq!(ids.enumeration(BuiltinEnum::WriteStatus), None);
         assert_eq!(ids.function(BuiltinFunction::WriteStdout), None);

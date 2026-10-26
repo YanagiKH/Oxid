@@ -26,10 +26,13 @@ pub(in crate::frontend::oir) fn check_source(
     ast: &ast::Program,
     sources: &SourceMap,
 ) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
-    let resolved = resolve::resolve_in_map(source, ast, sources)?;
-    let typed = typeck::check(resolved)?;
-    let entry = typed.entry();
-    Ok((check_typed(&typed)?, entry))
+    let owner = SourceOwner::original(
+        source,
+        ast,
+        crate::frontend::source::SourceView::Map(sources),
+    )
+    .map_err(|error| vec![*error])?;
+    check_enum_source(owner)
 }
 
 #[test]
@@ -54,8 +57,10 @@ fn record_field_views_rederive_composed_offsets_before_scalar_reads() {
     );
 }
 
-/// Keep the fresh index and paid typed owner local until ordinary source
-/// lowering, association and the complete raw verifier have finished.
+/// Keep the fresh index and typed owner local until ordinary source lowering,
+/// association and the complete raw verifier have finished. The historical
+/// name also covers enum-free owned sources: the sealed index determines
+/// whether fresh paid typing is required.
 pub(in crate::frontend::oir) fn check_enum_source(
     owner: SourceOwner<'_>,
 ) -> Result<(SourceProgram, Option<hir::DefId>), Vec<Diagnostic>> {
@@ -64,7 +69,11 @@ pub(in crate::frontend::oir) fn check_enum_source(
     let facts = index::collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
         .map_err(|error| vec![*error])?;
     let index = facts.finish(&work, &mut allocator)?;
-    let typed = resolve::type_enum_source(&index, &work, &mut allocator)?;
+    let typed = if resolve::requires_paid_source(&index) {
+        resolve::type_enum_source(&index, &work, &mut allocator)?
+    } else {
+        typeck::check(resolve::resolve_project(&index, &work)?)?
+    };
     let entry = typed.entry();
     Ok((check_typed(&typed)?, entry))
 }
@@ -941,6 +950,27 @@ struct ProductionProgramCarriers {
     index_borrow: &'static index::DeclarationIndex<'static>,
     work_borrow: &'static WorkMeter,
     allocator_borrow: &'static mut Allocator,
+    // The original-file selector now uses the same frozen-index predicate as
+    // the project selector. These are its actual receiver/return roles, in
+    // addition to the existing fresh index and paid typing transports.
+    route_index: &'static index::DeclarationIndex<'static>,
+    route_return: bool,
+    route_selected: bool,
+    route_enum_receiver: &'static index::DeclarationIndex<'static>,
+    route_enum_count: usize,
+    route_has_enums: bool,
+    route_builtin_receiver: &'static index::DeclarationIndex<'static>,
+    route_builtins_return: crate::frontend::builtin_catalog::BuiltinSet,
+    route_builtins_receiver: crate::frontend::builtin_catalog::BuiltinSet,
+    route_experimental_return: crate::frontend::builtin_catalog::experimental::Inventory,
+    route_experimental_receiver: crate::frontend::builtin_catalog::experimental::Inventory,
+    route_experimental_empty: bool,
+    route_has_experimental: bool,
+    route_range_for_receiver: &'static index::DeclarationIndex<'static>,
+    route_range_for_return: bool,
+    route_element_ranges_receiver: &'static index::DeclarationIndex<'static>,
+    route_element_ranges_return: bool,
+    route_element_ranges_caller: bool,
     typed_return: Result<typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
     typed: typeck::TypedOwnedProgram<'static>,
     typed_borrow: &'static typeck::TypedOwnedProgram<'static>,

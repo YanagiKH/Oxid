@@ -6,6 +6,7 @@ use super::*;
 pub(in crate::frontend::oir) enum ResourceKind {
     ByteBuf,
     File,
+    Vector(hir::Ty),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -204,8 +205,12 @@ pub(super) fn summaries(
                 }
                 Some(ty) => {
                     let top = stack[length - 1].as_mut().unwrap();
-                    top.contains |=
-                        matches!(ty, ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File));
+                    top.contains |= matches!(
+                        ty,
+                        ValueTy::Owned(
+                            AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                        )
+                    );
                     top.next += 1;
                 }
             }
@@ -222,7 +227,7 @@ impl Declarations {
     ) -> Result<bool, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
         match aggregate {
-            AggregateTy::ByteBuf | AggregateTy::File => return Ok(true),
+            AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_) => return Ok(true),
             AggregateTy::FixedArray(_) => return Ok(false),
             _ => {}
         }
@@ -255,6 +260,26 @@ impl Declarations {
             stack,
             length: 1,
         })
+    }
+
+    /// Inspect each direct checked field/payload once. Nested vectors must have
+    /// a direct declaration somewhere in these already bounded tables.
+    pub(in crate::frontend::oir) fn has_vector_declarations(&self) -> bool {
+        self.fields
+            .iter()
+            .any(|field| matches!(field.ty, ValueTy::Owned(AggregateTy::Vector(_))))
+            || self.enums.enums().iter().any(|enumeration| {
+                self.enums
+                    .variants(enumeration.id())
+                    .expect("checked enumeration")
+                    .iter()
+                    .any(|variant| {
+                        matches!(
+                            variant.value_payload(),
+                            Some(ValueTy::Owned(AggregateTy::Vector(_)))
+                        )
+                    })
+            })
     }
 
     /// The cache is populated only after a direct resource declaration is found.
@@ -295,6 +320,13 @@ where
                     return Ok(Some(ResourceLeaf {
                         offset,
                         kind: ResourceKind::ByteBuf,
+                    }));
+                }
+                ValueTy::Owned(AggregateTy::Vector(element)) => {
+                    self.length -= 1;
+                    return Ok(Some(ResourceLeaf {
+                        offset,
+                        kind: ResourceKind::Vector(element),
                     }));
                 }
                 ValueTy::Owned(AggregateTy::Record(record)) => {
@@ -397,6 +429,105 @@ mod tests {
         ];
         Declarations::check_combined(&[document, nested], &enums, &sources).unwrap()
     }
+
+    #[test]
+    fn vector_resource_walk_keeps_element_identity_through_active_enum_payloads() {
+        let (sources, span) = source();
+        let mut holder = record(0, &[hir::Ty::I32, hir::Ty::Unit, hir::Ty::Unit], span);
+        holder.fields[1].ty = ParameterTy::Value(owned(AggregateTy::Vector(hir::Ty::I128)));
+        holder.fields[2].ty = ParameterTy::Value(owned(AggregateTy::ByteBuf));
+        let alternatives = [enumeration(
+            0,
+            &[
+                None,
+                Some(owned(AggregateTy::Vector(hir::Ty::U8))),
+                Some(owned(AggregateTy::Record(RecordId(0)))),
+            ],
+            span,
+        )];
+        let d = Declarations::check_combined(&[holder], &alternatives, &sources).unwrap();
+        let collect = |tag| {
+            d.resource_leaves(AggregateTy::Enum(EnumId(0)), |offset| {
+                assert_eq!(offset, 0);
+                Ok(tag)
+            })
+            .unwrap()
+            .map(|leaf| leaf.map(|leaf| (leaf.offset, leaf.kind)))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+        };
+        assert!(collect(0).is_empty());
+        assert_eq!(collect(1), [(8, ResourceKind::Vector(hir::Ty::U8))]);
+        assert_eq!(
+            collect(2),
+            [
+                (16, ResourceKind::Vector(hir::Ty::I128)),
+                (32, ResourceKind::ByteBuf),
+            ]
+        );
+        assert!(d
+            .contains_resources(AggregateTy::Record(RecordId(0)))
+            .unwrap());
+        assert!(d.contains_resources(AggregateTy::Enum(EnumId(0))).unwrap());
+        assert_eq!(
+            d.leaves(AggregateTy::Record(RecordId(0)))
+                .unwrap()
+                .map(|leaf| (leaf.offset, leaf.ty))
+                .collect::<Vec<_>>(),
+            [(0, hir::Ty::I32)]
+        );
+    }
+
+    #[test]
+    fn vector_slice_authority_cannot_change_element_type_or_become_a_byte_buffer_owner() {
+        let vector = BorrowedTy::Exact(AggregateTy::Vector(hir::Ty::U8));
+        assert!(BorrowedTy::ScalarSlice(hir::Ty::U8).accepts(vector));
+        assert!(!BorrowedTy::ScalarSlice(hir::Ty::I8).accepts(vector));
+        assert!(!BorrowedTy::ScalarSlice(hir::Ty::I128).accepts(vector));
+        assert!(!BorrowedTy::Exact(AggregateTy::ByteBuf).accepts(vector));
+        assert!(!vector.accepts(BorrowedTy::ScalarSlice(hir::Ty::U8)));
+        assert!(!vector.accepts(BorrowedTy::Exact(AggregateTy::ByteBuf)));
+        let wide = BorrowedTy::Exact(AggregateTy::Vector(hir::Ty::I128));
+        assert!(BorrowedTy::ScalarSlice(hir::Ty::I128).accepts(wide));
+        assert!(!BorrowedTy::ScalarSlice(hir::Ty::U128).accepts(wide));
+    }
+
+    #[test]
+    fn vector_enum_payload_retains_element_identity_when_another_variant_requires_alignment_16() {
+        let (sources, span) = source();
+        let alternatives = [enumeration(
+            0,
+            &[
+                Some(owned(AggregateTy::Vector(hir::Ty::F64))),
+                Some(ValueTy::Scalar(hir::Ty::I128)),
+            ],
+            span,
+        )];
+        let d = Declarations::check_combined(&[], &alternatives, &sources).unwrap();
+        let variant = d
+            .enums
+            .variant(
+                EnumId(0),
+                VariantId {
+                    enumeration: EnumId(0),
+                    index: 0,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            variant.value_payload(),
+            Some(owned(AggregateTy::Vector(hir::Ty::F64)))
+        );
+        assert_eq!(variant.payload_offset(), Some(16));
+        let leaves = d
+            .resource_leaves(AggregateTy::Enum(EnumId(0)), |_| Ok(0))
+            .unwrap()
+            .map(|leaf| leaf.map(|leaf| (leaf.offset, leaf.kind)))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(leaves, [(16, ResourceKind::Vector(hir::Ty::F64))]);
+    }
+
     #[test]
     fn bytebuf_layout_resource_width_and_enum_alignment_are_derived() {
         let d = declarations();

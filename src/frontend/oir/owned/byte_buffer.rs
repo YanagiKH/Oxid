@@ -11,7 +11,10 @@ use std::{
 
 #[path = "file_resources.rs"]
 mod files;
+#[path = "vector_resources.rs"]
+mod vectors;
 pub(super) use files::{FileAccess, FileDescriptor, OpenValue};
+pub(in crate::frontend::oir::owned) use vectors::{Element as VectorElement, VectorDescriptor};
 pub(super) const fn file_helper_control_bytes() -> usize {
     files::helper_control_bytes()
 }
@@ -474,11 +477,17 @@ impl Heap {
         // once. Copy its links and size before deallocating its entire block.
         unsafe {
             let header = node.as_ref();
+            let vector = header.capacity == vectors::VECTOR_NODE;
             let capacity = if header.capacity == files::FILE_NODE {
                 let _ = files::close_node(header);
                 0
             } else {
                 header.capacity
+            };
+            let charge = if vector {
+                vectors::node_charge(header)
+            } else {
+                capacity as u64 + ALLOCATION_CHARGE
             };
             if header.previous.is_null() {
                 self.head = header.next;
@@ -488,8 +497,12 @@ impl Heap {
             if !header.next.is_null() {
                 (*header.next).previous = header.previous;
             }
-            dealloc(node.as_ptr().cast(), allocation_layout(capacity));
-            self.ledger.live_bytes -= capacity as u64 + ALLOCATION_CHARGE;
+            if vector {
+                vectors::deallocate_node(node);
+            } else {
+                dealloc(node.as_ptr().cast(), allocation_layout(capacity));
+            }
+            self.ledger.live_bytes -= charge;
             self.ledger.live_allocations -= 1;
             self.ledger.releases += 1;
         }

@@ -14,6 +14,7 @@ from pathlib import Path
 from verify_feature_status import verify_feature_status
 from verify_fixture_data import fixture_data_sources as predecessor_fixture_data_sources
 from verify_bounded_byte_storage import fixture_data_sources as byte_storage_fixture_data_sources
+from verify_typed_vector_fixture_data import fixture_data_sources as typed_vector_fixture_data_sources
 from verify_typed_formatter import verify as verify_typed_formatter
 
 
@@ -21,12 +22,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def fixture_data_sources(root: Path) -> set[Path]:
-    """Explicit RFC0031 DATA successor; predecessor registration stays intact."""
+    """Explicit DATA successors; predecessor registrations stay intact."""
     previous = predecessor_fixture_data_sources(root)
     current = byte_storage_fixture_data_sources(root)
     if previous & current:
         raise RuntimeError("byte-storage DATA overlaps predecessor inventory")
-    return previous | current
+    vectors = typed_vector_fixture_data_sources(root)
+    if vectors & (previous | current):
+        raise RuntimeError("typed-vector DATA overlaps predecessor inventory")
+    return previous | current | vectors
 
 RUNNABLE_GROUPS = ("tests", "examples", "tools", "apps")
 RUNNABLE_PACKAGE_FILES = (
@@ -87,6 +91,10 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/typed-float-vector/src/main.ox",
         "examples/typed-float-vector/tests/vector.ox",
     ),
+    "examples/typed-vectors": (
+        "examples/typed-vectors/src/main.ox",
+        "examples/typed-vectors/tests/vectors.ox",
+    ),
     "packages/matrix": ("packages/matrix/src/lib.ox",),
     "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
     "apps/cpu-training": (
@@ -142,7 +150,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/minibatch-training",
     "apps/streaming-training",
 )
-TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix")
+TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (

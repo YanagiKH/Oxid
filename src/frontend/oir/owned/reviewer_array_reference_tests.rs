@@ -292,6 +292,7 @@ fn sequence_fixture(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -594,6 +595,7 @@ fn chain_fixture(ty: hir::Ty, n: usize) -> (SourceMap, RawOwnedProgram, Vec<(Spa
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record],
@@ -1025,6 +1027,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1332,7 +1335,10 @@ fn reference_fixture(
     let (other_ty, other_n) = match other {
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
-        AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File => {
+        AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_) => {
             unreachable!("aggregate executable gate")
         }
     };
@@ -1354,7 +1360,10 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
-        AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File => {
+        AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_) => {
             unreachable!("aggregate executable gate")
         }
         AggregateTy::FixedArray(_) => OwnedInstruction::ConstructArray {
@@ -1729,6 +1738,7 @@ fn observer_scalar_cap_fixture(statements: usize) -> (SourceMap, RawOwnedProgram
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1774,6 +1784,7 @@ fn observer_storage_cap_fixture(owners: usize, n: usize) -> (SourceMap, RawOwned
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],

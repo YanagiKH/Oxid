@@ -8,6 +8,8 @@ use super::{
 
 #[path = "experimental_builtins.rs"]
 pub(super) mod experimental;
+#[path = "vector_builtins.rs"]
+pub(super) mod vector;
 
 /// Each family is absent, status-only, or function plus its required status.
 /// Explicit variants prevent dependency-incomplete inventories from existing.
@@ -29,22 +31,43 @@ pub(super) enum BuiltinSet {
 /// its dependency-complete identity behind the same sealed constructors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ExtendedSet {
-    packed: [u8; 4],
+    packed: [u8; 8],
+}
+/// Complete current by-value catalog transports, including the empty case.
+/// The collector pays this separate row; no opaque historical bank is credited.
+#[allow(dead_code)]
+struct BuiltinSetControls {
+    admission_legacy_choice: BuiltinSet,
+    admission_set_return: BuiltinSet,
+    with_experimental_receiver: BuiltinSet,
+    with_experimental_legacy: BuiltinSet,
+    legacy_receiver: BuiltinSet,
+    legacy_return: BuiltinSet,
+    experimental_receiver: BuiltinSet,
+    set_caller_result: BuiltinSet,
+    admission_inventory_argument: experimental::Inventory,
+    with_experimental_inventory: experimental::Inventory,
+    empty_return_inventory: experimental::Inventory,
+    inventory_caller_result: experimental::Inventory,
+}
+pub(in crate::frontend) const fn builtin_set_control_bytes() -> usize {
+    std::mem::size_of::<BuiltinSetControls>()
 }
 impl BuiltinSet {
     pub fn legacy(self) -> Self {
         match self {
-            Self::Extended(value) => [
-                Self::None,
-                Self::ReadStatus,
-                Self::ReadStdin,
-                Self::WriteStatus,
-                Self::WriteStdout,
-                Self::ReadStatusWriteStatus,
-                Self::ReadStatusWriteStdout,
-                Self::ReadStdinWriteStatus,
-                Self::ReadStdinWriteStdout,
-            ][experimental::Inventory::unpack(value.packed).1 as usize],
+            Self::Extended(value) => match experimental::Inventory::unpack(value.packed).1 {
+                0 => Self::None,
+                1 => Self::ReadStatus,
+                2 => Self::ReadStdin,
+                3 => Self::WriteStatus,
+                4 => Self::WriteStdout,
+                5 => Self::ReadStatusWriteStatus,
+                6 => Self::ReadStatusWriteStdout,
+                7 => Self::ReadStdinWriteStatus,
+                8 => Self::ReadStdinWriteStdout,
+                _ => unreachable!("sealed legacy inventory"),
+            },
             value => value,
         }
     }
@@ -144,6 +167,9 @@ impl BuiltinSet {
             BuiltinItem::Experimental(item) => {
                 self.with_experimental(self.experimental().admit(item))
             }
+            BuiltinItem::Vector(item) => {
+                self.with_experimental(self.experimental().admit_vector(item))
+            }
         }
     }
     pub fn contains_enum(self, item: BuiltinEnum) -> bool {
@@ -173,6 +199,20 @@ impl BuiltinSet {
         usize::from(self.contains_function(BuiltinFunction::ReadStdin))
             + usize::from(self.has_output_function())
             + self.experimental().functions()
+    }
+    pub fn contains_vector(self, item: vector::Item) -> bool {
+        self.experimental().contains_vector(item)
+    }
+    pub fn vector_templates(self) -> usize {
+        self.experimental().vector_templates()
+    }
+    pub fn vector_template_rank(self, operation: vector::Operation) -> Option<usize> {
+        self.experimental()
+            .vector_template_rank(operation)
+            .map(|rank| self.extra_functions() + rank)
+    }
+    pub fn extra_template_functions(self) -> usize {
+        self.extra_functions() + self.vector_templates()
     }
     pub fn experimental_enum_rank(self, item: experimental::Enumeration) -> Option<usize> {
         self.experimental()
@@ -222,6 +262,7 @@ pub(super) enum BuiltinItem {
     Enum(BuiltinEnum),
     Function(BuiltinFunction),
     Experimental(experimental::Item),
+    Vector(vector::Item),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum BuiltinEnum {
@@ -243,21 +284,21 @@ impl BuiltinItem {
         match self {
             Self::Enum(item) => item.variant_count(),
             Self::Experimental(item) => item.enumeration().map_or(0, |item| item.members().len()),
-            Self::Function(_) => 0,
+            Self::Function(_) | Self::Vector(_) => 0,
         }
     }
     pub fn member_name(self, index: usize) -> Option<&'static str> {
         match self {
             Self::Enum(item) => item.member_name(index),
             Self::Experimental(item) => item.enumeration()?.members().get(index).copied(),
-            Self::Function(_) => None,
+            Self::Function(_) | Self::Vector(_) => None,
         }
     }
     pub fn member_payload(self, index: usize) -> Option<Ty> {
         match self {
             Self::Enum(item) => item.member_payload(index),
             Self::Experimental(item) => item.enumeration()?.payload(index),
-            Self::Function(_) => None,
+            Self::Function(_) | Self::Vector(_) => None,
         }
     }
     pub fn name(self) -> &'static str {
@@ -265,11 +306,13 @@ impl BuiltinItem {
             Self::Enum(item) => item.name(),
             Self::Function(item) => item.name(),
             Self::Experimental(item) => item.name(),
+            Self::Vector(item) => item.name(),
         }
     }
     pub fn path(self) -> [&'static str; 3] {
         match self {
             Self::Experimental(item) => item.path(),
+            Self::Vector(item) => item.path(),
             _ => ["std", "io", self.name()],
         }
     }
@@ -332,9 +375,9 @@ mod compact_inventory_tests {
     fn compact_inventory_preserves_legacy_variants_and_all_extension_bits() {
         assert_eq!(experimental::Item::Take as u8, 14);
         assert_eq!(experimental::Function::Take as u8, 10);
-        assert_eq!(std::mem::size_of::<ExtendedSet>(), 4);
+        assert_eq!(std::mem::size_of::<ExtendedSet>(), 8);
         assert_eq!(std::mem::align_of::<ExtendedSet>(), 1);
-        assert_eq!(std::mem::size_of::<BuiltinSet>(), 4 + 1);
+        assert_eq!(std::mem::size_of::<BuiltinSet>(), 8 + 1);
         assert_eq!(std::mem::align_of::<BuiltinSet>(), 1);
         let legacy = [
             BuiltinSet::None,

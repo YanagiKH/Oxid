@@ -520,6 +520,7 @@ fn availability_raw(graph: &model::Graph, prologue: usize, span: Span) -> RawOwn
     }
     f.blocks.insert(prologue, setup);
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -723,6 +724,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
         at(span, 1_300),
     ));
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -846,6 +848,7 @@ fn lifecycle_raw(initial: model::Storage, word: &[model::Event], span: Span) -> 
         at(span, 500),
     ));
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -2117,6 +2120,7 @@ fn nested_raw(model: &nested_model::Program, span: Span) -> RawOwnedProgram {
         functions.push(builder.raw);
     }
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -2918,6 +2922,7 @@ fn array_model_staged_access_and_reference_permissions_match_class_table() {
                 ));
                 let raw = array_raw(
                     RawOwnedProgram {
+                        vector_functions: Vec::new(),
                         builtins: BuiltinOrigins::None,
                         enums: vec![],
                         records: vec![record(span)],

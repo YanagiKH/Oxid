@@ -371,6 +371,7 @@ fn parse_counted_with_policies(
         std_imports,
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
+        parsed_has_named_slice: false,
         tokens,
         cursor: 0,
         pending_equal: None,
@@ -577,6 +578,7 @@ fn parse_counted_with_policies(
                 parser.paths,
                 parser.path_segments,
                 imports,
+                parser.parsed_has_named_slice,
             ),
             parser.nodes,
         ))
@@ -595,6 +597,8 @@ struct Parser<'a> {
     // Sticky only after ordinary parsing enters project grammar. Recovery
     // scans never set it; successful source flavor comes from the AST instead.
     project_recovery: bool,
+    // Written in the already bounded named-slice parse branch, with no AST scan.
+    parsed_has_named_slice: bool,
     tokens: Vec<Token>,
     cursor: usize,
     pending_equal: Option<Token>,
@@ -733,7 +737,7 @@ impl Parser<'_> {
         };
         let id = self.qualified_segments(first, root)?;
         if root == PathRoot::Std && self.std_imports == StdImportPolicy::Enabled {
-            use super::builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction};
+            use super::builtin_catalog::{experimental, vector, BuiltinEnum, BuiltinFunction};
             let path = &self.paths[id.0];
             let segments = &self.path_segments[path.segment_start..];
             let experimental = segments.len() == 3
@@ -743,7 +747,18 @@ impl Parser<'_> {
                         .zip(segments)
                         .all(|(name, span)| self.source.text_at(*span) == name)
                 });
+            let vector = segments.len() == 3
+                && (vector::Item::ALL.into_iter().any(|item| {
+                    item.path()
+                        .into_iter()
+                        .zip(segments)
+                        .all(|(name, span)| self.source.text_at(*span) == name)
+                }) || ["alloc", "vec", "GrowStatus"]
+                    .into_iter()
+                    .zip(segments)
+                    .all(|(name, span)| self.source.text_at(*span) == name));
             if !experimental
+                && !vector
                 && (segments.len() != 3
                     || self.source.text_at(segments[0]) != "std"
                     || self.source.text_at(segments[1]) != "io"
@@ -1622,7 +1637,16 @@ impl Parser<'_> {
                     ));
                 };
                 let annotation = if self.take(Kind::Colon).is_some() {
-                    Some(self.parameter_ty()?)
+                    let ty = self.parameter_ty()?;
+                    if matches!(ty.kind, TypeSyntaxKind::GenericSliceReference { .. }) {
+                        return Err(self.diagnostic(
+                            "E0101",
+                            "parse",
+                            "named slice references are only supported as parameters",
+                            Some(ty.span),
+                        ));
+                    }
+                    Some(ty)
                 } else {
                     None
                 };
@@ -2755,6 +2779,8 @@ pub(super) fn parse_with_lowered_node_limit(
     parse_with_node_limit(source, tokens, mode, limit)
 }
 
+#[cfg(test)]
+mod generic_slice_tests;
 #[cfg(test)]
 mod generic_syntax_tests;
 #[cfg(test)]

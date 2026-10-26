@@ -1312,7 +1312,10 @@ fn bounded_stdout_retained_header_predecessor_endpoints() {
             plan.retained,
             old_retained + 8 + FILE_ADMISSION_CARRIER_GROWTH as u64
         );
-        assert_eq!(plan.scratch, old_scratch + 2);
+        assert_eq!(
+            plan.scratch,
+            old_scratch + 2 + (CURRENT_BASE_SCRATCH - FIXED_SCRATCH) as u64
+        );
         for (retained, scratch, expected) in [
             (old_retained, plan.scratch, false),
             (plan.retained - 1, plan.scratch, false),

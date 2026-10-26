@@ -286,6 +286,7 @@ fn type_syntax(
         ast::TypeSyntaxKind::Array(_)
             | ast::TypeSyntaxKind::ArrayReference { .. }
             | ast::TypeSyntaxKind::SliceReference { .. }
+            | ast::TypeSyntaxKind::GenericSliceReference { .. }
     ) {
         return Err(Diagnostic::new(
             "E0500",

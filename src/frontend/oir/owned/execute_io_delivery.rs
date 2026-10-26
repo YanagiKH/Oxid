@@ -196,6 +196,36 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             },
             span,
         )?;
+        // A shared vector source must stay an immutable host slice. Do not
+        // construct vector_range_mut under a shared language loan merely to
+        // feed a write-only syscall that consumes immutable bytes.
+        if operation == Function::WriteSome {
+            if let ByteRegion::Vector { value, start, end } = region {
+                let bytes = self
+                    .heap
+                    .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
+                    .map_err(|failure| heap_failure(failure, span))?;
+                let mut operation_fuel = self.fuel;
+                let admission =
+                    binary_io::admit_delivery(bytes.len(), delivery.cost, &mut operation_fuel);
+                if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
+                    self.fuel = operation_fuel;
+                }
+                admission.map_err(|failure| io_failure(failure, span))?;
+                let value = match binary_io::write_admitted(bytes) {
+                    binary_io::WriteStatus::Written(value) => OperationValue::Status {
+                        tag: 0,
+                        payload: Some(value),
+                    },
+                    binary_io::WriteStatus::Error(value) => OperationValue::Status {
+                        tag: 1,
+                        payload: Some(value),
+                    },
+                };
+                self.complete_binary_delivery(frame, delivery, value, span);
+                return Ok(());
+            }
+        }
         // Resolve the final slice and all resource validation before admission.
         // No user instruction or nested call can run between here and delivery.
         let bytes = match region {
@@ -204,6 +234,19 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 .heap
                 .range_mut(&value, start, end)
                 .map_err(|failure| heap_failure(failure, span))?,
+            ByteRegion::Vector { value, start, end } => {
+                if !matches!(operation, Function::ReadSome | Function::ArgBytes) {
+                    return Err(bad("vector mutable byte operation", span));
+                }
+                // SAFETY: byte_region admitted the U8 class/extent and the
+                // existing access check established the required language
+                // loan. Every byte written by read/arg_bytes is a valid u8.
+                unsafe {
+                    self.heap
+                        .vector_range_mut(&value, byte_buffer::VectorElement::U8, start, end)
+                }
+                .map_err(|failure| heap_failure(failure, span))?
+            }
         };
         let mut operation_fuel = self.fuel;
         if operation == Function::ArgBytes {

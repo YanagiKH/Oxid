@@ -1,0 +1,14 @@
+[project]
+name = "typed-vectors-example"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+entry-mode = "result"
+reproducible = true
+
+[tests]
+vectors = "tests/vectors.ox"
+
+[execution]
+policy = "hosted"

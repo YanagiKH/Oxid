@@ -22,12 +22,17 @@ pub(super) enum ByteRegion {
         start: i32,
         end: i32,
     },
+    Vector {
+        value: byte_buffer::VectorDescriptor,
+        start: i32,
+        end: i32,
+    },
 }
 struct BufferPlace {
     frame: usize,
     bytes: Range<usize>,
 }
-enum ResultPlace {
+pub(super) enum ResultPlace {
     Scalar(LocalId),
     Owner {
         owner: OwnerPlaceId,
@@ -36,12 +41,12 @@ enum ResultPlace {
     },
 }
 #[derive(Clone, Copy)]
-enum OperationValue {
+pub(super) enum OperationValue {
     Scalar(Scalar),
     EmptyBuffer,
     Status { tag: u32, payload: Option<i32> },
 }
-fn heap_failure(failure: byte_buffer::Failure, span: Span) -> OwnedRunFailure {
+pub(super) fn heap_failure(failure: byte_buffer::Failure, span: Span) -> OwnedRunFailure {
     match failure {
         byte_buffer::Failure::Bounds => OwnedRunFailure::Bounds(span),
         byte_buffer::Failure::Fuel => RunFailure::Fuel(span).into(),
@@ -82,7 +87,12 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     }
     /// The descriptor address is re-derived from checked nominal paths. A slice
     /// stores only its initialized range and can never manufacture an owner.
-    fn resource_origin(&self, mut permission: LoanKey, root: OwnerKey, span: Span) -> Result<u64> {
+    pub(super) fn resource_origin(
+        &self,
+        mut permission: LoanKey,
+        root: OwnerKey,
+        span: Span,
+    ) -> Result<u64> {
         if matches!(self.aggregate(root, span)?, AggregateTy::Record(_)) {
             let view = self
                 .projected_view(permission, root, span)
@@ -149,6 +159,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         let root = self.base(frame, base, access, span)?;
         let view = self.base_view(frame, base, root, span)?;
         match view.aggregate.map(AggregateSlot::aggregate) {
+            Some(AggregateTy::Vector(hir::Ty::U8)) => {
+                self.vector_byte_region(frame, base, access, span)
+            }
             Some(AggregateTy::ByteBuf) => {
                 if let AccessBase::Parameter(reference) = base {
                     if self.function(self.frames[frame].function).references[reference.0].referent()
@@ -204,7 +217,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         let view = self.base_view(frame, AccessBase::Parameter(reference), root, span)?;
         self.buffer_at(root, view.offset, span)
     }
-    fn prepare_experimental_result(
+    pub(super) fn prepare_experimental_result(
         &self,
         frame: usize,
         destination: CallResult,
@@ -235,6 +248,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 let generation = epoch(key.generation, span)?;
                 match f.result {
                     ValueTy::Owned(AggregateTy::ByteBuf) if bytes.len() == 16 => (),
+                    ValueTy::Owned(AggregateTy::Vector(element))
+                        if bytes.len() == 16
+                            && f.owners[owner.0].aggregate() == AggregateTy::Vector(element) => {}
                     ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                         let variants = self
                             .plan
@@ -270,7 +286,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             }
         }
     }
-    fn commit_experimental_result(
+    pub(super) fn commit_experimental_result(
         &mut self,
         frame: usize,
         place: ResultPlace,
@@ -427,6 +443,29 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                                 end,
                                 &mut operation_fuel,
                             ),
+                            ByteRegion::Vector {
+                                value: source,
+                                start,
+                                end,
+                            } => {
+                                let bytes = self
+                                    .heap
+                                    .vector_range(
+                                        &source,
+                                        byte_buffer::VectorElement::U8,
+                                        start,
+                                        end,
+                                    )
+                                    .map_err(|failure| heap_failure(failure, span))?;
+                                let pointer = bytes.as_ptr();
+                                let length = bytes.len();
+                                // SAFETY: source Vector and target ByteBuf are
+                                // distinct classes/allocations. The verified
+                                // read loan keeps source payload immutable and
+                                // allocated while only target bytes/links move.
+                                let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+                                self.heap.try_extend(&mut value, bytes, &mut operation_fuel)
+                            }
                         }
                     }
                     Function::Truncate => {

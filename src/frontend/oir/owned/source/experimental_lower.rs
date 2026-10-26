@@ -229,6 +229,7 @@ mod tests {
         .finish(&work, &mut allocator)
         .unwrap();
         let mut raw = RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: index.builtin_set(),
             enums: Vec::new(),
             records: Vec::new(),
@@ -291,6 +292,7 @@ mod tests {
         };
         verified::verify_owned(
             RawOwnedProgram {
+                vector_functions: Vec::new(),
                 builtins: raw.builtins,
                 enums: raw.enums.clone(),
                 records: vec![],
