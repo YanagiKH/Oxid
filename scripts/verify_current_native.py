@@ -234,7 +234,7 @@ def verify(args):
                 "missing complete native-suite result")
         owned = output / "owned-cli"
         runner.command("owned-cli", [*python, "scripts/verify_owned_source.py", *binaries, "--mode", "cli",
-                       "--cli-amendment", "projected-array-slices-v1", "--jobs", "2", "--evidence", owned])
+                       "--cli-amendment", "local-reference-bindings-v1", "--jobs", "2", "--evidence", owned])
         result = json.loads((owned / "production-cli-result.json").read_bytes())
         require(result.get("status") == "CLI_ELF_PASS" and result.get("full_qualification") is False,
                 "missing owned-source CLI result")
