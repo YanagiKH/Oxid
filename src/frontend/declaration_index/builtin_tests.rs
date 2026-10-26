@@ -380,7 +380,7 @@ fn builtin_current_no_stdin_work_trace_and_boundaries_match_closed_policy() {
         }
     }
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn builtin_index_aliases_across_modules_coexist_with_crate_std_and_source_names() {
     for current in [false, true] {
@@ -1085,7 +1085,7 @@ mod output_layout_feasibility {
             fixture.0.join("main.ox").to_str().unwrap(),
             ProjectLimits::default(),
         );
-        if !cfg!(target_os = "linux") {
+        if !cfg!(any(target_os = "linux", target_os = "macos")) {
             assert_module_policy_denial(
                 result.unwrap_err(),
                 Span {
@@ -1839,7 +1839,7 @@ fn bounded_stdout_private_borrowed_anchors_preserve_dependency_and_module_order(
             ProjectLimits::default(),
             &mut Allocator::default(),
         );
-        if !cfg!(target_os = "linux") {
+        if !cfg!(any(target_os = "linux", target_os = "macos")) {
             assert_module_policy_denial(
                 result.unwrap_err(),
                 Span {

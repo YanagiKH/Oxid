@@ -222,7 +222,7 @@ fn process_entries_can_calculate_with_full_width_values_and_return_i32_status() 
         .unwrap();
         let result = project.invoke(&["run"]);
         if cfg!(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -290,7 +290,7 @@ fn mixed_types_invalid_literals_and_non_i32_process_entries_are_rejected() {
     assert_eq!(result.status.code(), Some(1), "{result:?}");
     assert!(result.stdout.is_empty(), "{result:?}");
     let expected = if cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")

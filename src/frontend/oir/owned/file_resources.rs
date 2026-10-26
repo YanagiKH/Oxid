@@ -202,9 +202,8 @@ impl Heap {
                 } else {
                     libc::O_RDONLY
                 };
-            // SAFETY: The bounded path is NUL terminated with no interior NUL.
-            let fd =
-                unsafe { libc::open(terminated.as_ptr().cast(), flags, 0o600 as libc::mode_t) };
+            // SAFETY: The path is NUL terminated; C varargs promote Darwin's u16 mode_t to int.
+            let fd = unsafe { libc::open(terminated.as_ptr().cast(), flags, 0o600 as libc::c_int) };
             if fd < 0 {
                 let error = errno();
                 self.unlink(node);

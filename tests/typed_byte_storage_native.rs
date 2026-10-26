@@ -73,7 +73,7 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
     for output in ["existing", "fresh"] {
         let text = diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
         if cfg!(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -86,7 +86,7 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
             }
         } else {
             assert!(
-                text.contains("native builds require a Linux x86_64 or ARM64 host"),
+                text.contains("native builds require Linux or macOS on x86_64 or ARM64"),
                 "{text}"
             );
         }

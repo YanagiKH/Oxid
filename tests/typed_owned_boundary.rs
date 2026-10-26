@@ -95,9 +95,8 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         "{}",
         text(&run)
     );
-    // Valid owned source reaches the native toolchain on every host. Linux
-    // rejects the existing output before tools, then the missing tool path for
-    // a fresh output; other hosts reject the unsupported build host first.
+    // Linux and macOS reject the existing output before tools, then the missing
+    // tool path for a fresh output. Other hosts reject the build host first.
     for output in ["output", "new-output"] {
         let compile = scratch.typed_with_output("compile", output);
         diagnostic(&compile, "E0701", "native-toolchain");
@@ -105,7 +104,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         assert_eq!(json.lines().count(), 2, "{json}");
         assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
         if cfg!(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -118,7 +117,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
             }
         } else {
             assert!(
-                json.contains("native builds require a Linux x86_64 or ARM64 host"),
+                json.contains("native builds require Linux or macOS on x86_64 or ARM64"),
                 "{json}"
             );
         }

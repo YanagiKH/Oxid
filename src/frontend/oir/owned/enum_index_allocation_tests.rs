@@ -127,7 +127,7 @@ fn inventory(lengths: [usize; REQUESTS]) -> [Row; REQUESTS] {
     ]
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn mixed_inventory() -> [Row; REQUESTS] {
     // Source order: 5 functions, 3 records/fields, 5 enums/7 variants,
     // 3 modules, 2 imports; 15 originals and 2 child links.
@@ -207,7 +207,7 @@ fn diagnostic_payload(error: &Diagnostic) -> usize {
 #[test]
 fn enum_index_lifecycle_collection_freeze_and_drop_match_independent_row_capacities() {
     for (name, files, rows, requested_retained, requested_scratch) in [
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         ("mixed", MIXED, mixed_inventory(), 1268, 96),
         ("enum-free", ENUM_FREE, enum_free_inventory(), 120, 8),
     ] {
@@ -308,7 +308,7 @@ fn enum_index_lifecycle_collection_freeze_and_drop_match_independent_row_capacit
 #[test]
 fn enum_index_lifecycle_all_reserve_failures_leave_only_diagnostic_then_zero() {
     for (name, files, rows) in [
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         ("mixed", MIXED, mixed_inventory()),
         ("enum-free", ENUM_FREE, enum_free_inventory()),
     ] {
@@ -400,7 +400,7 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
             "E0201",
             1,
         ),
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         (
             "paired alias builtin collision",
             &[
@@ -488,7 +488,7 @@ fn enum_index_lifecycle_runtime_finalization_errors_drop_all_index_owners() {
 #[test]
 fn enum_index_lifecycle_trace_exhaustion_is_not_production_allocation_failure() {
     for (files, rows) in [
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         (MIXED, mixed_inventory()),
         (ENUM_FREE, enum_free_inventory()),
     ] {
@@ -522,7 +522,7 @@ fn enum_index_lifecycle_trace_exhaustion_is_not_production_allocation_failure() 
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop() {
     const TRACE_ROWS: usize = 512;
@@ -710,7 +710,7 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
     );
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn enum_index_lifecycle_unqualified_host_drops_all_loader_owners() {
     const TRACE_ROWS: usize = 512;

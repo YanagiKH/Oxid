@@ -324,7 +324,7 @@ fn lexical_loader_moves_actual_provider_allocation_into_root_parser_on_every_hos
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn lexical_loader_moves_actual_provider_allocation_into_each_module_parser() {
     let files = Files::new();
@@ -357,7 +357,7 @@ fn lexical_loader_moves_actual_provider_allocation_into_each_module_parser() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn lexical_loader_declared_child_refuses_unqualified_host_without_child_fallback() {
     let files = Files::new();
@@ -438,7 +438,7 @@ fn lexical_loader_diagnostic_and_parser_failure_keep_receipts() {
         assert_eq!(receipt.selected_for_parser, selected);
     }
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn lexical_loader_passes_remaining_aggregate_limit_and_accepts_exact_diagnostic() {
     let files = Files::new();

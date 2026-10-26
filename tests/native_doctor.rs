@@ -539,7 +539,7 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
     // can link. Remove only the standard libraries at the actual link step.
     let missing_libraries = fixture.0.join("without-libraries");
     fs::create_dir(&missing_libraries).unwrap();
-    fs::write(missing_libraries.join("clang"), format!("#!/bin/sh\nfor arg do\nif [ \"$arg\" = -pie ]; then exec '{quoted}' -nostdlib \"$@\"; fi\ndone\nexec '{quoted}' \"$@\"\n")).unwrap();
+    fs::write(missing_libraries.join("clang"), format!("#!/bin/sh\nfor arg do\ncase \"$arg\" in -pie|-Wl,-pie) exec '{quoted}' -nostdlib \"$@\";; esac\ndone\nexec '{quoted}' \"$@\"\n")).unwrap();
     fs::set_permissions(
         missing_libraries.join("clang"),
         fs::Permissions::from_mode(0o700),
@@ -562,39 +562,92 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
     assert!(output.contains("undefined symbol"), "{output}");
     status(&output, "execute", "skipped");
     fixture.clean();
-    // A tool flooding inside the real compiler child must be contained even
-    // though the existing native build boundary buffers that tool's output.
-    // This is a constant-output test tool, never a user's program.
-    let nested_flood = fixture.0.join("nested-flood");
-    fs::create_dir(&nested_flood).unwrap();
-    for tool in ["clang", LINKER] {
-        std::os::unix::fs::symlink(Path::new(&tools).join(tool), nested_flood.join(tool)).unwrap();
+    #[cfg(target_os = "linux")]
+    {
+        // A tool flooding inside the real compiler child must be contained even
+        // though the existing native build boundary buffers that tool's output.
+        // This is a constant-output test tool, never a user's program.
+        let nested_flood = fixture.0.join("nested-flood");
+        fs::create_dir(&nested_flood).unwrap();
+        for tool in ["clang", LINKER] {
+            std::os::unix::fs::symlink(Path::new(&tools).join(tool), nested_flood.join(tool))
+                .unwrap();
+        }
+        let opt = Path::new(&tools)
+            .join("opt")
+            .to_string_lossy()
+            .replace('\'', "'\\''");
+        fs::write(nested_flood.join("opt"), format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{opt}' \"$@\"; fi\nexec /usr/bin/yes nested-flood\n")).unwrap();
+        fs::set_permissions(nested_flood.join("opt"), fs::Permissions::from_mode(0o700)).unwrap();
+        let start = std::time::Instant::now();
+        let output = fixture
+            .command()
+            .env("OXID_LLVM_BIN", nested_flood)
+            .args(["doctor", "--native", "--message-format=json"])
+            .output()
+            .unwrap();
+        assert!(
+            start.elapsed().as_secs() < 20,
+            "nested tool did not hit the memory bound"
+        );
+        assert_eq!(output.status.code(), Some(1));
+        let output = text(&output);
+        status(&output, "sdk", "passed");
+        status(&output, "compile-link", "failed");
+        assert!(
+            output.contains("memory allocation") && output.contains("failed"),
+            "{output}"
+        );
+        assert!(!fixture.0.join("core").exists());
+        fixture.clean();
     }
-    let opt = Path::new(&tools)
-        .join("opt")
-        .to_string_lossy()
-        .replace('\'', "'\\''");
-    fs::write(nested_flood.join("opt"), format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{opt}' \"$@\"; fi\nexec /usr/bin/yes nested-flood\n")).unwrap();
-    fs::set_permissions(nested_flood.join("opt"), fs::Permissions::from_mode(0o700)).unwrap();
-    let start = std::time::Instant::now();
-    let output = fixture
-        .command()
-        .env("OXID_LLVM_BIN", nested_flood)
-        .args(["doctor", "--native", "--message-format=json"])
-        .output()
+    #[cfg(target_os = "macos")]
+    {
+        // Darwin retains inherited address-space limits. Use a finite failed
+        // tool to verify diagnostic clipping through the nested compiler probe.
+        let nested_failure = fixture.0.join("nested-finite-failure");
+        fs::create_dir(&nested_failure).unwrap();
+        for tool in ["clang", LINKER] {
+            std::os::unix::fs::symlink(Path::new(&tools).join(tool), nested_failure.join(tool))
+                .unwrap();
+        }
+        let opt = Path::new(&tools)
+            .join("opt")
+            .to_string_lossy()
+            .replace('\'', "'\\''");
+        fs::write(
+            nested_failure.join("opt"),
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{opt}' \"$@\"; fi\n\
+                 printf 'finite-opt-failure\\n' >&2\n\
+                 count=0\nwhile [ \"$count\" -lt 1024 ]; do\n\
+                 printf '%s' 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' >&2\n\
+                 count=$((count + 1))\ndone\n\
+                 printf '\\nfinite-opt-tail-must-be-clipped\\n' >&2\nexit 9\n"
+            ),
+        )
         .unwrap();
-    assert!(
-        start.elapsed().as_secs() < 20,
-        "nested tool did not hit the memory bound"
-    );
-    assert_eq!(output.status.code(), Some(1));
-    let output = text(&output);
-    status(&output, "sdk", "passed");
-    status(&output, "compile-link", "failed");
-    assert!(
-        output.contains("memory allocation") && output.contains("failed"),
-        "{output}"
-    );
-    assert!(!fixture.0.join("core").exists());
-    fixture.clean();
+        fs::set_permissions(
+            nested_failure.join("opt"),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        let output = fixture
+            .command()
+            .env("OXID_LLVM_BIN", nested_failure)
+            .args(["doctor", "--native", "--message-format=json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let output = text(&output);
+        status(&output, "sdk", "passed");
+        status(&output, "compile-link", "failed");
+        status(&output, "execute", "skipped");
+        assert_eq!(output.lines().count(), 1);
+        assert!(output.len() < 12_000, "{output}");
+        assert!(output.contains("finite-opt-failure"), "{output}");
+        assert!(!output.contains("finite-opt-tail-must-be-clipped"));
+        assert!(!fixture.0.join("core").exists());
+        fixture.clean();
+    }
 }

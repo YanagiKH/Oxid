@@ -197,7 +197,7 @@ fn byte_arithmetic_stays_strict_and_process_entries_still_require_i32() {
     assert!(out.stdout.is_empty());
     let error = String::from_utf8(out.stderr).unwrap();
     if cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")

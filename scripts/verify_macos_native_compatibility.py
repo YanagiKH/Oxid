@@ -20,15 +20,19 @@ PREDECESSOR = 'b40dfdf471331863b1b77204f95aa6263b18172d'
 PREDECESSOR_POLICY = 'scripts/verify_scalar_debug_storage_compatibility.py'
 PREDECESSOR_POLICY_SHA = 'a33e700c9b9a5fe5673ddd97e0f5a0f3a764db294bd6194b07b77b168b042487'
 PREDECESSOR_POLICY_BYTES = 20564
-MACOS_NATIVE_CHANGED = frozenset({'src/frontend/oir/owned/execute.rs', 'src/frontend/project/tests.rs', 'native/experimental_files.c', 'src/frontend/project/filesystem.rs', 'src/frontend/project/packages/tests.rs', 'src/frontend/native/doctor.rs', 'src/frontend/oir/owned/input.rs', 'src/frontend/oir/owned/native.rs', 'build.rs', 'src/project_cli.rs', 'src/frontend/driver.rs', 'src/frontend/build_config.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/oir/native.rs', 'src/frontend/project/packages.rs', 'src/frontend/project/unit2_tests.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/file_resources.rs', 'src/frontend/oir/owned/binary_io.rs', 'src/frontend/native.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/project/enum_index_tests.rs'})
+MACOS_NATIVE_CHANGED = frozenset({'src/frontend/oir/owned/byte_storage_native_tests.rs', 'src/frontend/oir/owned/native.rs', 'src/frontend/oir/owned/source/output_lower_tests.rs', 'src/frontend/project/filesystem.rs', 'src/frontend/oir/source/hir_import/verify_fact_tests.rs', 'src/frontend/oir/owned/process.rs', 'src/frontend/oir/owned/source/output_typing_tests.rs', 'src/frontend/declaration_index/builtin_tests.rs', 'src/frontend/oir/project_execution_tests.rs', 'src/frontend/project/tests.rs', 'src/frontend/oir/source/hir_import/emit_failure_tests.rs', 'src/frontend/driver.rs', 'src/frontend/project/packages/tests.rs', 'src/frontend/project/unit2_tests.rs', 'src/frontend/build_config.rs', 'src/frontend/oir/owned/file_resources.rs', 'src/frontend/stdin_public_tests.rs', 'src/frontend/project/enum_index_tests.rs', 'src/frontend/oir/source/hir_import/emit_tests.rs', 'src/frontend/lexical_provider/tests.rs', 'src/frontend/project/packages.rs', 'src/frontend/project/array_syntax_tests.rs', 'src/frontend/oir/native.rs', 'src/frontend/oir/owned/source/output_source_tests.rs', 'src/frontend/oir/owned/execute.rs', 'src/frontend/oir/owned/output.rs', 'src/frontend/oir/owned/enum_index_allocation_tests.rs', 'src/frontend/oir/owned/binary_io.rs', 'native/experimental_files.c', 'src/frontend/native/doctor.rs', 'src/frontend/native.rs', 'src/frontend/oir/source/hir_import/emit_resource_tests.rs', 'src/project_cli.rs', 'src/frontend/oir/owned/input.rs', 'build.rs', 'src/frontend/oir/owned/source/enum_type_tests.rs'})
 MACOS_NATIVE_ADDED = frozenset()
 MACOS_NATIVE_INPUTS = {'build.rs': (1896, 'a079492b9533e8283959b87048019e3ac90cbdf0550ca527322bae16c5075539'),
  'native/experimental_files.c': (7168,
                                  'd2875afe16a251bdae632b41ac05f5f7ef0c2447bdec4f24e9b34554661c14e4'),
  'src/frontend/build_config.rs': (23904,
                                   'eee71ee31d0225806f95131572753779ea46a809608f7904b30cf089f5c05e95'),
+ 'src/frontend/declaration_index/builtin_tests.rs': (80160,
+                                                     '8f01fd5d18c97d5700ba121b8b42a8e4f3b99e668843f9f232b8952948af0ad6'),
  'src/frontend/driver.rs': (93477,
                             'b07558a88bbd1861fe7e8e9ad99bce0a101eb86b0e293b069914a819b8d818aa'),
+ 'src/frontend/lexical_provider/tests.rs': (45387,
+                                            '6665e1ccc7fea1671e13342501cb924ee834a8acc3576a3e27f52f2538a03bb8'),
  'src/frontend/native.rs': (21205,
                             'a10c13bbb3b66a1938ea4bda534f143a4a29563a08e880b60bf33fa2e1ccc8b8'),
  'src/frontend/native/doctor.rs': (21693,
@@ -37,10 +41,14 @@ MACOS_NATIVE_INPUTS = {'build.rs': (1896, 'a079492b9533e8283959b87048019e3ac90cb
                                 'd11918359634bd83e9880db1191dc1fcc15987387a0e45fadbe841f5f84fc4a0'),
  'src/frontend/oir/owned/binary_io.rs': (13857,
                                          '4631b6895dc39d1ae58f64e0c14394e0d249d7d89eef40600454fe249afeca31'),
+ 'src/frontend/oir/owned/byte_storage_native_tests.rs': (66435,
+                                                         'e3a9b1af06da6e530974e3128535840cf3606348b353848dd67bc0e214cd62de'),
+ 'src/frontend/oir/owned/enum_index_allocation_tests.rs': (30222,
+                                                           'b7b7015fe3e6dbf7fc4a7d530fcefd7a7ba8299c89b20d85a605ec856c164432'),
  'src/frontend/oir/owned/execute.rs': (209721,
                                        'de2447e941fd9944370dd5765c1376844e89a3b6622dac534eebc0b28622701f'),
  'src/frontend/oir/owned/file_resources.rs': (14337,
-                                              '8f09d1b5cf899bd97fdbb6ca185f1bf144fb473155ca66b88794edfec682d787'),
+                                              '04649564ffaa0f2c26b41913b28641084c499322b9c37d4d4ad1cc02401cc6c1'),
  'src/frontend/oir/owned/input.rs': (1880,
                                      '9e2c350eb09d6eb5802b40d69524f2e79c60810bcf143e491c44b4e338fa8d45'),
  'src/frontend/oir/owned/native.rs': (263369,
@@ -49,6 +57,24 @@ MACOS_NATIVE_INPUTS = {'build.rs': (1896, 'a079492b9533e8283959b87048019e3ac90cb
                                       'a6e9e8d76df32c2914af61acb53680c822639275c0adfaa28bcd9b9ab166c2bc'),
  'src/frontend/oir/owned/process.rs': (3239,
                                        'ac4fb5d363e89dbaa368565471b2d6e7a898bb245ec667ce7c139113ff6e5eae'),
+ 'src/frontend/oir/owned/source/enum_type_tests.rs': (22000,
+                                                      'dda5ad708786dd97466cfc500acdca2642df814b7224e79731b1a88fbf7de98a'),
+ 'src/frontend/oir/owned/source/output_lower_tests.rs': (31987,
+                                                         '5bf857b1f211f53bdabcdac4477b8d1695b30ccbcfba90b0cc8e2e5dac47f18a'),
+ 'src/frontend/oir/owned/source/output_source_tests.rs': (22286,
+                                                          'b89af3ba7c7cf46bb3559dd189869d0b4cd2382050cfcbf3c617c997364765d9'),
+ 'src/frontend/oir/owned/source/output_typing_tests.rs': (44502,
+                                                          'aea2867b337397ddc5b63e14af360e7e9467578b17133fa84f690924d40fcc7e'),
+ 'src/frontend/oir/project_execution_tests.rs': (10261,
+                                                 '7c6f04d73ef9d75d281e61510c658d944519af6a15147547afa919feb8fb1253'),
+ 'src/frontend/oir/source/hir_import/emit_failure_tests.rs': (10475,
+                                                              'c95e1920e56cbc5e9317e9040aeb2f373f1e10b1fd83c32b21b7bdb28651a147'),
+ 'src/frontend/oir/source/hir_import/emit_resource_tests.rs': (12361,
+                                                               '24310b363df14532b965ee9f93872056940342f2c5e38f0542f0d6f4bce2fcfd'),
+ 'src/frontend/oir/source/hir_import/emit_tests.rs': (22088,
+                                                      'a61fa65387449d6daef0b5ab8e67bab975325530e100bb793a210caee4d2e975'),
+ 'src/frontend/oir/source/hir_import/verify_fact_tests.rs': (16666,
+                                                             '7080f9672559a3c0672653ae593ec7cad83a09bec25969983f51f97ba203401f'),
  'src/frontend/project/array_syntax_tests.rs': (7131,
                                                 '089c54bc7f5f0c73e68eb0fb36c5cad26c8ed497b37f502ece395e1b2ac6b784'),
  'src/frontend/project/enum_index_tests.rs': (16740,
@@ -63,11 +89,15 @@ MACOS_NATIVE_INPUTS = {'build.rs': (1896, 'a079492b9533e8283959b87048019e3ac90cb
                                    '8c5b26d1ee5a14c8571cfe9fa465fa6979ddb4c4cb01ee621e9b0b5f2ad0d049'),
  'src/frontend/project/unit2_tests.rs': (9831,
                                          '95a92ad4c295f6e8ea56314c5bfe9e7a1ac728c74a0ed6eb6b99cd20f96dd7ee'),
+ 'src/frontend/stdin_public_tests.rs': (5154,
+                                        '3ca59074780eed91432246f11a17aa9976a9b46c0b2c2d674ce69fde49233930'),
  'src/project_cli.rs': (63112, 'd6c92fd940aa559bed135a771adff7b2dcc81226fc6cd907579d812974728597')}
 REVIEWED_DIRECTIVES = {'build.rs': ([], []),
  'native/experimental_files.c': ([], []),
  'src/frontend/build_config.rs': ([], []),
+ 'src/frontend/declaration_index/builtin_tests.rs': ([], [b'#[path = "experimental_tests.rs"]']),
  'src/frontend/driver.rs': ([], []),
+ 'src/frontend/lexical_provider/tests.rs': ([], []),
  'src/frontend/native.rs': ([b'include_str!("../../native/typed_preview.c")',
                              b'include_str!("../../native/typed_character.c")',
                              b'include_str!("../../native/typed_float.c")',
@@ -90,6 +120,8 @@ REVIEWED_DIRECTIVES = {'build.rs': ([], []),
                                  b'#[path = "native_emit_observation.rs"]',
                                  b'#[path = "native_hosted_capacity_tests.rs"]']),
  'src/frontend/oir/owned/binary_io.rs': ([], []),
+ 'src/frontend/oir/owned/byte_storage_native_tests.rs': ([], []),
+ 'src/frontend/oir/owned/enum_index_allocation_tests.rs': ([], []),
  'src/frontend/oir/owned/execute.rs': ([],
                                        [b'#[path = "execute_floats.rs"]',
                                         b'#[path = "execute_values.rs"]',
@@ -123,6 +155,48 @@ REVIEWED_DIRECTIVES = {'build.rs': ([], []),
                                        b'#[path = "byte_storage_native_tests.rs"]']),
  'src/frontend/oir/owned/output.rs': ([], []),
  'src/frontend/oir/owned/process.rs': ([], []),
+ 'src/frontend/oir/owned/source/enum_type_tests.rs': ([], []),
+ 'src/frontend/oir/owned/source/output_lower_tests.rs': ([], []),
+ 'src/frontend/oir/owned/source/output_source_tests.rs': ([], []),
+ 'src/frontend/oir/owned/source/output_typing_tests.rs': ([], []),
+ 'src/frontend/oir/project_execution_tests.rs': ([], []),
+ 'src/frontend/oir/source/hir_import/emit_failure_tests.rs': ([b'include_str!(concat!(\n    env!("'
+                                                               b'CARGO_MANIFEST_DIR")',
+                                                               b'include_bytes!(concat!(\n    env!'
+                                                               b'("CARGO_MANIFEST_DIR")'],
+                                                              []),
+ 'src/frontend/oir/source/hir_import/emit_resource_tests.rs': ([b'include_str!(concat!(\n    env!("'
+                                                                b'CARGO_MANIFEST_DIR")',
+                                                                b'include_bytes!(concat!(\n    env!'
+                                                                b'("CARGO_MANIFEST_DIR")',
+                                                                b'include_str!(concat!(\n        en'
+                                                                b'v!("CARGO_MANIFEST_DIR")',
+                                                                b'include_bytes!(concat!(\n        '
+                                                                b'env!("CARGO_MANIFEST_DIR")'],
+                                                               []),
+ 'src/frontend/oir/source/hir_import/emit_tests.rs': ([b'include_str!(concat!(\n    env!("CARGO_MA'
+                                                       b'NIFEST_DIR")',
+                                                       b'include_bytes!(concat!(\n    env!("CARGO_'
+                                                       b'MANIFEST_DIR")',
+                                                       b'include_str!(concat!(\n                en'
+                                                       b'v!("CARGO_MANIFEST_DIR")',
+                                                       b'include_bytes!(concat!(\n                '
+                                                       b'env!("CARGO_MANIFEST_DIR")',
+                                                       b'include_bytes!(concat!(\n            env!'
+                                                       b'("CARGO_MANIFEST_DIR")',
+                                                       b'include_bytes!(concat!(\n            env!'
+                                                       b'("CARGO_MANIFEST_DIR")',
+                                                       b'include_bytes!(concat!(\n            env!'
+                                                       b'("CARGO_MANIFEST_DIR")',
+                                                       b'include_bytes!(concat!(\n            env!'
+                                                       b'("CARGO_MANIFEST_DIR")'],
+                                                      [b'#[path = "emit_native_tests.rs"]']),
+ 'src/frontend/oir/source/hir_import/verify_fact_tests.rs': ([b'include_str!(concat!(\n          '
+                                                              b'      env!("CARGO_MANIFEST_DIR")',
+                                                              b'include_bytes!(concat!(\n        '
+                                                              b'        env!("CARGO_MANIFEST_DIR'
+                                                              b'")'],
+                                                             []),
  'src/frontend/project/array_syntax_tests.rs': ([], []),
  'src/frontend/project/enum_index_tests.rs': ([], []),
  'src/frontend/project/filesystem.rs': ([], []),
@@ -130,6 +204,7 @@ REVIEWED_DIRECTIVES = {'build.rs': ([], []),
  'src/frontend/project/packages/tests.rs': ([], []),
  'src/frontend/project/tests.rs': ([], []),
  'src/frontend/project/unit2_tests.rs': ([], []),
+ 'src/frontend/stdin_public_tests.rs': ([], []),
  'src/project_cli.rs': ([], [])}
 
 

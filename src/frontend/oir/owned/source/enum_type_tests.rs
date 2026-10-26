@@ -273,7 +273,7 @@ fn bounded_enum_pipeline_tiny_relay_executes_after_full_proof_and_releases_backi
     });
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn bounded_enum_pipeline_scanner_canonical_project_returns_115() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};
@@ -463,7 +463,7 @@ fn bounded_enum_pipeline_emits_after_success_and_inert_fuel_error_then_drops_art
     });
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn bounded_enum_pipeline_scanner_preserves_unqualified_host_diagnostic() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};
