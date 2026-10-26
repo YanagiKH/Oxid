@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from legacy_scalar_observer_range_for import adapt_wrapper as _adapt_wrapper, SCHEMA
+from legacy_scalar_observer_local_references import adapt_wrapper as _adapt_wrapper, SCHEMA
 
 
 def adapt_wrapper(name, original):
