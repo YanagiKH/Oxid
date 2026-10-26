@@ -3,6 +3,8 @@
 //! Explicit file editions retain the original pure frontend option boundary.
 //! Projects never reinterpret typed sources using the legacy interpreter.
 use crate::{frontend, project_lock, runtime};
+mod documentation;
+mod editor;
 mod package;
 mod workspace;
 
@@ -14,6 +16,9 @@ use std::{
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
 };
+
+pub(crate) use editor::project_graphs as editor_project_graphs;
+pub(crate) use editor::source_edition as editor_source_edition;
 
 #[derive(Default)]
 struct Options {
@@ -39,6 +44,7 @@ struct Options {
 struct BuildOptions {
     incremental: bool,
     reproducible: Option<bool>,
+    debug_info: Option<bool>,
     optimization: Option<frontend::NativeOptimization>,
 }
 
@@ -53,7 +59,9 @@ impl BuildOptions {
             self.optimization
                 .or(manifest_optimization)
                 .unwrap_or(frontend::NativeOptimization::O0),
-        ))
+        )
+        .with_execution(execution_policy(manifest)?)
+        .with_debug_info(self.debug_info.or(manifest.debug_info).unwrap_or(false)))
     }
 }
 
@@ -61,6 +69,19 @@ fn parse_profile(profile: &str) -> Result<frontend::NativeOptimization, String> 
     frontend::NativeOptimization::from_profile(profile).ok_or_else(|| {
         format!("unknown build profile `{profile}`; expected bounded, dev or release")
     })
+}
+
+fn execution_policy(
+    manifest: &runtime::ProjectManifest,
+) -> Result<frontend::ExecutionPolicy, String> {
+    let name = manifest.execution_policy.as_deref().unwrap_or("bounded");
+    let policy = frontend::ExecutionPolicy::from_name(name)
+        .ok_or_else(|| format!("unknown execution policy `{name}`; expected bounded or hosted"))?;
+    match manifest.heap_limit {
+        Some(limit) if policy.hosted() => Ok(frontend::ExecutionPolicy::HostedWithHeapLimit(limit)),
+        Some(_) => Err("execution heap-limit requires policy = \"hosted\"".into()),
+        None => Ok(policy),
+    }
 }
 
 /// The doctor integration can admit the complete workspace without routing a
@@ -198,10 +219,13 @@ impl Options {
             return Err("--update is valid only for `oxid lock` and conflicts with --locked, --offline and --frozen".into());
         }
         if self.has_lock_options()
-            && !matches!(self.command(), "lock" | "check" | "run" | "build" | "test")
+            && !matches!(
+                self.command(),
+                "lock" | "check" | "run" | "build" | "test" | "doc"
+            )
         {
             return Err(
-                "locking options require a typed project lock, check, run, build or test command"
+                "locking options require a typed project lock, check, run, build, test or doc command"
                     .into(),
             );
         }
@@ -263,7 +287,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     }
     let operands = operands(&options.words);
     let explicit = options.edition.is_some();
-    let project_operation = matches!(command, "lock" | "build" | "test" | "new" | "init")
+    let project_operation = matches!(command, "lock" | "build" | "test" | "doc" | "new" | "init")
         || (matches!(command, "check" | "run") && operands.is_empty());
     if explicit && !project_operation {
         return None;
@@ -412,6 +436,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "lock" => lock_project(root, &snapshot, &options),
         "build" => build(root, &snapshot, &options, process),
         "test" => test(root, &snapshot, &options),
+        "doc" => documentation::command(root, &snapshot, &options),
         "check" | "run" if operands.is_empty() => {
             if options
                 .words
@@ -426,7 +451,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "check" | "run" | "compile" | "fmt" => {
             if options.has_lock_options() {
                 Err("locking options require a source-less project command".into())
-            } else if !manifest.dependencies.is_empty() {
+            } else if command != "fmt" && !manifest.dependencies.is_empty() {
                 Err("package dependencies require a source-less project command: use `oxid check`, `oxid run`, `oxid build` or `oxid test`".into())
             } else if command == "fmt"
                 && operands
@@ -493,6 +518,7 @@ fn find_manifest(source: Option<&Path>) -> Result<Option<PathBuf>, String> {
 }
 
 fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> {
+    execution_policy(manifest)?;
     if let Some(error) = &manifest.configuration_error {
         return Err(error.clone());
     }
@@ -501,7 +527,7 @@ fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> 
         (
             "target",
             manifest.target.as_deref(),
-            "x86_64-unknown-linux-gnu",
+            frontend::NativeBuildSettings::new(false).target_triple(),
         ),
     ] {
         if value.is_some_and(|value| value != supported) {
@@ -577,11 +603,81 @@ trait ProjectReader {
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
         fs::canonicalize(root.join(source)).map_err(|error| error.to_string())
     }
+    fn finish_graph(
+        &self,
+        _packages: &[frontend::PackageSpec],
+        _manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
-struct RegularProjectReader;
+struct RegularProjectReader {
+    root: PathBuf,
+    locked: bool,
+    offline: bool,
+    git_roots: Vec<PathBuf>,
+}
 impl ProjectReader for RegularProjectReader {
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String> {
         runtime::load_typed_manifest(path)
+    }
+
+    fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
+        if source.starts_with("git+") || source.starts_with("https://") {
+            if !cfg!(target_os = "linux") {
+                return Err("typed Git dependencies are currently available only on Linux".into());
+            }
+            let target =
+                runtime::materialize_typed_git(&self.root, source, self.locked, self.offline)?;
+            if !self.git_roots.contains(&target) {
+                self.git_roots.push(target.clone());
+            }
+            return Ok(target);
+        }
+        let path = Path::new(source);
+        if source.contains("://") || (!path.is_absolute() && source.contains(':')) {
+            return Err(
+                "dependencies support local paths or Git URLs pinned to a full commit hash".into(),
+            );
+        }
+        let target = fs::canonicalize(root.join(path)).map_err(|error| error.to_string())?;
+        if self
+            .git_roots
+            .iter()
+            .any(|anchor| root.starts_with(anchor) && !target.starts_with(anchor))
+        {
+            return Err("a Git package's local dependency must remain inside its checkout".into());
+        }
+        Ok(target)
+    }
+
+    fn finish_graph(
+        &self,
+        packages: &[frontend::PackageSpec],
+        manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        // A local alias can discover a checkout before its Git edge. Validate
+        // the completed canonical graph so traversal order cannot hide a local
+        // edge outside a subsequently authenticated Git checkout.
+        for (package, manifest) in packages.iter().zip(manifests) {
+            if let Some(anchor) = self
+                .git_roots
+                .iter()
+                .find(|root| package.root.starts_with(root.as_path()))
+            {
+                for edge in &package.dependencies {
+                    let source = &manifest.manifest.dependencies[&edge.alias];
+                    let git = source.starts_with("git+") || source.starts_with("https://");
+                    if !git && !packages[edge.package].root.starts_with(anchor) {
+                        return Err(
+                            "a Git package's local dependency must remain inside its checkout"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -589,7 +685,32 @@ fn package_graph(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
 ) -> Result<PackageGraph, String> {
-    package_graph_with(root, snapshot, &mut RegularProjectReader)
+    package_graph_options(root, snapshot, true, true)
+}
+
+fn package_graph_options(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    locked: bool,
+    offline: bool,
+) -> Result<PackageGraph, String> {
+    package_graph_cache_owner(root, snapshot, locked, offline, root)
+}
+
+fn package_graph_cache_owner(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    locked: bool,
+    offline: bool,
+    cache_owner: &Path,
+) -> Result<PackageGraph, String> {
+    let mut reader = RegularProjectReader {
+        root: fs::canonicalize(cache_owner).map_err(|error| error.to_string())?,
+        locked,
+        offline,
+        git_roots: Vec::new(),
+    };
+    package_graph_with(root, snapshot, &mut reader)
 }
 
 fn package_graph_with(
@@ -690,22 +811,23 @@ fn package_graph_with(
                 }
             }
             for (alias, source) in dependencies {
-                let path = Path::new(&source);
                 if source.is_empty()
                     || source.len() > 4096
                     || source.chars().any(char::is_control)
-                    || source.starts_with("git+")
-                    || source.contains("://")
-                    || (!path.is_absolute() && source.contains(':'))
                     || source.starts_with(['{', '['])
                 {
-                    return Err(format!("dependencies support only local directory paths; unsupported source for `{alias}`"));
+                    return Err(format!("dependencies: invalid source for `{alias}`"));
                 }
-                let target = self.reader.dependency(&root, &source).map_err(|error| {
-                    format!(
-                        "dependencies: cannot open local path for `{alias}` ({source}): {error}"
-                    )
-                })?;
+                let target = self
+                    .reader
+                    .dependency(&root, &source)
+                    .map_err(|error| {
+                        if source.starts_with("git+") || source.starts_with("https://") {
+                            format!("dependencies: cannot resolve `{alias}`: {error}")
+                        } else {
+                            format!("dependencies: cannot open local path for `{alias}` ({source}): {error}")
+                        }
+                    })?;
                 if !target.is_dir() {
                     return Err(format!(
                         "dependencies: path for `{alias}` must be a package directory"
@@ -779,6 +901,9 @@ fn package_graph_with(
     if longest_path(0, &graph.packages, &mut vec![None; graph.packages.len()]) > 32 {
         return Err("dependencies exceed the 32-level graph path limit".into());
     }
+    graph
+        .reader
+        .finish_graph(&graph.packages, &graph.manifests)?;
     Ok(PackageGraph {
         specs: graph.packages,
         manifests: graph.manifests,
@@ -971,7 +1096,12 @@ fn execute_project(
         ));
     }
     let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let graph = package_graph_options(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.offline || options.frozen,
+    )?;
     let entry_override = entry_override
         .map(|entry| local_source(&graph.specs[0].root, entry))
         .transpose()?;
@@ -991,7 +1121,12 @@ fn execute_project(
             settings,
             &graph.specs[0].root,
         ),
-        None => prepared.execute(command, options.json(), process),
+        None => prepared.execute_with_execution(
+            command,
+            options.json(),
+            process,
+            execution_policy(&snapshot.manifest)?,
+        ),
     })
 }
 
@@ -1006,7 +1141,12 @@ fn lock_project(
         );
     }
     let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let graph = package_graph_options(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.offline || options.frozen,
+    )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     let expected = lock_snapshot(&graph, &prepared)?;
@@ -1108,6 +1248,12 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
             result.incremental = true;
             continue;
         }
+        if matches!(word.as_str(), "--debug-info" | "--no-debug-info") {
+            if result.debug_info.replace(word == "--debug-info").is_some() {
+                return Err("select --debug-info or --no-debug-info only once".into());
+            }
+            continue;
+        }
         if matches!(word.as_str(), "--reproducible" | "--no-reproducible") {
             if result
                 .reproducible
@@ -1134,7 +1280,7 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
         }
         let supported = match name {
             "--backend" => "llvm",
-            "--target" => "x86_64-unknown-linux-gnu",
+            "--target" => frontend::NativeBuildSettings::new(false).target_triple(),
             _ => {
                 return Err(format!(
                     "unsupported option for typed-preview build: {word}"
@@ -1180,7 +1326,12 @@ fn test(
     // Admit every package manifest before starting any declared user test.
     // Each child repeats admission and compiles its own entry in one session.
     let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let graph = package_graph_options(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.offline || options.frozen,
+    )?;
     if existing.is_some() {
         let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].0])?;
         let prepared = frontend::prepare_package_project(&graph.specs, Some(&test_entry))
@@ -1286,7 +1437,7 @@ fn scaffold(options: &Options) -> Result<(), String> {
     write("src/main.ox", "fn main() -> i32 {\n    return 0;\n}\n")?;
     write("tests/smoke.ox", "fn double(value: i32) -> i32 {\n    return value * 2;\n}\n\nfn main() -> i32 {\n    if double(21) == 42 {\n        return 0;\n    } else {\n        return 1;\n    }\n}\n")?;
     write(".gitignore", ".oxid/\n")?;
-    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
+    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 or ARM64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"new-summary\",\"success\":true,\"path\":{}}}", json_string(&root.to_string_lossy()));
     } else {
@@ -1344,6 +1495,56 @@ mod profile_tests {
     }
 
     #[test]
+    fn project_target_selects_the_host_and_refuses_foreign_architectures() {
+        let host = frontend::NativeBuildSettings::new(false).target_triple();
+        let manifest = runtime::ProjectManifest {
+            target: Some(host.into()),
+            ..Default::default()
+        };
+        validate_settings(&manifest).unwrap();
+        let option = format!("--target={host}");
+        validate_build_options(&options(&["build", &option])).unwrap();
+        let foreign = if host == "aarch64-unknown-linux-gnu" {
+            "x86_64-unknown-linux-gnu"
+        } else {
+            "aarch64-unknown-linux-gnu"
+        };
+        let manifest = runtime::ProjectManifest {
+            target: Some(foreign.into()),
+            ..Default::default()
+        };
+        assert!(validate_settings(&manifest).unwrap_err().contains("target"));
+        let option = format!("--target={foreign}");
+        assert!(validate_build_options(&options(&["build", &option])).is_err());
+    }
+
+    #[test]
+    fn debug_info_resolves_per_member_and_cli_overrides_without_changing_optimization() {
+        for inherited in [None, Some(false), Some(true)] {
+            let manifest = runtime::ProjectManifest {
+                debug_info: inherited,
+                profile: Some("release".into()),
+                ..Default::default()
+            };
+            let setting = validate_build_options(&options(&["build"]))
+                .unwrap()
+                .resolve(&manifest)
+                .unwrap();
+            assert_eq!(setting.debug_info(), inherited.unwrap_or(false));
+            assert_eq!(setting.optimization_flag(), "-O2");
+            for (flag, enabled) in [("--debug-info", true), ("--no-debug-info", false)] {
+                let setting = validate_build_options(&options(&["build", flag, "--profile=dev"]))
+                    .unwrap()
+                    .resolve(&manifest)
+                    .unwrap();
+                assert_eq!(setting.debug_info(), enabled);
+                assert_eq!(setting.optimization_flag(), "-O0");
+                assert!(!setting.reproducible());
+            }
+        }
+    }
+
+    #[test]
     fn cli_profile_overrides_member_profile_without_changing_source_policy() {
         for manifest_profile in [None, Some("bounded"), Some("dev"), Some("release")] {
             let manifest = runtime::ProjectManifest {
@@ -1375,7 +1576,10 @@ mod profile_tests {
                     let settings = selected.resolve(&manifest).unwrap();
                     assert_eq!(settings.optimization_flag(), flag);
                     assert!(settings.reproducible());
-                    assert_eq!(settings.target_triple(), "x86_64-unknown-linux-gnu");
+                    assert_eq!(
+                        settings.target_triple(),
+                        frontend::NativeBuildSettings::new(false).target_triple()
+                    );
                 }
             }
             let selected = validate_build_options(&options(&[
@@ -1471,7 +1675,7 @@ mod profile_tests {
         assert!(build.resolve(&invalid).unwrap_err().contains("profile"));
         let invalid = runtime::ProjectManifest {
             profile: Some("release".into()),
-            target: Some("aarch64-unknown-linux-gnu".into()),
+            target: Some("riscv64-unknown-linux-gnu".into()),
             ..Default::default()
         };
         assert!(validate_settings(&invalid).unwrap_err().contains("target"));

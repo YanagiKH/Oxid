@@ -44,6 +44,21 @@ struct ScalarType(hir::Ty);
 impl fmt::Display for ScalarType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Json(match self.0 {
+            hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize
+            | hir::Ty::I128
+            | hir::Ty::U128
+            | hir::Ty::Char
+            | hir::Ty::F32
+            | hir::Ty::F64 => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
+            hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
             hir::Ty::U8 => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
@@ -59,7 +74,9 @@ impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
-            AggregateTy::Enum(_) => unreachable!("enum source gate"),
+            AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File => {
+                unreachable!("aggregate source gate")
+            }
             AggregateTy::FixedArray(array) => write!(
                 f,
                 "[\"fixed-array\",{},{}]",
@@ -315,6 +332,17 @@ impl fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::ExprKind as E;
         match self.0 {
+            source_hir::ExprKind::Bitwise { .. }
+            | source_hir::ExprKind::BitNot { .. }
+            | source_hir::ExprKind::Integer { .. }
+            | source_hir::ExprKind::Character(_)
+            | source_hir::ExprKind::Float { .. }
+            | source_hir::ExprKind::Integer128 { .. } => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
+            source_hir::ExprKind::I64(_) => {
+                panic!("i64 is outside this retained narrow fixture or observer")
+            }
             source_hir::ExprKind::Conversion { .. } => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
@@ -379,6 +407,7 @@ impl fmt::Display for Expression<'_> {
                 write!(f, "[\"record-literal\",{},{}]", record.0, fields.len())
             }
             E::ArrayLiteral { elements } => write!(f, "[\"array-literal\",{}]", elements.len()),
+            E::ByteString { bytes } => write!(f, "[\"byte-string\",{bytes:?}]"),
             E::IndexRead {
                 base,
                 base_span,
@@ -412,6 +441,9 @@ impl fmt::Display for HirArgument<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             source_hir::Argument::Value(id) => write!(f, "[\"value\",{}]", id.0),
+            source_hir::Argument::BorrowRange { .. } => {
+                unreachable!("call-only ranges are outside this predecessor fixture domain")
+            }
             source_hir::Argument::Borrow {
                 kind,
                 place,
@@ -442,6 +474,34 @@ impl fmt::Display for HirStatement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::StmtKind as S;
         match self.0 {
+            S::BorrowLet {
+                binding,
+                kind,
+                place,
+                borrow_span,
+                annotation,
+            } => {
+                let (mode, root) = match place {
+                    source_hir::BorrowPlace::Owner(id) => ("owner", id.0),
+                    source_hir::BorrowPlace::Forwarded(id) => ("forwarded", id.0),
+                };
+                write!(
+                    f,
+                    "[\"borrow-let\",{},{},\"{}\",{},{},",
+                    binding.0,
+                    Borrow(*kind),
+                    mode,
+                    root,
+                    SpanRow(*borrow_span)
+                )?;
+                if let Some(ty) = annotation {
+                    ParameterType(*ty).fmt(f)?;
+                } else {
+                    f.write_str("null")?;
+                }
+                f.write_str("]")
+            }
+            S::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             S::Match { .. } => unreachable!("enum source gate"),
             S::Let { binding, init } => write!(f, "[\"let\",{},{}]", binding.0, init.0),
             S::Assign {
@@ -495,6 +555,17 @@ impl fmt::Display for HirStatement<'_> {
             S::Return(id) => write!(f, "[\"return\",{}]", Optional(id.map(|id| id.0))),
             S::Break { target } => write!(f, "[\"break\",{}]", target.0),
             S::Continue { target } => write!(f, "[\"continue\",{}]", target.0),
+            S::ForRange {
+                loop_id,
+                binding,
+                start,
+                end,
+                body,
+            } => write!(
+                f,
+                "[\"for-range\",{},{},{},{},{}]",
+                loop_id.0, binding.0, start.0, end.0, body.0
+            ),
             S::While {
                 loop_id,
                 condition,
@@ -773,6 +844,7 @@ impl fmt::Display for Base {
         match self.0 {
             AccessBase::Owner(id) => write!(f, "[\"owner\",{}]", id.0),
             AccessBase::Parameter(id) => write!(f, "[\"reference\",{}]", id.0),
+            AccessBase::Loan(id) => write!(f, "[\"local-reference\",{}]", id.0),
         }
     }
 }
@@ -835,7 +907,30 @@ struct ValueRow<'a>(&'a Rvalue);
 impl fmt::Display for ValueRow<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
+            Rvalue::Bitwise { .. }
+            | Rvalue::BitNot { .. }
+            | Rvalue::Integer { .. }
+            | Rvalue::Character(_)
+            | Rvalue::CharacterConvert { .. }
+            | Rvalue::Float { .. }
+            | Rvalue::FloatConvert { .. }
+            | Rvalue::FloatNegate { .. }
+            | Rvalue::FloatArithmetic { .. }
+            | Rvalue::Integer128 { .. }
+            | Rvalue::CheckedInteger { .. }
+            | Rvalue::CheckedNegateInteger { .. }
+            | Rvalue::CheckedIntegerCast { .. } => {
+                panic!("integer width is outside this retained narrow fixture or observer")
+            }
+            Rvalue::I64(_)
+            | Rvalue::WidenI64 { .. }
+            | Rvalue::CheckedI64ToI32 { .. }
+            | Rvalue::CheckedI64ToU8 { .. }
+            | Rvalue::CheckedNegateI64 { .. }
+            | Rvalue::CheckedI64 { .. } => {
+                panic!("i64 is outside this retained narrow fixture or observer")
+            }
+            Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } | Rvalue::U8(_) => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
             Rvalue::Load(place) => write!(f, "[\"load\",{}]", PlaceRow(*place)),
@@ -942,7 +1037,13 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
-            I::ReadStdin { .. } | I::WriteStdout { .. } => {
+            I::AcquireLocalBorrow(id) => write!(f, "[\"acquire-local-borrow\",{}]", id.0),
+            I::ReleaseLocalBorrow(id) => write!(f, "[\"release-local-borrow\",{}]", id.0),
+            I::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
+            I::PrepareBorrowRange { .. }
+            | I::Experimental { .. }
+            | I::ReadStdin { .. }
+            | I::WriteStdout { .. } => {
                 unreachable!("builtin effect source gate")
             }
             I::ConstructEnum { .. }
@@ -1228,18 +1329,31 @@ pub(super) fn raw(out: &mut Output, raw: &RawOwnedProgram) -> ObservationResult<
             }
         }
         for (loan, l) in function.loans.iter().enumerate() {
-            out.row(
-                "raw-loan",
-                format_args!(
-                    "{id},{loan},{},{},{},{},{},{}",
-                    l.call.0,
-                    l.argument,
-                    Base(l.authority),
-                    Borrow(l.kind),
-                    Borrowed(l.referent()),
-                    SpanRow(l.span)
-                ),
-            )?;
+            if let Some((call, argument)) = l.call_binding() {
+                out.row(
+                    "raw-loan",
+                    format_args!(
+                        "{id},{loan},{},{},{},{},{},{}",
+                        call.0,
+                        argument,
+                        Base(l.authority),
+                        Borrow(l.kind),
+                        Borrowed(l.referent()),
+                        SpanRow(l.span)
+                    ),
+                )?;
+            } else {
+                out.row(
+                    "raw-local-loan",
+                    format_args!(
+                        "{id},{loan},{},{},{},{}",
+                        Base(l.authority),
+                        Borrow(l.kind),
+                        Borrowed(l.referent()),
+                        SpanRow(l.span)
+                    ),
+                )?;
+            }
         }
         for (block, b) in function.blocks.iter().enumerate() {
             out.row(

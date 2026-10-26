@@ -1,6 +1,11 @@
 //! Public profile admission and real LLVM optimization/semantic acceptance.
 //! Rust's cargo profile does not select Oxid's native optimization profile.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use sha2::{Digest, Sha256};
 use std::{
@@ -192,7 +197,11 @@ impl Fixture {
                 .collect();
             assert_eq!(options, [*expected], "{line}");
             assert!(
-                line.contains("\"--target=x86_64-unknown-linux-gnu\""),
+                line.contains(if cfg!(target_arch = "aarch64") {
+                    "\"--target=aarch64-unknown-linux-gnu\""
+                } else {
+                    "\"--target=x86_64-unknown-linux-gnu\""
+                }),
                 "{line}"
             );
         }
@@ -256,7 +265,14 @@ impl Fixture {
                 );
                 assert_eq!(&bytes[56..88], &Sha256::digest(&bytes[88..])[..]);
                 assert_eq!(&bytes[88..95], b"\x7fELF\x02\x01\x01");
-                assert_eq!(&bytes[104..108], &[1, 0, 62, 0]);
+                assert_eq!(
+                    &bytes[104..108],
+                    if cfg!(target_arch = "aarch64") {
+                        &[1, 0, 183, 0]
+                    } else {
+                        &[1, 0, 62, 0]
+                    }
+                );
                 bytes[88..].to_vec()
             })
             .collect();
@@ -947,4 +963,189 @@ fn switching_profile_with_a_failed_link_preserves_the_previous_executable_and_lo
     assert_eq!(fs::read(fixture.executable()).unwrap(), original);
     assert_eq!(fs::read(fixture.root.join("app/oxid.lock")).unwrap(), lock);
     outcome(fixture.execute(b""), 0, b"7\n", b"");
+}
+
+#[test]
+fn optimized_owned_emission_keeps_unused_type_ownership_and_resource_errors() {
+    let wide = (0..9)
+        .map(|index| format!("f{index}:[i32;1024]"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let cases = [
+        ("struct T{value:i32}fn unused(x:T)->bool{return x.value;}fn main()->i32{let x=T{value:42};return x.value;}".to_owned(), "E0300"),
+        ("struct T{value:i32}fn unused(x:T)->i32{let moved=x;return x.value;}fn main()->i32{let x=T{value:42};return x.value;}".to_owned(), "E0310"),
+        (format!("struct T{{value:i32}}struct Wide{{{wide}}}fn unused(x:Wide)->i32{{return 0;}}fn main()->i32{{let x=T{{value:42}};return x.value;}}"), "E0700"),
+        ("struct T{value:i32}fn unused(x:T)->i32{return unused(x);}fn main()->i32{let x=T{value:42};return x.value;}".to_owned(), "E0700"),
+    ];
+    for (source, code) in cases {
+        let fixture = Fixture::new();
+        fixture.write("app/src/main.ox", &source);
+        for profile in ["dev", "release"] {
+            let diagnostic =
+                failure(fixture.run(&["build", "--profile", profile, "--message-format=json"]));
+            assert!(diagnostic.contains(code), "{profile}: {diagnostic}");
+            assert_eq!(
+                fs::read_to_string(fixture.root.join("app/src/main.ox")).unwrap(),
+                source
+            );
+            assert!(!fixture.executable().exists());
+            fixture.no_tools_or_cache();
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires real LLVM 19.1.7 in OXID_LLVM_BIN"]
+fn optimized_owned_bodies_use_entry_reachability_with_debug_info_and_object_reuse() {
+    verify_owned_function_selection("struct T{value:i32}fn unused(x:T)->i32{return x.value+1;}fn leaf(x:T)->i32{return x.value;}fn middle(x:T)->i32{return leaf(x);}fn main()->i32{let x=T{value:42};return middle(x);}\n", "bounded", 4, 3, "bounded");
+    let mut source = "struct T{value:i32}".to_owned();
+    for id in 0..1023 {
+        let body = if matches!(id, 255 | 511) {
+            format!("return f{}(x);", id + 1)
+        } else {
+            "return x.value;".to_owned()
+        };
+        source.push_str(&format!("fn f{id}(x:T)->i32{{{body}}}"));
+    }
+    source.push_str("fn main()->i32{let a=f255(T{value:10});let b=f511(T{value:20});let c=f1022(T{value:12});return a+b+c;}");
+    verify_owned_function_selection(&source, "hosted", 1024, 6, "hosted-1024");
+}
+
+fn verify_owned_function_selection(
+    source: &str,
+    policy: &str,
+    full: usize,
+    selected: usize,
+    case_name: &str,
+) {
+    let fixture = Fixture::new();
+    fixture.real_tools();
+    fixture.write("app/src/main.ox", source);
+    let manifest = fs::read_to_string(fixture.root.join("app/oxid.toml")).unwrap();
+    fixture.write(
+        "app/oxid.toml",
+        &format!("{manifest}\n[execution]\npolicy=\"{policy}\"\n"),
+    );
+    let capture = fixture.root.join("captured.ll");
+    let real_opt = PathBuf::from(std::env::var_os("OXID_LLVM_BIN").unwrap()).join("opt");
+    let quoted_capture = serde_json::to_string(&capture.to_string_lossy()).unwrap();
+    let quoted_opt = serde_json::to_string(&real_opt.to_string_lossy()).unwrap();
+    let capture_tool = format!("#!/usr/bin/python3\nfrom pathlib import Path\nimport os,shutil,sys\np=Path.cwd()/'program.ll'\nif p.is_file():shutil.copy2(p,{quoted_capture})\nos.execv({quoted_opt},[{quoted_opt},*sys.argv[1:]])\n");
+    let deployment = fixture.root.join("deployed");
+    fs::create_dir(&deployment).unwrap();
+    let compiler_digest = format!("{:x}", Sha256::digest(fs::read(&fixture.compiler).unwrap()));
+    let evidence = std::env::var_os("OXID_NATIVE_REACHABILITY_EVIDENCE").map(|root| {
+        PathBuf::from(root)
+            .join(&compiler_digest)
+            .join(format!("run-{}", std::process::id()))
+            .join(case_name)
+    });
+    let mut rows = Vec::new();
+    for profile in ["dev", "release"] {
+        for debug in [false, true] {
+            let label = format!("{profile}-{}", if debug { "debug-info" } else { "plain" });
+            let mut arguments = vec![
+                "build",
+                "--profile",
+                profile,
+                "--reproducible",
+                "--message-format=json",
+            ];
+            fixture.script_tool("opt", &capture_tool);
+            if debug {
+                arguments.push("--debug-info");
+            }
+            let built = success(fixture.run(&arguments));
+            let module = fs::read(&capture).unwrap();
+            let text = std::str::from_utf8(&module).unwrap();
+            let definitions = text
+                .lines()
+                .filter(|line| {
+                    line.starts_with("define internal") && line.contains("@__oxid_owned_fn_")
+                })
+                .count();
+            assert_eq!(
+                definitions,
+                if profile == "dev" { full } else { selected },
+                "{label}"
+            );
+            assert_eq!(
+                text.contains("@__oxid_owned_fn_0("),
+                profile == "dev",
+                "{label}"
+            );
+            let binary = deployment.join(&label);
+            fs::copy(fixture.executable(), &binary).unwrap();
+            let bytes = fs::read(&binary).unwrap();
+            assert_eq!(&bytes[..6], b"\x7fELF\x02\x01");
+            // A script that observes IR intentionally disables executable
+            // fingerprinting. Cache acceptance uses the actual LLVM tools.
+            fixture.real_tools();
+            arguments.push("--incremental");
+            let cold = success(fixture.run(&arguments));
+            assert!(
+                String::from_utf8_lossy(&cold.stdout).contains("\"status\":\"miss\""),
+                "{cold:?}"
+            );
+            assert_eq!(fs::read(fixture.executable()).unwrap(), bytes);
+            let repeated = success(fixture.run(&arguments));
+            assert!(
+                String::from_utf8_lossy(&repeated.stdout).contains("\"status\":\"hit\""),
+                "{repeated:?}"
+            );
+            assert_eq!(fs::read(fixture.executable()).unwrap(), bytes);
+            let ran = Command::new(&binary)
+                .current_dir(&deployment)
+                .env_clear()
+                .output()
+                .unwrap();
+            outcome(ran, 0, b"42\n", b"");
+            rows.push(serde_json::json!({"name":label,"profile":profile,"debug_info":debug,"emitted_functions":definitions,"ir_sha256":format!("{:x}",Sha256::digest(&module)),"elf_sha256":format!("{:x}",Sha256::digest(&bytes)),"cache_hit":true}));
+            if let Some(root) = &evidence {
+                let case = root.join(&label);
+                fs::create_dir_all(&case).unwrap();
+                fs::write(case.join("program.ll"), module).unwrap();
+                fs::write(case.join("program"), bytes).unwrap();
+                fs::set_permissions(case.join("program"), fs::Permissions::from_mode(0o755))
+                    .unwrap();
+                fs::write(case.join("build.stdout"), built.stdout).unwrap();
+                fs::write(case.join("build.stderr"), built.stderr).unwrap();
+                fs::write(case.join("cold.stdout"), cold.stdout).unwrap();
+                fs::write(case.join("cold.stderr"), cold.stderr).unwrap();
+                fs::write(case.join("repeat.stdout"), repeated.stdout).unwrap();
+                fs::write(case.join("repeat.stderr"), repeated.stderr).unwrap();
+            }
+        }
+    }
+    fs::rename(
+        fixture.root.join("app/src"),
+        fixture.root.join("retained-src"),
+    )
+    .unwrap();
+    for entry in fs::read_dir(&deployment).unwrap() {
+        let binary = entry.unwrap().path();
+        outcome(
+            Command::new(&binary)
+                .current_dir(&deployment)
+                .env_clear()
+                .output()
+                .unwrap(),
+            0,
+            b"42\n",
+            b"",
+        );
+    }
+    if let Some(root) = evidence {
+        fs::write(
+            root.join("main.ox"),
+            fs::read(fixture.root.join("retained-src/main.ox")).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.join("oxid.toml"),
+            fs::read(fixture.root.join("app/oxid.toml")).unwrap(),
+        )
+        .unwrap();
+        fs::write(root.join("result.json"), serde_json::to_vec_pretty(&serde_json::json!({"status":"passed","compiler_sha256":compiler_digest,"cases":rows,"source_paths_moved":true})).unwrap()).unwrap();
+    }
 }

@@ -55,12 +55,38 @@ HISTORICAL_ONLY = {
         "requires the frozen source identity before its predecessor binding mutation suite"),
 }
 
+# These complete source-pinned modules test policies on their exact parent
+# compilers. ci.yml replays them unchanged in separate required jobs.
+PREDECESSOR_ONLY = {
+    "test_arm64_host_compatibility": (
+        "91b9cb1ae16da868ee873a36f6efef8ef93745bfed3b8684340c828cf77421a1",
+        "18314e95d6afa3d8a4da7970dbddc828f4f6cbac",
+        "binds the pre-documentation module owners and ARM64 test-only correction scope"),
+    "test_byte_string_compatibility": (
+        'd60fd64d3a8116e191727e84194729063d1068b4da17380a3e3b6ee4952c31d8',
+        "22d04a015a444edcb600a6011cdb0e2c8529cb34",
+        "asserts the complete compiler source identity before native files"),
+    "test_buffer_transfer_compatibility": (
+        "483fa4180a3b409eab07818800f378a96a6eddecaf13b94c0ad5cef214252512",
+        "c45d519127d314f522762c35879c0c485994ea42",
+        "asserts the complete compiler source identity before byte string literals"),
+    "test_byte_buffer_compatibility": (
+        "6b0213e3f6ce75d3ea4fed2566d1b4eae0ece002db2c95cdff7dea4c41da669c",
+        "2e3fe21f76d0027d2b24cb5c7f02ba38ad354809",
+        "asserts the complete pre-hosted compiler source identity"),
+    "test_hosted_execution_compatibility": (
+        "67a0aff2a4a77e0b8a202871492841f09f0c164bf27944bd012b35b1f44adaaf",
+        "559a6e6aa0b2ab2022d8fa37546ac62aeac9954e",
+        "asserts the complete compiler source identity before buffer transfer"),
+}
+
 
 def selected_modules(directory):
     """Select by exact module name; no prefix, failure, or exception filtering."""
     discovered = sorted(Path(directory).glob("test_*.py"))
-    selected = [path for path in discovered if path.stem not in HISTORICAL_ONLY]
-    delegated = [path for path in discovered if path.stem in HISTORICAL_ONLY]
+    pinned = HISTORICAL_ONLY.keys() | PREDECESSOR_ONLY.keys()
+    selected = [path for path in discovered if path.stem not in pinned]
+    delegated = [path for path in discovered if path.stem in pinned]
     return selected, delegated
 
 
@@ -74,7 +100,7 @@ class CurrentTestLoader(unittest.TestLoader):
     def _match_path(self, path, full_path, pattern):
         candidate = Path(full_path)
         if (candidate.parent.resolve() == self.directory
-                and candidate.stem in HISTORICAL_ONLY):
+                and candidate.stem in HISTORICAL_ONLY.keys() | PREDECESSOR_ONLY.keys()):
             return False
         return super()._match_path(path, full_path, pattern)
 
@@ -86,7 +112,8 @@ def main():
     directory = Path(__file__).resolve().parent
     selected, delegated = selected_modules(directory)
     print(f"Current script modules: {len(selected)}", file=sys.stderr)
-    for name, (expected, _) in HISTORICAL_ONLY.items():
+    pinned = {**HISTORICAL_ONLY, **{name: (row[0], row[2]) for name, row in PREDECESSOR_ONLY.items()}}
+    for name, (expected, _) in pinned.items():
         path = directory / (name + ".py")
         try:
             actual = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -100,6 +127,10 @@ def main():
             )
             return 1
     for path in delegated:
+        if path.stem in PREDECESSOR_ONLY:
+            _, revision, reason = PREDECESSOR_ONLY[path.stem]
+            print(f"Mandatory predecessor replay: {path.name} @ {revision}: {reason}", file=sys.stderr)
+            continue
         print(
             f"Mandatory historical replay: {path.name} @ {HISTORICAL_REVISION}: "
             f"{HISTORICAL_ONLY[path.stem][1]}",

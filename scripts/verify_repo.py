@@ -54,6 +54,18 @@ TYPED_MANIFEST_PROJECTS = {
         "apps/frame-filter/packages/codec/src/lib.ox",
         "apps/frame-filter/packages/output/src/lib.ox",
     ),
+    "apps/byte-reverse": (
+        "apps/byte-reverse/app/src/main.ox",
+        "apps/byte-reverse/binary/src/lib.ox",
+        "apps/byte-reverse/reverse/src/lib.ox",
+    ),
+    "packages/utf8_text": (
+        "packages/utf8_text/src/lib.ox",
+    ),
+    "apps/utf8-normalize": (
+        "apps/utf8-normalize/app/src/main.ox",
+        "apps/utf8-normalize/contracts/src/main.ox",
+    ),
     "examples/projects/owned_enum_payload_acceptance/ready": (
         "examples/projects/owned_enum_payload_acceptance/ready/src/main.ox",
         "examples/projects/owned_enum_payload_acceptance/ready/src/flow.ox",
@@ -69,13 +81,68 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/projects/owned_enum_payload_acceptance/library/src/lib.ox",
         "examples/projects/owned_enum_payload_acceptance/library/src/model.ox",
     ),
+    "examples/typed-unicode-range": ("examples/typed-unicode-range/src/main.ox",),
+    "packages/float_vector": ("packages/float_vector/src/lib.ox",),
+    "examples/typed-float-vector": (
+        "examples/typed-float-vector/src/main.ox",
+        "examples/typed-float-vector/tests/vector.ox",
+    ),
+    "packages/matrix": ("packages/matrix/src/lib.ox",),
+    "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
+    "apps/cpu-training": (
+        'apps/cpu-training/checkpoint/src/lib.ox',
+        'apps/cpu-training/checkpoint/src/pipeline.ox',
+        'apps/cpu-training/checkpoint/src/training.ox',
+        'apps/cpu-training/tensor/src/codec.ox',
+        'apps/cpu-training/tensor/src/data.ox',
+        'apps/cpu-training/tensor/src/data/checkpoint.ox',
+        'apps/cpu-training/tensor/src/data/sampler_checkpoint.ox',
+        'apps/cpu-training/tensor/src/data/session.ox',
+        'apps/cpu-training/tensor/src/graph.ox',
+        'apps/cpu-training/tensor/src/lib.ox',
+        'apps/cpu-training/tensor/src/model.ox',
+        'apps/cpu-training/tensor/src/model/checkpoint.ox',
+        'apps/cpu-training/tensor/src/model/session.ox',
+        'apps/cpu-training/tensor/src/optimizer.ox',
+        'apps/cpu-training/tensor/src/optimizer/checkpoint.ox',
+        'apps/cpu-training/trainer/src/main.ox',
+        'apps/cpu-training/trainer/src/options.ox',
+        'apps/cpu-training/trainer/src/report.ox',
+        'apps/cpu-training/trainer/src/training.ox',
+        'apps/cpu-training/trainer/tests/optimizers.ox',
+        'apps/cpu-training/trainer/tests/tensor.ox',
+    ),
+    "apps/minibatch-training": (
+        'apps/minibatch-training/src/main.ox',
+        'apps/minibatch-training/src/options.ox',
+        'apps/minibatch-training/src/report.ox',
+        'apps/minibatch-training/src/training.ox',
+        'apps/minibatch-training/tests/data.ox',
+    ),
+    "apps/streaming-training": (
+        'apps/streaming-training/src/main.ox',
+        'apps/streaming-training/src/options.ox',
+        'apps/streaming-training/src/report.ox',
+        'apps/streaming-training/src/training.ox',
+        'apps/streaming-training/tests/reader.ox',
+        'apps/streaming-training/reader/src/lib.ox',
+    ),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
 TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "examples/projects/owned_enum_payload_acceptance/library",
+    "apps/byte-reverse",
+    "packages/utf8_text",
+    "apps/utf8-normalize",
+    "examples/typed-unicode-range",
+    "packages/float_vector",
+    "packages/matrix",
+    "apps/cpu-training",
+    "apps/minibatch-training",
+    "apps/streaming-training",
 )
-TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
+TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (

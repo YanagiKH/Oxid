@@ -65,7 +65,12 @@ fn status(output: &str, id: &str, expected: &str) {
         "{output}"
     );
 }
-const SUPPORTED: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+const SUPPORTED: bool = cfg!(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+));
 
 #[test]
 fn native_doctor_reports_real_tool_selection_and_unsupported_hosts_honestly() {
@@ -78,7 +83,12 @@ fn native_doctor_reports_real_tool_selection_and_unsupported_hosts_honestly() {
         "{output}"
     );
     assert_eq!(output.lines().count(), 1);
-    assert!(output.contains("\"target\":\"x86_64-unknown-linux-gnu\""));
+    let triple = if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
+    assert!(output.contains(&format!("\"target\":\"{triple}\"")));
     assert!(output.contains("\"llvm_version\":\"19.1.7\""));
     assert!(output.contains("\"toolchain_ready\":false,\"success\":false"));
     status(&output, "host", if SUPPORTED { "passed" } else { "failed" });
@@ -207,7 +217,12 @@ fn invalid_nearest_manifest_is_not_hidden_as_an_absent_project() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn native_doctor_escapes_tool_paths_in_both_output_formats() {
     let fixture = Fixture::new();
@@ -235,7 +250,12 @@ fn native_doctor_escapes_tool_paths_in_both_output_formats() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn fake_tools(fixture: &Fixture, clang_mode: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let tools = fixture.0.join("tools");
@@ -256,7 +276,12 @@ fn fake_tools(fixture: &Fixture, clang_mode: &str) -> PathBuf {
     tools
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn version_only_tools_cannot_claim_sdk_or_native_readiness() {
     let fixture = Fixture::new();
@@ -289,7 +314,12 @@ fn version_only_tools_cannot_claim_sdk_or_native_readiness() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn wrong_versions_output_floods_and_hung_tools_are_bounded() {
     for (script, expected) in [
@@ -312,7 +342,12 @@ fn wrong_versions_output_floods_and_hung_tools_are_bounded() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn exited_probe_leader_does_not_leave_a_child_holding_capture_pipes() {
     let fixture = Fixture::new();
@@ -350,7 +385,12 @@ fn exited_probe_leader_does_not_leave_a_child_holding_capture_pipes() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn inherited_auto_reaping_is_rejected_before_probe_processes() {
     use std::os::unix::process::CommandExt;
@@ -378,7 +418,12 @@ fn inherited_auto_reaping_is_rejected_before_probe_processes() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn malformed_locks_and_changed_dependency_inputs_fail_package_diagnosis_without_rewrites() {
     let fixture = Fixture::new();
@@ -414,7 +459,12 @@ fn malformed_locks_and_changed_dependency_inputs_fail_package_diagnosis_without_
     assert!(!fixture.0.join(".oxid").exists());
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 tools"]
 fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
@@ -442,7 +492,7 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
         status(&output, id, "passed");
     }
     assert!(output.contains("\"toolchain_ready\":true,\"success\":true"));
-    assert!(output.contains("ELF64 x86_64 PIE"));
+    assert!(output.contains(&format!("ELF64 {} PIE", std::env::consts::ARCH)));
     fixture.clean();
     // A real compiler with its SDK include search deliberately disabled must
     // fail the SDK check even though all three version checks still succeed.

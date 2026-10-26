@@ -49,6 +49,16 @@ fn scalar_raw(spans: &[Span]) -> RawOwnedProgram {
 
 fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
     match kind {
+        FailureKind::WideOverflow
+        | FailureKind::WideDivisionByZero
+        | FailureKind::I64ToI32Range
+        | FailureKind::I64ToU8Range => {
+            panic!("i64 is outside this retained narrow fixture or observer")
+        }
+        FailureKind::AllocationIdentity => {
+            execute::OwnedRunFailure::Invariant("allocation identity exhausted", Some(origin))
+                .diagnostic(sources)
+        }
         FailureKind::ByteRange => {
             unreachable!("u8 is outside this predecessor fixture or observation domain")
         }
@@ -71,6 +81,11 @@ fn ordinary(kind: FailureKind, origin: Span, sources: &SourceMap) -> String {
         FailureKind::ProcessStatus => {
             execute::OwnedRunFailure::ProcessResult(origin).diagnostic(sources)
         }
+        FailureKind::ResourceDescriptor => {
+            execute::OwnedRunFailure::Invariant("resource descriptor", Some(origin))
+                .diagnostic(sources)
+        }
+        _ => panic!("integer width is outside this retained narrow fixture or observer"),
     }
     .render_human(sources)
 }

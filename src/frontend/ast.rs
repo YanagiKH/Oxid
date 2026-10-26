@@ -1,3 +1,4 @@
+mod generic_syntax;
 use super::lexer::Token;
 use super::source::{SourceFile, Span};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,7 +14,7 @@ pub enum PathRoot {
     Std,
     LocalType,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QualifiedPath {
     pub span: Span,
     pub segment_start: usize,
@@ -22,7 +23,7 @@ pub struct QualifiedPath {
 }
 /// Compatibility spelling for the still-absolute production parser.
 pub type AbsolutePath = QualifiedPath;
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImportDecl {
     pub path: PathId,
     pub alias: Span,
@@ -35,8 +36,132 @@ pub struct BodyBlockId(pub usize);
 /// Closed named-receiver scalar conversions; no general cast or method dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConversionOp {
+    ToCharChecked,
+    CharToU32,
+    ToFloat(FloatTypeSyntax),
+    FloatToBits,
+    FloatSqrt,
+    FloatFromBits(FloatTypeSyntax),
     ToU8Checked,
     ToI32,
+    ToI64,
+    ToI32Checked,
+    ToIntegerChecked(IntegerTypeSyntax),
+}
+/// Integer spellings added after the retained i32/u8/i64 source contracts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IntegerTypeSyntax {
+    I8,
+    U8,
+    I16,
+    I32,
+    I64,
+    U16,
+    U32,
+    U64,
+    Isize,
+    Usize,
+    I128,
+    U128,
+}
+impl IntegerTypeSyntax {
+    pub const ADDITIONAL_LITERAL_SUFFIXES: [Self; 10] = [
+        Self::I8,
+        Self::U8,
+        Self::I16,
+        Self::U16,
+        Self::U32,
+        Self::U64,
+        Self::Isize,
+        Self::Usize,
+        Self::I128,
+        Self::U128,
+    ];
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::U8 => "u8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::Isize => "isize",
+            Self::Usize => "usize",
+            Self::I128 => "i128",
+            Self::U128 => "u128",
+        }
+    }
+    pub fn from_spelling(text: &str) -> Option<Self> {
+        match text {
+            "i8" => Some(Self::I8),
+            "u8" => Some(Self::U8),
+            "i16" => Some(Self::I16),
+            "i32" => Some(Self::I32),
+            "i64" => Some(Self::I64),
+            "u16" => Some(Self::U16),
+            "u32" => Some(Self::U32),
+            "u64" => Some(Self::U64),
+            "isize" => Some(Self::Isize),
+            "usize" => Some(Self::Usize),
+            "i128" => Some(Self::I128),
+            "u128" => Some(Self::U128),
+            _ => None,
+        }
+    }
+    pub const fn bits(self) -> u8 {
+        match self {
+            Self::I8 | Self::U8 => 8,
+            Self::I16 | Self::U16 => 16,
+            Self::I32 | Self::U32 => 32,
+            Self::I64 | Self::U64 | Self::Isize | Self::Usize => 64,
+            Self::I128 | Self::U128 => 128,
+        }
+    }
+    pub const fn signed(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize | Self::I128
+        )
+    }
+    pub const fn checked_conversion(self) -> &'static str {
+        match self {
+            Self::I8 => "to_i8_checked",
+            Self::U8 => "to_u8_checked",
+            Self::I16 => "to_i16_checked",
+            Self::I32 => "to_i32_checked",
+            Self::I64 => "to_i64_checked",
+            Self::U16 => "to_u16_checked",
+            Self::U32 => "to_u32_checked",
+            Self::U64 => "to_u64_checked",
+            Self::Isize => "to_isize_checked",
+            Self::Usize => "to_usize_checked",
+            Self::I128 => "to_i128_checked",
+            Self::U128 => "to_u128_checked",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatTypeSyntax {
+    F32,
+    F64,
+}
+impl FloatTypeSyntax {
+    pub fn from_spelling(text: &str) -> Option<Self> {
+        match text {
+            "f32" => Some(Self::F32),
+            "f64" => Some(Self::F64),
+            _ => None,
+        }
+    }
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithmeticOp {
@@ -45,6 +170,19 @@ pub enum ArithmeticOp {
     Multiply,
     Divide,
     Remainder,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitwiseOp {
+    And,
+    Or,
+    Xor,
+    ShiftLeft,
+    ShiftRight,
+}
+impl BitwiseOp {
+    pub const fn shift(self) -> bool {
+        matches!(self, Self::ShiftLeft | Self::ShiftRight)
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComparisonOp {
@@ -60,8 +198,24 @@ pub enum LogicalOp {
     And,
     Or,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ExprKind {
+    /// A local reference initializer. Borrowed values are not ordinary values.
+    Borrow {
+        mutable: bool,
+        name: Span,
+        forwarded: bool,
+    },
+    BitNot {
+        operand: ExprId,
+        operator_span: Span,
+    },
+    Bitwise {
+        op: BitwiseOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Conversion {
         op: ConversionOp,
         operand: ExprId,
@@ -88,10 +242,25 @@ pub enum ExprKind {
         operator_span: Span,
     },
     Bool(bool),
+    Character(char),
     /// Exact decimal digits, separate literal-only sign, and full origin on Expr.
     Number {
         digits: Span,
         negative: bool,
+    },
+    I64Number {
+        digits: Span,
+        negative: bool,
+    },
+    FloatNumber {
+        digits: Span,
+        negative: bool,
+        kind: FloatTypeSyntax,
+    },
+    IntegerNumber {
+        digits: Span,
+        negative: bool,
+        kind: IntegerTypeSyntax,
     },
     Unit,
     Name(Span),
@@ -109,6 +278,11 @@ pub enum ExprKind {
         record: ItemPath,
         fields: Vec<FieldInit>,
     },
+    GenericVariant {
+        application: GenericApplicationId,
+        variant: Span,
+        args: Option<Vec<Argument>>,
+    },
     FieldRead {
         base: Span,
         /// The bounded dot-separated field path, including retained trivia.
@@ -116,6 +290,10 @@ pub enum ExprKind {
     },
     ArrayLiteral {
         elements: Vec<ExprId>,
+    },
+    ByteString {
+        contents: Span,
+        length: u16,
     },
     IndexRead {
         /// A named root, optionally followed by a bounded record field path.
@@ -133,12 +311,12 @@ pub enum ExprKind {
         operator_span: Span,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScalarTypeSyntax {
     Bool,
     I32,
@@ -147,28 +325,42 @@ pub enum ScalarTypeSyntax {
     Name,
     /// Compact index into the existing bounded qualified-path table.
     Absolute(u32),
+    Applied(u32),
     Array(FixedArraySyntax),
+    I64,
+    Integer(IntegerTypeSyntax),
+    Float(FloatTypeSyntax),
+    Char,
 }
 /// Scalar elements in the existing fixed-array grammar.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArrayElementTypeSyntax {
     Bool,
     I32,
     U8,
     Unit,
+    I64,
+    Integer(IntegerTypeSyntax),
+    Float(FloatTypeSyntax),
+    Char,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FixedArraySyntax {
     pub element: ArrayElementTypeSyntax,
     pub length: u16,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TypeSyntaxKind {
     Name(ItemPath),
+    Applied(GenericApplicationId),
     Unit,
     Reference {
         mutable: bool,
         referent: ItemPath,
+    },
+    AppliedReference {
+        mutable: bool,
+        application: GenericApplicationId,
     },
     Array(FixedArraySyntax),
     SliceReference {
@@ -180,19 +372,50 @@ pub enum TypeSyntaxKind {
         array: FixedArraySyntax,
     },
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypeSyntax {
     pub span: Span,
     pub kind: TypeSyntaxKind,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructField {
     pub public: Option<Span>,
     pub name: Span,
     pub ty: TypeSyntax,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct GenericParam {
+    pub name: Span,
+    pub bounds: Vec<ItemPath>,
+    pub span: Span,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub struct GenericHeader {
+    pub declaration: Span,
+    pub parameters: Vec<GenericParam>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GenericApplicationId(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenericArgumentContext {
+    Expression,
+    Type,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub struct GenericArguments {
+    pub callee: Span,
+    pub path: ItemPath,
+    pub arguments: Vec<TypeSyntax>,
+    pub span: Span,
+    pub context: GenericArgumentContext,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct GenericSyntax {
+    pub headers: Vec<GenericHeader>,
+    pub calls: Vec<GenericArguments>,
+}
+#[derive(Debug, PartialEq, Eq)]
 pub struct StructDecl {
     pub public: Option<Span>,
     pub name: Span,
@@ -200,7 +423,7 @@ pub struct StructDecl {
     pub span: Span,
     pub end: Span,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumPayloadSyntax {
     #[cfg_attr(not(test), allow(dead_code))] // Read by private structural qualification.
     pub kind: ScalarTypeSyntax,
@@ -211,25 +434,32 @@ impl EnumPayloadSyntax {
         TypeSyntax {
             span: self.span,
             kind: match self.kind {
-                ScalarTypeSyntax::Bool | ScalarTypeSyntax::I32 | ScalarTypeSyntax::Name => {
-                    TypeSyntaxKind::Name(ItemPath::Unqualified(self.span))
-                }
+                ScalarTypeSyntax::Bool
+                | ScalarTypeSyntax::I32
+                | ScalarTypeSyntax::I64
+                | ScalarTypeSyntax::Float(_)
+                | ScalarTypeSyntax::Char
+                | ScalarTypeSyntax::Integer(_)
+                | ScalarTypeSyntax::Name => TypeSyntaxKind::Name(ItemPath::Unqualified(self.span)),
                 ScalarTypeSyntax::Unit => TypeSyntaxKind::Unit,
                 ScalarTypeSyntax::Absolute(id) => {
                     TypeSyntaxKind::Name(ItemPath::Absolute(PathId(id as usize)))
+                }
+                ScalarTypeSyntax::Applied(id) => {
+                    TypeSyntaxKind::Applied(GenericApplicationId(id as usize))
                 }
                 ScalarTypeSyntax::Array(array) => TypeSyntaxKind::Array(array),
             },
         }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct EnumVariantSyntax {
     pub name: Span,
     pub payload: Option<EnumPayloadSyntax>,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct EnumDecl {
     pub public: Option<Span>,
     pub name: Span,
@@ -238,14 +468,14 @@ pub struct EnumDecl {
     pub end: Span,
 }
 /// Private source-discovery grammar; no namespace or runtime semantics yet.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModuleDecl {
     pub name: Span,
     pub public: Option<Span>,
     #[allow(dead_code)] // Full original declaration origin for the staged shared index.
     pub span: Span,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemId {
     Module(usize),
     Import(usize),
@@ -254,7 +484,7 @@ pub enum ItemId {
     #[cfg_attr(not(test), allow(dead_code))] // No enum parser production yet.
     Enum(usize),
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BorrowPlace {
     /// Complete bounded named-root field path, or a single whole binding name.
     OwnerName(Span),
@@ -262,8 +492,14 @@ pub enum BorrowPlace {
         name: Span,
         star_span: Span,
     },
+    Range {
+        name: Span,
+        start: ExprId,
+        end: ExprId,
+        star: Option<u32>,
+    },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Argument {
     Value(ExprId),
     Borrow {
@@ -272,27 +508,38 @@ pub enum Argument {
         span: Span,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FieldInit {
     pub name: Span,
     pub value: ExprId,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Param {
     pub name: Span,
     pub ty: TypeSyntax,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MatchArmSyntax {
     pub variant: PathId,
     pub binding: Option<Span>,
     pub body: BodyBlockId,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct RecordPatternField {
+    pub field: Span,
+    pub binding: Span,
+    pub span: Span,
+}
+#[derive(Debug, PartialEq, Eq)]
 pub enum StmtKind {
+    DestructureRecord {
+        record: ItemPath,
+        fields: Vec<RecordPatternField>,
+        init: ExprId,
+    },
     Let {
         mutable: bool,
         name: Span,
@@ -325,6 +572,12 @@ pub enum StmtKind {
         condition: ExprId,
         body: BodyBlockId,
     },
+    ForRange {
+        name: Span,
+        start: ExprId,
+        end: ExprId,
+        body: BodyBlockId,
+    },
     If {
         condition: ExprId,
         then_block: BodyBlockId,
@@ -336,18 +589,18 @@ pub enum StmtKind {
         arms: Vec<MatchArmSyntax>,
     },
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BodyBlock {
     pub body: Vec<Stmt>,
     pub span: Span,
     pub end: Span,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Function {
     pub public: Option<Span>,
     pub name: Span,
@@ -364,8 +617,22 @@ enum ProjectSyntax {
     Original,
     Project,
     StdImports,
+    OriginalRanges,
+    ProjectRanges,
+    StdImportsRanges,
 }
 impl ProjectSyntax {
+    fn with_ranges(self, ranges: bool) -> Self {
+        if !ranges {
+            return self;
+        }
+        match self {
+            Self::Original => Self::OriginalRanges,
+            Self::Project => Self::ProjectRanges,
+            Self::StdImports => Self::StdImportsRanges,
+            other => other,
+        }
+    }
     fn new(project: bool, std_imports: bool) -> Self {
         if std_imports {
             Self::StdImports
@@ -380,7 +647,10 @@ impl std::fmt::Debug for ProjectSyntax {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This explicit representation conversion preserves the historical
         // project_syntax boolean. Std roots remain visible in every AST path.
-        std::fmt::Debug::fmt(&(*self != Self::Original), formatter)
+        std::fmt::Debug::fmt(
+            &(!matches!(self, Self::Original | Self::OriginalRanges)),
+            formatter,
+        )
     }
 }
 const _: () = {
@@ -388,7 +658,6 @@ const _: () = {
     assert!(std::mem::align_of::<ProjectSyntax>() == std::mem::align_of::<bool>());
 };
 
-#[derive(Debug)]
 pub struct Program {
     /// The complete lossless token tape, not a full public CST.
     pub tokens: Vec<Token>,
@@ -403,6 +672,31 @@ pub struct Program {
     pub imports: Vec<ImportDecl>,
     source: super::parser::SourceProvenance,
     project_syntax: ProjectSyntax,
+}
+
+impl std::fmt::Debug for Program {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = formatter.debug_struct("Program");
+        out.field("tokens", &self.tokens);
+        out.field("functions", &self.functions);
+        out.field("expressions", &self.expressions);
+        out.field("records", &self.records);
+        out.field("enums", &self.enums);
+        out.field("items", &self.items);
+        out.field("modules", &self.modules);
+        out.field("paths", &self.paths);
+        out.field("path_segments", &self.path_segments);
+        out.field("imports", &self.imports);
+        if !self.generic_headers().is_empty() {
+            out.field("generic_headers", &self.generic_headers());
+        }
+        if !self.generic_calls().is_empty() {
+            out.field("generic_calls", &self.generic_calls());
+        }
+        out.field("source", &self.source);
+        out.field("project_syntax", &self.project_syntax);
+        out.finish()
+    }
 }
 
 impl Program {
@@ -420,8 +714,16 @@ impl Program {
         path_segments: Vec<Span>,
         imports: Vec<ImportDecl>,
     ) -> Self {
-        let mut project_syntax = !modules.is_empty() || !imports.is_empty();
+        let mut project_syntax =
+            !modules.is_empty() || !imports.is_empty() || source.has_generics();
         let mut std_import_syntax = false;
+        let range_syntax = functions.iter().any(|f| {
+            f.blocks.iter().any(|b| {
+                b.body
+                    .iter()
+                    .any(|s| matches!(s.kind, StmtKind::ForRange { .. }))
+            })
+        });
         // Both private summaries are derived during bounded AST construction.
         // The index never needs an unmetered path/import scan to read them.
         for path in &paths {
@@ -445,11 +747,27 @@ impl Program {
             path_segments,
             imports,
             source,
-            project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax),
+            project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax)
+                .with_ranges(range_syntax),
         }
     }
+    pub(super) fn syntax_matches(&self, other: &Self) -> bool {
+        self.tokens == other.tokens
+            && self.functions == other.functions
+            && self.expressions == other.expressions
+            && self.records == other.records
+            && self.enums == other.enums
+            && self.items == other.items
+            && self.modules == other.modules
+            && self.paths == other.paths
+            && self.path_segments == other.path_segments
+            && self.imports == other.imports
+            && self.generic_headers() == other.generic_headers()
+            && self.generic_calls() == other.generic_calls()
+            && self.project_syntax == other.project_syntax
+    }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
-        self.source.belongs_to(source)
+        self.source.belongs_to(source) && self.generic_headers_match_source(source)
     }
     pub(super) fn item_path_span(&self, path: ItemPath) -> Option<Span> {
         match path {
@@ -471,10 +789,24 @@ impl Program {
         )
     }
     pub(super) fn uses_project_syntax(&self) -> bool {
-        self.project_syntax != ProjectSyntax::Original
+        !matches!(
+            self.project_syntax,
+            ProjectSyntax::Original | ProjectSyntax::OriginalRanges
+        )
     }
     pub(super) fn uses_std_imports(&self) -> bool {
-        self.project_syntax == ProjectSyntax::StdImports
+        matches!(
+            self.project_syntax,
+            ProjectSyntax::StdImports | ProjectSyntax::StdImportsRanges
+        )
+    }
+    pub(super) fn has_range_for(&self) -> bool {
+        matches!(
+            self.project_syntax,
+            ProjectSyntax::OriginalRanges
+                | ProjectSyntax::ProjectRanges
+                | ProjectSyntax::StdImportsRanges
+        )
     }
     /// Visit every retained source-span occurrence once, and check every arena
     /// edge without indexing it first. Source identity and UTF-8 policy belong
@@ -522,7 +854,9 @@ impl Program {
         if !visit() {
             return false;
         }
-        let mut project_syntax = !self.modules.is_empty() || !self.imports.is_empty();
+        let mut project_syntax =
+            !self.modules.is_empty() || !self.imports.is_empty() || self.has_generics();
+        let mut range_syntax = false;
         let path_valid = |path: ItemPath, valid: &mut dyn FnMut(Span) -> bool| match path {
             ItemPath::Unqualified(span) => valid(span),
             ItemPath::Absolute(id) => {
@@ -533,6 +867,28 @@ impl Program {
                         .is_some_and(|path| path.root == PathRoot::Crate)
             }
         };
+        for header in self.generic_headers() {
+            if !visit()
+                || !valid(header.declaration)
+                || header.parameters.is_empty()
+                || header.parameters.len() > super::parser::MAX_PARAMS
+            {
+                return false;
+            }
+            for parameter in &header.parameters {
+                if !visit()
+                    || !valid(parameter.name)
+                    || !valid(parameter.span)
+                    || parameter.bounds.len() > super::parser::MAX_PARAMS
+                    || parameter
+                        .bounds
+                        .iter()
+                        .any(|bound| !visit() || !path_valid(*bound, &mut valid))
+                {
+                    return false;
+                }
+            }
+        }
         let type_valid = |ty: TypeSyntax, valid: &mut dyn FnMut(Span) -> bool| {
             valid(ty.span)
                 && match ty.kind {
@@ -542,8 +898,37 @@ impl Program {
                     }
                     TypeSyntaxKind::Name(path)
                     | TypeSyntaxKind::Reference { referent: path, .. } => path_valid(path, valid),
+                    TypeSyntaxKind::Applied(id)
+                    | TypeSyntaxKind::AppliedReference {
+                        application: id, ..
+                    } => self.generic_application(id).is_some_and(|app| {
+                        app.context == GenericArgumentContext::Type && path_valid(app.path, valid)
+                    }),
                 }
         };
+        for call in self.generic_calls() {
+            if !visit()
+                || !valid(call.callee)
+                || !valid(call.span)
+                || !match (call.context, call.path) {
+                    (GenericArgumentContext::Expression, ItemPath::Absolute(id)) => {
+                        visit()
+                            && self.paths.get(id.0).is_some_and(|path| {
+                                matches!(path.root, PathRoot::Crate | PathRoot::LocalType)
+                            })
+                    }
+                    _ => path_valid(call.path, &mut valid),
+                }
+                || call.arguments.is_empty()
+                || call.arguments.len() > super::parser::MAX_PARAMS
+                || call
+                    .arguments
+                    .iter()
+                    .any(|ty| !visit() || !type_valid(*ty, &mut valid))
+            {
+                return false;
+            }
+        }
         let mut std_paths = 0usize;
         let mut std_imports = 0usize;
         let mut path_end = 0;
@@ -794,6 +1179,20 @@ impl Program {
                         return false;
                     }
                     let ok = match &statement.kind {
+                        StmtKind::DestructureRecord {
+                            record,
+                            fields,
+                            init,
+                        } => {
+                            path_valid(*record, &mut valid)
+                                && fields.iter().all(|field| {
+                                    visit()
+                                        && valid(field.field)
+                                        && valid(field.binding)
+                                        && valid(field.span)
+                                })
+                                && expr_valid(*init)
+                        }
                         StmtKind::Let {
                             name,
                             annotation,
@@ -841,6 +1240,19 @@ impl Program {
                         StmtKind::While { condition, body } => {
                             expr_valid(*condition) && block_valid(*body)
                         }
+                        StmtKind::ForRange {
+                            name,
+                            start,
+                            end,
+                            body,
+                        } => {
+                            range_syntax = true;
+                            enum_syntax.get_or_insert(statement.span);
+                            valid(*name)
+                                && expr_valid(*start)
+                                && expr_valid(*end)
+                                && block_valid(*body)
+                        }
                         StmtKind::If {
                             condition,
                             then_block,
@@ -883,6 +1295,12 @@ impl Program {
             }
             let earlier = |id: ExprId| visit() && id.0 < index;
             let ok = match &expression.kind {
+                ExprKind::Borrow { name, .. } => {
+                    valid(*name)
+                        && name.file == expression.span.file
+                        && name.start >= expression.span.start
+                        && name.end <= expression.span.end
+                }
                 // Structural ID/span admission shares the established unary
                 // traversal. The source-association witness independently checks
                 // the named receiver, operation and exact authenticated origins.
@@ -892,6 +1310,10 @@ impl Program {
                     ..
                 }
                 | ExprKind::Negate {
+                    operand,
+                    operator_span,
+                }
+                | ExprKind::BitNot {
                     operand,
                     operator_span,
                 }
@@ -911,15 +1333,38 @@ impl Program {
                     operator_span,
                     ..
                 }
+                | ExprKind::Bitwise {
+                    left,
+                    right,
+                    operator_span,
+                    ..
+                }
                 | ExprKind::Arithmetic {
                     left,
                     right,
                     operator_span,
                     ..
                 } => earlier(*left) && earlier(*right) && valid(*operator_span),
-                ExprKind::Bool(_) | ExprKind::Unit => true,
-                ExprKind::Number { digits, .. } => valid(*digits),
+                ExprKind::Bool(_) | ExprKind::Unit | ExprKind::Character(_) => true,
+                ExprKind::Number { digits, .. }
+                | ExprKind::I64Number { digits, .. }
+                | ExprKind::FloatNumber { digits, .. }
+                | ExprKind::IntegerNumber { digits, .. } => valid(*digits),
                 ExprKind::Name(name) => valid(*name),
+                ExprKind::GenericVariant {
+                    application,
+                    variant,
+                    args,
+                } => {
+                    enum_syntax.get_or_insert(expression.span);
+                    self.generic_application(*application)
+                        .is_some_and(|app| app.context == GenericArgumentContext::Expression)
+                        && valid(*variant)
+                        && args.iter().flatten().all(|arg| match arg {
+                            Argument::Value(id) => earlier(*id),
+                            Argument::Borrow { .. } => false,
+                        })
+                }
                 ExprKind::Call { callee, args } => {
                     path_valid(*callee, &mut valid)
                         && args.iter().all(|arg| {
@@ -931,6 +1376,23 @@ impl Program {
                                 Argument::Borrow { place, span, .. } => {
                                     valid(*span)
                                         && match place {
+                                            BorrowPlace::Range {
+                                                name,
+                                                start,
+                                                end,
+                                                star,
+                                            } => {
+                                                valid(*name)
+                                                    && earlier(*start)
+                                                    && earlier(*end)
+                                                    && star.is_none_or(|start| {
+                                                        valid(Span {
+                                                            file: name.file,
+                                                            start: start as usize,
+                                                            end: start as usize + 1,
+                                                        })
+                                                    })
+                                            }
                                             BorrowPlace::OwnerName(name) => valid(*name),
                                             BorrowPlace::ForwardedParameter { name, star_span } => {
                                                 valid(*name) && valid(*star_span)
@@ -958,6 +1420,23 @@ impl Program {
                                         Argument::Borrow { place, span, .. } => {
                                             valid(*span)
                                                 && match place {
+                                                    BorrowPlace::Range {
+                                                        name,
+                                                        start,
+                                                        end,
+                                                        star,
+                                                    } => {
+                                                        valid(*name)
+                                                            && earlier(*start)
+                                                            && earlier(*end)
+                                                            && star.is_none_or(|start| {
+                                                                valid(Span {
+                                                                    file: name.file,
+                                                                    start: start as usize,
+                                                                    end: start as usize + 1,
+                                                                })
+                                                            })
+                                                    }
                                                     BorrowPlace::OwnerName(name) => valid(*name),
                                                     BorrowPlace::ForwardedParameter {
                                                         name,
@@ -983,6 +1462,13 @@ impl Program {
                     elements.len() <= super::parser::MAX_ARRAY_ELEMENTS
                         && elements.iter().all(|element| earlier(*element))
                 }
+                ExprKind::ByteString { contents, length } => {
+                    valid(*contents)
+                        && contents.file == expression.span.file
+                        && contents.start.checked_sub(2) == Some(expression.span.start)
+                        && contents.end.checked_add(1) == Some(expression.span.end)
+                        && usize::from(*length) <= super::byte_strings::MAX_BYTES
+                }
                 ExprKind::IndexRead { base, index } => valid(*base) && earlier(*index),
                 ExprKind::ArrayLength { base } => valid(*base),
                 ExprKind::Group(inner) => earlier(*inner),
@@ -991,12 +1477,58 @@ impl Program {
                 return false;
             }
         }
-        visit() && ProjectSyntax::new(project_syntax, *std_syntax) == self.project_syntax
+        visit()
+            && ProjectSyntax::new(project_syntax, *std_syntax).with_ranges(range_syntax)
+                == self.project_syntax
     }
+    /// Float literals and annotations select the current typed checker.
+    pub(super) fn uses_float_syntax(&self, source: &SourceFile) -> bool {
+        let float_type = |ty: &TypeSyntax| {
+            matches!(ty.kind,
+            TypeSyntaxKind::Name(ItemPath::Unqualified(name)) if FloatTypeSyntax::from_spelling(source.text_at(name)).is_some())
+        };
+        self.expressions.iter().any(|e| matches!(e.kind, ExprKind::FloatNumber { .. }))
+            || self.functions.iter().any(|f| float_type(&f.result)
+                || f.params.iter().any(|p| float_type(&p.ty))
+                || f.blocks.iter().any(|b| b.body.iter().any(|s| matches!(&s.kind, StmtKind::Let { annotation: Some(ty), .. } if float_type(ty)))))
+    }
+    pub(super) fn uses_character_syntax(&self, source: &SourceFile) -> bool {
+        let character_type = |ty: &TypeSyntax| {
+            matches!(ty.kind,
+            TypeSyntaxKind::Name(ItemPath::Unqualified(name)) if source.text_at(name) == "char")
+        };
+        self.expressions.iter().any(|e| matches!(e.kind, ExprKind::Character(_)))
+            || self.functions.iter().any(|f| character_type(&f.result)
+                || f.params.iter().any(|p| character_type(&p.ty))
+                || f.blocks.iter().any(|b| b.body.iter().any(|s| matches!(&s.kind, StmtKind::Let { annotation: Some(ty), .. } if character_type(ty)))))
+    }
+    pub(super) fn uses_bitwise_syntax(&self) -> bool {
+        self.expressions.iter().any(|expression| {
+            matches!(
+                expression.kind,
+                ExprKind::Bitwise { .. } | ExprKind::BitNot { .. }
+            )
+        })
+    }
+    pub(super) fn uses_byte_scalars(&self, source: &SourceFile) -> bool {
+        let byte_type = |ty: &TypeSyntax| {
+            matches!(ty.kind,
+            TypeSyntaxKind::Name(ItemPath::Unqualified(name)) if source.text_at(name) == "u8")
+        };
+        self.functions.iter().any(|function| {
+            byte_type(&function.result)
+                || function.params.iter().any(|parameter| byte_type(&parameter.ty))
+                || function.blocks.iter().any(|block| block.body.iter().any(|statement|
+                    matches!(&statement.kind, StmtKind::Let { annotation: Some(ty), .. } if byte_type(ty))))
+        }) || self.expressions.iter().any(|expression|
+            matches!(expression.kind, ExprKind::Conversion { op: ConversionOp::ToU8Checked | ConversionOp::ToI32, .. }))
+    }
+
     #[allow(dead_code)] // Used by private qualification until source dispatch activates.
     pub(super) fn uses_owned_syntax(&self, source: &super::source::SourceFile) -> bool {
         let owned_type = |ty: &TypeSyntax| match ty.kind {
             TypeSyntaxKind::Unit => false,
+            TypeSyntaxKind::Applied(_) | TypeSyntaxKind::AppliedReference { .. } => true,
             TypeSyntaxKind::Reference { .. } => true,
             TypeSyntaxKind::Array(_)
             | TypeSyntaxKind::ArrayReference { .. }
@@ -1018,19 +1550,33 @@ impl Program {
                                 annotation: Some(ty),
                                 ..
                             } => owned_type(ty),
-                            StmtKind::FieldAssign { .. }
+                            StmtKind::DestructureRecord { .. }
+                            | StmtKind::FieldAssign { .. }
                             | StmtKind::IndexAssign { .. }
+                            | StmtKind::ForRange { .. }
                             | StmtKind::Match { .. } => true,
                             _ => false,
                         })
                     })
             })
             || self.expressions.iter().any(|e| match &e.kind {
+                ExprKind::Borrow { .. } => true,
                 ExprKind::StructLiteral { .. }
+                | ExprKind::GenericVariant { .. }
                 | ExprKind::FieldRead { .. }
                 | ExprKind::ArrayLiteral { .. }
+                | ExprKind::ByteString { .. }
                 | ExprKind::IndexRead { .. }
-                | ExprKind::ArrayLength { .. } => true,
+                | ExprKind::ArrayLength { .. }
+                | ExprKind::I64Number { .. }
+                | ExprKind::IntegerNumber { .. }
+                | ExprKind::Conversion {
+                    op:
+                        ConversionOp::ToI64
+                        | ConversionOp::ToI32Checked
+                        | ConversionOp::ToIntegerChecked(_),
+                    ..
+                } => true,
                 ExprKind::Call { args, .. } => {
                     args.iter().any(|a| matches!(a, Argument::Borrow { .. }))
                 }

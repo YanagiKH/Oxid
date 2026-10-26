@@ -12,6 +12,15 @@ use crate::frontend::{
     source::{SourceMap, SourceView},
 };
 
+// Host headers differ by one byte; source, wire, work and allocation
+// contracts below retain their independently measured predecessor values.
+pub(super) const TARGET_TRIPLE: &str = if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+    "aarch64-unknown-linux-gnu"
+} else {
+    "x86_64-unknown-linux-gnu"
+};
+pub(super) const TARGET_TEXT_GROWTH: usize = TARGET_TRIPLE.len() - "x86_64-unknown-linux-gnu".len();
+
 const RICH_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/checked_hir_import/rich-source.txt"
@@ -242,7 +251,10 @@ fn checked_hir_import_emit_rich_smoke_matches_source_after_backing_drop_u8_succe
     assert_eq!(artifact.bytes, artifact.text.len());
     assert_eq!(artifact.capacity, artifact.text.capacity());
     assert_eq!(artifact.bytes, artifact.capacity);
-    assert_eq!(artifact.bytes, 14_325);
+    assert_eq!(artifact.bytes, 14_325 + TARGET_TEXT_GROWTH);
+    assert!(artifact
+        .text
+        .contains(&format!("target triple = \"{TARGET_TRIPLE}\"")));
     assert!(verified.candidate.equal);
     assert_eq!(verified.functions, 2);
     assert_eq!(verified.typed_cells, 29);

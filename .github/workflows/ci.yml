@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_enum_payload_compatibility.py \
+          python3 -B scripts/verify_scalar_debug_storage_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -60,6 +60,22 @@ jobs:
           python3 scripts/verify_owned_witness_privacy.py
           python3 scripts/verify_i32_literals.py target/release/oxid
           python3 scripts/verify_i32_arithmetic.py target/debug/oxid target/release/oxid
+          python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-i64-reference" --reference-only
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-reference" --reference-only
+          python3 -B scripts/verify_byte_integers.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-integer-reference" --reference-only
+          python3 -B scripts/verify_integer128.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer128-reference" --reference-only
+          python3 -B scripts/verify_integer_bits.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-bits-reference" --reference-only
+          python3 -B scripts/verify_floats.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-reference" --reference-only
+          python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-roots-reference" --reference-only
+          python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-character-reference" --reference-only
           python3 scripts/verify_repo.py target/release/oxid
           python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-interpreter"
@@ -69,6 +85,14 @@ jobs:
             --output "$RUNNER_TEMP/current-workspace-interpreter"
           python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-bundle-interpreter"
+          python3 -B scripts/verify_utf8_text_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-text-interpreter" --reference-only
+          python3 -B scripts/verify_utf8_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-characters-interpreter" --reference-only
+          python3 -B scripts/verify_float_vector.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-vector-interpreter" --reference-only
+          python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-matrix-interpreter" --reference-only
       - name: Retain current source qualification
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,6 +100,13 @@ jobs:
           name: current-project-unit2
           path: |
             ${{ runner.temp }}/current-project-unit2
+            ${{ runner.temp }}/current-i64-reference
+            ${{ runner.temp }}/current-integer-widths-reference
+            ${{ runner.temp }}/current-byte-integer-reference
+            ${{ runner.temp }}/current-integer128-reference
+            ${{ runner.temp }}/current-integer-bits-reference
+            ${{ runner.temp }}/current-character-reference
+            ${{ runner.temp }}/current-float-reference
             !${{ runner.temp }}/current-project-unit2/**/target/**
           if-no-files-found: warn
           retention-days: 14
@@ -111,6 +142,16 @@ jobs:
           path: ${{ runner.temp }}/current-package-bundle-interpreter
           if-no-files-found: warn
           retention-days: 14
+      - name: Retain current UTF-8 interpreter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-utf8-text-interpreter
+          path: |
+            ${{ runner.temp }}/current-utf8-text-interpreter
+            ${{ runner.temp }}/current-utf8-characters-interpreter
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify current source installation
         run: |
           cargo install --path . --locked --root "$RUNNER_TEMP/oxid-install"
@@ -120,12 +161,133 @@ jobs:
           docker build --tag oxid:current .
           docker run --rm oxid:current --version
 
+  source-policy-predecessor:
+    name: ByteBuf source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_predecessor_script_tests.py "$RUNNER_TEMP/source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 2e3fe21f76d0027d2b24cb5c7f02ba38ad354809
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/source-policy-replay.py" --repo . --output "$RUNNER_TEMP/source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: byte-buffer-source-policy-predecessor
+          path: ${{ runner.temp }}/source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  hosted-source-policy-predecessor:
+    name: Hosted source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_hosted_predecessor_tests.py "$RUNNER_TEMP/hosted-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 559a6e6aa0b2ab2022d8fa37546ac62aeac9954e
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/hosted-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/hosted-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-source-policy-predecessor
+          path: ${{ runner.temp }}/hosted-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  buffer-transfer-source-policy-predecessor:
+    name: Buffer-transfer source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_buffer_transfer_predecessor_tests.py "$RUNNER_TEMP/buffer-transfer-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: c45d519127d314f522762c35879c0c485994ea42
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/buffer-transfer-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/buffer-transfer-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffer-transfer-source-policy-predecessor
+          path: ${{ runner.temp }}/buffer-transfer-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  byte-string-source-policy-predecessor:
+    name: Byte-string source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_byte_string_predecessor_tests.py "$RUNNER_TEMP/byte-string-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 22d04a015a444edcb600a6011cdb0e2c8529cb34
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/byte-string-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/byte-string-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: byte-string-source-policy-predecessor
+          path: ${{ runner.temp }}/byte-string-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  arm64-host-source-policy-predecessor:
+    name: ARM64 host-test source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_arm64_host_predecessor_tests.py "$RUNNER_TEMP/arm64-host-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 18314e95d6afa3d8a4da7970dbddc828f4f6cbac
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/arm64-host-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/arm64-host-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-host-source-policy-predecessor
+          path: ${{ runner.temp }}/arm64-host-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   cross-platform:
     name: Current compiler tests (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-14]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -182,7 +344,9 @@ jobs:
     name: Current native project and source-free regression tests
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    container: debian:trixie-slim
+    container:
+      image: debian:trixie-slim
+      options: --cap-add=SYS_PTRACE
     env:
       OXID_LLVM_BIN: /usr/lib/llvm-19/bin
       OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
@@ -191,7 +355,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
             clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
             libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
             libclang-common-19-dev=1:19.1.7-3+b1
@@ -200,6 +364,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Run public native tests in both compiler profiles
+        env:
+          OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/current-local-reference-bindings
+          OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/current-generic-field-borrows
+          OXID_NATIVE_REACHABILITY_EVIDENCE: ${{ runner.temp }}/current-native-reachability
         shell: bash
         run: |
           for profile in debug release; do
@@ -208,23 +376,52 @@ jobs:
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance -- --ignored
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion --test typed_generics --test typed_nominal_generics --test typed_record_patterns --test typed_record_enum_fields --test typed_constructor_inference --test typed_range_for --test native_debug_info -- --include-ignored
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
               byte_storage_native_source_free_ -- --ignored --test-threads=1
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-fields-$profile" \
+              cargo test --locked "${profile_flags[@]}" --bin oxid byte_record_ \
+              -- --ignored --test-threads=1
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-buffers-$profile" \
+              cargo test --locked "${profile_flags[@]}" --bin oxid bytebuf_native_ \
+              -- --ignored --test-threads=1
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal \
               -- --ignored --exact
           done
       - name: Verify real package application and source-free deployment
         run: |
+          python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-i64-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_byte_integers.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-integer-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer128.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer128-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_bits.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-bits-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_floats.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-roots-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_hosted_capacity.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-hosted-capacity-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_output.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-output" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-character-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-application" --native
           python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
@@ -241,10 +438,64 @@ jobs:
         run: |
           python3 -B scripts/verify_native_profiles.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-native-profiles" --llvm-bin "$OXID_LLVM_BIN"
-      - name: Verify owned enum payloads in the frame filter application
+      - name: Verify enum payloads and byte fields in the frame filter application
         run: |
           python3 -B scripts/verify_owned_enum_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-owned-enum-application" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify growable buffers, binary I/O and source-free byte reversal
+        run: |
+          python3 -B scripts/verify_byte_reverse_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-reverse-application" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify UTF-8 text, newline conversion and source-free Unicode processing
+        run: |
+          python3 -B scripts/verify_utf8_text_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-text-application" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_utf8_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-characters-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_vector.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify native CPU training, gradients and checkpoint recovery
+        run: |
+          python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-cpu-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_math.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-math" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_checkpoints.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-checkpoints" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_data_pipeline.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-data-pipeline" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_minibatch_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-minibatch-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_streaming_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-streaming-training" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Check buffer runtime components at O0 and O2 with memory checking
+        run: |
+          python3 -B scripts/test_bytebuf_runtime.py
+          python3 -B scripts/test_binary_delivery.py
+          python3 -B scripts/test_hosted_bytebuf.py
+          python3 -B scripts/test_bytebuf_transfer.py
+          python3 -B scripts/test_native_files_runtime.py
+          python3 -B scripts/test_process_arguments_runtime.py
+          python3 -B scripts/test_i64_output_runtime.py
+          python3 -B scripts/test_integer_output_runtime.py
+          python3 -B scripts/test_integer128_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_binary_delivery.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_hosted_bytebuf.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_transfer.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_files_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_process_arguments_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_i64_output_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer_output_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer128_runtime.py
+      - name: Verify source-free file copies larger than the process memory limit
+        run: |
+          python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-native-files" --llvm-bin "$OXID_LLVM_BIN"
       - name: Run current independent native oracles and private LLVM regressions
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -257,6 +508,14 @@ jobs:
           name: current-native
           path: |
             ${{ runner.temp }}/current-native
+            ${{ runner.temp }}/current-i64-native
+            ${{ runner.temp }}/current-integer-widths-native
+            ${{ runner.temp }}/current-byte-integer-native
+            ${{ runner.temp }}/current-integer128-native
+            ${{ runner.temp }}/current-integer-bits-native
+            ${{ runner.temp }}/current-float-native
+            ${{ runner.temp }}/current-character-native
+            ${{ runner.temp }}/current-float-output
             ${{ runner.temp }}/current-package-application
             ${{ runner.temp }}/current-package-lock-application
             ${{ runner.temp }}/current-workspace-application
@@ -264,9 +523,92 @@ jobs:
             ${{ runner.temp }}/current-reproducible-native
             ${{ runner.temp }}/current-native-profiles
             ${{ runner.temp }}/current-owned-enum-application
+            ${{ runner.temp }}/current-local-references-debug
+            ${{ runner.temp }}/current-local-references-release
+            ${{ runner.temp }}/current-local-reference-bindings
+            ${{ runner.temp }}/current-generic-field-borrows
+            ${{ runner.temp }}/current-native-reachability
             ${{ runner.temp }}/current-byte-storage-debug
             ${{ runner.temp }}/current-byte-storage-release
+            ${{ runner.temp }}/current-byte-fields-debug
+            ${{ runner.temp }}/current-byte-fields-release
+            ${{ runner.temp }}/current-byte-buffers-debug
+            ${{ runner.temp }}/current-byte-buffers-release
+            ${{ runner.temp }}/current-byte-reverse-application
+            ${{ runner.temp }}/current-utf8-characters-native
+            ${{ runner.temp }}/current-utf8-text-application
+            ${{ runner.temp }}/current-native-files
+            ${{ runner.temp }}/current-cpu-training
+            ${{ runner.temp }}/current-optimizer-math
+            ${{ runner.temp }}/current-optimizer-checkpoints
+            ${{ runner.temp }}/current-optimizer-training
+            ${{ runner.temp }}/current-data-pipeline
+            ${{ runner.temp }}/current-minibatch-training
+            ${{ runner.temp }}/current-streaming-training
           if-no-files-found: warn
+          retention-days: 14
+
+  linux-arm64-native:
+    name: Current Linux ARM64 native programs
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    container:
+      image: debian:trixie-slim
+      options: --cap-add=SYS_PTRACE
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - name: Install pinned ARM64 LLVM and host tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check ARM64 code and ordinary regressions
+        run: |
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets --all-features
+      - name: Verify native ARM64 builds and source-free execution
+        env:
+          OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
+          OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/generic-field-borrows
+          OXID_NATIVE_REACHABILITY_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/native-reachability
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD
+          python3 -B scripts/verify_linux_arm64_native.py \
+            --repo . --expected-head "$EXPECTED_HEAD" \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
+      - name: Verify local reference lifetimes on ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/linux-arm64-native/local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
+          done
+      - name: Retain ARM64 native results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-linux-arm64-native
+          path: ${{ runner.temp }}/linux-arm64-native
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
   workflow-lint:

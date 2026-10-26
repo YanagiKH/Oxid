@@ -178,7 +178,12 @@ fn transfer_shapes_keep_results_with_nonzero_entry_block_permutations() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run in the native CI job"]
 fn loop_control_uses_real_llvm() {

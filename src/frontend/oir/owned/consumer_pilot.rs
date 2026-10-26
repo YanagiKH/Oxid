@@ -270,8 +270,10 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
     .enumerate()
     .map(|(i, &(label, kind))| LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(i),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(i),
+            argument: 0,
+        },
         authority: root,
         kind,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -579,8 +581,10 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram, Schedule) {
     }];
     dispatch.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: parameter,
         kind: BorrowKind::Exclusive,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),

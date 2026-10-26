@@ -9,8 +9,9 @@ use super::{
 /// manufacture it for a different source owner.
 pub(super) struct SourceProvenance {
     identity: u64,
-    text_len: usize,
-    file: super::source::SourceFileId,
+    text_len: u32,
+    file: u32,
+    generics: Option<Box<[GenericSyntax; 1]>>,
 }
 impl std::fmt::Debug for SourceProvenance {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -18,23 +19,61 @@ impl std::fmt::Debug for SourceProvenance {
         // observations deterministic across identical source allocations.
         formatter
             .debug_struct("SourceProvenance")
-            .field("text_len", &self.text_len)
-            .field("file", &self.file)
+            .field("text_len", &(self.text_len as usize))
+            .field("file", &super::source::SourceFileId(self.file as usize))
             .finish_non_exhaustive()
     }
 }
 impl SourceProvenance {
-    fn new(source: &SourceFile) -> Self {
-        Self {
+    fn new(
+        source: &SourceFile,
+        headers: Vec<GenericHeader>,
+        calls: Vec<GenericArguments>,
+        allocator: &mut Allocator,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let failure = || {
+            Diagnostic::new(
+                "E0400",
+                "parse",
+                "generic source metadata allocation or compact source limit exceeded",
+                Some(source.span(0, 0)),
+            )
+        };
+        let text_len = u32::try_from(source.text().len()).map_err(|_| failure())?;
+        let file = u32::try_from(source.span(0, 0).file.0).map_err(|_| failure())?;
+        let generics = if headers.is_empty() && calls.is_empty() {
+            None
+        } else {
+            Some(
+                allocator
+                    .boxed_carrier(GenericSyntax { headers, calls }, "generic syntax owner")
+                    .map_err(|_| failure())?,
+            )
+        };
+        Ok(Self {
             identity: source.identity(),
-            text_len: source.text().len(),
-            file: source.span(0, 0).file,
-        }
+            text_len,
+            file,
+            generics,
+        })
+    }
+    pub(super) fn generic_headers(&self) -> &[GenericHeader] {
+        self.generics
+            .as_ref()
+            .map_or(&[], |owner| owner[0].headers.as_slice())
+    }
+    pub(super) fn generic_calls(&self) -> &[GenericArguments] {
+        self.generics
+            .as_ref()
+            .map_or(&[], |owner| owner[0].calls.as_slice())
+    }
+    pub(super) fn has_generics(&self) -> bool {
+        self.generics.is_some()
     }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
         self.identity == source.identity()
-            && self.text_len == source.text().len()
-            && self.file == source.span(0, 0).file
+            && self.text_len as usize == source.text().len()
+            && self.file as usize == source.span(0, 0).file.0
     }
 }
 pub const MAX_NODES: usize = 100_000;
@@ -131,6 +170,7 @@ enum LiteralContext {
 }
 enum PrimaryStart {
     Boolean,
+    Character,
     Number,
     Name,
     Group,
@@ -333,9 +373,12 @@ fn parse_counted_with_policies(
         project_recovery: false,
         tokens,
         cursor: 0,
+        pending_equal: None,
         expressions: Vec::new(),
         paths: Vec::new(),
         path_segments: Vec::new(),
+        generic_headers: Vec::new(),
+        generic_calls: Vec::new(),
         heights: Vec::new(),
         nodes: 0,
         node_limit: node_limit.min(MAX_NODES),
@@ -495,9 +538,35 @@ fn parse_counted_with_policies(
     }
     *storage = parser.storage;
     if diagnostics.is_empty() {
+        let has_generics = !parser.generic_headers.is_empty() || !parser.generic_calls.is_empty();
+        let provenance = SourceProvenance::new(
+            source,
+            parser.generic_headers,
+            parser.generic_calls,
+            parser.allocator,
+        )
+        .map_err(|error| vec![*error])?;
+        if has_generics && parser.enums.enabled() {
+            let bytes = std::mem::size_of::<GenericSyntax>();
+            storage.retained_capacity =
+                storage
+                    .retained_capacity
+                    .checked_add(bytes)
+                    .ok_or_else(|| {
+                        vec![*Diagnostic::new(
+                            "E0400",
+                            "parse",
+                            "generic syntax storage overflow",
+                            Some(source.span(0, 0)),
+                        )]
+                    })?;
+            storage.peak_capacity_bound = storage
+                .peak_capacity_bound
+                .max(storage.retained_capacity + storage.scratch_capacity);
+        }
         Ok((
             Program::parsed(
-                SourceProvenance::new(source),
+                provenance,
                 parser.tokens,
                 functions,
                 parser.expressions,
@@ -528,9 +597,12 @@ struct Parser<'a> {
     project_recovery: bool,
     tokens: Vec<Token>,
     cursor: usize,
+    pending_equal: Option<Token>,
     expressions: Vec<Expr>,
     paths: Vec<AbsolutePath>,
     path_segments: Vec<super::source::Span>,
+    generic_headers: Vec<GenericHeader>,
+    generic_calls: Vec<GenericArguments>,
     heights: Vec<usize>,
     nodes: usize,
     node_limit: usize,
@@ -542,9 +614,12 @@ impl Parser<'_> {
         }
     }
     fn peek(&self) -> Token {
-        self.tokens[self.cursor]
+        self.pending_equal.unwrap_or(self.tokens[self.cursor])
     }
     fn bump(&mut self) -> Token {
+        if let Some(token) = self.pending_equal.take() {
+            return token;
+        }
         let token = self.peek();
         if token.kind != Kind::Eof {
             self.cursor += 1;
@@ -560,6 +635,9 @@ impl Parser<'_> {
         }
     }
     fn next_kind(&self) -> Kind {
+        if self.pending_equal.is_some() {
+            return self.tokens[self.cursor].kind;
+        }
         self.tokens[self.cursor + 1..]
             .iter()
             .find(|token| token.kind != Kind::Trivia)
@@ -569,6 +647,20 @@ impl Parser<'_> {
         self.peek().kind == Kind::Colon
             && self.tokens.get(self.cursor + 1).is_some_and(|next| {
                 next.kind == Kind::Colon && self.peek().span.end == next.span.start
+            })
+    }
+    fn type_arguments_ahead(&self) -> bool {
+        self.mode.owned()
+            && self.double_colon()
+            && self.tokens[self.cursor + 2..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Less)
+    }
+    fn double_dot(&self) -> bool {
+        self.peek().kind == Kind::Dot
+            && self.tokens.get(self.cursor + 1).is_some_and(|next| {
+                next.kind == Kind::Dot && self.peek().span.end == next.span.start
             })
     }
     fn project_reserve_error(
@@ -592,7 +684,10 @@ impl Parser<'_> {
         paths: bool,
     ) -> Result<(ItemPath, super::source::Span), Box<Diagnostic>> {
         let first = self.expect(Kind::Ident, message)?.span;
-        if self.mode != SourceMode::ProjectCandidate || !self.double_colon() {
+        if self.mode != SourceMode::ProjectCandidate
+            || !self.double_colon()
+            || self.type_arguments_ahead()
+        {
             return Ok((ItemPath::Unqualified(first), first));
         }
         // Recognition precedes both denied field paths and denied prefixes.
@@ -626,6 +721,7 @@ impl Parser<'_> {
         let root = match self.source.text_at(first) {
             "crate" => PathRoot::Crate,
             "std" if self.std_imports.enabled() => PathRoot::Std,
+            "alloc" if self.std_imports == StdImportPolicy::Enabled => PathRoot::Std,
             _ => {
                 return Err(self.diagnostic(
                     "E0101",
@@ -637,15 +733,24 @@ impl Parser<'_> {
         };
         let id = self.qualified_segments(first, root)?;
         if root == PathRoot::Std && self.std_imports == StdImportPolicy::Enabled {
-            use super::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+            use super::builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction};
             let path = &self.paths[id.0];
             let segments = &self.path_segments[path.segment_start..];
-            if segments.len() != 3
-                || self.source.text_at(segments[1]) != "io"
-                || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
-                    && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name()
-                    && self.source.text_at(segments[2]) != BuiltinEnum::WriteStatus.name()
-                    && self.source.text_at(segments[2]) != BuiltinFunction::WriteStdout.name())
+            let experimental = segments.len() == 3
+                && experimental::Item::ALL.into_iter().any(|item| {
+                    item.path()
+                        .into_iter()
+                        .zip(segments)
+                        .all(|(name, span)| self.source.text_at(*span) == name)
+                });
+            if !experimental
+                && (segments.len() != 3
+                    || self.source.text_at(segments[0]) != "std"
+                    || self.source.text_at(segments[1]) != "io"
+                    || (self.source.text_at(segments[2]) != BuiltinEnum::ReadStatus.name()
+                        && self.source.text_at(segments[2]) != BuiltinFunction::ReadStdin.name()
+                        && self.source.text_at(segments[2]) != BuiltinEnum::WriteStatus.name()
+                        && self.source.text_at(segments[2]) != BuiltinFunction::WriteStdout.name()))
             {
                 return Err(self.diagnostic(
                     "E0101",
@@ -736,7 +841,7 @@ impl Parser<'_> {
             let segment = self.expect(Kind::Ident, "expected item path segment")?.span;
             self.path_segment(&mut segment_len, segment)?;
             end = segment.end;
-            if !self.double_colon() {
+            if !self.double_colon() || self.type_arguments_ahead() {
                 break;
             }
         }
@@ -907,6 +1012,161 @@ impl Parser<'_> {
         })
     }
 
+    fn generic_parameters(
+        &mut self,
+        declaration: super::source::Span,
+    ) -> Result<(), Box<Diagnostic>> {
+        let mut parameters = Vec::new();
+        if self.peek().kind != Kind::Less {
+            return Ok(());
+        }
+        if !self.mode.owned() {
+            return Err(self.diagnostic(
+                "E0002",
+                "parse",
+                "generic parameters require typed project syntax",
+                Some(self.peek().span),
+            ));
+        }
+        self.bump();
+        if self.peek().kind == Kind::Greater {
+            return Err(self.diagnostic(
+                "E0002",
+                "parse",
+                "generic parameter list cannot be empty",
+                Some(self.peek().span),
+            ));
+        }
+        loop {
+            self.node()?;
+            let name = self
+                .expect(Kind::Ident, "expected type parameter name")?
+                .span;
+            let mut bounds = Vec::new();
+            let mut end = name.end;
+            if self.take(Kind::Colon).is_some() {
+                loop {
+                    let (bound, span) = self.item_path("expected trait bound", true)?;
+                    self.candidate_reserve(&mut bounds, MAX_PARAMS, "type parameter bounds", span)?;
+                    bounds.push(bound);
+                    end = span.end;
+                    if self.take(Kind::Plus).is_none() {
+                        break;
+                    }
+                }
+            }
+            self.candidate_reserve(&mut parameters, MAX_PARAMS, "generic parameters", name)?;
+            parameters.push(GenericParam {
+                name,
+                bounds,
+                span: self.source.span(name.start, end),
+            });
+            if self.take(Kind::Comma).is_none() || self.peek().kind == Kind::Greater {
+                break;
+            }
+        }
+        self.expect(Kind::Greater, "expected `>` after type parameters")?;
+        let mut headers = std::mem::take(&mut self.generic_headers);
+        self.candidate_reserve(
+            &mut headers,
+            MAX_NODES,
+            "generic declaration headers",
+            declaration,
+        )?;
+        headers.push(GenericHeader {
+            declaration,
+            parameters,
+        });
+        self.generic_headers = headers;
+        Ok(())
+    }
+    fn generic_call_arguments(
+        &mut self,
+        path: ItemPath,
+        callee: super::source::Span,
+    ) -> Result<GenericApplicationId, Box<Diagnostic>> {
+        let start = self.bump().span.start;
+        self.expect(Kind::Colon, "type arguments require `::`")?;
+        let id = self.type_arguments(path, callee, GenericArgumentContext::Expression, start, 0)?;
+        if !self.wide_scalars_enabled() && self.peek().kind != Kind::LParen {
+            return Err(self.error("explicit function type arguments require a call"));
+        }
+        if !matches!(self.peek().kind, Kind::LParen | Kind::LBrace) && !self.double_colon() {
+            return Err(self.error("explicit type arguments require a call or constructor"));
+        }
+        Ok(id)
+    }
+    fn type_arguments(
+        &mut self,
+        path: ItemPath,
+        callee: super::source::Span,
+        context: GenericArgumentContext,
+        start: usize,
+        depth: usize,
+    ) -> Result<GenericApplicationId, Box<Diagnostic>> {
+        if !self.mode.owned() {
+            return Err(self.error("generic type arguments require typed project syntax"));
+        }
+        if context == GenericArgumentContext::Type && !self.wide_scalars_enabled() {
+            return Err(self.error("generic nominal types require current typed project syntax"));
+        }
+        if depth >= MAX_NESTING {
+            return Err(self.diagnostic(
+                "E0400",
+                "parse",
+                "type application nesting limit exceeded",
+                Some(self.peek().span),
+            ));
+        }
+        self.expect(Kind::Less, "type arguments require `<`")?;
+        if matches!(self.peek().kind, Kind::Greater | Kind::GreaterEqual) {
+            return Err(self.error("type argument list cannot be empty"));
+        }
+        let mut calls = std::mem::take(&mut self.generic_calls);
+        self.candidate_reserve(&mut calls, MAX_NODES, "generic application syntax", callee)?;
+        let id = GenericApplicationId(calls.len());
+        calls.push(GenericArguments {
+            callee,
+            path,
+            arguments: Vec::new(),
+            span: self.source.span(start, start),
+            context,
+        });
+        self.generic_calls = calls;
+        let mut arguments = Vec::new();
+        loop {
+            self.node()?;
+            let argument = self.ty_with_paths_at(true, depth + 1)?;
+            self.candidate_reserve(
+                &mut arguments,
+                MAX_PARAMS,
+                "explicit type arguments",
+                argument.span,
+            )?;
+            arguments.push(argument);
+            if self.take(Kind::Comma).is_none()
+                || matches!(self.peek().kind, Kind::Greater | Kind::GreaterEqual)
+            {
+                break;
+            }
+        }
+        let end = if self.peek().kind == Kind::GreaterEqual {
+            let token = self.bump();
+            let middle = token.span.start + 1;
+            self.pending_equal = Some(Token {
+                kind: Kind::Equal,
+                span: self.source.span(middle, token.span.end),
+            });
+            middle
+        } else {
+            self.expect(Kind::Greater, "expected `>` after type arguments")?
+                .span
+                .end
+        };
+        self.generic_calls[id.0].arguments = arguments;
+        self.generic_calls[id.0].span = self.source.span(start, end);
+        Ok(id)
+    }
     fn function(
         &mut self,
         public: Option<super::source::Span>,
@@ -914,6 +1174,7 @@ impl Parser<'_> {
         self.node()?;
         self.expect(Kind::Fn, "expected a top-level function declaration")?;
         let name = self.expect(Kind::Ident, "expected function name")?.span;
+        self.generic_parameters(name)?;
         self.expect(Kind::LParen, "expected `(`")?;
         let mut params = Vec::new();
         if self.peek().kind != Kind::RParen {
@@ -992,6 +1253,13 @@ impl Parser<'_> {
         self.ty_with_paths(true)
     }
     fn ty_with_paths(&mut self, paths: bool) -> Result<TypeSyntax, Box<Diagnostic>> {
+        self.ty_with_paths_at(paths, 0)
+    }
+    fn ty_with_paths_at(
+        &mut self,
+        paths: bool,
+        depth: usize,
+    ) -> Result<TypeSyntax, Box<Diagnostic>> {
         let token = self.peek();
         let (kind, end) = if self.arrays_enabled() && self.array_punctuation("[") {
             if !paths {
@@ -1008,7 +1276,21 @@ impl Parser<'_> {
             )
         } else {
             let (name, span) = self.item_path("expected `bool`, `i32` or `()` type", paths)?;
-            (TypeSyntaxKind::Name(name), span.end)
+            if self.peek().kind == Kind::Less {
+                let id = self.type_arguments(
+                    name,
+                    span,
+                    GenericArgumentContext::Type,
+                    self.peek().span.start,
+                    depth,
+                )?;
+                (
+                    TypeSyntaxKind::Applied(id),
+                    self.generic_calls[id.0].span.end,
+                )
+            } else {
+                (TypeSyntaxKind::Name(name), span.end)
+            }
         };
         Ok(TypeSyntax {
             span: self.source.span(token.span.start, end),
@@ -1028,6 +1310,24 @@ impl Parser<'_> {
             }
             let (referent, span) =
                 self.item_path("reference parameter requires a record name", true)?;
+            if self.peek().kind == Kind::Less {
+                let application = self.type_arguments(
+                    referent,
+                    span,
+                    GenericArgumentContext::Type,
+                    self.peek().span.start,
+                    0,
+                )?;
+                return Ok(TypeSyntax {
+                    span: self
+                        .source
+                        .span(start, self.generic_calls[application.0].span.end),
+                    kind: TypeSyntaxKind::AppliedReference {
+                        mutable,
+                        application,
+                    },
+                });
+            }
             return Ok(TypeSyntax {
                 span: self.source.span(start, span.end),
                 kind: TypeSyntaxKind::Reference { mutable, referent },
@@ -1044,6 +1344,7 @@ impl Parser<'_> {
             .expect(Kind::Struct, "expected struct declaration")?
             .span;
         let name = self.expect(Kind::Ident, "expected record name")?.span;
+        self.generic_parameters(name)?;
         self.expect(Kind::LBrace, "expected record fields `{`")?;
         let mut fields = Vec::new();
         while self.peek().kind != Kind::RBrace {
@@ -1127,19 +1428,44 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            let place = star.map_or(BorrowPlace::OwnerName(name), |star| {
+            let mut place = star.map_or(BorrowPlace::OwnerName(name), |star| {
                 BorrowPlace::ForwardedParameter {
                     name,
                     star_span: star.span,
                 }
             });
+            let mut end = name.end;
+            if self.arrays_enabled() && self.array_punctuation("[") {
+                let bracket = self.bump();
+                let range_start = self.expression(depth + 1, LiteralContext::Allowed)?;
+                if !self.double_dot() {
+                    return Err(self.array_unsupported(bracket.span));
+                }
+                self.bump();
+                self.bump();
+                let range_end = self.expression(depth + 1, LiteralContext::Allowed)?;
+                end = self.array_close("byte view range requires `]`")?;
+                let star = star
+                    .map(|token| {
+                        u32::try_from(token.span.start).map_err(|_| {
+                            self.project_reserve_error(ReserveFailure::Overflow, token.span)
+                        })
+                    })
+                    .transpose()?;
+                place = BorrowPlace::Range {
+                    name,
+                    start: range_start,
+                    end: range_end,
+                    star,
+                };
+            }
             if !matches!(self.peek().kind, Kind::Comma | Kind::RParen) {
                 return Err(self.error("borrow must be the complete call argument"));
             }
             return Ok(Argument::Borrow {
                 mutable,
                 place,
-                span: self.source.span(start, name.end),
+                span: self.source.span(start, end),
             });
         }
         Ok(Argument::Value(
@@ -1155,6 +1481,51 @@ impl Parser<'_> {
         let start = self.peek().span.start;
         if self.enum_keyword("match") {
             return self.match_statement(blocks, depth, start);
+        }
+        if self.enum_keyword("for")
+            && self.tokens[self.cursor + 1..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Ident)
+        {
+            self.bump();
+            let name = self
+                .expect(Kind::Ident, "expected range loop binding")?
+                .span;
+            let keyword = self.expect(Kind::Ident, "range loop requires `in`")?;
+            if self.source.text_at(keyword.span) != "in" {
+                return Err(self.diagnostic(
+                    "E0100",
+                    "parse",
+                    "range loop requires `in`",
+                    Some(keyword.span),
+                ));
+            }
+            let first = self.expression(0, LiteralContext::ConditionRoot)?;
+            if !self.double_dot() {
+                return Err(self.error("range loop requires an exclusive `start..end` range"));
+            }
+            self.bump();
+            self.bump();
+            let end = self.expression(0, LiteralContext::ConditionRoot)?;
+            if depth >= MAX_BLOCK_NESTING {
+                return Err(self.diagnostic(
+                    "E0400",
+                    "parse",
+                    "statement block nesting limit exceeded",
+                    Some(self.peek().span),
+                ));
+            }
+            let body = self.block(blocks, depth, "expected range loop body `{`")?;
+            return Ok(Stmt {
+                kind: StmtKind::ForRange {
+                    name,
+                    start: first,
+                    end,
+                    body,
+                },
+                span: self.source.span(start, blocks[body.0].end.end),
+            });
         }
         if self.take(Kind::While).is_some() {
             let condition = self.expression(0, LiteralContext::ConditionRoot)?;
@@ -1202,18 +1573,70 @@ impl Parser<'_> {
         }
         let kind = if self.take(Kind::Let).is_some() {
             let mutable = self.take(Kind::Mut).is_some();
-            let name = self.expect(Kind::Ident, "expected binding name")?.span;
-            let annotation = if self.take(Kind::Colon).is_some() {
-                Some(self.ty()?)
+            let (path, at) = if self.wide_scalars_enabled() {
+                self.item_path("expected binding name or record pattern", true)?
             } else {
-                None
+                let name = self.expect(Kind::Ident, "expected binding name")?.span;
+                (ItemPath::Unqualified(name), name)
             };
-            self.expect(Kind::Equal, "binding requires an initializer")?;
-            StmtKind::Let {
-                mutable,
-                name,
-                annotation,
-                init: self.expression(0, LiteralContext::Allowed)?,
+            if self.wide_scalars_enabled() && self.take(Kind::LBrace).is_some() {
+                if mutable {
+                    return Err(self.error("record patterns declare immutable bindings"));
+                }
+                let mut fields = Vec::new();
+                while self.peek().kind != Kind::RBrace {
+                    self.node()?;
+                    let field = self
+                        .expect(Kind::Ident, "expected record pattern field")?
+                        .span;
+                    let binding = if self.take(Kind::Colon).is_some() {
+                        self.expect(Kind::Ident, "expected field binding name")?
+                            .span
+                    } else {
+                        field
+                    };
+                    self.candidate_reserve(&mut fields, MAX_NODES, "record pattern fields", field)?;
+                    fields.push(RecordPatternField {
+                        field,
+                        binding,
+                        span: self.source.span(field.start, binding.end),
+                    });
+                    if self.take(Kind::Comma).is_none() {
+                        break;
+                    }
+                }
+                self.expect(Kind::RBrace, "expected record pattern `}`")?;
+                self.expect(Kind::Equal, "record pattern requires an initializer")?;
+                StmtKind::DestructureRecord {
+                    record: path,
+                    fields,
+                    init: self.expression(0, LiteralContext::Allowed)?,
+                }
+            } else {
+                let ItemPath::Unqualified(name) = path else {
+                    return Err(self.diagnostic(
+                        "E0100",
+                        "parse",
+                        "qualified binding requires a record pattern",
+                        Some(at),
+                    ));
+                };
+                let annotation = if self.take(Kind::Colon).is_some() {
+                    Some(self.parameter_ty()?)
+                } else {
+                    None
+                };
+                self.expect(Kind::Equal, "binding requires an initializer")?;
+                StmtKind::Let {
+                    mutable,
+                    name,
+                    annotation,
+                    init: if self.mode.owned() && self.peek().kind == Kind::Ampersand {
+                        self.local_reference_initializer()?
+                    } else {
+                        self.expression(0, LiteralContext::Allowed)?
+                    },
+                }
             }
         } else if self.take(Kind::Break).is_some() {
             StmtKind::Break
@@ -1332,6 +1755,29 @@ impl Parser<'_> {
             _ => return None,
         })
     }
+    fn local_reference_initializer(&mut self) -> Result<ExprId, Box<Diagnostic>> {
+        self.node()?;
+        let start = self
+            .expect(Kind::Ampersand, "reference requires `&`")?
+            .span
+            .start;
+        let mutable = self.take(Kind::Mut).is_some();
+        let forwarded = self.take(Kind::Star).is_some();
+        let name = self
+            .expect(Kind::Ident, "reference requires a binding name")?
+            .span;
+        if self.peek().kind != Kind::Semi {
+            return Err(self.error("local reference initializer must borrow a whole binding"));
+        }
+        self.push_expr(
+            ExprKind::Borrow {
+                mutable,
+                name,
+                forwarded,
+            },
+            self.source.span(start, name.end),
+        )
+    }
     fn expression(
         &mut self,
         depth: usize,
@@ -1344,6 +1790,12 @@ impl Parser<'_> {
         Some(match self.peek().kind {
             Kind::True | Kind::False => PrimaryStart::Boolean,
             Kind::Number | Kind::Minus => PrimaryStart::Number,
+            Kind::Unsupported
+                if self.wide_scalars_enabled()
+                    && self.source.text_at(self.peek().span).starts_with('\'') =>
+            {
+                PrimaryStart::Character
+            }
             Kind::Ident => PrimaryStart::Name,
             Kind::LParen => PrimaryStart::Group,
             Kind::Unsupported if self.arrays_enabled() && self.array_punctuation("[") => {
@@ -1355,6 +1807,7 @@ impl Parser<'_> {
     fn expression_starter(&self) -> bool {
         self.primary_start().is_some()
             || self.peek().kind == Kind::Not // unary() prefix
+            || (self.wide_scalars_enabled() && self.peek().kind == Kind::Invalid && self.source.text_at(self.peek().span) == "~")
             || (self.mode.owned() && self.peek().kind == Kind::Ampersand) // argument() prefix
     }
     fn logical(
@@ -1396,13 +1849,13 @@ impl Parser<'_> {
         depth: usize,
         context: LiteralContext,
     ) -> Result<ExprId, Box<Diagnostic>> {
-        let left = self.sum(depth, context)?;
+        let left = self.bitwise(depth, context, 0)?;
         let Some(op) = self.comparison_op() else {
             return Ok(left);
         };
         let operator_span = self.bump().span;
         self.node()?;
-        let right = self.sum(depth, context)?;
+        let right = self.bitwise(depth, context, 0)?;
         if self.comparison_op().is_some() {
             return Err(self.error("comparison operators cannot be chained; use parentheses"));
         }
@@ -1418,6 +1871,65 @@ impl Parser<'_> {
                 self.expressions[right.0].span.end,
             ),
         )
+    }
+    // Fixed precedence levels reuse the original immutable token tape. In
+    // particular, a shift is two adjacent angle tokens; lexical certificates
+    // and byte-for-byte token classifications remain unchanged.
+    fn bitwise(
+        &mut self,
+        depth: usize,
+        context: LiteralContext,
+        level: u8,
+    ) -> Result<ExprId, Box<Diagnostic>> {
+        if !self.wide_scalars_enabled() || level == 4 {
+            return self.sum(depth, context);
+        }
+        let mut left = self.bitwise(depth, context, level + 1)?;
+        loop {
+            let first = self.peek();
+            let spelling = self.source.text_at(first.span);
+            let op = match (level, first.kind, spelling) {
+                (0, Kind::Unsupported, "|") => BitwiseOp::Or,
+                (1, Kind::Invalid, "^") => BitwiseOp::Xor,
+                (2, Kind::Ampersand, "&") => BitwiseOp::And,
+                (3, Kind::Less, "<") | (3, Kind::Greater, ">") => {
+                    let next = self.tokens[self.cursor + 1..]
+                        .iter()
+                        .find(|token| token.kind != Kind::Trivia);
+                    if !next.is_some_and(|next| {
+                        next.kind == first.kind && first.span.end == next.span.start
+                    }) {
+                        break;
+                    }
+                    if first.kind == Kind::Less {
+                        BitwiseOp::ShiftLeft
+                    } else {
+                        BitwiseOp::ShiftRight
+                    }
+                }
+                _ => break,
+            };
+            let mut operator_span = self.bump().span;
+            if op.shift() {
+                operator_span.end = self.bump().span.end;
+            }
+            self.node()?;
+            let right = self.bitwise(depth, context, level + 1)?;
+            let span = self.source.span(
+                self.expressions[left.0].span.start,
+                self.expressions[right.0].span.end,
+            );
+            left = self.push_expr(
+                ExprKind::Bitwise {
+                    op,
+                    left,
+                    right,
+                    operator_span,
+                },
+                span,
+            )?;
+        }
+        Ok(left)
     }
     fn sum(&mut self, depth: usize, context: LiteralContext) -> Result<ExprId, Box<Diagnostic>> {
         let mut left = self.product(depth, context)?;
@@ -1472,6 +1984,9 @@ impl Parser<'_> {
         // The prefix stack retains only spans; validated one-byte spelling tells
         // us which operator to construct when unwinding without larger scratch.
         while self.peek().kind == Kind::Not
+            || (self.wide_scalars_enabled()
+                && self.peek().kind == Kind::Invalid
+                && self.source.text_at(self.peek().span) == "~")
             || (self.peek().kind == Kind::Minus
                 && self.tokens[self.cursor + 1..]
                     .iter()
@@ -1509,6 +2024,11 @@ impl Parser<'_> {
             operand = self.push_expr(
                 if self.source.text_at(operator_span) == "-" {
                     ExprKind::Negate {
+                        operand,
+                        operator_span,
+                    }
+                } else if self.source.text_at(operator_span) == "~" {
+                    ExprKind::BitNot {
                         operand,
                         operator_span,
                     }
@@ -1555,11 +2075,16 @@ impl Parser<'_> {
             ExprKind::Group(inner)
             | ExprKind::Negate { operand: inner, .. }
             | ExprKind::Not { operand: inner, .. }
+            | ExprKind::BitNot { operand: inner, .. }
             | ExprKind::Conversion { operand: inner, .. } => self.heights[inner.0],
             ExprKind::Call { args, .. } => args
                 .iter()
                 .map(|arg| match arg {
                     Argument::Value(id) => self.heights[id.0],
+                    Argument::Borrow {
+                        place: BorrowPlace::Range { start, end, .. },
+                        ..
+                    } => self.heights[start.0].max(self.heights[end.0]),
                     Argument::Borrow { .. } => 1,
                 })
                 .max()
@@ -1569,6 +2094,10 @@ impl Parser<'_> {
                 .flatten()
                 .map(|arg| match arg {
                     Argument::Value(id) => self.heights[id.0],
+                    Argument::Borrow {
+                        place: BorrowPlace::Range { start, end, .. },
+                        ..
+                    } => self.heights[start.0].max(self.heights[end.0]),
                     Argument::Borrow { .. } => 1,
                 })
                 .max()
@@ -1584,7 +2113,8 @@ impl Parser<'_> {
                 .max()
                 .unwrap_or(0),
             ExprKind::IndexRead { index, .. } => self.heights[index.0],
-            ExprKind::Arithmetic { left, right, .. }
+            ExprKind::Bitwise { left, right, .. }
+            | ExprKind::Arithmetic { left, right, .. }
             | ExprKind::Comparison { left, right, .. }
             | ExprKind::Logical { left, right, .. } => {
                 self.heights[left.0].max(self.heights[right.0])
@@ -1624,6 +2154,94 @@ impl Parser<'_> {
         self.heights.push(height);
         Ok(id)
     }
+    fn float_literal(
+        &mut self,
+        literal: super::source::Span,
+        negative: bool,
+        end: &mut usize,
+    ) -> Result<Option<ExprKind>, Box<Diagnostic>> {
+        if !self.wide_scalars_enabled() {
+            return Ok(None);
+        }
+        let mut candidate = literal;
+        let first = self.source.text_at(candidate);
+        if first.contains(".to_") {
+            return Ok(None);
+        }
+        // Pointer-sized integer suffixes end in `e`; select every existing
+        // integer spelling before looking for a scientific exponent sign.
+        if first.ends_with("i64")
+            || first.ends_with("i32")
+            || IntegerTypeSyntax::ADDITIONAL_LITERAL_SUFFIXES
+                .into_iter()
+                .any(|kind| first.ends_with(kind.spelling()))
+        {
+            return Ok(None);
+        }
+        if first.ends_with(['e', 'E'])
+            && matches!(self.peek().kind, Kind::Plus | Kind::Minus)
+            && self.peek().span.start == literal.end
+        {
+            let sign = self.bump();
+            if self.peek().kind != Kind::Number || self.peek().span.start != sign.span.end {
+                return Err(self.diagnostic(
+                    "E0101",
+                    "parse",
+                    "expected decimal exponent digits",
+                    Some(sign.span),
+                ));
+            }
+            candidate = self.source.span(literal.start, self.bump().span.end);
+            *end = candidate.end;
+        }
+        let text = self.source.text_at(candidate);
+        let kind = if text.ends_with("f32") {
+            Some(FloatTypeSyntax::F32)
+        } else if text.ends_with("f64") {
+            Some(FloatTypeSyntax::F64)
+        } else {
+            None
+        };
+        if kind.is_none() && !text.bytes().any(|b| matches!(b, b'.' | b'e' | b'E')) {
+            return Ok(None);
+        }
+        let digits = self.source.span(
+            candidate.start,
+            candidate.end - if kind.is_some() { 3 } else { 0 },
+        );
+        let value = self.source.text_at(digits).as_bytes();
+        let mut cursor = 0;
+        while value.get(cursor).is_some_and(u8::is_ascii_digit) {
+            cursor += 1;
+        }
+        let valid_integer = cursor != 0;
+        if value.get(cursor) == Some(&b'.') {
+            cursor += 1;
+            while value.get(cursor).is_some_and(u8::is_ascii_digit) {
+                cursor += 1;
+            }
+        }
+        let mut valid_exponent = true;
+        if value.get(cursor).is_some_and(|b| matches!(b, b'e' | b'E')) {
+            cursor += 1;
+            if value.get(cursor).is_some_and(|b| matches!(b, b'+' | b'-')) {
+                cursor += 1;
+            }
+            let start = cursor;
+            while value.get(cursor).is_some_and(u8::is_ascii_digit) {
+                cursor += 1;
+            }
+            valid_exponent = cursor > start;
+        }
+        if !valid_integer || !valid_exponent || cursor != value.len() {
+            return Err(self.diagnostic("E0101", "parse", "unsupported floating-point literal; expected decimal digits and an optional exponent", Some(candidate)));
+        }
+        Ok(Some(ExprKind::FloatNumber {
+            digits,
+            negative,
+            kind: kind.unwrap_or(FloatTypeSyntax::F64),
+        }))
+    }
     fn primary(
         &mut self,
         depth: usize,
@@ -1645,6 +2263,19 @@ impl Parser<'_> {
                 self.bump();
                 ExprKind::Bool(token.kind == Kind::True)
             }
+            Some(PrimaryStart::Character) => {
+                self.bump();
+                ExprKind::Character(character_value(self.source.text_at(token.span)).ok_or_else(
+                    || {
+                        self.diagnostic(
+                            "E0101",
+                            "parse",
+                            "character literal requires one Unicode scalar or a valid escape",
+                            Some(token.span),
+                        )
+                    },
+                )?)
+            }
             Some(PrimaryStart::Number) => {
                 let negative = token.kind == Kind::Minus;
                 if negative {
@@ -1658,35 +2289,143 @@ impl Parser<'_> {
                         ));
                     }
                 }
-                let digits = self.bump().span;
-                end = digits.end;
-                if !self
-                    .source
-                    .text_at(digits)
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit())
-                {
-                    // The unchanged lexer retains a numeric candidate as one
-                    // token. Still blame the excluded postfix punctuation for
-                    // these exact new spellings, never a fake numeric receiver.
-                    if self.peek().kind == Kind::LParen {
-                        if let Some((number, name)) = self.source.text_at(digits).split_once('.') {
-                            if number.bytes().all(|byte| byte.is_ascii_digit())
-                                && matches!(name, "to_u8_checked" | "to_i32")
+                let literal = self.bump().span;
+                end = literal.end;
+                if let Some(kind) = self.float_literal(literal, negative, &mut end)? {
+                    kind
+                } else {
+                    let wide = self.wide_scalars_enabled()
+                        && self.source.text_at(literal).ends_with("i64");
+                    let integer = if self.wide_scalars_enabled() {
+                        IntegerTypeSyntax::ADDITIONAL_LITERAL_SUFFIXES
+                            .into_iter()
+                            .find(|kind| self.source.text_at(literal).ends_with(kind.spelling()))
+                    } else {
+                        None
+                    };
+                    let digits = if wide {
+                        self.source.span(literal.start, literal.end - 3)
+                    } else if let Some(kind) = integer {
+                        self.source
+                            .span(literal.start, literal.end - kind.spelling().len())
+                    } else {
+                        literal
+                    };
+                    if !self
+                        .source
+                        .text_at(digits)
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit())
+                        || self.source.text_at(digits).is_empty()
+                    {
+                        // The unchanged lexer retains a numeric candidate as one
+                        // token. Still blame the excluded postfix punctuation for
+                        // these exact new spellings, never a fake numeric receiver.
+                        if self.peek().kind == Kind::LParen {
+                            if let Some((number, name)) =
+                                self.source.text_at(digits).split_once('.')
                             {
-                                let dot = digits.start + number.len();
-                                return Err(self.array_unsupported(self.source.span(dot, dot + 1)));
+                                if number.bytes().all(|byte| byte.is_ascii_digit())
+                                    && matches!(name, "to_u8_checked" | "to_i32")
+                                {
+                                    let dot = digits.start + number.len();
+                                    return Err(
+                                        self.array_unsupported(self.source.span(dot, dot + 1))
+                                    );
+                                }
                             }
                         }
+                        return Err(self.diagnostic(
+                            "E0101",
+                            "parse",
+                            "unsupported numeric spelling; expected ASCII decimal literal digits",
+                            Some(self.source.span(token.span.start, end)),
+                        ));
                     }
+                    if wide {
+                        ExprKind::I64Number { digits, negative }
+                    } else if let Some(kind) = integer {
+                        ExprKind::IntegerNumber {
+                            digits,
+                            negative,
+                            kind,
+                        }
+                    } else {
+                        ExprKind::Number { digits, negative }
+                    }
+                }
+            }
+            Some(PrimaryStart::Name)
+                if self.wide_scalars_enabled()
+                    && FloatTypeSyntax::from_spelling(self.source.text_at(token.span))
+                        .is_some()
+                    && self.enum_qualified_ahead() =>
+            {
+                let selected =
+                    FloatTypeSyntax::from_spelling(self.source.text_at(token.span)).unwrap();
+                self.bump();
+                self.bump();
+                self.bump();
+                let method = self
+                    .expect(Kind::Ident, "expected floating-point constructor")?
+                    .span;
+                if self.source.text_at(method) != "from_bits" {
                     return Err(self.diagnostic(
                         "E0101",
                         "parse",
-                        "unsupported numeric spelling; expected ASCII decimal literal digits",
-                        Some(self.source.span(token.span.start, end)),
+                        "supported floating-point constructor is from_bits",
+                        Some(method),
                     ));
                 }
-                ExprKind::Number { digits, negative }
+                self.expect(Kind::LParen, "from_bits requires `(`")?;
+                let name = self
+                    .expect(Kind::Ident, "from_bits requires a named integer value")?
+                    .span;
+                self.node()?;
+                let operand = self.push_expr(ExprKind::Name(name), name)?;
+                end = self
+                    .expect(
+                        Kind::RParen,
+                        "from_bits requires one named integer value and `)`",
+                    )?
+                    .span
+                    .end;
+                ExprKind::Conversion {
+                    op: ConversionOp::FloatFromBits(selected),
+                    operand,
+                    name_span: method,
+                }
+            }
+            Some(PrimaryStart::Name)
+                if self.arrays_enabled()
+                    && self.source.text_at(token.span) == "b"
+                    && self.tokens.get(self.cursor + 1).is_some_and(|next| {
+                        next.kind == Kind::String && token.span.end == next.span.start
+                    }) =>
+            {
+                self.bump();
+                let quoted = self.bump().span;
+                end = quoted.end;
+                let contents = self.source.span(quoted.start + 1, quoted.end - 1);
+                let length = super::byte_strings::length(self.source.text_at(contents)).map_err(
+                    |failure| {
+                        let too_long = failure.reason == super::byte_strings::Reason::Length;
+                        self.diagnostic(
+                            if too_long { "E0400" } else { "E0101" },
+                            "parse",
+                            failure.reason.message(),
+                            Some(if too_long {
+                                self.source.span(token.span.start, end)
+                            } else {
+                                self.source.span(
+                                    contents.start + failure.range.start,
+                                    contents.start + failure.range.end,
+                                )
+                            }),
+                        )
+                    },
+                )?;
+                ExprKind::ByteString { contents, length }
             }
             Some(PrimaryStart::Name) => {
                 let qualified = if self.enum_qualified_ahead() {
@@ -1699,7 +2438,51 @@ impl Parser<'_> {
                     None => self.item_path("expected item name", true)?,
                 };
                 end = path_span.end;
-                if self.take(Kind::LParen).is_some() {
+                let application = if self.type_arguments_ahead() {
+                    Some(self.generic_call_arguments(path, path_span)?)
+                } else {
+                    None
+                };
+                if let Some(application) = application.filter(|_| self.double_colon()) {
+                    self.bump();
+                    self.bump();
+                    let variant = self
+                        .expect(Kind::Ident, "expected enum variant after type arguments")?
+                        .span;
+                    end = variant.end;
+                    let args = if self.take(Kind::LParen).is_some() {
+                        let mut args = Vec::new();
+                        if self.peek().kind != Kind::RParen {
+                            loop {
+                                let argument = Argument::Value(
+                                    self.expression(depth + 1, LiteralContext::Allowed)?,
+                                );
+                                self.candidate_reserve(
+                                    &mut args,
+                                    MAX_PARAMS,
+                                    "generic variant arguments",
+                                    variant,
+                                )?;
+                                args.push(argument);
+                                if self.take(Kind::Comma).is_none() {
+                                    break;
+                                }
+                            }
+                        }
+                        end = self
+                            .expect(Kind::RParen, "variant payload requires `)`")?
+                            .span
+                            .end;
+                        Some(args)
+                    } else {
+                        None
+                    };
+                    ExprKind::GenericVariant {
+                        application,
+                        variant,
+                        args,
+                    }
+                } else if self.take(Kind::LParen).is_some() {
                     let mut args = Vec::new();
                     if self.peek().kind != Kind::RParen {
                         loop {
@@ -1742,6 +2525,9 @@ impl Parser<'_> {
                         return Err(self.array_missing("array index requires an expression"));
                     }
                     let index = self.expression(depth + 1, LiteralContext::Allowed)?;
+                    if self.double_dot() {
+                        return Err(self.array_index_range_error(index));
+                    }
                     end = self.array_close("array index requires `]`")?;
                     ExprKind::IndexRead {
                         base: token.span,
@@ -1763,6 +2549,7 @@ impl Parser<'_> {
                     }
                 } else if self.mode.owned()
                     && matches!(path, ItemPath::Unqualified(_))
+                    && !self.double_dot()
                     && self.take(Kind::Dot).is_some()
                 {
                     let first = self
@@ -1781,7 +2568,7 @@ impl Parser<'_> {
                                 Some(self.peek().span),
                             ));
                         }
-                        if self.peek().kind != Kind::Dot {
+                        if self.peek().kind != Kind::Dot || self.double_dot() {
                             break;
                         }
                         if self.named_conversion_ahead(path).is_some() {
@@ -1828,6 +2615,9 @@ impl Parser<'_> {
                             return Err(self.array_missing("array index requires an expression"));
                         }
                         let index = self.expression(depth + 1, LiteralContext::Allowed)?;
+                        if self.double_dot() {
+                            return Err(self.array_index_range_error(index));
+                        }
                         end = self.array_close("array index requires `]`")?;
                         ExprKind::IndexRead {
                             base: self.source.span(token.span.start, field.end),
@@ -1919,7 +2709,9 @@ impl Parser<'_> {
             }
             None => return Err(self.error("expected a bool, i32 or unit expression")),
         };
-        if (self.arrays_enabled() && (self.array_punctuation("[") || self.peek().kind == Kind::Dot))
+        if (self.arrays_enabled()
+            && (self.array_punctuation("[")
+                || (self.peek().kind == Kind::Dot && !self.double_dot())))
             || (matches!(kind, ExprKind::Conversion { .. }) && self.peek().kind == Kind::LParen)
         {
             return Err(self.array_unsupported(self.peek().span));
@@ -1930,8 +2722,11 @@ impl Parser<'_> {
 
 #[path = "parser/arrays.rs"]
 mod arrays;
+#[path = "parser/characters.rs"]
+mod characters;
 #[path = "parser/conversions.rs"]
 mod conversions;
+pub(super) use characters::character_value;
 #[path = "parser/enums.rs"]
 mod enums;
 #[cfg(test)]
@@ -1960,6 +2755,8 @@ pub(super) fn parse_with_lowered_node_limit(
     parse_with_node_limit(source, tokens, mode, limit)
 }
 
+#[cfg(test)]
+mod generic_syntax_tests;
 #[cfg(test)]
 #[path = "parser/project_tests.rs"]
 mod project_tests;

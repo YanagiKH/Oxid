@@ -100,6 +100,21 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
 }
 fn value(ty: hir::Ty, j: usize) -> Scalar {
     match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(37 * j as i32 - 91),
         hir::Ty::Bool => Scalar::Bool(j.is_multiple_of(2)),
@@ -108,6 +123,21 @@ fn value(ty: hir::Ty, j: usize) -> Scalar {
 }
 fn replacement(ty: hir::Ty) -> Scalar {
     match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(-123456789),
         hir::Ty::Bool => Scalar::Bool(false),
@@ -849,8 +879,10 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
         });
         f.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(j),
-            argument: 0,
+            region: LoanRegion::Call {
+                call: CallSiteId(j),
+                argument: 0,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
             referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
@@ -1300,7 +1332,9 @@ fn reference_fixture(
     let (other_ty, other_n) = match other {
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
-        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
+        AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File => {
+            unreachable!("aggregate executable gate")
+        }
     };
     let f = &mut raw.functions[0];
     f.calls.truncate(1);
@@ -1320,7 +1354,9 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
-        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
+        AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File => {
+            unreachable!("aggregate executable gate")
+        }
         AggregateTy::FixedArray(_) => OwnedInstruction::ConstructArray {
             destination: OwnerPlaceId(1),
             elements: vec![op(4, base); other_n],
@@ -1533,8 +1569,10 @@ fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
         .push(ArgumentSlot::Borrow(LoanId(1)));
     raw.functions[0].loans.push(LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 1,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 1,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(1)),
         kind: BorrowKind::Exclusive,
         referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),

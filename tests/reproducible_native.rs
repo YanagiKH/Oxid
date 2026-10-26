@@ -1,6 +1,11 @@
 //! Public settings/admission contracts and opt-in real LLVM diagnostic checks.
 //! The independent seven-build ELF oracle is verify_reproducible_native.py.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use std::{
     fs,

@@ -63,7 +63,17 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_enum_payload_compatibility.py', current)
+        self.assertIn('scripts/verify_scalar_debug_storage_compatibility.py', current)
+        self.assertIn('scripts/verify_floats.py', current)
+        self.assertIn('scripts/verify_float_roots.py', current)
+        self.assertIn('scripts/verify_characters.py', current)
+        self.assertIn('scripts/verify_float_vector.py', current)
+        self.assertIn('scripts/verify_matrices.py', current)
+        self.assertIn('scripts/verify_i64.py', current)
+        self.assertIn('scripts/verify_integer_widths.py', current)
+        self.assertIn('scripts/verify_byte_integers.py', current)
+        self.assertIn('scripts/verify_integer128.py', current)
+        self.assertIn('scripts/verify_integer_bits.py', current)
         self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
 
         replay = block(self.ci, 'historical-qualification', 2)
@@ -75,6 +85,42 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('--archive "$RUNNER_TEMP/historical-script-controller/typed-project-unit2-evidence.zip"', historical)
         self.assertIn('name: historical-script-replay', historical)
         self.assertNotRegex(historical, r'(?m)^    if:|continue-on-error:')
+
+        predecessor = block(self.ci, 'source-policy-predecessor', 2)
+        self.assertIn('ref: 2e3fe21f76d0027d2b24cb5c7f02ba38ad354809', predecessor)
+        self.assertIn('scripts/run_predecessor_script_tests.py', predecessor)
+        self.assertIn('source-policy-replay.py" --repo .', predecessor)
+        self.assertIn('name: byte-buffer-source-policy-predecessor', predecessor)
+        self.assertNotRegex(predecessor, r'(?m)^    if:|continue-on-error:')
+
+        hosted = block(self.ci, 'hosted-source-policy-predecessor', 2)
+        self.assertIn('ref: 559a6e6aa0b2ab2022d8fa37546ac62aeac9954e', hosted)
+        self.assertIn('scripts/run_hosted_predecessor_tests.py', hosted)
+        self.assertIn('hosted-source-policy-replay.py" --repo .', hosted)
+        self.assertIn('name: hosted-source-policy-predecessor', hosted)
+        self.assertNotRegex(hosted, r'(?m)^    if:|continue-on-error:')
+
+        transfer = block(self.ci, 'buffer-transfer-source-policy-predecessor', 2)
+        self.assertIn('ref: c45d519127d314f522762c35879c0c485994ea42', transfer)
+        self.assertIn('scripts/run_buffer_transfer_predecessor_tests.py', transfer)
+        self.assertIn('buffer-transfer-source-policy-replay.py" --repo .', transfer)
+        self.assertIn('name: buffer-transfer-source-policy-predecessor', transfer)
+        self.assertNotRegex(transfer, r'(?m)^    if:|continue-on-error:')
+
+        literals = block(self.ci, 'byte-string-source-policy-predecessor', 2)
+        self.assertIn('ref: 22d04a015a444edcb600a6011cdb0e2c8529cb34', literals)
+        self.assertIn('scripts/run_byte_string_predecessor_tests.py', literals)
+        self.assertIn('byte-string-source-policy-replay.py" --repo .', literals)
+        self.assertIn('name: byte-string-source-policy-predecessor', literals)
+        self.assertNotRegex(literals, r'(?m)^    if:|continue-on-error:')
+
+        arm64 = block(self.ci, 'arm64-host-source-policy-predecessor', 2)
+        self.assertIn('ref: 18314e95d6afa3d8a4da7970dbddc828f4f6cbac', arm64)
+        self.assertIn('fetch-depth: 0', arm64)
+        self.assertIn('scripts/run_arm64_host_predecessor_tests.py', arm64)
+        self.assertIn('arm64-host-source-policy-replay.py" --repo .', arm64)
+        self.assertIn('name: arm64-host-source-policy-predecessor', arm64)
+        self.assertNotRegex(arm64, r'(?m)^    if:|continue-on-error:')
 
     def test_historical_provenance_reads_are_authorized_without_event_spoofing(self):
         for workflow in (self.ci, self.release, self.historical):

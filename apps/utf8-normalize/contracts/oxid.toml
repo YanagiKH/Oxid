@@ -1,0 +1,15 @@
+[project]
+name = "utf8-text-contracts"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+text = "../../../packages/utf8_text"
+
+[build]
+entry-mode = "result"
+reproducible = true
+
+[tests]
+utf8 = "src/main.ox"

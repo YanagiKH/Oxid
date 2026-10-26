@@ -24,6 +24,22 @@ enum Seed {
 fn values(ty: hir::Ty, n: usize, seed: Seed) -> Vec<Scalar> {
     (0..n)
         .map(|i| match (ty, seed) {
+            (
+                hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::U128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64,
+                _,
+            ) => panic!("integer width is outside this retained narrow fixture or observer"),
+            (hir::Ty::I64, _) => panic!("i64 is outside this retained narrow fixture or observer"),
             (hir::Ty::U8, _) => {
                 unreachable!("u8 is outside this predecessor fixture or observation domain")
             }
@@ -38,6 +54,22 @@ fn values(ty: hir::Ty, n: usize, seed: Seed) -> Vec<Scalar> {
 
 fn replacement(ty: hir::Ty, seed: Seed) -> Scalar {
     match (ty, seed) {
+        (
+            hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize
+            | hir::Ty::I128
+            | hir::Ty::U128
+            | hir::Ty::Char
+            | hir::Ty::F32
+            | hir::Ty::F64,
+            _,
+        ) => panic!("integer width is outside this retained narrow fixture or observer"),
+        (hir::Ty::I64, _) => panic!("i64 is outside this retained narrow fixture or observer"),
         (hir::Ty::U8, _) => {
             unreachable!("u8 is outside this predecessor fixture or observation domain")
         }
@@ -985,8 +1017,10 @@ fn helper_raw(case: HelperCase, s: &impl Fn(usize) -> Span) -> RawOwnedProgram {
     .into_iter()
     .map(|(call, argument, kind, span)| LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(call),
-        argument,
+        region: LoanRegion::Call {
+            call: CallSiteId(call),
+            argument,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind,
         referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 2))).unwrap(),

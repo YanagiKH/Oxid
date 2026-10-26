@@ -1379,7 +1379,7 @@ fn rich_parts() -> (Vec<Record>, Vec<Signature>, Vec<Function>, HirPlan) {
 }
 
 #[test]
-fn c3_t0_enum_values_are_counted_but_containment_references_and_empty_match_are_denied() {
+fn c3_t0_enum_values_and_fields_are_counted_but_enum_references_and_empty_matches_are_denied() {
     use crate::frontend::oir::owned_types::EnumId;
     let at = origin();
     let enumeration = AggregateTy::Enum(EnumId(0));
@@ -1415,7 +1415,7 @@ fn c3_t0_enum_values_are_counted_but_containment_references_and_empty_match_are_
             &WorkMeter::default(),
             at,
         );
-        if matches!(mutant, 0 | 3) {
+        if mutant == 3 {
             assert_eq!(result.err().unwrap().code, "E0500", "mutant {mutant}");
         } else {
             // Resource preparation permits by-value enum storage. It is not

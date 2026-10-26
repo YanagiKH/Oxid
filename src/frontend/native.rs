@@ -12,8 +12,30 @@ use std::{
 };
 
 const LLVM_VERSION: &str = "19.1.7";
-const TARGET: &str = "x86_64-unknown-linux-gnu";
+const TARGET: &str = NativeBuildSettings::new(false).target_triple();
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const CHARACTER_RUNTIME: &str = include_str!("../../native/typed_character.c");
+const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+const FLOAT_FORMAT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/float_format.a"));
+#[cfg(not(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
+const FLOAT_FORMAT: &[u8] = &[];
+const INTEGER128_RUNTIME: &str = include_str!("../../native/typed_integer128.c");
+const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
+const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
+const FILE_CORE: &str = include_str!("../../native/experimental_files.c");
+const ARGUMENT_CORE: &str = include_str!("../../native/experimental_arguments.c");
+const BYTEBUF_HEADER: &str = include_str!("../../native/experimental_bytebuf.h");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
@@ -133,7 +155,7 @@ fn validate_version_output(
 }
 
 fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
-    [
+    let mut arguments: Vec<OsString> = [
         "--no-default-config",
         &format!("--target={}", settings.target_triple()),
         settings.optimization_flag(),
@@ -149,7 +171,15 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
     ]
     .into_iter()
     .map(OsString::from)
-    .collect()
+    .collect();
+    if settings.execution().heap_limit() != super::build_config::ExecutionPolicy::DEFAULT_HEAP_LIMIT
+    {
+        arguments.push(OsString::from(format!(
+            "-DOXID_BYTEBUF_LIMIT={}ULL",
+            settings.execution().heap_limit()
+        )));
+    }
+    arguments
 }
 
 /// Publish a project-owned native output without destroying the previous build
@@ -188,8 +218,10 @@ fn managed(
     incremental: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err(failure("native preview requires a Linux x86_64 build host"));
+    if !NativeBuildSettings::host_supported() {
+        return Err(failure(
+            "native builds require a Linux x86_64 or ARM64 host",
+        ));
     }
     let output = Path::new(output);
     let parent = output
@@ -279,8 +311,10 @@ fn compile_inner(
     cache_root: Option<&Path>,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err(failure("native preview requires a Linux x86_64 build host"));
+    if !NativeBuildSettings::host_supported() {
+        return Err(failure(
+            "native builds require a Linux x86_64 or ARM64 host",
+        ));
     }
     // Path::file_name normalizes trailing separators and `.` components.
     // Preserve the caller's file-vs-directory intent before that normalization.
@@ -360,6 +394,56 @@ fn compile_inner(
     let workspace = Workspace::create(&parent)?;
     fs::write(workspace.0.join("program.ll"), module).map_err(io)?;
     fs::write(workspace.0.join("runtime.c"), RUNTIME).map_err(io)?;
+    if module.contains("declare void @__oxid_bytebuf_start()") {
+        // The sealed emitter selects the runtime. The complete source is
+        // embedded in the compiler; the linked program needs no checkout.
+        fs::write(workspace.0.join("experimental_bytebuf.h"), BYTEBUF_HEADER).map_err(io)?;
+        fs::write(workspace.0.join("experimental_bytebuf.c"), BYTEBUF_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_files.c"), FILE_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_arguments.c"), ARGUMENT_CORE).map_err(io)?;
+        fs::write(workspace.0.join("typed_bytebuf.c"), BYTEBUF_RUNTIME).map_err(io)?;
+        let arguments = if module.contains("declare void @__oxid_arguments_start(i32, ptr)") {
+            "#include \"experimental_arguments.c\"\n"
+        } else {
+            ""
+        };
+        fs::write(
+            workspace.0.join("runtime.c"),
+            format!("{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
+        )
+        .map_err(io)?;
+    }
+    if module.contains("declare i32 @__oxid_print_i128_parts(i64, i64)") {
+        let runtime_path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&runtime_path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(INTEGER128_RUNTIME);
+        fs::write(runtime_path, runtime).map_err(io)?;
+    }
+    if module
+        .lines()
+        .any(|line| line == "declare i32 @__oxid_print_char(i32)")
+    {
+        let path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(CHARACTER_RUNTIME);
+        fs::write(path, runtime).map_err(io)?;
+    }
+    let float_output = module.contains("declare i32 @__oxid_print_float_bits(i64, i32)");
+    let float_operations = module
+        .lines()
+        .any(|line| line == "declare void @__oxid_float_runtime()");
+    if float_operations {
+        fs::write(workspace.0.join("float_format.a"), FLOAT_FORMAT).map_err(io)?;
+    }
+    if float_output {
+        let path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(FLOAT_RUNTIME);
+        fs::write(path, runtime).map_err(io)?;
+    }
     let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
     let invoke = |path: &Path, values: Vec<OsString>| {
         run(
@@ -448,6 +532,13 @@ fn compile_inner(
         "-o",
         "executable",
     ]);
+    if float_operations {
+        link.push(OsString::from("float_format.a"));
+        link.push(OsString::from("-Wl,--gc-sections"));
+    }
+    if float_operations {
+        link.push(OsString::from("-lm"));
+    }
     let mut linker = OsString::from("--ld-path=");
     linker.push(lld);
     link.push(linker);

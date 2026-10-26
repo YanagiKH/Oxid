@@ -7,7 +7,8 @@ from typechecking or executing source, which doctor never performs. Workspace
 source/manifest limits and ownership checks apply to this diagnosis too.
 
 Run `oxid doctor --native` from any directory to diagnose the currently supported
-bounded native target: Linux x86_64, `x86_64-unknown-linux-gnu`, LLVM **19.1.7**.
+native target: Linux x86_64 (`x86_64-unknown-linux-gnu`) or Linux ARM64
+(`aarch64-unknown-linux-gnu`), using LLVM **19.1.7** for the current host.
 `oxid diagnose --native` is an alias. `--message-format=json` produces one JSON
 document; `--message-format=text` selects human output. Explicit
 `--edition=typed-preview` is also accepted. Other options are rejected before
@@ -20,10 +21,10 @@ The command performs these checks in order:
 2. Reserve private temporary storage.
 3. Launch `clang`, `opt` and `ld.lld` and verify their exact LLVM versions.
 4. Compile Oxid's production C runtime against the target SDK headers and verify
-   that the result is an ELF64 x86_64 object.
+   that the result is an ELF64 object for the current host.
 5. Use the running Oxid compiler to compile a fixed `fn main()->i32{return 42;}`
    program through the normal typed frontend, LLVM verifier, code generator,
-   C runtime compiler and linker. Require an ELF64 x86_64 PIE executable.
+   C runtime compiler and linker. Require an ELF64 PIE executable for that host.
 6. Execute that fixed program and require exit status 0, stdout `42\n` and empty
    stderr. This checks the target loader and runtime libraries in use.
 7. If the nearest manifest selects `typed-preview`, admit its local package graph

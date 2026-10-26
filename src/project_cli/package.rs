@@ -20,6 +20,8 @@ struct Reader {
     parsed: HashMap<PathBuf, runtime::ManifestSnapshot>,
     graph_nodes_left: usize,
     graph_edges_left: usize,
+    git: Option<RegularProjectReader>,
+    cache_roots: BTreeSet<PathBuf>,
 }
 
 fn component(value: &str) -> Result<(), String> {
@@ -172,13 +174,28 @@ impl ProjectReader for Reader {
         }
         // Reject every portability violation before traversing the first edge.
         for path in snapshot.manifest.dependencies.values() {
-            relative_path(path, true)?;
+            if !(self.boundary.is_none() && git_source(path)) {
+                relative_path(path, true)?;
+            }
         }
         self.parsed.insert(path.to_owned(), snapshot.clone());
         Ok(snapshot)
     }
 
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
+        if git_source(source) {
+            if self.boundary.is_some() {
+                return Err("source package payloads require portable local dependencies".into());
+            }
+            let path = self
+                .git
+                .as_mut()
+                .ok_or("source package Git session is missing")?
+                .dependency(root, source)?;
+            ordinary_path(&path, false, None)?;
+            self.cache_roots.insert(path.clone());
+            return Ok(path);
+        }
         relative_path(source, true)?;
         let mut path = root.to_owned();
         for part in source.split('/') {
@@ -193,6 +210,21 @@ impl ProjectReader for Reader {
         ordinary_path(&path, false, self.boundary.as_deref())?;
         Ok(path)
     }
+
+    fn finish_graph(
+        &self,
+        packages: &[frontend::PackageSpec],
+        manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        if let Some(git) = &self.git {
+            git.finish_graph(packages, manifests)?;
+        }
+        Ok(())
+    }
+}
+
+fn git_source(value: &str) -> bool {
+    value.starts_with("git+") || value.starts_with("https://")
 }
 
 struct Roster {
@@ -202,6 +234,22 @@ struct Roster {
     source_bytes_left: usize,
 }
 impl Roster {
+    fn replace(&mut self, path: &Path, previous: &[u8], bytes: Vec<u8>) -> Result<(), String> {
+        if self.files.get(path).map(Vec::as_slice) != Some(previous) {
+            return Err("exported source package input differs from its retained owner".into());
+        }
+        let next = self
+            .bytes
+            .checked_sub(previous.len())
+            .and_then(|count| count.checked_add(bytes.len()))
+            .ok_or("exported source package size overflow")?;
+        if next > PAYLOAD_BYTES {
+            return Err("source package exceeds the 32 MiB payload limit".into());
+        }
+        self.files.insert(path.to_owned(), bytes);
+        self.bytes = next;
+        Ok(())
+    }
     fn insert(&mut self, path: PathBuf, bytes: &[u8]) -> Result<(), String> {
         if let Some(previous) = self.files.get(&path) {
             if previous != bytes {
@@ -306,8 +354,13 @@ pub(crate) fn package_source_plan(
     boundary: Option<&Path>,
     require_workspace: bool,
 ) -> Result<crate::project_package::SourcePlan, String> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err("typed source package creation requires Linux x86_64".into());
+    if !cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        return Err("typed source package creation requires Linux x86_64 or ARM64".into());
     }
     let cwd = fs::canonicalize(start)
         .map_err(|error| format!("cannot locate source package start: {error}"))?;
@@ -323,6 +376,8 @@ pub(crate) fn package_source_plan(
         parsed: HashMap::new(),
         graph_nodes_left: 256,
         graph_edges_left: 1024,
+        git: None,
+        cache_roots: BTreeSet::new(),
     };
     let mut workspace_root = None;
     let mut nearest = None;
@@ -396,6 +451,12 @@ pub(crate) fn package_source_plan(
     .ok_or("source packaging requires an existing typed lock")?;
     let mut graphs = Vec::new();
     for (root, snapshot) in &members {
+        reader.git = Some(RegularProjectReader {
+            root: owner.clone(),
+            locked: true,
+            offline: true,
+            git_roots: Vec::new(),
+        });
         graphs.push(package_graph_with(root, snapshot, &mut reader)?);
         graph_budget(&graphs)?;
     }
@@ -531,6 +592,42 @@ pub(crate) fn package_source_plan(
             roster.collect(&session, &graph)?;
         }
     }
+    // The original lock is verified above. Change only the exported manifest
+    // dependency values and matching digests; user files stay untouched.
+    let mut updates = HashMap::new();
+    let mut manifest_bytes = MANIFEST_BYTES - reader.remaining;
+    for (root, &(slot, index)) in &packages {
+        let graph = &graphs[slot];
+        let manifest = &graph.manifests[index];
+        let mut replacements = HashMap::new();
+        for edge in &graph.specs[index].dependencies {
+            if git_source(&manifest.manifest.dependencies[&edge.alias]) {
+                let path = project_lock::relative(root, &graph.specs[edge.package].root)?;
+                relative_path(&path, true)?;
+                replacements.insert(edge.alias.clone(), path);
+            }
+        }
+        if replacements.is_empty() {
+            continue;
+        }
+        let path = root.join("oxid.toml");
+        let previous = reader.retained_manifest(&path, manifest)?;
+        let bytes = runtime::rewrite_dependency_sources(&path, previous, &replacements)?;
+        manifest_bytes = manifest_bytes
+            .checked_sub(previous.len())
+            .and_then(|count| count.checked_add(bytes.len()))
+            .ok_or("exported manifest size overflow")?;
+        if manifest_bytes > MANIFEST_BYTES {
+            return Err("exported manifests exceed the 8 MiB aggregate limit".into());
+        }
+        let snapshot = runtime::parse_typed_manifest_bytes(&path, &bytes)?;
+        updates.insert(root.clone(), snapshot.digest);
+        roster.replace(&path, previous, bytes)?;
+    }
+    if !updates.is_empty() {
+        let bytes = expected.export_with_manifests(&owner, &updates)?;
+        roster.replace(&owner.join("oxid.lock"), existing.bytes(), bytes)?;
+    }
     let mut anchor = owner.as_path();
     for root in packages.keys() {
         while !root.starts_with(anchor) {
@@ -557,6 +654,7 @@ pub(crate) fn package_source_plan(
     // the archive payload. Output publication must preserve them as well.
     let mut input_paths = reader.raw.keys().cloned().collect::<BTreeSet<_>>();
     input_paths.extend(discovery_locks);
+    input_paths.extend(reader.cache_roots);
     for (path, bytes) in roster.files {
         files.push((archive_path(&path)?, bytes));
         input_paths.insert(path);
@@ -570,7 +668,13 @@ pub(crate) fn package_source_plan(
     })
 }
 
-#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    test,
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -761,6 +865,8 @@ mod tests {
             parsed: HashMap::new(),
             graph_nodes_left: 256,
             graph_edges_left: 1024,
+            git: None,
+            cache_roots: BTreeSet::new(),
         };
         let path = fixture.0.join("app/oxid.toml");
         let snapshot = reader.manifest(&path).unwrap();

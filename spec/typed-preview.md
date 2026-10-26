@@ -1,4 +1,4 @@
-# Experimental typed checking and bounded reference execution
+# Experimental typed checking and reference execution
 
 Source-integration status: experimental. The ownership source subset uses the
 production `typed-preview` route. See the
@@ -6,7 +6,7 @@ production `typed-preview` route. See the
 for the exact source, compiler, target and validation scope. This describes the
 current repository, not support in an older released binary.
 
-Status: experimental. Checking is non-executing; explicit run is bounded reference execution. A narrower optional [LLVM native compilation preview](native-preview.md) is also available. `typed-preview` is a provisional selector,
+Status: experimental. Checking is non-executing; explicit file runs retain bounded reference execution. Typed projects may select the hosted execution policy below. A narrower optional [LLVM native compilation preview](native-preview.md) is also available. `typed-preview` is a provisional selector,
 not a final language edition or a completed M1/M2 milestone. The scoped design
 and review boundaries are recorded in [RFC 0001](../rfcs/0001-typed-preview-check.md),
 [RFC 0002](../rfcs/0002-verified-straight-line-oir.md) and
@@ -36,16 +36,20 @@ oxid check --edition typed-preview -- --dash-prefixed.ox
 oxid run input.ox --edition typed-preview
 ```
 
-With no edition option, existing commands retain their legacy behavior.
-`--edition legacy-0.9` explicitly selects that same route. Both `--option value`
+Without an edition option or a manifest edition, commands retain legacy behavior.
+Otherwise, commands use the applicable manifest's edition unless an edition is
+selected explicitly. File commands discover the manifest above their source;
+source-less project commands discover it above the working directory.
+`--edition legacy-0.9` explicitly selects the legacy route. Both `--option value`
 and `--option=value` work for edition and message format. These two options may
 appear before the command, between the command and source, or after the source.
 Duplicate, missing, empty, or unknown values fail; they are never ignored.
 
-`--` ends option recognition. For typed checking/running it must follow `check` or `run`, and all
-later words are literal operands; exactly one source path is required. A typed
-option written after `--` is an operand, not an edition selection. With no new
-options, legacy arguments, including any separator, are forwarded unchanged.
+`--` ends option recognition. Checking requires exactly one source path.
+For `run`, a separator after the source starts literal program arguments; use
+`run -- SOURCE -- ARGUMENTS` when protecting a dash-prefixed source path.
+A typed option after the program separator is an argument, not an edition
+selection. Legacy commands retain their existing separator behavior.
 
 There is one deliberate process-argument boundary: all arguments after
 `script <name>` belong to that manifest script, so edition-like words there are
@@ -53,9 +57,12 @@ passed through. To select an Oxid edition for a script command, place the option
 before its name. An explicit typed selection there is rejected before launching
 anything. This prevents accidentally consuming an external process's options.
 
-The preview supports `check`, explicit `run`, syntax-only `fmt`, and the separately specified
+With an explicit source path and edition, the preview supports `check`, `run`,
+syntax-only `fmt`, and the separately specified
 [native `compile --backend llvm`](native-preview.md). Direct-file invocation,
-`ast`, project commands, and every other operation fail before legacy dispatch. The gate runs before interpreter construction, preprocessing,
+`ast`, and unsupported operations fail before legacy dispatch. Manifest project
+commands follow the project workflow described below. The gate runs before
+interpreter construction, preprocessing,
 dependency resolution, script execution, cache writes, or artifact generation.
 Checking and reference running read the entry and its explicitly declared modules
 and create no output/cache files. Native compilation has its own explicit artifact boundary.
@@ -78,14 +85,118 @@ Native project builds also support [workspaces](../rfcs/0035-typed-workspaces.md
 [source packages](../rfcs/0038-typed-source-packages.md),
 [relative diagnostic paths](../rfcs/0039-reproducible-native-builds.md), and
 [`dev`/`release` profiles](../rfcs/0040-native-build-profiles.md).
-Typed Git and registry dependencies remain unimplemented.
-Explicitly choosing a legacy command on a source remains possible; the selector
-is not a file-carried or project-wide edition marker.
+[`oxid doc`](../rfcs/0063-typed-api-documentation.md) generates public API
+documentation using the same manifest, workspace selection, and dependency locks.
+
+[`oxid lsp --stdio`](../rfcs/0065-typed-language-server.md) provides experimental
+diagnostics over open editor buffers and document formatting. Its UTF-16 ranges
+are separate from the CLI's human diagnostic columns.
+Typed Git dependencies require pinned complete commit hashes; see the project
+workflow. Registry dependencies remain unimplemented.
+An explicit edition option applies to the current invocation; it does not alter
+source files or the manifest's default edition.
+
+## 64-bit signed integers
+
+Use `i64` when a signed value needs more than 32 bits:
+
+```text
+fn main() -> i64 {
+    let bytes = 9007199254740993i64;
+    return bytes + 1i64;
+}
+```
+
+The result is exactly `9007199254740994`. Literals need the `i64` suffix;
+unsuffixed literals remain `i32`, with no implicit conversion. Named `i32`
+and `u8` values support `.to_i64()`. Use `.to_i32_checked()` or
+`.to_u8_checked()` to narrow an `i64`; out-of-range values report E0610.
+
+Arithmetic and comparisons require operands of the same type. Arithmetic
+overflow reports E0604; division or remainder by zero reports E0607. Division
+truncates toward zero. The minimum value divided by −1, its remainder by −1,
+and negating the minimum value also report overflow.
+
+`i64` works in record fields, enum payloads, fixed arrays and borrowed slices.
+Indexes and lengths remain `i32`. Result-mode `main() -> i64` prints decimal
+text; JSON results use a decimal string to preserve all bits. See the
+[complete integer contract](../rfcs/0050-checked-i64-integers.md).
+
+## More integer widths
+
+Use `i8`, `i16`, `u16`, `u32`, `u64`, `isize` or `usize` for smaller signed
+values or larger unsigned values. Suffix literals explicitly, such as
+`-128i8`, `65535u16` and `18446744073709551615u64`. Named values convert with
+methods such as `value.to_u64_checked()`; mixed arithmetic never converts
+implicitly. Overflow, division by zero and failed conversions report errors.
+
+`isize` and `usize` are 64 bits on the current execution targets. Array
+indexes and lengths remain `i32`. Byte literals such as `255u8` and `u8`
+enum payloads support checked arithmetic and result-mode `main() -> u8`.
+See [integer types and conversions](../rfcs/0051-checked-integer-widths.md)
+and [byte arithmetic](../rfcs/0052-byte-integer-arithmetic.md) for ranges,
+results and storage rules.
+
+## 128-bit integers
+
+Use `i128` and `u128` for exact values beyond 64 bits, with explicit suffixes
+such as `18446744073709551616u128`. Both support checked arithmetic,
+comparisons, calls and aggregate storage. Convert named integers with
+`.to_i128_checked()`, `.to_u128_checked()` or another checked integer method.
+JSON results use decimal strings. See [128-bit integers](../rfcs/0053-checked-128-bit-integers.md)
+for ranges, diagnostics and storage rules.
+
+## Integer bit operations
+
+Integers support `&`, `|`, `^`, `~`, `<<` and `>>`. Masks require matching
+operand types; a shift count may use any integer type. Counts outside zero
+through the bit width minus one report E0611. Left shift discards high bits;
+signed right shift copies the sign bit. See [integer bit operations](../rfcs/0054-integer-bit-operations.md)
+for precedence, examples and execution rules.
+
+## Floating-point numbers
+
+Use `f32` or `f64` for IEEE 754 binary floating-point arithmetic. Named float
+values support `.sqrt()`, preserving the operand width and rounding to nearest,
+ties to even. Negative inputs produce the canonical NaN; signed zeros keep
+their signs. Decimal and
+scientific literals default to `f64`; write `0.1f32` for single precision.
+Operations require matching types. Named numeric values convert explicitly
+with `.to_f32()` or `.to_f64()`; `.to_bits()` and the matching `from_bits`
+constructor preserve raw representations. Floats support calls and aggregate
+storage. JSON result values are decimal strings, including `-0`, `inf` and
+`NaN`. See [floating-point numbers](../rfcs/0055-floating-point.md) for rounding,
+comparison, conversion and native execution rules.
+
+## Characters
+
+Use `char` for one Unicode scalar, written as `'a'`, `'中'`, `'🦀'` or an
+escape such as `'\u{1f980}'`. Characters compare by scalar value and support
+calls and aggregate storage. Convert a named integer with `.to_char_checked()`;
+invalid Unicode scalar values report E0612. Convert a named character back
+with `.to_u32()`. Text results use UTF-8 and JSON results use one-character
+strings. See [characters](../rfcs/0056-characters.md) for escapes, storage and
+execution rules.
+
+## Integer range loops
+
+`for index in start..end { ... }` accepts matching integer bounds of any
+supported integer type. Bounds evaluate left-to-right exactly once, before
+iteration; changing an original bound variable in the body does not change
+the range. The end is exclusive. An equal or reversed range has no iterations.
+
+The index has the bounds' type, is immutable, and is scoped to the body under
+the existing binding-name rules. `break` and `continue` target the nearest loop;
+return and all loop transfers retain ordinary ownership cleanup. The implicit
+increment cannot overflow: it executes only when the current value is strictly
+below the end. Compiler limits and the selected execution policy still apply.
+Inclusive ranges, range values and general iterator protocols are unavailable.
 
 ## Fixed scalar arrays
 
 Explicit typed-preview `check`, `run` and native `compile --backend llvm` accept
-move-only `[bool; N]`, `[i32; N]` and `[(); N]` values for decimal lengths 0..1024.
+move-only scalar arrays, including `[bool; N]`, `[(); N]` and arrays of the
+supported integer, floating-point and character types, for decimal lengths 0..1024.
 Nonempty literals infer one exact scalar element type and their element count:
 
 ```text
@@ -129,7 +240,7 @@ are unchanged; native limits can reject a source-legal large program.
 require an original zero-argument bool/i32/unit root main, rejecting other
 entries with E0600/E0700. The [three-module sample](../fixtures/typed-array-samples/README.md)
 returns 5325. Declared-child loading remains Linux-only; native compilation
-remains Linux x86_64 with LLVM 19.1.7 at O0. See [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md)
+supports Linux x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2. See [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md)
 for exact diagnostics, costs and exclusions, and the
 [public-route validation](../docs/architecture/fixed-array-public-validation.md)
 for actual local evidence. Default/legacy dynamic arrays are unchanged. This is
@@ -146,8 +257,9 @@ the historical validation claims linked above.
 A u8 scalar is exactly 0..255. Construct one through an explicitly named i32
 local or parameter using `x.to_u8_checked()`; an out-of-range value fails with
 E0610. Widen a named byte with `b.to_i32()`. Decimal literals remain i32 even
-under byte annotations. There is no implicit coercion, u8 arithmetic or byte
-literal syntax. The helper `byte` in the
+under byte annotations. Explicit byte literals use the `u8` suffix; byte
+arithmetic checks overflow and requires `u8` operands. There is no implicit
+coercion. The helper `byte` in the
 [pilot](../fixtures/typed-byte-storage/main.ox) is an ordinary declared function.
 That pilot moves `[0,127,128,255]` through a helper, mutates index1 through an
 exclusive slice, and sums `[0,255,128,255]` through a shared slice to return638.
@@ -160,25 +272,116 @@ existing whole-owner loans, explicit reborrows and evaluation/fuel order.
 An indexed byte must first be bound to a local before widening; `a[i].to_i32()`
 is not a supported receiver.
 
-Byte arrays cannot be record fields, including unused/nested/imported fields
-and N=0. Such fields fail E0202/resolve at the complete field type with
-`u8 array record fields are not supported`. Direct u8 fields and enum payloads
-remain excluded. Predecessor bool/i32/unit record arrays and projections stay
-available. There are no byte-record projections, element references, subslices,
-heap buffers, I/O signature changes or provider wire expansions. Existing
+### Byte string literals
+
+`b"Hello, Oxid 👋"` creates a move-only `[u8; 16]`. The adjacent `b` prefix is
+required. Raw Unicode text becomes UTF-8 bytes; the length counts decoded bytes,
+not characters. `b""` infers `[u8; 0]` without an annotation. Each literal is
+limited to 1024 decoded bytes, just like other fixed arrays.
+
+Supported escapes are `\\`, `\"`, `\n`, `\r`, `\t`, `\0`, `\xNN` (exactly two
+ASCII hexadecimal digits), and `\u{H}` (one through six ASCII hexadecimal
+digits naming a Unicode scalar value). Thus `b"\xFF"` is valid binary data,
+while `b"\u{1F44B}"` contains the four UTF-8 bytes for 👋. Raw line breaks,
+unknown escapes, surrogate values and values above U+10FFFF are rejected with
+E0101; exceeding the decoded length limit gives E0400. These errors precede
+native tool execution. Formatting preserves the literal's exact spelling.
+
+Byte strings use existing array moves, indexing, mutable assignments and
+array/slice call borrows. Their inferred type must match exactly. They add no
+implicit integer conversions, copies, character literals or general `String`
+type. Quoted strings without the `b` prefix remain unsupported in this edition.
+See [RFC 0047](../rfcs/0047-byte-string-literals.md).
+
+Record fields also admit `u8` and `[u8; N]`, including unused, nested and
+imported declarations and N=0, under
+[byte record fields](../rfcs/0042-byte-record-fields.md). Named-root byte reads,
+writes, array indexing, length and projected array/slice call borrows follow
+the existing whole-root ownership rules. Bind a field or indexed byte to a
+local before widening it. A direct scalar u8 enum payload remains excluded;
+byte arrays and records can be finite enum payloads. There are no element
+references, partial field moves, subslices, heap buffers, I/O signature changes
+or provider wire expansions. Existing
 stdin/stdout builtins continue to use i32 arrays/slices.
 
 Physical standalone byte array storage uses stride/alignment1 and max(1,N)
 bytes. Logical width remains max(1,N), preserving all expanded-cell and fuel
 charges. Source/reference and native caps are unchanged; a legal N=1024 source
 constructor can exceed the narrower native per-function slot cap and be refused
-before tools/output. Native qualification remains Linux x86_64 LLVM19.1.7 O0.
+before tools/output. Native project builds support Linux x86_64 and ARM64 with LLVM19.1.7 at
+O0 and O2.
+
+## Growable byte buffers and partial binary I/O
+
+[Growable byte buffers](../rfcs/0043-growable-byte-buffers.md) add the move-only
+`alloc::bytes::ByteBuf` type, including record fields and enum payloads. Its
+functions create, inspect, reserve, append, extend, resize and truncate initialized
+bytes. Growth reports `GrowStatus`; failure preserves the previous value.
+Lengths remain checked i32 values, byte conversions remain explicit, and the
+normalized live allocation limit is 16 MiB, including allocation headers and
+the old-plus-new growth peak.
+
+[`alloc::bytes::take(&mut ByteBuf) -> ByteBuf`](../rfcs/0046-owned-buffer-transfer.md)
+transfers the buffer's allocation, length and capacity to its result, leaving
+the source empty and reusable. It does not copy bytes or allocate, even when
+the live-memory limit is reached. It requires an exclusive borrow and retains
+the existing rules for overlapping borrows and whole-value moves.
+
+Call-only byte views admit `&buffer[start..end]` and
+`&mut buffer[start..end]`, including byte arrays, named record fields and
+explicitly dereferenced parameters. Endpoints evaluate once in source order
+and must satisfy `0 <= start <= end <= len`. Views retain whole-root loans and
+cannot escape, be stored or resize the owner. Resource moves transfer ownership;
+normal scope cleanup releases initialized owners. Replacement validates the
+incoming value before releasing the previous one.
+
+`std::io::read_some` and `write_some` accept byte slices in process entry mode
+on Linux x86_64 and ARM64. They expose partial progress, EOF and immediate errno without
+retrying. Their distinct `ReadSomeStatus` and `WriteSomeStatus` enums preserve
+the existing bounded `ReadStatus`/`WriteStatus` identities. Immediate result
+delivery is admitted before transport; later user failures preserve completed
+external effects. The [byte reversal application](../apps/byte-reverse/README.md)
+shows workspace packages, growth and partial I/O together.
+
+## Native files
+
+On Linux x86_64 and ARM64, `std::fs::open_read` and `create` return an `OpenResult`:
+`Opened(File)`, `Error(errno)`, `MemoryLimit` or `AllocationFailed`. A `File`
+is move-only and closes automatically when its owner leaves scope.
+
+`std::fs::read_some(&mut file, &mut bytes)` and
+`std::fs::write_some(&mut file, &bytes)` use the existing partial I/O status
+enums from `std::io`. They expose partial progress, EOF and immediate errors;
+callers choose how to continue. `sync_all` and `close` return `FileStatus::Ok`
+or `FileStatus::Error(errno)`. Closing an already closed handle succeeds;
+other operations on it return `Error(9)`.
+
+Paths are byte slices of at most 4095 bytes. NUL is rejected before opening or
+truncating a file. `create` truncates an existing file. Both entry modes support
+files, with signal setup before source effects. See
+[native file ownership and I/O](../rfcs/0048-native-file-io.md) for the API and
+error contracts.
+
+## Program arguments
+
+On Linux x86_64 and ARM64, `std::env::arg_count()` includes the executable at index 0.
+`std::env::arg_bytes(index, &mut bytes)` returns `ArgStatus::Copied(length)`,
+`TooSmall(required)`, `Missing` or `TooLong`. It preserves raw OS bytes and
+empty arguments. Only a successful copy modifies the destination's prefix;
+all other statuses leave it unchanged. User arguments start at index 1 in
+both reference and native execution.
+
+Pass them with `oxid run -- ARGUMENTS`, or `oxid run SOURCE --edition=typed-preview
+-- ARGUMENTS`. Native executables accept arguments directly. See the
+[program argument contract](../rfcs/0049-program-arguments.md).
 
 ## Bounded owned record composition
 
 [RFC 0020](../rfcs/0020-owned-record-composition.md) permits record fields to hold
-bool/i32/unit, another nominal record, or a fixed bool/i32/unit array. Standalone
-byte arrays are excluded from record fields. Forward type
+bool/i32/unit, another nominal record, or a fixed bool/i32/unit array.
+[Byte fields](../rfcs/0042-byte-record-fields.md) add u8 scalars and arrays to
+that same contract. Fields also support the other scalar types described above,
+finite enums and the supported owned resources. Forward type
 references are allowed, but by-value containment must be acyclic even in unused
 declarations. Records remain nominal and move-only. Containment and named-root
 field paths are bounded to 64 levels, with the existing byte and work ceilings.
@@ -213,13 +416,16 @@ move an explicitly annotated zero-length local; `field: []` does not infer a typ
 
 Named-root paths may copy or write a scalar leaf, index a contained fixed scalar
 array, or call its `len()`. Visibility is checked at every intermediate and final
-field. The root must remain available and its existing whole-root permissions
-must allow the access. A shared/exclusive helper borrows the complete outer
-record; explicit reborrows keep existing parent-suspension rules.
+field. The root must remain available. A helper may borrow a whole record or a
+record field; active field loans permit access to different fields under the
+[field borrowing rules](../rfcs/0067-disjoint-field-borrows.md). Whole-record
+access retains the existing parent-suspension rules.
 
-No aggregate field may be extracted, moved, discarded, passed or returned by
-value or independently replaced. Replace the complete outer record instead.
-The call-only fixed-array-field slice exception below retains whole-root authority. Partial initialization, arrays of records,
+Individual aggregate fields cannot be moved or independently replaced.
+Use a complete record pattern below to transfer fields into new bindings,
+or replace the complete outer record.
+Call-only field and contained-array slice borrows retain the outer owner's
+lifetime and cleanup authority. Partial initialization, arrays of records,
 nested arrays, stored references and temporary/grouped path roots remain
 excluded. Subobjects never gain independent ownership or loan authority.
 
@@ -232,9 +438,16 @@ transfer initialized leaves and empty sentinels without copying padding.
 
 ## Call-only projected array slices
 
+Record fields can also be borrowed by their exact record type with
+`&value.field`, `&mut value.field`, and explicit parameter reborrows such as
+`&mut *parameter.field`. Nested paths keep the outer owner alive, but distinct
+field paths may be borrowed together. Equal paths and parent/child paths
+overlap; a whole-record borrow overlaps every field.
+See [borrowing record fields](../rfcs/0057-record-field-borrows.md).
+
 [RFC 0022](../rfcs/0022-projected-array-slices.md) permits `sum(&batch.samples)`
 and `bump(&mut batch.samples)` when the bounded named-root field path ends in a
-fixed bool/i32/unit array and the formal is exactly the matching shared/exclusive
+fixed scalar array and the formal is exactly the matching shared/exclusive
 scalar slice. Paths may contain up to 64 fields and visibility is checked at each
 hop. Length zero works through an explicitly typed empty-array initializer.
 
@@ -248,8 +461,9 @@ Existing `&*p` reborrowing remains unchanged.
 A view exposes only the selected complete array, while its loan covers the
 entire root record. Different fields therefore still conflict for exclusive
 borrows; shared/shared loans may coexist. Parent permissions restore on return.
-The view cannot escape, grant field ownership, borrow scalar/record fields,
-supply an exact fixed-array formal, or enable ranges/element borrowing.
+Array views cannot escape, grant field ownership, borrow scalar fields,
+supply an exact fixed-array formal, or enable element references. Byte views
+also support the ranges described under [growable byte buffers](#growable-byte-buffers-and-partial-binary-io).
 
 Runtime and native consumers preserve field offsets, actual lengths, argument
 staging, RHS/index/fuel/bounds/store order and neighboring fields. Retained view
@@ -312,7 +526,7 @@ The [three-module sample](../fixtures/typed-slice-samples/README.md) uses shared
 [`tests/typed_slices.rs`](../tests/typed_slices.rs) for the public acceptance
 controls. Test definitions are not current hosted-CI receipts; historical
 source-bound ledgers keep their original qualification identities. Declared-child
-loading remains Linux-only; native scope remains Linux x86_64 with
+loading remains Linux-only; native builds support Linux x86_64 and ARM64 with
 LLVM/Clang/LLD 19.1.7 at O0 and the existing admission gates. Default/legacy and
 OXBC behavior are unchanged. This remains experimental, with no stable slice
 ABI, general lifetime inference or milestone-completion claim.
@@ -338,8 +552,7 @@ fn main() -> i32 { return consume(Token::Integer(7)); }
 ```
 
 Each enum has 1..256 unique variants, each nullary or carrying exactly one
-`bool`, `i32`, `()`, record, fixed scalar array or finite enum value. Array
-payloads include `u8` arrays; a direct scalar `u8` payload is still unsupported.
+supported scalar, record, fixed scalar array, finite enum or owned resource.
 Payload type names, imported aliases and `crate::` paths use ordinary type
 resolution and exact nominal identity. A public enum must expose a visible
 payload type; private fields in that public record retain their field privacy.
@@ -387,7 +600,7 @@ independent whole-program inventories I and W, each at most 8,192, plus unchange
 1 MiB aggregate/live explicit-byte bounds and its other stricter limits; see
 [RFC 0027](../rfcs/0027-native-admission-inventories.md).
 
-Enum borrows, storage in record fields or arrays, recursive payloads,
+Enum borrows, arrays of enums, recursive payloads,
 partial moves, equality, printing and source-visible tags are unavailable.
 Match expressions, guards, wildcard/alternative/nested patterns and arbitrary
 scrutinee expressions are also unavailable. An enum-returning `main` may check;
@@ -400,7 +613,7 @@ character codes, a separate mutable cursor with a private field, and an imported
 `Token` alias. Input `12 + 3` returns 115 (12 + 100 + 3). Decimal accumulation
 uses checked i32 arithmetic, so overflow remains the ordinary arithmetic failure.
 Run it with `oxid run tests/fixtures/bounded_enum_scanner/main.ox --edition typed-preview`.
-Declared-child loading remains Linux-only; native scope remains Linux x86_64
+Declared-child loading remains Linux-only; native builds support Linux x86_64 and ARM64
 with LLVM/Clang/LLD 19.1.7. Native project profiles support O0 and O2. This fixed-input compiler-component example
 makes no production-provider or self-hosting claim. The
 [public acceptance controls](../src/frontend/enum_public_tests.rs) cover the
@@ -479,8 +692,8 @@ store, commit and result materialization contain no fallible helper, allocation,
 validation or extra fuel debit. A later builtin return or caller operation can
 still exhaust fuel after the successful commit; earlier effects remain.
 
-Input-bearing reference execution is Linux x86_64 only. Other hosts report
-E0608/oir-owned-run, exactly `bounded stdin execution requires Linux x86_64`, at
+Input-bearing reference execution supports Linux x86_64 and ARM64. Other hosts report
+E0608/oir-owned-run, exactly `bounded stdin execution requires Linux x86_64 or ARM64`, at
 the admitted input import before entry validation or activation. This applies
 to unused function imports and zero-capacity calls. `ReadStatus`-only use remains
 portable under the existing project-loading rules; native compilation retains
@@ -536,7 +749,7 @@ values on typed Run also use that text-only channel. `--` and script forwarding
 retain their existing boundaries. Compile JSON remains a compiler build report;
 Check, Fmt and Compile never establish process signal policy or execute I/O.
 
-Runtime execution is qualified on Linux x86_64. Process Run establishes ignored
+Runtime execution supports Linux x86_64 and ARM64. Process Run establishes ignored
 SIGPIPE before source loading, diagnostic rendering, activation or fuel checks.
 Setup failure returns silent 74. Terminal stderr retries Interrupted/positive
 short writes and returns 74 on zero/error, preserving any prefix without a
@@ -639,7 +852,7 @@ Declared-child filesystem loading currently admits Linux only; non-Linux hosts
 reject it with E0005/source. Linux x86_64 has the predecessor filesystem evidence;
 other Linux architectures are not qualified. A module-free root has no discovery
 host gate, including root-only visibility/import/absolute-path syntax. Native
-remains Linux x86_64 with LLVM 19.1.7 at O0. The loader checks a stable filesystem;
+supports Linux x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2. The loader checks a stable filesystem;
 it does not promise a concurrent-filesystem snapshot or sandbox.
 
 Source bytes (1 MiB), non-EOF tokens including trivia (100,000), syntax nodes
@@ -651,6 +864,134 @@ Shared index requested payload is at most 32 MiB, peak scratch 16 MiB and work
 RSS, host I/O time or LLVM memory. Exact loader/path and measured resource limits
 remain in RFC 0015 and its implementation ledgers.
 
+## Generic functions
+
+A function may declare type parameters, for example
+`fn identity<T>(value: T) -> T { return value; }`. Type parameter names occupy the
+function's type namespace, including parameter/result types and local annotations.
+They are distinct from function and value names. Repeated type parameters and
+built-in scalar type names are rejected.
+
+Call arguments infer each type parameter. A call can instead supply every type
+argument in declaration order using `function::<Type, OtherType>(arguments)`.
+The list is nonempty, permits a trailing comma and accepts value types, including
+the caller's type parameters. These type names resolve in the caller's module.
+The explicit arguments must satisfy the same bounds and agree with the value
+arguments; omitted parameters and inference placeholders are not supported.
+Repeated occurrences must agree on the
+same type identity, including nominal package and declaration identity. An
+unconstrained parameter is affine: passing or returning it moves the value even
+when a particular call uses a scalar. `T: Copy` permits repeated scalar reads;
+it does not authorize arithmetic, comparison, field access or conversions on T.
+Generic definitions are checked with distinct opaque parameters, including
+unused definitions. Unknown or repeated bounds are errors.
+
+Concrete specializations are shared for the same declaration and ordered type
+arguments. Name resolution stays in the definition's module and package.
+Reference parameters `&T` and `&mut T` infer a supported owned referent; references
+cannot be returned or stored as values. Other trait bounds remain unavailable.
+Function type arguments cannot be applied to enum variants, ordinary functions
+or builtin functions. Enum type arguments precede the variant name instead.
+
+A project may create at most 1,024 generic function specializations, with at most
+64 newly created instances along an instantiation chain. Each nominal family
+also permits at most 1,024 applications with nonempty arguments, including the
+opaque applications used to check definitions. Type argument depth is at most
+64. Generic checking has a shared 8 MiB working storage limit, including live
+constructor inference frames. Other project and native build limits still
+apply; exceeding a limit reports a compilation error.
+
+## Generic structs and enums
+
+Struct and enum declarations may declare the same type parameters and scalar
+`Copy` bounds as functions. Type applications use `Cell<T>` and
+`Result<T, E>` in annotations, fields, payloads and function signatures.
+Applications resolve in the module containing that syntax. Their identity
+includes the original package/declaration and the complete ordered arguments;
+phantom arguments remain part of identity and public API visibility checks.
+
+Constructors infer every type parameter from the struct's field values or the
+selected enum variant's payload when arguments are omitted. For example,
+`Cell { value: 42 }` and `Option::Some(42)` infer `i32`. Field names determine
+which constraints apply; initializer order does not change the inferred type.
+Inference recurses through nested nominal applications and checks generic
+function bodies using their opaque parameters. Repeated constraints must agree
+on the same type identity, and inferred arguments must satisfy declared bounds.
+
+Explicit arguments remain available, as in `Cell::<i32> { value: 42 }` and
+`Option::<i32>::Some(42)`. Every explicit argument is required in declaration
+order and is checked against the values. A nullary variant or a type parameter
+not determined by the selected fields or payload needs explicit arguments,
+for example `Option::<i32>::None`. Type annotations and return types do not
+provide constructor constraints. An enum constructor's type arguments apply
+to its enum, not its variant. Match arms use ordinary variant paths without
+arguments and are checked against the matched concrete enum type. Payloads can
+transfer owned records, enums, arrays and byte buffers to an arm binding.
+
+Function inference recurses through nominal arguments, including parameters
+that affect identity without appearing in stored fields. Every nominal
+declaration is checked with opaque arguments even if unused. By-value recursive
+layouts, wrong argument counts and unsatisfied bounds are errors. Concrete
+layouts are emitted only for complete applications; templates have no runtime
+layout. Record field operations retain the existing move, scalar access and
+whole-owner borrowing restrictions. Reference returns, stored references and
+user-defined traits remain unsupported.
+
+## Enums in structs
+
+Struct fields can store enum values, including generic enum applications:
+
+```text
+enum Option<T> { None, Some(T) }
+struct Cell<T> { value: Option<T> }
+
+fn main() -> i32 {
+    let cell = Cell::<i32> { value: Option::<i32>::Some(42) };
+    let Cell { value } = cell;
+    match value {
+        Option::None => { return 0; },
+        Option::Some(number) => { return number; },
+    }
+}
+```
+
+Pass, return or replace the complete struct, or consume it with a complete
+record pattern before matching an enum field. Each payload moves once; owned
+resources are released only for the active variant. Nested structs and enums
+share the existing 64-level depth limit and must have finite, acyclic layouts.
+Borrowing an enum directly, storing references and moving just one field out
+of a struct remain unsupported.
+
+The joint layout pass uses a separate 8 MiB temporary storage budget before
+allocating its metadata. Native builds validate each complete incoming value
+before transferring fields; generated helper code follows declarations rather
+than expanding every path through shared nested types.
+
+## Record patterns
+
+Use a complete record pattern to consume a struct and bind its fields:
+
+```text
+struct Cell<T> { value: T }
+fn take<T>(cell: Cell<T>) -> T {
+    let Cell { value } = cell;
+    return value;
+}
+```
+
+Every field must appear exactly once. Fields can appear in any order and can
+be renamed, as in `let Pair { second: right, first: left } = pair;`.
+Bindings are immutable and their types come from the initializer, including
+generic arguments. Qualified struct names and field visibility follow the
+same rules as construction.
+
+The initializer runs once. The pattern consumes the complete struct; the old
+binding is unavailable afterward. Owned fields transfer to separate bindings,
+and unused bindings release their resources at the end of their scope. Scalar
+fields retain their concrete scalar behavior. `let Empty {} = value;` consumes
+an empty struct. Reference initializers, partial patterns with `..`, nested
+patterns and `let mut` patterns are not supported.
+
 ## Grammar
 
 ```text
@@ -661,25 +1002,31 @@ import_decl    := "use" import_path ("as" name)? ";"
 import_path    := absolute_path | "std" "::" "io" "::" ("read_stdin" | "ReadStatus" | "write_stdout" | "WriteStatus")
 absolute_path  := "crate" "::" name ("::" name)*
 item_path      := name | absolute_path
-function       := "pub"? "fn" name "(" parameters? ")" "->" value_type block
+function       := "pub"? "fn" name type_parameters? "(" parameters? ")" "->" value_type block
+type_parameters := "<" type_parameter ("," type_parameter)* ","? ">"
+type_parameter := name (":" "Copy")?
+type_arguments := "::" nominal_arguments
+nominal_arguments := "<" value_type ("," value_type)* ","? ">"
+applied_type   := item_path nominal_arguments
 parameters     := name ":" parameter_type ("," name ":" parameter_type)*
 scalar_type    := "bool" | "i32" | "u8" | "(" ")"
 array_element_type := "bool" | "i32" | "u8" | "(" ")"
-enum_payload_type := "bool" | "i32" | "(" ")" | item_path | fixed_array_type
+enum_payload_type := "bool" | "i32" | "(" ")" | item_path | applied_type | fixed_array_type
 fixed_array_type := "[" array_element_type ";" decimal "]"
 slice_type     := "[" array_element_type "]"
-value_type     := scalar_type | item_path | fixed_array_type
-referent_type  := item_path | fixed_array_type | slice_type
+value_type     := scalar_type | item_path | applied_type | fixed_array_type
+referent_type  := item_path | applied_type | fixed_array_type | slice_type
 parameter_type := value_type | "&" referent_type | "&" "mut" referent_type
-struct_decl    := "pub"? "struct" type_name "{" field_decls? "}"
+struct_decl    := "pub"? "struct" type_name type_parameters? "{" field_decls? "}"
 field_decl     := "pub"? name ":" value_type
 field_decls    := field_decl ("," field_decl)* ","?
-enum_decl      := "pub"? "enum" type_name "{" variant_decl ("," variant_decl)* ","? "}"
+enum_decl      := "pub"? "enum" type_name type_parameters? "{" variant_decl ("," variant_decl)* ","? "}"
 variant_decl   := name ("(" enum_payload_type ")")?
 variant_path   := name "::" name | absolute_path "::" name
 match_arm      := variant_path ("(" name ")")? "=>" block
 block          := "{" statement* "}"
 statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
+                | "let" item_path "{" record_bindings? "}" "=" expression ";"
                 | name "=" expression ";"
                 | field_path "=" expression ";"
                 | array_base "[" expression "]" "=" expression ";"
@@ -698,14 +1045,19 @@ sum            := product (("+" | "-") product)*
 product        := unary (("*" | "/" | "%") unary)*
 unary          := ("!" | "-") unary | primary
 primary        := "true" | "false" | name | "(" ")" | "(" expression ")"
-                | item_path "(" arguments? ")" | decimal | "-" decimal
-                | field_path | item_path "{" field_inits? "}"
+                | item_path type_arguments? "(" arguments? ")" | decimal | "-" decimal
+                | byte_string
+                | field_path | item_path type_arguments? "{" field_inits? "}"
                 | variant_path ("(" expression ")")?
+                | item_path type_arguments "::" name ("(" expression ")")?
                 | array_base "[" expression "]" | array_base "." "len" "(" ")"
 field_path     := name ("." name)+
 array_base     := name | field_path
 decimal        := ASCII_DIGIT+
+byte_string    := "b" '"' byte_string_contents '"'
 field_inits    := name ":" expression ("," name ":" expression)* ","?
+record_bindings := record_binding ("," record_binding)* ","?
+record_binding := name (":" name)?
 arguments      := argument ("," argument)*
 argument       := expression | borrow_argument
 borrow_argument := "&" name | "&" "mut" name
@@ -721,8 +1073,8 @@ parser. Unicode is permitted in comments; Unicode identifiers are not supported.
 The two colons remain separate lexer tokens and both count in the resource
 ledger. Trivia may surround the delimiter but cannot split its two bytes.
 Public-field recognition requires `pub` followed by a nontrivia identifier.
-Optional trailing commas are confined to struct field declarations, literal
-initializers, enum variants and match arms. Function parameters and call
+Optional trailing commas are confined to type parameter/argument lists, struct
+field declarations, literal initializers, enum variants and match arms. Function parameters and value call
 arguments still reject trailing commas. The two arrow bytes in `=>` must be adjacent. Legacy concise-keyword
 aliases are not supported.
 
@@ -936,6 +1288,14 @@ malformed/value/labeled transfer statements give E0100/parse. See
 
 ### Nominal owned structs and call-only borrowing
 
+Whole aggregates additionally support [local reference bindings](../rfcs/0068-local-reference-bindings.md).
+`let view = &value;` and `let view = &mut value;` retain a borrow until the
+declaring block ends. Explicit reborrows use `&*view` or `&mut *view`.
+An optional reference annotation must match the initializer exactly. Early
+returns and loop exits release references in reverse declaration order before
+ending owner storage. This does not add reference returns, references stored
+inside values, local field/slice borrows or lifetimes shortened to the last use.
+
 The owned contract is [RFC 0014](../rfcs/0014-owned-structs-call-borrows.md).
 Type names have a separate namespace from functions/locals; fields belong to
 their declaring struct. All declarations are collected before bodies. Types are
@@ -991,7 +1351,7 @@ whereas `a.field = consume(a);` fails when the final target is unavailable.
 Earlier moves and writes are not rolled back if a later operation fails; an
 unpaid store performs no write.
 
-Partial moves, aggregate-field extraction/replacement, destructuring, aggregate
+Partial moves, individual aggregate-field extraction/replacement, aggregate
 equality, stored or returned references, scalar/field/temporary borrows, general dereference,
 reference coercions, mutable parameter bindings, heap resources and user
 destructors remain unavailable.
@@ -1360,7 +1720,7 @@ X is the logical activation-fuel count. Xphysical includes the existing
 reference/loan view metadata and remains the reference expanded-cell admission
 count; the metadata and builtin scratch do not add logical activation fuel.
 
-Native admission separately uses whole-program `I = sum(S + A + O + R + L + C)`
+Bounded native admission separately uses whole-program `I = sum(S + A + O + R + L + C)`
 and `W = sum(P)`, each at most 8,192, including all argument positions, unused
 functions and untaken branches. [RFC 0027](../rfcs/0027-native-admission-inventories.md)
 replaces only the native aggregate/live Xphysical gates with these inventories.
@@ -1392,6 +1752,7 @@ as defined above, and r be the call's number of borrowed arguments:
 | Bounded stdin core, capacity C and A attempted reads | `4 + C + A`; result construction and commit prepaid |
 | Bounded stdout core, capacity C and A attempted writes | `4 + C + A`; validation/staging and infallible result commit prepaid |
 | Whole replacement | `1 + 2w` |
+| Complete record pattern with K owned fields | `1 + 2w + K`, after scalar field reads |
 | OpenCall | `1 + owned_argument_count` |
 | Invoke | `1 + argc + X(callee) + sum(owned_argument_widths) + r(r-1)/2` |
 | Scalar return | `1 + P + L + C + R` |
@@ -1574,3 +1935,36 @@ are rejected. Default routing is unchanged and failures have no fallback.
 See the [complete LXI1/LXS1 contract](streaming-lexical-provider.md),
 [actual source component](../fixtures/typed-streaming-lexer/README.md) and
 [qualification boundary](../docs/architecture/streaming-lexical-provider.md).
+
+## Project execution policy
+
+A typed project's `oxid.toml` can select execution independently of its build profile:
+
+```toml
+[execution]
+policy = "hosted"
+```
+
+`hosted` has no cumulative execution-work budget. `bounded` retains the existing
+1,000,000-unit budget and is the default when the setting is absent. These units
+count language operations and byte work rather than processor instructions.
+The fuel schedules and fuel-admission limits elsewhere in this document describe
+bounded execution. Both policies retain type, ownership, arithmetic, bounds,
+allocation, live-storage and compiler-resource checks.
+
+Each workspace binary chooses its own policy; library dependencies cannot change
+the caller's policy. `run`, native `build` and declared project tests use the same
+setting. The `dev`/`release` optimization choice is independent. See the
+[execution policy contract](../rfcs/0044-project-execution-policy.md).
+
+Hosted native project builds support direct and mutual recursion, including
+owned results and call-only reborrows. Calls reserve storage before entering the
+callee. Limits and runtime errors are specified in
+[hosted native recursion](../rfcs/0058-hosted-native-recursion.md). The bounded
+native policy retains its acyclic call-graph and depth requirements.
+
+Hosted native projects permit up to 1,024 functions, 32,768 scalar storage slots,
+16,384 basic blocks and 65,536 compiler inventory items and owner width cells.
+All declarations count, including dependencies and unused functions. Per-function,
+verification, metadata, native storage and output limits also apply. See
+[hosted native program sizes](../rfcs/0062-hosted-native-program-size.md).

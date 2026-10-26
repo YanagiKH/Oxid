@@ -3,7 +3,12 @@
 use super::*;
 use crate::frontend::oir::owned::enum_consumer_fixtures as e;
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM 19.1.7; executes emitted fault controls with O0 and O2"]
 fn owned_enum_native_late_invalid_leaf_preserves_destination_at_both_optimizations() {
@@ -910,7 +915,12 @@ fn native_enums_handcounted_schedules_and_dispatch_cycle_edges() {
     assert_schedule(&witness, &sources, &schedule);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn exercise(
     scratch: &Scratch,
     sources: &SourceMap,
@@ -973,7 +983,12 @@ fn exercise(
     schedule.fuel() + 3
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_enums_source_free_all_payloads_orders_sites_loops_and_every_fuel() {
@@ -1047,7 +1062,12 @@ fn native_enums_source_free_all_payloads_orders_sites_loops_and_every_fuel() {
     eprintln!("native enum core:39 input cases,78 compiled source-free artifacts,39 preserved guarded production modules,{processes} ELF executions including every independent fuel budget");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_enums_source_free_invalid_dispatch_consume_and_active_bytes() {
@@ -1136,7 +1156,12 @@ fn native_enums_source_free_invalid_dispatch_consume_and_active_bytes() {
     assert_eq!(artifacts, 24);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_enums_source_free_all_transfer_faults_and_no_partial_write() {
@@ -1201,7 +1226,12 @@ fn native_enums_source_free_all_transfer_faults_and_no_partial_write() {
     assert_eq!(artifacts, 72);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
@@ -1255,6 +1285,23 @@ fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
                 1,
             );
             let inactive = match payload {
+                Some(
+                    hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::U128
+                    | hir::Ty::Char
+                    | hir::Ty::F32
+                    | hir::Ty::F64,
+                ) => panic!("integer width is outside this retained narrow fixture or observer"),
+                Some(hir::Ty::I64) => {
+                    panic!("i64 is outside this retained narrow fixture or observer")
+                }
                 Some(hir::Ty::U8) => {
                     unreachable!("u8 is outside this predecessor fixture or observation domain")
                 }
@@ -1335,7 +1382,12 @@ fn native_enums_source_free_discard_and_inactive_moved_uninitialized_poison() {
     assert_eq!(artifacts, 26);
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn charge_boundary(
     scratch: &Scratch,
     witness: &VerifiedOwnedProgram,
@@ -1372,7 +1424,12 @@ fn charge_boundary(
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_enums_source_free_guards_precede_every_binding_and_transfer_effect() {
@@ -1501,7 +1558,12 @@ fn native_enums_changed_variants_and_later_owned_input_boundary_modules() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn native_enums_source_free_changed_variants_and_later_owned_input_boundary() {

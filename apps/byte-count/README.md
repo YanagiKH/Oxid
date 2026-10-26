@@ -15,7 +15,7 @@ oxid build
 printf 'hello\nworld\n' | ./.oxid/bin/byte-count
 ```
 
-Both executions print `2 12`. Native building requires Linux x86_64 and LLVM,
+Both executions print `2 12`. Native building requires Linux x86_64 or ARM64 and LLVM,
 Clang and LLD 19.1.7. The executable can be copied elsewhere and run without
 Oxid or the source packages; it retains its normal system library dependencies.
 

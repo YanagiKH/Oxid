@@ -102,6 +102,10 @@ pub(super) struct FunctionCounts {
     pub diagnostic_origins: usize,
     pub max_constructor_fields: usize,
     pub ownership_active: bool,
+    pub destructured_fields: u32,
+    // Only the bounded ancestry multiplier is retained, not a second exact
+    // declaration count. Every descriptor is still independently inventoried.
+    pub local_loan_depth_bound: u8,
 }
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProgramCounts {
@@ -123,6 +127,16 @@ pub(super) fn account_builtin_descriptors(
     limits: Limits,
     program: &mut ProgramCounts,
 ) -> Result<(), OwnedFailure> {
+    if !origin.experimental().is_empty() {
+        program.usage.metadata_bytes = cap(
+            add(
+                program.usage.metadata_bytes,
+                crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes(),
+            )?,
+            limits.bounded().metadata,
+            "ownership metadata",
+        )?;
+    }
     program.usage.work = cap(
         add(program.usage.work, builtins::descriptor_visits(origin))?,
         limits.bounded().work,
@@ -217,7 +231,10 @@ pub(super) fn account_function(
     )?;
     if ownership_active {
         let a = add(c.descriptor_arguments, c.preparations)?;
-        let composition = add(c.composite_fields, c.projection_fields)?;
+        let composition = add(
+            add(c.composite_fields, c.projection_fields)?,
+            c.destructured_fields as usize,
+        )?;
         u.owners = cap(add(u.owners, c.owners)?, limits.owners, "owners")?;
         u.expanded_events = cap(
             add(
@@ -256,6 +273,12 @@ pub(super) fn account_function(
         }
         let multiplier = add(add(add(mul(4, c.owners)?, c.loans)?, c.calls)?, 32)?;
         work = add(work, mul(multiplier, n)?)?;
+        if c.local_loan_depth_bound != 0 {
+            // Each local authority chain is bounded before flow. Pay for both
+            // root comparisons and parent-use checks in every loan walk.
+            let ancestry = usize::from(c.local_loan_depth_bound).min(MAX_LOCAL_REFERENCE_DEPTH);
+            work = add(work, mul(mul(mul(8, c.loans)?, ancestry)?, n)?)?;
+        }
         // Retained acquisition sites are included here once. Their lifetime
         // extends through flow; no duplicate loan-origin vector is allocated.
         for (count, size) in [
@@ -270,6 +293,10 @@ pub(super) fn account_function(
             (c.constructed_fields, size_of::<(FieldId, Operand)>()),
             (c.constructed_elements, size_of::<Operand>()),
             (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+            (
+                c.destructured_fields as usize,
+                size_of::<(FieldId, OwnerPlaceId)>(),
+            ),
             (c.projection_fields, size_of::<FieldId>()),
         ] {
             metadata = add(metadata, mul(count, size)?)?;
@@ -373,6 +400,12 @@ pub(super) fn preflight(
             c.max_match_arms = c.max_match_arms.max(descriptor.arms.len());
         }
         for loan in &f.loans {
+            if loan.region == LoanRegion::Local {
+                c.local_loan_depth_bound = c
+                    .local_loan_depth_bound
+                    .saturating_add(1)
+                    .min(MAX_LOCAL_REFERENCE_DEPTH as u8);
+            }
             cap(
                 loan.projection.len(),
                 MAX_CONTAINMENT_DEPTH,
@@ -431,6 +464,12 @@ pub(super) fn preflight(
                         c.constructed_fields = add(c.constructed_fields, fields.len())?;
                         c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
                     }
+                    OwnedInstruction::DestructureRecord { fields, .. } => {
+                        cap(fields.len(), 1024, "record pattern owned fields")?;
+                        c.destructured_fields =
+                            u32::try_from(add(c.destructured_fields as usize, fields.len())?)
+                                .map_err(|_| OwnedFailure::resource("record pattern fields"))?;
+                    }
                     OwnedInstruction::ConstructComposite { fields, .. } => {
                         cap(fields.len(), 1024, "composite constructor fields")?;
                         c.composite_fields = add(c.composite_fields, fields.len())?;
@@ -450,7 +489,8 @@ pub(super) fn preflight(
                     }
                     OwnedInstruction::PrepareScalar { .. }
                     | OwnedInstruction::PrepareOwned { .. }
-                    | OwnedInstruction::PrepareBorrow { .. } => {
+                    | OwnedInstruction::PrepareBorrow { .. }
+                    | OwnedInstruction::PrepareBorrowRange { .. } => {
                         c.preparations = add(c.preparations, 1)?
                     }
                     _ => {}

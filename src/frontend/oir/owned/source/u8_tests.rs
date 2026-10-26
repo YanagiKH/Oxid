@@ -123,20 +123,15 @@ fn owned_u8_source_static_rejections_byte_storage_successor() {
         (legacy[0].code, legacy[0].stage, legacy[0].message.as_str()),
         ("E0300", "type", "equality requires i32 or bool operands")
     );
-    let text = "struct R { x: u8 } fn main()->(){return;}";
-    let e = errors(text);
-    assert_eq!(e.len(), 1);
-    assert_eq!(
-        (e[0].code, e[0].stage, e[0].message.as_str()),
-        ("E0202", "resolve", "u8 record fields are not supported")
-    );
-    assert_eq!(e[0].primary.unwrap().start, text.find("u8").unwrap());
+    assert_eq!(run("struct R{x:u8}fn main()->i32{let n=255;let r=R{x:n.to_u8_checked()};let b=r.x;return b.to_i32();}"), Scalar::I32(255));
+    for expression in ["b+ b", "b-b", "b*b", "b/b", "b%b", "b.to_u8_checked()"] {
+        let text = format!(
+            "struct R {{}} fn main()->(){{let x=1;let b=x.to_u8_checked();{expression};return;}}"
+        );
+        let (sources, raw) = raw_source(&text);
+        assert!(verify_source_raw(raw, &sources).is_ok());
+    }
     for expression in [
-        "b+ b",
-        "b-b",
-        "b*b",
-        "b/b",
-        "b%b",
         "-b",
         "!b",
         "b&&b",
@@ -145,7 +140,6 @@ fn owned_u8_source_static_rejections_byte_storage_successor() {
         "1==b",
         "b<1",
         "1<b",
-        "b.to_u8_checked()",
         "x.to_i32()",
     ] {
         let text = format!(
@@ -482,7 +476,12 @@ fn owned_u8_tracker_seed_overlay_has_exact_unchanged_ceiling() {
     println!("RFC0030 owned tracker owners=1 expressions=65 requested={requested} incremental={extra} unchanged_cap={cap}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn owned_u8_real_native_helpers_and_all_roundtrips() {
@@ -528,12 +527,20 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
     {
         assert_eq!(
             seed,
-            169_210 + super::hir_budget::byte_storage_fixed_successor_bytes()
+            169_210
+                + super::hir_budget::byte_storage_fixed_successor_bytes()
+                + super::hir_budget::byte_string_successor_bytes(1)
+                + super::hir_budget::file_index_successor_bytes()
+                + super::hir_budget::file_projection_successor_bytes()
         );
         assert_eq!(extra, 2_028);
         assert_eq!(
             exact,
-            171_238 + super::hir_budget::byte_storage_fixed_successor_bytes()
+            171_238
+                + super::hir_budget::byte_storage_fixed_successor_bytes()
+                + super::hir_budget::byte_string_successor_bytes(1)
+                + super::hir_budget::file_index_successor_bytes()
+                + super::hir_budget::file_projection_successor_bytes()
         );
     }
     for (limit, succeeds) in [

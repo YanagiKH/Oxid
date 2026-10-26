@@ -44,6 +44,106 @@ fn prefix_only(allocator: &Allocator) {
 }
 
 #[test]
+fn byte_string_data_is_paid_exactly_and_every_reserve_failure_drops_storage() {
+    with_index(
+        r#"enum Unused{V} fn main()->i32{let bytes=b"A\0\xFF";return bytes.len();}"#,
+        |index| {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let work = WorkMeter::default();
+            let (observation, (_, live, _)) =
+                super::super::reviewer_source::integration_measured(|| {
+                    probe_enum_resolver_storage(index, &work, &mut allocator)
+                        .unwrap()
+                        .unwrap()
+                });
+            assert_eq!(live, 0);
+            let kind =
+                crate::frontend::oir::owned::source::resolver_storage::Kind::ByteStrings as usize;
+            assert_eq!(observation.retained_counts[kind], 3);
+            assert_eq!(observation.capacities[kind], 3);
+            let byte_requests = allocator
+                .trace
+                .iter()
+                .filter(|event| event.kind == "paid HIR byte string data")
+                .map(|event| (event.length, event.element_bytes, event.success))
+                .collect::<Vec<_>>();
+            assert_eq!(byte_requests, [(3, 1, true)]);
+            let attempts = allocator.attempts;
+            for ordinal in 1..=attempts {
+                let mut denied = Allocator {
+                    fail_at: Some(ordinal),
+                    ..Allocator::default()
+                };
+                denied.observer_trace_bound(128).unwrap();
+                let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                    let errors = attempt_error(index, &WorkMeter::default(), &mut denied);
+                    assert!(errors.iter().any(|error| error.code == "E0400"));
+                    drop(errors);
+                });
+                assert_eq!(
+                    live, 0,
+                    "byte string reserve failure {ordinal} leaked storage"
+                );
+            }
+            let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                let errors = attempt_error(
+                    index,
+                    &WorkMeter::new(work.used() - 1),
+                    &mut Allocator::default(),
+                );
+                assert!(errors.iter().any(|error| error.code == "E0400"));
+                drop(errors);
+            });
+            assert_eq!(live, 0);
+        },
+    );
+}
+
+#[test]
+fn byte_string_escape_work_is_paid_before_decoded_storage_reservation() {
+    let spelling = r"\u{000000}".repeat(1024);
+    let source =
+        format!("enum Unused{{V}} fn main()->i32{{let bytes=b\"{spelling}\";return bytes.len();}}");
+    with_index(&source, |index| {
+        let work = WorkMeter::default();
+        work.enable_observation();
+        probe_enum_resolver_storage(index, &work, &mut Allocator::default())
+            .unwrap()
+            .unwrap();
+        let events = work.events.borrow();
+        let position = events
+            .iter()
+            .position(|event| event.operation == "byte string resolve")
+            .unwrap();
+        let before = events[..position]
+            .iter()
+            .map(|event| event.units)
+            .sum::<u64>();
+        // Two complete 10240-byte spellings, 1024 decoded bytes and one entry.
+        assert_eq!(events[position].units, 21505);
+        for (available, reserved) in [(21504, false), (21505, true)] {
+            let mut allocator = Allocator::default();
+            allocator.observer_trace_bound(128).unwrap();
+            let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
+                let errors =
+                    attempt_error(index, &WorkMeter::new(before + available), &mut allocator);
+                assert!(errors.iter().any(|error| error.code == "E0400"));
+                drop(errors);
+            });
+            assert_eq!(live, 0);
+            assert_eq!(
+                allocator
+                    .trace
+                    .iter()
+                    .any(|event| event.kind == "paid HIR byte string data"),
+                reserved
+            );
+        }
+    });
+}
+
+#[test]
 fn c3a_paid_resolver_enum_value_types_preserve_later_body_diagnostics() {
     for text in [
         "enum E{V} fn take(value:E)->i32{return missing;}",
@@ -74,7 +174,7 @@ fn c3a_paid_resolver_enum_value_types_preserve_later_body_diagnostics() {
 }
 
 #[test]
-fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative() {
+fn c3a_paid_resolver_existing_query_errors_remain_authoritative_with_enum_fields() {
     for text in [
         "enum E{V} fn take(value:&E)->E{return missing;}",
         "enum E{V} fn take(value:Missing)->E{return missing;}",
@@ -105,18 +205,19 @@ fn c3a_paid_resolver_existing_query_and_record_field_errors_remain_authoritative
         });
     }
     with_index(
-        "enum E{V} struct R{x:E} fn main()->i32{return missing;}",
+        "enum E{V} struct R{x:E} fn main()->i32{return 0;}",
         |index| {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(32).unwrap();
-            let errors = attempt_error(index, &WorkMeter::default(), &mut allocator);
-            assert_eq!(errors[0].code, "E0300");
-            assert_eq!(errors[0].message, "enum values cannot be record fields");
+            let observation =
+                probe_enum_resolver_storage(index, &WorkMeter::default(), &mut allocator)
+                    .unwrap()
+                    .unwrap();
             assert_eq!(
-                index.sources().text(errors[0].primary.unwrap()).unwrap(),
-                "x:E"
+                observation.retained_counts[storage::Kind::Fields as usize],
+                1
             );
-            prefix_only(&allocator);
+            assert!(!allocator.observer_trace_overflow);
         },
     );
 }
@@ -204,7 +305,7 @@ fn c3a_paid_resolver_record_containment_guard_is_a_no_allocation_scalar_check() 
     sources.add("guard.ox".into(), "x".into());
     let at = sources.get(SourceFileId(0)).span(0, 1);
     let (result, stats) = super::super::reviewer_source::integration_measured(|| {
-        record_field_type(ValueTy::Scalar(Ty::I32), at)
+        record_field_type(ValueTy::Scalar(Ty::I32), at, 0)
     });
     result.unwrap();
     assert_eq!(stats, (0, 0, 0));
@@ -344,8 +445,8 @@ fn c3a_paid_resolver_fixed_observations_match_independent_small_oracles() {
             assert_eq!(live, 0);
             assert_eq!(allocator.attempts, expected_attempts);
             assert_eq!(observation.reservation_attempts, expected_attempts);
-            assert_eq!(observation.retained_counts.as_slice(), &expected_slots[..13]);
-            assert_eq!(observation.capacities, expected_slots);
+            assert_eq!(crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<13>(&observation.retained_counts).as_slice(), &expected_slots[..13]);
+            assert_eq!(crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(&observation.capacities), expected_slots);
             let payloads = match expected_attempts { 3 => (0, 0), 13 => (480, 304 + 12 * 8), 24 => (1552, 704 + 24 * 8), _ => unreachable!() };
             assert_eq!((observation.retained_bytes, observation.scratch_capacity_bytes), payloads);
             let labels = ["paid HIR records", "paid HIR record fields", "paid HIR signatures",
@@ -381,7 +482,9 @@ fn c3a_paid_resolver_mixed_observation_pays_every_kind_and_every_failure_drops()
         // never retained as a resolved expression; lengths and capacity differ.
         assert_eq!(
             observation.retained_counts[6] + 1,
-            observation.capacities[6]
+            crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(
+                &observation.capacities
+            )[6]
         );
         assert_eq!(baseline_live, 0);
         assert!(baseline_peak > 0);
@@ -829,16 +932,19 @@ fn c3a_paid_resolver_final_work_failures_drop_parts_constructed_inside_heap_wind
         // name inventory1 =15; completed-HIR inventory13 + reconcile18 =46.
         // The real MatchArms kind adds exactly one scalar reconcile debit,
         // even when its row/capacity quota is zero; no synthetic work padding.
+        // Byte-string storage adds one real reconciliation debit, including
+        // zero-capacity literals. Keep the old endpoints as explicit inputs.
         // Every chosen failure occurs after all 13 exact reserves succeeded.
+        let current_total = 46 + (storage::KINDS - 18) as u64;
         for limit in [15, 20, 28, 45, 46, 47] {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(13).unwrap();
             let (_, (_, live, peak)) = super::super::reviewer_source::integration_measured(|| {
                 let work = WorkMeter::new(limit);
                 let result = probe_enum_resolver_storage(index, &work, &mut allocator);
-                assert_eq!(result.is_ok(), limit >= 46);
-                assert_eq!(work.used(), limit.min(46));
-                if limit < 46 {
+                assert_eq!(result.is_ok(), limit >= current_total);
+                assert_eq!(work.used(), limit.min(current_total));
+                if limit < current_total {
                     assert_eq!(result.as_ref().unwrap_err()[0].code, "E0400");
                 } else {
                     assert_eq!(
@@ -919,7 +1025,9 @@ fn c3a_paid_resolver_imported_unused_enum_selects_inert_project_observation() {
         (480, 304 + 12 * 8)
     );
     assert_eq!(
-        observation.capacities,
+        crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(
+            &observation.capacities
+        ),
         [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12]
     );
     assert_eq!(
@@ -1150,9 +1258,9 @@ fn c3_t1_inhabited_denied_selector_prices_its_complete_return_representation() {
         (
             old_carrier,
             old_return,
-            size_of::<Returned>(),
-            denied_type_probe_carrier_bytes(),
-            delta
+            size_of::<Returned>() - 3 * size_of::<usize>(),
+            denied_type_probe_carrier_bytes() - 3 * size_of::<usize>(),
+            delta - 3 * size_of::<usize>()
         ),
         // Measured after HirCounts.signatures adds 8 bytes to the complete
         // resolver facts/return, widening this enclosing carrier equally.
@@ -1266,7 +1374,9 @@ fn c3_t1_first_tiny_source_observations_match_independent_ledgers_and_drop_all_b
                     }
                 );
                 assert_eq!(
-                    facts.resolver.retained_counts,
+                    crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<13>(
+                        &facts.resolver.retained_counts
+                    ),
                     if has_body {
                         [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0]
                     } else {
@@ -1274,7 +1384,9 @@ fn c3_t1_first_tiny_source_observations_match_independent_ledgers_and_drop_all_b
                     }
                 );
                 assert_eq!(
-                    facts.resolver.capacities,
+                    crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(
+                        &facts.resolver.capacities
+                    ),
                     if has_body {
                         [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12]
                     } else {
@@ -1485,6 +1597,7 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             field_initializers: 0,
             array_literals: 0,
             array_entries: 0,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 4,
@@ -1528,6 +1641,7 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             field_initializers: 3,
             array_literals: 0,
             array_entries: 0,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 2,
@@ -1571,6 +1685,7 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             field_initializers: 0,
             array_literals: 0,
             array_entries: 0,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 3,
@@ -1614,6 +1729,7 @@ const TYPED_RICH_SUCCESS_A: [TypedRichSuccessCase; 4] = [
             field_initializers: 0,
             array_literals: 1,
             array_entries: 0,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 1,
@@ -1766,8 +1882,18 @@ fn assert_typed_rich_success(
                     .unwrap()
             );
             assert_eq!(suffix.len(), case.attempts.0 + case.attempts.1);
-            assert_eq!(facts.resolver.retained_counts, case.resolver_lengths);
-            assert_eq!(facts.resolver.capacities, case.resolver_capacities);
+            assert_eq!(
+                crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<13>(
+                    &facts.resolver.retained_counts
+                ),
+                case.resolver_lengths
+            );
+            assert_eq!(
+                crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(
+                    &facts.resolver.capacities
+                ),
+                case.resolver_capacities
+            );
             assert_eq!(facts.typed.materialized_vectors, case.typed_requests);
             assert_eq!(facts.typed.capacities, case.typed_capacities);
             assert_eq!(facts.typed.retained_lengths, case.typed_lengths);
@@ -2087,6 +2213,7 @@ const TYPED_PROJECTION_SUCCESS_B: [TypedRichSuccessCase; 3] = [
             field_initializers: 2,
             array_literals: 2,
             array_entries: 4,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 2,
@@ -2130,6 +2257,7 @@ const TYPED_PROJECTION_SUCCESS_B: [TypedRichSuccessCase; 3] = [
             field_initializers: 3,
             array_literals: 1,
             array_entries: 2,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 4,
@@ -2173,6 +2301,7 @@ const TYPED_PROJECTION_SUCCESS_B: [TypedRichSuccessCase; 3] = [
             field_initializers: 0,
             array_literals: 2,
             array_entries: 4,
+            byte_string_bytes: 0,
             matches: 0,
             match_arms: 0,
             scope_marks: 2,

@@ -2,32 +2,28 @@
 //! associations, including descendants of the outer declaration_index module.
 use super::*;
 
-/// Constructor and anchor updates remain sealed. Borrowed endpoints belong to
-/// the same immutable source owner as Tables; moves never invalidate them.
-/// The constructor installs each function's dependency before its function.
+/// The sealed collector stores import ordinals, never source-supplied origins.
+/// Four legacy anchors retain their first-use ordering; each experimental family
+/// shares its first canonical import anchor. The same immutable source owner and
+/// checked ImportRow table recover the exact borrowed endpoint on demand.
 #[derive(Debug)]
+#[repr(C, align(8))]
 pub(super) struct BuiltinAdmission<'s> {
-    read_status: Option<&'s Span>,
-    read_stdin: Option<&'s Span>,
-    write_status: Option<&'s Span>,
-    write_stdout: Option<&'s Span>,
+    anchors: [u32; 9],
+    experimental: super::super::builtin_catalog::experimental::Inventory,
+    source: std::marker::PhantomData<&'s Span>,
 }
 impl<'s> BuiltinAdmission<'s> {
     fn none() -> Self {
         Self {
-            read_status: None,
-            read_stdin: None,
-            write_status: None,
-            write_stdout: None,
+            anchors: [NONE; 9],
+            experimental: Default::default(),
+            source: std::marker::PhantomData,
         }
     }
     pub(super) fn set(&self) -> BuiltinSet {
-        match (
-            self.read_status.is_some(),
-            self.read_stdin.is_some(),
-            self.write_status.is_some(),
-            self.write_stdout.is_some(),
-        ) {
+        let present = |index| self.anchors[index] != NONE;
+        let legacy = match (present(0), present(1), present(2), present(3)) {
             (false, false, false, false) => BuiltinSet::None,
             (true, false, false, false) => BuiltinSet::ReadStatus,
             (true, true, false, false) => BuiltinSet::ReadStdin,
@@ -38,70 +34,89 @@ impl<'s> BuiltinAdmission<'s> {
             (true, true, true, false) => BuiltinSet::ReadStdinWriteStatus,
             (true, true, true, true) => BuiltinSet::ReadStdinWriteStdout,
             _ => unreachable!("sealed function dependency"),
-        }
+        };
+        legacy.with_experimental(self.experimental)
     }
-    fn admit(&mut self, item: BuiltinItem, anchor: &'s Span) {
-        // Inventory is module preorder, then source order. First anchors are minima.
-        match item {
-            BuiltinItem::Enum(BuiltinEnum::ReadStatus) => {
-                if self.read_status.is_none() {
-                    self.read_status = Some(anchor);
-                }
-            }
+    fn admit(&mut self, item: BuiltinItem, import: u32) {
+        let slot = match item {
+            BuiltinItem::Enum(BuiltinEnum::ReadStatus) => 0,
             BuiltinItem::Function(BuiltinFunction::ReadStdin) => {
-                if self.read_status.is_none() {
-                    self.read_status = Some(anchor);
+                if self.anchors[0] == NONE {
+                    self.anchors[0] = import;
                 }
-                if self.read_stdin.is_none() {
-                    self.read_stdin = Some(anchor);
-                }
+                1
             }
-            BuiltinItem::Enum(BuiltinEnum::WriteStatus) => {
-                if self.write_status.is_none() {
-                    self.write_status = Some(anchor);
-                }
-            }
+            BuiltinItem::Enum(BuiltinEnum::WriteStatus) => 2,
             BuiltinItem::Function(BuiltinFunction::WriteStdout) => {
-                if self.write_status.is_none() {
-                    self.write_status = Some(anchor);
+                if self.anchors[2] == NONE {
+                    self.anchors[2] = import;
                 }
-                if self.write_stdout.is_none() {
-                    self.write_stdout = Some(anchor);
-                }
+                3
             }
+            BuiltinItem::Experimental(item) => {
+                self.experimental = self.experimental.admit(item);
+                if let Some(enumeration) = item
+                    .function()
+                    .and_then(experimental::Function::result_enum)
+                {
+                    let dependency = 4 + enumeration.item().family();
+                    if self.anchors[dependency] == NONE {
+                        self.anchors[dependency] = import;
+                    }
+                }
+                4 + item.family()
+            }
+        };
+        if self.anchors[slot] == NONE {
+            self.anchors[slot] = import;
         }
     }
-    pub(super) fn enum_anchor(&self, item: BuiltinEnum) -> Option<Span> {
-        match item {
-            BuiltinEnum::ReadStatus => self.read_status.copied(),
-            BuiltinEnum::WriteStatus => self.write_status.copied(),
-        }
+    pub(super) fn enum_anchor(&self, item: BuiltinEnum) -> Option<u32> {
+        self.anchor(match item {
+            BuiltinEnum::ReadStatus => 0,
+            BuiltinEnum::WriteStatus => 2,
+        })
     }
-    pub(super) fn function_anchor(&self, item: BuiltinFunction) -> Option<Span> {
-        match item {
-            BuiltinFunction::ReadStdin => self.read_stdin.copied(),
-            BuiltinFunction::WriteStdout => self.write_stdout.copied(),
-        }
+    pub(super) fn function_anchor(&self, item: BuiltinFunction) -> Option<u32> {
+        self.anchor(match item {
+            BuiltinFunction::ReadStdin => 1,
+            BuiltinFunction::WriteStdout => 3,
+        })
+    }
+    fn experimental_anchor(&self, item: experimental::Item) -> Option<u32> {
+        self.experimental
+            .contains(item)
+            .then(|| self.anchor(4 + item.family()))
+            .flatten()
+    }
+    fn anchor(&self, slot: usize) -> Option<u32> {
+        (self.anchors[slot] != NONE).then_some(self.anchors[slot])
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub(super) enum CandidateOrigin {
     Current,
+    CurrentGeneric(Box<[super::generics::Plan; 1]>),
+    CurrentRanges,
+    CurrentGenericRanges(Box<[super::generics::Plan; 1]>),
     Enum(CompactSpan),
     Builtin(CompactSpan),
     #[cfg(test)]
     Output(CompactSpan),
 }
 impl CandidateOrigin {
-    pub(super) fn span(self) -> Option<Span> {
+    pub(super) fn span(&self) -> Option<Span> {
         match self {
-            Self::Current => None,
+            Self::Current
+            | Self::CurrentGeneric(_)
+            | Self::CurrentRanges
+            | Self::CurrentGenericRanges(_) => None,
             Self::Enum(at) | Self::Builtin(at) => Some(at.span()),
             #[cfg(test)]
             Self::Output(at) => Some(at.span()),
         }
     }
-    pub(super) fn is_builtin(self) -> bool {
+    pub(super) fn is_builtin(&self) -> bool {
         matches!(self, Self::Builtin(_))
     }
 }
@@ -117,6 +132,7 @@ fn builtin_endpoint(
     let at = view.span();
     if view.root() != ast::PathRoot::Std
         || segments.len() != 3
+        || sources.text(segments[0])? != "std"
         || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal
     {
         return Err(diagnostic(
@@ -159,6 +175,14 @@ fn current_builtin_endpoint(
     let view = sources.import_path(path)?;
     let segments = view.segments();
     let at = view.span();
+    if view.root() == ast::PathRoot::Std
+        && segments.len() == 3
+        && (sources.text(segments[0])? == "alloc"
+            || (sources.text(segments[0])? == "std"
+                && matches!(sources.text(segments[1])?, "fs" | "env")))
+    {
+        return experimental_endpoint(sources, segments, work, at);
+    }
     if view.root() != ast::PathRoot::Std
         || segments.len() != 3
         || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal
@@ -199,11 +223,34 @@ fn current_builtin_endpoint(
     {
         return Ok(BuiltinItem::Function(BuiltinFunction::WriteStdout));
     }
+    experimental_endpoint(sources, segments, work, at)
+}
+fn experimental_endpoint(
+    sources: SourceOwner<'_>,
+    segments: &[Span],
+    work: &WorkMeter,
+    at: Span,
+) -> Result<BuiltinItem, Box<Diagnostic>> {
+    if segments.len() == 3 {
+        for item in experimental::Item::ALL {
+            let mut matches = true;
+            for (name, segment) in item.path().into_iter().zip(segments) {
+                if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
+                return Ok(BuiltinItem::Experimental(item));
+            }
+        }
+    }
     Err(diagnostic(
         "E0205",
         "resolve",
         "unsupported standard library import",
-        segments[2],
+        at,
     ))
 }
 
@@ -376,6 +423,7 @@ fn collect<'s>(
     let record_usage = super::super::oir::owned_types::admit_declaration_counts(fields)
         .map_err(|_| declaration_limit())?;
     let mut builtins = BuiltinAdmission::none();
+    let mut builtin_import = 0u32;
     if syntax.std_policy().enabled()
         && (syntax != CollectionSyntax::Enabled || source_features & 2 != 0)
     {
@@ -384,6 +432,10 @@ fn collect<'s>(
             let ast = sources.ast(ModuleId(module))?;
             let mut previous = NONE;
             for import in &ast.imports {
+                let import_ordinal = builtin_import;
+                builtin_import = builtin_import
+                    .checked_add(1)
+                    .ok_or_else(|| overflow(import.span))?;
                 work.preflight(import.span)?;
                 let path = QualifiedPathRef {
                     file: import.span.file,
@@ -413,7 +465,7 @@ fn collect<'s>(
                 // Only its validated start enters the narrower reserved-domain cursor.
                 let checked = CompactSpan::new(*endpoint)?;
                 previous = checked.start;
-                builtins.admit(item, endpoint);
+                builtins.admit(item, import_ordinal);
             }
         }
     }
@@ -489,6 +541,9 @@ fn collect<'s>(
         if !valid {
             return Err(bad(at));
         }
+        if ast.has_range_for() && matches!(candidate_source_origin, CandidateOrigin::Current) {
+            candidate_source_origin = CandidateOrigin::CurrentRanges;
+        }
         if let Some(span) = enum_syntax {
             if syntax == CollectionSyntax::Closed {
                 return Err(diagnostic(
@@ -504,7 +559,10 @@ fn collect<'s>(
                 candidate_source_origin = CandidateOrigin::Enum(CompactSpan::new(span)?);
             }
         }
-        if sources.is_original_adapter() && ast.uses_project_syntax() {
+        if sources.is_original_adapter()
+            && ast.uses_project_syntax()
+            && !ast.has_only_original_generic_syntax()
+        {
             return Err(bad(at));
         }
         c.functions = add(c.functions, ast.functions.len() as u64, at)?;
@@ -594,7 +652,20 @@ fn collect<'s>(
     for (prefix, extra) in [
         (
             c.originals,
-            builtins.set().extra_enums() + builtins.set().extra_functions(),
+            builtins.set().extra_enums()
+                + builtins.set().extra_functions()
+                + usize::from(
+                    builtins
+                        .set()
+                        .experimental()
+                        .contains(experimental::Item::ByteBuf),
+                )
+                + usize::from(
+                    builtins
+                        .set()
+                        .experimental()
+                        .contains(experimental::Item::File),
+                ),
         ),
         (c.functions, builtins.set().extra_functions()),
         (c.enums, builtins.set().extra_enums()),
@@ -609,7 +680,13 @@ fn collect<'s>(
     let plan = IndexPlan::calculate(
         c,
         size_of::<DeclarationIndex<'s>>(),
-        FIXED_SCRATCH,
+        if builtins.set().experimental().is_empty() {
+            FIXED_SCRATCH
+        } else {
+            FIXED_SCRATCH
+                .checked_add(experimental::compiler_carrier_bytes())
+                .ok_or_else(|| overflow(at))?
+        },
         limits,
         at,
     )?;
@@ -1244,7 +1321,7 @@ impl<'s> DeclarationFacts<'s> {
     pub fn finish(
         self,
         work: &WorkMeter,
-        _allocator: &mut Allocator,
+        allocator: &mut Allocator,
     ) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
         work.phase("original-conflicts");
         let mut errors = Vec::new();
@@ -1305,7 +1382,35 @@ impl<'s> DeclarationFacts<'s> {
         if !errors.is_empty() {
             return Err(errors);
         }
-        CleanOriginals { facts: self }.freeze(work)
+        let mut index = CleanOriginals { facts: self }.freeze(work)?;
+        let has_generics = (0..index.sources().count()).any(|module| {
+            index
+                .sources()
+                .ast(ModuleId(module))
+                .is_ok_and(|program| program.has_generics() || program.has_record_patterns())
+        });
+        if has_generics {
+            index
+                .require_current_source_pipeline()
+                .map_err(|error| vec![*error])?;
+            let plan = super::generics::Plan::build(&index, work, allocator)
+                .map_err(|error| vec![*error])?;
+            let ranges = index.has_range_for();
+            let plan = allocator
+                .boxed_carrier(plan, "generic instantiation owner")
+                .map_err(|_| {
+                    vec![*resource(
+                        "generic instantiation owner allocation failed",
+                        index.sources().eof(),
+                    )]
+                })?;
+            index.tables.candidate_source_origin = if ranges {
+                CandidateOrigin::CurrentGenericRanges(plan)
+            } else {
+                CandidateOrigin::CurrentGeneric(plan)
+            };
+        }
+        Ok(index)
     }
 }
 
@@ -1452,6 +1557,13 @@ fn stage_import(
         match item {
             BuiltinItem::Enum(_) => (Some(handle), None),
             BuiltinItem::Function(_) => (None, Some(handle)),
+            BuiltinItem::Experimental(item) => {
+                if item.function().is_some() {
+                    (None, Some(handle))
+                } else {
+                    (Some(handle), None)
+                }
+            }
         }
     } else {
         tables.absolute_endpoint(
@@ -1605,6 +1717,15 @@ impl<'s> DeclarationIndex<'s> {
         matches!(
             self.tables.candidate_source_origin,
             CandidateOrigin::Current
+                | CandidateOrigin::CurrentGeneric(_)
+                | CandidateOrigin::CurrentRanges
+                | CandidateOrigin::CurrentGenericRanges(_)
+        )
+    }
+    pub fn has_range_for(&self) -> bool {
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::CurrentRanges | CandidateOrigin::CurrentGenericRanges(_)
         )
     }
     #[cfg(test)]
@@ -1621,7 +1742,38 @@ impl<'s> DeclarationIndex<'s> {
         self.source_enum_count() + self.builtin_set().extra_enums()
     }
     pub fn source_enum_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.enums.len(), |plan| plan.enum_count())
+    }
+    pub(super) fn template_enum_count(&self) -> usize {
         self.tables.enums.len()
+    }
+    pub(super) fn template_enumeration(
+        &self,
+        id: EnumId,
+    ) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
+        enumeration(&self.tables, id)
+    }
+    pub(super) fn template_builtin_enum_item(
+        &self,
+        id: EnumId,
+    ) -> Result<BuiltinItem, Box<Diagnostic>> {
+        let rank =
+            id.0.checked_sub(self.tables.enums.len())
+                .ok_or_else(|| bad(self.sources().eof()))?;
+        let read = usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus));
+        if read != 0 && rank == 0 {
+            return Ok(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
+        }
+        if self.builtin_set().contains_enum(BuiltinEnum::WriteStatus) && rank == read {
+            return Ok(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self.builtin_set().experimental_enum_rank(item) == Some(rank) {
+                return Ok(BuiltinItem::Experimental(item.item()));
+            }
+        }
+        Err(bad(self.sources().eof()))
     }
     pub fn builtin_set(&self) -> BuiltinSet {
         self.tables.builtins.set()
@@ -1641,7 +1793,7 @@ impl<'s> DeclarationIndex<'s> {
         self.tables.require_no_builtin_candidate()
     }
     pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
-        enumeration(&self.tables, id)
+        enumeration(&self.tables, self.template_enum_for_instance(id)?)
     }
     pub fn builtin_enum_id(&self, item: BuiltinEnum) -> Result<EnumId, Box<Diagnostic>> {
         self.tables.builtin_handle(BuiltinItem::Enum(item))?;
@@ -1668,19 +1820,72 @@ impl<'s> DeclarationIndex<'s> {
                 },
         ))
     }
+    pub fn experimental_enum_id(
+        &self,
+        item: experimental::Enumeration,
+    ) -> Result<EnumId, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Experimental(item.item()))?;
+        self.builtin_set()
+            .experimental_enum_rank(item)
+            .map(|rank| EnumId(self.source_enum_count() + rank))
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn experimental_function_id(
+        &self,
+        item: experimental::Function,
+    ) -> Result<DefId, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Experimental(item.item()))?;
+        self.builtin_set()
+            .experimental_function_rank(item)
+            .map(|rank| DefId(self.source_function_count() + rank))
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn experimental_anchor(&self, item: experimental::Item) -> Result<Span, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Experimental(item))?;
+        self.tables
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .experimental_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
+    }
+    pub fn experimental_signature(
+        &self,
+        item: experimental::Function,
+    ) -> Result<experimental::Signature, Box<Diagnostic>> {
+        self.experimental_function_id(item)?;
+        let enumeration = item
+            .result_enum()
+            .map(|item| self.experimental_enum_id(item))
+            .transpose()?;
+        Ok(item.signature(|_| enumeration.expect("checked enum dependency")))
+    }
     pub fn builtin_enum_anchor(&self, item: BuiltinEnum) -> Result<Span, Box<Diagnostic>> {
         self.builtin_enum_id(item)?;
         self.tables
-            .builtins
-            .enum_anchor(item)
-            .ok_or_else(|| bad(self.sources().eof()))
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .enum_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
     }
     pub fn builtin_function_anchor(&self, item: BuiltinFunction) -> Result<Span, Box<Diagnostic>> {
         self.builtin_function_id(item)?;
         self.tables
-            .builtins
-            .function_anchor(item)
-            .ok_or_else(|| bad(self.sources().eof()))
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .function_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
     }
     pub fn enum_origin(&self, id: EnumId) -> Result<DeclarationOrigin, Box<Diagnostic>> {
         if id.0 < self.source_enum_count() {
@@ -1702,6 +1907,17 @@ impl<'s> DeclarationIndex<'s> {
             return Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(
                 BuiltinEnum::WriteStatus,
             )));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self
+                .builtin_set()
+                .experimental_enum_rank(item)
+                .is_some_and(|rank| id.0 == self.source_enum_count() + rank)
+            {
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Experimental(
+                    item.item(),
+                )));
+            }
         }
         Err(bad(self.sources().eof()))
     }
@@ -1733,10 +1949,25 @@ impl<'s> DeclarationIndex<'s> {
                 BuiltinFunction::WriteStdout,
             )));
         }
+        for item in experimental::Function::ALL {
+            if self
+                .builtin_set()
+                .experimental_function_rank(item)
+                .is_some_and(|rank| id.0 == self.source_function_count() + rank)
+            {
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Experimental(
+                    item.item(),
+                )));
+            }
+        }
         Err(bad(self.sources().eof()))
     }
     // Only checked view constructors use these narrow immutable projections.
     pub(super) fn frozen_enum_syntax(&self, id: EnumId) -> Option<&ast::EnumDecl> {
+        if id.0 >= self.source_enum_count() {
+            return None;
+        }
+        let id = self.template_enum_for_instance(id).ok()?;
         self.tables.enums.get(id.0).map(|row| {
             self.tables.sources.frozen_enum(EnumAstKey {
                 file: SourceFileId(row.file as usize),
@@ -1745,20 +1976,12 @@ impl<'s> DeclarationIndex<'s> {
         })
     }
     pub(super) fn frozen_enum_origin(&self, id: EnumId) -> DeclarationOrigin {
-        if id.0 < self.source_enum_count() {
-            DeclarationOrigin::Source
-        } else if self.builtin_set().contains_enum(BuiltinEnum::ReadStatus)
-            && id.0 == self.source_enum_count()
-        {
-            DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus))
-        } else {
-            DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::WriteStatus))
-        }
+        self.enum_origin(id).expect("checked enum identity")
     }
     pub(super) fn frozen_enum_name(&self, id: EnumId) -> &str {
         self.frozen_enum_syntax(id).map_or_else(
             || match self.frozen_enum_origin(id) {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item.name(),
+                DeclarationOrigin::Builtin(item) => item.name(),
                 _ => unreachable!("checked builtin enum"),
             },
             |syntax| self.tables.sources.frozen_text(syntax.name),
@@ -1768,21 +1991,26 @@ impl<'s> DeclarationIndex<'s> {
         self.frozen_enum_syntax(id).map_or_else(
             || match self.frozen_enum_origin(id) {
                 DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => self
-                    .tables
-                    .builtins
-                    .enum_anchor(item)
+                    .builtin_enum_anchor(item)
                     .expect("checked builtin enum"),
+                DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) => self
+                    .experimental_anchor(item)
+                    .expect("checked experimental enum"),
                 _ => unreachable!("checked builtin enum"),
             },
             |syntax| syntax.name,
         )
     }
     pub(super) fn frozen_variant_count(&self, id: EnumId) -> usize {
-        self.tables
-            .enums
-            .get(id.0)
-            .map_or(3, |row| row.variant_len as usize)
+        self.frozen_enum_syntax(id).map_or_else(
+            || match self.frozen_enum_origin(id) {
+                DeclarationOrigin::Builtin(item) => item.variant_count(),
+                _ => unreachable!("checked enum count"),
+            },
+            |syntax| syntax.variants.len(),
+        )
     }
+
     pub fn enum_for(&self, key: EnumAstKey) -> Result<EnumId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
         let row = self.tables.modules[module.0];
@@ -1790,10 +2018,10 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = EnumId(row.enum_base as usize + key.index);
-        if self.enumeration(id)?.0 != key {
+        if self.template_enumeration(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        self.ordinary_enum_instance(id)
     }
     pub fn enum_view(&self, id: EnumId) -> Result<EnumView<'_>, Box<Diagnostic>> {
         EnumView::from_index(self, id)
@@ -1847,15 +2075,48 @@ impl<'s> DeclarationIndex<'s> {
         self.source_function_count() + self.builtin_set().extra_functions()
     }
     pub fn source_function_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.functions.len(), |plan| plan.len())
+    }
+    pub(super) fn generic_plan(&self) -> Option<&super::generics::Plan> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::CurrentGeneric(plan) | CandidateOrigin::CurrentGenericRanges(plan) => {
+                Some(&plan[0])
+            }
+            _ => None,
+        }
+    }
+    pub(super) fn template_function_count(&self) -> usize {
         self.tables.functions.len()
     }
-    pub fn record_count(&self) -> usize {
-        self.tables.records.len()
-    }
-    pub fn function(&self, id: DefId) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
+    pub(super) fn template_function(
+        &self,
+        id: DefId,
+    ) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
         function(&self.tables, id)
     }
+    pub(super) fn template_record_count(&self) -> usize {
+        self.tables.records.len()
+    }
+    pub(super) fn template_record(
+        &self,
+        id: RecordId,
+    ) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
+        record(&self.tables, id)
+    }
+    pub fn record_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.records.len(), |plan| plan.record_count())
+    }
+    pub fn function(&self, id: DefId) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
+        let definition = match self.generic_plan() {
+            Some(plan) => plan.definition(id)?,
+            None => id,
+        };
+        function(&self.tables, definition)
+    }
     pub fn record(&self, id: RecordId) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
+        let id = self.template_record_for_instance(id)?;
         record(&self.tables, id)
     }
     pub fn def_for(&self, key: FunctionAstKey) -> Result<DefId, Box<Diagnostic>> {
@@ -1865,10 +2126,15 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = DefId(row.function_base as usize + key.index);
-        if self.function(id)?.0 != key {
+        if self.template_function(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        match self.generic_plan() {
+            Some(plan) => plan
+                .non_generic(id)
+                .ok_or_else(|| bad(self.tables.sources.eof())),
+            None => Ok(id),
+        }
     }
     pub fn record_for(&self, key: RecordAstKey) -> Result<RecordId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
@@ -1877,13 +2143,18 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = RecordId(row.record_base as usize + key.index);
-        if self.record(id)?.0 != key {
+        if self.template_record(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        self.ordinary_record_instance(id)
     }
     pub fn root_original_main(&self) -> Option<DefId> {
-        (self.tables.root_main != NONE).then_some(DefId(self.tables.root_main as usize))
+        let definition =
+            (self.tables.root_main != NONE).then_some(DefId(self.tables.root_main as usize))?;
+        match self.generic_plan() {
+            Some(plan) => plan.non_generic(definition),
+            None => Some(definition),
+        }
     }
     pub fn query<'i>(&'i self, work: &'i WorkMeter) -> QuerySession<'i, 's> {
         QuerySession {
@@ -2165,12 +2436,12 @@ fn bounded_enum_public_index_rejects_every_unpaid_scalar_producer() {
 impl<'s> DeclarationIndex<'s> {
     /// Read-only pointer evidence for the sealed source-owner association.
     pub(super) fn builtin_anchor_borrows_for_test(&self) -> [Option<&'s Span>; 4] {
-        [
-            self.tables.builtins.read_status,
-            self.tables.builtins.read_stdin,
-            self.tables.builtins.write_status,
-            self.tables.builtins.write_stdout,
-        ]
+        [0, 1, 2, 3].map(|slot| {
+            self.tables
+                .builtins
+                .anchor(slot)
+                .and_then(|import| self.tables.builtin_anchor(import).ok())
+        })
     }
 }
 

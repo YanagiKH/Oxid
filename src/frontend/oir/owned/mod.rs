@@ -1,21 +1,27 @@
 //! Authoritative private ownership OIR and bounded verified consumers.
 //! Production record source lowering and both consumers require the sealed witness.
-//! Enum carriers are rejected before an executable witness can be built.
+//! Finite enum payloads and built-in resources use the same sealed witness.
 #![allow(dead_code)]
 // Denials retain exact verifier-derived facts on the stack. Boxing this fixed
 // transport would add an allocation on ownership/resource failure paths.
 #![allow(clippy::result_large_err)]
 use super::{owned_types::*, *};
+mod binary_io;
 mod budget;
 mod builtins;
+// Built-in buffer operations require the checked canonical resource catalog.
+mod byte_buffer;
 mod cfg;
 mod execute;
+mod experimental_descriptors;
 mod flow;
 mod input;
 mod native;
 mod output;
 mod plan;
 pub(in crate::frontend) mod process;
+#[cfg(test)]
+mod resource_gate_tests;
 mod shape;
 pub(super) mod source;
 pub(super) use source::SourceProgram;
@@ -119,18 +125,38 @@ impl ReferenceDecl {
 enum AccessBase {
     Owner(OwnerPlaceId),
     Parameter(ReferenceParamId),
+    Loan(LoanId),
 }
+const MAX_LOCAL_REFERENCE_DEPTH: usize = 64;
+const _: () = assert!(MAX_LOCAL_REFERENCE_DEPTH <= u8::MAX as usize);
 #[derive(Clone, Debug)]
 struct LoanDecl {
-    call: CallSiteId,
-    argument: usize,
+    region: LoanRegion,
     authority: AccessBase,
     projection: Vec<FieldId>,
     kind: BorrowKind,
     referent: BorrowedSlot,
     span: Span,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoanRegion {
+    Call { call: CallSiteId, argument: usize },
+    Local,
+}
 impl LoanDecl {
+    fn call_binding(&self) -> Option<(CallSiteId, usize)> {
+        match self.region {
+            LoanRegion::Call { call, argument } => Some((call, argument)),
+            LoanRegion::Local => None,
+        }
+    }
+    #[cfg(test)]
+    fn call_binding_mut(&mut self) -> Option<(&mut CallSiteId, &mut usize)> {
+        match &mut self.region {
+            LoanRegion::Call { call, argument } => Some((call, argument)),
+            LoanRegion::Local => None,
+        }
+    }
     fn referent(&self) -> BorrowedTy {
         self.referent.referent()
     }
@@ -190,6 +216,18 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    /// Consume a complete record and initialize every owned field binding.
+    /// Scalar fields use ordinary checked reads before this atomic transfer.
+    DestructureRecord {
+        source: OwnerPlaceId,
+        fields: Vec<(FieldId, OwnerPlaceId)>,
+    },
+    /// Operands are the independently checked canonical parameter rows. No
+    /// spelling, producer layout, or arbitrary owner ID grants this authority.
+    Experimental {
+        operation: crate::frontend::builtin_catalog::experimental::Function,
+        destination: CallResult,
+    },
     // Atomic input is confined to the verified canonical builtin body.
     ReadStdin {
         buffer: ReferenceParamId,
@@ -298,11 +336,20 @@ enum OwnedInstruction {
         argument: usize,
         source: OwnerPlaceId,
     },
+    PrepareBorrowRange {
+        call: CallSiteId,
+        argument: usize,
+        loan: LoanId,
+        start: Operand,
+        end: Operand,
+    },
     PrepareBorrow {
         call: CallSiteId,
         argument: usize,
         loan: LoanId,
     },
+    AcquireLocalBorrow(LoanId),
+    ReleaseLocalBorrow(LoanId),
 }
 #[derive(Clone, Debug)]
 struct OwnedTerminator {

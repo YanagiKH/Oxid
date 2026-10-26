@@ -173,8 +173,10 @@ fn borrow_program(s: Span, specs: &[(usize, BorrowKind)]) -> RawOwnedProgram {
         let t = at(s, 40 + i);
         f.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: i,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: i,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(*owner)),
             kind: *kind,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -279,7 +281,7 @@ fn reviewer_signature_and_body_are_authoritative() {
         match variant {
             0 => p.functions[1].references[0].kind = BorrowKind::Exclusive,
             1 => p.functions[0].calls[0].target = hir::DefId(0),
-            2 => p.functions[0].loans[0].call = CallSiteId(usize::MAX),
+            2 => *p.functions[0].loans[0].call_binding_mut().unwrap().0 = CallSiteId(usize::MAX),
             3 => p.functions[0].loans[0].authority = AccessBase::Owner(OwnerPlaceId(usize::MAX)),
             4 => p.functions[0].calls[0].arguments[0] = ArgumentSlot::Scalar,
             5 => p.functions[0].calls[0].result = CallResult::Scalar(LocalId(1)),
@@ -733,8 +735,10 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
                 });
                 f.loans.push(LoanDecl {
                     projection: Vec::new(),
-                    call: CallSiteId(0),
-                    argument: 0,
+                    region: LoanRegion::Call {
+                        call: CallSiteId(0),
+                        argument: 0,
+                    },
                     authority: AccessBase::Parameter(ReferenceParamId(0)),
                     kind: child,
                     referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
@@ -824,8 +828,10 @@ fn reviewer_reference_authority_is_separate_from_parent_owner() {
     for i in 0..2 {
         f.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: i,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: i,
+            },
             authority: AccessBase::Parameter(ReferenceParamId(i)),
             kind: BorrowKind::Shared,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))

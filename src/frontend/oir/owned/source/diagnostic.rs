@@ -28,14 +28,15 @@ fn mutable(owner: OwnerSubject) -> bool {
 fn named_subject(subject: DeniedSubject) -> bool {
     match subject {
         DeniedSubject::Owner(owner) => named(owner),
-        DeniedSubject::Reference { .. } => true,
+        DeniedSubject::Reference { .. } | DeniedSubject::LocalReference { .. } => true,
     }
 }
 
 fn writable(subject: DeniedSubject) -> bool {
     match subject {
         DeniedSubject::Owner(owner) => mutable(owner),
-        DeniedSubject::Reference { granted, .. } => granted == BorrowKind::Exclusive,
+        DeniedSubject::Reference { granted, .. }
+        | DeniedSubject::LocalReference { granted, .. } => granted == BorrowKind::Exclusive,
     }
 }
 
@@ -114,6 +115,9 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                     DeniedSubject::Reference {
                         granted: BorrowKind::Shared,
                         ..
+                    } | DeniedSubject::LocalReference {
+                        granted: BorrowKind::Shared,
+                        ..
                     }
                 )
                 && ((field && facts.operation == Op::WriteField)
@@ -129,7 +133,8 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
 fn subject_declaration(facts: DenialFacts) -> Span {
     match facts.subject {
         DeniedSubject::Owner(owner) => owner.declaration,
-        DeniedSubject::Reference { declaration, .. } => declaration,
+        DeniedSubject::Reference { declaration, .. }
+        | DeniedSubject::LocalReference { declaration, .. } => declaration,
     }
 }
 

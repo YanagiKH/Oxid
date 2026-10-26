@@ -1,6 +1,6 @@
 //! Checked sum declarations, integrated by the combined declaration facade.
 //! Finite owned alternatives use independently checked maximum-alternative
-//! layouts. Stored enum fields and enum borrows remain excluded. The facade
+//! layouts. Enum fields use joint nominal layouts; enum borrows stay excluded. The facade
 //! recomputes record and enum inventory before retained allocation.
 
 use super::{
@@ -94,12 +94,24 @@ impl EnumDecl {
     }
     pub(in crate::frontend::oir) fn layout(&self) -> Layout {
         Layout {
-            size: self.size as usize,
-            align: 4,
+            // Layout admission caps size at 1 MiB. A private high bit retains
+            // alignment without enlarging this frozen declaration carrier.
+            size: (self.size & 0x001f_ffff) as usize,
+            align: if self.size & 0x4000_0000 != 0 {
+                16
+            } else if self.size & 0x8000_0000 != 0 {
+                8
+            } else {
+                4
+            },
         }
     }
     pub(in crate::frontend::oir) fn width(&self) -> usize {
         self.width as usize
+    }
+
+    pub(in crate::frontend::oir) fn has_enum_record_nesting(&self) -> bool {
+        self.size & 0x0020_0000 != 0
     }
 }
 
@@ -118,11 +130,23 @@ enum PayloadSlot {
     Record(u32),
     Enum(u32),
     Array(super::FixedArrayTy),
+    ByteBuf,
+    File,
+    AlignedScalar(hir::Ty),
+    AlignedRecord(u32),
+    AlignedEnum(u32),
+    AlignedArray(super::FixedArrayTy),
+    DoubleAlignedScalar(hir::Ty),
+    DoubleAlignedRecord(u32),
+    DoubleAlignedEnum(u32),
+    DoubleAlignedArray(super::FixedArrayTy),
+    DoubleAlignedByteBuf,
+    DoubleAlignedFile,
 }
 impl PayloadSlot {
-    fn check(ty: ValueTy) -> Result<Self, DeclarationError> {
+    fn check(ty: ValueTy, alignment: usize) -> Result<Self, DeclarationError> {
         use super::AggregateTy;
-        Ok(match ty {
+        let payload = match ty {
             ValueTy::Scalar(ty) => Self::Scalar(ty),
             ValueTy::Owned(AggregateTy::Record(id)) => Self::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
@@ -131,15 +155,61 @@ impl PayloadSlot {
                 Self::Enum(u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?)
             }
             ValueTy::Owned(AggregateTy::FixedArray(array)) => Self::Array(array),
-        })
+            ValueTy::Owned(AggregateTy::ByteBuf) => Self::ByteBuf,
+            ValueTy::Owned(AggregateTy::File) => Self::File,
+        };
+        match alignment {
+            4 if !matches!(payload, Self::ByteBuf | Self::File) => Ok(payload),
+            8 => Ok(match payload {
+                Self::Scalar(ty) => Self::AlignedScalar(ty),
+                Self::Record(id) => Self::AlignedRecord(id),
+                Self::Enum(id) => Self::AlignedEnum(id),
+                Self::Array(array) => Self::AlignedArray(array),
+                Self::ByteBuf => Self::ByteBuf,
+                Self::File => Self::File,
+                _ => unreachable!("fresh compact payload"),
+            }),
+            16 => Ok(match payload {
+                Self::Scalar(ty) => Self::DoubleAlignedScalar(ty),
+                Self::Record(id) => Self::DoubleAlignedRecord(id),
+                Self::Enum(id) => Self::DoubleAlignedEnum(id),
+                Self::Array(array) => Self::DoubleAlignedArray(array),
+                Self::ByteBuf => Self::DoubleAlignedByteBuf,
+                Self::File => Self::DoubleAlignedFile,
+                _ => unreachable!("fresh compact payload"),
+            }),
+            _ => Err(DeclarationError::LayoutOverflow),
+        }
     }
     fn value(self) -> ValueTy {
         use super::{AggregateTy, RecordId};
         match self {
-            Self::Scalar(ty) => ValueTy::Scalar(ty),
-            Self::Record(id) => ValueTy::Owned(AggregateTy::Record(RecordId(id as usize))),
-            Self::Enum(id) => ValueTy::Owned(AggregateTy::Enum(EnumId(id as usize))),
-            Self::Array(array) => ValueTy::Owned(AggregateTy::FixedArray(array)),
+            Self::Scalar(ty) | Self::AlignedScalar(ty) | Self::DoubleAlignedScalar(ty) => {
+                ValueTy::Scalar(ty)
+            }
+            Self::Record(id) | Self::AlignedRecord(id) | Self::DoubleAlignedRecord(id) => {
+                ValueTy::Owned(AggregateTy::Record(RecordId(id as usize)))
+            }
+            Self::Enum(id) | Self::AlignedEnum(id) | Self::DoubleAlignedEnum(id) => {
+                ValueTy::Owned(AggregateTy::Enum(EnumId(id as usize)))
+            }
+            Self::Array(array) | Self::AlignedArray(array) | Self::DoubleAlignedArray(array) => {
+                ValueTy::Owned(AggregateTy::FixedArray(array))
+            }
+            Self::ByteBuf | Self::DoubleAlignedByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
+            Self::File | Self::DoubleAlignedFile => ValueTy::Owned(AggregateTy::File),
+        }
+    }
+    fn offset(self) -> usize {
+        match self {
+            Self::Scalar(_) | Self::Record(_) | Self::Enum(_) | Self::Array(_) => 4,
+            Self::DoubleAlignedScalar(_)
+            | Self::DoubleAlignedRecord(_)
+            | Self::DoubleAlignedEnum(_)
+            | Self::DoubleAlignedArray(_)
+            | Self::DoubleAlignedByteBuf
+            | Self::DoubleAlignedFile => 16,
+            _ => 8,
         }
     }
 }
@@ -169,7 +239,7 @@ impl VariantDecl {
     }
     /// Nullary variants have no payload access, including to inactive bytes.
     pub(in crate::frontend::oir) fn payload_offset(&self) -> Option<usize> {
-        self.payload.map(|_| 4)
+        self.payload.map(PayloadSlot::offset)
     }
 }
 
@@ -183,6 +253,20 @@ pub(in crate::frontend::oir) struct EnumDeclarations {
 }
 
 impl EnumDeclarations {
+    pub(super) fn mark_joint_shapes(&mut self, shapes: &[u8]) -> Result<(), DeclarationError> {
+        if shapes.len() != self.enums.len()
+            || shapes.iter().any(|shape| shape & !6 != 0 || shape & 2 == 0)
+        {
+            return Err(DeclarationError::TypeMismatch);
+        }
+        for (declaration, shape) in self.enums.iter_mut().zip(shapes) {
+            if shape & 4 != 0 {
+                declaration.size |= 0x0020_0000;
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::frontend::oir) fn check(
         raw: &[RawEnumDecl],
         sources: &SourceMap,
@@ -311,6 +395,26 @@ impl PreparedEnums<'_> {
         self.usage
     }
 
+    pub(super) fn with_joint_layouts(
+        mut self,
+        summaries: &[super::ContainmentSummary],
+        limit: usize,
+    ) -> Result<Self, EnumDeclarationError> {
+        if summaries.len() != self.raw.len() {
+            return Err(DeclarationError::TypeMismatch.into());
+        }
+        self.usage.layout_bytes = 0;
+        for summary in summaries {
+            self.usage.layout_bytes = super::limited_add(
+                self.usage.layout_bytes,
+                summary.layout.size,
+                limit,
+                "declaration layout bytes",
+            )?;
+        }
+        Ok(self)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn with_owned_layouts(
         mut self,
@@ -373,11 +477,14 @@ impl PreparedEnums<'_> {
         }
         for declaration in self.raw {
             let variant_start = variants.len();
+            let layout = summaries
+                .get(declaration.id.0)
+                .map_or_else(|| scalar_enum_layout(declaration), |s| s.layout);
             for variant in &declaration.variants {
                 variants.push(VariantDecl {
                     id: variant.id,
                     payload: value_payload(variant)?
-                        .map(PayloadSlot::check)
+                        .map(|ty| PayloadSlot::check(ty, layout.align))
                         .transpose()?,
                     span: variant.span,
                 });
@@ -389,8 +496,15 @@ impl PreparedEnums<'_> {
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
                 variant_end: u32::try_from(variants.len())
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
-                size: u32::try_from(summaries.get(declaration.id.0).map_or(8, |s| s.layout.size))
-                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                size: u32::try_from(layout.size)
+                    .ok()
+                    .filter(|size| *size < 0x4000_0000)
+                    .ok_or(DeclarationError::LayoutOverflow)?
+                    | match layout.align {
+                        16 => 0x4000_0000,
+                        8 => 0x8000_0000,
+                        _ => 0,
+                    },
                 width: u32::try_from(summaries.get(declaration.id.0).map_or(2, |s| s.width))
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
             });
@@ -436,7 +550,23 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
     match variant.payload {
         None => Ok(None),
         Some(ParameterTy::Value(ValueTy::Scalar(
-            ty @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit),
+            ty @ (hir::Ty::Bool
+            | hir::Ty::I32
+            | hir::Ty::Unit
+            | hir::Ty::I64
+            | hir::Ty::U8
+            | hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize
+            | hir::Ty::I128
+            | hir::Ty::U128
+            | hir::Ty::Char
+            | hir::Ty::F32
+            | hir::Ty::F64),
         ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
@@ -445,12 +575,11 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
 fn value_payload(variant: &RawVariantDecl) -> Result<Option<ValueTy>, EnumDeclarationError> {
     match variant.payload {
         None => Ok(None),
-        Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)))
-        | Some(ParameterTy::Reference { .. }) => {
+        Some(ParameterTy::Reference { .. }) => {
             Err(EnumDeclarationError::NonScalarPayload(variant.id))
         }
         Some(ParameterTy::Value(ty)) => {
-            PayloadSlot::check(ty)?;
+            PayloadSlot::check(ty, 8)?;
             Ok(Some(ty))
         }
     }
@@ -472,7 +601,7 @@ fn prepare_shapes<'a>(
     limits: Limits,
     owned: bool,
 ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
-    let usage = preflight_counts(
+    let mut usage = preflight_counts(
         raw.iter().map(|declaration| declaration.variants.len()),
         existing,
         limits,
@@ -504,8 +633,37 @@ fn prepare_shapes<'a>(
                 scalar_payload(variant)?;
             }
         }
+        if scalar_enum_layout(declaration).size > 8 {
+            usage.layout_bytes = super::limited_add(
+                usage.layout_bytes,
+                scalar_enum_layout(declaration).size - 8,
+                limits.bounded().layout_bytes,
+                "declaration layout bytes",
+            )?;
+            super::limited_add(
+                existing.layout_bytes,
+                usage.layout_bytes,
+                limits.bounded().layout_bytes,
+                "declaration layout bytes",
+            )?;
+        }
     }
     Ok(PreparedEnums { raw, usage })
+}
+
+fn scalar_enum_layout(declaration: &RawEnumDecl) -> Layout {
+    if declaration.variants.iter().any(|variant| {
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.quad_integer())
+    }) {
+        return Layout { size: 32, align: 16 };
+    }
+    if declaration.variants.iter().any(|variant| {
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.integer_bits() == Some(64) || ty == hir::Ty::F64)
+    }) {
+        Layout { size: 16, align: 8 }
+    } else {
+        Layout { size: 8, align: 4 }
+    }
 }
 
 /// Independent bounded DFS over enum edges. Records cannot contain enums, so
@@ -581,7 +739,7 @@ fn owned_summaries(
                 }
                 continue;
             }
-            let (mut bytes, mut width, mut depth) = (4usize, 1usize, 1usize);
+            let (mut bytes, mut width, mut depth, mut alignment) = (4usize, 1usize, 1usize, 4usize);
             for variant in &raw[id].variants {
                 let child = match value_payload(variant)? {
                     None => continue,
@@ -601,8 +759,19 @@ fn owned_summaries(
                         width: array.length().max(1),
                         depth: 0,
                     },
+                    Some(ValueTy::Owned(AggregateTy::File)) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 2,
+                        depth: 0,
+                    },
+                    Some(ValueTy::Owned(AggregateTy::ByteBuf)) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 3,
+                        depth: 0,
+                    },
                 };
                 bytes = bytes.max(child.layout.size);
+                alignment = alignment.max(child.layout.align);
                 width = width.max(child.width);
                 depth = depth.max(
                     child
@@ -616,14 +785,17 @@ fn owned_summaries(
             }
             let size = super::align_up(
                 bytes
-                    .checked_add(4)
+                    .checked_add(super::align_up(4, alignment)?)
                     .ok_or(DeclarationError::LayoutOverflow)?,
-                4,
+                alignment,
             )?;
             super::limited_add(0, size, limit, "declaration layout bytes")?;
             let width = super::limited_add(width, 1, limit, "enum expanded width")?;
             summaries[id] = ContainmentSummary {
-                layout: Layout { size, align: 4 },
+                layout: Layout {
+                    size,
+                    align: alignment,
+                },
                 width,
                 depth,
             };

@@ -210,7 +210,12 @@ fn record_composition_formatter_round_trip_preserves_comments_and_tokens() {
     assert_eq!(again.stdout, formatted.as_bytes());
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires the pinned LLVM 19.1.7 native toolchain"]
 fn record_composition_source_free_native_pilot() {

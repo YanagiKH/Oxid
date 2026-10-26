@@ -134,21 +134,55 @@ impl<'s> Visitor<'s> {
                 self.span(*span)?;
                 match value {
                     Rvalue::Load(place) => self.span(place.span)?,
-                    Rvalue::CheckedI32ToU8 {
+                    Rvalue::CharacterConvert {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::FloatConvert {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedI32ToU8 {
                         operand, name_span, ..
                     }
                     | Rvalue::U8ToI32 {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::WidenI64 {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedI64ToI32 {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedI64ToU8 {
+                        operand, name_span, ..
+                    }
+                    | Rvalue::CheckedIntegerCast {
                         operand, name_span, ..
                     } => {
                         self.has_conversions = true;
                         self.span(operand.span)?;
                         self.span(*name_span)?;
                     }
-                    Rvalue::CheckedNegateI32 {
+                    Rvalue::FloatNegate {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::BitNot {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::CheckedNegateI32 {
                         operand,
                         operator_span,
                     }
                     | Rvalue::NotBool {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::CheckedNegateI64 {
+                        operand,
+                        operator_span,
+                    }
+                    | Rvalue::CheckedNegateInteger {
                         operand,
                         operator_span,
                     } => {
@@ -156,7 +190,19 @@ impl<'s> Visitor<'s> {
                         self.span(*operator_span)?;
                     }
                     Rvalue::Copy(operand) => self.span(operand.span)?,
-                    Rvalue::CompareScalar {
+                    Rvalue::FloatArithmetic {
+                        left,
+                        right,
+                        operator_span,
+                        ..
+                    }
+                    | Rvalue::Bitwise {
+                        left,
+                        right,
+                        operator_span,
+                        ..
+                    }
+                    | Rvalue::CompareScalar {
                         left,
                         right,
                         operator_span,
@@ -167,12 +213,32 @@ impl<'s> Visitor<'s> {
                         right,
                         operator_span,
                         ..
+                    }
+                    | Rvalue::CheckedI64 {
+                        left,
+                        right,
+                        operator_span,
+                        ..
+                    }
+                    | Rvalue::CheckedInteger {
+                        left,
+                        right,
+                        operator_span,
+                        ..
                     } => {
                         self.span(left.span)?;
                         self.span(right.span)?;
                         self.span(*operator_span)?;
                     }
-                    Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => (),
+                    Rvalue::Bool(_)
+                    | Rvalue::I32(_)
+                    | Rvalue::I64(_)
+                    | Rvalue::Integer { .. }
+                    | Rvalue::Character(_)
+                    | Rvalue::Float { .. }
+                    | Rvalue::Integer128 { .. }
+                    | Rvalue::U8(_)
+                    | Rvalue::Unit => (),
                 }
             }
             Statement::Initialize { place, value, span } => {
@@ -236,7 +302,24 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
     // A real discriminator inspection also happens for predecessor assignments.
     increment(&mut visitor.dimensions)?;
     let (operation, operand, name_span, source_expr) = match assign.value {
+        Rvalue::CharacterConvert {
+            op,
+            operand,
+            source_expr,
+            name_span,
+        }
+        | Rvalue::FloatConvert {
+            op,
+            operand,
+            source_expr,
+            name_span,
+        } => (op, operand, name_span, source_expr),
         Rvalue::CheckedI32ToU8 {
+            operand,
+            name_span,
+            source_expr,
+        }
+        | Rvalue::CheckedI64ToU8 {
             operand,
             name_span,
             source_expr,
@@ -251,6 +334,35 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
             name_span,
             source_expr,
         } => (ast::ConversionOp::ToI32, operand, name_span, source_expr),
+        Rvalue::WidenI64 {
+            operand,
+            name_span,
+            source_expr,
+        } => (ast::ConversionOp::ToI64, operand, name_span, source_expr),
+        Rvalue::CheckedI64ToI32 {
+            operand,
+            name_span,
+            source_expr,
+        } => (
+            ast::ConversionOp::ToI32Checked,
+            operand,
+            name_span,
+            source_expr,
+        ),
+        Rvalue::CheckedIntegerCast {
+            operand,
+            target,
+            name_span,
+            source_expr,
+        } => {
+            let operation = match target {
+                hir::Ty::U8 => ast::ConversionOp::ToU8Checked,
+                hir::Ty::I32 => ast::ConversionOp::ToI32Checked,
+                hir::Ty::I64 => ast::ConversionOp::ToIntegerChecked(ast::IntegerTypeSyntax::I64),
+                ty => ast::ConversionOp::ToIntegerChecked(ty.extended_integer().ok_or_else(bad)?),
+            };
+            (operation, operand, name_span, source_expr)
+        }
         _ => return Ok(()),
     };
     macro_rules! inspect {
@@ -289,16 +401,31 @@ pub(in crate::frontend::oir) fn authenticate_conversion(
             && body.span.file == assign.span.file
             && body.span.start <= assign.span.start
             && assign.span.end <= owner.end.end
-            && operand.span.start == assign.span.start
-            && operand.span.end <= name_span.start
+            && if matches!(operation, ast::ConversionOp::FloatFromBits(_)) {
+                assign.span.start < name_span.start
+                    && name_span.end < operand.span.start
+                    && operand.span.end < assign.span.end
+            } else {
+                operand.span.start == assign.span.start && operand.span.end <= name_span.start
+            }
             && name_span.end < assign.span.end
     ) {
         return Err(bad());
     }
     let name = inspect!(sources.try_text(name_span)).ok_or_else(bad)?;
     let expected = match operation {
+        ast::ConversionOp::ToFloat(ast::FloatTypeSyntax::F32) => "to_f32",
+        ast::ConversionOp::ToFloat(ast::FloatTypeSyntax::F64) => "to_f64",
+        ast::ConversionOp::ToCharChecked => "to_char_checked",
+        ast::ConversionOp::CharToU32 => "to_u32",
+        ast::ConversionOp::FloatToBits => "to_bits",
+        ast::ConversionOp::FloatSqrt => "sqrt",
+        ast::ConversionOp::FloatFromBits(_) => "from_bits",
         ast::ConversionOp::ToU8Checked => "to_u8_checked",
         ast::ConversionOp::ToI32 => "to_i32",
+        ast::ConversionOp::ToI64 => "to_i64",
+        ast::ConversionOp::ToI32Checked => "to_i32_checked",
+        ast::ConversionOp::ToIntegerChecked(kind) => kind.checked_conversion(),
     };
     if !inspect!(name.len() == expected.len()) {
         return Err(bad());

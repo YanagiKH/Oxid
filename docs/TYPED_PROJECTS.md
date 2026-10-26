@@ -1,8 +1,9 @@
 # Native projects
 
 Use Oxid's typed mode to check code, test local packages and build native
-executables. This workflow is available in development builds on Linux x86_64.
-Native builds require LLVM, Clang and LLD 19.1.7.
+executables. This workflow is available in development builds on Linux x86_64
+and ARM64. Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
+Oxid selects that host's native target automatically.
 
 ## Create and run
 
@@ -30,11 +31,74 @@ when creating the project.
 | `oxid build` | Build an executable under `.oxid/bin/` using project settings. |
 | `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
+| `oxid doc` | Generate public API documentation under `.oxid/doc/`. |
+| `oxid lsp --stdio` | Check open editor buffers and provide formatting. |
 | `oxid lock` | Record local dependency inputs in `oxid.lock`. |
 | `oxid doctor --native` | Check the native tools, SDK and project configuration. |
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` takes one file and writes its result to stdout.
+
+## Edit with live diagnostics
+
+Configure your editor's language server command as `oxid lsp --stdio` and use
+the `oxid` language ID for `.ox` files. The server reads `oxid.toml`, checks open
+buffers together with their modules and dependencies, and reports type and
+ownership errors before saving. It also provides document formatting. LLVM is
+not required, and checking does not run your program or write formatted source.
+
+With Neovim 0.11 or later, add this to your configuration:
+
+```lua
+vim.filetype.add({ extension = { ox = 'oxid' } })
+vim.lsp.config('oxid', {
+  cmd = { 'oxid', 'lsp', '--stdio' },
+  filetypes = { 'oxid' },
+  root_markers = { 'oxid.toml', '.git' },
+})
+vim.lsp.enable('oxid')
+```
+
+Use `:lua vim.lsp.buf.format()` to format the current buffer. Save it normally
+when ready. For standalone files, add `--edition`, `typed-preview` to the command
+arguments. Files must already exist on disk; untitled buffers are unsupported.
+
+Use `:lua vim.lsp.buf.definition()` to jump from a function call or a local
+variable use to its declaration. `:lua vim.lsp.buf.document_symbol()` lists the
+current file's declarations. In a project or workspace, use
+`:lua vim.lsp.buf.workspace_symbol('name')` to search declarations by name.
+These operations read unsaved buffers too; import aliases and function privacy
+follow the compiler's ordinary namespace rules.
+
+Use `<C-x><C-o>` in Neovim for name completion. Suggestions include keywords,
+functions, types, import aliases and variables visible in the current block.
+They follow unsaved text and replace the name around the cursor.
+
+Workspace checks include every member and declared test entry. Dependencies are
+resolved offline; prepare Git dependencies with ordinary project commands first.
+Manifests and lockfiles are read from disk. Diagnostics reflect editor source
+buffers and do not replace `oxid check --frozen` for saved-input verification.
+Cross-file loading currently requires Linux. Member and qualified-path
+completion, rename and navigation to types or members are not yet provided. See the
+[language server contract](../rfcs/0065-typed-language-server.md) and
+[navigation scope](../rfcs/0066-editor-symbol-navigation.md).
+
+## Generate API documentation
+
+```sh
+oxid doc
+```
+
+Open `.oxid/doc/index.html` in a browser to read the project's public functions,
+generic parameters, structs and enums. Place `///` descriptions directly above
+declarations or fields, and use `//!` at the start of a module. Descriptions are
+shown as plain text; private declarations and function bodies are omitted.
+
+Use `oxid doc --workspace` for every workspace member or
+`oxid doc --package math` for one member. The selected APIs share one page at
+the workspace root. Locking options such as `--frozen` also apply. All selected
+packages are checked before replacing a page; checking or file publication
+failures preserve the previous page. The command generates documentation without running the program.
 
 ## Project settings
 
@@ -66,8 +130,12 @@ oxid build --profile release
 
 `dev` builds without optimization (`-O0`); `release` enables optimization
 (`-O2`) for both the program and its runtime. Both preserve checked arithmetic,
-bounds checks and the current execution limits. `bounded` is an alias for `dev`.
-These profiles do not add source-level debugger information.
+bounds checks and the selected execution policy. `bounded` is an alias for `dev`.
+Source-level line information can be enabled separately with `--debug-info`.
+
+For programs using owned values, `release` omits function bodies that cannot be
+reached from the entry point. Every declared function still undergoes the full
+type, ownership and native resource checks. `dev` retains the complete output.
 
 The command-line profile overrides `[build] profile` in the selected package.
 Omitting both uses `dev`. A workspace uses each selected member's setting;
@@ -80,6 +148,32 @@ Profiles also work with `--incremental` and `--reproducible`. Switching between
 `dev` and `bounded` can reuse the same object.
 [Build profile details](../rfcs/0040-native-build-profiles.md).
 
+## Debug a program
+
+```sh
+oxid build --debug-info
+gdb .oxid/bin/hello
+```
+
+In GDB, use `break main`, `break src/main.ox:2`, `run`, `next` and `backtrace`
+to stop in Oxid source and inspect the call stack. Source files must be available
+to show their text. The executable still runs after those files are removed.
+Use `info args`, `info locals` and `print name` to inspect scalar parameters and
+initialized local variables. This includes integer widths, floating-point values,
+booleans and characters. Variables follow their source block's scope.
+
+Set `debug-info = true` under `[build]` to keep line information enabled.
+`--debug-info` and `--no-debug-info` override the selected package's setting;
+workspace builds apply the command-line choice to every selected member.
+Both `dev` and `release` support it. Optimized builds can fold or remove source
+lines, functions and values. A value without a recoverable machine location
+appears as `<optimized out>`; this can also happen to an SSA value in `dev`.
+References and owned aggregates are not yet described for variable inspection.
+
+`--reproducible` keeps debug paths relative to the project or workspace root.
+Run the debugger from that root after moving the project, or configure its source
+search path. Debug and non-debug builds use different cached program objects.
+
 ## Local dependencies
 
 ```toml
@@ -89,8 +183,22 @@ math = "../math"
 
 The library needs its own typed project manifest and a `src/lib.ox` entry.
 Import public items with `use crate::math::answer;`. Each package keeps its own
-module root and visibility. Git and registry dependencies are not yet available
-in typed projects.
+module root and visibility.
+
+On Linux, dependencies can also use a Git URL pinned to a complete commit hash:
+
+```toml
+[dependencies]
+codec = "git+https://github.com/example/codec.git#0123456789012345678901234567890123456789"
+```
+
+Replace the example URL and hash with a real library, then run `oxid lock` to
+fetch it and record its inputs. Later `--locked`, `--offline` and `--frozen`
+commands use cached checkouts without fetching. Different commits can coexist
+under different aliases. Git checkouts with local changes are preserved and
+refused. Workspaces share one cache under the workspace root. Source bundles
+include cached Git libraries as local dependencies; registry dependencies are
+not yet available. See [Git dependencies](../rfcs/0059-typed-git-dependencies.md).
 
 After changing dependency manifests or source code intentionally, run
 `oxid lock --update`. Normal commands verify an existing lock. `--locked`
@@ -148,10 +256,154 @@ oxid package --extract application.oxpkg.tar --output restored
 A source package includes the project, local dependencies, declared tests and
 matching lock. Extraction requires a new directory. Enter the project root
 printed by extraction, then run `oxid build --frozen` to rebuild offline.
+Cached Git libraries are included as local sources, so the restored project
+does not require Git or the original cache. Creation never fetches dependencies.
 Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 [Package details](../rfcs/0038-typed-source-packages.md).
 
 For complete applications, try [Byte count](../apps/byte-count/README.md) or
 [Frame filter](../apps/frame-filter/README.md), which passes owned records,
 arrays and nested enum values between local packages.
+Try [UTF-8 normalize](../apps/utf8-normalize/README.md) to validate and transform
+text using a shared [owned UTF-8 library](../packages/utf8_text/README.md).
 See the [language reference](../spec/typed-preview.md) for supported syntax.
+
+## Range loops
+
+Use `for` to visit each integer before the end of a range:
+
+```oxid
+fn main() -> i32 {
+    let values = [10, 20, 12];
+    let mut total = 0;
+    for index in 0..values.len() {
+        total = total + values[index];
+    }
+    return total;
+}
+```
+
+Both bounds must have the same integer type. Oxid evaluates them once, from
+left to right. The index is immutable and available inside the loop body.
+Empty and reversed ranges run no iterations. `break`, `continue` and `return`
+perform the usual resource cleanup. Inclusive ranges and general iterators
+are not available yet.
+
+## Generic functions
+
+Write a function once and let its arguments choose the type:
+
+```oxid
+fn identity<T>(value: T) -> T {
+    return value;
+}
+
+struct Number { value: i32 }
+
+fn main() -> i32 {
+    let number = identity(Number { value: 42 });
+    return number.value;
+}
+```
+
+Type parameters can stand for scalar or owned values, including records, enums,
+fixed arrays and byte buffers. Passing an owned value transfers ownership.
+Use `T: Copy` when the function needs to read the same scalar value more than
+once. `Copy` does not provide arithmetic or comparison operators.
+
+Type arguments are inferred from arguments. You can also specify every type
+parameter in declaration order, for example `identity::<Number>(Number { value: 42 })`.
+Use explicit type arguments when a parameter cannot be inferred from the inputs.
+Type names at a call resolve in the caller's module. Generic functions work with
+`check`, `run`, tests and native builds. Recursive calls require the `hosted`
+execution policy for native builds. User-defined traits are not available yet.
+
+## Generic structs and enums
+
+Give reusable data types their own type parameters:
+
+```oxid
+struct Cell<T> { value: T }
+enum Option<T> { None, Some(T) }
+
+fn wrap<T>(value: T) -> Option<Cell<T>> {
+    return Option::Some(Cell { value: value });
+}
+
+fn main() -> i32 {
+    let value = wrap(42);
+    match value {
+        Option::None => { return 0; },
+        Option::Some(cell) => { return cell.value; },
+    }
+}
+```
+
+Write `Cell<i32>` in a type annotation. Constructors infer type arguments from
+field values or the selected enum payload: `Cell { value: 42 }` and
+`Option::Some(42)`. This also works through nested structs and enums, including
+inside generic functions. Match arms use the type of the matched value.
+
+Specify every argument in declaration order when values cannot determine the
+type, for example `Option::<i32>::None` or `Cell::<i32> { value: 42 }`.
+Annotations and return types do not supply missing constructor arguments;
+repeated occurrences of a type parameter must agree.
+
+Each declaration and ordered argument list defines a distinct type, even when
+its fields have the same layout. An owned enum payload transfers ownership to
+its match binding. Reading a generic scalar field requires `T: Copy`; record
+fields otherwise keep the existing move rules. Different record fields may be
+[borrowed together](../rfcs/0067-disjoint-field-borrows.md), including nested
+fields and fields that own buffers. The whole record cannot move while a field
+is borrowed. Whole values can also have [local reference bindings](../rfcs/0068-local-reference-bindings.md)
+such as `let current = &mut value;`. A local reference lasts until its declaring
+block ends; `return`, `break` and `continue` also end the scopes they leave.
+Forward it to a helper with `&*current` or `&mut *current`. References cannot
+yet be returned from functions or stored in records.
+
+## Long-running programs
+
+Add this setting to a typed binary's `oxid.toml` to run without a cumulative work budget:
+
+```toml
+[execution]
+policy = "hosted"
+```
+
+It applies to `oxid run`, native builds and declared project tests. Existing
+projects without the setting keep the `bounded` policy. Changing `dev` or
+`release` affects optimization; it does not change the execution policy.
+
+Each workspace binary selects its own policy. Libraries cannot change their
+caller's policy. Both choices retain arithmetic, bounds, ownership, allocation
+and live-memory checks. Current compiler, storage and call-depth limits remain.
+See the [execution policy contract](../rfcs/0044-project-execution-policy.md).
+
+Hosted projects can set the shared allocation budget in bytes:
+
+```toml
+[execution]
+policy = "hosted"
+heap-limit = 67108864 # 64 MiB
+```
+
+The default is 16 MiB. The budget counts buffer capacity and allocation metadata,
+including both buffers during growth. It applies to byte buffers and the
+collections built from them, across dependencies in the same program. A value
+of `0` prevents nonempty allocations. `run`, project tests and native builds use
+the same setting; libraries do not override the calling program's budget.
+Process memory also includes code, stacks and other runtime storage. Allocation
+can still fail when the operating system cannot provide memory.
+
+## Program arguments
+
+```sh
+oxid run -- input.bin output.bin
+.oxid/bin/application input.bin output.bin
+```
+
+Import `arg_count`, `arg_bytes` and `ArgStatus` from `std::env` to read them.
+Index 0 is the executable name; user arguments start at 1. `arg_bytes` copies
+raw bytes into a mutable byte slice and reports the required length when that
+slice is too short. Arguments after `--` are literal program input.
+See the [argument API](../rfcs/0049-program-arguments.md) for status handling.

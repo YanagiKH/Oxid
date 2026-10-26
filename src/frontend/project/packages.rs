@@ -331,6 +331,16 @@ impl<'a> PackageSources<'a> {
         entry_override: Option<&Path>,
         limits: ProjectLimits,
     ) -> Result<Self, LoadFailure> {
+        Self::load_with_editor(specs, entry_override, limits, None)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(in crate::frontend) fn load_with_editor(
+        specs: &'a [PackageSpec],
+        entry_override: Option<&Path>,
+        limits: ProjectLimits,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
         let mut allocator = Allocator::default();
         let mut builder = SourceSetBuilder {
             entry: "",
@@ -369,7 +379,11 @@ impl<'a> PackageSources<'a> {
                 };
                 builder.entry = entry.to_str().expect("validated UTF-8 entry");
                 let start = builder.project.modules.len();
-                builder.load_package_root(spec)?;
+                if overlay.is_some() {
+                    builder.load_package_root_with_editor(spec, overlay)?;
+                } else {
+                    builder.load_package_root(spec)?;
+                }
                 let end = builder.project.modules.len();
                 context.roots[package] = start;
                 context.owners[start..end].fill(package);
@@ -395,6 +409,14 @@ impl<'a> PackageSources<'a> {
 
 impl SourceSetBuilder<'_> {
     fn load_package_root(&mut self, spec: &PackageSpec) -> Result<(), Errors> {
+        self.load_package_root_with_editor(spec, None)
+    }
+
+    fn load_package_root_with_editor(
+        &mut self,
+        spec: &PackageSpec,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<(), Errors> {
         let id = ModuleId(self.project.modules.len());
         if id.0 >= self.limits.modules.min(256) {
             return Err(one(resource("module count limit exceeded", None)));
@@ -418,7 +440,7 @@ impl SourceSetBuilder<'_> {
             .expect("absolute entry has parent")
             .to_path_buf();
         let text = self
-            .read_source(&canonical, self.entry, None)
+            .read_source_input(&canonical, self.entry, None, overlay)
             .map_err(one)?;
         let mut display = String::new();
         self.allocator
@@ -488,7 +510,11 @@ impl SourceSetBuilder<'_> {
                 continue;
             }
             stack[height - 1].next += 1;
-            let child = self.load_child(frame.module, frame.next)?;
+            let child = if overlay.is_some() {
+                self.load_child_with_inputs(frame.module, frame.next, &mut None, overlay)?
+            } else {
+                self.load_child(frame.module, frame.next)?
+            };
             if height == stack.len() {
                 return Err(one(resource("module depth limit exceeded", Some(at))));
             }

@@ -74,6 +74,31 @@ int __oxid_print_i32(int32_t value) {
     return output(STDOUT_FILENO, buffer + index, sizeof buffer - index);
 }
 
+int __oxid_print_i64(int64_t value) {
+    char buffer[21]; /* minus, nineteen digits, newline */
+    size_t index = sizeof buffer;
+    buffer[--index] = '\n';
+    /* Unsigned subtraction includes INT64_MIN without signed overflow. */
+    uint64_t magnitude = value < 0 ? UINT64_C(0) - (uint64_t)value : (uint64_t)value;
+    do {
+        buffer[--index] = (char)('0' + magnitude % 10);
+        magnitude /= 10;
+    } while (magnitude != 0);
+    if (value < 0) buffer[--index] = '-';
+    return output(STDOUT_FILENO, buffer + index, sizeof buffer - index);
+}
+
+int __oxid_print_u64(uint64_t value) {
+    char buffer[21]; /* twenty decimal digits and newline */
+    size_t index = sizeof buffer;
+    buffer[--index] = '\n';
+    do {
+        buffer[--index] = (char)('0' + value % 10);
+        value /= 10;
+    } while (value != 0);
+    return output(STDOUT_FILENO, buffer + index, sizeof buffer - index);
+}
+
 /* Private Linux x86_64 ABI: i64 is the byte length, not a NUL-terminated string.
  * No result was printed before this first-error path. Never return to Oxid code.
  */

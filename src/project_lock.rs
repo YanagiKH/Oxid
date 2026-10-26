@@ -69,7 +69,7 @@ fn package_id(path: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn relative(base: &Path, target: &Path) -> Result<String, String> {
+pub(crate) fn relative(base: &Path, target: &Path) -> Result<String, String> {
     let base: Vec<_> = base.components().collect();
     let target: Vec<_> = target.components().collect();
     let shared = base.iter().zip(&target).take_while(|(a, b)| a == b).count();
@@ -302,6 +302,45 @@ fn valid_path(value: &str, parents: bool) -> bool {
 }
 
 impl Snapshot {
+    /// Export the same graph and sources after its retained manifest values are
+    /// converted to portable local dependencies. This never writes a user lock.
+    pub(crate) fn export_with_manifests(
+        mut self,
+        owner: &Path,
+        updates: &HashMap<std::path::PathBuf, String>,
+    ) -> Result<Vec<u8>, String> {
+        let mut pending = HashMap::new();
+        for (root, digest) in updates {
+            if !valid_hash(digest)
+                || pending
+                    .insert(relative(owner, root)?, digest.clone())
+                    .is_some()
+            {
+                return Err("invalid exported manifest inventory".into());
+            }
+        }
+        for package in &mut self.packages {
+            if let Some(digest) = pending.remove(&package.path) {
+                package.manifest = digest;
+            }
+        }
+        if let Some(workspace) = &mut self.workspace {
+            if let Some(digest) = updates.get(owner) {
+                *workspace = digest.clone();
+                pending.remove(".");
+            }
+        }
+        if !pending.is_empty() {
+            return Err("exported manifest is outside its retained lock graph".into());
+        }
+        self.validate()?;
+        let bytes = self.encode().into_bytes();
+        if bytes.len() > MAX_LOCK_BYTES {
+            return Err("exported lock exceeds the 2 MiB limit".into());
+        }
+        Ok(bytes)
+    }
+
     fn validate(&self) -> Result<(), String> {
         let invalid = || "malformed typed lock: invalid package or dependency record".to_owned();
         if self.packages.is_empty()

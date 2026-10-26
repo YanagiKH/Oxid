@@ -35,6 +35,7 @@ PROBES = [
         fn inspect(w: &SourceProgram, sources: &SourceMap) {
             let _ = w.function_count();
             let _ = w.run(None, sources);
+            let _ = w.run_value(None, sources, crate::frontend::build_config::ExecutionPolicy::Bounded);
         }
     """),
     ("source-facade-cannot-be-forged", False, ("E0451",), """
@@ -70,7 +71,41 @@ PROBES = [
     """),
     ("raw-program-cannot-enter-checked-source", False, ("E0308",), """
         fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
-            let _ = crate::frontend::oir::CheckedSourceProgram::run(raw);
+            let _ = crate::frontend::oir::CheckedSourceProgram::run_value(
+                raw, crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("checked-source-immutable-value-method", True, (), """
+        fn inspect(w: &crate::frontend::oir::CheckedSourceProgram<'_>) {
+            let _ = w.run_value(crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("raw-program-cannot-enter-source-value-facade", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = SourceProgram::run_value(raw, None, sources,
+                crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("source-facade-immutable-typed-result-method", True, (), """
+        fn inspect(w: &SourceProgram, sources: &SourceMap) {
+            let _ = w.run_result(None, sources, crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("raw-program-cannot-enter-typed-source-facade", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = SourceProgram::run_result(raw, None, sources,
+                crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("checked-source-immutable-typed-result-method", True, (), """
+        fn inspect(w: &crate::frontend::oir::CheckedSourceProgram<'_>) {
+            let _ = w.run_result(crate::frontend::build_config::ExecutionPolicy::Bounded);
+        }
+    """),
+    ("raw-program-cannot-enter-typed-checked-source", False, ("E0308",), """
+        fn run(raw: &RawOwnedProgram, sources: &SourceMap) {
+            let _ = crate::frontend::oir::CheckedSourceProgram::run_result(
+                raw, crate::frontend::build_config::ExecutionPolicy::Bounded);
         }
     """),
     ("denial-context-immutable-inspection", True, (), """
@@ -130,6 +165,22 @@ PROBES = [
     ("immutable-access", True, (), """
         fn inspect(w: &VerifiedOwnedProgram) {
             let _ = (w.functions(), w.declarations(), w.usage());
+        }
+    """),
+    ("projected-permission-derived-from-witness", True, (), """
+        fn inspect(w: &VerifiedOwnedProgram) {
+            let _ = w.projection_permission(hir::DefId(0), BlockId(0), 0,
+                verified::ProjectionRequest::Borrow(LoanId(0)));
+        }
+    """),
+    ("projected-permission-cannot-rebind-instruction", False, ("E0451",), """
+        fn forge(base: verified::ProjectionPermission<'_>) -> verified::ProjectionPermission<'_> {
+            verified::ProjectionPermission { statement: 0, ..base }
+        }
+    """),
+    ("projected-permission-private-witness", False, ("E0616",), """
+        fn rebind<'a>(proof: &mut verified::ProjectionPermission<'a>, replacement: &'a VerifiedOwnedProgram) {
+            proof.witness = replacement;
         }
     """),
     ("replace-program-using-struct-update", False, ("E0451",), """

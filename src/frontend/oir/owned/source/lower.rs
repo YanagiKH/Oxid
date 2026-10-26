@@ -26,6 +26,34 @@ pub(super) enum BindingLocation {
     ScalarPlace(PlaceId),
     Owner(OwnerPlaceId),
     Reference(ReferenceParamId),
+    LocalReference(LoanId),
+}
+// Cleanup entries carry bounded indices only; the raw verifier independently
+// checks the resulting owner/loan instructions. Keep one machine word per entry.
+#[derive(Clone, Copy)]
+struct LexicalSlot(usize);
+impl LexicalSlot {
+    fn instruction(self) -> OwnedInstruction {
+        if self.0 & 1 == 0 {
+            OwnedInstruction::StorageEnd(OwnerPlaceId(self.0 / 2))
+        } else {
+            OwnedInstruction::ReleaseLocalBorrow(LoanId(self.0 / 2))
+        }
+    }
+}
+fn lexical_capacity(view: &TypedOwnedFunction<'_>, count: Counts) -> Result<usize> {
+    if count.local_loan_depth_bound == 0 {
+        return Ok(count.owners);
+    }
+    let references = (view.signature().params.len()..view.hir().bindings.len())
+        .filter(|&id| {
+            matches!(
+                view.binding_ty(source::BindingId(id)),
+                ParameterTy::Reference { .. }
+            )
+        })
+        .count();
+    budget::add(count.owners, references)
 }
 #[derive(Clone, Copy)]
 pub(super) enum EvaluatedValue {
@@ -141,12 +169,14 @@ enum ExprFrame {
     },
     Call(CallFrame),
     Prepare(CallFrame),
+    RangeStart(CallFrame),
+    RangeEnd(CallFrame),
 }
 struct Output {
     raw: RawOwnedFunction,
     bindings: Vec<Option<BindingLocation>>,
     expressions: Vec<Option<EvaluatedValue>>,
-    lexical: Vec<OwnerPlaceId>,
+    lexical: Vec<LexicalSlot>,
     expected: Counts,
 }
 struct Walk<'a, 'b> {
@@ -197,7 +227,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                 },
                 bindings: budget::filled(f.bindings.len(), None)?,
                 expressions: budget::filled(f.expressions.len(), None)?,
-                lexical: budget::reserve(c.owners)?,
+                lexical: budget::reserve(lexical_capacity(view, c)?)?,
                 expected: c,
             })
         } else {
@@ -275,7 +305,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                     BindingLocation::ScalarValue(id) => ParameterBinding::Scalar(id),
                     BindingLocation::Owner(id) => ParameterBinding::Owned(id),
                     BindingLocation::Reference(id) => ParameterBinding::Reference(id),
-                    BindingLocation::ScalarPlace(_) => return Err(invariant(binding.span)),
+                    BindingLocation::ScalarPlace(_) | BindingLocation::LocalReference(_) => {
+                        return Err(invariant(binding.span))
+                    }
                 };
                 budget::append(
                     &mut out.raw.parameters,
@@ -287,6 +319,12 @@ impl<'a, 'b> Walk<'a, 'b> {
         }
         for (index, binding) in f.bindings.iter().enumerate().skip(signature.params.len()) {
             require(binding.parameter_position.is_none(), binding.span)?;
+            if matches!(
+                self.view.binding_ty(source::BindingId(index)),
+                ParameterTy::Reference { .. }
+            ) {
+                continue;
+            }
             let ParameterTy::Value(ty) = self.view.binding_ty(source::BindingId(index)) else {
                 return Err(invariant(binding.span));
             };
@@ -348,7 +386,10 @@ impl<'a, 'b> Walk<'a, 'b> {
             )?,
             budget::add(
                 budget::add(c.constructed_fields, c.constructed_elements)?,
-                budget::add(c.composite_fields, c.projection_fields)?,
+                budget::add(
+                    budget::add(c.composite_fields, c.projection_fields)?,
+                    c.destructured_fields as usize,
+                )?,
             )?,
         )?;
         let expanded = budget::add(expanded, budget::add(c.matches, c.match_arms)?)?;
@@ -400,9 +441,13 @@ impl<'a, 'b> Walk<'a, 'b> {
         Ok(id)
     }
     fn register(&mut self, owner: OwnerPlaceId, span: Span) -> Result<()> {
+        self.register_slot(LexicalSlot(budget::mul(owner.0, 2)?), span)
+    }
+    fn register_slot(&mut self, slot: LexicalSlot, span: Span) -> Result<()> {
         self.active = budget::add(self.active, 1)?;
         if let Some(out) = &mut self.output {
-            budget::append(&mut out.lexical, owner, out.expected.owners, span)?;
+            let capacity = out.lexical.capacity();
+            budget::append(&mut out.lexical, slot, capacity, span)?;
         }
         Ok(())
     }
@@ -429,6 +474,11 @@ impl<'a, 'b> Walk<'a, 'b> {
             }
             ParameterTy::Value(ValueTy::Scalar(_)) => BindingLocation::ScalarValue(LocalId(0)),
             ParameterTy::Value(ValueTy::Owned(_)) => BindingLocation::Owner(OwnerPlaceId(0)),
+            ParameterTy::Reference { .. }
+                if self.view.hir().bindings[id.0].parameter_position.is_none() =>
+            {
+                BindingLocation::LocalReference(LoanId(0))
+            }
             ParameterTy::Reference { .. } => BindingLocation::Reference(ReferenceParamId(0)),
         })
     }
@@ -480,6 +530,7 @@ impl<'a, 'b> Walk<'a, 'b> {
         match self.location(id, span)? {
             BindingLocation::Owner(id) => Ok(AccessBase::Owner(id)),
             BindingLocation::Reference(id) => Ok(AccessBase::Parameter(id)),
+            BindingLocation::LocalReference(id) => Ok(AccessBase::Loan(id)),
             _ => Err(invariant(span)),
         }
     }
@@ -560,6 +611,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             OwnedInstruction::PrepareScalar { .. }
                 | OwnedInstruction::PrepareOwned { .. }
                 | OwnedInstruction::PrepareBorrow { .. }
+                | OwnedInstruction::PrepareBorrowRange { .. }
         ) {
             self.counts.preparations = budget::add(self.counts.preparations, 1)?;
         }
@@ -652,9 +704,227 @@ impl<'a, 'b> Walk<'a, 'b> {
             return Ok(());
         }
         for index in (prefix..self.active).rev() {
-            let owner = self.output.as_ref().ok_or_else(|| invariant(span))?.lexical[index];
-            self.statement(OwnedInstruction::StorageEnd(owner), span, span, span)?;
+            let slot = self.output.as_ref().ok_or_else(|| invariant(span))?.lexical[index];
+            self.statement(slot.instruction(), span, span, span)?;
         }
+        Ok(())
+    }
+    fn range_loop(
+        &mut self,
+        statement: &source::Stmt,
+        frames: &mut Stack<BodyFrame, BODY_FRAMES>,
+        loops: &mut Stack<LoopTargets, LOOP_FRAMES>,
+    ) -> Result<()> {
+        let source::StmtKind::ForRange {
+            loop_id,
+            binding,
+            start,
+            end,
+            body,
+        } = statement.kind
+        else {
+            return Err(invariant(statement.span));
+        };
+        let s = statement.span;
+        let f = self.view.hir();
+        let ValueTy::Scalar(ty) = self.view.expression_ty(start) else {
+            return Err(invariant(s));
+        };
+        require(
+            ty.integer_bits().is_some() && self.view.expression_ty(end) == ValueTy::Scalar(ty),
+            s,
+        )?;
+        require(loop_id.0 == body.0 && !f.bindings[binding.0].mutable, s)?;
+        // Evaluate both source expressions once before creating the loop head.
+        self.expression(start, s)?;
+        self.expression(end, s)?;
+        let first = self.operand(start)?;
+        let limit = self.operand(end)?;
+        let prefix = self.active;
+        let cursor = PlaceId(self.counts.places);
+        self.counts.places = budget::add(self.counts.places, 1)?;
+        if let Some(out) = &mut self.output {
+            budget::append(
+                &mut out.raw.places,
+                PlaceDecl { ty, span: s },
+                out.expected.places,
+                s,
+            )?;
+        }
+        self.check_counts()?;
+        let current = self.local(ty, LocalKind::Temporary, s)?;
+        let condition = self.local(hir::Ty::Bool, LocalKind::Temporary, s)?;
+        let one = self.local(ty, LocalKind::Temporary, s)?;
+        let next = self.local(ty, LocalKind::Temporary, s)?;
+        self.statement(
+            OwnedInstruction::Scalar(Statement::Initialize {
+                place: Place {
+                    id: cursor,
+                    span: s,
+                },
+                value: first,
+                span: s,
+            }),
+            s,
+            s,
+            s,
+        )?;
+        let unit = match ty {
+            hir::Ty::I32 => Rvalue::I32(1),
+            hir::Ty::I64 => Rvalue::I64(1),
+            hir::Ty::U8 => Rvalue::U8(1),
+            ty if ty.quad_integer() => Rvalue::Integer128 {
+                ty,
+                low: 1,
+                high: 0,
+            },
+            ty => Rvalue::Integer { ty, bits: 1 },
+        };
+        self.scalar_assign(one, unit, s, s)?;
+        let header = self.block(s)?;
+        let entry = self.block(f.blocks[body.0].span)?;
+        let exit = self.block(s)?;
+        loops.push(
+            LoopTargets {
+                id: loop_id,
+                header,
+                exit,
+                prefix,
+            },
+            s,
+        )?;
+        self.close(OwnedTerminatorKind::Goto(header), s, s)?;
+        self.enter(Some(header), s)?;
+        self.scalar_assign(
+            current,
+            Rvalue::Load(Place {
+                id: cursor,
+                span: s,
+            }),
+            s,
+            s,
+        )?;
+        self.scalar_assign(
+            condition,
+            Rvalue::CompareScalar {
+                op: hir::ComparisonOp::Less,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: limit,
+                operator_span: s,
+            },
+            s,
+            s,
+        )?;
+        self.close(
+            OwnedTerminatorKind::Branch {
+                condition: Operand {
+                    local: condition,
+                    span: s,
+                },
+                then_block: entry,
+                else_block: exit,
+            },
+            s,
+            s,
+        )?;
+        self.enter(Some(entry), s)?;
+        let BindingLocation::ScalarValue(index) = self.location(binding, s)? else {
+            return Err(invariant(s));
+        };
+        self.scalar_assign(
+            index,
+            Rvalue::Copy(Operand {
+                local: current,
+                span: s,
+            }),
+            s,
+            s,
+        )?;
+        // current < limit <= the type's maximum proves the step cannot overflow.
+        // Advancing before the user body also gives continue its normal target.
+        let step = match ty {
+            hir::Ty::I32 => Rvalue::CheckedI32 {
+                op: hir::ArithmeticOp::Add,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: Operand {
+                    local: one,
+                    span: s,
+                },
+                operator_span: s,
+            },
+            hir::Ty::I64 => Rvalue::CheckedI64 {
+                op: hir::ArithmeticOp::Add,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: Operand {
+                    local: one,
+                    span: s,
+                },
+                operator_span: s,
+            },
+            _ => Rvalue::CheckedInteger {
+                op: hir::ArithmeticOp::Add,
+                left: Operand {
+                    local: current,
+                    span: s,
+                },
+                right: Operand {
+                    local: one,
+                    span: s,
+                },
+                operator_span: s,
+            },
+        };
+        self.scalar_assign(next, step, s, s)?;
+        self.statement(
+            OwnedInstruction::Scalar(Statement::Store {
+                place: Place {
+                    id: cursor,
+                    span: s,
+                },
+                value: Operand {
+                    local: next,
+                    span: s,
+                },
+                operator_span: s,
+                span: s,
+            }),
+            s,
+            s,
+            s,
+        )?;
+        frames.push(
+            BodyFrame::LoopEnd {
+                id: loop_id,
+                exit,
+                span: s,
+                prefix,
+            },
+            s,
+        )?;
+        frames.push(
+            BodyFrame::Finish {
+                end: f.blocks[body.0].end,
+                join: Some(header),
+                prefix,
+            },
+            s,
+        )?;
+        frames.push(
+            BodyFrame::Body {
+                block: body,
+                next: 0,
+            },
+            s,
+        )?;
         Ok(())
     }
     fn scalar_assign(
@@ -693,6 +963,61 @@ impl<'a, 'b> Walk<'a, 'b> {
                 ExprFrame::Visit(id) => {
                     let expression = &self.view.hir().expressions[id.0];
                     match &expression.kind {
+                        source::ExprKind::ByteString { bytes } => {
+                            let span = expression.span;
+                            let ValueTy::Owned(AggregateTy::FixedArray(array)) =
+                                self.view.expression_ty(id)
+                            else {
+                                return Err(invariant(span));
+                            };
+                            require(
+                                array.length() == bytes.len() && array.element() == hir::Ty::U8,
+                                span,
+                            )?;
+                            budget::cap(bytes.len(), 1024, "byte string length")?;
+                            let owner = self.owner(
+                                AggregateTy::FixedArray(array),
+                                OwnerKind::Temporary,
+                                span,
+                            )?;
+                            self.statement(
+                                OwnedInstruction::StorageLive(owner),
+                                span,
+                                span,
+                                cause,
+                            )?;
+                            self.counts.constructed_elements =
+                                budget::add(self.counts.constructed_elements, bytes.len())?;
+                            self.check_counts()?;
+                            let mut values = if self.output.is_some() {
+                                budget::reserve_array_operands(bytes.len())?
+                            } else {
+                                Vec::new()
+                            };
+                            for &byte in bytes {
+                                let local = self.local(hir::Ty::U8, LocalKind::Temporary, span)?;
+                                self.scalar_assign(local, Rvalue::U8(byte), span, cause)?;
+                                if self.output.is_some() {
+                                    budget::append(
+                                        &mut values,
+                                        Operand { local, span },
+                                        bytes.len(),
+                                        span,
+                                    )?;
+                                }
+                            }
+                            self.statement(
+                                OwnedInstruction::ConstructArray {
+                                    destination: owner,
+                                    elements: values,
+                                },
+                                span,
+                                span,
+                                cause,
+                            )?;
+                            self.set_owned(id, owner);
+                            self.complete(id)?;
+                        }
                         source::ExprKind::ArrayLiteral { .. } => frames.push(
                             ExprFrame::ArrayLiteral {
                                 expression: id,
@@ -732,10 +1057,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 | source::ExprKind::Conversion { operand: inner, .. }
                                 | source::ExprKind::Negate { operand: inner, .. }
                                 | source::ExprKind::Not { operand: inner, .. }
+                                | source::ExprKind::BitNot { operand: inner, .. }
                                 | source::ExprKind::IndexRead { index: inner, .. } => {
                                     frames.push(ExprFrame::Visit(*inner), cause)?
                                 }
-                                source::ExprKind::Arithmetic { left, right, .. }
+                                source::ExprKind::Bitwise { left, right, .. }
+                                | source::ExprKind::Arithmetic { left, right, .. }
                                 | source::ExprKind::Comparison { left, right, .. } => {
                                     frames.push(ExprFrame::Visit(*right), cause)?;
                                     frames.push(ExprFrame::Visit(*left), cause)?;
@@ -1059,6 +1386,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                                 frames.push(ExprFrame::Prepare(call), cause)?;
                                 frames.push(ExprFrame::Visit(*id), cause)?;
                             }
+                            source::Argument::BorrowRange { start, .. } => {
+                                frames.push(ExprFrame::RangeStart(call), cause)?;
+                                frames.push(ExprFrame::Visit(*start), cause)?;
+                            }
                             source::Argument::Borrow { span, .. } => {
                                 self.statement(
                                     OwnedInstruction::PrepareBorrow {
@@ -1092,6 +1423,46 @@ impl<'a, 'b> Walk<'a, 'b> {
                         self.preparing = call.parent;
                         self.complete(call.expression)?;
                     }
+                }
+                ExprFrame::RangeStart(call) => {
+                    let source::ExprKind::Call { args, .. } =
+                        &self.view.hir().expressions[call.expression.0].kind
+                    else {
+                        return Err(invariant(cause));
+                    };
+                    let source::Argument::BorrowRange { end, .. } = args[call.next] else {
+                        return Err(invariant(cause));
+                    };
+                    frames.push(ExprFrame::RangeEnd(call), cause)?;
+                    frames.push(ExprFrame::Visit(end), cause)?;
+                }
+                ExprFrame::RangeEnd(mut call) => {
+                    let source::ExprKind::Call { args, .. } =
+                        &self.view.hir().expressions[call.expression.0].kind
+                    else {
+                        return Err(invariant(cause));
+                    };
+                    let source::Argument::BorrowRange {
+                        start, end, span, ..
+                    } = args[call.next]
+                    else {
+                        return Err(invariant(cause));
+                    };
+                    self.statement(
+                        OwnedInstruction::PrepareBorrowRange {
+                            call: call.call,
+                            argument: call.next,
+                            loan: LoanId(call.next_loan),
+                            start: self.operand(start)?,
+                            end: self.operand(end)?,
+                        },
+                        span,
+                        span,
+                        span,
+                    )?;
+                    call.next += 1;
+                    call.next_loan += 1;
+                    frames.push(ExprFrame::Call(call), cause)?;
                 }
                 ExprFrame::Prepare(mut call) => {
                     let expression = &self.view.hir().expressions[call.expression.0];
@@ -1270,7 +1641,12 @@ impl<'a, 'b> Walk<'a, 'b> {
                 return Ok(());
             }
             source::ExprKind::Bool(value) => Rvalue::Bool(value),
+            source::ExprKind::Character(value) => Rvalue::Character(value),
             source::ExprKind::I32(value) => Rvalue::I32(value),
+            source::ExprKind::I64(value) => Rvalue::I64(value),
+            source::ExprKind::Float { bits, ty } => Rvalue::Float { bits, ty },
+            source::ExprKind::Integer { bits, ty } => Rvalue::Integer { bits, ty },
+            source::ExprKind::Integer128 { low, high, ty } => Rvalue::Integer128 { low, high, ty },
             source::ExprKind::Unit => Rvalue::Unit,
             source::ExprKind::Binding(binding) => match self.location(binding, span)? {
                 BindingLocation::ScalarValue(local) => Rvalue::Copy(Operand { local, span }),
@@ -1283,6 +1659,42 @@ impl<'a, 'b> Walk<'a, 'b> {
                 operand,
                 name_span,
             } => match op {
+                op @ (source::ConversionOp::ToCharChecked | source::ConversionOp::CharToU32) => {
+                    Rvalue::CharacterConvert {
+                        op,
+                        operand: self.operand(operand)?,
+                        source_expr,
+                        name_span,
+                    }
+                }
+                op @ (source::ConversionOp::ToFloat(_)
+                | source::ConversionOp::FloatToBits
+                | source::ConversionOp::FloatSqrt
+                | source::ConversionOp::FloatFromBits(_)) => Rvalue::FloatConvert {
+                    op,
+                    operand: self.operand(operand)?,
+                    source_expr,
+                    name_span,
+                },
+                source::ConversionOp::ToU8Checked
+                    if self.view.expression_ty(operand) == ValueTy::Scalar(hir::Ty::I64) =>
+                {
+                    Rvalue::CheckedI64ToU8 {
+                        source_expr,
+                        operand: self.operand(operand)?,
+                        name_span,
+                    }
+                }
+                source::ConversionOp::ToU8Checked
+                    if self.view.expression_ty(operand) != ValueTy::Scalar(hir::Ty::I32) =>
+                {
+                    Rvalue::CheckedIntegerCast {
+                        source_expr,
+                        operand: self.operand(operand)?,
+                        target: hir::Ty::U8,
+                        name_span,
+                    }
+                }
                 source::ConversionOp::ToU8Checked => Rvalue::CheckedI32ToU8 {
                     source_expr,
                     operand: self.operand(operand)?,
@@ -1293,15 +1705,82 @@ impl<'a, 'b> Walk<'a, 'b> {
                     operand: self.operand(operand)?,
                     name_span,
                 },
+                source::ConversionOp::ToI64 => Rvalue::WidenI64 {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    name_span,
+                },
+                source::ConversionOp::ToI32Checked
+                    if self.view.expression_ty(operand) == ValueTy::Scalar(hir::Ty::I64) =>
+                {
+                    Rvalue::CheckedI64ToI32 {
+                        source_expr,
+                        operand: self.operand(operand)?,
+                        name_span,
+                    }
+                }
+                source::ConversionOp::ToI32Checked => Rvalue::CheckedIntegerCast {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    target: hir::Ty::I32,
+                    name_span,
+                },
+                source::ConversionOp::ToIntegerChecked(kind) => Rvalue::CheckedIntegerCast {
+                    source_expr,
+                    operand: self.operand(operand)?,
+                    target: hir::Ty::from_extended_integer(kind),
+                    name_span,
+                },
             },
             source::ExprKind::Group(inner) => Rvalue::Copy(self.operand(inner)?),
             source::ExprKind::Negate {
                 operand,
                 operator_span,
-            } => Rvalue::CheckedNegateI32 {
+            } => {
+                if matches!(self.view.expression_ty(id), ValueTy::Scalar(ty) if ty.floating()) {
+                    Rvalue::FloatNegate {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
+                    Rvalue::CheckedNegateI64 {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I32) {
+                    Rvalue::CheckedNegateI32 {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                } else {
+                    Rvalue::CheckedNegateInteger {
+                        operand: self.operand(operand)?,
+                        operator_span,
+                    }
+                }
+            }
+            source::ExprKind::BitNot {
+                operand,
+                operator_span,
+            } => Rvalue::BitNot {
                 operand: self.operand(operand)?,
                 operator_span,
             },
+            source::ExprKind::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let left = self.operand(left)?;
+                let right = self.operand(right)?;
+                Rvalue::Bitwise {
+                    op,
+                    left,
+                    right,
+                    operator_span,
+                }
+            }
             source::ExprKind::Not {
                 operand,
                 operator_span,
@@ -1325,12 +1804,37 @@ impl<'a, 'b> Walk<'a, 'b> {
                 left,
                 right,
                 operator_span,
-            } => Rvalue::CheckedI32 {
-                op,
-                left: self.operand(left)?,
-                right: self.operand(right)?,
-                operator_span,
-            },
+            } => {
+                if matches!(self.view.expression_ty(id), ValueTy::Scalar(ty) if ty.floating()) {
+                    Rvalue::FloatArithmetic {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I64) {
+                    Rvalue::CheckedI64 {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                } else if self.view.expression_ty(id) == ValueTy::Scalar(hir::Ty::I32) {
+                    Rvalue::CheckedI32 {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                } else {
+                    Rvalue::CheckedInteger {
+                        op,
+                        left: self.operand(left)?,
+                        right: self.operand(right)?,
+                        operator_span,
+                    }
+                }
+            }
             source::ExprKind::FieldRead { base, .. } => {
                 let projection = self
                     .view
@@ -1392,6 +1896,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                 },
                 source::Argument::Borrow {
                     kind, place, span, ..
+                }
+                | source::Argument::BorrowRange {
+                    kind, place, span, ..
                 } => {
                     let binding = match place {
                         source::BorrowPlace::Owner(id) | source::BorrowPlace::Forwarded(id) => *id,
@@ -1417,8 +1924,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                         budget::append(
                             &mut out.raw.loans,
                             LoanDecl {
-                                call,
-                                argument,
+                                region: LoanRegion::Call { call, argument },
                                 authority,
                                 projection,
                                 kind: *kind,
@@ -1735,6 +2241,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                 }
             };
             let s = statement.span;
+            if matches!(statement.kind, source::StmtKind::ForRange { .. }) {
+                self.range_loop(statement, &mut frames, &mut loops)?;
+                continue;
+            }
             if let source::StmtKind::While {
                 loop_id,
                 condition,
@@ -1818,7 +2328,8 @@ impl<'a, 'b> Walk<'a, 'b> {
                 continue;
             }
             let root = match statement.kind {
-                source::StmtKind::Let { init, .. }
+                source::StmtKind::DestructureRecord { init, .. }
+                | source::StmtKind::Let { init, .. }
                 | source::StmtKind::Assign { value: init, .. }
                 | source::StmtKind::FieldAssign { value: init, .. }
                 | source::StmtKind::Expr(init) => Some(init),
@@ -1838,6 +2349,144 @@ impl<'a, 'b> Walk<'a, 'b> {
                     frames.push(BodyFrame::MatchArm(cursor), s)?;
                 }
                 source::StmtKind::IndexAssign { .. } => return Err(invariant(s)),
+                source::StmtKind::DestructureRecord {
+                    ref fields, init, ..
+                } => {
+                    let EvaluatedValue::Owned(source) = self.value(init)? else {
+                        return Err(invariant(s));
+                    };
+                    let owned = fields
+                        .iter()
+                        .filter(|field| {
+                            matches!(
+                                self.view.binding_ty(field.binding),
+                                ParameterTy::Value(ValueTy::Owned(_))
+                            )
+                        })
+                        .count();
+                    self.counts.destructured_fields = u32::try_from(budget::add(
+                        self.counts.destructured_fields as usize,
+                        owned,
+                    )?)
+                    .map_err(|_| OwnedFailure::resource("record pattern fields"))?;
+                    self.check_counts()?;
+                    let mut destinations = if self.output.is_some() {
+                        budget::reserve(owned)?
+                    } else {
+                        Vec::new()
+                    };
+                    for field in fields {
+                        match self.view.binding_ty(field.binding) {
+                            ParameterTy::Value(ValueTy::Scalar(_)) => {
+                                let BindingLocation::ScalarValue(destination) =
+                                    self.location(field.binding, field.span)?
+                                else {
+                                    return Err(invariant(field.span));
+                                };
+                                self.statement(
+                                    OwnedInstruction::ReadField {
+                                        destination,
+                                        base: AccessBase::Owner(source),
+                                        field: field.field,
+                                    },
+                                    field.span,
+                                    field.span,
+                                    s,
+                                )?;
+                            }
+                            ParameterTy::Value(ValueTy::Owned(aggregate)) => {
+                                let declaration = &f.bindings[field.binding.0];
+                                let destination = self.owner(
+                                    aggregate,
+                                    OwnerKind::Local { mutable: false },
+                                    declaration.span,
+                                )?;
+                                if let Some(out) = &mut self.output {
+                                    require(out.bindings[field.binding.0].is_none(), field.span)?;
+                                    out.bindings[field.binding.0] =
+                                        Some(BindingLocation::Owner(destination));
+                                    budget::append(
+                                        &mut destinations,
+                                        (field.field, destination),
+                                        owned,
+                                        field.span,
+                                    )?;
+                                }
+                                self.statement(
+                                    OwnedInstruction::StorageLive(destination),
+                                    s,
+                                    declaration.span,
+                                    s,
+                                )?;
+                                self.register(destination, s)?;
+                            }
+                            _ => return Err(invariant(field.span)),
+                        }
+                    }
+                    self.statement(
+                        OwnedInstruction::DestructureRecord {
+                            source,
+                            fields: destinations,
+                        },
+                        s,
+                        s,
+                        s,
+                    )?;
+                    self.end_value(source, s, f.expressions[init.0].span, s)?;
+                }
+                source::StmtKind::BorrowLet {
+                    binding,
+                    kind,
+                    place,
+                    borrow_span,
+                    ..
+                } => {
+                    let root = match place {
+                        source::BorrowPlace::Owner(id) | source::BorrowPlace::Forwarded(id) => id,
+                    };
+                    let authority = self.base(root, borrow_span)?;
+                    let ParameterTy::Reference {
+                        referent,
+                        kind: granted,
+                    } = self.view.binding_ty(binding)
+                    else {
+                        return Err(invariant(s));
+                    };
+                    require(kind == granted, s)?;
+                    let loan = LoanId(self.counts.loans);
+                    self.counts.loans = budget::add(self.counts.loans, 1)?;
+                    self.counts.local_loan_depth_bound = self
+                        .counts
+                        .local_loan_depth_bound
+                        .saturating_add(1)
+                        .min(MAX_LOCAL_REFERENCE_DEPTH as u8);
+                    self.counts.ownership_active = true;
+                    if let Some(out) = &mut self.output {
+                        budget::append(
+                            &mut out.raw.loans,
+                            LoanDecl {
+                                region: LoanRegion::Local,
+                                authority,
+                                projection: Vec::new(),
+                                kind,
+                                referent: BorrowedSlot::check(referent)?,
+                                span: borrow_span,
+                            },
+                            out.expected.loans,
+                            borrow_span,
+                        )?;
+                        require(out.bindings[binding.0].is_none(), s)?;
+                        out.bindings[binding.0] = Some(BindingLocation::LocalReference(loan));
+                    }
+                    self.statement(
+                        OwnedInstruction::AcquireLocalBorrow(loan),
+                        borrow_span,
+                        borrow_span,
+                        borrow_span,
+                    )?;
+                    let tag = budget::add(budget::mul(loan.0, 2)?, 1)?;
+                    self.register_slot(LexicalSlot(tag), s)?;
+                }
                 source::StmtKind::Let { binding, init } => match self.value(init)? {
                     EvaluatedValue::Scalar(value) => match self.location(binding, s)? {
                         BindingLocation::ScalarValue(destination) => {
@@ -2067,7 +2716,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                         s,
                     )?;
                 }
-                source::StmtKind::While { .. } => return Err(invariant(s)),
+                source::StmtKind::While { .. } | source::StmtKind::ForRange { .. } => {
+                    return Err(invariant(s))
+                }
             }
         }
         require(
@@ -2148,7 +2799,7 @@ pub(super) fn scratch_bytes(view: &TypedOwnedFunction<'_>, count: Counts) -> Res
             view.hir().expressions.len(),
             size_of::<Option<EvaluatedValue>>(),
         ),
-        (count.owners, size_of::<OwnerPlaceId>()),
+        (lexical_capacity(view, count)?, size_of::<LexicalSlot>()),
     ] {
         bytes = budget::add(bytes, budget::mul(n, width)?)?;
     }
@@ -2373,6 +3024,26 @@ pub(super) fn lower_with_limits(
                     typed.index().sources().eof(),
                 )?;
             }
+        }
+    }
+    for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if typed
+            .index()
+            .builtin_set()
+            .experimental()
+            .contains(kind.item())
+        {
+            let function = super::experimental_lower::function(typed.index(), kind)?;
+            bytes = budget::add(
+                bytes,
+                budget::function_bytes(super::experimental_lower::counts(kind))?,
+            )?;
+            budget::append(
+                &mut functions,
+                function,
+                typed.index().function_count(),
+                typed.index().sources().eof(),
+            )?;
         }
     }
     if bytes != expected.raw_bytes {

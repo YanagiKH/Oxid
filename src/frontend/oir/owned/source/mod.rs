@@ -2,11 +2,16 @@
 pub(super) mod association;
 mod budget;
 mod builtin_lower;
+mod byte_string_resources;
+mod experimental_lower;
 pub(super) mod hir;
 mod hir_budget;
 pub(super) mod lower;
 mod owned_enum_resources;
 mod program;
+#[cfg(test)]
+mod record_enum_field_tests;
+mod record_enum_layouts;
 pub(in crate::frontend::oir) mod resolve;
 mod resolver_storage;
 #[cfg(test)]
@@ -15,6 +20,8 @@ mod type_storage;
 pub(in crate::frontend::oir) mod typeck;
 pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
 mod diagnostic;
+#[cfg(test)]
+mod range_for_tests;
 
 /// Test subprocesses reuse the authoritative denial presentation. This exposes
 /// no source producer, owner, proof or execution capability.
@@ -30,9 +37,17 @@ pub(super) fn raw_verification_diagnostic(
 mod diagnostic_tests;
 
 #[cfg(test)]
+mod integer_width_tests;
+
+#[cfg(test)]
+mod byte_integer_tests;
+
+#[cfg(test)]
 mod budget_tests;
 #[cfg(test)]
 mod lower_tests;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod resource_native_tests;
 
 #[cfg(test)]
 mod reviewer_heldout;
@@ -93,3 +108,18 @@ mod byte_storage_fuel_tests;
 
 #[cfg(test)]
 mod byte_storage_authority_tests;
+
+#[cfg(test)]
+mod integer128_tests;
+
+#[cfg(test)]
+mod integer_bit_tests;
+
+#[cfg(test)]
+mod float_tests;
+
+#[cfg(test)]
+mod character_tests;
+
+#[cfg(test)]
+mod record_pattern_tests;

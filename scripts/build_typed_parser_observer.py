@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from legacy_scalar_observer_u8 import adapt_wrapper as _adapt_wrapper, SCHEMA
+from legacy_scalar_observer_local_references import adapt_wrapper as _adapt_wrapper, SCHEMA
 
 
 def adapt_wrapper(name, original):
@@ -21,13 +21,17 @@ def adapt_wrapper(name, original):
 
 SOURCE_FILES = (
     "lexer.rs", "diagnostic.rs", "source.rs", "project/budget.rs",
-    "ast.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs",
-    "owned_diagnostic.rs", "builtin_catalog.rs", "hir.rs",
-    "declaration_index.rs", "declaration_index/enum_views.rs",
+    "ast.rs", "ast/generic_syntax.rs", "byte_strings.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs", "parser/characters.rs",
+    "owned_diagnostic.rs", "builtin_catalog.rs", "experimental_builtins.rs", "hir.rs",
+    "declaration_index.rs", "declaration_index/generics.rs",
+    "declaration_index/generics/flow.rs", "declaration_index/generics/nominal.rs",
+    "declaration_index/generics/inference.rs",
+    "declaration_index/enum_views.rs",
     "declaration_index/resource.rs", "declaration_index/sealed.rs",
     "declaration_index/u8_reservation.rs",
-    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs",
-    "oir/owned_types.rs", "oir/owned_types/enums.rs",
+    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs", "project/editor_sources.rs",
+    "oir/owned_types.rs", "oir/owned_types/enums.rs", "oir/owned_types/resources.rs",
+    "oir/owned_types/composition.rs",
 )
 WRAPPER_FILES = (
     ("main.rs", "main.rs"),

@@ -72,7 +72,12 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
     let case = Case::new(SOURCE);
     for output in ["existing", "fresh"] {
         let text = diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
-        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if cfg!(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             if output == "existing" {
                 assert!(text.contains("native output already exists"), "{text}");
             } else {
@@ -81,7 +86,7 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
             }
         } else {
             assert!(
-                text.contains("native preview requires a Linux x86_64 build host"),
+                text.contains("native builds require a Linux x86_64 or ARM64 host"),
                 "{text}"
             );
         }
@@ -109,7 +114,7 @@ fn byte_storage_native_public_entry_and_capacity_refuse_before_tool_and_output()
 #[test]
 fn byte_storage_native_public_unsupported_target_has_no_artifact_effects() {
     let case = Case::new(SOURCE);
-    let output = case.compile("fresh", &["--target=aarch64-unknown-linux-gnu"]);
+    let output = case.compile("fresh", &["--target=riscv64-unknown-linux-gnu"]);
     assert_eq!(output.status.code(), Some(1));
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("E0001"), "{text}");
@@ -118,28 +123,14 @@ fn byte_storage_native_public_unsupported_target_has_no_artifact_effects() {
 
 #[test]
 fn byte_storage_public_excluded_spellings_fail_before_native_tools() {
-    // Owned fixed-array payloads are supported. Bare u8 payloads, numeric
-    // suffixes and repetition syntax remain excluded.
-    for (source, code, message, selected) in [
-        (
-            "enum E{V(u8)}fn main()->i32{return 0;}",
-            "E0100",
-            "only bool, i32 and () enum payloads are supported",
-            "u8",
-        ),
-        (
-            "fn main()->i32{let a=[1u8];return 0;}",
-            "E0101",
-            "unsupported numeric spelling; expected ASCII decimal literal digits",
-            "1u8",
-        ),
-        (
-            "fn f(b:u8)->i32{let a=[b;2];return 0;}",
-            "E0101",
-            "unsupported typed-preview construct `;`",
-            ";",
-        ),
-    ] {
+    // Byte enum payloads and suffixes are admitted; array repetition remains
+    // excluded and must fail before tool discovery or output replacement.
+    for (source, code, message, selected) in [(
+        "fn f(b:u8)->i32{let a=[b;2];return 0;}",
+        "E0101",
+        "unsupported typed-preview construct `;`",
+        ";",
+    )] {
         let case = Case::new(source);
         let start = source.find(selected).unwrap();
         let end = start + selected.len();
@@ -248,28 +239,34 @@ fn byte_storage_public_identical_module_text_keeps_runtime_file_identity() {
 
 #[test]
 fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() {
-    // All five exact diagnostic templates and selected token ranges were
-    // independently replayed on b5455ad bool-slice analogues before execution.
-    for (source, marker, offset, length, message) in [
+    // Reference annotations now parse; assigning an ordinary value to one
+    // remains a source error before native tools or output changes.
+    for (source, marker, offset, length, code, stage, message) in [
         (
             "fn f(p:&[u8])->&[u8]{return p;}",
             ")->&",
             3,
             1,
+            "E0101",
+            "parse",
             "unsupported typed-preview construct `&`",
         ),
         (
             "fn f(p:&[u8])->i32{let q:&[u8]=p;return 0;}",
             "q:&",
             2,
-            1,
-            "unsupported typed-preview construct `&`",
+            5,
+            "E0202",
+            "resolve",
+            "reference annotation requires a borrowed initializer",
         ),
         (
             "struct R{p:&[u8]}fn main()->i32{return 0;}",
             "p:&",
             2,
             1,
+            "E0101",
+            "parse",
             "unsupported typed-preview construct `&`",
         ),
         (
@@ -277,6 +274,8 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
             "0..1",
             0,
             4,
+            "E0101",
+            "parse",
             "unsupported numeric spelling; expected ASCII decimal literal digits",
         ),
         (
@@ -284,15 +283,17 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
             "p[0]",
             1,
             1,
+            "E0101",
+            "parse",
             "unsupported typed-preview construct `[`",
         ),
     ] {
         let case = Case::new(source);
         let start = source.find(marker).unwrap() + offset;
         let end = start + length;
-        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0101\",\"stage\":\"parse\",\"message\":\"{message}\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
+        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"{code}\",\"stage\":\"{stage}\",\"message\":\"{message}\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
         for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), "E0101", "parse");
+            let text = diagnostic(case.compile(output, &[]), code, stage);
             assert_eq!(text.lines().count(), 2);
             assert_eq!(text.lines().next(), Some(expected.as_str()));
             case.unchanged();
@@ -301,25 +302,17 @@ fn byte_storage_public_slice_value_and_element_reference_grammar_stays_closed() 
 }
 
 #[test]
-fn byte_storage_public_record_reference_projection_stops_at_declaration() {
-    // The sealed direct/unused-record oracle fixes E0202 at the full field type.
-    // A whole-record reference and unused projection cannot get past that gate.
+fn byte_storage_public_record_reference_projection_checks_without_effects() {
     for n in [0, 1, 1024] {
-        let ty = format!("[u8;{n}]");
         let source = format!(
-            "struct R{{a:{ty}}}fn f(r:&R)->i32{{return r.a.len();}}fn main()->i32{{return 0;}}"
+            "struct R{{a:[u8;{n}]}}fn f(r:&R)->i32{{return r.a.len();}}fn main()->i32{{return 0;}}"
         );
         let case = Case::new(&source);
-        let start = source.find(&ty).unwrap();
-        let end = start + ty.len();
-        let expected = format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"diagnostic\",\"severity\":\"error\",\"code\":\"E0202\",\"stage\":\"resolve\",\"message\":\"u8 array record fields are not supported\",\"primary\":{{\"file_id\":0,\"path\":\"main.ox\",\"start\":{start},\"end\":{end},\"line\":1,\"column\":{},\"end_line\":1,\"end_column\":{}}},\"secondary\":[],\"notes\":[]}}", start+1, end+1);
-        for output in ["existing", "fresh"] {
-            let text = diagnostic(case.compile(output, &[]), "E0202", "resolve");
-            assert_eq!(text.lines().count(), 2);
-            assert_eq!(text.lines().next(), Some(expected.as_str()));
-            assert!(!text.contains("E0701"));
-            case.unchanged();
-        }
+        let checked = source_command(&case, "check", true);
+        assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+        assert!(checked.stderr.is_empty(), "{checked:?}");
+        assert_eq!(checked.stdout, b"{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"check-summary\",\"success\":true,\"errors\":0,\"functions\":2}\n");
+        case.unchanged();
     }
 }
 

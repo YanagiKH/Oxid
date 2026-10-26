@@ -39,6 +39,56 @@ ENUM_PROJECTS = {
 }
 ENUM_LIBRARY = "examples/projects/owned_enum_payload_acceptance/library"
 ENUM_MEMBERS = {member for members in ENUM_PROJECTS.values() for member in members}
+BUFFER_PROJECTS = {
+    "apps/byte-reverse": (
+        "apps/byte-reverse/app/src/main.ox",
+        "apps/byte-reverse/binary/src/lib.ox",
+        "apps/byte-reverse/reverse/src/lib.ox",
+    ),
+}
+BUFFER_MEMBERS = {member for members in BUFFER_PROJECTS.values() for member in members}
+TEXT_PROJECTS = {
+    "packages/utf8_text": ("packages/utf8_text/src/lib.ox",),
+    "apps/utf8-normalize": (
+        "apps/utf8-normalize/app/src/main.ox",
+        "apps/utf8-normalize/contracts/src/main.ox",
+    ),
+}
+TEXT_MEMBERS = {member for members in TEXT_PROJECTS.values() for member in members}
+UNICODE_PROJECTS = {"examples/typed-unicode-range": ("examples/typed-unicode-range/src/main.ox",)}
+UNICODE_MEMBERS = {member for members in UNICODE_PROJECTS.values() for member in members}
+VECTOR_PROJECTS = {
+    "packages/float_vector": ("packages/float_vector/src/lib.ox",),
+    "examples/typed-float-vector": (
+        "examples/typed-float-vector/src/main.ox", "examples/typed-float-vector/tests/vector.ox",
+    ),
+}
+VECTOR_MEMBERS = {member for members in VECTOR_PROJECTS.values() for member in members}
+MATRIX_PROJECTS = {
+    "packages/matrix": ("packages/matrix/src/lib.ox",),
+    "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
+}
+MATRIX_MEMBERS = {member for members in MATRIX_PROJECTS.values() for member in members}
+
+CPU_PROJECTS = {
+    "apps/cpu-training": tuple("apps/cpu-training/" + name for name in (
+        "checkpoint/src/lib.ox", "checkpoint/src/pipeline.ox", "checkpoint/src/training.ox",
+        "tensor/src/codec.ox", "tensor/src/data.ox", "tensor/src/data/checkpoint.ox",
+        "tensor/src/data/sampler_checkpoint.ox", "tensor/src/data/session.ox", "tensor/src/graph.ox",
+        "tensor/src/lib.ox", "tensor/src/model.ox", "tensor/src/model/checkpoint.ox",
+        "tensor/src/model/session.ox", "tensor/src/optimizer.ox", "tensor/src/optimizer/checkpoint.ox",
+        "trainer/src/main.ox", "trainer/src/options.ox", "trainer/src/report.ox", "trainer/src/training.ox",
+        "trainer/tests/optimizers.ox", "trainer/tests/tensor.ox",
+    )),
+    "apps/minibatch-training": tuple("apps/minibatch-training/" + name for name in (
+        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/data.ox",
+    )),
+    "apps/streaming-training": tuple("apps/streaming-training/" + name for name in (
+        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox", "reader/src/lib.ox",
+    )),
+}
+
+CPU_MEMBERS = {member for members in CPU_PROJECTS.values() for member in members}
 
 WIDE_FILES = tuple("fixtures/typed-parser-wide-span/" + name + ".ox" for name in (
     "parser_main", "parser_state", "parser_signature", "parser_atom", "parser_call",
@@ -210,8 +260,62 @@ class PublishedRegistrationTests(unittest.TestCase):
             application + "/src/main.ox", application + "/tests/counts.ox",
             application + "/packages/counts/src/lib.ox", application + "/packages/report/src/lib.ox",
         )
-        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS, {application: application_members, **ENUM_PROJECTS})
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS, (ENUM_LIBRARY,))
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS,
+                         {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS})
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
+                         (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
+        self.assertEqual(len(CPU_MEMBERS), 32)
+        self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
+        self.assertEqual([row for row in check_inventory if row[0] in CPU_PROJECTS], [("apps/cpu-training", True), ("apps/minibatch-training", True), ("apps/streaming-training", True)])
+        self.assertFalse(any(name in CPU_MEMBERS for name, _ in check_inventory + run_inventory))
+        self.assertFalse(any(name in CPU_PROJECTS for name, _ in run_inventory))
+        language = [name for name in language if name not in CPU_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in CPU_PROJECTS]
+        typed_members -= len(CPU_MEMBERS)
+        self.assertEqual([name for name in language if name in MATRIX_MEMBERS], sorted(MATRIX_MEMBERS))
+        self.assertEqual({row for row in check_inventory if row[0] in MATRIX_PROJECTS}, {(name, True) for name in MATRIX_PROJECTS})
+        self.assertEqual({row for row in run_inventory if row[0] in MATRIX_PROJECTS}, {("examples/typed-matrix", True)})
+        self.assertFalse(any(name in MATRIX_MEMBERS for name, _ in check_inventory + run_inventory))
+        language = [name for name in language if name not in MATRIX_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in MATRIX_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in MATRIX_PROJECTS]
+        typed_members -= len(MATRIX_MEMBERS)
+        typed_entries = [path for path in typed_entries if path.relative_to(root).as_posix() not in MATRIX_PROJECTS]
+        self.assertEqual([name for name in language if name in VECTOR_MEMBERS], sorted(VECTOR_MEMBERS))
+        self.assertEqual({row for row in check_inventory if row[0] in VECTOR_PROJECTS},
+                         {(name, True) for name in VECTOR_PROJECTS})
+        self.assertEqual({row for row in run_inventory if row[0] in VECTOR_PROJECTS},
+                         {("examples/typed-float-vector", True)})
+        self.assertFalse(any(name in VECTOR_MEMBERS for name, _ in check_inventory + run_inventory))
+        language = [name for name in language if name not in VECTOR_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in VECTOR_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in VECTOR_PROJECTS]
+        typed_members -= len(VECTOR_MEMBERS)
+        typed_entries = [path for path in typed_entries if path.relative_to(root).as_posix() not in VECTOR_PROJECTS]
+        self.assertEqual([name for name in language if name in UNICODE_MEMBERS], sorted(UNICODE_MEMBERS))
+        self.assertEqual({row for row in check_inventory if row[0] in UNICODE_PROJECTS},
+                         {(name, True) for name in UNICODE_PROJECTS})
+        self.assertFalse(any(name in UNICODE_MEMBERS | UNICODE_PROJECTS.keys() for name, _ in run_inventory))
+        language = [name for name in language if name not in UNICODE_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in UNICODE_PROJECTS]
+        typed_members -= len(UNICODE_MEMBERS)
+        self.assertEqual(len(TEXT_MEMBERS), 3)
+        self.assertEqual([name for name in language if name in TEXT_MEMBERS], sorted(TEXT_MEMBERS))
+        self.assertEqual({row for row in check_inventory if row[0] in TEXT_PROJECTS},
+                         {(name, True) for name in TEXT_PROJECTS})
+        self.assertFalse(any(name in TEXT_MEMBERS | TEXT_PROJECTS.keys() for name, _ in run_inventory))
+        language = [name for name in language if name not in TEXT_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in TEXT_PROJECTS]
+        typed_members -= len(TEXT_MEMBERS)
+        self.assertEqual(len(BUFFER_MEMBERS), 3)
+        self.assertEqual([name for name in language if name in BUFFER_MEMBERS], sorted(BUFFER_MEMBERS))
+        self.assertEqual([row for row in check_inventory if row[0] in BUFFER_PROJECTS],
+                         [("apps/byte-reverse", True)])
+        self.assertFalse(any(name in BUFFER_MEMBERS | BUFFER_PROJECTS.keys()
+                             for name, _ in run_inventory))
+        language = [name for name in language if name not in BUFFER_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in BUFFER_PROJECTS]
+        typed_members -= len(BUFFER_MEMBERS)
         self.assertEqual(len(ENUM_MEMBERS), 11)
         self.assertEqual([name for name in language if name in ENUM_MEMBERS], sorted(ENUM_MEMBERS))
         self.assertEqual({row for row in check_inventory if row[0] in ENUM_PROJECTS},
@@ -427,7 +531,22 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected_commands])
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
-        manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS}
+        buffer_calls = [call for call in run.call_args_list
+                        if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/byte-reverse"]
+        self.assertEqual([call.args[0] for call in buffer_calls],
+                         [[str(Path(sys.executable).resolve()), "check"]])
+        for name in TEXT_PROJECTS | UNICODE_PROJECTS:
+            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
+            self.assertEqual([call.args[0] for call in calls], [[str(Path(sys.executable).resolve()), "check"]])
+        for name in VECTOR_PROJECTS | MATRIX_PROJECTS:
+            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
+            expected_commands = ("check",) if name in ("packages/float_vector", "packages/matrix") else ("check", "run", "test")
+            self.assertEqual([call.args[0] for call in calls],
+                             [[str(Path(sys.executable).resolve()), command] for command in expected_commands])
+            self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
+        cpu_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/cpu-training"]
+        self.assertEqual([call.args[0] for call in cpu_calls], [[str(Path(sys.executable).resolve()), "check"]])
+        manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS | BUFFER_PROJECTS | TEXT_PROJECTS | UNICODE_PROJECTS | VECTOR_PROJECTS | MATRIX_PROJECTS | CPU_PROJECTS}
         commands = [call.args[0] for call in run.call_args_list if call.kwargs.get("cwd") not in manifest_roots]
         byte_pilot = str(verify_repo.ROOT / BYTE_PILOT)
         self.assertEqual([command[1] for command in commands if byte_pilot in command], ["check", "run"])
@@ -493,13 +612,13 @@ class PublishedRegistrationTests(unittest.TestCase):
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
         application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
-        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
-                      f"{131 + 2 + len(ENUM_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
-                      "81 runnable programs", output.getvalue())
-        self.assertIn("6 manifest projects checked; 5 run; 2 tested", output.getvalue())
+        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
+                      f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
+                      "83 runnable programs", output.getvalue())
+        self.assertIn("17 manifest projects checked; 7 run; 4 tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(additional_members)} typed source members / "
-                      "14 typed entry runs", output.getvalue())
+                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(additional_members)} typed source members / "
+                      "16 typed entry runs", output.getvalue())
         self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
                       output.getvalue())

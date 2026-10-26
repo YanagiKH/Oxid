@@ -50,7 +50,10 @@ mod tests {
         sources.add("byte-storage-fixed-resource.ox".into(), "x".into());
         let at = sources.get(SourceFileId(0)).span(0, 1);
         let plan = HirPlan::calculate(HirCounts::default(), at).unwrap();
-        let successor = fixed_bytes();
+        let successor = fixed_bytes()
+            + super::super::byte_string_successor_bytes(0)
+            + super::super::file_index_successor_bytes()
+            + super::super::file_projection_successor_bytes();
         let inherited = plan.total.checked_sub(successor).unwrap();
         // Independently executed immutable b5455ad baseline unit probe:
         // c3a_complete_fallible_return_envelopes_and_copies_are_prepaid.

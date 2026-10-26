@@ -38,10 +38,15 @@ pub(in crate::frontend) fn check_source<'s>(
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
     let owner =
         SourceOwner::original(source, ast, SourceView::Map(sources)).map_err(|e| vec![*e])?;
-    let (body, entry) = if !ast.enums.is_empty() {
+    let (body, entry) = if !ast.enums.is_empty() || ast.has_range_for() {
         let (program, entry) = owned::source::check_enum_source(owner)?;
         (CheckedBody::Owned(program), entry)
-    } else if ast.uses_owned_syntax(source) {
+    } else if ast.uses_owned_syntax(source)
+        || ast.uses_byte_scalars(source)
+        || ast.uses_bitwise_syntax()
+        || ast.uses_float_syntax(source)
+        || ast.uses_character_syntax(source)
+    {
         let resolved = owned::source::resolve::resolve_sources(owner)?;
         let typed = owned::source::typeck::check(resolved)?;
         let entry = typed.entry();
@@ -197,7 +202,7 @@ fn check_project_owner<'s>(
             )
         }
         ProjectRoute::Owned => {
-            let typed = if frozen.enum_count() != 0 {
+            let typed = if owned::source::resolve::requires_paid_source(&frozen) {
                 owned::source::resolve::type_enum_source(&frozen, work, allocator)?
             } else {
                 let resolved = owned::source::resolve::resolve_project(&frozen, work)?;
@@ -238,6 +243,7 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => program.function_count(),
         }
     }
+    #[cfg(test)]
     pub(in crate::frontend) fn run(&self) -> Result<Scalar, Box<Diagnostic>> {
         match &self.body {
             CheckedBody::Scalar(program) => program
@@ -249,7 +255,150 @@ impl CheckedSourceProgram<'_> {
     pub(in crate::frontend) fn native_module(&self) -> Result<String, Box<Diagnostic>> {
         match &self.body {
             CheckedBody::Scalar(program) => program.native_module(self.entry, self.sources),
-            CheckedBody::Owned(program) => program.native_module(self.entry, self.sources),
+            CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                false,
+                crate::frontend::build_config::ExecutionPolicy::Bounded,
+                None,
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)] // Retained narrow facade for private predecessor consumers.
+    pub(in crate::frontend) fn run_with_execution(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, Box<Diagnostic>> {
+        if !execution.hosted() {
+            return self.run();
+        }
+        match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(self.entry, execution)
+                .map_err(|error| error.diagnostic(self.sources)),
+            CheckedBody::Owned(program) => {
+                program.run_with_execution(self.entry, self.sources, execution)
+            }
+        }
+    }
+
+    pub(in crate::frontend) fn run_result(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeValue, Box<Diagnostic>> {
+        match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(self.entry, execution)
+                .map(RuntimeValue::from)
+                .map_err(|error| error.diagnostic(self.sources)),
+            CheckedBody::Owned(program) => program.run_result(self.entry, self.sources, execution),
+        }
+    }
+
+    #[allow(dead_code)] // Retained checked scalar facade for internal consumers.
+    pub(in crate::frontend) fn run_value(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeScalar, Box<Diagnostic>> {
+        match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(self.entry, execution)
+                .map(RuntimeScalar::from)
+                .map_err(|error| error.diagnostic(self.sources)),
+            CheckedBody::Owned(program) => program.run_value(self.entry, self.sources, execution),
+        }
+    }
+
+    pub(in crate::frontend) fn native_module_with_execution(
+        &self,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !execution.hosted() {
+            return match (process, names) {
+                (false, None) => self.native_module(),
+                (true, None) => self.native_process_module(),
+                (false, Some(names)) => self.native_module_with_source_names(names),
+                (true, Some(names)) => self.native_process_module_with_source_names(names),
+            };
+        }
+        if process {
+            self.process_preflight()?;
+        }
+        match &self.body {
+            CheckedBody::Scalar(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
+            CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
+        }
+    }
+
+    pub(in crate::frontend) fn native_optimized_module_with_execution(
+        &self,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+        debug: bool,
+    ) -> Result<String, Box<Diagnostic>> {
+        if process {
+            self.process_preflight()?;
+        }
+        match &self.body {
+            CheckedBody::Scalar(_) => {
+                if debug {
+                    self.native_debug_module_with_execution(process, execution, names)
+                } else {
+                    self.native_module_with_execution(process, execution, names)
+                }
+            }
+            CheckedBody::Owned(program) => program.native_optimized_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+                debug,
+            ),
+        }
+    }
+
+    pub(in crate::frontend) fn native_debug_module_with_execution(
+        &self,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if process {
+            self.process_preflight()?;
+        }
+        match &self.body {
+            CheckedBody::Scalar(program) => program.native_debug_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
+            CheckedBody::Owned(program) => program.native_debug_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
         }
     }
 
@@ -261,9 +410,13 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Scalar(program) => {
                 program.native_module_with_source_names(self.entry, self.sources, names)
             }
-            CheckedBody::Owned(program) => {
-                program.native_module_with_source_names(self.entry, self.sources, names)
-            }
+            CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                false,
+                crate::frontend::build_config::ExecutionPolicy::Bounded,
+                Some(names),
+            ),
         }
     }
     /// A single source-owned signature rule serves both public process consumers.
@@ -332,6 +485,38 @@ impl CheckedSourceProgram<'_> {
                 .run(Some(entry))
                 .map_err(|error| error.diagnostic(self.sources))?,
             CheckedBody::Owned(program) => program.run_process(entry, self.sources)?,
+        };
+        match value {
+            Scalar::I32(status @ 0..=255) => Ok(status),
+            _ => Err(Diagnostic::new(
+                "E0600",
+                "oir-run",
+                "process main must return a status in 0..255",
+                Some(span),
+            )
+            .into()),
+        }
+    }
+
+    pub(in crate::frontend) fn run_process_with_execution(
+        &self,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<i32, ProcessFailure> {
+        if !execution.hosted() {
+            return self.run_process();
+        }
+        self.require_process_host()?;
+        if !super::super::process::setup() {
+            return Err(ProcessFailure::Setup);
+        }
+        let (entry, span) = self.checked_process_entry()?;
+        let value = match &self.body {
+            CheckedBody::Scalar(program) => program
+                .run_with_execution(Some(entry), execution)
+                .map_err(|error| error.diagnostic(self.sources))?,
+            CheckedBody::Owned(program) => {
+                program.run_process_with_execution(entry, self.sources, execution)?
+            }
         };
         match value {
             Scalar::I32(status @ 0..=255) => Ok(status),

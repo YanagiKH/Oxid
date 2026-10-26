@@ -206,16 +206,53 @@ impl<'a> Fingerprint<'a> {
         self.tag(match element {
             ArrayElementTypeSyntax::Bool => "bool-element",
             ArrayElementTypeSyntax::I32 => "i32-element",
+            ArrayElementTypeSyntax::I64 => "i64-element",
+            ArrayElementTypeSyntax::Char => "char-element",
+            ArrayElementTypeSyntax::Float(kind) => kind.spelling(),
+            ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
             ArrayElementTypeSyntax::U8 => "u8-element",
             ArrayElementTypeSyntax::Unit => "unit-element",
         });
         self.count(usize::from(length));
     }
 
+    fn generics(&mut self, declaration: Span) {
+        let parameters = self.program.generic_parameters(declaration);
+        if parameters.is_empty() {
+            return;
+        }
+        self.tag("generic-parameters");
+        self.count(parameters.len());
+        for parameter in parameters {
+            self.spelling(parameter.name);
+            self.span(parameter.span);
+            self.count(parameter.bounds.len());
+            for bound in &parameter.bounds {
+                self.path(*bound);
+            }
+        }
+    }
+
     fn ty(&mut self, ty: TypeSyntax) {
         let TypeSyntax { span, kind } = ty;
         self.span(span);
         match kind {
+            TypeSyntaxKind::Applied(id)
+            | TypeSyntaxKind::AppliedReference {
+                application: id, ..
+            } => {
+                self.tag("applied-type");
+                self.flag(matches!(kind, TypeSyntaxKind::AppliedReference { .. }));
+                if let TypeSyntaxKind::AppliedReference { mutable, .. } = kind {
+                    self.flag(mutable);
+                }
+                let app = self.program.generic_application(id).unwrap();
+                self.path(app.path);
+                self.count(app.arguments.len());
+                for argument in &app.arguments {
+                    self.ty(*argument);
+                }
+            }
             TypeSyntaxKind::Name(path) => {
                 self.tag("name-type");
                 self.path(path);
@@ -231,6 +268,10 @@ impl<'a> Fingerprint<'a> {
                 self.tag(match element {
                     ArrayElementTypeSyntax::Bool => "bool",
                     ArrayElementTypeSyntax::I32 => "i32",
+                    ArrayElementTypeSyntax::I64 => "i64",
+                    ArrayElementTypeSyntax::Char => "char-element",
+                    ArrayElementTypeSyntax::Float(kind) => kind.spelling(),
+                    ArrayElementTypeSyntax::Integer(kind) => kind.spelling(),
                     ArrayElementTypeSyntax::U8 => "u8",
                     ArrayElementTypeSyntax::Unit => "unit",
                 });
@@ -263,6 +304,18 @@ impl<'a> Fingerprint<'a> {
                 self.flag(*mutable);
                 self.span(*span);
                 match *place {
+                    BorrowPlace::Range {
+                        name,
+                        start,
+                        end,
+                        star,
+                    } => {
+                        self.tag("range");
+                        self.access_path(name);
+                        self.flag(star.is_some());
+                        self.expression(start);
+                        self.expression(end);
+                    }
                     BorrowPlace::OwnerName(name) => {
                         self.tag("owner");
                         self.access_path(name);
@@ -288,14 +341,84 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::Borrow {
+                mutable,
+                name,
+                forwarded,
+            } => {
+                self.tag("local-reference");
+                self.flag(*mutable);
+                self.spelling(*name);
+                self.flag(*forwarded);
+            }
+            ExprKind::GenericVariant {
+                application,
+                variant,
+                args,
+            } => {
+                self.tag("generic-variant");
+                let app = self.program.generic_application(*application).unwrap();
+                self.path(app.path);
+                self.count(app.arguments.len());
+                for argument in &app.arguments {
+                    self.ty(*argument);
+                }
+                self.spelling(*variant);
+                self.flag(args.is_some());
+                if let Some(args) = args {
+                    self.count(args.len());
+                    for arg in args {
+                        self.argument(arg);
+                    }
+                }
+            }
+            ExprKind::Character(value) => {
+                self.tag("character");
+                self.count(u32::from(*value) as usize);
+            }
+            ExprKind::BitNot {
+                operand,
+                operator_span,
+            } => {
+                self.tag("bit-not");
+                self.span(*operator_span);
+                self.expression(*operand);
+            }
+            ExprKind::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                self.tag("bitwise");
+                self.count(*op as usize);
+                self.span(*operator_span);
+                self.expression(*left);
+                self.expression(*right);
+            }
             ExprKind::Conversion {
                 op,
                 operand,
                 name_span,
             } => {
                 self.tag(match op {
+                    ConversionOp::ToFloat(crate::frontend::ast::FloatTypeSyntax::F32) => "to-f32",
+                    ConversionOp::ToFloat(crate::frontend::ast::FloatTypeSyntax::F64) => "to-f64",
+                    ConversionOp::ToCharChecked => "to-char-checked",
+                    ConversionOp::CharToU32 => "char-to-u32",
+                    ConversionOp::FloatToBits => "float-to-bits",
+                    ConversionOp::FloatSqrt => "float-sqrt",
+                    ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F32) => {
+                        "f32-from-bits"
+                    }
+                    ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F64) => {
+                        "f64-from-bits"
+                    }
                     ConversionOp::ToU8Checked => "to-u8-checked",
                     ConversionOp::ToI32 => "to-i32",
+                    ConversionOp::ToI64 => "to-i64",
+                    ConversionOp::ToI32Checked => "to-i32-checked",
+                    ConversionOp::ToIntegerChecked(kind) => kind.checked_conversion(),
                 });
                 self.spelling(*name_span);
                 self.expression(*operand);
@@ -356,6 +479,36 @@ impl<'a> Fingerprint<'a> {
                 self.tag("number");
                 self.spelling(*digits);
                 self.flag(*negative);
+            }
+            ExprKind::I64Number { digits, negative } => {
+                self.tag("number-i64");
+                self.spelling(*digits);
+                self.flag(*negative);
+            }
+            ExprKind::FloatNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                self.tag("float-number");
+                self.tag(kind.spelling());
+                self.spelling(*digits);
+                self.flag(*negative);
+            }
+            ExprKind::IntegerNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                self.tag("integer-number");
+                self.tag(kind.spelling());
+                self.spelling(*digits);
+                self.flag(*negative);
+            }
+            ExprKind::ByteString { contents, length } => {
+                self.tag("byte-string");
+                self.spelling(*contents);
+                self.count(usize::from(*length));
             }
             ExprKind::Unit => self.tag("unit"),
             ExprKind::Name(name) => {
@@ -440,6 +593,21 @@ impl<'a> Fingerprint<'a> {
         let Stmt { kind, span } = statement;
         self.span(*span);
         match kind {
+            StmtKind::DestructureRecord {
+                record,
+                fields,
+                init,
+            } => {
+                self.tag("record-pattern");
+                self.path(*record);
+                self.count(fields.len());
+                for field in fields {
+                    self.spelling(field.field);
+                    self.spelling(field.binding);
+                    self.span(field.span);
+                }
+                self.expression(*init);
+            }
             StmtKind::Let {
                 mutable,
                 name,
@@ -519,6 +687,18 @@ impl<'a> Fingerprint<'a> {
             StmtKind::While { condition, body } => {
                 self.tag("while");
                 self.expression(*condition);
+                self.block(function, blocks, *body);
+            }
+            StmtKind::ForRange {
+                name,
+                start,
+                end,
+                body,
+            } => {
+                self.tag("for-range");
+                self.spelling(*name);
+                self.expression(*start);
+                self.expression(*end);
                 self.block(function, blocks, *body);
             }
             StmtKind::If {
@@ -615,6 +795,7 @@ impl<'a> Fingerprint<'a> {
                     self.tag("struct");
                     self.optional_span(*public);
                     self.spelling(*name);
+                    self.generics(*name);
                     self.span(*span);
                     self.span(*end);
                     self.count(fields.len());
@@ -646,6 +827,7 @@ impl<'a> Fingerprint<'a> {
                     self.tag("function");
                     self.optional_span(*public);
                     self.spelling(*name);
+                    self.generics(*name);
                     self.span(*end);
                     self.count(params.len());
                     for Param { name, ty } in params {
@@ -664,6 +846,7 @@ impl<'a> Fingerprint<'a> {
                     self.tag("enum");
                     self.optional_span(enumeration.public);
                     self.spelling(enumeration.name);
+                    self.generics(enumeration.name);
                     self.span(enumeration.span);
                     self.span(enumeration.end);
                     self.count(enumeration.variants.len());
@@ -674,10 +857,21 @@ impl<'a> Fingerprint<'a> {
                         self.flag(variant.payload.is_some());
                         if let Some(payload) = variant.payload {
                             match payload.kind {
+                                ScalarTypeSyntax::Char => self.tag("char-payload"),
                                 ScalarTypeSyntax::Bool => self.tag("bool-payload"),
                                 ScalarTypeSyntax::I32 => self.tag("i32-payload"),
+                                ScalarTypeSyntax::I64 => self.tag("i64-payload"),
+                                ScalarTypeSyntax::Float(kind) => {
+                                    self.tag("float-payload");
+                                    self.tag(kind.spelling());
+                                }
+                                ScalarTypeSyntax::Integer(kind) => {
+                                    self.tag("integer-payload");
+                                    self.tag(kind.spelling());
+                                }
                                 ScalarTypeSyntax::Unit => self.tag("unit-payload"),
                                 ScalarTypeSyntax::Name
+                                | ScalarTypeSyntax::Applied(_)
                                 | ScalarTypeSyntax::Absolute(_)
                                 | ScalarTypeSyntax::Array(_) => {
                                     self.tag("owned-payload");
@@ -688,6 +882,17 @@ impl<'a> Fingerprint<'a> {
                         }
                     }
                 }
+            }
+        }
+        for call in program.generic_calls() {
+            self.tag("explicit-type-arguments");
+            self.path(call.path);
+            self.flag(call.context == GenericArgumentContext::Type);
+            self.span(call.callee);
+            self.span(call.span);
+            self.count(call.arguments.len());
+            for ty in &call.arguments {
+                self.ty(*ty);
             }
         }
         for ids in [
@@ -707,7 +912,7 @@ impl<'a> Fingerprint<'a> {
                 .paths
                 .iter()
                 .map(|p| usize::from(p.segment_len))
-                .sum()
+                .sum::<usize>()
         );
         self.parts
     }
@@ -744,6 +949,52 @@ fn fingerprint(source: &SourceFile, program: &Program) -> Vec<Part> {
     Fingerprint::new(source, program).program()
 }
 
+#[test]
+fn explicit_call_type_arguments_preserve_independent_ast_origins() {
+    for text in [
+        "fn relay<T>(value:T)->T{return identity :: < /* type */ T, > (value);}",
+        "fn use_types()->(){crate::helper::consume :: < [i32;2], crate::types::Number, (), > ([1,2],42,());return;}",
+    ] {
+        let mut map=SourceMap::new();
+        let id=map.add("explicit-format.ox".into(),text.into());
+        let source=map.get(id);
+        let before=fingerprint(source,&parse(source));
+        let formatted=format_source(source).unwrap();
+        let mut after_map=SourceMap::new();
+        let after=after_map.add("explicit-format.ox".into(),formatted);
+        let after=after_map.get(after);
+        assert_eq!(before,fingerprint(after,&parse(after)));
+        assert_eq!(format_source(after).unwrap(),after.text());
+    }
+}
+
+#[test]
+fn nominal_application_formatting_preserves_raw_tokens_nested_types_and_enum_members() {
+    let parse_current = |source: &SourceFile| {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    };
+    for text in [
+        "struct Pair<A,B>{first:A,second:B}enum Option<T>{None,Some(T)}fn read<T:Copy>(pair:&Pair<T,Option<i32>>)->Option<T>{let value:Option<Pair<T,i32>,>=Option::<Pair<T,i32>,>::None;return Option::<T>::Some(pair.first);}",
+        "enum Outer<T>{Empty,Value(Inner<T>)}struct Inner<T>{value:T}fn f(value:&mut Inner<Inner<i32>>)->(){let a:Inner<i32>=Inner::<i32>{value:42};return;}",
+    ] {
+        let mut sources=SourceMap::new();let id=sources.add("nominal-format.ox".into(),text.into());let source=sources.get(id);
+        let before=fingerprint(source,&parse_current(source));
+        let formatted=format_source(source).unwrap();
+        let mut output=SourceMap::new();let id=output.add("nominal-format.ox".into(),formatted);let source=output.get(id);
+        assert_eq!(before,fingerprint(source,&parse_current(source)));
+        assert_eq!(format_source(source).unwrap(),source.text());
+    }
+}
+
 fn normalized(text: &str) -> Vec<Part> {
     let mut map = SourceMap::new();
     let id = map.add("independent-owner.ox".into(), text.into());
@@ -755,6 +1006,7 @@ fn normalized(text: &str) -> Vec<Part> {
 // runtime fixtures. No packages or unrelated language proposals are needed.
 const CORPUS: &[(&str, &str)] = &[
     ("empty", ""),
+    ("local-references", "struct R{x:i32}fn f(value:&mut R)->i32{let parent:&mut R=&mut *value;if true{let shared:&R=&*parent;let n=shared.x;}parent.x=42;return parent.x;}"),
     ("named-byte-conversions", "// 雪\r\nfn f(x:i32,b:u8)->i32{x /*é*/ . /*dot*/ to_u8_checked /*name*/ ( /*empty*/ );return (b . to_i32 ());}fn u8(x:i32)->i32{return - -x.to_i32()+x.to_i32()*2;}"),
     ("projected-borrow-paths", "fn use_paths()->(){f(&batch /* root */ . inner . samples,&mut batch.inner.samples,&*p . inner . samples,&mut *p /* ref */ .inner.samples);return;}"),
     ("comments-only", "// 雪\r\n/* é\n braces { } and punctuation :: */\r\n"),
@@ -867,7 +1119,11 @@ fn normalization_ignores_arena_storage_order_but_retains_edges() {
     program.expressions.reverse();
     for expression in &mut program.expressions {
         match &mut expression.kind {
-            ExprKind::Bool(_) | ExprKind::Number { .. } => {}
+            ExprKind::Bool(_)
+            | ExprKind::Number { .. }
+            | ExprKind::I64Number { .. }
+            | ExprKind::FloatNumber { .. }
+            | ExprKind::IntegerNumber { .. } => {}
             ExprKind::Call { args, .. } => {
                 for argument in args {
                     let Argument::Value(id) = argument else {
@@ -1741,6 +1997,59 @@ fn byte_storage_formatter_preserves_array_only_types_and_source_origins() {
     let mut output = SourceMap::new();
     output.add("unrelated.ox".into(), "".into());
     let id = output.add("byte-formatted.ox".into(), formatted);
+    let after = output.get(id);
+    assert_eq!(before, fingerprint(after, &parse(after)));
+    assert_eq!(format_source(after).unwrap(), after.text());
+}
+
+#[test]
+fn bytebuf_formatter_preserves_call_only_range_endpoints_and_forwarding() {
+    fn parse(source: &SourceFile) -> Program {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    }
+    let text = "use alloc::bytes::new;fn take(p:&[u8])->i32{return p.len();}fn f(p:&mut [u8])->i32{return take(&*p[0..p.len()]);}fn main()->i32{let mut b=new();return f(&mut b[0..0]);}";
+    let mut sources = SourceMap::new();
+    let id = sources.add("range-format.ox".into(), text.into());
+    let source = sources.get(id);
+    let before = fingerprint(source, &parse(source));
+    let formatted = format_source(source).unwrap();
+    let mut output = SourceMap::new();
+    let id = output.add("range-formatted.ox".into(), formatted);
+    let after = output.get(id);
+    assert_eq!(before, fingerprint(after, &parse(after)));
+    assert_eq!(format_source(after).unwrap(), after.text());
+}
+
+#[test]
+fn record_pattern_formatter_preserves_field_names_bindings_and_origins() {
+    fn parse(source: &SourceFile) -> Program {
+        parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut crate::frontend::project::budget::Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap()
+        .0
+    }
+    let mut sources = SourceMap::new();
+    let id = sources.add("pattern.ox".into(), "// 雪\r\nstruct Pair<A,B>{first:A,second:B}fn take<T>(value:Pair<T,i32>)->T{let crate::Pair{second /* S */ :discard,first:kept,}=value;return kept;}fn main()->i32{return take(Pair::<i32,i32>{first:42,second:0});}".into());
+    let source = sources.get(id);
+    let before = fingerprint(source, &parse(source));
+    let formatted = format_source(source).unwrap();
+    let mut output = SourceMap::new();
+    let id = output.add("formatted-pattern.ox".into(), formatted);
     let after = output.get(id);
     assert_eq!(before, fingerprint(after, &parse(after)));
     assert_eq!(format_source(after).unwrap(), after.text());

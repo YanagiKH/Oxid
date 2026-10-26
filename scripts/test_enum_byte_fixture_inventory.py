@@ -1,8 +1,8 @@
 """Current fixture registration after finite enum payloads extend the language.
 
 The exact pre-extension registry/oracle controls remain mandatory on their
-historical sources. Here only two test names change; executable new payload
-semantics have separate Rust, LLVM and application checks.
+historical sources. Explicit enum/field test renames are recorded here;
+executable new semantics have separate Rust, LLVM and application checks.
 """
 import copy
 import hashlib
@@ -16,30 +16,43 @@ import unittest
 import verify_bounded_byte_storage as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-UNIT_BEFORE = "byte_storage_previous_record_elements_and_enum_exclusions_are_unchanged"
-UNIT_AFTER = "byte_storage_previous_record_elements_and_owned_enum_arrays"
-PUBLIC_BEFORE = "byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser"
-PUBLIC_AFTER = "byte_storage_public_unused_nested_enum_array_payload_checks_without_effects"
+UNIT_RENAMES = {
+    "byte_storage_previous_record_elements_and_enum_exclusions_are_unchanged":
+        "byte_storage_previous_record_elements_and_owned_enum_arrays",
+    "byte_storage_source_unused_nested_and_empty_record_fields_stay_closed":
+        "byte_storage_source_unused_nested_and_empty_record_fields_are_admitted",
+    "byte_storage_raw_record_byte_fields_are_rejected_even_unused_and_nested":
+        "byte_storage_raw_record_byte_fields_are_checked_even_unused_and_nested",
+    "byte_storage_raw_unused_and_nested_record_fields_reject_before_output_reserve":
+        "byte_storage_raw_unused_and_nested_record_fields_keep_bounded_layout_and_output_reservations",
+}
+PUBLIC_RENAMES = {
+    "byte_storage_public_unused_nested_enum_array_payload_stops_in_inner_parser":
+        "byte_storage_public_unused_nested_enum_array_payload_checks_without_effects",
+    "byte_storage_public_record_reference_projection_stops_at_declaration":
+        "byte_storage_public_record_reference_projection_checks_without_effects",
+}
 
 
 def current_registry(registry):
     result = copy.deepcopy(registry)
-    selected = [row for row in result["unit_tests"] if row["function"] == UNIT_BEFORE]
-    gate.require(len(selected) == 1 and UNIT_AFTER not in {row["function"] for row in result["unit_tests"]},
-                 "wrong original unit registry boundary")
-    row = selected[0]
-    gate.require(row["name"].endswith("::" + UNIT_BEFORE), "wrong original unit identity")
-    row["function"] = UNIT_AFTER
-    row["name"] = row["name"][:-len(UNIT_BEFORE)] + UNIT_AFTER
-    gate.require(result["public_tests"].count(PUBLIC_BEFORE) == 1
-                 and PUBLIC_AFTER not in result["public_tests"], "wrong original public registry boundary")
-    result["public_tests"] = sorted(PUBLIC_AFTER if name == PUBLIC_BEFORE else name
-                                    for name in result["public_tests"])
+    for before, after in UNIT_RENAMES.items():
+        selected = [row for row in result["unit_tests"] if row["function"] == before]
+        gate.require(len(selected) == 1 and after not in {row["function"] for row in result["unit_tests"]},
+                     "wrong original unit registry boundary")
+        row = selected[0]
+        gate.require(row["name"].endswith("::" + before), "wrong original unit identity")
+        row["function"] = after
+        row["name"] = row["name"][:-len(before)] + after
+    for before, after in PUBLIC_RENAMES.items():
+        gate.require(result["public_tests"].count(before) == 1 and after not in result["public_tests"],
+                     "wrong original public registry boundary")
+    result["public_tests"] = sorted(PUBLIC_RENAMES.get(name, name) for name in result["public_tests"])
     return result
 
 
 class CurrentByteFixtureInventory(unittest.TestCase):
-    def test_exact_original_data_and_only_two_source_test_name_changes(self):
+    def test_exact_original_data_and_only_explicit_source_test_name_changes(self):
         self.assertEqual(hashlib.sha256(Path(gate.__file__).read_bytes()).hexdigest(),
                          "3fc7ed6d9264e5446485b52a74106216fe236235b517190835a6b70e5bbb1f5d")
         _, original, cases = gate.admit_package(ROOT)
@@ -55,11 +68,11 @@ class CurrentByteFixtureInventory(unittest.TestCase):
             self.assertEqual(successor[key], original[key])
         changed = [(old, new) for old, new in zip(original["unit_tests"], successor["unit_tests"], strict=True)
                    if old != new]
-        self.assertEqual(len(changed), 1)
-        self.assertEqual(changed[0][0]["function"], UNIT_BEFORE)
-        self.assertEqual(changed[0][1]["function"], UNIT_AFTER)
-        self.assertEqual(set(successor["public_tests"]) - set(original["public_tests"]), {PUBLIC_AFTER})
-        self.assertEqual(set(original["public_tests"]) - set(successor["public_tests"]), {PUBLIC_BEFORE})
+        self.assertEqual(len(changed), 4)
+        self.assertEqual({old["function"] for old, _ in changed}, set(UNIT_RENAMES))
+        self.assertEqual({new["function"] for _, new in changed}, set(UNIT_RENAMES.values()))
+        self.assertEqual(set(successor["public_tests"]) - set(original["public_tests"]), set(PUBLIC_RENAMES.values()))
+        self.assertEqual(set(original["public_tests"]) - set(successor["public_tests"]), set(PUBLIC_RENAMES))
 
     def test_new_imports_keep_portable_fixture_admission_without_native_helpers(self):
         script = textwrap.dedent('''
@@ -103,14 +116,15 @@ class CurrentByteFixtureInventory(unittest.TestCase):
 
     def test_missing_original_name_cannot_silently_drop_a_current_registry_check(self):
         _, original, _ = gate.admit_package(ROOT)
-        for field in ("unit_tests", "public_tests"):
-            changed = copy.deepcopy(original)
-            if field == "unit_tests":
-                changed[field] = [row for row in changed[field] if row["function"] != UNIT_BEFORE]
-            else:
-                changed[field].remove(PUBLIC_BEFORE)
-            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "registry boundary"):
-                current_registry(changed)
+        for field, names in (("unit_tests", UNIT_RENAMES), ("public_tests", PUBLIC_RENAMES)):
+            for name in names:
+                changed = copy.deepcopy(original)
+                if field == "unit_tests":
+                    changed[field] = [row for row in changed[field] if row["function"] != name]
+                else:
+                    changed[field].remove(name)
+                with self.subTest(field=field, name=name), self.assertRaisesRegex(ValueError, "registry boundary"):
+                    current_registry(changed)
 
 
 if __name__ == "__main__":

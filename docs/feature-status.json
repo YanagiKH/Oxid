@@ -223,7 +223,7 @@
       "implementation": [],
       "tests": [],
       "evidence": [],
-      "limitations": "The complete memory model remains proposed. A private verified owned core and experimental production source integration are recorded by typed-preview-ownership-foundations; they do not establish stored-reference lifetimes/NLL, partial moves, field-disjoint loans, heap/drop safety, unsafe/FFI contracts or general memory-safety certification."
+      "limitations": "The complete memory model remains proposed. A private verified owned core and experimental production source integration are recorded by typed-preview-ownership-foundations; they do not establish stored-reference lifetimes/NLL, partial moves, heap/drop safety, unsafe/FFI contracts or general memory-safety certification."
     },
     {
       "id": "llvm-native-backend",
@@ -1147,7 +1147,7 @@
       "evidence": [
         "docs/architecture/bounded-byte-storage-validation.md"
       ],
-      "limitations": "Standalone N=0..1024 only; move-only including zero length. i32 indexes/lengths, explicit named-local conversions, whole-owner loans. No record-contained byte arrays/projections, direct u8 record fields or enum payloads, arithmetic/coercions/literals, heap/subslice/element references, I/O migration or provider expansion. Existing stricter native limits can reject source-legal programs. No stable ABI, memory-safety certification, M2/M3 completion, self-hosting or tensor claim."
+      "limitations": "Original standalone evidence covers N=0..1024, move-only values including zero length, i32 indexes/lengths, named-local conversions and whole-owner loans. Current byte arithmetic, literals, record fields, enum payloads, heap buffers and I/O have separate feature entries and validation. Subslice/element references and implicit coercion remain unavailable; existing native storage limits can reject source-legal programs."
     },
     {
       "id": "owned-enum-payloads",
@@ -1182,6 +1182,921 @@
         "scripts/test_enum_payload_compatibility.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "byte-record-fields",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "u8 and fixed byte-array record fields with nested layouts, whole-value ownership and projected call borrows.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Bounded reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Checking and reference execution on supported compiler hosts; native Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Fixed arrays have lengths 0..1024; explicit named-local conversion, exact types and whole-root loans remain. Current byte arithmetic, literals, enum payloads, heap buffers and I/O have separate feature entries. Partial field moves, element borrows and enum/reference record fields remain unavailable. Existing native storage limits can reject source-legal programs; layout is private.",
+      "spec": [
+        "rfcs/0042-byte-record-fields.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned_types.rs"
+      ],
+      "tests": [
+        "tests/byte_record_fields.rs",
+        "src/frontend/oir/owned_types/byte_storage_tests.rs",
+        "src/frontend/oir/owned/byte_storage_codec_tests.rs",
+        "src/frontend/oir/owned/byte_storage_native_tests.rs",
+        "scripts/verify_owned_enum_app.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "growable-byte-buffers",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Move-only growable byte buffers, checked borrowed byte ranges, scope cleanup and partial binary input/output.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Bounded reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Byte-buffer reference execution on supported compiler hosts; process I/O and native execution on Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "The shared normalized heap budget defaults to 16 MiB and includes allocation headers and the simultaneous growth peak; hosted projects can configure it with heap-limit. Lengths are i32 and bytes use explicit conversions. Whole-root call-only loans remain; no escaping views, partial moves, generic containers, text semantics, user destructors, stable ABI or additional native targets. Existing execution and compiler limits apply.",
+      "spec": [
+        "rfcs/0043-growable-byte-buffers.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/experimental_builtins.rs",
+        "src/frontend/oir/owned/byte_buffer.rs",
+        "src/frontend/oir/owned_types/resources.rs",
+        "src/frontend/oir/owned/source/experimental_lower.rs",
+        "src/frontend/oir/owned/execute_resources.rs",
+        "src/frontend/oir/owned/execute_io_delivery.rs",
+        "src/frontend/oir/owned/native_resources.rs",
+        "native/experimental_bytebuf.c",
+        "native/typed_bytebuf.c"
+      ],
+      "tests": [
+        "tests/bytebuf_binary.rs",
+        "src/frontend/oir/owned/byte_buffer/tests.rs",
+        "src/frontend/oir/owned/source/experimental_source_tests.rs",
+        "src/frontend/oir/owned/source/io_delivery_source_tests.rs",
+        "src/frontend/oir/owned/source/resource_native_tests.rs",
+        "scripts/test_bytebuf_runtime.py",
+        "scripts/test_binary_delivery.py",
+        "scripts/verify_byte_reverse_app.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "hosted-project-execution",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Long-running typed projects without a fixed execution-work budget.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; process I/O and native execution on Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Opt-in per binary manifest. Existing projects and explicit source-file commands remain bounded by default. Compiler, layout, live-memory and call-depth limits remain; recursive native calls, cancellation and additional native targets are not added.",
+      "spec": [
+        "rfcs/0044-project-execution-policy.md",
+        "spec/typed-preview.md",
+        "spec/native-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/build_config.rs",
+        "src/project_cli.rs",
+        "src/project_cli/workspace.rs",
+        "src/frontend/driver.rs",
+        "src/frontend/oir/execute.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/native.rs",
+        "native/typed_bytebuf.c"
+      ],
+      "tests": [
+        "tests/hosted_execution.rs",
+        "tests/hosted_bytebuf.c",
+        "scripts/test_hosted_bytebuf.py",
+        "scripts/test_hosted_execution_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "byte-string-literals",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Write UTF-8 text and arbitrary binary data as move-only fixed byte arrays.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; native Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "At most 1024 decoded bytes per literal. Existing exact array types, move/borrow rules and execution limits apply. No scalar byte literals, raw strings, general String type or implicit copies.",
+      "spec": [
+        "rfcs/0047-byte-string-literals.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/byte_strings.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/lower.rs"
+      ],
+      "tests": [
+        "tests/byte_strings.rs",
+        "src/frontend/byte_strings.rs",
+        "src/frontend/oir/owned/source/resolver_paid_tests.rs"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "owned-buffer-transfer",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Transfer a byte buffer without copying or allocating, leaving an empty reusable source.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; native Linux x86_64 with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Requires an exclusive ByteBuf borrow and existing whole-root ownership rules. No general partial field moves, escaping references or stable ABI. Compiler, execution and live-memory limits remain.",
+      "spec": [
+        "rfcs/0046-owned-buffer-transfer.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/experimental_builtins.rs",
+        "src/frontend/oir/owned/execute_experimental.rs",
+        "src/frontend/oir/owned/native_experimental.rs",
+        "native/typed_bytebuf.c"
+      ],
+      "tests": [
+        "tests/byte_buffer_transfer.rs",
+        "tests/bytebuf_transfer.c",
+        "scripts/test_bytebuf_transfer.py",
+        "scripts/test_buffer_transfer_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "owned-utf8-text",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Owned UTF-8 text with validated byte transfer, character append/access, scalar-boundary truncation and exact byte round-trips.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Ordinary Oxid local packages using reference execution or LLVM native builds at O0/O2.",
+      "target_scope": "Reference execution on compiler hosts; UTF-8 filter process and native application checks on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "A local library over ByteBuf, without new compiler types or intrinsics. No general String syntax, returned references, Unicode normalization, grapheme segmentation or stable ABI. Allocations share the current runtime memory limit.",
+      "spec": [
+        "rfcs/0045-owned-utf8-text.md"
+      ],
+      "implementation": [
+        "packages/utf8_text/src/lib.ox",
+        "apps/utf8-normalize/app/src/main.ox"
+      ],
+      "tests": [
+        "apps/utf8-normalize/contracts/src/main.ox",
+        "scripts/test_utf8_text_app.py",
+        "scripts/verify_utf8_text_app.py",
+        "examples/typed-unicode-range/src/main.ox",
+        "scripts/verify_utf8_characters.py",
+        "scripts/test_utf8_characters.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "native-files",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Move-only file handles with partial binary reads and writes, fsync and automatic close.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native builds.",
+      "limitations": "Raw Linux byte paths of at most 4095 bytes. Blocking single OS attempts, caller-directed retries, shared normalized live-memory and existing ownership limits. No seek, directories, async, deadlines, cancellation or additional native targets.",
+      "spec": [
+        "rfcs/0048-native-file-io.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/experimental_builtins.rs",
+        "src/frontend/oir/owned/file_resources.rs",
+        "src/frontend/oir/owned/execute_file_delivery.rs",
+        "native/experimental_files.c"
+      ],
+      "tests": [
+        "tests/native_files.rs",
+        "src/frontend/oir/owned/file_resource_tests.rs",
+        "tests/native_files_runtime.c",
+        "scripts/test_native_files_runtime.py",
+        "scripts/verify_native_files.py",
+        "tests/fixtures/native_files/copy.ox.in"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "checked-i64-integers",
+      "classification": "production-path",
+      "summary": "Exact signed 64-bit values with checked arithmetic, explicit conversions, records, arrays and enum payloads.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Decimal i64-suffixed literals; no implicit conversion. Indexes, lengths and process status remain i32. Additional integer widths are tracked separately; floating point is unavailable.",
+      "spec": [
+        "rfcs/0050-checked-i64-integers.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "src/frontend/oir/owned/native_numeric.rs",
+        "native/typed_preview.c"
+      ],
+      "tests": [
+        "tests/typed_i64.rs",
+        "src/frontend/oir/owned/source/i64_source_tests.rs",
+        "scripts/verify_i64.py",
+        "tests/i64_output_runtime.c",
+        "scripts/test_i64_output_runtime.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "checked-integer-widths",
+      "classification": "production-path",
+      "summary": "Exact signed and unsigned integers with explicit checked conversions and aligned record, array and enum storage.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking; current 64-bit execution targets; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Adds i8, i16, u16, u32, u64 and 64-bit isize/usize. Byte arithmetic and byte result entries are tracked separately. No i128/u128, floats, implicit conversion or wrapping arithmetic. Indexes and lengths remain i32.",
+      "spec": [
+        "rfcs/0051-checked-integer-widths.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/ast.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/execute_integers.rs",
+        "src/frontend/oir/owned/native_integers.rs",
+        "native/typed_preview.c"
+      ],
+      "tests": [
+        "tests/typed_integer_widths.rs",
+        "src/frontend/oir/owned/source/integer_width_tests.rs",
+        "scripts/verify_integer_widths.py",
+        "tests/integer_output_runtime.c",
+        "scripts/test_integer_output_runtime.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "byte-integer-arithmetic",
+      "classification": "production-path",
+      "summary": "Checked u8 arithmetic, explicit conversions and decimal byte results across files and linked modules.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Byte values remain 0..255; overflow and zero divisors report errors. No implicit conversion, wrapping arithmetic or unsigned negation. Process main, indexes and lengths remain i32. Existing storage, borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0052-byte-integer-arithmetic.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/ast.rs",
+        "src/frontend/declaration_index/source_owner.rs",
+        "src/frontend/oir/source/sealed.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/driver.rs"
+      ],
+      "tests": [
+        "tests/typed_byte_integers.rs",
+        "src/frontend/oir/owned/source/byte_integer_tests.rs",
+        "scripts/verify_byte_integers.py",
+        "scripts/test_byte_integer_oracle.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "checked-128-bit-integers",
+      "classification": "production-path",
+      "summary": "Exact signed and unsigned 128-bit arithmetic, checked conversions, aligned aggregate values and decimal results.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "No implicit conversions, wrapping arithmetic or unsigned negation. Process main, indexes and lengths remain i32. Existing borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0053-checked-128-bit-integers.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/execute_integer128.rs",
+        "src/frontend/oir/owned/native_integer128.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "src/frontend/oir/owned_types/enums.rs",
+        "native/typed_integer128.c"
+      ],
+      "tests": [
+        "tests/typed_integer128.rs",
+        "src/frontend/oir/owned/source/integer128_tests.rs",
+        "scripts/verify_integer128.py",
+        "scripts/test_integer128_oracle.py",
+        "scripts/test_integer128_runtime.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "integer-bit-operations",
+      "classification": "production-path",
+      "summary": "Integer masks, inversion and guarded shifts across all supported integer widths.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "Mask operands must have the same integer type. Shift counts must be nonnegative and smaller than the left operand width. Existing storage, borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0054-integer-bit-operations.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/format.rs",
+        "src/frontend/oir/owned/execute_bitwise.rs",
+        "src/frontend/oir/owned/native_bitwise.rs"
+      ],
+      "tests": [
+        "tests/typed_integer_bits.rs",
+        "src/frontend/oir/owned/source/integer_bit_tests.rs",
+        "scripts/verify_integer_bits.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "floating-point",
+      "classification": "production-path",
+      "summary": "IEEE 754 f32/f64 arithmetic, correctly rounded square roots, comparisons, explicit numeric conversions, raw bit representations and aggregate storage.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 and ARM64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "No implicit conversion, hexadecimal float literals or float-to-integer conversion. Bit constructors currently take named integer values. Process main, indexes and lengths remain i32. Existing borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0055-floating-point.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/oir/owned/execute_floats.rs",
+        "src/frontend/oir/owned/native_floats.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "native/float_format.rs",
+        "native/typed_float.c",
+        "src/frontend/parser/conversions.rs"
+      ],
+      "tests": [
+        "tests/typed_floats.rs",
+        "src/frontend/oir/owned/source/float_tests.rs",
+        "scripts/verify_floats.py",
+        "scripts/test_floats.py",
+        "tests/typed_float_roots.rs",
+        "scripts/verify_float_roots.py",
+        "scripts/test_float_root_oracle.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "characters",
+      "classification": "production-path",
+      "summary": "Unicode scalar literals, comparisons, checked integer conversions, UTF-8 output and aggregate storage.",
+      "status": "experimental",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Portable checking and reference execution; Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native execution.",
+      "limitations": "One Unicode scalar per character. No implicit conversions, character arithmetic, normalization or locale collation. Conversion methods currently take named values. Existing borrowing and compiler limits apply.",
+      "spec": [
+        "rfcs/0056-characters.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser/characters.rs",
+        "src/frontend/oir/owned/execute_values.rs",
+        "src/frontend/oir/owned/native.rs",
+        "native/typed_character.c"
+      ],
+      "tests": [
+        "tests/typed_characters.rs",
+        "src/frontend/oir/owned/source/character_tests.rs",
+        "scripts/verify_characters.py",
+        "scripts/test_characters.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "owned-float-vectors",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Owned growable f64 vectors with exact bit storage, checked indexing, fallible growth and little-endian byte transfer.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Ordinary Oxid local package using reference execution and LLVM native builds at O0/O2.",
+      "target_scope": "Reference compiler hosts; native verification on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "f64 elements only, i32 lengths and the shared allocation budget (16 MiB by default; configurable in hosted projects). Indexed values are copied; no borrowed f64 views or generic collection type.",
+      "spec": [
+        "packages/float_vector/README.md"
+      ],
+      "implementation": [
+        "packages/float_vector/src/lib.ox"
+      ],
+      "tests": [
+        "examples/typed-float-vector/tests/vector.ox",
+        "scripts/verify_float_vector.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "projected-record-borrows",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Call-only shared and exclusive borrows of nested record fields with exact nominal views.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Typed source checking, verified owned OIR, reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference compiler hosts; native execution on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "References cannot escape calls. Different field paths may be borrowed together; overlapping paths and whole-owner movement during a borrow remain rejected. Returned references and partial field moves are unavailable.",
+      "spec": [
+        "rfcs/0057-record-field-borrows.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/shape.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/execute_experimental.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/record_field_borrows.rs",
+        "src/frontend/oir/owned/source/program.rs",
+        "scripts/test_record_field_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "owned-f64-matrices",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Owned row-major f64 matrices with checked indexing, transpose and ordered matrix multiplication.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Ordinary Oxid package over float_vector; reference execution and LLVM native compilation at O0/O2.",
+      "target_scope": "Reference compiler hosts; native verification on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "Two-dimensional f64 only; i32 dimensions, at most 268435455 elements and the shared allocation budget (16 MiB by default; configurable in hosted projects). Sequential multiplication, with each f64 operation separately rounded.",
+      "spec": [
+        "packages/matrix/README.md"
+      ],
+      "implementation": [
+        "packages/matrix/src/lib.ox"
+      ],
+      "tests": [
+        "examples/typed-matrix/tests/contracts.ox",
+        "scripts/verify_matrices.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "hosted-native-recursion",
+      "summary": "Hosted native direct/mutual recursive calls, checked live call storage, owned returns, call-only reborrows and larger compiled programs.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Reference execution and LLVM native project builds at O0/O2.",
+      "target_scope": "Native execution on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "Hosted compilation permits 1,024 functions, 32,768 scalar slots, 16,384 blocks and 65,536 compiler inventory items/owner width cells, subject to existing verification and metadata limits. Runtime limits remain 1,024 live calls, 200,000 scalar slots, 1 MiB native frame/runtime storage and a separate shared heap budget, defaulting to 16 MiB and configurable through hosted heap-limit. Bounded native calls remain acyclic.",
+      "spec": [
+        "rfcs/0058-hosted-native-recursion.md",
+        "rfcs/0062-hosted-native-program-size.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/hosted_recursion.rs",
+        "scripts/test_hosted_recursion_compatibility.py",
+        "src/frontend/oir/native_hosted_capacity_tests.rs",
+        "src/frontend/oir/owned/hosted_capacity_tests.rs",
+        "scripts/test_hosted_capacity_compatibility.py",
+        "scripts/verify_hosted_capacity.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "typed-git-dependencies",
+      "summary": "Typed project and workspace libraries from pinned Git commits with alias-local namespaces, coexisting revisions and cached offline builds.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Typed package graph and lock verification; reference execution and LLVM native builds at O0/O2.",
+      "target_scope": "Package source loading on Linux; native execution on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "Full Git commit hashes only; no registry ranges or automatic updates. Locked/offline/frozen and doctor do not fetch. Local edges from Git packages stay in their checkout. Source bundles still require portable local paths.",
+      "spec": [
+        "rfcs/0059-typed-git-dependencies.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/main.rs",
+        "src/project_cli.rs",
+        "src/project_cli/workspace.rs",
+        "src/runtime/packages.rs"
+      ],
+      "tests": [
+        "tests/typed_git_dependencies.rs",
+        "scripts/test_typed_git_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "git-source-bundles",
+      "summary": "Locked Git libraries exported as portable local sources, with offline extraction and native rebuilding without Git metadata.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Retained typed source-package collector, local dependency graph and LLVM native rebuilds.",
+      "target_scope": "Source bundle creation and extraction on Linux x86_64; native rebuilds with LLVM/Clang/LLD 19.1.7.",
+      "limitations": "Existing matching lock and pristine cached Git commits required; creation never fetches. Existing source-bundle byte/file/graph limits apply. Registry and package signatures remain unavailable.",
+      "spec": [
+        "rfcs/0060-git-source-bundles.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/main.rs",
+        "src/project_cli/package.rs",
+        "src/project_cli/workspace.rs",
+        "src/project_lock.rs",
+        "src/project_package.rs"
+      ],
+      "tests": [
+        "tests/typed_git_dependencies.rs",
+        "src/main.rs"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "inferred-generic-functions",
+      "summary": "Generic functions, structs and enums with type inference from call arguments, record fields and enum payloads, scalar Copy bounds and concrete native specialization.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Owned typed frontend, reference execution and native builds.",
+      "target_scope": "Linux x86_64 with LLVM 19.1.7 for native execution.",
+      "limitations": "Unconstrained constructor type parameters require explicit arguments. Record operations retain whole-owner moves; different record fields may be borrowed together. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
+      "spec": [
+        "spec/typed-preview.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/ast.rs",
+        "src/frontend/ast/generic_syntax.rs",
+        "src/frontend/parser.rs",
+        "src/frontend/declaration_index/generics.rs",
+        "src/frontend/declaration_index/sealed.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/association.rs",
+        "src/frontend/declaration_index/generics/nominal.rs",
+        "src/frontend/declaration_index/enum_views.rs",
+        "src/frontend/declaration_index/generics/inference.rs"
+      ],
+      "tests": [
+        "tests/typed_generics.rs",
+        "src/frontend/parser/generic_syntax_tests.rs",
+        "scripts/test_explicit_generic_arguments_compatibility.py",
+        "src/frontend/oir/owned/source/association.rs",
+        "tests/typed_nominal_generics.rs",
+        "scripts/test_nominal_generics_compatibility.py",
+        "tests/typed_constructor_inference.rs",
+        "tests/typed_record_patterns.rs",
+        "tests/typed_record_enum_fields.rs"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "linux-native-hosts",
+      "summary": "Build and run native Linux executables on x86_64 and ARM64, with host-specific targets, SDK checks and object-cache validation.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "LLVM 19.1.7, project development/release profiles and bounded/hosted execution.",
+      "target_scope": "Linux x86_64 and ARM64, 64-bit little-endian GNU targets. Hardware ARM64 regression runs are required in repository CI.",
+      "limitations": "Builds select the current host; cross-compilation and other operating systems are unavailable. Existing compiler and native storage limits apply. Historical certificates retain their original platform scope.",
+      "spec": [
+        "spec/native-preview.md",
+        "docs/NATIVE_DOCTOR.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "build.rs",
+        "src/frontend/build_config.rs",
+        "src/frontend/native.rs",
+        "src/frontend/native/doctor.rs",
+        "src/frontend/native_cache.rs"
+      ],
+      "tests": [
+        "tests/native_doctor.rs",
+        "tests/native_profiles.rs",
+        "tests/native_incremental.rs",
+        "scripts/test_linux_native_target.py",
+        "scripts/test_linux_arm64_native.py",
+        "scripts/verify_linux_arm64_native.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "integer-range-loops",
+      "summary": "Exclusive integer range iteration with once-only bounds, immutable scoped indexes and ordinary loop transfers.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Typed reference execution and LLVM native project builds.",
+      "target_scope": "Reference execution on supported compiler hosts; native builds on Linux x86_64 and ARM64 with LLVM 19.1.7.",
+      "limitations": "Bounds require the same known integer type. Inclusive ranges, range values and general iterator protocols are unavailable. Existing compiler limits and bounded/hosted execution policies apply.",
+      "spec": [
+        "spec/typed-preview.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/ast.rs",
+        "src/frontend/declaration_index/generics.rs",
+        "src/frontend/oir/owned/source/resolve.rs",
+        "src/frontend/oir/owned/source/typeck.rs",
+        "src/frontend/oir/owned/source/lower.rs"
+      ],
+      "tests": [
+        "tests/typed_range_for.rs",
+        "src/frontend/oir/owned/source/range_for_tests.rs",
+        "scripts/test_range_for_compatibility.py"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "native-source-debug-information",
+      "summary": "Optional native source locations, call stacks and scalar parameter/local inspection in GDB",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "LLVM DWARF 5",
+      "target_scope": "Linux x86_64 and ARM64 implementation; local x86_64 GDB execution tested, ARM64 hardware verification pending",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0061-native-debug-information.md",
+        "docs/TYPED_PROJECTS.md",
+        "rfcs/0064-native-debug-variables.md"
+      ],
+      "implementation": [
+        "src/frontend/native_debug.rs",
+        "src/frontend/driver.rs",
+        "src/frontend/build_config.rs",
+        "src/project_cli.rs",
+        "src/frontend/oir/native.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "tests/native_debug_info.rs",
+        "scripts/test_native_debug_compatibility.py",
+        "scripts/test_linux_arm64_native.py",
+        "scripts/test_debug_variables_compatibility.py"
+      ],
+      "evidence": [
+        "rfcs/0061-native-debug-information.md"
+      ],
+      "limitations": "References, unit values and owned aggregates have no variable descriptions. Values without a recoverable location may appear optimized out, including SSA values in dev; optimization can remove source code. LLVM 19.1.7 and existing native execution/resource limits apply."
+    },
+    {
+      "id": "native-cpu-tensor-training",
+      "summary": "Checked f64 tensors, reverse-mode gradients, optimizers, resumable minibatches and sequential dataset training",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "AST interpreter and LLVM native",
+      "target_scope": "Linux x86_64 and ARM64 implementation; independent numerical and deployment verification via the CPU training controller",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "apps/cpu-training/README.md",
+        "apps/cpu-training/tensor/README.md",
+        "apps/minibatch-training/README.md",
+        "apps/streaming-training/README.md"
+      ],
+      "implementation": [
+        "apps/cpu-training/tensor/src/lib.ox",
+        "apps/cpu-training/tensor/src/graph.ox",
+        "apps/cpu-training/tensor/src/model.ox",
+        "apps/cpu-training/tensor/src/model/checkpoint.ox",
+        "apps/cpu-training/checkpoint/src/lib.ox",
+        "apps/cpu-training/trainer/src/main.ox",
+        "apps/cpu-training/tensor/src/optimizer.ox",
+        "apps/cpu-training/tensor/src/optimizer/checkpoint.ox",
+        "apps/cpu-training/tensor/src/model/session.ox",
+        "apps/cpu-training/checkpoint/src/training.ox",
+        "apps/cpu-training/tensor/src/data.ox",
+        "apps/cpu-training/tensor/src/data/checkpoint.ox",
+        "apps/cpu-training/tensor/src/data/sampler_checkpoint.ox",
+        "apps/cpu-training/tensor/src/data/session.ox",
+        "apps/cpu-training/checkpoint/src/pipeline.ox",
+        "apps/minibatch-training/src/main.ox",
+        "apps/streaming-training/reader/src/lib.ox",
+        "apps/streaming-training/src/main.ox"
+      ],
+      "tests": [
+        "apps/cpu-training/trainer/tests/tensor.ox",
+        "scripts/verify_cpu_training.py",
+        "scripts/test_cpu_training_oracles.py",
+        "apps/cpu-training/trainer/tests/optimizers.ox",
+        "scripts/verify_optimizer_math.py",
+        "scripts/verify_optimizer_checkpoints.py",
+        "scripts/verify_optimizer_training.py",
+        "scripts/test_optimizer_oracles.py",
+        "scripts/test_optimizer_sessions.py",
+        "apps/minibatch-training/tests/data.ox",
+        "scripts/verify_data_pipeline.py",
+        "scripts/verify_minibatch_training.py",
+        "scripts/test_data_pipeline_oracles.py",
+        "apps/streaming-training/tests/reader.ox",
+        "scripts/verify_streaming_training.py",
+        "scripts/test_streaming_training_oracle.py"
+      ],
+      "evidence": [
+        "apps/cpu-training/README.md"
+      ],
+      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Sequential datasets use a fixed input buffer and caller-selected batches; the streaming example does not shuffle, save or resume. Existing resumable sessions hold their dataset in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
+    },
+    {
+      "id": "typed-project-api-documentation",
+      "summary": "Checked public API documentation for typed projects and selected workspace members",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "checked-source / static-html",
+      "target_scope": "Compiler hosts; no native toolchain required. Cross-platform qualification depends on executed tests.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0063-typed-api-documentation.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/documentation.rs",
+        "src/frontend/driver.rs",
+        "src/project_cli/documentation.rs",
+        "src/project_cli/workspace.rs"
+      ],
+      "tests": [
+        "tests/typed_documentation.rs",
+        "src/frontend/documentation.rs"
+      ],
+      "evidence": [],
+      "limitations": "One static HTML page with plain-text doc comments. Markdown, documentation tests, search and external dependency pages are not provided. Compiler/workspace source limits and a 32 MiB output limit apply."
+    },
+    {
+      "id": "typed-language-server",
+      "summary": "Live typed diagnostics, formatting, scoped name completion, definitions and source symbols",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "checked-source / LSP stdio",
+      "target_scope": "Portable single-file compiler checks; project modules and dependency loading currently Linux only. Hosted qualification requires executed exact-source tests.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0065-typed-language-server.md",
+        "docs/TYPED_PROJECTS.md",
+        "rfcs/0066-editor-symbol-navigation.md",
+        "rfcs/0069-editor-name-completion.md"
+      ],
+      "implementation": [
+        "src/lsp_cli.rs",
+        "src/lsp_cli/documents.rs",
+        "src/lsp_cli/json.rs",
+        "src/lsp_cli/transport.rs",
+        "src/lsp_cli/uri.rs",
+        "src/project_cli/editor.rs",
+        "src/frontend/editor.rs",
+        "src/frontend/project/editor_sources.rs",
+        "src/frontend/editor/navigation.rs",
+        "src/frontend/editor/completion.rs"
+      ],
+      "tests": [
+        "tests/typed_language_server.rs",
+        "src/frontend/editor.rs",
+        "src/lsp_cli/documents.rs",
+        "src/lsp_cli/json.rs",
+        "src/lsp_cli/transport.rs",
+        "src/lsp_cli/uri.rs"
+      ],
+      "evidence": [],
+      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion covers keywords and visible names with a 512-item response limit; member and qualified-path completion, type/member navigation, rename and profiling are unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
+    },
+    {
+      "id": "disjoint-record-field-borrows",
+      "summary": "Simultaneous call-only borrows of different nested record fields",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "oir-reference and llvm-19.1.7",
+      "target_scope": "Reference execution and supported Linux native targets; hosted qualification requires executed tests for the selected commit.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0067-disjoint-field-borrows.md",
+        "rfcs/0057-record-field-borrows.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/oir/owned/flow.rs",
+        "src/frontend/oir/owned/verified.rs",
+        "src/frontend/oir/owned/execute.rs"
+      ],
+      "tests": [
+        "tests/record_field_borrows.rs",
+        "src/frontend/oir/owned/verified.rs"
+      ],
+      "evidence": [],
+      "limitations": "Call-only aggregate field references. Same-field and parent/child paths overlap. Whole-owner moves, replacement and destruction remain forbidden during a field borrow. No stored or returned references, partial moves, scalar-place borrowing or disjoint ranges within one array field."
+    },
+    {
+      "id": "optimized-native-function-selection",
+      "summary": "Release builds emit owned function bodies reachable from the entry point",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "LLVM native",
+      "target_scope": "Linux x86_64 and ARM64",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "rfcs/0071-native-release-function-selection.md",
+        "docs/TYPED_PROJECTS.md"
+      ],
+      "implementation": [
+        "src/frontend/driver.rs",
+        "src/frontend/oir/source/sealed.rs",
+        "src/frontend/oir/owned/source/program.rs",
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/oir/owned/native_reachability.rs"
+      ],
+      "tests": [
+        "tests/native_profiles.rs",
+        "src/frontend/oir/owned/native_reachability.rs",
+        "scripts/test_native_reachability_compatibility.py"
+      ],
+      "evidence": [
+        "rfcs/0071-native-release-function-selection.md"
+      ],
+      "limitations": "Static direct-call reachability for owned programs in release builds. All declarations and native resource admission remain complete; diagnostic and runtime-helper inventories are retained. Dev and scalar output are unchanged. Module admission and LLVM output limits still apply."
     }
   ]
 }

@@ -1199,11 +1199,16 @@ fn enum_query_complete_return_carriers_fit_the_explicit_fixed_ledger() {
         + size_of::<Option<&str>>();
     let table_growth = size_of::<Tables<'_>>() - 344;
     let names_saved = 2 * (576 - size_of::<PreparedTypeName<'_>>());
+    // The baseline sums the standalone collector admission and query session.
+    // For this index those complete carriers occupy disjoint phases; the
+    // admission embedded in Tables is still included in table_growth above.
+    let collector_query_phase_savings =
+        size_of::<BuiltinAdmission>().min(size_of::<QuerySession<'_, '_>>());
     assert_eq!(
         FIXED_SCRATCH,
-        3968 + added + table_growth + builtin - names_saved
+        3968 + added + table_growth + builtin - names_saved - collector_query_phase_savings
     );
-    println!("builtin-index-fixed-breakdown baseline=4088 table_growth={table_growth} new_carriers={builtin} name_savings={names_saved} complete={FIXED_SCRATCH}");
+    println!("builtin-index-fixed-breakdown baseline=4088 table_growth={table_growth} new_carriers={builtin} name_savings={names_saved} collector_query_phase_savings={collector_query_phase_savings} complete={FIXED_SCRATCH}");
 }
 
 #[test]

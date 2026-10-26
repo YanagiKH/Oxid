@@ -82,6 +82,7 @@ pub(super) fn inventory(inventory: BuiltinOrigins) -> (SourceMap, RawOwnedProgra
     )];
     // Independently authored finite case inventory: no catalog/rank helper.
     let (read_enum, read_function, write_enum, write_function) = match inventory {
+        BuiltinOrigins::Extended(_) => unreachable!("legacy fixture inventory"),
         BuiltinOrigins::None => (false, false, false, false),
         BuiltinOrigins::ReadStatus => (true, false, false, false),
         BuiltinOrigins::ReadStdin => (true, true, false, false),
@@ -149,8 +150,10 @@ pub(super) fn program(capacity: usize) -> (SourceMap, RawOwnedProgram, hir::DefI
         span: s(4),
     }];
     main.loans = vec![LoanDecl {
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         projection: vec![],
         kind: BorrowKind::Shared,

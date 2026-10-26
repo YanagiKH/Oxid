@@ -1,0 +1,9 @@
+[project]
+name = "tensor"
+version = "0.1.0"
+edition = "typed-preview"
+kind = "lib"
+entry = "src/lib.ox"
+
+[execution]
+policy = "hosted"

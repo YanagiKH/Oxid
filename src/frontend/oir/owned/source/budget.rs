@@ -1,6 +1,7 @@
 //! Source output inventory only; neither a declaration nor an executable witness.
 use super::super::{budget as raw_budget, *};
 use super::{lower, typeck::TypedOwnedProgram};
+use crate::frontend::project::budget::Allocator;
 use std::mem::size_of;
 
 pub(super) const MAX_RAW_BYTES: usize = 64 * 1024 * 1024;
@@ -112,6 +113,10 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.constructed_fields, size_of::<(FieldId, Operand)>()),
         (c.constructed_elements, size_of::<Operand>()),
         (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+        (
+            c.destructured_fields as usize,
+            size_of::<(FieldId, OwnerPlaceId)>(),
+        ),
         (c.projection_fields, size_of::<FieldId>()),
     ] {
         bytes = add(bytes, mul(n, width)?)?;
@@ -178,7 +183,29 @@ pub(super) fn preflight(
     guard_event(GuardEvent::DeclarationAdmission);
     let mut declarations =
         admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
-    declarations.layout_bytes = if typed
+    declarations.layout_bytes = if super::record_enum_layouts::needed(typed.records()) {
+        super::record_enum_layouts::inventory(
+            typed.index(),
+            typed.records(),
+            typed.work(),
+            &mut Allocator::default(),
+        )
+        .map_err(|error| {
+            let span = error
+                .primary
+                .unwrap_or_else(|| typed.index().sources().eof());
+            at(
+                if error.code == "E0400" {
+                    OwnedFailure::resource("record and enum source layout inventory")
+                } else {
+                    OwnedFailure::malformed(Malformed::CanonicalSite, span)
+                },
+                span,
+            )
+        })?
+        .0
+        .layout_bytes
+    } else if typed
         .records()
         .iter()
         .all(|r| r.fields.iter().all(|f| matches!(f.ty, ValueTy::Scalar(_))))
@@ -249,6 +276,28 @@ pub(super) fn preflight(
                 )?;
             }
         }
+    }
+    for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if typed
+            .index()
+            .builtin_set()
+            .experimental()
+            .contains(kind.item())
+        {
+            let count = super::experimental_lower::counts(kind);
+            raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+            bytes = cap(
+                add(bytes, function_bytes(count)?)?,
+                ceiling,
+                "source raw payload",
+            )?;
+        }
+    }
+    if !typed.index().builtin_set().experimental().is_empty() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::experimental_lower::extra_bytes(),
+        )?);
     }
     // Status-only imports use the same fixed capacity-check roles for the new
     // enum suffix; conservatively admit the bounded builtin producer envelope.

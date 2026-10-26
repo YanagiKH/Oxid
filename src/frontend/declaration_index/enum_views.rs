@@ -5,13 +5,17 @@ use super::*;
 pub(in crate::frontend) enum NominalId {
     Record(RecordId),
     Enum(EnumId),
+    ByteBuf,
+    File,
 }
 #[cfg(test)]
 impl NominalId {
     pub(super) fn legacy_record(self) -> RecordId {
         match self {
             Self::Record(record) => record,
-            Self::Enum(_) => panic!("legacy index observation excludes enum projection"),
+            Self::Enum(_) | Self::ByteBuf | Self::File => {
+                panic!("legacy index observation excludes enum projection")
+            }
         }
     }
 }
@@ -92,7 +96,7 @@ impl<'a> VariantView<'a> {
         match self.source_syntax() {
             Some(syntax) => self.index.sources().frozen_text(syntax.name),
             None => match self.origin() {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item
+                DeclarationOrigin::Builtin(item) => item
                     .member_name(self.id.index)
                     .expect("checked builtin variant"),
                 _ => unreachable!("checked builtin variant"),
@@ -123,11 +127,21 @@ impl<'a> VariantView<'a> {
             .and_then(|syntax| syntax.payload.map(|payload| payload.span))
     }
     pub fn has_owned_payload(&self) -> bool {
+        if let Some(payload) = self.index.generic_enum_payload(self.id) {
+            return matches!(payload, Some(ValueTy::Owned(_)));
+        }
+        if let DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) = self.origin() {
+            return item
+                .enumeration()
+                .and_then(|kind| kind.value_payload(self.id.index))
+                .is_some_and(|payload| matches!(payload, ValueTy::Owned(_)));
+        }
         self.source_syntax().is_some_and(|syntax| {
             syntax.payload.is_some_and(|payload| {
                 matches!(
                     payload.kind,
                     ast::ScalarTypeSyntax::Name
+                        | ast::ScalarTypeSyntax::Applied(_)
                         | ast::ScalarTypeSyntax::Absolute(_)
                         | ast::ScalarTypeSyntax::Array(_)
                 )
@@ -138,21 +152,30 @@ impl<'a> VariantView<'a> {
         self.has_owned_payload() || self.payload().is_some()
     }
     pub fn payload(&self) -> Option<Ty> {
+        if let Some(payload) = self.index.generic_enum_payload(self.id) {
+            return match payload {
+                Some(ValueTy::Scalar(ty)) => Some(ty),
+                _ => None,
+            };
+        }
         match self.source_syntax() {
             Some(syntax) => syntax.payload.map(|payload| match payload.kind {
                 ast::ScalarTypeSyntax::Bool => Ty::Bool,
                 ast::ScalarTypeSyntax::I32 => Ty::I32,
+                ast::ScalarTypeSyntax::I64 => Ty::I64,
+                ast::ScalarTypeSyntax::Float(kind) => Ty::from_float(kind),
+                ast::ScalarTypeSyntax::Char => Ty::Char,
+                ast::ScalarTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
                 ast::ScalarTypeSyntax::Unit => Ty::Unit,
                 ast::ScalarTypeSyntax::Name
+                | ast::ScalarTypeSyntax::Applied(_)
                 | ast::ScalarTypeSyntax::Absolute(_)
                 | ast::ScalarTypeSyntax::Array(_) => {
                     panic!("owned enum payload requires value_payload")
                 }
             }),
             None => match self.origin() {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => {
-                    item.member_payload(self.id.index)
-                }
+                DeclarationOrigin::Builtin(item) => item.member_payload(self.id.index),
                 _ => unreachable!("checked builtin variant"),
             },
         }
@@ -161,6 +184,15 @@ impl<'a> VariantView<'a> {
     /// scope cannot grant access to a private type or change nominal identity.
     /// Existing scalar and builtin payloads retain their original query work.
     pub fn value_payload(&self, work: &WorkMeter) -> Result<Option<ValueTy>, Box<Diagnostic>> {
+        if let Some(payload) = self.index.generic_enum_payload(self.id) {
+            work.debit(1, self.diagnostic_span(), "instantiated enum payload")?;
+            return Ok(payload);
+        }
+        if let DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) = self.origin() {
+            return Ok(item
+                .enumeration()
+                .and_then(|kind| kind.value_payload(self.id.index)));
+        }
         if !self.has_owned_payload() {
             return Ok(self.payload().map(ValueTy::Scalar));
         }
@@ -195,11 +227,10 @@ impl QuerySession<'_, '_> {
         self.requester(ModuleId(declared.owner as usize), at)?;
         let handle = self.tables.original_for_nominal(nominal, at)?;
         let original = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+            DeclarationProjection::Builtin(_) => {
                 return Ok(NominalExposure::Allowed);
             }
             DeclarationProjection::SourceOriginal(id) => id,
-            _ => return Err(bad(at)),
         };
         let payload = self.tables.original(original)?;
         if payload.domain == NONE
@@ -223,6 +254,14 @@ impl DeclarationIndex<'_> {
     /// Feature selection over immutable source syntax; this is not a type or
     /// layout proof. Scalar enum compilation retains its original accounting.
     pub fn has_owned_enum_payloads(&self, work: &WorkMeter) -> Result<bool, Box<Diagnostic>> {
+        if self
+            .builtin_set()
+            .experimental()
+            .contains(experimental::Item::OpenResult)
+        {
+            work.debit(1, self.sources().eof(), "file result payload inventory")?;
+            return Ok(true);
+        }
         let mut inspected = 0u64;
         for ordinal in 0..self.source_enum_count() {
             let Some(enumeration) = self.frozen_enum_syntax(EnumId(ordinal)) else {
@@ -241,6 +280,7 @@ impl DeclarationIndex<'_> {
                     matches!(
                         payload.kind,
                         ast::ScalarTypeSyntax::Name
+                            | ast::ScalarTypeSyntax::Applied(_)
                             | ast::ScalarTypeSyntax::Absolute(_)
                             | ast::ScalarTypeSyntax::Array(_)
                     )

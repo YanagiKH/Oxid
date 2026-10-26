@@ -197,8 +197,9 @@ fn owned_enum_type_ownership_coverage_and_cycle_rejections() {
         ("enum E{N,V(E)} fn main()->i32{return 0;}","E0202"),
         ("enum A{N,V(B)} enum B{V(A)} fn main()->i32{return 0;}","E0202"),
         ("struct P{n:i32} pub enum E{V(P)} fn main()->i32{return 0;}","E0207"),
-        ("enum E{N} struct P{e:E} fn main()->i32{return 0;}","E0300"),
     ] { Package::new(source).reject(code); }
+    Package::new("enum E{N}struct P{e:E}fn main()->i32{let record=P{e:E::N};let P{e}=record;match e{E::N=>{return 0;},}}")
+        .run("interpreter", 0);
     let p = opaque();
     p.source("use crate::lib::model::good;use crate::lib::model::Outcome;fn main()->i32{let e=good();match e{Outcome::Value(p)=>{return p.left;},Outcome::Error(code)=>{return code;},}}");
     p.reject(if cfg!(target_os = "linux") {

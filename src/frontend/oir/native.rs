@@ -40,8 +40,98 @@ const MAX_PARAMS: usize = 64;
 const MAX_FUNCTION_LOCALS: usize = 256;
 const MAX_NATIVE_LOCALS: usize = 8_192;
 const MAX_NATIVE_BLOCKS: usize = 4_096;
+pub(super) const MAX_HOSTED_FUNCTIONS: usize = 1_024;
+pub(super) const MAX_HOSTED_LOCALS: usize = 32_768;
+pub(super) const MAX_HOSTED_BLOCKS: usize = 16_384;
 const MAX_DEPTH: usize = 32;
 const MAX_COST: usize = 100_000;
+
+/// Internal executable call accounting shared by the two native emitters.
+/// Reservations occur at the caller, before the callee can allocate a frame.
+pub(super) mod hosted_frames {
+    use std::fmt::Write;
+
+    pub(in crate::frontend::oir) const MAX_BYTES: usize = 1024 * 1024;
+    pub(in crate::frontend::oir) const COUNTER_BYTES: usize = 24;
+    // Two counter iteration carriers, usage, callback captures and formatter
+    // arguments have a fixed payload independent of source or call depth.
+    pub(in crate::frontend::oir) const EMISSION_BYTES: usize = 1024;
+    const _: () = assert!(
+        2 * std::mem::size_of::<[(&str, usize, usize, Failure); 3]>()
+            + std::mem::size_of::<Usage>()
+            + std::mem::size_of::<std::fmt::Arguments<'static>>()
+            + 16 * std::mem::size_of::<usize>()
+            <= EMISSION_BYTES
+    );
+    const MAX_FRAMES: usize = 1024;
+    const MAX_SLOTS: usize = 200_000;
+
+    #[derive(Clone, Copy)]
+    pub(in crate::frontend::oir) struct Usage {
+        pub(in crate::frontend::oir) slots: usize,
+        pub(in crate::frontend::oir) bytes: usize,
+    }
+
+    #[derive(Clone, Copy)]
+    pub(in crate::frontend::oir) enum Failure {
+        Frames,
+        Slots,
+        Bytes,
+    }
+
+    fn counters(usage: Usage) -> [(&'static str, usize, usize, Failure); 3] {
+        [
+            ("frames", 1, MAX_FRAMES, Failure::Frames),
+            ("slots", usage.slots, MAX_SLOTS, Failure::Slots),
+            ("bytes", usage.bytes, MAX_BYTES, Failure::Bytes),
+        ]
+    }
+
+    pub(in crate::frontend::oir) fn globals(out: &mut impl Write) {
+        for name in ["frames", "slots", "bytes"] {
+            writeln!(
+                out,
+                "@__oxid_hosted_{name} = internal thread_local global i64 0, align 8"
+            )
+            .unwrap();
+        }
+    }
+
+    pub(in crate::frontend::oir) fn reset(out: &mut impl Write, initial_bytes: usize) {
+        for name in ["frames", "slots", "bytes"] {
+            let value = if name == "bytes" { initial_bytes } else { 0 };
+            writeln!(
+                out,
+                "  store i64 {value}, ptr @__oxid_hosted_{name}, align 8"
+            )
+            .unwrap();
+        }
+    }
+
+    pub(in crate::frontend::oir) fn enter<W: Write>(
+        out: &mut W,
+        name: &str,
+        usage: Usage,
+        mut failure: impl FnMut(&mut W, Failure),
+    ) {
+        for (counter, charge, limit, kind) in counters(usage) {
+            let available = limit.checked_sub(charge).expect("admitted native frame");
+            writeln!(out, "  %{name}_{counter} = load i64, ptr @__oxid_hosted_{counter}, align 8\n  %{name}_{counter}_full = icmp ugt i64 %{name}_{counter}, {available}\n  br i1 %{name}_{counter}_full, label %{name}_{counter}_error, label %{name}_{counter}_ready\n{name}_{counter}_error:").unwrap();
+            failure(out, kind);
+            writeln!(out, "{name}_{counter}_ready:").unwrap();
+        }
+        // Check every budget before committing any of the reservations.
+        for (counter, charge, _, _) in counters(usage) {
+            writeln!(out, "  %{name}_{counter}_next = add nuw i64 %{name}_{counter}, {charge}\n  store i64 %{name}_{counter}_next, ptr @__oxid_hosted_{counter}, align 8").unwrap();
+        }
+    }
+
+    pub(in crate::frontend::oir) fn leave(out: &mut impl Write, name: &str, usage: Usage) {
+        for (counter, charge, _, _) in counters(usage) {
+            writeln!(out, "  %{name}_{counter}_returned = load i64, ptr @__oxid_hosted_{counter}, align 8\n  %{name}_{counter}_previous = sub nuw i64 %{name}_{counter}_returned, {charge}\n  store i64 %{name}_{counter}_previous, ptr @__oxid_hosted_{counter}, align 8").unwrap();
+        }
+    }
+}
 
 fn reject(message: impl Into<String>, span: Option<Span>) -> Box<Diagnostic> {
     Diagnostic::new("E0700", "native-admission", message, span)
@@ -69,17 +159,110 @@ enum EntryPolicy {
     #[default]
     Result,
     Process,
+    HostedResult,
+    HostedProcess,
+    RecursiveHostedResult,
+    RecursiveHostedProcess,
 }
 impl EntryPolicy {
+    fn process(self) -> bool {
+        matches!(
+            self,
+            Self::Process | Self::HostedProcess | Self::RecursiveHostedProcess
+        )
+    }
+    fn hosted(self) -> bool {
+        matches!(
+            self,
+            Self::HostedResult
+                | Self::HostedProcess
+                | Self::RecursiveHostedResult
+                | Self::RecursiveHostedProcess
+        )
+    }
+    fn recursive(self) -> bool {
+        matches!(
+            self,
+            Self::RecursiveHostedResult | Self::RecursiveHostedProcess
+        )
+    }
+    fn with_recursion(self, recursive: bool) -> Self {
+        match (self, recursive) {
+            (Self::HostedResult, true) => Self::RecursiveHostedResult,
+            (Self::HostedProcess, true) => Self::RecursiveHostedProcess,
+            _ => self,
+        }
+    }
     fn failure_symbol(self) -> &'static str {
         match self {
-            Self::Result => "__oxid_overflow",
-            Self::Process => "__oxid_process_failure",
+            Self::Result | Self::HostedResult | Self::RecursiveHostedResult => "__oxid_overflow",
+            Self::Process | Self::HostedProcess | Self::RecursiveHostedProcess => {
+                "__oxid_process_failure"
+            }
         }
     }
 }
 
 impl VerifiedProgram {
+    pub(in crate::frontend) fn native_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        let policy = match (process, execution.hosted()) {
+            (false, false) => EntryPolicy::Result,
+            (true, false) => EntryPolicy::Process,
+            (false, true) => EntryPolicy::HostedResult,
+            (true, true) => EntryPolicy::HostedProcess,
+        };
+        self.native_module_policy_limits_mode_with_source_names(
+            entry,
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            policy,
+            OutputMode::Default,
+            names,
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
+    pub(in crate::frontend) fn native_debug_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        let policy = match (process, execution.hosted()) {
+            (false, false) => EntryPolicy::Result,
+            (true, false) => EntryPolicy::Process,
+            (false, true) => EntryPolicy::HostedResult,
+            (true, true) => EntryPolicy::HostedProcess,
+        };
+        self.native_module_policy_limits_mode_with_source_names_debug(
+            entry,
+            sources,
+            execute::MAX_FUEL,
+            MAX_GUARDED_DIAGNOSTIC_BYTES,
+            MAX_GUARDED_IR_BYTES,
+            policy,
+            OutputMode::Default,
+            names,
+            true,
+        )
+        .map_err(|failure| match failure {
+            EmitFailure::Diagnostic(diagnostic) => diagnostic,
+            _ => unreachable!("default native allocation has no private failure"),
+        })
+    }
     pub(in crate::frontend) fn native_module(
         &self,
         entry: Option<hir::DefId>,
@@ -264,6 +447,32 @@ impl VerifiedProgram {
         mode: OutputMode<'_>,
         names: Option<&NativeSourceNames<'_>>,
     ) -> Result<String, EmitFailure> {
+        self.native_module_policy_limits_mode_with_source_names_debug(
+            entry,
+            sources,
+            fuel,
+            diagnostic_limit,
+            ir_limit,
+            policy,
+            mode,
+            names,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn native_module_policy_limits_mode_with_source_names_debug(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        fuel: usize,
+        diagnostic_limit: usize,
+        ir_limit: usize,
+        policy: EntryPolicy,
+        mode: OutputMode<'_>,
+        names: Option<&NativeSourceNames<'_>>,
+        debug: bool,
+    ) -> Result<String, EmitFailure> {
         if let Some(names) = names {
             names.validate(sources)?;
         }
@@ -289,23 +498,28 @@ impl VerifiedProgram {
         if root.param_count != 0 {
             return Err(reject("native main must have no parameters", Some(root.span)).into());
         }
-        if policy == EntryPolicy::Process && root.result != hir::Ty::I32 {
+        if policy.process() && root.result != hir::Ty::I32 {
             return Err(reject("process main must return i32", Some(root.span)).into());
         }
         // An i8 helper result is valid internally, but has no public result
         // representation. Reject the selected entry before native plan vectors,
         // diagnostics, count/render passes, output allocation, or tools.
-        if policy == EntryPolicy::Result && root.result == hir::Ty::U8 {
+        if !policy.process() && root.result == hir::Ty::U8 {
             return Err(reject("native main must return bool, i32 or ()", Some(root.span)).into());
         }
         // The importer already prepays the complete fixed bank. Recheck the
         // descriptor before entering the new scalar helper or native plans.
         mode.preflight_fixed()?;
-        let bounds = self.admit()?;
-        let guarded = bounds.iter().any(|bound| bound.cyclic);
+        let bounds = if policy.hosted() {
+            self.admit_with_execution(true)?
+        } else {
+            self.admit()?
+        };
+        let policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
+        let guarded = !policy.hosted() && bounds.iter().any(|bound| bound.cyclic);
         // Process diagnostics use the same bounded table even for acyclic
         // bodies. This does not change their ABI or introduce fuel guards.
-        let diagnostics = (guarded || policy == EntryPolicy::Process)
+        let diagnostics = (guarded || policy.process() || policy.hosted())
             .then(|| match names {
                 Some(names) => GuardedDiagnostics::new_policy_with_source_names(
                     &self.program,
@@ -332,6 +546,7 @@ impl VerifiedProgram {
         // text buffer. Inherited native metadata/temporary Strings still allocate.
         let mut count = Emission {
             policy,
+            debug,
             ..Emission::default()
         };
         #[cfg(test)]
@@ -348,10 +563,11 @@ impl VerifiedProgram {
         );
         #[cfg(test)]
         emit_observation::finish_pass(false, &count);
-        if guarded || policy == EntryPolicy::Process {
+        if debug || guarded || policy.process() || policy.hosted() {
             limit(count.len, ir_limit, "guarded LLVM bytes", root.span)?;
         }
         let mut output = mode.allocate(count.len, policy)?;
+        output.debug = debug;
         #[cfg(test)]
         emit_observation::start_pass(true, &output);
         emit(
@@ -370,12 +586,31 @@ impl VerifiedProgram {
     }
 
     fn admit(&self) -> Result<Vec<Bound>, Box<Diagnostic>> {
+        self.admit_with_execution(false)
+    }
+
+    fn admit_with_execution(&self, hosted: bool) -> Result<Vec<Bound>, Box<Diagnostic>> {
         let functions = &self.program.functions;
         if functions.is_empty() {
             return Ok(Vec::new());
         }
         let origin = functions[0].span;
-        limit(functions.len(), MAX_FUNCTIONS, "function count", origin)?;
+        let function_limit = if hosted {
+            MAX_HOSTED_FUNCTIONS
+        } else {
+            MAX_FUNCTIONS
+        };
+        let local_limit = if hosted {
+            MAX_HOSTED_LOCALS
+        } else {
+            MAX_NATIVE_LOCALS
+        };
+        let block_limit = if hosted {
+            MAX_HOSTED_BLOCKS
+        } else {
+            MAX_NATIVE_BLOCKS
+        };
+        limit(functions.len(), function_limit, "function count", origin)?;
         let mut callers = vec![Vec::new(); functions.len()];
         let mut remaining = vec![0usize; functions.len()];
         let (mut locals, mut blocks) = (0, 0);
@@ -428,8 +663,8 @@ impl VerifiedProgram {
                 }
             }
         }
-        limit(locals, MAX_NATIVE_LOCALS, "aggregate locals", origin)?;
-        limit(blocks, MAX_NATIVE_BLOCKS, "aggregate blocks", origin)?;
+        limit(locals, local_limit, "aggregate locals", origin)?;
+        limit(blocks, block_limit, "aggregate blocks", origin)?;
         let mut ready: Vec<_> = remaining
             .iter()
             .enumerate()
@@ -469,7 +704,7 @@ impl VerifiedProgram {
             // Preserve the old inclusive static bound for every function whose
             // transitive CFG is acyclic. Cyclic costs require a shared runtime
             // guard, while depth/live storage remain statically bounded.
-            if !bound.cyclic {
+            if !bound.cyclic && !hosted {
                 limit(
                     bound.cost.saturating_add(1),
                     MAX_COST,
@@ -477,8 +712,10 @@ impl VerifiedProgram {
                     f.span,
                 )?;
             }
-            limit(bound.depth, MAX_DEPTH, "call depth", f.span)?;
-            limit(bound.slots, MAX_NATIVE_LOCALS, "live local slots", f.span)?;
+            if !hosted {
+                limit(bound.depth, MAX_DEPTH, "call depth", f.span)?;
+            }
+            limit(bound.slots, local_limit, "live local slots", f.span)?;
             bounds[i] = bound;
             for &caller in &callers[i] {
                 remaining[caller] -= 1;
@@ -487,7 +724,18 @@ impl VerifiedProgram {
                 }
             }
         }
-        if visited != functions.len() {
+        if hosted {
+            // Zero depth marks a function whose transitive callees include a
+            // call cycle. Runtime caller reservations replace that static sum.
+            for (i, pending) in remaining.iter().enumerate() {
+                if *pending != 0 {
+                    bounds[i] = Bound {
+                        cyclic: true,
+                        ..Bound::default()
+                    };
+                }
+            }
+        } else if visited != functions.len() {
             let f = &functions[remaining
                 .iter()
                 .position(|&n| n != 0)
@@ -510,6 +758,25 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
     scalar_resource::record_closure(&local);
     let destination = local(assignment.destination);
     let valid = match assignment.value {
+        Rvalue::I64(_)
+        | Rvalue::WidenI64 { .. }
+        | Rvalue::CheckedI64ToI32 { .. }
+        | Rvalue::CheckedI64ToU8 { .. }
+        | Rvalue::CheckedNegateI64 { .. }
+        | Rvalue::Integer { .. }
+        | Rvalue::CharacterConvert { .. }
+        | Rvalue::FloatConvert { .. }
+        | Rvalue::Character(_)
+        | Rvalue::Float { .. }
+        | Rvalue::FloatArithmetic { .. }
+        | Rvalue::FloatNegate { .. }
+        | Rvalue::Integer128 { .. }
+        | Rvalue::Bitwise { .. }
+        | Rvalue::BitNot { .. }
+        | Rvalue::CheckedInteger { .. }
+        | Rvalue::CheckedNegateInteger { .. }
+        | Rvalue::CheckedIntegerCast { .. }
+        | Rvalue::CheckedI64 { .. } => false,
         Rvalue::CheckedI32ToU8 { operand, .. } => {
             local(operand.local) == Some(hir::Ty::I32) && destination == Some(hir::Ty::U8)
         }
@@ -547,6 +814,7 @@ fn admit_assignment(function: &Function, assignment: &Assign) -> Result<(), Box<
         }
         Rvalue::Bool(_) => destination == Some(hir::Ty::Bool),
         Rvalue::I32(_) => destination == Some(hir::Ty::I32),
+        Rvalue::U8(_) => destination == Some(hir::Ty::U8),
         Rvalue::Unit => destination == Some(hir::Ty::Unit),
         Rvalue::Copy(operand) => destination.is_some() && destination == local(operand.local),
         Rvalue::Load(place) => {
@@ -617,6 +885,7 @@ fn successors(kind: &TerminatorKind) -> impl Iterator<Item = BlockId> {
 
 #[derive(Default)]
 struct Emission {
+    debug: bool,
     len: usize,
     text: Option<String>,
     policy: EntryPolicy,
@@ -680,6 +949,8 @@ impl Write for LimitedCount {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum FailureKind {
     Fuel,
+    Frames,
+    Slots,
     Overflow,
     DivisionByZero,
     ByteRange,
@@ -699,6 +970,8 @@ impl FailureKind {
         }
         match self {
             Self::Fuel => RunFailure::Fuel(span),
+            Self::Frames => RunFailure::Frames(span),
+            Self::Slots => RunFailure::Slots(span),
             Self::Overflow => RunFailure::Overflow(span),
             Self::DivisionByZero => RunFailure::DivisionByZero(span),
             Self::ByteRange => RunFailure::ByteRange(span),
@@ -711,7 +984,9 @@ impl FailureKind {
             Self::Overflow => "__oxid_error",
             Self::DivisionByZero => "__oxid_division_error",
             Self::ByteRange => "__oxid_byte_range_error",
-            Self::Fuel | Self::ProcessStatus => unreachable!("arithmetic failure kind"),
+            Self::Fuel | Self::Frames | Self::Slots | Self::ProcessStatus => {
+                unreachable!("arithmetic failure kind")
+            }
         }
     }
 }
@@ -851,6 +1126,10 @@ impl GuardedDiagnostics {
         if guarded {
             add(FailureKind::Fuel, program.functions[entry.0].span)?;
         }
+        if policy.recursive() {
+            add(FailureKind::Frames, program.functions[entry.0].span)?;
+            add(FailureKind::Slots, program.functions[entry.0].span)?;
+        }
         for function in &program.functions {
             for block in &function.blocks {
                 if guarded {
@@ -877,9 +1156,14 @@ impl GuardedDiagnostics {
                         block.terminator.as_ref().expect("verified terminator").span,
                     )?;
                 }
+                let term = block.terminator.as_ref().expect("verified terminator");
+                if policy.recursive() && matches!(term.kind, TerminatorKind::Call { .. }) {
+                    add(FailureKind::Frames, term.span)?;
+                    add(FailureKind::Slots, term.span)?;
+                }
             }
         }
-        if policy == EntryPolicy::Process {
+        if policy.process() {
             add(FailureKind::ProcessStatus, program.functions[entry.0].span)?;
         }
         Ok(result)
@@ -915,11 +1199,39 @@ fn emit_guard(
     writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
 }
 
+fn emit_frame_enter(
+    out: &mut Emission,
+    diagnostics: &GuardedDiagnostics,
+    name: &str,
+    usage: hosted_frames::Usage,
+    span: Span,
+) {
+    hosted_frames::enter(out, name, usage, |out, kind| {
+        let kind = match kind {
+            hosted_frames::Failure::Frames => FailureKind::Frames,
+            hosted_frames::Failure::Slots | hosted_frames::Failure::Bytes => FailureKind::Slots,
+        };
+        let (id, message) = diagnostics.get(kind, span);
+        let failure = out.policy.failure_symbol();
+        writeln!(
+            out,
+            "  call void @{failure}(ptr @__oxid_guard_error_{id}, i64 {})\n  unreachable",
+            message.len()
+        )
+        .unwrap();
+    });
+}
+
 fn ty(ty: hir::Ty) -> &'static str {
     match ty {
         hir::Ty::Bool => "i1",
-        hir::Ty::Unit | hir::Ty::U8 => "i8",
-        hir::Ty::I32 => "i32",
+        hir::Ty::Unit | hir::Ty::U8 | hir::Ty::I8 => "i8",
+        hir::Ty::I16 | hir::Ty::U16 => "i16",
+        hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::F64 | hir::Ty::I128 | hir::Ty::U128 => {
+            unreachable!("closed scalar native type")
+        }
     }
 }
 fn write_u8_checks(out: &mut Emission, n: usize, operand: usize) {
@@ -990,6 +1302,43 @@ fn emit_arithmetic_failure_with_source_names(
     }
     writeln!(out, "  unreachable").unwrap();
 }
+fn scalar_debug_slot(function: &Function, index: usize) -> bool {
+    let local = &function.locals[index];
+    local.ty != hir::Ty::Unit && (index < function.param_count || local.kind == LocalKind::Binding)
+}
+
+fn scalar_frame_usage(function: &Function, debug: bool) -> hosted_frames::Usage {
+    let slots = function.slot_count();
+    // Debug addresses have their own physical storage in addition to SSA
+    // values. Charge four bytes per scalar, including one-byte booleans.
+    let debug_slots = if debug {
+        (0..function.locals.len())
+            .filter(|&index| scalar_debug_slot(function, index))
+            .count()
+    } else {
+        0
+    };
+    hosted_frames::Usage {
+        slots,
+        bytes: (slots + debug_slots) * 4,
+    }
+}
+
+fn scalar_debug_store(out: &mut Emission, index: usize, value_ty: hir::Ty) {
+    if value_ty == hir::Ty::Bool {
+        // DWARF describes a full byte. Define its padding bits rather than
+        // exposing the unspecified high bits of an LLVM i1 store.
+        writeln!(out, "  %debug_bool_v{index} = zext i1 %v{index} to i8\n  store i8 %debug_bool_v{index}, ptr %debug_v{index}, align 4").unwrap();
+    } else {
+        writeln!(
+            out,
+            "  store {} %v{index}, ptr %debug_v{index}, align 4",
+            ty(value_ty)
+        )
+        .unwrap();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit(
     program: &Program,
@@ -1001,11 +1350,14 @@ fn emit(
     fuel: usize,
     out: &mut Emission,
 ) {
-    out.push_str("; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n");
+    out.push_str(if cfg!(all(target_os="linux",target_arch="aarch64")) { "; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"aarch64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" } else { "; Oxid experimental scalar native ABI 1\nsource_filename = \"oxid-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" });
     // Diagnostics are pre-rendered with the reference renderer. Every UTF-8
     // byte is escaped as LLVM constant data; no source path can become syntax.
-    if out.policy == EntryPolicy::Process {
+    if out.policy.process() {
         out.push_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n");
+    }
+    if out.policy.recursive() {
+        hosted_frames::globals(out);
     }
     if let Some(diagnostics) = diagnostics {
         for (id, message) in diagnostics.messages.iter().enumerate() {
@@ -1065,6 +1417,9 @@ fn emit(
         }
     }
     for f in &program.functions {
+        if out.debug {
+            crate::frontend::native_debug::function(out, f.span);
+        }
         // Source names and paths never enter LLVM symbol syntax. Deterministic
         // numeric DefIds avoid collisions with main, libc and runtime symbols.
         write!(
@@ -1084,8 +1439,39 @@ fn emit(
             write!(out, "{} %v{i}", ty(p.ty)).unwrap();
         }
         out.push_str(") noinline {\nentry:\n");
+        if out.debug {
+            crate::frontend::native_debug::location(out, f.span);
+        }
         for (i, place) in f.places.iter().enumerate() {
             writeln!(out, "  %p{i} = alloca {}", ty(place.ty)).unwrap();
+        }
+        if out.debug {
+            for (i, local) in f.locals.iter().enumerate() {
+                if scalar_debug_slot(f, i) {
+                    let storage_ty = if local.ty == hir::Ty::Bool {
+                        "i8"
+                    } else {
+                        ty(local.ty)
+                    };
+                    writeln!(out, "  %debug_v{i} = alloca {storage_ty}, align 4").unwrap();
+                }
+            }
+            for (i, parameter) in f.locals.iter().take(f.param_count).enumerate() {
+                if !scalar_debug_slot(f, i) {
+                    continue;
+                }
+                scalar_debug_store(out, i, parameter.ty);
+                crate::frontend::native_debug::variable(
+                    out,
+                    parameter.span,
+                    parameter.ty,
+                    i + 1,
+                    crate::frontend::native_debug::VariableValue::Address(
+                        &format!("%debug_v{i}"),
+                        0,
+                    ),
+                );
+            }
         }
         writeln!(out, "  br label %b{}", f.entry.0).unwrap();
         // Checked arithmetic splits an OIR block. Phi edges depart from its
@@ -1114,6 +1500,9 @@ fn emit(
         for (i, b) in f.blocks.iter().enumerate() {
             writeln!(out, "b{i}:").unwrap();
             if let Some(merge) = &b.merge {
+                if out.debug {
+                    crate::frontend::native_debug::location(out, merge.span);
+                }
                 let [left, right] = merge.incoming;
                 writeln!(
                     out,
@@ -1131,6 +1520,9 @@ fn emit(
                 emit_guard(out, diagnostics, &format!("g{i}_0"), 1, merge.span);
             }
             for (j, statement) in b.statements.iter().enumerate() {
+                if out.debug {
+                    crate::frontend::native_debug::location(out, statement.span());
+                }
                 if guarded {
                     let diagnostics = diagnostics.expect("guarded diagnostics");
                     emit_guard(
@@ -1153,6 +1545,19 @@ fn emit(
                             place.id.0
                         )
                         .unwrap();
+                        if out.debug && matches!(statement, Statement::Initialize { .. }) {
+                            let declaration = &f.places[place.id.0];
+                            crate::frontend::native_debug::variable(
+                                out,
+                                declaration.span,
+                                declaration.ty,
+                                0,
+                                crate::frontend::native_debug::VariableValue::Address(
+                                    &format!("%p{}", place.id.0),
+                                    0,
+                                ),
+                            );
+                        }
                         continue;
                     }
                 };
@@ -1356,8 +1761,27 @@ fn emit(
                     _ => unreachable!("native admission allowlist"),
                 };
                 writeln!(out, "  %v{} = or {t} {rhs}, 0", a.destination.0).unwrap();
+                if out.debug {
+                    let declaration = &f.locals[a.destination.0];
+                    if declaration.kind == LocalKind::Binding && declaration.ty != hir::Ty::Unit {
+                        scalar_debug_store(out, a.destination.0, declaration.ty);
+                        crate::frontend::native_debug::variable(
+                            out,
+                            declaration.span,
+                            declaration.ty,
+                            0,
+                            crate::frontend::native_debug::VariableValue::Address(
+                                &format!("%debug_v{}", a.destination.0),
+                                0,
+                            ),
+                        );
+                    }
+                }
             }
             let terminator = b.terminator.as_ref().expect("verified terminator");
+            if out.debug {
+                crate::frontend::native_debug::location(out, terminator.span);
+            }
             if guarded {
                 let diagnostics = diagnostics.expect("guarded diagnostics");
                 let cost = match &terminator.kind {
@@ -1399,6 +1823,17 @@ fn emit(
                     destination,
                     continuation,
                 } => {
+                    let usage = scalar_frame_usage(&program.functions[target.0], out.debug);
+                    if out.policy.recursive() {
+                        let frame_name = format!("f{}_b{}_call", f.id.0, i);
+                        emit_frame_enter(
+                            out,
+                            diagnostics.expect("hosted diagnostics"),
+                            &frame_name,
+                            usage,
+                            terminator.span,
+                        );
+                    }
                     write!(
                         out,
                         "  %v{} = call {} @__oxid_fn_{}(",
@@ -1416,7 +1851,12 @@ fn emit(
                         }
                         write!(out, "{} %v{}", ty(f.locals[arg.local.0].ty), arg.local.0).unwrap();
                     }
-                    writeln!(out, ")\n  br label %b{}", continuation.0).unwrap();
+                    writeln!(out, ")").unwrap();
+                    if out.policy.recursive() {
+                        let frame_name = format!("f{}_b{}_call", f.id.0, i);
+                        hosted_frames::leave(out, &frame_name, usage);
+                    }
+                    writeln!(out, "  br label %b{}", continuation.0).unwrap();
                 }
             }
         }
@@ -1424,7 +1864,7 @@ fn emit(
     }
     let result = program.functions[entry.0].result;
     out.push_str("\ndefine i32 @main() {\nentry:\n");
-    if out.policy == EntryPolicy::Process {
+    if out.policy.process() {
         out.push_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n");
     }
     if guarded {
@@ -1432,6 +1872,17 @@ fn emit(
         writeln!(out, "  %fuel = alloca i64\n  store i64 {}, ptr %fuel", fuel).unwrap();
         let root = &program.functions[entry.0];
         emit_guard(out, diagnostics, "root", 1 + root.slot_count(), root.span);
+    }
+    let usage = scalar_frame_usage(&program.functions[entry.0], out.debug);
+    if out.policy.recursive() {
+        hosted_frames::reset(out, hosted_frames::COUNTER_BYTES);
+        emit_frame_enter(
+            out,
+            diagnostics.expect("hosted diagnostics"),
+            "hosted_root",
+            usage,
+            program.functions[entry.0].span,
+        );
     }
     writeln!(
         out,
@@ -1441,7 +1892,10 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
-    if out.policy == EntryPolicy::Process {
+    if out.policy.recursive() {
+        hosted_frames::leave(out, "hosted_root", usage);
+    }
+    if out.policy.process() {
         let diagnostics = diagnostics.expect("process diagnostics");
         let (id, message) =
             diagnostics.get(FailureKind::ProcessStatus, program.functions[entry.0].span);
@@ -1455,7 +1909,22 @@ fn emit(
         ),
         hir::Ty::I32 => out.push_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n"),
         hir::Ty::Unit => out.push_str("  %status = call i32 @__oxid_print_unit()\n"),
-        hir::Ty::U8 => unreachable!("byte entry rejected before native admission"),
+        hir::Ty::U8
+        | hir::Ty::I64
+        | hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::F32
+        | hir::Ty::F64
+        | hir::Ty::Char
+        | hir::Ty::U128 => {
+            unreachable!("entry rejected before closed scalar native admission")
+        }
     }
     out.push_str("  ret i32 %status\n}\n");
 }
@@ -1485,6 +1954,41 @@ mod tests {
     }
     fn verified(text: &str) -> VerifiedProgram {
         verified_with_sources(text).0
+    }
+
+    #[test]
+    fn scalar_debug_addresses_charge_each_recursive_call_without_changing_value_slots() {
+        use crate::frontend::build_config::ExecutionPolicy;
+        let (program, sources) = verified_with_sources("fn count(n:i32)->i32{let observed=n;if n==0{return observed;}else{return count(n-1);}}fn main()->i32{return count(2);}");
+        let entry = Some(hir::DefId(1));
+        let plain = program
+            .native_module_with_execution(entry, &sources, false, ExecutionPolicy::Hosted, None)
+            .unwrap();
+        let debug = program
+            .native_debug_module_with_execution(
+                entry,
+                &sources,
+                false,
+                ExecutionPolicy::Hosted,
+                None,
+            )
+            .unwrap();
+        let charges = |text: &str, counter: &str| -> Vec<usize> {
+            text.lines()
+                .filter(|line| line.contains(&format!("_{counter}_next = add nuw i64 ")))
+                .map(|line| line.rsplit_once(", ").unwrap().1.parse().unwrap())
+                .collect()
+        };
+        let before = charges(&plain, "bytes");
+        let after = charges(&debug, "bytes");
+        assert_eq!(before.len(), 3);
+        // Two call sites enter count. Its parameter and observed binding each
+        // need a four-byte debug slot. The wrapper enters a binding-free main.
+        assert_eq!(after, vec![before[0] + 8, before[1] + 8, before[2]]);
+        assert_eq!(charges(&plain, "slots"), charges(&debug, "slots"));
+        assert!(!plain.contains("%debug_v"));
+        assert_eq!(debug.matches(" = alloca i32, align 4").count(), 2);
+        assert_eq!(debug.matches("address %debug_v").count(), 2);
     }
 
     fn source_name_paths(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -1717,6 +2221,14 @@ mod tests {
                 "  %value = call i32 @__oxid_fn_0()\n",
                 "  %status = call i32 @__oxid_print_i32(i32 %value)\n",
                 "  ret i32 %status\n}\n",
+            )
+            .replace(
+                "x86_64-unknown-linux-gnu",
+                if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+                    "aarch64-unknown-linux-gnu"
+                } else {
+                    "x86_64-unknown-linux-gnu"
+                }
             )
         );
     }
@@ -2577,3 +3089,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_hosted_capacity_tests.rs"]
+mod hosted_capacity_tests;

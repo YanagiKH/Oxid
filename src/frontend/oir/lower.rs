@@ -403,6 +403,17 @@ fn lower_expression(
                         name_span,
                         source_expr,
                     } => Some(match op {
+                        hir::ConversionOp::ToCharChecked
+                        | hir::ConversionOp::CharToU32
+                        | hir::ConversionOp::ToFloat(_)
+                        | hir::ConversionOp::FloatToBits
+                        | hir::ConversionOp::FloatSqrt
+                        | hir::ConversionOp::FloatFromBits(_)
+                        | hir::ConversionOp::ToI64
+                        | hir::ConversionOp::ToI32Checked
+                        | hir::ConversionOp::ToIntegerChecked(_) => {
+                            return Err(failure(FailureKind::TypeMismatch, expr.span))
+                        }
                         hir::ConversionOp::ToU8Checked => Rvalue::CheckedI32ToU8 {
                             operand: operand(*inner),
                             name_span: *name_span,

@@ -7,7 +7,12 @@ use std::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
-const PROCESS_HOST: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+const PROCESS_HOST: bool = cfg!(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+));
 
 struct Project(PathBuf);
 impl Project {
@@ -199,7 +204,7 @@ fn unknown_editions_and_unsupported_configuration_never_fall_back() {
             "profile",
         ),
         (
-            "[project]\nedition = \"typed-preview\"\n[build]\ntarget = \"aarch64-unknown-linux-gnu\"\n",
+            "[project]\nedition = \"typed-preview\"\n[build]\ntarget = \"riscv64-unknown-linux-gnu\"\n",
             "target",
         ),
         (
@@ -450,7 +455,12 @@ fn invalid_source_or_tool_failure_preserves_previous_managed_executable() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn managed_build_rejects_symlinks_and_directory_outputs_before_tool_invocation() {
     use std::os::unix::fs::symlink;
 
@@ -509,8 +519,13 @@ fn typed_formatter_inherits_manifest_and_preserves_stdout_contract() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-#[ignore = "requires Linux x86_64 and pinned LLVM 19.1.7"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[ignore = "requires Linux x86_64 or ARM64 and pinned LLVM 19.1.7"]
 fn native_build_replaces_managed_output_after_module_edit_and_preserves_compile_contract() {
     let project = Project::new();
     project.typed("");

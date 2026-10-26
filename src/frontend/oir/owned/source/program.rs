@@ -9,6 +9,13 @@ use crate::frontend::{
     project::budget::Allocator,
 };
 
+#[cfg(test)]
+#[path = "experimental_source_tests.rs"]
+mod experimental_source_tests;
+#[cfg(test)]
+#[path = "i64_source_tests.rs"]
+mod i64_source_tests;
+
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct SourceProgram {
     witness: verified::VerifiedOwnedProgram,
@@ -23,6 +30,28 @@ pub(in crate::frontend::oir) fn check_source(
     let typed = typeck::check(resolved)?;
     let entry = typed.entry();
     Ok((check_typed(&typed)?, entry))
+}
+
+#[test]
+fn record_field_views_rederive_composed_offsets_before_scalar_reads() {
+    use crate::frontend::{lexer, parser};
+    let mut sources = SourceMap::new();
+    let id = sources.add("record-field-views.ox".into(), "struct Inner{x:i32}struct Middle{pad:i32,a:Inner,b:Inner}struct Outer{pad:i32,middle:Middle}struct Other{x:i32}\nfn main()->i32{let outer=Outer{pad:11,middle:Middle{pad:22,a:Inner{x:37},b:Inner{x:99}}};return relay(&outer.middle);}\nfn relay(p:&Middle)->i32{return read(&*p.a);}\nfn read(p:&Inner)->i32{return p.x;}".into());
+    let file = sources.get(id);
+    let (ast, _) = parser::parse_counted_with_arrays(
+        file,
+        lexer::lex(file).unwrap(),
+        parser::SourceMode::OwnedCandidate,
+        parser::MAX_NODES,
+        &mut Allocator::default(),
+        parser::ArraySyntaxPolicy::Enabled,
+    )
+    .unwrap();
+    let (program, _) = check_source(file, &ast, &sources).unwrap();
+    assert_eq!(
+        execute::record_field_view_tests::exercise_record_views(&program.witness),
+        5
+    );
 }
 
 /// Keep the fresh index and paid typed owner local until ordinary source
@@ -175,8 +204,126 @@ impl SourceProgram {
         entry: Option<hir::DefId>,
         sources: &SourceMap,
     ) -> Result<Scalar, Box<Diagnostic>> {
+        self.run_with_execution(
+            entry,
+            sources,
+            crate::frontend::build_config::ExecutionPolicy::Bounded,
+        )
+    }
+
+    pub(in crate::frontend::oir) fn run_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, Box<Diagnostic>> {
+        // Keep the retained narrow entry interface closed. Current language
+        // results use run_value, including byte results.
+        if entry
+            .and_then(|id| self.witness.functions().get(id.0))
+            .is_some_and(|function| function.result == ValueTy::Scalar(hir::Ty::U8))
+        {
+            self.require_result_entry_policy(sources)?;
+            return execute::run_with_execution(&self.witness, entry, execution)
+                .map_err(|error| error.diagnostic(sources));
+        }
+        self.run_value(entry, sources, execution)?
+            .narrow()
+            .ok_or_else(|| {
+                Diagnostic::new(
+                    "E0600",
+                    "oir-run",
+                    "this scalar result interface does not support i64",
+                    None,
+                )
+            })
+    }
+
+    pub(in crate::frontend::oir) fn run_result(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeValue, Box<Diagnostic>> {
         self.require_result_entry_policy(sources)?;
-        execute::run(&self.witness, entry).map_err(|error| error.diagnostic(sources))
+        execute::run_result(&self.witness, entry, execute::Limits::default(), execution)
+            .map_err(|error| error.diagnostic(sources))
+    }
+
+    pub(in crate::frontend::oir) fn run_value(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<RuntimeScalar, Box<Diagnostic>> {
+        self.require_result_entry_policy(sources)?;
+        execute::run_value(&self.witness, entry, execute::Limits::default(), execution)
+            .map_err(|error| error.diagnostic(sources))
+    }
+
+    pub(in crate::frontend::oir) fn native_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !process {
+            self.require_result_entry_policy(sources)?;
+        }
+        native::native_module_with_execution(
+            &self.witness,
+            entry,
+            sources,
+            process,
+            execution,
+            names,
+        )
+    }
+
+    pub(in crate::frontend::oir) fn native_debug_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !process {
+            self.require_result_entry_policy(sources)?;
+        }
+        native::native_debug_module_with_execution(
+            &self.witness,
+            entry,
+            sources,
+            process,
+            execution,
+            names,
+        )
+    }
+
+    pub(in crate::frontend::oir) fn native_optimized_module_with_execution(
+        &self,
+        entry: Option<hir::DefId>,
+        sources: &SourceMap,
+        process: bool,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+        names: Option<&NativeSourceNames<'_>>,
+        debug: bool,
+    ) -> Result<String, Box<Diagnostic>> {
+        if !process {
+            self.require_result_entry_policy(sources)?;
+        }
+        native::native_optimized_module_with_execution(
+            &self.witness,
+            entry,
+            sources,
+            process,
+            execution,
+            names,
+            debug,
+        )
     }
 
     pub(in crate::frontend::oir) fn native_module(
@@ -217,6 +364,17 @@ impl SourceProgram {
     }
 
     fn require_result_entry_policy(&self, sources: &SourceMap) -> Result<(), Box<Diagnostic>> {
+        for operation in [
+            crate::frontend::builtin_catalog::experimental::Function::ReadSome,
+            crate::frontend::builtin_catalog::experimental::Function::WriteSome,
+        ] {
+            if let Some(id) = self.witness.experimental_function(operation) {
+                return Err(execute::OwnedRunFailure::BinaryEntry(
+                    self.witness.functions()[id.0].span,
+                )
+                .diagnostic(sources));
+            }
+        }
         if let Some(id) = self.witness.builtin_output_function() {
             return Err(
                 execute::OwnedRunFailure::OutputEntry(self.witness.functions()[id.0].span)
@@ -253,6 +411,24 @@ impl SourceProgram {
             entry,
             sources,
             super::super::plan::MAX_FUEL,
+        )
+    }
+
+    pub(in crate::frontend::oir) fn run_process_with_execution(
+        &self,
+        entry: hir::DefId,
+        sources: &SourceMap,
+        execution: crate::frontend::build_config::ExecutionPolicy,
+    ) -> Result<Scalar, crate::frontend::oir::ProcessFailure> {
+        execute::run_process_with_execution(&self.witness, Some(entry), execution).map_err(
+            |error| match error {
+                execute::OwnedRunFailure::ProcessSetup => {
+                    crate::frontend::oir::ProcessFailure::Setup
+                }
+                error => {
+                    crate::frontend::oir::ProcessFailure::Diagnostic(error.diagnostic(sources))
+                }
+            },
         )
     }
 

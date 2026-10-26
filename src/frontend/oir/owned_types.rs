@@ -10,7 +10,14 @@ use super::{hir, SourceMap, Span};
 use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
+mod composition;
 mod enums;
+mod resources;
+#[allow(unused_imports)]
+pub(super) use resources::{
+    enumerated_resource_walk_bytes, resource_walk_control_bytes, ResourceKind, ResourceLeaf,
+    ResourceLeaves,
+};
 #[cfg(test)]
 mod owned_enum_tests;
 #[allow(unused_imports)]
@@ -38,7 +45,23 @@ impl FixedArrayTy {
     ) -> Result<Self, DeclarationError> {
         if !matches!(
             element,
-            hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit
+            hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64
+                | hir::Ty::U128
         ) {
             return Err(DeclarationError::TypeMismatch);
         }
@@ -82,6 +105,8 @@ pub(in crate::frontend) enum AggregateTy {
     Record(RecordId),
     Enum(EnumId),
     FixedArray(FixedArrayTy),
+    ByteBuf,
+    File,
 }
 
 /// A call-only borrowed view. Unsized slices are never owned value types.
@@ -100,6 +125,7 @@ impl BorrowedTy {
             (Self::Exact(AggregateTy::FixedArray(array)), Self::ScalarSlice(element)) => {
                 array.element() == element
             }
+            (Self::Exact(AggregateTy::ByteBuf), Self::ScalarSlice(hir::Ty::U8)) => true,
             (Self::ScalarSlice(actual), Self::ScalarSlice(expected)) => actual == expected,
             _ => false,
         }
@@ -108,7 +134,8 @@ impl BorrowedTy {
         match self {
             Self::Exact(AggregateTy::FixedArray(array)) => Some(array.element()),
             Self::ScalarSlice(element) => Some(element),
-            Self::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => None,
+            Self::Exact(AggregateTy::ByteBuf) => Some(hir::Ty::U8),
+            Self::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::File) => None,
         }
     }
 }
@@ -121,11 +148,15 @@ enum BorrowedSlotRepr {
     Record(u32),
     FixedArray(FixedArrayTy),
     ScalarSlice(hir::Ty),
+    ByteBuf,
+    File,
 }
 impl BorrowedSlot {
     pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
         Ok(Self(match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
+            BorrowedTy::Exact(AggregateTy::ByteBuf) => BorrowedSlotRepr::ByteBuf,
+            BorrowedTy::Exact(AggregateTy::File) => BorrowedSlotRepr::File,
             BorrowedTy::Exact(AggregateTy::Record(id)) => BorrowedSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -134,12 +165,30 @@ impl BorrowedSlot {
                 BorrowedSlotRepr::FixedArray(array)
             }
             BorrowedTy::ScalarSlice(
-                element @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit),
+                element @ (hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64
+                | hir::Ty::U128),
             ) => BorrowedSlotRepr::ScalarSlice(element),
         }))
     }
     pub(in crate::frontend) fn referent(self) -> BorrowedTy {
         match self.0 {
+            BorrowedSlotRepr::ByteBuf => BorrowedTy::Exact(AggregateTy::ByteBuf),
+            BorrowedSlotRepr::File => BorrowedTy::Exact(AggregateTy::File),
             BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
             ))),
@@ -161,12 +210,16 @@ enum AggregateSlotRepr {
     Record(u32),
     Enum(u32),
     FixedArray(FixedArrayTy),
+    ByteBuf,
+    File,
 }
 impl AggregateSlot {
     pub(in crate::frontend) fn try_from_aggregate(
         ty: AggregateTy,
     ) -> Result<Self, DeclarationError> {
         Ok(Self(match ty {
+            AggregateTy::ByteBuf => AggregateSlotRepr::ByteBuf,
+            AggregateTy::File => AggregateSlotRepr::File,
             AggregateTy::Record(id) => AggregateSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -181,6 +234,8 @@ impl AggregateSlot {
     }
     pub(in crate::frontend) fn aggregate(self) -> AggregateTy {
         match self.0 {
+            AggregateSlotRepr::ByteBuf => AggregateTy::ByteBuf,
+            AggregateSlotRepr::File => AggregateTy::File,
             // All qualified hosts are 64-bit; no truncation on supported targets.
             AggregateSlotRepr::Record(id) => AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
@@ -241,8 +296,8 @@ pub(super) struct RawRecordDecl {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RawFieldDecl {
     pub(super) id: FieldId,
-    // Raw input can express unsupported fields so validation, not a trusted
-    // producer, is responsible for excluding enums and references.
+    // Raw input can express unsupported fields. Validation excludes references
+    // and checks every owned nominal against the complete declaration graph.
     pub(super) ty: ParameterTy,
     pub(super) span: Span,
 }
@@ -301,8 +356,18 @@ impl Layout {
     }
     fn scalar(ty: hir::Ty) -> Self {
         match ty {
-            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => Self { size: 1, align: 1 },
-            hir::Ty::I32 => Self { size: 4, align: 4 },
+            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => Self { size: 1, align: 1 },
+            hir::Ty::I16 | hir::Ty::U16 => Self { size: 2, align: 2 },
+            hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => {
+                Self { size: 4, align: 4 }
+            }
+            hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => {
+                Self { size: 8, align: 8 }
+            }
+            hir::Ty::I128 | hir::Ty::U128 => Self {
+                size: 16,
+                align: 16,
+            },
         }
     }
 }
@@ -344,9 +409,25 @@ pub(super) struct RecordDecl {
     field_start: usize,
     field_end: usize,
     layout: Layout,
-    width: usize,
+    // Width minus one needs 20 bits and the owned-field count needs 11 bits.
+    // Bit31 records enum nesting; all fit the original word on 32/64-bit hosts.
+    width_and_owned_fields: usize,
 }
 impl RecordDecl {
+    const WIDTH_BITS: u32 = 20;
+
+    fn width(&self) -> usize {
+        (self.width_and_owned_fields & ((1usize << Self::WIDTH_BITS) - 1)) + 1
+    }
+
+    pub(super) fn owned_field_count(&self) -> usize {
+        (self.width_and_owned_fields >> Self::WIDTH_BITS) & 0x7ff
+    }
+
+    pub(super) fn has_enum_record_nesting(&self) -> bool {
+        self.width_and_owned_fields & (1usize << 31) != 0
+    }
+
     pub(super) fn id(&self) -> RecordId {
         self.id
     }
@@ -412,8 +493,19 @@ pub(super) struct Declarations {
     records: Vec<RecordDecl>,
     fields: Vec<FieldDecl>,
     enums: EnumDeclarations,
-    usage: DeclarationUsage,
+    storage: DeclarationStorage,
 }
+
+/// Counts are available from the checked vectors. The bounded byte totals fit
+/// u32, leaving room for an optional resource cache in the original facade size.
+/// Resource-free declarations retain their original allocation and accounting.
+#[derive(Debug)]
+struct DeclarationStorage {
+    table_bytes: u32,
+    layout_bytes: u32,
+    resources: Vec<resources::Presence>,
+}
+const _: () = assert!(size_of::<DeclarationStorage>() == size_of::<DeclarationUsage>());
 impl Declarations {
     pub(super) fn check(
         raw: &[RawRecordDecl],
@@ -477,7 +569,7 @@ impl Declarations {
                 Err(error) => return Err(error.into()),
             };
         let enum_usage = prepared_enums.usage();
-        limited_add(
+        let aggregate_declarations = limited_add(
             usage.records,
             enum_usage.enums,
             limits.records,
@@ -505,6 +597,8 @@ impl Declarations {
                 "declaration layout bytes",
             )?
         };
+        let mut resource_declarations = false;
+        let mut enum_record_fields = false;
         for (index, record) in raw.iter().enumerate() {
             if record.id != RecordId(index) {
                 return Err(DeclarationError::InvalidRecordId(record.id));
@@ -520,12 +614,26 @@ impl Declarations {
                     return Err(DeclarationError::InvalidFieldId(field.id));
                 }
                 check_span(sources, field.span)?;
-                if let ValueTy::Owned(AggregateTy::Record(id)) = value_field(field)? {
+                let ty = value_field_with_enums(field, raw_enums.len())?;
+                enum_record_fields |= matches!(ty, ValueTy::Owned(AggregateTy::Enum(_)));
+                resource_declarations |=
+                    matches!(ty, ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File));
+                if let ValueTy::Owned(AggregateTy::Record(id)) = ty {
                     if id.0 >= raw.len() {
                         return Err(DeclarationError::InvalidRecordId(id));
                     }
                 }
             }
+        }
+        if enum_record_fields {
+            return Self::check_joint_records(
+                raw,
+                raw_enums,
+                prepared_enums,
+                usage,
+                limits,
+                allocator,
+            );
         }
         let summaries = containment_summaries(raw, limits)?;
         for summary in &summaries {
@@ -556,6 +664,29 @@ impl Declarations {
             (prepared_enums, Vec::new())
         };
 
+        // Scalar/nullary enum admission proves that no resource payload exists.
+        // Otherwise inspect only the already count-bounded direct declarations,
+        // never an expanded containment graph.
+        resource_declarations |= owned_payloads
+            && raw_enums.iter().any(|enumeration| {
+                enumeration.variants.iter().any(|variant| {
+                    matches!(
+                        variant.payload,
+                        Some(ParameterTy::Value(ValueTy::Owned(
+                            AggregateTy::ByteBuf | AggregateTy::File
+                        )))
+                    )
+                })
+            });
+        if resource_declarations {
+            limited_add(
+                usage.table_bytes,
+                aggregate_declarations,
+                limits.table_bytes,
+                "resource containment summary bytes",
+            )?;
+        }
+
         // All malformed declarations and all size/overflow gates above reject
         // before these output allocations. Flat fields avoid R separate
         // allocations, with O(R + F) persistent storage and O(R) graph scratch.
@@ -575,8 +706,10 @@ impl Declarations {
         for record in raw {
             let field_start = fields.len();
             let mut cursor = LayoutCursor::default();
+            let mut owned_fields = 0usize;
             for field in &record.fields {
                 let ty = value_field(field)?;
+                owned_fields += usize::from(matches!(ty, ValueTy::Owned(_)));
                 let offset = cursor.push(value_summary(ty, &summaries)?.layout)?;
                 fields.push(FieldDecl {
                     id: field.id,
@@ -591,15 +724,128 @@ impl Declarations {
                 field_start,
                 field_end: fields.len(),
                 layout: cursor.finish()?,
-                width: summaries[record.id.0].width,
+                width_and_owned_fields: (summaries[record.id.0].width - 1)
+                    | (owned_fields << RecordDecl::WIDTH_BITS),
             });
         }
-        Ok(Self {
+        let mut result = Self {
             records,
             fields,
             enums,
-            usage,
-        })
+            storage: DeclarationStorage {
+                table_bytes: u32::try_from(usage.table_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                layout_bytes: u32::try_from(usage.layout_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                resources: Vec::new(),
+            },
+        };
+        if resource_declarations {
+            let (presence, bytes) = resources::summaries(&result, limits.table_bytes, allocator)?;
+            result.storage.table_bytes =
+                u32::try_from(bytes).map_err(|_| DeclarationError::LayoutOverflow)?;
+            result.storage.resources = presence;
+        }
+        Ok(result)
+    }
+
+    /// New mixed layouts have their own traversal and pending summary owner.
+    /// The preceding record-only declaration path keeps its allocation order.
+    fn check_joint_records(
+        raw: &[RawRecordDecl],
+        raw_enums: &[RawEnumDecl],
+        prepared: PreparedEnums<'_>,
+        mut usage: DeclarationUsage,
+        limits: Limits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, DeclarationError> {
+        let layouts = composition::layouts(raw, raw_enums, usage.table_bytes, limits, allocator)?;
+        let prepared = prepared.with_joint_layouts(layouts.enums(), limits.layout_bytes)?;
+        usage.layout_bytes = prepared.usage().layout_bytes;
+        for record in layouts.records() {
+            usage.layout_bytes = limited_add(
+                usage.layout_bytes,
+                record.layout.size,
+                limits.layout_bytes,
+                "declaration layout bytes",
+            )?;
+        }
+        let resources = raw.iter().flat_map(|record| &record.fields).any(|field| {
+            matches!(
+                field.ty,
+                ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File))
+            )
+        }) || raw_enums
+            .iter()
+            .flat_map(|enumeration| &enumeration.variants)
+            .any(|variant| {
+                matches!(
+                    variant.payload,
+                    Some(ParameterTy::Value(ValueTy::Owned(
+                        AggregateTy::ByteBuf | AggregateTy::File
+                    )))
+                )
+            });
+        if resources {
+            limited_add(
+                usage.table_bytes,
+                raw.len() + raw_enums.len(),
+                limits.table_bytes,
+                "resource containment summary bytes",
+            )?;
+        }
+        let mut records = Vec::new();
+        allocator.vector_exact(&mut records, usage.records, "checked record declarations")?;
+        let mut fields = Vec::new();
+        allocator.vector_exact(&mut fields, usage.fields, "checked record fields")?;
+        let mut enums = prepared.finish_owned_with_allocator(allocator, layouts.enums())?;
+        enums.mark_joint_shapes(layouts.enum_shapes())?;
+        for record in raw {
+            let field_start = fields.len();
+            let mut cursor = LayoutCursor::default();
+            let mut owned_fields = 0usize;
+            for field in &record.fields {
+                let ty = value_field_with_enums(field, raw_enums.len())?;
+                let summary = composition::value_summary(ty, layouts.records(), layouts.enums())?;
+                let offset = cursor.push(summary.layout)?;
+                owned_fields += usize::from(matches!(ty, ValueTy::Owned(_)));
+                fields.push(FieldDecl {
+                    id: field.id,
+                    ty,
+                    span: field.span,
+                    offset,
+                });
+            }
+            records.push(RecordDecl {
+                id: record.id,
+                span: record.span,
+                field_start,
+                field_end: fields.len(),
+                layout: cursor.finish()?,
+                width_and_owned_fields: (layouts.records()[record.id.0].width - 1)
+                    | (owned_fields << RecordDecl::WIDTH_BITS)
+                    | (usize::from(layouts.record_has_enum_nesting(record.id)) << 31),
+            });
+        }
+        let mut result = Self {
+            records,
+            fields,
+            enums,
+            storage: DeclarationStorage {
+                table_bytes: u32::try_from(usage.table_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                layout_bytes: u32::try_from(usage.layout_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                resources: Vec::new(),
+            },
+        };
+        if resources {
+            let (presence, bytes) = resources::summaries(&result, limits.table_bytes, allocator)?;
+            result.storage.table_bytes =
+                u32::try_from(bytes).map_err(|_| DeclarationError::LayoutOverflow)?;
+            result.storage.resources = presence;
+        }
+        Ok(result)
     }
 
     /// A field path is a bounded access description, never a new owner. Offsets
@@ -633,7 +879,12 @@ impl Declarations {
         aggregate: AggregateTy,
     ) -> Result<ScalarLeaves<'_>, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
-        if matches!(aggregate, AggregateTy::Enum(_)) {
+        if self.has_enum_record_nesting(aggregate)?
+            || matches!(
+                aggregate,
+                AggregateTy::Enum(_) | AggregateTy::ByteBuf | AggregateTy::File
+            )
+        {
             return Err(DeclarationError::TypeMismatch);
         }
         let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
@@ -646,7 +897,12 @@ impl Declarations {
     }
 
     pub(super) fn usage(&self) -> DeclarationUsage {
-        self.usage
+        DeclarationUsage {
+            records: self.records.len(),
+            fields: self.fields.len(),
+            table_bytes: self.storage.table_bytes as usize,
+            layout_bytes: self.storage.layout_bytes as usize,
+        }
     }
     pub(super) fn enums(&self) -> &EnumDeclarations {
         &self.enums
@@ -682,6 +938,7 @@ impl Declarations {
     }
     pub(super) fn check_aggregate_type(&self, ty: AggregateTy) -> Result<(), DeclarationError> {
         match ty {
+            AggregateTy::ByteBuf | AggregateTy::File => Ok(()),
             AggregateTy::Record(id) => self.record(id).map(|_| ()),
             AggregateTy::Enum(id) => self.enums.enumeration(id).map(|_| ()).map_err(Into::into),
             AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
@@ -689,6 +946,7 @@ impl Declarations {
     }
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
         match ty {
+            AggregateTy::ByteBuf | AggregateTy::File => Ok(Layout { size: 16, align: 8 }),
             AggregateTy::Record(id) => self.record(id).map(RecordDecl::layout),
             AggregateTy::Enum(id) => self
                 .enums
@@ -700,7 +958,9 @@ impl Declarations {
     }
     pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
         match ty {
-            AggregateTy::Record(id) => self.record(id).map(|record| record.width),
+            AggregateTy::ByteBuf => Ok(3),
+            AggregateTy::File => Ok(2),
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::width),
             AggregateTy::Enum(id) => self
                 .enums
                 .enumeration(id)
@@ -709,6 +969,24 @@ impl Declarations {
             AggregateTy::FixedArray(array) => {
                 FixedArrayTy::check(array.element(), array.length())?;
                 Ok(array.length().max(1))
+            }
+        }
+    }
+
+    pub(super) fn has_enum_record_nesting(
+        &self,
+        ty: AggregateTy,
+    ) -> Result<bool, DeclarationError> {
+        match ty {
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::has_enum_record_nesting),
+            AggregateTy::Enum(id) => self
+                .enums
+                .enumeration(id)
+                .map(|enumeration| enumeration.has_enum_record_nesting())
+                .map_err(Into::into),
+            _ => {
+                self.check_aggregate_type(ty)?;
+                Ok(false)
             }
         }
     }
@@ -730,9 +1008,25 @@ impl Declarations {
         match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
-            BorrowedTy::ScalarSlice(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit) => {
-                Ok(())
-            }
+            BorrowedTy::ScalarSlice(
+                hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::U128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64,
+            ) => Ok(()),
         }
     }
     pub(super) fn same_borrowed_type(
@@ -813,6 +1107,11 @@ impl Iterator for ScalarLeaves<'_> {
                 ValueTy::Owned(AggregateTy::Enum(_)) => {
                     unreachable!("enum excluded from static leaves")
                 }
+                ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File) => {
+                    // Resources have their own checked traversal. A descriptor
+                    // is never reinterpreted as scalar storage or a pointer leaf.
+                    self.length -= 1;
+                }
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {
                         self.stack[position] = Some((ty, offset, next + 1));
@@ -869,19 +1168,23 @@ fn check_nominal_span(sources: &SourceMap, span: Span) -> Result<(), Declaration
 
 fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
     match field.ty {
-        ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)) => {
-            Err(DeclarationError::NonScalarField(field.id))
-        }
-        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)))
-            if array.element() == hir::Ty::U8 =>
-        {
-            Err(DeclarationError::NonScalarField(field.id))
-        }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_))) => {
             Err(DeclarationError::NonScalarField(field.id))
         }
         ParameterTy::Value(ty) => Ok(ty),
         _ => Err(DeclarationError::NonScalarField(field.id)),
+    }
+}
+
+fn value_field_with_enums(
+    field: &RawFieldDecl,
+    enum_count: usize,
+) -> Result<ValueTy, DeclarationError> {
+    match field.ty {
+        ParameterTy::Value(value @ ValueTy::Owned(AggregateTy::Enum(id))) if id.0 < enum_count => {
+            Ok(value)
+        }
+        _ => value_field(field),
     }
 }
 
@@ -900,18 +1203,24 @@ fn value_summary(
     summaries: &[ContainmentSummary],
 ) -> Result<ContainmentSummary, DeclarationError> {
     Ok(match ty {
-        ValueTy::Scalar(hir::Ty::U8) => return Err(DeclarationError::TypeMismatch),
         ValueTy::Scalar(ty) => ContainmentSummary {
             layout: Layout::scalar(ty),
             width: 1,
             depth: 0,
         },
-        ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == hir::Ty::U8 => {
-            return Err(DeclarationError::TypeMismatch)
-        }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
             layout: array.layout()?,
             width: array.length().max(1),
+            depth: 0,
+        },
+        ValueTy::Owned(AggregateTy::File) => ContainmentSummary {
+            layout: Layout { size: 16, align: 8 },
+            width: 2,
+            depth: 0,
+        },
+        ValueTy::Owned(AggregateTy::ByteBuf) => ContainmentSummary {
+            layout: Layout { size: 16, align: 8 },
+            width: 3,
             depth: 0,
         },
         ValueTy::Owned(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
@@ -1120,6 +1429,47 @@ where
     Ok(total)
 }
 
+/// Source layout inventory only. No source spans or nominal identities are
+/// authenticated here and no checked declaration or execution witness escapes.
+pub(super) fn admit_joint_value_layouts(
+    records: &[RawRecordDecl],
+    enums: &[RawEnumDecl],
+    allocator: &mut Allocator,
+) -> Result<(DeclarationUsage, usize), DeclarationError> {
+    let mut usage = preflight(records, Limits::DEFAULT)?;
+    let enum_usage = admit_enum_counts(
+        enums.iter().map(|enumeration| enumeration.variants.len()),
+        usage,
+    )
+    .map_err(DeclarationError::from)?;
+    let table_bytes = limited_add(
+        usage.table_bytes,
+        enum_usage.table_bytes,
+        Limits::DEFAULT.table_bytes,
+        "declaration table bytes",
+    )?;
+    let layouts = composition::layouts(records, enums, table_bytes, Limits::DEFAULT, allocator)?;
+    usage.layout_bytes = 0;
+    for summary in layouts.records() {
+        usage.layout_bytes = limited_add(
+            usage.layout_bytes,
+            summary.layout.size,
+            Limits::DEFAULT.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    let mut enum_bytes = 0;
+    for summary in layouts.enums() {
+        enum_bytes = limited_add(
+            enum_bytes,
+            summary.layout.size,
+            Limits::DEFAULT.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    Ok((usage, enum_bytes))
+}
+
 /// Count scalar layouts without building declarations. The private cursor is
 /// shared with full declaration validation, and this result grants no authority.
 pub(super) fn admit_scalar_layouts<R, F>(records: R) -> Result<usize, DeclarationError>
@@ -1148,7 +1498,26 @@ where
                 "fields per record",
             )?;
             fields = limited_add(fields, 1, limits.fields, "field declarations")?;
-            if !matches!(ty, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) {
+            if !matches!(
+                ty,
+                hir::Ty::Bool
+                    | hir::Ty::I32
+                    | hir::Ty::U8
+                    | hir::Ty::Unit
+                    | hir::Ty::I64
+                    | hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::Char
+                    | hir::Ty::F32
+                    | hir::Ty::F64
+                    | hir::Ty::U128
+            ) {
                 return Err(DeclarationError::TypeMismatch);
             }
             cursor.push(Layout::scalar(ty))?;
@@ -1297,6 +1666,42 @@ mod tests {
             table.record(RecordId(0)).unwrap_err(),
             DeclarationError::InvalidRecordId(RecordId(0))
         );
+    }
+
+    #[test]
+    fn record_pattern_cached_field_counts_preserve_width_and_carrier_at_both_limits() {
+        #[allow(dead_code)]
+        struct OriginalRecordDecl {
+            id: RecordId,
+            span: Span,
+            field_start: usize,
+            field_end: usize,
+            layout: Layout,
+            width: usize,
+        }
+        assert_eq!(size_of::<RecordDecl>(), size_of::<OriginalRecordDecl>());
+        assert_eq!(
+            std::mem::align_of::<RecordDecl>(),
+            std::mem::align_of::<OriginalRecordDecl>()
+        );
+        let (sources, span) = source();
+        let array = FixedArrayTy::check(hir::Ty::U8, 1024).unwrap();
+        for owned in [0, 1, 1024] {
+            let mut raw = record(0, &vec![hir::Ty::Bool; 1024], span);
+            for field in &mut raw.fields[..owned] {
+                field.ty = ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)));
+            }
+            let declarations = Declarations::check(&[raw], &sources).unwrap();
+            let record = declarations.record(RecordId(0)).unwrap();
+            assert_eq!(record.owned_field_count(), owned);
+            assert_eq!(record.width(), (1024 - owned) + owned * 1024);
+            assert_eq!(
+                declarations
+                    .aggregate_width(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
+                record.width()
+            );
+        }
     }
 
     #[test]

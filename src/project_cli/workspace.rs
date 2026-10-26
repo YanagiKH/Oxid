@@ -101,7 +101,13 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
         return Ok(None);
     };
     let snapshot = runtime::load_typed_manifest(&root.join("oxid.toml"))?;
-    load_roster(root, &cwd, snapshot, &mut RegularProjectReader).map(Some)
+    let mut reader = RegularProjectReader {
+        root: root.clone(),
+        locked: true,
+        offline: true,
+        git_roots: Vec::new(),
+    };
+    load_roster(root, &cwd, snapshot, &mut reader).map(Some)
 }
 
 /// Reuse workspace member/default/nesting admission with already retained root
@@ -132,7 +138,9 @@ pub(super) fn load_roster(
             || snapshot.manifest.target.is_some()
             || snapshot.manifest.profile.is_some()
             || snapshot.manifest.reproducible.is_some()
+            || snapshot.manifest.debug_info.is_some()
             || snapshot.manifest.entry_mode.is_some()
+            || snapshot.manifest.heap_limit.is_some()
             || !snapshot.manifest.scripts.is_empty()
             || !snapshot.manifest.features.is_empty())
     {
@@ -244,12 +252,23 @@ impl Workspace {
             .map(|member| (member.root.as_path(), &member.snapshot))
     }
 
-    fn graphs(&self, scope: &[usize]) -> Result<Vec<PackageGraph>, String> {
+    fn graphs(
+        &self,
+        scope: &[usize],
+        locked: bool,
+        offline: bool,
+    ) -> Result<Vec<PackageGraph>, String> {
         let mut graphs = Vec::new();
         let mut nodes = 0usize;
         let mut edges = 0usize;
         for &index in scope {
-            let graph = package_graph(&self.members[index].root, &self.members[index].snapshot)?;
+            let graph = package_graph_cache_owner(
+                &self.members[index].root,
+                &self.members[index].snapshot,
+                locked,
+                offline,
+                &self.root,
+            )?;
             nodes += graph.specs.len();
             edges += graph
                 .specs
@@ -300,7 +319,7 @@ impl Workspace {
     pub(super) fn validate_for_doctor(&self) -> Result<String, String> {
         let existing = project_lock::read_workspace(&self.root, false)?;
         let scope = (0..self.members.len()).collect::<Vec<_>>();
-        let graphs = self.graphs(&scope)?;
+        let graphs = self.graphs(&scope, true, true)?;
         let mut prepared = Vec::new();
         let (mut files, mut bytes) = (0, 0);
         for graph in &graphs {
@@ -382,7 +401,7 @@ impl Workspace {
         let selected = self.selected(options)?;
         let build_options = match options.command() {
             "build" => validate_build_options(options)?,
-            "check" | "run" | "test" | "lock" => {
+            "check" | "run" | "test" | "lock" | "doc" => {
                 if options.words.len() != 1
                     && !(matches!(options.command(), "check" | "run")
                         && options.words.len() == 2
@@ -409,7 +428,9 @@ impl Workspace {
         } else {
             Vec::new()
         };
-        if matches!(options.command(), "check" | "test" | "lock") && options.entry_mode.is_some() {
+        if matches!(options.command(), "check" | "test" | "lock" | "doc")
+            && options.entry_mode.is_some()
+        {
             return Err(format!(
                 "workspace {} does not accept --entry-mode",
                 options.command()
@@ -446,7 +467,11 @@ impl Workspace {
         } else {
             selected.clone()
         };
-        let graphs = self.graphs(&scope)?;
+        let graphs = self.graphs(
+            &scope,
+            options.requires_lock(),
+            options.offline || options.frozen,
+        )?;
         let mut prepared = Vec::new();
         let mut files = 0usize;
         let mut bytes = 0usize;
@@ -507,6 +532,22 @@ impl Workspace {
             return Ok(0);
         }
         project_lock::verify(&expected, existing.as_ref())?;
+        if options.command() == "doc" {
+            let mut pages = Vec::new();
+            let mut remaining = documentation::remaining();
+            for &index in &selected {
+                let slot = scope
+                    .iter()
+                    .position(|candidate| *candidate == index)
+                    .expect("selected session");
+                pages.push(documentation::fragment(
+                    &prepared[slot],
+                    &self.members[index].snapshot.manifest,
+                    &mut remaining,
+                )?);
+            }
+            return documentation::publish(&self.root, &pages, options);
+        }
         if test_child {
             let index = selected[0];
             let slot = scope
@@ -522,13 +563,24 @@ impl Workspace {
                 .get(name)
                 .ok_or_else(|| format!("unknown declared project test `{name}`"))?;
             let entry = local_source(&member.root, path)?;
+            let execution = execution_policy(&member.snapshot.manifest)?;
             if !member.library() {
-                return Ok(prepared[slot].execute(frontend::PackageCommand::Run, false, true));
+                return Ok(prepared[slot].execute_with_execution(
+                    frontend::PackageCommand::Run,
+                    false,
+                    true,
+                    execution,
+                ));
             }
             let session = frontend::prepare_package_project(&graphs[slot].specs, Some(&entry))
                 .map_err(|error| error.message())?;
             verify_test_dependencies(&prepared[slot], &session)?;
-            return Ok(session.execute(frontend::PackageCommand::Run, false, true));
+            return Ok(session.execute_with_execution(
+                frontend::PackageCommand::Run,
+                false,
+                true,
+                execution,
+            ));
         }
         if options.command() == "test" {
             return self.tests(
@@ -570,10 +622,11 @@ impl Workspace {
                 .iter()
                 .position(|candidate| *candidate == selected[0])
                 .expect("selected session");
-            return Ok(prepared[slot].execute(
+            return Ok(prepared[slot].execute_with_execution(
                 frontend::PackageCommand::Run,
                 options.json(),
                 process,
+                execution_policy(&self.members[selected[0]].snapshot.manifest)?,
             ));
         }
         let mut failed = 0;

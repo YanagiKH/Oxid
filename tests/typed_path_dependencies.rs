@@ -7,7 +7,12 @@ use std::{
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
-const PROCESS_HOST: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+const PROCESS_HOST: bool = cfg!(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+));
 
 struct Packages(PathBuf);
 impl Packages {
@@ -352,7 +357,7 @@ fn path_and_manifest_failures_are_precise_and_json_remains_framed() {
 #[test]
 fn unsupported_dependency_forms_and_malicious_paths_cannot_be_ignored() {
     for declaration in [
-        "[dependencies]\ndep = \"https://invalid.example/repo.git#0123456789012345678901234567890123456789\"\n",
+        "[dependencies]\ndep = \"https://invalid.example/repo.git#main\"\n",
         "[dependencies]\ndep = \"git+file:///tmp/repo\"\n",
         "[dependencies]\ndep = \"registry:dep@1\"\n",
         "[dependencies]\ndep = \"../dep\\u0000\"\n",
@@ -364,9 +369,24 @@ fn unsupported_dependency_forms_and_malicious_paths_cannot_be_ignored() {
         "[features.extra]\nenabled = true\n",
     ] {
         let packages = Packages::new();
-        packages.package("app", "app", &format!("entry = \"src/main.ox\"\n{declaration}"), "");
-        packages.write("app/src/main.ox", "write_text(\"sentinel\", \"executed\");\n");
-        failure(packages.run(&["check"]), if declaration.contains("features") { "features" } else { "dependencies" });
+        packages.package(
+            "app",
+            "app",
+            &format!("entry = \"src/main.ox\"\n{declaration}"),
+            "",
+        );
+        packages.write(
+            "app/src/main.ox",
+            "write_text(\"sentinel\", \"executed\");\n",
+        );
+        failure(
+            packages.run(&["check"]),
+            if declaration.contains("features") {
+                "features"
+            } else {
+                "dependencies"
+            },
+        );
         packages.no_outputs();
     }
     for declaration in [
@@ -585,7 +605,7 @@ fn invalid_package_build_preserves_the_previous_managed_binary() {
 }
 
 #[test]
-#[ignore = "requires qualified Linux x86_64 with LLVM 19.1.7"]
+#[ignore = "requires qualified Linux x86_64 or ARM64 with LLVM 19.1.7"]
 fn package_native_build_runs_without_sources_and_rebuild_failure_preserves_it() {
     let packages = Packages::new();
     packages.app(

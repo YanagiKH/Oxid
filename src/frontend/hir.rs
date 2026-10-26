@@ -1,5 +1,5 @@
 //! Resolved IDs are compilation-local, deterministic in source order.
-pub use super::ast::{ArithmeticOp, ComparisonOp, ConversionOp, LogicalOp};
+pub use super::ast::{ArithmeticOp, BitwiseOp, ComparisonOp, ConversionOp, LogicalOp};
 use super::{
     ast,
     declaration_index::{
@@ -13,13 +13,117 @@ use super::{
     source::{SourceFile, SourceView, Span},
 };
 use std::collections::HashMap;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Ty {
     Bool,
     I32,
     U8,
     Unit,
+    I64,
+    I8,
+    I16,
+    U16,
+    U32,
+    U64,
+    Isize,
+    Usize,
+    I128,
+    U128,
+    F32,
+    F64,
+    Char,
 }
+impl Ty {
+    pub fn character_conversion(self, operation: ast::ConversionOp) -> Option<Self> {
+        match operation {
+            ast::ConversionOp::ToCharChecked if self.integer_bits().is_some() => Some(Self::Char),
+            ast::ConversionOp::CharToU32 if self == Self::Char => Some(Self::U32),
+            _ => None,
+        }
+    }
+    pub fn float_conversion(self, operation: ast::ConversionOp) -> Option<Self> {
+        match operation {
+            ast::ConversionOp::FloatSqrt if self.floating() => Some(self),
+            ast::ConversionOp::ToFloat(kind)
+                if self.floating() || self.integer_bits().is_some() =>
+            {
+                Some(Self::from_float(kind))
+            }
+            ast::ConversionOp::FloatToBits => match self {
+                Self::F32 => Some(Self::U32),
+                Self::F64 => Some(Self::U64),
+                _ => None,
+            },
+            ast::ConversionOp::FloatFromBits(ast::FloatTypeSyntax::F32) if self == Self::U32 => {
+                Some(Self::F32)
+            }
+            ast::ConversionOp::FloatFromBits(ast::FloatTypeSyntax::F64) if self == Self::U64 => {
+                Some(Self::F64)
+            }
+            _ => None,
+        }
+    }
+    pub const fn floating(self) -> bool {
+        matches!(self, Self::F32 | Self::F64)
+    }
+    pub const fn from_float(kind: ast::FloatTypeSyntax) -> Self {
+        match kind {
+            ast::FloatTypeSyntax::F32 => Self::F32,
+            ast::FloatTypeSyntax::F64 => Self::F64,
+        }
+    }
+
+    pub const fn quad_integer(self) -> bool {
+        matches!(self, Self::I128 | Self::U128)
+    }
+    pub const fn from_extended_integer(kind: ast::IntegerTypeSyntax) -> Self {
+        match kind {
+            ast::IntegerTypeSyntax::I8 => Self::I8,
+            ast::IntegerTypeSyntax::U8 => Self::U8,
+            ast::IntegerTypeSyntax::I16 => Self::I16,
+            ast::IntegerTypeSyntax::I32 => Self::I32,
+            ast::IntegerTypeSyntax::I64 => Self::I64,
+            ast::IntegerTypeSyntax::U16 => Self::U16,
+            ast::IntegerTypeSyntax::U32 => Self::U32,
+            ast::IntegerTypeSyntax::U64 => Self::U64,
+            ast::IntegerTypeSyntax::Isize => Self::Isize,
+            ast::IntegerTypeSyntax::Usize => Self::Usize,
+            ast::IntegerTypeSyntax::I128 => Self::I128,
+            ast::IntegerTypeSyntax::U128 => Self::U128,
+        }
+    }
+    pub const fn extended_integer(self) -> Option<ast::IntegerTypeSyntax> {
+        match self {
+            Self::I8 => Some(ast::IntegerTypeSyntax::I8),
+            Self::I16 => Some(ast::IntegerTypeSyntax::I16),
+            Self::U16 => Some(ast::IntegerTypeSyntax::U16),
+            Self::U32 => Some(ast::IntegerTypeSyntax::U32),
+            Self::U64 => Some(ast::IntegerTypeSyntax::U64),
+            Self::Isize => Some(ast::IntegerTypeSyntax::Isize),
+            Self::Usize => Some(ast::IntegerTypeSyntax::Usize),
+            Self::I128 => Some(ast::IntegerTypeSyntax::I128),
+            Self::U128 => Some(ast::IntegerTypeSyntax::U128),
+            _ => None,
+        }
+    }
+    pub const fn integer_bits(self) -> Option<u8> {
+        match self {
+            Self::I8 | Self::U8 => Some(8),
+            Self::I16 | Self::U16 => Some(16),
+            Self::I32 | Self::U32 => Some(32),
+            Self::I64 | Self::U64 | Self::Isize | Self::Usize => Some(64),
+            Self::I128 | Self::U128 => Some(128),
+            Self::Bool | Self::Unit | Self::F32 | Self::F64 | Self::Char => None,
+        }
+    }
+    pub const fn signed_integer(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize | Self::I128
+        )
+    }
+}
+const _: () = assert!(std::mem::size_of::<Ty>() == 1);
 impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -27,6 +131,19 @@ impl std::fmt::Display for Ty {
             Self::I32 => "i32",
             Self::U8 => "u8",
             Self::Unit => "()",
+            Self::I64 => "i64",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::Isize => "isize",
+            Self::Usize => "usize",
+            Self::I128 => "i128",
+            Self::U128 => "u128",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Char => "char",
         })
     }
 }
@@ -535,6 +652,23 @@ impl<'a> Resolver<'_, 'a> {
             };
             frames.push(Frame::Next(block, index + 1));
             let kind = match &statement.kind {
+                ast::StmtKind::ForRange { .. } => {
+                    return Err(Diagnostic::new(
+                        "E0101",
+                        "resolve",
+                        "range loops require the owned source pipeline",
+                        Some(statement.span),
+                    ));
+                }
+                ast::StmtKind::DestructureRecord { .. } => {
+                    return Err(Diagnostic::new(
+                        "E0101",
+                        "resolve",
+                        "record patterns require the owned source pipeline",
+                        Some(statement.span),
+                    ));
+                }
+
                 ast::StmtKind::Let {
                     mutable,
                     name,
@@ -668,6 +802,14 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::Borrow { .. } => {
+                return Err(Diagnostic::new(
+                    "E0300",
+                    "resolve",
+                    "local references require typed execution",
+                    Some(expr.span),
+                ))
+            }
             ast::ExprKind::QualifiedValue {
                 path,
                 args: Some(args),
@@ -688,7 +830,10 @@ impl<'a> Resolver<'_, 'a> {
                     Some(expr.span),
                 ));
             }
-            ast::ExprKind::ArrayLiteral { .. }
+            ast::ExprKind::Bitwise { .. }
+            | ast::ExprKind::BitNot { .. }
+            | ast::ExprKind::ArrayLiteral { .. }
+            | ast::ExprKind::ByteString { .. }
             | ast::ExprKind::IndexRead { .. }
             | ast::ExprKind::ArrayLength { .. } => {
                 return Err(Diagnostic::new(
@@ -698,7 +843,9 @@ impl<'a> Resolver<'_, 'a> {
                     Some(expr.span),
                 ));
             }
-            ast::ExprKind::StructLiteral { .. } | ast::ExprKind::FieldRead { .. } => {
+            ast::ExprKind::StructLiteral { .. }
+            | ast::ExprKind::FieldRead { .. }
+            | ast::ExprKind::GenericVariant { .. } => {
                 return Err(Diagnostic::new(
                     "E0500",
                     "resolve",
@@ -707,6 +854,24 @@ impl<'a> Resolver<'_, 'a> {
                 ))
             }
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
+            ast::ExprKind::I64Number { .. } => {
+                return Err(Diagnostic::new(
+                    "E0101",
+                    "resolve",
+                    "i64 requires the owned typed source path",
+                    Some(expr.span),
+                ))
+            }
+            ast::ExprKind::Character(_)
+            | ast::ExprKind::FloatNumber { .. }
+            | ast::ExprKind::IntegerNumber { .. } => {
+                return Err(Diagnostic::new(
+                    "E0101",
+                    "resolve",
+                    "integer width requires the owned typed source path",
+                    Some(expr.span),
+                ))
+            }
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
             }

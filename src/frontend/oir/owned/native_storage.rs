@@ -139,7 +139,10 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
             execution,
             id,
             scalar_slots: add(p.usage.scalar_slots, p.usage.arguments)?,
-            owner_bytes: align(p.usage.payload_bytes, 4)?,
+            owner_bytes: align(
+                p.usage.payload_bytes,
+                native_owner_alignment(execution.witness.declarations(), f),
+            )?,
             reference_slots: add(p.usage.references, p.usage.loans)?,
             slice_slots: add(slices, loans)?,
         })
@@ -201,7 +204,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 require(range.is_none())?;
             }
         }
-        require(end == u.payload_bytes && align(end, 4)? == self.owner_bytes)?;
+        require(end == u.payload_bytes && align(end, self.owner_alignment())? == self.owner_bytes)?;
         let (mut arguments, mut owned, mut borrowed) = (0, 0, 0);
         for (call, cp) in f.calls.iter().zip(&p.calls) {
             require(
@@ -270,7 +273,14 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         // independently reconciled, without replacing their admission policy.
         let scalar = add(u.scalar_slots, arguments)?;
         let mut expanded = add(scalar, cells)?;
-        let mut reference_bytes = add(mul(scalar, size_of::<Option<Scalar>>())?, end)?;
+        let scalar_bytes = if self.execution.uses_quad_scalars() {
+            size_of::<Option<RuntimeValue>>()
+        } else if self.execution.uses_wide_scalars() {
+            size_of::<Option<RuntimeScalar>>()
+        } else {
+            size_of::<Option<Scalar>>()
+        };
+        let mut reference_bytes = add(mul(scalar, scalar_bytes)?, end)?;
         for (count, width, bytes) in [
             (f.owners.len(), 4, size_of::<OwnerRuntime>()),
             (f.references.len(), 10, size_of::<ReferenceHandle>()),
@@ -343,6 +353,9 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     pub(in super::super) fn owner_bytes(&self) -> usize {
         self.owner_bytes
     }
+    pub(in super::super) fn owner_alignment(&self) -> usize {
+        native_owner_alignment(self.execution.witness.declarations(), self.raw())
+    }
     pub(in super::super) fn reference_slots(&self) -> usize {
         self.reference_slots
     }
@@ -351,13 +364,26 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     }
     pub(in super::super) fn native_bytes(&self) -> Result<usize, AdmissionFailure> {
         add(
-            add(mul(self.scalar_slots, 8)?, self.owner_bytes)?,
+            add(
+                add(
+                    mul(self.scalar_slots, self.execution.native_scalar_bytes())?,
+                    self.owner_bytes,
+                )?,
+                if self.execution.uses_quad_scalars() {
+                    32
+                } else {
+                    0
+                },
+            )?,
             add(mul(self.reference_slots, 8)?, mul(self.slice_slots, 4)?)?,
         )
     }
+    pub(in super::super) fn scalar_width(&self) -> usize {
+        self.execution.native_scalar_bytes()
+    }
     pub(in super::super) fn scalar_offset(&self, slot: usize) -> usize {
         assert!(slot < self.scalar_slots);
-        slot * 8
+        slot * self.execution.native_scalar_bytes()
     }
     pub(in super::super) fn reference_offset(&self, slot: usize) -> usize {
         assert!(slot < self.reference_slots);

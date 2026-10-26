@@ -31,6 +31,7 @@ pub(super) fn lower_and_associate<'s>(
     let crate::frontend::source::SourceView::Map(sources) = typed.index().sources().view() else {
         return Err(bad());
     };
+    typed.index().validate_generic_source(typed.work())?;
     let raw =
         super::lower::lower(typed).map_err(|error| super::diagnostic::lower(&error, sources))?;
     let index = typed.index();
@@ -187,6 +188,15 @@ fn function(
             visitor.span(statement.span)?;
             origins(statement.diagnostic_origins, visitor)?;
             match &statement.kind {
+                OwnedInstruction::PrepareBorrowRange { start, end, .. } => {
+                    visitor.span(start.span)?;
+                    visitor.span(end.span)?;
+                }
+                OwnedInstruction::Experimental { .. } => {
+                    if matches!(source, FunctionSource::Original(..)) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::WriteStdout { .. } => {
                     if builtin != Some(BuiltinFunction::WriteStdout) {
                         return Err(bad());
@@ -194,6 +204,11 @@ fn function(
                 }
                 OwnedInstruction::ReadStdin { .. } => {
                     if builtin != Some(BuiltinFunction::ReadStdin) {
+                        return Err(bad());
+                    }
+                }
+                OwnedInstruction::DestructureRecord { .. } => {
+                    if matches!(source, FunctionSource::Synthetic) {
                         return Err(bad());
                     }
                 }
@@ -218,7 +233,12 @@ fn function(
                         && matches!(
                             statement,
                             Statement::Assign(Assign {
-                                value: Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. },
+                                value: Rvalue::CheckedI32ToU8 { .. }
+                                    | Rvalue::U8ToI32 { .. }
+                                    | Rvalue::WidenI64 { .. }
+                                    | Rvalue::CheckedI64ToI32 { .. }
+                                    | Rvalue::CheckedI64ToU8 { .. }
+                                    | Rvalue::CheckedIntegerCast { .. },
                                 ..
                             })
                         )
@@ -275,6 +295,12 @@ fn function(
                     visitor.span(value.span)?;
                 }
                 OwnedInstruction::ProjectionLength { .. } => (),
+                OwnedInstruction::AcquireLocalBorrow(_)
+                | OwnedInstruction::ReleaseLocalBorrow(_) => {
+                    if matches!(source, FunctionSource::Synthetic) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::ConstructArray { elements, .. } => {
                     for operand in elements {
                         visitor.span(operand.span)?;
@@ -518,6 +544,26 @@ fn check_impl(
                 }
             }
         }
+        for kind in crate::frontend::builtin_catalog::experimental::Enumeration::ALL {
+            if let Some(id) = ids.experimental_enum(kind) {
+                if id != index.experimental_enum_id(kind).map_err(|_| bad())?
+                    || raw.enums.get(id.0).ok_or_else(bad)?.span
+                        != index.experimental_anchor(kind.item()).map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
+            }
+        }
+        for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+            if let Some(id) = ids.experimental_function(kind) {
+                if id != index.experimental_function_id(kind).map_err(|_| bad())?
+                    || raw.functions.get(id.0).ok_or_else(bad)?.span
+                        != index.experimental_anchor(kind.item()).map_err(|_| bad())?
+                {
+                    return Err(bad());
+                }
+            }
+        }
         let first_kind = if raw.builtins.contains_function(BuiltinFunction::ReadStdin) {
             BuiltinFunction::ReadStdin
         } else {
@@ -624,6 +670,11 @@ fn check_impl(
     }
     visitor.dimension(raw.records.len(), index.record_count())?;
     visitor.dimension(raw.functions.len(), index.function_count())?;
+    // New enum fields require exact source types even in nongeneric, unused
+    // records. Compare the entire field table: checking only the raw enum case
+    // would let a changed raw scalar or record type evade authentication.
+    let check_field_types = index.has_generic_instances()
+        || typed.is_some_and(|program| super::record_enum_layouts::needed(program.records()));
     for (ordinal, declaration) in raw.records.iter().enumerate() {
         let id = RecordId(ordinal);
         let (key, module) = index.record(id).map_err(|_| bad())?;
@@ -644,6 +695,21 @@ fn check_impl(
                 || field.span != original.name
             {
                 return Err(bad());
+            }
+            if check_field_types {
+                let typed = typed.ok_or_else(bad)?;
+                if field.ty
+                    != index.instantiated_record_field(
+                        FieldId {
+                            record: id,
+                            index: field_index,
+                        },
+                        original.ty,
+                        typed.work(),
+                    )?
+                {
+                    return Err(bad());
+                }
             }
         }
         visitor.file(original.name.file);
@@ -676,6 +742,372 @@ fn check_impl(
         if declaration.id != id || declaration.span != original.name {
             return Err(bad());
         }
+        if index.has_generic_instances() {
+            let typed = typed.ok_or_else(bad)?;
+            if declaration.result != index.instantiated_value(id, original.result, typed.work())? {
+                return Err(bad());
+            }
+            if declaration.parameters.len() != original.params.len() {
+                return Err(bad());
+            }
+            for (binding, parameter) in declaration.parameters.iter().zip(&original.params) {
+                let actual = match *binding {
+                    ParameterBinding::Scalar(local) => ParameterTy::Value(ValueTy::Scalar(
+                        declaration.locals.get(local.0).ok_or_else(bad)?.ty,
+                    )),
+                    ParameterBinding::Owned(place) => {
+                        let owner = declaration.owners.get(place.0).ok_or_else(bad)?;
+                        ParameterTy::Value(ValueTy::Owned(owner.aggregate()))
+                    }
+                    ParameterBinding::Reference(reference) => {
+                        let reference = declaration.references.get(reference.0).ok_or_else(bad)?;
+                        ParameterTy::Reference {
+                            referent: reference.referent(),
+                            kind: reference.kind,
+                        }
+                    }
+                };
+                if actual != index.instantiated_parameter(id, parameter.ty, typed.work())? {
+                    return Err(bad());
+                }
+            }
+            for call in &declaration.calls {
+                if call.target != index.expected_generic_call(id, call.span, typed.work())? {
+                    return Err(bad());
+                }
+            }
+            for block in &declaration.blocks {
+                for statement in &block.statements {
+                    let (destination, variant) = match statement.kind {
+                        OwnedInstruction::Construct { destination, .. }
+                        | OwnedInstruction::ConstructComposite { destination, .. } => {
+                            (destination, None)
+                        }
+                        OwnedInstruction::ConstructEnum {
+                            destination,
+                            variant,
+                            ..
+                        }
+                        | OwnedInstruction::ConstructOwnedEnum {
+                            destination,
+                            variant,
+                            ..
+                        } => (destination, Some(variant)),
+                        _ => continue,
+                    };
+                    let (expected, expected_variant) =
+                        index.expected_generic_construction(id, statement.span, typed.work())?;
+                    let actual = ValueTy::Owned(
+                        declaration
+                            .owners
+                            .get(destination.0)
+                            .ok_or_else(bad)?
+                            .aggregate(),
+                    );
+                    if actual != expected || variant != expected_variant {
+                        return Err(bad());
+                    }
+                }
+            }
+            for descriptor in &declaration.matches {
+                let enumeration =
+                    index.expected_generic_match(id, descriptor.span, typed.work())?;
+                if declaration
+                    .owners
+                    .get(descriptor.source.0)
+                    .ok_or_else(bad)?
+                    .aggregate()
+                    != AggregateTy::Enum(enumeration)
+                {
+                    return Err(bad());
+                }
+                let original = original
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.body)
+                    .find(|statement| statement.span == descriptor.span)
+                    .ok_or_else(bad)?;
+                let crate::frontend::ast::StmtKind::Match { arms, .. } = &original.kind else {
+                    return Err(bad());
+                };
+                if arms.len() != descriptor.arms.len() {
+                    return Err(bad());
+                }
+                for (source, actual) in arms.iter().zip(&descriptor.arms) {
+                    let template = index.query(typed.work()).variant(
+                        module,
+                        crate::frontend::project::QualifiedPathRef {
+                            file: source.span.file,
+                            path: source.variant,
+                        },
+                    )?;
+                    let expected = index.instantiated_match_variant(id, source.span, template)?;
+                    if actual.variant != expected {
+                        return Err(bad());
+                    }
+                }
+            }
+        }
+        for block in &declaration.blocks {
+            for statement in &block.statements {
+                let OwnedInstruction::DestructureRecord { source, ref fields } = statement.kind
+                else {
+                    continue;
+                };
+                let typed = typed.ok_or_else(bad)?;
+                let (record, pattern, initializer) =
+                    index.source_record_pattern(id, statement.span, typed.work())?;
+                let source_decl = declaration.owners.get(source.0).ok_or_else(bad)?;
+                if source_decl.aggregate() != AggregateTy::Record(record)
+                    || source_decl.span != initializer
+                    || !matches!(
+                        source_decl.kind,
+                        OwnerKind::Temporary | OwnerKind::CallResult { .. }
+                    )
+                {
+                    return Err(bad());
+                }
+                let (record_key, record_module) = index.record(record)?;
+                let record_ast = &index.sources().ast(record_module)?.records[record_key.index];
+                let mut owned = 0usize;
+                for field in pattern {
+                    typed.work().debit(
+                        record_ast.fields.len() as u64 + 1,
+                        field.span,
+                        "record pattern field correspondence",
+                    )?;
+                    let ordinal = record_ast
+                        .fields
+                        .iter()
+                        .position(|member| {
+                            index.sources().text(member.name).ok()
+                                == index.sources().text(field.field).ok()
+                        })
+                        .ok_or_else(bad)?;
+                    let expected_id = FieldId {
+                        record,
+                        index: ordinal,
+                    };
+                    let expected = index.instantiated_record_field(
+                        expected_id,
+                        record_ast.fields[ordinal].ty,
+                        typed.work(),
+                    )?;
+                    match expected {
+                        ParameterTy::Value(ValueTy::Owned(aggregate)) => {
+                            let (actual_id, destination) = fields.get(owned).ok_or_else(bad)?;
+                            let target = declaration.owners.get(destination.0).ok_or_else(bad)?;
+                            if *actual_id != expected_id
+                                || target.aggregate() != aggregate
+                                || target.span != field.binding
+                                || target.kind != (OwnerKind::Local { mutable: false })
+                            {
+                                return Err(bad());
+                            }
+                            owned += 1;
+                        }
+                        ParameterTy::Value(ValueTy::Scalar(ty)) => {
+                            let mut matches = 0usize;
+                            for raw in declaration
+                                .blocks
+                                .iter()
+                                .flat_map(|block| &block.statements)
+                            {
+                                typed.work().debit(
+                                    1,
+                                    field.span,
+                                    "record pattern scalar correspondence",
+                                )?;
+                                if raw.span != field.span {
+                                    continue;
+                                }
+                                if let OwnedInstruction::ReadField {
+                                    destination,
+                                    base: AccessBase::Owner(actual_source),
+                                    field: actual_field,
+                                } = raw.kind
+                                {
+                                    let destination =
+                                        declaration.locals.get(destination.0).ok_or_else(bad)?;
+                                    if actual_source != source
+                                        || actual_field != expected_id
+                                        || destination.ty != ty
+                                        || destination.span != field.binding
+                                        || destination.kind != LocalKind::Binding
+                                    {
+                                        return Err(bad());
+                                    }
+                                    matches += 1;
+                                }
+                            }
+                            if matches != 1 {
+                                return Err(bad());
+                            }
+                        }
+                        _ => return Err(bad()),
+                    }
+                }
+                if owned != fields.len() {
+                    return Err(bad());
+                }
+            }
+        }
+        let mut local_declarations = 0usize;
+        for statement in original.blocks.iter().flat_map(|block| &block.body) {
+            if let crate::frontend::ast::StmtKind::Let { init, .. } = statement.kind {
+                if let crate::frontend::ast::ExprKind::Borrow { .. } = ast.expressions[init.0].kind
+                {
+                    local_declarations = local_declarations.checked_add(1).ok_or_else(bad)?;
+                    let typed = typed.ok_or_else(bad)?;
+                    let view = typed.functions().nth(ordinal).ok_or_else(bad)?;
+                    let borrow_span = ast.expressions[init.0].span;
+                    let mut found = 0usize;
+                    for (loan_id, loan) in declaration.loans.iter().enumerate() {
+                        typed.work().debit(
+                            1,
+                            borrow_span,
+                            "local reference source correspondence",
+                        )?;
+                        if loan.region != LoanRegion::Local || loan.span != borrow_span {
+                            continue;
+                        }
+                        found += 1;
+                        typed.work().debit(
+                            u64::try_from(view.hir().blocks.len()).map_err(|_| bad())?,
+                            borrow_span,
+                            "local reference block inventory",
+                        )?;
+                        let rows = view
+                            .hir()
+                            .blocks
+                            .iter()
+                            .try_fold(0usize, |sum, block| sum.checked_add(block.body.len()))
+                            .ok_or_else(bad)?;
+                        let scans = rows
+                            .checked_mul(2)
+                            .and_then(|sum| sum.checked_add(1))
+                            .ok_or_else(bad)?;
+                        typed.work().debit(
+                            u64::try_from(scans).map_err(|_| bad())?,
+                            borrow_span,
+                            "local reference declaration lookup",
+                        )?;
+                        let source_binding = view
+                            .hir()
+                            .blocks
+                            .iter()
+                            .flat_map(|block| &block.body)
+                            .find_map(|row| {
+                                if let super::hir::StmtKind::BorrowLet {
+                                    binding,
+                                    kind,
+                                    place,
+                                    borrow_span: origin,
+                                    ..
+                                } = row.kind
+                                {
+                                    (origin == borrow_span).then_some((binding, kind, place))
+                                } else {
+                                    None
+                                }
+                            })
+                            .ok_or_else(bad)?;
+                        let (binding, kind, place) = source_binding;
+                        if view.binding_ty(binding)
+                            != (ParameterTy::Reference {
+                                referent: loan.referent(),
+                                kind: loan.kind,
+                            })
+                            || kind != loan.kind
+                            || !loan.projection.is_empty()
+                        {
+                            return Err(bad());
+                        }
+                        let root = match place {
+                            super::hir::BorrowPlace::Owner(id)
+                            | super::hir::BorrowPlace::Forwarded(id) => id,
+                        };
+                        let origin = view.hir().bindings[root.0].span;
+                        match loan.authority {
+                            AccessBase::Owner(owner)
+                                if declaration
+                                    .owners
+                                    .get(owner.0)
+                                    .is_some_and(|row| row.span == origin) => {}
+                            AccessBase::Parameter(parameter)
+                                if declaration
+                                    .references
+                                    .get(parameter.0)
+                                    .is_some_and(|row| row.span == origin) => {}
+                            AccessBase::Loan(parent) => {
+                                if parent.0 == loan_id {
+                                    return Err(bad());
+                                }
+                                let parent = declaration.loans.get(parent.0).ok_or_else(bad)?;
+                                let binding = view
+                                    .hir()
+                                    .blocks
+                                    .iter()
+                                    .flat_map(|block| &block.body)
+                                    .find_map(|row| {
+                                        if let super::hir::StmtKind::BorrowLet {
+                                            binding,
+                                            borrow_span,
+                                            ..
+                                        } = row.kind
+                                        {
+                                            (binding == root).then_some(borrow_span)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .ok_or_else(bad)?;
+                                if parent.region != LoanRegion::Local || parent.span != binding {
+                                    return Err(bad());
+                                }
+                            }
+                            _ => return Err(bad()),
+                        }
+                    }
+                    if found != 1 {
+                        return Err(bad());
+                    }
+                }
+            }
+            if !matches!(
+                statement.kind,
+                crate::frontend::ast::StmtKind::DestructureRecord { .. }
+            ) {
+                continue;
+            }
+            let typed = typed.ok_or_else(bad)?;
+            let mut count = 0usize;
+            for lowered in declaration
+                .blocks
+                .iter()
+                .flat_map(|block| &block.statements)
+            {
+                typed
+                    .work()
+                    .debit(1, statement.span, "record pattern statement correspondence")?;
+                count += usize::from(
+                    lowered.span == statement.span
+                        && matches!(lowered.kind, OwnedInstruction::DestructureRecord { .. }),
+                );
+            }
+            if count != 1 {
+                return Err(bad());
+            }
+        }
+        if declaration
+            .loans
+            .iter()
+            .filter(|loan| loan.region == LoanRegion::Local)
+            .count()
+            != local_declarations
+        {
+            return Err(bad());
+        }
         visitor.file(original.name.file);
         function(
             declaration,
@@ -687,6 +1119,166 @@ fn check_impl(
         )?;
     }
     visitor.finish(count)
+}
+
+#[cfg(test)]
+mod generic_source_tests {
+    use super::*;
+    use crate::frontend::{
+        declaration_index::{collect_originals, IndexLimits, SourceOwner, WorkMeter},
+        project::{budget::Allocator, ProjectLimits, ProjectSources},
+    };
+
+    #[test]
+    fn nominal_same_layout_identity_swaps_fail_source_association() {
+        use crate::frontend::oir::owned_types::AggregateSlot;
+        for (kind, source) in [
+            ("record", "struct Marker<T>{value:i32}fn main()->i32{let first=Marker::<i32>{value:1};let second=Marker::<bool>{value:2};return first.value+second.value;}"),
+            ("enum", "enum Marker<T>{Empty,Value(i32)}fn main()->i32{let first=Marker::<i32>::Value(1);let second=Marker::<bool>::Value(2);match first{Marker::Empty=>{return 0;},Marker::Value(value)=>{},}match second{Marker::Empty=>{return 0;},Marker::Value(value)=>{return value;},}}"),
+        ] {
+            let path=std::env::temp_dir().join(format!("oxid-nominal-auth-{kind}-{}.ox",std::process::id()));
+            std::fs::write(&path,source).unwrap();
+            let project=ProjectSources::load_typed(path.to_str().unwrap(),ProjectLimits::default()).unwrap();
+            std::fs::remove_file(path).unwrap();
+            let work=WorkMeter::default();
+            let mut allocator=Allocator::default();
+            let index=collect_originals(SourceOwner::project(&project),IndexLimits::default(),&work,&mut allocator).unwrap().finish(&work,&mut allocator).unwrap();
+            let typed=if kind=="enum" {
+                super::super::resolve::type_enum_source(&index,&work,&mut allocator).unwrap()
+            } else {
+                super::super::typeck::check(super::super::resolve::resolve_project(&index,&work).unwrap()).unwrap()
+            };
+            assert!(associate_lowered(super::super::lower::lower(&typed).unwrap(),&typed).is_ok());
+            for independent in [true,false] {
+                let mut raw=super::super::lower::lower(&typed).unwrap();
+                assert_eq!(if kind=="record" {raw.records.len()} else {raw.enums.len()},2);
+                let swap_record=|field:&mut FieldId|{assert!(field.record.0<2);field.record.0=1-field.record.0;};
+                for function in &mut raw.functions {
+                    for owner in &mut function.owners {
+                        let aggregate=match owner.aggregate() {
+                            AggregateTy::Record(RecordId(id)) if kind=="record"=>AggregateTy::Record(RecordId(1-id)),
+                            AggregateTy::Enum(EnumId(id)) if kind=="enum"=>AggregateTy::Enum(EnumId(1-id)),
+                            other=>other,
+                        };
+                        owner.aggregate=AggregateSlot::try_from_aggregate(aggregate).unwrap();
+                    }
+                    for descriptor in &mut function.matches {
+                        for arm in &mut descriptor.arms {arm.variant.enumeration.0=1-arm.variant.enumeration.0;}
+                    }
+                    for block in &mut function.blocks {
+                        for statement in &mut block.statements {
+                            match &mut statement.kind {
+                                OwnedInstruction::Construct {fields,..}=>{for (field,_) in fields {swap_record(field);}},
+                                OwnedInstruction::ConstructComposite {fields,..}=>{for (field,_) in fields {swap_record(field);}},
+                                OwnedInstruction::ReadField {field,..}=>swap_record(field),
+                                OwnedInstruction::ReadProjection {path,..}|OwnedInstruction::WriteProjection {path,..}|OwnedInstruction::ProjectionLength {path,..}=>{for field in path {swap_record(field);}},
+                                OwnedInstruction::ConstructEnum {variant,..}|OwnedInstruction::ConstructOwnedEnum {variant,..}=>{variant.enumeration.0=1-variant.enumeration.0;},
+                                _=>(),
+                            }
+                        }
+                    }
+                }
+                if independent {
+                    assert!(super::super::super::verified::verify_owned(raw,project.sources()).is_ok());
+                } else {assert!(associate_lowered(raw,&typed).is_err());}
+            }
+        }
+    }
+
+    #[test]
+    fn inferred_constructor_nominals_cannot_be_replaced_by_equal_layouts() {
+        use super::super::record_pattern_tests::with_typed;
+        use crate::frontend::oir::owned_types::AggregateSlot;
+        for (kind, text) in [
+            ("record", "struct Left{value:i32}struct Right{value:i32}struct Cell<T>{value:T}fn main()->i32{let first=Cell{value:Left{value:20}};let second=Cell{value:Right{value:22}};return first.value.value+second.value.value;}"),
+            ("enum", "struct Left{value:i32}struct Right{value:i32}enum Choice<T>{Empty,Some(T)}fn main()->i32{let first=Choice::Some(Left{value:20});let second=Choice::Some(Right{value:22});match first{Choice::Empty=>{return 0;},Choice::Some(value)=>{},}match second{Choice::Empty=>{return 0;},Choice::Some(value)=>{return value.value;},}}"),
+        ] {
+            with_typed(text, |typed,sources| {
+                let valid=super::super::lower::lower(typed).unwrap();
+                assert_eq!(valid.records.len(),if kind=="record" {4} else {2});
+                assert_eq!(valid.enums.len(),if kind=="record" {0} else {2});
+                for id in 0..valid.records.len() {
+                    let template=typed.index().template_record_for_instance(RecordId(id)).unwrap();
+                    assert_eq!(template.0,if id<2 {id} else {2});
+                }
+                assert!(associate_lowered(valid,typed).is_ok());
+                for independent in [true,false] {
+                    let mut raw=super::super::lower::lower(typed).unwrap();
+                    let swap_record=|field:&mut FieldId| {field.record.0^=1;};
+                    for function in &mut raw.functions {
+                        for owner in &mut function.owners {
+                            owner.aggregate=AggregateSlot::try_from_aggregate(match owner.aggregate() {
+                                AggregateTy::Record(RecordId(id))=>AggregateTy::Record(RecordId(id^1)),
+                                AggregateTy::Enum(EnumId(id))=>AggregateTy::Enum(EnumId(id^1)),
+                                other=>other,
+                            }).unwrap();
+                        }
+                        for descriptor in &mut function.matches {
+                            for arm in &mut descriptor.arms {arm.variant.enumeration.0^=1;}
+                        }
+                        for block in &mut function.blocks {
+                            for statement in &mut block.statements {
+                                match &mut statement.kind {
+                                    OwnedInstruction::Construct{fields,..}=>{
+                                        for (field,_) in fields {swap_record(field);}
+                                    }
+                                    OwnedInstruction::ConstructComposite{fields,..}=>{
+                                        for (field,_) in fields {swap_record(field);}
+                                    }
+                                    OwnedInstruction::ReadField{field,..}=>swap_record(field),
+                                    OwnedInstruction::ReadProjection{path,..}|OwnedInstruction::WriteProjection{path,..}|OwnedInstruction::ProjectionLength{path,..}=>{
+                                        for field in path {swap_record(field);}
+                                    }
+                                    OwnedInstruction::ConstructEnum{variant,..}|OwnedInstruction::ConstructOwnedEnum{variant,..}=>{variant.enumeration.0^=1;}
+                                    _=>(),
+                                }
+                            }
+                        }
+                    }
+                    if independent {
+                        assert!(super::super::super::verified::verify_owned(raw,sources).is_ok(),"{kind}");
+                    } else {assert!(associate_lowered(raw,typed).is_err(),"{kind}");}
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn same_signature_generic_call_swap_is_rejected_by_source_association() {
+        let path =
+            std::env::temp_dir().join(format!("oxid-generic-call-auth-{}.ox", std::process::id()));
+        std::fs::write(&path, "fn one<T>(value:T)->i32{return 1;}fn two<T>(value:T)->i32{return 2;}fn main()->i32{return one(42)+two(42);}").unwrap();
+        let project =
+            ProjectSources::load_typed(path.to_str().unwrap(), ProjectLimits::default()).unwrap();
+        std::fs::remove_file(path).unwrap();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = collect_originals(
+            SourceOwner::project(&project),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        let typed = super::super::typeck::check(
+            super::super::resolve::resolve_project(&index, &work).unwrap(),
+        )
+        .unwrap();
+        let raw = super::super::lower::lower(&typed).unwrap();
+        assert!(associate_lowered(raw, &typed).is_ok());
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        let entry = index.root_original_main().unwrap();
+        assert_eq!(raw.functions[entry.0].calls.len(), 2);
+        let other = raw.functions[entry.0].calls[1].target;
+        raw.functions[entry.0].calls[0].target = other;
+        // The independent raw verifier accepts the identical ABI and ownership.
+        assert!(super::super::super::verified::verify_owned(raw, project.sources()).is_ok());
+        let mut raw = super::super::lower::lower(&typed).unwrap();
+        raw.functions[entry.0].calls[0].target = other;
+        assert!(associate_lowered(raw, &typed).is_err());
+    }
 }
 
 /// Preserve the RFC 0025 predecessor/candidate layout evidence alongside the

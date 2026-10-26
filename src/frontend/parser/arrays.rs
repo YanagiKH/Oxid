@@ -37,6 +37,32 @@ impl Parser<'_> {
         )
     }
 
+    pub(super) fn array_index_range_error(&self, index: ExprId) -> Box<Diagnostic> {
+        let expression = &self.expressions[index.0];
+        if matches!(expression.kind, ExprKind::Number { .. })
+            && expression.span.end == self.peek().span.start
+        {
+            // Splitting `..` permits call-only views. An ordinary numeric
+            // index still rejects the same complete numeric candidate as
+            // before that lexer refinement.
+            let suffix = self.source.text()[expression.span.end..]
+                .chars()
+                .take_while(|next| next.is_alphanumeric() || matches!(next, '_' | '.'))
+                .map(char::len_utf8)
+                .sum::<usize>();
+            return self.diagnostic(
+                "E0101",
+                "parse",
+                "unsupported numeric spelling; expected ASCII decimal literal digits",
+                Some(
+                    self.source
+                        .span(expression.span.start, expression.span.end + suffix),
+                ),
+            );
+        }
+        self.array_unsupported(self.peek().span)
+    }
+
     pub(super) fn array_missing(&self, message: &'static str) -> Box<Diagnostic> {
         self.diagnostic("E0100", "parse", message, Some(self.peek().span))
     }
@@ -92,9 +118,41 @@ impl Parser<'_> {
                 self.bump();
                 ArrayElementTypeSyntax::I32
             }
+            Kind::Ident
+                if self.wide_scalars_enabled() && self.source.text_at(token.span) == "char" =>
+            {
+                self.bump();
+                ArrayElementTypeSyntax::Char
+            }
             Kind::Ident if self.source.text_at(token.span) == "u8" => {
                 self.bump();
                 ArrayElementTypeSyntax::U8
+            }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && FloatTypeSyntax::from_spelling(self.source.text_at(token.span))
+                        .is_some() =>
+            {
+                self.bump();
+                ArrayElementTypeSyntax::Float(
+                    FloatTypeSyntax::from_spelling(self.source.text_at(token.span)).unwrap(),
+                )
+            }
+            Kind::Ident
+                if self.wide_scalars_enabled() && self.source.text_at(token.span) == "i64" =>
+            {
+                self.bump();
+                ArrayElementTypeSyntax::I64
+            }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && IntegerTypeSyntax::from_spelling(self.source.text_at(token.span))
+                        .is_some() =>
+            {
+                let kind =
+                    IntegerTypeSyntax::from_spelling(self.source.text_at(token.span)).unwrap();
+                self.bump();
+                ArrayElementTypeSyntax::Integer(kind)
             }
             Kind::LParen if self.next_kind() == Kind::RParen => {
                 self.bump();

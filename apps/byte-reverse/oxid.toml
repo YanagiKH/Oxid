@@ -1,0 +1,4 @@
+[workspace]
+edition = "typed-preview"
+members = ["app", "binary", "reverse"]
+default-members = ["app"]

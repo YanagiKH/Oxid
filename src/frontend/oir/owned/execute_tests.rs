@@ -1,8 +1,165 @@
 use super::super::consumer_fixtures::*;
 use super::*;
 
+#[test]
+fn local_reference_every_fuel_boundary_matches_an_independent_schedule() {
+    let (sources, raw) = super::super::tests::local_reference_program();
+    let schedule = super::super::tests::local_reference_schedule(&sources);
+    assert_eq!(schedule.fuel(), 66);
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    for fuel in 0..=66 {
+        let mut events = vec![];
+        let result = run_observed(
+            &witness,
+            schedule.entry,
+            Limits {
+                fuel,
+                ..Limits::default()
+            },
+            &mut events,
+        );
+        match schedule.failure(fuel) {
+            Some(span) => assert_eq!(
+                result,
+                Err(OwnedRunFailure::Scalar(RunFailure::Fuel(span))),
+                "fuel {fuel}"
+            ),
+            None => assert_eq!(result, Ok(Scalar::I32(-47))),
+        }
+        let charges: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Charge(span, cost) => Some((*span, *cost)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(charges, schedule.events[..charges.len()], "fuel {fuel}");
+    }
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    // Acquisition and release have no effect until their one fuel unit is paid.
+    for (fuel, active, children) in [(40, 0, 0), (41, 1, 1), (58, 1, 1), (59, 0, 0)] {
+        let machine = stopped_machine(&plan, fuel);
+        assert_eq!(machine.frames[0].loans[0].state, active, "fuel {fuel}");
+        assert_eq!(
+            machine.frames[0].owners[0].shared_children, children,
+            "fuel {fuel}"
+        );
+        assert_eq!(machine.frames[0].loans[0].shared_children, 0, "fuel {fuel}");
+    }
+}
+
+#[test]
+fn local_reference_runtime_rejects_stale_epochs_and_failed_release_without_mutation() {
+    let (sources, raw) = super::super::tests::local_reference_program();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let span = witness.functions()[0].loans[0].span;
+    for mutation in 0..5 {
+        let mut machine = stopped_machine(&plan, 58);
+        let handle = machine.reference_from_loan(0, LoanId(0), span).unwrap();
+        match mutation {
+            0 => machine.frames[0].loans[0].shared_children = 1,
+            1 => machine.frames[0].loans[0].exclusive_children = 1,
+            2 => machine.frames[0].owners[0].shared_children = 0,
+            3 => machine.frames[0].owners[0].generation += 1,
+            4 => machine.frames[0].loans[0].instance += 1,
+            _ => unreachable!(),
+        }
+        let before = (machine.frames[0].loans[0], machine.frames[0].owners[0]);
+        assert!(
+            machine.release(handle.permission, span).is_err(),
+            "mutation {mutation}"
+        );
+        assert_eq!(
+            (machine.frames[0].loans[0], machine.frames[0].owners[0]),
+            before,
+            "mutation {mutation}"
+        );
+    }
+}
+
 #[path = "source/runtime_resource_tests.rs"]
 mod source_resources;
+
+#[test]
+fn record_pattern_runtime_preflights_every_destination_before_any_payload_copy() {
+    for source in [
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;struct Pair{first:ByteBuf,second:ByteBuf}fn main()->i32{let pair=Pair{first:make(40u8),second:make(2u8)};let Pair{first:a,second:b}=pair;return len(&a)+len(&b);}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}",
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;enum Option<T>{None,Some(T)}struct Pair{first:Option<ByteBuf>,second:Option<ByteBuf>}fn main()->i32{let pair=Pair{first:Option::<ByteBuf>::Some(make(40u8)),second:Option::<ByteBuf>::Some(make(2u8))};let Pair{first:a,second:b}=pair;match a{Option::None=>{return 0;},Option::Some(value)=>{return len(&value);},}}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}",
+    ] {
+    let checked = super::super::source::resource_fixtures::checked_enum_project(source);
+    assert_eq!(checked.entry, hir::DefId(0));
+    let plan = ExecutionPlan::build(&checked.witness).unwrap();
+    for mutation in 0..4 {
+        let initial = 1 + plan.function(checked.entry).usage().activation_fuel_cells();
+        let mut selected = None;
+        for fuel in initial..initial + 1000 {
+            let machine = stopped_machine(&plan, fuel);
+            let frame = machine.frames.len() - 1;
+            let current = &machine.frames[frame];
+            let function = &plan.witness().functions()[current.function.0];
+            if let Some(statement) = function.blocks[current.block.0]
+                .statements
+                .get(current.next)
+            {
+                if matches!(statement.kind, OwnedInstruction::DestructureRecord { .. }) {
+                    selected = Some((machine, frame, statement));
+                    break;
+                }
+            }
+        }
+        let (mut machine, frame, statement) = selected.expect("record pattern reached");
+        let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind else {
+            unreachable!()
+        };
+        assert_eq!(fields.len(), 2);
+        let span = plan::instruction_span(statement);
+        let last = fields[1].1;
+        match mutation {
+            0 => machine.frames[frame].owners[last.0].generation = u64::MAX,
+            1 => machine.frames[frame].owners[source.0].generation = u64::MAX,
+            2 => machine.frames[frame].owners[last.0].state = AVAILABLE,
+            3 => {
+                let key = machine.raw_key(frame, *source);
+                let AggregateTy::Record(record) = machine.aggregate(key, span).unwrap() else {
+                    unreachable!()
+                };
+                let (_, extent) = machine
+                    .owned_record_field_extent(key, record, fields[1].0, span)
+                    .unwrap();
+                machine.frames[frame].payload[extent].fill(0xff);
+            }
+            _ => unreachable!(),
+        }
+        let payload = machine.frames[frame].payload.clone();
+        let owners = machine.frames[frame]
+            .owners
+            .iter()
+            .map(|owner| (owner.state, owner.generation))
+            .collect::<Vec<_>>();
+        assert!(machine.statement(frame, &statement.kind, span).is_err());
+        assert_eq!(
+            machine.frames[frame].payload, payload,
+            "mutation {mutation}"
+        );
+        assert_eq!(
+            machine.frames[frame]
+                .owners
+                .iter()
+                .map(|owner| (owner.state, owner.generation))
+                .collect::<Vec<_>>(),
+            owners
+        );
+        assert_eq!(machine.heap.ledger().live_allocations, 2);
+        machine.heap.cleanup();
+        assert_eq!(machine.heap.ledger().live_allocations, 0);
+        assert_eq!(
+            machine.heap.ledger().allocations,
+            machine.heap.ledger().releases
+        );
+    }
+    }
+}
 
 #[test]
 fn independently_counted_complete_traces_and_every_lower_fuel() {
@@ -233,6 +390,7 @@ fn stopped_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>, fuel: usize) -> Machine<
         live_cells: 0,
         live_bytes: 0,
         header_bytes: limits.frames * size_of::<Frame>(),
+        heap: byte_buffer::Heap::default(),
         events: vec![],
         observer: array_observe::Observer::default(),
     };
@@ -954,8 +1112,10 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     }];
     main.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -1020,8 +1180,10 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     }];
     recursive.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),

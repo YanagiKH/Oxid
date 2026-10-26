@@ -285,6 +285,33 @@ fn check_body(program: &Program, function: &Function) -> Result<TypedBody, Box<D
                         let (expected, result) = match op {
                             ConversionOp::ToU8Checked => (Ty::I32, Ty::U8),
                             ConversionOp::ToI32 => (Ty::U8, Ty::I32),
+                            ConversionOp::ToI64 => (Ty::I32, Ty::I64),
+                            ConversionOp::ToI32Checked => (Ty::I64, Ty::I32),
+                            ConversionOp::ToCharChecked | ConversionOp::CharToU32 => {
+                                return Err(Diagnostic::new(
+                                    "E0300",
+                                    "type",
+                                    "character conversion requires the owned typed source path",
+                                    Some(expr.span),
+                                ))
+                            }
+                            ConversionOp::ToFloat(_)
+                            | ConversionOp::FloatToBits
+                            | ConversionOp::FloatSqrt
+                            | ConversionOp::FloatFromBits(_) => return Err(Diagnostic::new(
+                                "E0300",
+                                "type",
+                                "floating-point conversion requires the owned typed source path",
+                                Some(expr.span),
+                            )),
+                            ConversionOp::ToIntegerChecked(_) => {
+                                return Err(Diagnostic::new(
+                                    "E0300",
+                                    "type",
+                                    "integer conversion requires the owned typed source path",
+                                    Some(expr.span),
+                                ))
+                            }
                         };
                         let actual = expressions[operand.0];
                         if actual != expected {

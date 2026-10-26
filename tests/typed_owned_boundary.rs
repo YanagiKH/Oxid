@@ -104,7 +104,12 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         let json = text(&compile);
         assert_eq!(json.lines().count(), 2, "{json}");
         assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
-        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if cfg!(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             if output == "output" {
                 assert!(json.contains("native output already exists"), "{json}");
             } else {
@@ -113,7 +118,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
             }
         } else {
             assert!(
-                json.contains("native preview requires a Linux x86_64 build host"),
+                json.contains("native builds require a Linux x86_64 or ARM64 host"),
                 "{json}"
             );
         }
@@ -126,7 +131,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
 #[test]
 fn source_errors_precede_native_tools_and_preserve_existing_outputs() {
     let cases = [
-        ("struct T {} fn main() -> () { let x = T {}; let p = &x; return; }", "E0101", "parse"),
+        ("struct T {} fn main() -> () { let x = T {}; let p = &x; p = &x; return; }", "E0101", "parse"),
         ("struct T {} fn main() -> Missing { return T {}; }", "E0202", "resolve"),
         ("struct T { n: i32 } fn main() -> () { let x = T { n: true }; return; }", "E0300", "type"),
         ("struct T {} fn unused(x: T) -> () { x; x; return; } fn main() -> () { return; }", "E0310", "ownership"),

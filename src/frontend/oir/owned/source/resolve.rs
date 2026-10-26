@@ -3,7 +3,7 @@ use super::hir::*;
 use super::resolver_storage::{self as storage, Kind, PaidStorage};
 use crate::frontend::{
     ast,
-    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinSet},
+    builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction, BuiltinSet},
     declaration_index::{
         self as index, Access, DeclarationIndex, Exposure, IndexLimits, NominalExposure, NominalId,
         PreparedTypeName, QualifiedValueEndpoint, QuerySession, SourceOwner, TypeContext,
@@ -19,6 +19,14 @@ use crate::frontend::{
     source::{SourceFile, SourceMap, SourceView, Span},
 };
 use std::collections::HashMap;
+
+/// Canonical resources need the paid source lane even when their minimal
+/// imports introduce no enum (for example only `new` and `len`).
+pub(in crate::frontend::oir) fn requires_paid_source(index: &DeclarationIndex<'_>) -> bool {
+    index.enum_count() != 0
+        || !index.builtin_set().experimental().is_empty()
+        || index.has_range_for()
+}
 
 /// Construction policy, retained even for array-free inputs. No executable
 /// entrypoint accepts a caller-selected admission policy.
@@ -125,6 +133,7 @@ impl<'src> ResolvedOwnedProgram<'src> {
                     ExprKind::Call { args, .. } => inventory.vector(args)?,
                     ExprKind::StructLiteral { fields, .. } => inventory.vector(fields)?,
                     ExprKind::ArrayLiteral { elements } => inventory.vector(elements)?,
+                    ExprKind::ByteString { bytes } => inventory.vector(bytes)?,
                     _ => (),
                 }
             }
@@ -133,8 +142,10 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 inventory.vector(&block.body)?;
                 for statement in &block.body {
                     inventory.row()?;
-                    if let StmtKind::Match { arms, .. } = &statement.kind {
-                        inventory.vector(arms)?;
+                    match &statement.kind {
+                        StmtKind::Match { arms, .. } => inventory.vector(arms)?,
+                        StmtKind::DestructureRecord { fields, .. } => inventory.vector(fields)?,
+                        _ => (),
                     }
                 }
             }
@@ -227,7 +238,8 @@ impl<'src> ResolvedOwnedProgram<'src> {
         record: RecordId,
         at: Span,
     ) -> Result<PreparedTypeName<'src>, Box<Diagnostic>> {
-        self.query().prepare_type_name(record, at)
+        self.query()
+            .prepare_type_name(self.index().template_record_for_instance(record)?, at)
     }
     pub(super) fn text(&self, span: Span) -> &str {
         self.sources.text(span)
@@ -262,6 +274,25 @@ impl<'src> ResolvedOwnedProgram<'src> {
             if function.id != DefId(ordinal) {
                 return Err(invalid_signature_identity(function.end));
             }
+            if index.has_generic_instances() {
+                let (key, module) = index.function(function.id)?;
+                let original = &index.sources().ast(module)?.functions[key.index];
+                let signature = &self.signatures[ordinal];
+                if signature.span != original.name
+                    || signature.params.len() != original.params.len()
+                    || signature.result
+                        != index.instantiated_value(function.id, original.result, self.work())?
+                {
+                    return Err(invalid_signature_identity(function.end));
+                }
+                for (actual, parameter) in signature.params.iter().zip(&original.params) {
+                    if *actual
+                        != index.instantiated_parameter(function.id, parameter.ty, self.work())?
+                    {
+                        return Err(invalid_signature_identity(parameter.ty.span));
+                    }
+                }
+            }
         }
         for builtin in BuiltinFunction::ALL {
             if !index.builtin_set().contains_function(builtin) {
@@ -294,6 +325,29 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 return Err(invalid_signature_identity(anchor));
             }
         }
+        for builtin in experimental::Function::ALL {
+            if !index.builtin_set().experimental().contains(builtin.item()) {
+                continue;
+            }
+            let id = index.experimental_function_id(builtin)?;
+            let anchor = index.experimental_anchor(builtin.item())?;
+            let expected = index.experimental_signature(builtin)?;
+            let actual = self
+                .signatures
+                .get(id.0)
+                .ok_or_else(|| invalid_signature_identity(anchor))?;
+            self.work().debit(
+                (4 + expected.parameters().len()) as u64,
+                anchor,
+                "experimental signature identity",
+            )?;
+            if actual.params != expected.parameters()
+                || actual.result != expected.result
+                || actual.span != anchor
+            {
+                return Err(invalid_signature_identity(anchor));
+            }
+        }
         Ok(())
     }
 }
@@ -321,6 +375,23 @@ fn duplicate(span: Span, original: Span) -> Box<Diagnostic> {
         format_args!("first declared here"),
     )
 }
+fn value_annotation(ty: ast::TypeSyntax) -> Result<(), Box<Diagnostic>> {
+    if matches!(
+        ty.kind,
+        ast::TypeSyntaxKind::Reference { .. }
+            | ast::TypeSyntaxKind::AppliedReference { .. }
+            | ast::TypeSyntaxKind::ArrayReference { .. }
+            | ast::TypeSyntaxKind::SliceReference { .. }
+    ) {
+        Err(error(
+            "E0202",
+            format_args!("reference annotation requires a borrowed initializer"),
+            ty.span,
+        ))
+    } else {
+        Ok(())
+    }
+}
 fn value_type(
     query: &mut QuerySession<'_, '_>,
     requester: ModuleId,
@@ -328,25 +399,17 @@ fn value_type(
 ) -> Result<ValueTy, Box<Diagnostic>> {
     query.value_type(requester, ty, TypeContext::Value)
 }
-// Generic value-type resolution must never silently authorize enum containment.
-fn record_field_type(ty: ValueTy, span: Span) -> Result<ValueTy, Box<Diagnostic>> {
-    if ty == ValueTy::Scalar(Ty::U8) {
+// Name resolution supplies nominal IDs; the joint layout pass independently
+// checks containment before a resolved program can leave this module.
+fn record_field_type(
+    ty: ValueTy,
+    span: Span,
+    enum_count: usize,
+) -> Result<ValueTy, Box<Diagnostic>> {
+    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(id)) if id.0 >= enum_count) {
         Err(error(
-            "E0202",
-            format_args!("u8 record fields are not supported"),
-            span,
-        ))
-    } else if matches!(ty, ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == Ty::U8)
-    {
-        Err(error(
-            "E0202",
-            format_args!("u8 array record fields are not supported"),
-            span,
-        ))
-    } else if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
-        Err(error(
-            "E0300",
-            format_args!("enum values cannot be record fields"),
+            "E0500",
+            format_args!("invalid resolved enum field identity"),
             span,
         ))
     } else {
@@ -361,8 +424,8 @@ fn check_owned_enum_cycles(
     work: &WorkMeter,
 ) -> Result<(), Box<Diagnostic>> {
     use crate::frontend::{oir::owned_types::EnumId, parser::MAX_NESTING};
-    // The source enum grammar has one payload edge per variant. Records cannot
-    // contain enums, so only enum edges can create a new recursive layout.
+    // Diagnose enum-only cycles here. Mixed record/enum cycles are checked by
+    // the joint layout inventory after every record field has been resolved.
     let mut stack = [None; MAX_NESTING];
     for root in 0..index.source_enum_count() {
         let mut depth = 1usize;
@@ -414,7 +477,7 @@ fn check_owned_enum_cycles(
     Ok(())
 }
 #[test]
-fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
+fn enum_source_record_fields_require_declared_nominal_identities() {
     let mut sources = SourceMap::new();
     let id = sources.add("enum-field-gate.ox".into(), "field".into());
     let span = sources.get(id).span(0, 5);
@@ -424,11 +487,16 @@ fn bounded_enum_source_record_field_fence_is_independent_of_resolution() {
                 crate::frontend::oir::owned_types::EnumId(id),
             )),
             span,
+            0,
         )
         .unwrap_err();
-        assert_eq!(error.code, "E0300");
+        assert_eq!(error.code, "E0500");
         assert_eq!(error.primary, Some(span));
     }
+    let declared = ValueTy::Owned(AggregateTy::Enum(
+        crate::frontend::oir::owned_types::EnumId(0),
+    ));
+    assert_eq!(record_field_type(declared, span, 1).unwrap(), declared);
 }
 
 fn parameter_type(
@@ -462,6 +530,116 @@ fn decimal_i32(digits: &str, negative: bool, span: Span) -> Result<i32, Box<Diag
             })?;
     }
     Ok(value)
+}
+fn decimal_i64(digits: &str, negative: bool, span: Span) -> Result<i64, Box<Diagnostic>> {
+    let mut value = 0i64;
+    for byte in digits.bytes() {
+        let digit = i64::from(byte - b'0');
+        value = value.checked_mul(10).and_then(|value| {
+            if negative { value.checked_sub(digit) } else { value.checked_add(digit) }
+        }).ok_or_else(|| error("E0203", format_args!("decimal literal is outside the i64 range [-9223372036854775808, 9223372036854775807]"), span))?;
+    }
+    Ok(value)
+}
+
+fn decimal_integer(
+    digits: &str,
+    negative: bool,
+    kind: ast::IntegerTypeSyntax,
+    span: Span,
+) -> Result<u64, Box<Diagnostic>> {
+    if kind.bits() > 64 {
+        return Err(error(
+            "E0500",
+            format_args!("invalid narrow integer literal type"),
+            span,
+        ));
+    }
+    let range = || {
+        error(
+            "E0203",
+            format_args!("decimal literal is outside the {} range", kind.spelling()),
+            span,
+        )
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(error(
+            "E0500",
+            format_args!("invalid integer literal source"),
+            span,
+        ));
+    }
+    if negative && !kind.signed() {
+        return Err(range());
+    }
+    let mut magnitude = 0u64;
+    for byte in digits.bytes() {
+        magnitude = magnitude
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u64::from(byte - b'0')))
+            .ok_or_else(range)?;
+    }
+    let bound = if kind.signed() {
+        (1u64 << (kind.bits() - 1)) - u64::from(!negative)
+    } else if kind.bits() == 64 {
+        u64::MAX
+    } else {
+        (1u64 << kind.bits()) - 1
+    };
+    if magnitude > bound {
+        return Err(range());
+    }
+    Ok(if negative {
+        0u64.wrapping_sub(magnitude)
+    } else {
+        magnitude
+    })
+}
+
+fn decimal_integer128(
+    digits: &str,
+    negative: bool,
+    kind: ast::IntegerTypeSyntax,
+    span: Span,
+) -> Result<u128, Box<Diagnostic>> {
+    if kind.bits() != 128 || digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(error(
+            "E0500",
+            format_args!("invalid 128-bit integer literal source"),
+            span,
+        ));
+    }
+    let range = || {
+        error(
+            "E0203",
+            format_args!("decimal literal is outside the {} range", kind.spelling()),
+            span,
+        )
+    };
+    if negative && !kind.signed() {
+        return Err(range());
+    }
+    let mut magnitude = 0u128;
+    for byte in digits.bytes() {
+        magnitude = magnitude
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u128::from(byte - b'0')))
+            .ok_or_else(range)?;
+    }
+    let bound = if kind.signed() {
+        (1u128 << 127) - u128::from(!negative)
+    } else {
+        u128::MAX
+    };
+    if magnitude > bound {
+        return Err(range());
+    }
+    Ok(if negative {
+        0u128.wrapping_sub(magnitude)
+    } else {
+        magnitude
+    })
 }
 
 #[cfg(test)]
@@ -568,7 +746,7 @@ fn resolve_index(
     index
         .require_current_source_pipeline()
         .map_err(|e| vec![*e])?;
-    if index.enum_count() != 0 {
+    if requires_paid_source(index) {
         return Err(vec![*error(
             "E0101",
             format_args!("enum source requires fresh paid typing"),
@@ -591,7 +769,7 @@ pub(in crate::frontend::oir) fn type_enum_source<'s>(
         .require_current_source_pipeline()
         .map_err(|error| vec![*error])?;
     let at = index.sources().eof();
-    if index.enum_count() == 0 {
+    if !requires_paid_source(index) {
         return Err(vec![*error(
             "E0500",
             format_args!("fresh enum typing requires enum declarations"),
@@ -1225,17 +1403,24 @@ fn resolve_index_impl(
                 } else if let Some(first) = names.insert(sources.text(field.name)?, field.name) {
                     return Err(duplicate(field.name, first));
                 }
-                let ty = value_type(&mut index.query(work), module, field.ty)?;
-                let ty = record_field_type(
-                    ty,
-                    if ty == ValueTy::Scalar(Ty::U8)
-                        || matches!(ty, ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == Ty::U8)
-                    {
-                        field.ty.span
-                    } else {
-                        field.span
+                let ty = match index.instantiated_record_field(
+                    FieldId {
+                        record: RecordId(id),
+                        index: position,
                     },
-                )?;
+                    field.ty,
+                    work,
+                )? {
+                    ParameterTy::Value(value) => value,
+                    _ => {
+                        return Err(error(
+                            "E0300",
+                            format_args!("record fields require owned values"),
+                            field.span,
+                        ))
+                    }
+                };
+                let ty = record_field_type(ty, field.span, index.enum_count())?;
                 storage::room(&fields, fields.capacity(), paid.is_some(), field.span)?;
                 fields.push(Field {
                     id: FieldId {
@@ -1295,7 +1480,7 @@ fn resolve_index_impl(
                     function.name,
                 )?;
                 for parameter in &function.params {
-                    let ty = parameter_type(&mut index.query(work), module, parameter.ty)?;
+                    let ty = index.instantiated_parameter(DefId(id), parameter.ty, work)?;
                     storage::room(&params, params.capacity(), true, parameter.ty.span)?;
                     params.push(ty);
                 }
@@ -1304,18 +1489,27 @@ fn resolve_index_impl(
                 function
                     .params
                     .iter()
-                    .map(|p| parameter_type(&mut index.query(work), module, p.ty))
+                    .map(|p| index.instantiated_parameter(DefId(id), p.ty, work))
                     .collect::<Result<Vec<_>, _>>()?
             };
-            let result = value_type(&mut index.query(work), module, function.result)?;
+            let result = index.instantiated_value(DefId(id), function.result, work)?;
             for block in &function.blocks {
                 for statement in &block.body {
                     if let ast::StmtKind::Let {
                         annotation: Some(ty),
+                        init,
                         ..
                     } = statement.kind
                     {
-                        value_type(&mut index.query(work), module, ty)?;
+                        if matches!(
+                            sources.ast(module)?.expressions[init.0].kind,
+                            ast::ExprKind::Borrow { .. }
+                        ) {
+                            index.instantiated_parameter(DefId(id), ty, work)?;
+                        } else {
+                            value_annotation(ty)?;
+                            index.instantiated_value(DefId(id), ty, work)?;
+                        }
                     } else if index.enum_count() == 0
                         && matches!(statement.kind, ast::StmtKind::Match { .. })
                     {
@@ -1377,18 +1571,34 @@ fn resolve_index_impl(
                 }
                 let payload = variant.value_payload(work).map_err(|error| vec![*error])?;
                 let nominal = match payload {
+                    Some(ValueTy::Owned(AggregateTy::ByteBuf)) => NominalId::ByteBuf,
+                    Some(ValueTy::Owned(AggregateTy::File)) => NominalId::File,
                     Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
                     Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
                     Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
                     _ => return Err(vec![*invalid_signature_identity(variant.diagnostic_span())]),
                 };
                 let at = variant.payload_span().unwrap_or(variant.diagnostic_span());
+                // Generic declaration visibility was checked with opaque
+                // arguments. A private local instantiation does not change the
+                // public template's visibility domain.
+                if index.has_generic_instances() {
+                    continue;
+                }
                 if let NominalExposure::Denied {
                     declaration,
                     restrictor,
                 } = index
                     .query(work)
-                    .enum_payload_exposure(enumeration.id(), nominal, at)
+                    .enum_payload_exposure(
+                        index
+                            .template_enum_for_instance(enumeration.id())
+                            .map_err(|error| vec![*error])?,
+                        index
+                            .template_nominal_for_instance(nominal)
+                            .map_err(|error| vec![*error])?,
+                        at,
+                    )
                     .map_err(|error| vec![*error])?
                 {
                     let mut failure = secondary(
@@ -1443,7 +1653,49 @@ fn resolve_index_impl(
         )
         .map_err(|error| vec![*error])?;
     }
-    if records.iter().any(|record| {
+    for builtin in experimental::Function::ALL {
+        if !index.builtin_set().experimental().contains(builtin.item()) {
+            continue;
+        }
+        let mut append = || -> Result<(), Box<Diagnostic>> {
+            let anchor = index.experimental_anchor(builtin.item())?;
+            let id = index.experimental_function_id(builtin)?;
+            if id.0 != signatures.len() {
+                return Err(invalid_signature_identity(anchor));
+            }
+            let expected = index.experimental_signature(builtin)?;
+            let paid = paid
+                .as_deref_mut()
+                .ok_or_else(|| invalid_signature_identity(anchor))?;
+            work.debit(
+                (1 + expected.parameters().len()) as u64,
+                anchor,
+                "experimental signature construction",
+            )?;
+            let mut params = paid.reserve(
+                allocator,
+                Kind::Parameters,
+                expected.parameters().len(),
+                anchor,
+            )?;
+            for parameter in expected.parameters() {
+                storage::room(&params, params.capacity(), true, anchor)?;
+                params.push(*parameter);
+            }
+            storage::room(&signatures, signatures.capacity(), true, anchor)?;
+            signatures.push(Signature {
+                params,
+                result: expected.result,
+                span: anchor,
+            });
+            Ok(())
+        };
+        append().map_err(|error| vec![*error])?;
+    }
+    if super::record_enum_layouts::needed(&records) {
+        super::record_enum_layouts::inventory(index, &records, work, &mut Allocator::default())
+            .map_err(|error| vec![*error])?;
+    } else if records.iter().any(|record| {
         record
             .fields
             .iter()
@@ -1495,6 +1747,16 @@ fn resolve_index_impl(
             .map(|(ty, p)| {
                 (
                     match *ty {
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::File))
+                        | ParameterTy::Reference {
+                            referent: BorrowedTy::Exact(AggregateTy::File),
+                            ..
+                        } => Some(NominalId::File),
+                        ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf))
+                        | ParameterTy::Reference {
+                            referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
+                            ..
+                        } => Some(NominalId::ByteBuf),
                         ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
                         | ParameterTy::Reference {
                             referent: BorrowedTy::Exact(AggregateTy::Record(r)),
@@ -1510,6 +1772,8 @@ fn resolve_index_impl(
             });
         let result = (
             match signature.result {
+                ValueTy::Owned(AggregateTy::ByteBuf) => Some(NominalId::ByteBuf),
+                ValueTy::Owned(AggregateTy::File) => Some(NominalId::File),
                 ValueTy::Owned(AggregateTy::Record(r)) => Some(NominalId::Record(r)),
                 ValueTy::Owned(AggregateTy::Enum(e)) => Some(NominalId::Enum(e)),
                 _ => None,
@@ -1518,6 +1782,15 @@ fn resolve_index_impl(
         );
         for (nominal, ty) in params.chain(std::iter::once(result)) {
             let Some(nominal) = nominal else { continue };
+            if index
+                .is_type_parameter(DefId(id), *ty)
+                .map_err(|e| vec![*e])?
+            {
+                continue;
+            }
+            let definition = index
+                .template_for_instance(DefId(id))
+                .map_err(|e| vec![*e])?;
             let at = match ty.kind {
                 ast::TypeSyntaxKind::Reference { referent, .. } => sources
                     .path_span(ItemPathRef {
@@ -1529,12 +1802,22 @@ fn resolve_index_impl(
             };
             // Retain the old record query, work and diagnostic route exactly.
             let exposure = match nominal {
-                NominalId::Record(record) => {
-                    index.query(work).signature_exposure(DefId(id), record, at)
-                }
-                NominalId::Enum(_) => index
+                NominalId::Record(record) => index.query(work).signature_exposure(
+                    definition,
+                    index
+                        .template_record_for_instance(record)
+                        .map_err(|e| vec![*e])?,
+                    at,
+                ),
+                NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File => index
                     .query(work)
-                    .nominal_signature_exposure(DefId(id), nominal, at)
+                    .nominal_signature_exposure(
+                        definition,
+                        index
+                            .template_nominal_for_instance(nominal)
+                            .map_err(|error| vec![*error])?,
+                        at,
+                    )
                     .map(|exposure| match exposure {
                         NominalExposure::Allowed => Exposure::Allowed,
                         NominalExposure::Denied {
@@ -1618,7 +1901,8 @@ fn resolve_index_impl(
             ast,
             index,
             work,
-            requester,
+            context: ResolveContext::new(requester, DefId(id), ast.functions[key.index].name)
+                .map_err(|error| vec![*error])?,
             records: &records,
             scope: HashMap::new(),
             storage: storage::ResolverStorage {
@@ -1706,13 +1990,31 @@ pub(super) enum ResolveFrame {
     Leave,
     LeaveLoop,
 }
+struct ResolveContext {
+    module: u32,
+    function: u32,
+}
+impl ResolveContext {
+    fn new(module: ModuleId, function: DefId, at: Span) -> Result<Self, Box<Diagnostic>> {
+        Ok(Self {
+            module: u32::try_from(module.0).map_err(|_| invalid_signature_identity(at))?,
+            function: u32::try_from(function.0).map_err(|_| invalid_signature_identity(at))?,
+        })
+    }
+    fn module(&self) -> ModuleId {
+        ModuleId(self.module as usize)
+    }
+    fn function(&self) -> DefId {
+        DefId(self.function as usize)
+    }
+}
 struct Resolver<'i, 'a> {
     allocator: &'i mut Allocator,
     array_entries: &'i mut usize,
     ast: &'a ast::Program,
     index: &'i DeclarationIndex<'a>,
     work: &'i WorkMeter,
-    requester: ModuleId,
+    context: ResolveContext,
     records: &'i [Record],
     scope: HashMap<&'a str, (BindingId, Span)>,
     // Construction-local policy; no returned program owner contains it.
@@ -1772,7 +2074,7 @@ impl<'a> Resolver<'_, 'a> {
         if let Some(previous) = self
             .index
             .query(self.work)
-            .value_binding_for_local_conflict(self.requester, span)?
+            .value_binding_for_local_conflict(self.context.module(), span)?
         {
             return Err(duplicate(span, previous));
         }
@@ -2063,29 +2365,194 @@ impl<'a> Resolver<'_, 'a> {
             )?;
             frames.push(ResolveFrame::Next(block, index + 1));
             let kind = match &statement.kind {
+                ast::StmtKind::DestructureRecord {
+                    record,
+                    fields,
+                    init,
+                } => {
+                    let init = self.expression(*init)?;
+                    let template = self.index.query(self.work).record_type(
+                        self.context.module(),
+                        ItemPathRef {
+                            file: statement.span.file,
+                            path: *record,
+                        },
+                        TypeContext::Value,
+                    )?;
+                    let record = self.index.instantiated_record_pattern(
+                        self.context.function(),
+                        statement.span,
+                        template,
+                        self.work,
+                    )?;
+                    let declared = &self.records[record.0];
+                    if fields.len() != declared.fields.len() {
+                        return Err(error(
+                            "E0300",
+                            format_args!("record pattern must bind every field"),
+                            statement.span,
+                        ));
+                    }
+                    let mut resolved = match self.storage.paid.as_deref_mut() {
+                        Some(paid) => paid.reserve(
+                            self.allocator,
+                            Kind::FieldInitializers,
+                            fields.len(),
+                            statement.span,
+                        )?,
+                        None => Vec::new(),
+                    };
+                    for field in fields {
+                        self.work.debit(
+                            declared.fields.len() as u64 + resolved.len() as u64 + 1,
+                            field.span,
+                            "record pattern field resolution",
+                        )?;
+                        let member = declared
+                            .fields
+                            .iter()
+                            .find(|member| {
+                                self.index.sources().text(member.name_span).ok()
+                                    == self.index.sources().text(field.field).ok()
+                            })
+                            .ok_or_else(|| {
+                                error(
+                                    "E0300",
+                                    format_args!("unknown record pattern field"),
+                                    field.field,
+                                )
+                            })?;
+                        if resolved
+                            .iter()
+                            .any(|earlier: &RecordPatternField| earlier.field == member.id)
+                        {
+                            return Err(error(
+                                "E0300",
+                                format_args!("duplicate record pattern field"),
+                                field.field,
+                            ));
+                        }
+                        let original = self.index.template_field_for_instance(member.id)?;
+                        if let Access::Denied(field_id) = self.index.query(self.work).field_access(
+                            self.context.module(),
+                            original,
+                            field.field,
+                        )? {
+                            return Err(self.index.query(self.work).private_field_diagnostic(
+                                field_id,
+                                field.field,
+                                "resolve",
+                            )?);
+                        }
+                        let binding = self.bind(
+                            field.binding,
+                            Some(member.ty),
+                            false,
+                            BodyBlockId(block.0),
+                            None,
+                        )?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(field.binding));
+                        }
+                        storage::room(
+                            &resolved,
+                            resolved.capacity(),
+                            self.storage.paid.is_some(),
+                            field.span,
+                        )?;
+                        resolved.push(RecordPatternField {
+                            field: member.id,
+                            binding,
+                            span: field.span,
+                        });
+                    }
+                    StmtKind::DestructureRecord {
+                        record,
+                        fields: resolved,
+                        init,
+                    }
+                }
+
                 ast::StmtKind::Let {
                     mutable,
                     name,
                     annotation,
                     init,
                 } => {
-                    let init = self.expression(*init)?;
-                    let annotation = annotation
-                        .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
-                            value_type(&mut self.index.query(self.work), self.requester, ty)
-                        })
-                        .transpose()?;
-                    let local =
-                        self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
-                    if self.storage.paid.is_none() {
-                        scopes
-                            .last_mut()
-                            .expect("active body scope")
-                            .push(self.text(*name));
-                    }
-                    StmtKind::Let {
-                        binding: local,
-                        init,
+                    if let ast::ExprKind::Borrow {
+                        mutable: exclusive,
+                        name: target,
+                        forwarded,
+                    } = &self.ast.expressions[init.0].kind
+                    {
+                        if *mutable {
+                            return Err(error(
+                                "E0304",
+                                format_args!("reference bindings cannot be reassigned"),
+                                *name,
+                            ));
+                        }
+                        let root = self.lookup(*target)?;
+                        let annotation = annotation
+                            .map(|ty| {
+                                self.index.instantiated_parameter(
+                                    self.context.function(),
+                                    ty,
+                                    self.work,
+                                )
+                            })
+                            .transpose()?;
+                        let local = self.bind(*name, None, false, BodyBlockId(block.0), None)?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(*name));
+                        }
+                        StmtKind::BorrowLet {
+                            binding: local,
+                            kind: if *exclusive {
+                                BorrowKind::Exclusive
+                            } else {
+                                BorrowKind::Shared
+                            },
+                            place: if *forwarded {
+                                BorrowPlace::Forwarded(root)
+                            } else {
+                                BorrowPlace::Owner(root)
+                            },
+                            borrow_span: self.ast.expressions[init.0].span,
+                            annotation,
+                        }
+                    } else {
+                        if let Some(annotation) = annotation {
+                            value_annotation(*annotation)?;
+                        }
+                        let init = self.expression(*init)?;
+                        let annotation = annotation
+                            .map(|ty| -> Result<ValueTy, Box<Diagnostic>> {
+                                self.index.instantiated_value(
+                                    self.context.function(),
+                                    ty,
+                                    self.work,
+                                )
+                            })
+                            .transpose()?;
+                        let local =
+                            self.bind(*name, annotation, *mutable, BodyBlockId(block.0), None)?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(*name));
+                        }
+                        StmtKind::Let {
+                            binding: local,
+                            init,
+                        }
                     }
                 }
                 ast::StmtKind::Assign {
@@ -2187,11 +2654,16 @@ impl<'a> Resolver<'_, 'a> {
                     for arm in arms {
                         self.work.debit(1, arm.span, "enum resolve arm")?;
                         let variant = self.index.query(self.work).variant(
-                            self.requester,
+                            self.context.module(),
                             QualifiedPathRef {
                                 file: arm.span.file,
                                 path: arm.variant,
                             },
+                        )?;
+                        let variant = self.index.instantiated_match_variant(
+                            self.context.function(),
+                            arm.span,
+                            variant,
                         )?;
                         let view = self.index.enum_view(variant.enumeration)?;
                         if let Some(expected) = builder.enumeration {
@@ -2284,6 +2756,56 @@ impl<'a> Resolver<'_, 'a> {
                         StmtKind::Break { target }
                     } else {
                         StmtKind::Continue { target }
+                    }
+                }
+                ast::StmtKind::ForRange {
+                    name,
+                    start,
+                    end,
+                    body,
+                } => {
+                    // Bounds resolve in the outer scope before the index exists.
+                    let start = self.expression(*start)?;
+                    let end = self.expression(*end)?;
+                    if let Some(scope) = &mut self.storage.scope {
+                        scope.enter(function.blocks[body.0].span)?;
+                    } else {
+                        scopes.push(Vec::new());
+                    }
+                    let binding = self.bind(*name, None, false, BodyBlockId(body.0), None)?;
+                    if self.storage.paid.is_none() {
+                        scopes
+                            .last_mut()
+                            .expect("active range scope")
+                            .push(self.text(*name));
+                    }
+                    let loop_id = LoopId(body.0);
+                    storage::room(
+                        &loops,
+                        loops.capacity(),
+                        self.storage.paid.is_some(),
+                        statement.span,
+                    )?;
+                    loops.push(loop_id);
+                    for frame in [
+                        ResolveFrame::LeaveLoop,
+                        ResolveFrame::Leave,
+                        ResolveFrame::Next(*body, 0),
+                    ] {
+                        storage::room(
+                            &frames,
+                            frames.capacity(),
+                            self.storage.paid.is_some(),
+                            statement.span,
+                        )?;
+                        frames.push(frame);
+                    }
+                    StmtKind::ForRange {
+                        loop_id,
+                        binding,
+                        start,
+                        end,
+                        body: BodyBlockId(body.0),
                     }
                 }
                 ast::StmtKind::While { condition, body } => {
@@ -2381,7 +2903,35 @@ impl<'a> Resolver<'_, 'a> {
                 place,
                 span,
             } => {
+                if let ast::BorrowPlace::Range {
+                    name,
+                    start,
+                    end,
+                    star,
+                } = *place
+                {
+                    let binding = self.lookup(name)?;
+                    let start = self.expression(start)?;
+                    let end = self.expression(end)?;
+                    return Ok(Argument::BorrowRange {
+                        kind: if *mutable {
+                            BorrowKind::Exclusive
+                        } else {
+                            BorrowKind::Shared
+                        },
+                        place: if star.is_some() {
+                            BorrowPlace::Forwarded(binding)
+                        } else {
+                            BorrowPlace::Owner(binding)
+                        },
+                        span: *span,
+                        name_span: name,
+                        start,
+                        end,
+                    });
+                }
                 let (name_span, star_span) = match place {
+                    ast::BorrowPlace::Range { .. } => unreachable!("range handled"),
                     ast::BorrowPlace::OwnerName(name) => (*name, None),
                     ast::BorrowPlace::ForwardedParameter { name, star_span } => {
                         (*name, Some(*star_span))
@@ -2409,6 +2959,48 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
+            ast::ExprKind::Borrow { .. } => {
+                return Err(error(
+                    "E0300",
+                    format_args!("reference initializer requires a local declaration"),
+                    expr.span,
+                ))
+            }
+            ast::ExprKind::GenericVariant {
+                application,
+                variant,
+                args,
+            } => {
+                let application = self
+                    .ast
+                    .generic_application(*application)
+                    .ok_or_else(|| invalid_signature_identity(expr.span))?;
+                let template = self.index.generic_variant_template(
+                    self.context.module(),
+                    application.path,
+                    *variant,
+                    self.work,
+                )?;
+                let variant =
+                    self.index
+                        .instantiated_variant(self.context.function(), id, template)?;
+                let declared = self
+                    .index
+                    .enum_view(variant.enumeration)?
+                    .variant(variant)?;
+                let payload = match (declared.has_payload(), args.as_deref()) {
+                    (false, None) => None,
+                    (true, Some([ast::Argument::Value(value)])) => Some(self.expression(*value)?),
+                    _ => {
+                        return Err(error(
+                            "E0300",
+                            format_args!("enum variant payload mismatch"),
+                            expr.span,
+                        ))
+                    }
+                };
+                ExprKind::ConstructEnum { variant, payload }
+            }
             ast::ExprKind::QualifiedValue { path, args } => {
                 // The zero-enum absolute call is the same old query over the
                 // same borrowed syntax, before any argument work or retention.
@@ -2417,7 +3009,7 @@ impl<'a> Resolver<'_, 'a> {
                     && self.ast.paths[path.0].root == ast::PathRoot::Crate
                 {
                     QualifiedValueEndpoint::Function(self.index.query(self.work).callee(
-                        self.requester,
+                        self.context.module(),
                         ItemPathRef {
                             file: expr.span.file,
                             path: ast::ItemPath::Absolute(*path),
@@ -2426,7 +3018,7 @@ impl<'a> Resolver<'_, 'a> {
                     )?)
                 } else {
                     self.index.query(self.work).qualified_value_endpoint(
-                        self.requester,
+                        self.context.module(),
                         QualifiedPathRef {
                             file: expr.span.file,
                             path: *path,
@@ -2435,6 +3027,9 @@ impl<'a> Resolver<'_, 'a> {
                 };
                 match endpoint {
                     QualifiedValueEndpoint::Function(target) => {
+                        let target =
+                            self.index
+                                .instantiated_call(self.context.function(), id, target)?;
                         let args = args.as_ref().ok_or_else(|| {
                             error(
                                 "E0300",
@@ -2463,6 +3058,11 @@ impl<'a> Resolver<'_, 'a> {
                         ExprKind::Call { target, args }
                     }
                     QualifiedValueEndpoint::Variant(variant) => {
+                        let variant = self.index.instantiated_variant(
+                            self.context.function(),
+                            id,
+                            variant,
+                        )?;
                         let enumeration = self.index.enum_view(variant.enumeration)?;
                         let declared = enumeration.variant(variant)?;
                         if declared.has_owned_payload() {
@@ -2509,6 +3109,63 @@ impl<'a> Resolver<'_, 'a> {
                         }
                     }
                 }
+            }
+            ast::ExprKind::ByteString { contents, length } => {
+                let input = self.text(*contents);
+                let debit = crate::frontend::byte_strings::resolve_work(input.len(), *length)
+                    .ok_or_else(|| {
+                        error(
+                            "E0400",
+                            format_args!("byte string work overflow"),
+                            expr.span,
+                        )
+                    })?;
+                self.work.debit(debit, expr.span, "byte string resolve")?;
+                let actual = crate::frontend::byte_strings::length(input).map_err(|_| {
+                    error(
+                        "E0500",
+                        format_args!("invalid byte string syntax owner"),
+                        expr.span,
+                    )
+                })?;
+                if actual != *length {
+                    return Err(error(
+                        "E0500",
+                        format_args!("byte string length differs from syntax owner"),
+                        expr.span,
+                    ));
+                }
+                let mut bytes = if let Some(paid) = self.storage.paid.as_deref_mut() {
+                    paid.reserve(
+                        self.allocator,
+                        Kind::ByteStrings,
+                        usize::from(*length),
+                        expr.span,
+                    )?
+                } else {
+                    let mut bytes = Vec::new();
+                    self.allocator
+                        .vector_exact(&mut bytes, usize::from(*length), "byte string HIR bytes")
+                        .map_err(|failure| array_reserve_error(failure, expr.span))?;
+                    bytes
+                };
+                for byte in crate::frontend::byte_strings::Decoder::new(input) {
+                    let byte = byte.map_err(|_| {
+                        error(
+                            "E0500",
+                            format_args!("invalid byte string syntax owner"),
+                            expr.span,
+                        )
+                    })?;
+                    storage::room(
+                        &bytes,
+                        bytes.capacity(),
+                        self.storage.paid.is_some(),
+                        expr.span,
+                    )?;
+                    bytes.push(byte);
+                }
+                ExprKind::ByteString { bytes }
             }
             ast::ExprKind::ArrayLiteral { elements } => {
                 self.work.debit(1, expr.span, "array resolve literal")?;
@@ -2571,18 +3228,18 @@ impl<'a> Resolver<'_, 'a> {
                     path,
                 })?;
                 let record = self.index.query(self.work).record_type(
-                    self.requester,
+                    self.context.module(),
                     ItemPathRef {
                         file: expr.span.file,
                         path,
                     },
                     TypeContext::Constructor,
                 )?;
-                if let Access::Denied(field) =
-                    self.index
-                        .query(self.work)
-                        .construction_access(self.requester, record, at)?
-                {
+                if let Access::Denied(field) = self.index.query(self.work).construction_access(
+                    self.context.module(),
+                    record,
+                    at,
+                )? {
                     let mut primary = at;
                     for init in fields {
                         if self
@@ -2599,6 +3256,9 @@ impl<'a> Resolver<'_, 'a> {
                         .query(self.work)
                         .private_field_diagnostic(field, primary, "resolve")?);
                 }
+                let record =
+                    self.index
+                        .instantiated_constructor(self.context.function(), id, record)?;
                 let declared = &self.records[record.0];
                 let mut seen = HashMap::new();
                 let mut resolved = match self.storage.paid.as_deref_mut() {
@@ -2682,8 +3342,78 @@ impl<'a> Resolver<'_, 'a> {
                 }
             }
             ast::ExprKind::Bool(value) => ExprKind::Bool(*value),
+            ast::ExprKind::Character(value) => ExprKind::Character(*value),
             ast::ExprKind::Number { digits, negative } => {
                 ExprKind::I32(decimal_i32(self.text(*digits), *negative, expr.span)?)
+            }
+            ast::ExprKind::FloatNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                let text = self.text(*digits);
+                let bits = match kind {
+                    ast::FloatTypeSyntax::F32 => {
+                        let value: f32 = text.parse().map_err(|_| {
+                            error(
+                                "E0301",
+                                format_args!("invalid floating-point literal"),
+                                expr.span,
+                            )
+                        })?;
+                        if !value.is_finite() {
+                            return Err(error(
+                                "E0301",
+                                format_args!("f32 literal is outside the finite range"),
+                                expr.span,
+                            ));
+                        }
+                        u64::from((if *negative { -value } else { value }).to_bits())
+                    }
+                    ast::FloatTypeSyntax::F64 => {
+                        let value: f64 = text.parse().map_err(|_| {
+                            error(
+                                "E0301",
+                                format_args!("invalid floating-point literal"),
+                                expr.span,
+                            )
+                        })?;
+                        if !value.is_finite() {
+                            return Err(error(
+                                "E0301",
+                                format_args!("f64 literal is outside the finite range"),
+                                expr.span,
+                            ));
+                        }
+                        (if *negative { -value } else { value }).to_bits()
+                    }
+                };
+                ExprKind::Float {
+                    bits,
+                    ty: Ty::from_float(*kind),
+                }
+            }
+            ast::ExprKind::I64Number { digits, negative } => {
+                ExprKind::I64(decimal_i64(self.text(*digits), *negative, expr.span)?)
+            }
+            ast::ExprKind::IntegerNumber {
+                digits,
+                negative,
+                kind,
+            } => {
+                if kind.bits() == 128 {
+                    let bits = decimal_integer128(self.text(*digits), *negative, *kind, expr.span)?;
+                    ExprKind::Integer128 {
+                        low: bits as u64,
+                        high: (bits >> 64) as u64,
+                        ty: Ty::from_extended_integer(*kind),
+                    }
+                } else {
+                    ExprKind::Integer {
+                        bits: decimal_integer(self.text(*digits), *negative, *kind, expr.span)?,
+                        ty: Ty::from_extended_integer(*kind),
+                    }
+                }
             }
             ast::ExprKind::Unit => ExprKind::Unit,
             ast::ExprKind::Name(span) => {
@@ -2700,13 +3430,16 @@ impl<'a> Resolver<'_, 'a> {
             }
             ast::ExprKind::Call { callee, args } => {
                 let target = self.index.query(self.work).callee(
-                    self.requester,
+                    self.context.module(),
                     ItemPathRef {
                         file: expr.span.file,
                         path: *callee,
                     },
                     false,
                 )?;
+                let target = self
+                    .index
+                    .instantiated_call(self.context.function(), id, target)?;
                 let args = if let Some(paid) = self.storage.paid.as_deref_mut() {
                     let mut resolved =
                         paid.reserve(self.allocator, Kind::Arguments, args.len(), expr.span)?;
@@ -2734,6 +3467,28 @@ impl<'a> Resolver<'_, 'a> {
                 name_span: *name_span,
             },
             ast::ExprKind::Group(inner) => ExprKind::Group(self.expression(*inner)?),
+            ast::ExprKind::BitNot {
+                operand,
+                operator_span,
+            } => ExprKind::BitNot {
+                operand: self.expression(*operand)?,
+                operator_span: *operator_span,
+            },
+            ast::ExprKind::Bitwise {
+                op,
+                left,
+                right,
+                operator_span,
+            } => {
+                let left = self.expression(*left)?;
+                let right = self.expression(*right)?;
+                ExprKind::Bitwise {
+                    op: *op,
+                    left,
+                    right,
+                    operator_span: *operator_span,
+                }
+            }
             ast::ExprKind::Negate {
                 operand,
                 operator_span,

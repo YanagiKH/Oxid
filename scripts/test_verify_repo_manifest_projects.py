@@ -44,11 +44,12 @@ class ManifestApplications(unittest.TestCase):
                     verify_repo.manifest_project_members(self.members, self.root, required=True)
 
     def test_new_enum_projects_cannot_hide_missing_members_or_neighbors(self):
-        projects = ("apps/frame-filter",
+        projects = ("apps/frame-filter", "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize",
                     "examples/projects/owned_enum_payload_acceptance/ready",
                     "examples/projects/owned_enum_payload_acceptance/failed",
                     "examples/projects/owned_enum_payload_acceptance/values",
-                    "examples/projects/owned_enum_payload_acceptance/library")
+                    "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range",
+                    "packages/float_vector", "examples/typed-float-vector", "packages/matrix", "examples/typed-matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training")
         selected = set(self.members)
         entries = [self.root / self.application]
         for project in projects:

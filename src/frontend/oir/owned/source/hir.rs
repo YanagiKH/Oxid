@@ -1,5 +1,7 @@
 //! Resolved source identities and immutable producer views, never an ownership proof.
-pub(super) use crate::frontend::ast::{ArithmeticOp, ComparisonOp, ConversionOp, LogicalOp};
+pub(super) use crate::frontend::ast::{
+    ArithmeticOp, BitwiseOp, ComparisonOp, ConversionOp, LogicalOp,
+};
 pub(super) use crate::frontend::hir::{DefId, Ty};
 pub(super) use crate::frontend::oir::owned_types::{
     AggregateTy, BorrowKind, BorrowedTy, FieldId, FixedArrayTy, ParameterTy, RecordId, ValueTy,
@@ -39,6 +41,14 @@ pub(super) enum BorrowPlace {
 #[derive(Debug)]
 pub(super) enum Argument {
     Value(ExprId),
+    BorrowRange {
+        kind: BorrowKind,
+        place: BorrowPlace,
+        span: Span,
+        name_span: Span,
+        start: ExprId,
+        end: ExprId,
+    },
     Borrow {
         kind: BorrowKind,
         place: BorrowPlace,
@@ -56,6 +66,16 @@ pub(super) struct FieldInit {
 }
 #[derive(Debug)]
 pub(super) enum ExprKind {
+    BitNot {
+        operand: ExprId,
+        operator_span: Span,
+    },
+    Bitwise {
+        op: BitwiseOp,
+        left: ExprId,
+        right: ExprId,
+        operator_span: Span,
+    },
     Conversion {
         op: ConversionOp,
         operand: ExprId,
@@ -63,7 +83,22 @@ pub(super) enum ExprKind {
         source_expr: crate::frontend::ast::ExprId,
     },
     Bool(bool),
+    Character(char),
     I32(i32),
+    I64(i64),
+    Float {
+        bits: u64,
+        ty: Ty,
+    },
+    Integer {
+        bits: u64,
+        ty: Ty,
+    },
+    Integer128 {
+        low: u64,
+        high: u64,
+        ty: Ty,
+    },
     Unit,
     Binding(BindingId),
     Group(ExprId),
@@ -110,6 +145,9 @@ pub(super) enum ExprKind {
     ArrayLiteral {
         elements: Vec<ExprId>,
     },
+    ByteString {
+        bytes: Vec<u8>,
+    },
     IndexRead {
         base: BindingId,
         base_span: Span,
@@ -148,7 +186,18 @@ pub(super) struct MatchArm {
     pub(super) span: Span,
 }
 #[derive(Debug)]
+pub(super) struct RecordPatternField {
+    pub(super) field: FieldId,
+    pub(super) binding: BindingId,
+    pub(super) span: Span,
+}
+#[derive(Debug)]
 pub(super) enum StmtKind {
+    DestructureRecord {
+        record: RecordId,
+        fields: Vec<RecordPatternField>,
+        init: ExprId,
+    },
     /// A named owner, never an expression that would move it before dispatch.
     #[allow(dead_code)]
     Match {
@@ -158,6 +207,13 @@ pub(super) enum StmtKind {
     Let {
         binding: BindingId,
         init: ExprId,
+    },
+    BorrowLet {
+        binding: BindingId,
+        kind: BorrowKind,
+        place: BorrowPlace,
+        borrow_span: Span,
+        annotation: Option<ParameterTy>,
     },
     Assign {
         binding: BindingId,
@@ -192,6 +248,13 @@ pub(super) enum StmtKind {
     While {
         loop_id: LoopId,
         condition: ExprId,
+        body: BodyBlockId,
+    },
+    ForRange {
+        loop_id: LoopId,
+        binding: BindingId,
+        start: ExprId,
+        end: ExprId,
         body: BodyBlockId,
     },
     If {
@@ -241,3 +304,6 @@ pub(super) struct Projection {
     pub(super) field: FieldId,
     pub(super) path: Vec<FieldId>,
 }
+
+// Complete record-pattern fields share the already priced initializer carrier.
+const _: [(); std::mem::size_of::<RecordPatternField>()] = [(); std::mem::size_of::<FieldInit>()];

@@ -78,8 +78,10 @@ fn mixed_parameter_fixture(
     caller.loans = vec![
         LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: 4,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 4,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Shared,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -88,8 +90,10 @@ fn mixed_parameter_fixture(
         },
         LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: 1,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 1,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Shared,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -389,7 +393,12 @@ fn mixed_parameter_fixture(
     (sources, verified, schedule)
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn review_heldout_interleaved_abi_real_llvm() {
@@ -462,7 +471,12 @@ fn review_heldout_interleaved_abi_real_llvm() {
     eprintln!("reviewer held-out ABI: {cases} real-LLVM source-free processes; reverse-index/interleaved owned+shared-alias+i32+bool+unit parameters, reordered mixed fields, three sentinel sets, all263 fuel thresholds");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn review_heldout_call_result_merge_real_llvm() {

@@ -72,7 +72,7 @@ fn rv_fn(id: usize, ty: ValueTy, span: Span) -> RawOwnedFunction {
         references: vec![],
         calls: vec![],
         loans: vec![],
-            matches: Vec::new(),
+        matches: Vec::new(),
         entry: BlockId(0),
         blocks: vec![],
     }
@@ -122,6 +122,7 @@ fn rv_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>) -> Machine<'p, 'w> {
         live_cells: 0,
         live_bytes: 0,
         header_bytes: 8 * size_of::<Frame>(),
+        heap: byte_buffer::Heap::default(),
         events: vec![],
         observer: array_observe::Observer::default(),
     };
@@ -357,8 +358,10 @@ fn rv_alias(
     f.loans = (0..2)
         .map(|i| LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: i,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: i,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(roots[i])),
             kind: modes[i],
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -759,8 +762,10 @@ fn rv_loop(n: i32) -> (SourceMap, RawOwnedProgram) {
     }];
     f.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -1170,8 +1175,10 @@ fn rv_chain(
             f.loans = (0..count)
                 .map(|i| LoanDecl {
                     projection: Vec::new(),
-                    call: CallSiteId(0),
-                    argument: i,
+                    region: LoanRegion::Call {
+                        call: CallSiteId(0),
+                        argument: i,
+                    },
                     authority: base,
                     kind: mode(edge.shared),
                     referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
@@ -1474,8 +1481,10 @@ fn reviewer_reference_256_parameter_boundary_and_257_verifier_denial() {
         raw.functions[0].loans = (0..count)
             .map(|i| LoanDecl {
                 projection: Vec::new(),
-                call: CallSiteId(0),
-                argument: i,
+                region: LoanRegion::Call {
+                    call: CallSiteId(0),
+                    argument: i,
+                },
                 authority: AccessBase::Owner(OwnerPlaceId(0)),
                 kind: BorrowKind::Shared,
                 referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
