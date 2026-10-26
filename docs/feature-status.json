@@ -1917,7 +1917,7 @@
     },
     {
       "id": "native-cpu-tensor-training",
-      "summary": "Checked f64 tensors, reverse-mode gradients, SGD/Adam/AdamW and deterministic resumable minibatch training",
+      "summary": "Checked f64 tensors, reverse-mode gradients, optimizers, resumable minibatches and sequential dataset training",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1928,7 +1928,8 @@
       "spec": [
         "apps/cpu-training/README.md",
         "apps/cpu-training/tensor/README.md",
-        "apps/minibatch-training/README.md"
+        "apps/minibatch-training/README.md",
+        "apps/streaming-training/README.md"
       ],
       "implementation": [
         "apps/cpu-training/tensor/src/lib.ox",
@@ -1946,7 +1947,9 @@
         "apps/cpu-training/tensor/src/data/sampler_checkpoint.ox",
         "apps/cpu-training/tensor/src/data/session.ox",
         "apps/cpu-training/checkpoint/src/pipeline.ox",
-        "apps/minibatch-training/src/main.ox"
+        "apps/minibatch-training/src/main.ox",
+        "apps/cpu-training/tensor/src/data/stream.ox",
+        "apps/streaming-training/src/main.ox"
       ],
       "tests": [
         "apps/cpu-training/trainer/tests/tensor.ox",
@@ -1961,12 +1964,15 @@
         "apps/minibatch-training/tests/data.ox",
         "scripts/verify_data_pipeline.py",
         "scripts/verify_minibatch_training.py",
-        "scripts/test_data_pipeline_oracles.py"
+        "scripts/test_data_pipeline_oracles.py",
+        "apps/streaming-training/tests/reader.ox",
+        "scripts/verify_streaming_training.py",
+        "scripts/test_streaming_training_oracle.py"
       ],
       "evidence": [
         "apps/cpu-training/README.md"
       ],
-      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Data and sessions are held in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
+      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Sequential datasets use a fixed input buffer and caller-selected batches; the streaming example does not shuffle, save or resume. Existing resumable sessions hold their dataset in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
     },
     {
       "id": "typed-project-api-documentation",

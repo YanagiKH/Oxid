@@ -98,6 +98,7 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/cpu-training/tensor/src/data/checkpoint.ox',
         'apps/cpu-training/tensor/src/data/sampler_checkpoint.ox',
         'apps/cpu-training/tensor/src/data/session.ox',
+        'apps/cpu-training/tensor/src/data/stream.ox',
         'apps/cpu-training/tensor/src/graph.ox',
         'apps/cpu-training/tensor/src/lib.ox',
         'apps/cpu-training/tensor/src/model.ox',
@@ -119,6 +120,13 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/minibatch-training/src/training.ox',
         'apps/minibatch-training/tests/data.ox',
     ),
+    "apps/streaming-training": (
+        'apps/streaming-training/src/main.ox',
+        'apps/streaming-training/src/options.ox',
+        'apps/streaming-training/src/report.ox',
+        'apps/streaming-training/src/training.ox',
+        'apps/streaming-training/tests/reader.ox',
+    ),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
@@ -132,6 +140,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "packages/matrix",
     "apps/cpu-training",
     "apps/minibatch-training",
+    "apps/streaming-training",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix")
 # Effectful roots are checked here, but run only by dedicated verifiers that
