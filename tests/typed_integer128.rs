@@ -26,6 +26,23 @@ impl Project {
             .output()
             .unwrap()
     }
+    fn refused_modules(&self) {
+        let before = fs::read(self.0.join("src/main.ox")).unwrap();
+        for operation in ["check", "run"] {
+            let out = self.invoke(&[operation, "--message-format=json"]);
+            assert_eq!(out.status.code(), Some(1), "{out:?}");
+            assert!(out.stderr.is_empty(), "{out:?}");
+            let text = String::from_utf8(out.stdout).unwrap();
+            assert!(
+                text.contains("\"code\":\"E0005\"")
+                    && text.contains("module source policy is not qualified on this host"),
+                "{text}"
+            );
+        }
+        assert_eq!(fs::read(self.0.join("src/main.ox")).unwrap(), before);
+        assert!(!self.0.join(".oxid").exists());
+        assert!(!self.0.join("oxid.lock").exists());
+    }
     fn result(&self, ty: &str, expected: &str) {
         let check = self.invoke(&["check"]);
         assert!(check.status.success(), "{check:?}");
@@ -204,10 +221,24 @@ fn process_entries_can_calculate_with_full_width_values_and_return_i32_status() 
         )
         .unwrap();
         let result = project.invoke(&["run"]);
-        assert_eq!(
-            (result.status.code(), result.stdout, result.stderr),
-            (Some(255), Vec::new(), Vec::new())
-        );
+        if cfg!(all(
+            target_os = "linux",
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
+            assert_eq!(
+                (result.status.code(), result.stdout, result.stderr),
+                (Some(255), Vec::new(), Vec::new())
+            );
+        } else {
+            assert_eq!(result.status.code(), Some(1), "{result:?}");
+            assert!(result.stdout.is_empty(), "{result:?}");
+            assert!(
+                String::from_utf8_lossy(&result.stderr).contains("[E0608]"),
+                "{result:?}"
+            );
+        }
     }
 }
 
@@ -223,7 +254,11 @@ fn linked_scalar_modules_and_inferred_full_width_temporaries_select_complete_sto
             "pub fn number()->i128{return 18446744073709551616i128;}",
         )
         .unwrap();
-        project.result("i128", "18446744073709551617");
+        if cfg!(target_os = "linux") {
+            project.result("i128", "18446744073709551617");
+        } else {
+            project.refused_modules();
+        }
     }
 }
 
@@ -251,7 +286,23 @@ fn mixed_types_invalid_literals_and_non_i32_process_entries_are_rejected() {
             .replace("entry-mode=\"result\"", "entry-mode=\"process\""),
     )
     .unwrap();
-    assert_eq!(project.invoke(&["run"]).status.code(), Some(1));
+    let result = project.invoke(&["run"]);
+    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    assert!(result.stdout.is_empty(), "{result:?}");
+    let expected = if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        "[E0600]"
+    } else {
+        "[E0608]"
+    };
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains(expected),
+        "{result:?}"
+    );
 }
 
 #[cfg(all(
