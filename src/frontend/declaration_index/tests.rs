@@ -675,3 +675,60 @@ fn reference_exposure_reports_nominal_referent_without_borrow_prefix() {
         );
     }
 }
+
+#[test]
+fn generic_disjoint_loan_path_work_is_charged_before_each_lookup_and_token() {
+    let source = "struct Cell{n:i32}struct Pair{left:Cell,right:Cell}fn hold(a:&mut Cell,b:&mut Cell)->i32{return 42;}fn forward<T>(p:&mut Pair)->i32{return hold(&mut *p /* first */ .left,&mut *p /* second */ .right);}fn main()->i32{let mut p=Pair{left:Cell{n:20},right:Cell{n:22}};return forward::<()>(&mut p);}";
+    let fixture = Fixture::new(&[("main.ox", source)]);
+    let sources = fixture.load();
+    let measure = WorkMeter::default();
+    measure.enable_observation();
+    assert!(check_project_candidate(
+        &sources,
+        IndexLimits::default(),
+        &measure,
+        &mut Allocator::default()
+    )
+    .is_ok());
+    let mut used = 0;
+    let mut boundaries = Vec::new();
+    for event in measure.events.borrow().iter() {
+        used += event.units;
+        if matches!(
+            event.operation,
+            "generic loan path lookup" | "generic loan path token"
+        ) {
+            boundaries.push((used - 1, event.origin));
+        }
+    }
+    assert_eq!(used, measure.used());
+    assert!(boundaries.len() >= 8);
+    for (limit, origin) in boundaries {
+        let work = WorkMeter::new(limit);
+        let errors = match check_project_candidate(
+            &sources,
+            IndexLimits::default(),
+            &work,
+            &mut Allocator::default(),
+        ) {
+            Ok(_) => panic!("unpaid generic path inspection at {limit}"),
+            Err(errors) => errors,
+        };
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(
+            (errors[0].code, errors[0].primary),
+            ("E0400", Some(origin)),
+            "{limit}: {errors:?}"
+        );
+        assert!(work.used() <= limit);
+    }
+    let exact = WorkMeter::new(measure.used());
+    assert!(check_project_candidate(
+        &sources,
+        IndexLimits::default(),
+        &exact,
+        &mut Allocator::default()
+    )
+    .is_ok());
+    assert_eq!(exact.used(), measure.used());
+}

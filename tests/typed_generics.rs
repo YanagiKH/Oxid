@@ -521,3 +521,203 @@ fn unsupported_generic_referents_report_source_errors() {
         );
     }
 }
+
+fn disjoint_generic_samples() -> [&'static str; 5] {
+    [
+        "struct Cell{n:i32}struct Pair{left:Cell,right:Cell}fn change(a:&mut Cell,b:&mut Cell)->(){a.n=20;b.n=22;return;}fn forward<T>(p:&mut Pair)->i32{change(&mut *p.left,&mut *p.right);return p.left.n+p.right.n;}fn main()->i32{let mut pair=Pair{left:Cell{n:0},right:Cell{n:0}};return forward::<i32>(&mut pair);}",
+        "struct Cell{n:i32}struct Pair{left:Cell,right:Cell}struct Outer{pair:Pair}fn add(a:&mut Cell,b:&Cell)->i32{a.n=a.n+b.n;return a.n;}fn forward<T>(p:&mut Outer)->i32{let r=&mut *p;return add(&mut *r.pair /* left */ .left,&*r.pair /* right */ .right);}fn main()->i32{let mut p=Outer{pair:Pair{left:Cell{n:20},right:Cell{n:22}}};return forward::<()>(&mut p);}",
+        "struct Cell{n:i32}struct Pair{left:Cell,right:Cell}fn add(a:&mut Cell,n:i32)->i32{a.n=a.n+n;return a.n;}fn bump(a:&mut Cell)->i32{a.n=a.n+1;return a.n;}fn forward<T>(p:&mut Pair)->i32{let first=add(&mut *p.left,p.right.n);return add(&mut *p.left,bump(&mut *p.right))-first+19;}fn main()->i32{let mut p=Pair{left:Cell{n:20},right:Cell{n:22}};return forward::<bool>(&mut p);}",
+        "struct Pair<T>{left:T,right:T}fn change(a:&mut [u8],b:&mut [u8])->i32{a[0]=20u8;b[0]=22u8;let left=a[0];let right=b[0];return left.to_i32()+right.to_i32();}fn forward<T>(p:&mut Pair<[u8;2]>)->i32{return change(&mut *p.left[0..1],&mut *p.right[1..2]);}fn main()->i32{let mut p=Pair{left:[0u8,0u8],right:[0u8,0u8]};return forward::<i128>(&mut p);}",
+        "struct Empty{}struct Pair{left:Empty,right:Empty}fn hold(a:&mut Empty,b:&mut Empty)->i32{return 42;}fn forward<T>(p:&mut Pair)->i32{return hold(&mut *p.left,&mut *p.right);}fn main()->i32{let mut p=Pair{left:Empty{},right:Empty{}};return forward::<u128>(&mut p);}",
+    ]
+}
+
+#[test]
+fn generic_field_loans_accept_disjoint_forwarded_nested_and_slice_places() {
+    for source in disjoint_generic_samples() {
+        let project = Project::new(source);
+        for operation in ["check", "run"] {
+            let output = project.invoke(&[operation]);
+            assert!(output.status.success(), "{source}: {output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+            if operation == "run" {
+                assert_eq!(output.stdout, b"42\n", "{source}");
+            }
+        }
+    }
+}
+
+#[test]
+fn generic_field_loans_match_independent_prefix_and_permission_rules() {
+    let mut accepted = 0;
+    let mut cases = 0;
+    for left in [
+        "root",
+        "root.branch",
+        "root.branch.left",
+        "root.branch.right",
+        "root.other",
+    ] {
+        for right in [
+            "root",
+            "root.branch",
+            "root.branch.left",
+            "root.branch.right",
+            "root.other",
+        ] {
+            for left_mutable in [false, true] {
+                for right_mutable in [false, true] {
+                    let overlap = left == right
+                        || left.starts_with(&(right.to_owned() + "."))
+                        || right.starts_with(&(left.to_owned() + "."));
+                    let allowed = !overlap || (!left_mutable && !right_mutable);
+                    let a = if left_mutable { "mut " } else { "" };
+                    let b = if right_mutable { "mut " } else { "" };
+                    let left_ty = match left {
+                        "root" => "Outer",
+                        "root.branch" => "Pair",
+                        _ => "Cell",
+                    };
+                    let right_ty = match right {
+                        "root" => "Outer",
+                        "root.branch" => "Pair",
+                        _ => "Cell",
+                    };
+                    let source = format!("struct Cell{{n:i32}}struct Pair{{left:Cell,right:Cell}}struct Outer{{branch:Pair,other:Cell}}fn hold(a:&{a}{left_ty},b:&{b}{right_ty})->i32{{return 42;}}fn forward<T>(root:&mut Outer)->i32{{return hold(&{a}*{left},&{b}*{right});}}fn main()->i32{{let mut p=Outer{{branch:Pair{{left:Cell{{n:20}},right:Cell{{n:22}}}},other:Cell{{n:0}}}};return forward::<i32>(&mut p);}}");
+                    for instantiated in [false, true] {
+                        let source = if instantiated {
+                            source.clone()
+                        } else {
+                            source.replace("return forward::<i32>(&mut p);", "return 42;")
+                        };
+                        let output = Project::new(&source).invoke(&["run"]);
+                        assert_eq!(output.status.success(), allowed, "{source}: {output:?}");
+                        if allowed {
+                            assert_eq!(output.stdout, b"42\n");
+                            assert!(output.stderr.is_empty());
+                        } else {
+                            let message = String::from_utf8_lossy(&output.stderr);
+                            assert!(
+                                message.contains("E0300")
+                                    && message.contains("conflicting borrows"),
+                                "{source}: {output:?}"
+                            );
+                        }
+                        cases += 1;
+                        accepted += usize::from(allowed);
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!((cases, accepted), (200, 98));
+}
+
+#[test]
+fn generic_field_loans_preserve_overlapping_reads_moves_and_mutability_rejections() {
+    let declarations = "struct Cell{n:i32}struct Pair{left:Cell,right:Cell}fn hold(a:&mut Cell,n:i32)->i32{return n;}fn whole(a:&mut Pair,n:i32)->i32{return n;}fn own(p:Pair)->i32{return p.left.n;}fn read(p:&Cell)->i32{return p.n;}";
+    for body in [
+        "return hold(&mut *p.left,p.left.n);",
+        "return whole(&mut *p,p.right.n);",
+        "return hold(&mut *p.left,own(p));",
+        "let r=&*p;return hold(&mut *p.right,42);",
+        "let r=&mut *p;return read(&*p.left);",
+    ] {
+        let source = format!(
+            "{declarations}fn unused<T>(p:&mut Pair)->i32{{{body}}}fn main()->i32{{return 0;}}"
+        );
+        let output = Project::new(&source).invoke(&["check"]);
+        assert!(!output.status.success(), "{source}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("E0300"),
+            "{output:?}"
+        );
+    }
+    let source = format!("{declarations}fn unused<T>(p:&Pair)->i32{{return hold(&mut *p.left,42);}}fn main()->i32{{return 0;}}");
+    let output = Project::new(&source).invoke(&["check"]);
+    assert!(!output.status.success(), "{output:?}");
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+#[ignore = "requires Linux x86_64 or ARM64 and LLVM 19.1.7"]
+fn native_generic_field_loans_run_without_sources_and_build_storage() {
+    let evidence = std::env::var_os("OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE").map(|root| {
+        let root = PathBuf::from(root).join(if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        });
+        assert!(!root.exists(), "evidence directory must be new");
+        fs::create_dir_all(&root).unwrap();
+        root
+    });
+    for (case, source) in disjoint_generic_samples().into_iter().enumerate() {
+        for policy in ["bounded", "hosted"] {
+            let project = Project::new(source);
+            fs::write(project.0.join("oxid.toml"), format!("[project]\nname=\"generics\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"result\"\n[execution]\npolicy=\"{policy}\"\n")).unwrap();
+            let deployment = project.0.join("deployed");
+            fs::create_dir(&deployment).unwrap();
+            for profile in ["dev", "release"] {
+                let built = project.invoke(&["build", "--profile", profile]);
+                if let Some(root) = &evidence {
+                    let retained = root.join(format!("{case}-{policy}-{profile}"));
+                    fs::create_dir(&retained).unwrap();
+                    fs::write(retained.join("main.ox"), source).unwrap();
+                    fs::copy(project.0.join("oxid.toml"), retained.join("oxid.toml")).unwrap();
+                    fs::write(retained.join("build.stdout"), &built.stdout).unwrap();
+                    fs::write(retained.join("build.stderr"), &built.stderr).unwrap();
+                    fs::write(
+                        retained.join("build.status"),
+                        format!("{:?}\n", built.status.code()),
+                    )
+                    .unwrap();
+                    if built.status.success() {
+                        fs::copy(
+                            project.0.join(".oxid/bin/generics"),
+                            retained.join("program"),
+                        )
+                        .unwrap();
+                    }
+                }
+                assert!(built.status.success(), "{source}: {built:?}");
+                fs::copy(
+                    project.0.join(".oxid/bin/generics"),
+                    deployment.join(profile),
+                )
+                .unwrap();
+            }
+            for file in ["main.ox", "oxid.toml"] {
+                fs::remove_file(project.0.join(file)).unwrap();
+            }
+            fs::remove_dir_all(project.0.join(".oxid")).unwrap();
+            for profile in ["dev", "release"] {
+                let output = Command::new(deployment.join(profile))
+                    .env_clear()
+                    .current_dir(&deployment)
+                    .output()
+                    .unwrap();
+                if let Some(root) = &evidence {
+                    let retained = root.join(format!("{case}-{policy}-{profile}"));
+                    fs::write(retained.join("stdout"), &output.stdout).unwrap();
+                    fs::write(retained.join("stderr"), &output.stderr).unwrap();
+                    fs::write(
+                        retained.join("status"),
+                        format!("{:?}\n", output.status.code()),
+                    )
+                    .unwrap();
+                }
+                assert_eq!(
+                    (output.status.code(), output.stdout, output.stderr),
+                    (Some(0), b"42\n".to_vec(), Vec::new()),
+                    "{source}"
+                );
+            }
+        }
+    }
+}

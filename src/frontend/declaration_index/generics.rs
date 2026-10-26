@@ -5,7 +5,7 @@ mod inference;
 mod nominal;
 use super::*;
 use crate::frontend::ast::{self, Argument, ExprId, ExprKind, StmtKind, TypeSyntaxKind};
-use crate::frontend::lexer::Kind as TokenKind;
+use crate::frontend::lexer::{Kind as TokenKind, Token};
 use crate::frontend::oir::owned_types::FixedArrayTy;
 use nominal::Nominals;
 
@@ -1140,6 +1140,7 @@ struct Binding {
 struct Loan {
     binding: usize,
     kind: BorrowKind,
+    path: Span,
 }
 struct Checked {
     calls: Vec<Call>,
@@ -1711,7 +1712,13 @@ impl<'a, 's> Walker<'a, 's> {
                 StmtKind::FieldAssign {
                     base, field, value, ..
                 } => {
-                    self.mutable_place(self.local(*base)?, *base)?;
+                    self.mutable_place(
+                        self.local(*base)?,
+                        Span {
+                            start: base.start,
+                            ..*field
+                        },
+                    )?;
                     let expected = self.field(*base, *field)?;
                     let actual = self.expression(*value)?;
                     self.expect(actual, expected, statement.span)?;
@@ -2587,7 +2594,10 @@ impl<'a, 's> Walker<'a, 's> {
             for loan in &self.loans {
                 self.work
                     .debit(1, at, "generic active reference comparison")?;
-                if loan.binding == binding && (write || loan.kind == BorrowKind::Exclusive) {
+                if loan.binding == binding
+                    && (write || loan.kind == BorrowKind::Exclusive)
+                    && self.paths_overlap(loan.path, at)?
+                {
                     return Ok(true);
                 }
             }
@@ -2596,6 +2606,69 @@ impl<'a, 's> Walker<'a, 's> {
     }
     fn exclusive_loan(&self, binding: usize, path: Span) -> Result<bool, Box<Diagnostic>> {
         self.borrow_conflict(binding, false, path)
+    }
+    fn path_fields(&self, path: Span) -> Result<std::slice::Iter<'_, Token>, Box<Diagnostic>> {
+        // Charge a machine-word upper bound before the binary search. The
+        // remaining scan visits only this path, including its trivia.
+        self.work
+            .debit(u64::from(usize::BITS), path, "generic loan path lookup")?;
+        let start = self
+            .program
+            .tokens
+            .partition_point(|token| token.span.start < path.start);
+        let root = self.program.tokens.get(start).ok_or_else(|| bad(path))?;
+        if root.kind != TokenKind::Ident
+            || root.span.file != path.file
+            || root.span.start != path.start
+            || root.span.end > path.end
+        {
+            return Err(bad(path));
+        }
+        Ok(self.program.tokens[start + 1..].iter())
+    }
+    fn next_path_field(
+        &self,
+        tokens: &mut std::slice::Iter<'_, Token>,
+        path: Span,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        for token in tokens {
+            self.work.debit(1, path, "generic loan path token")?;
+            if token.span.start >= path.end {
+                break;
+            }
+            if token.span.file != path.file || token.span.end > path.end {
+                return Err(bad(path));
+            }
+            if token.kind == TokenKind::Ident {
+                return Ok(Some(token.span));
+            }
+        }
+        Ok(None)
+    }
+    fn paths_overlap(&self, left: Span, right: Span) -> Result<bool, Box<Diagnostic>> {
+        if left.file != right.file {
+            return Err(bad(right));
+        }
+        let mut left_tokens = self.path_fields(left)?;
+        let mut right_tokens = self.path_fields(right)?;
+        loop {
+            let left_field = self.next_path_field(&mut left_tokens, left)?;
+            let right_field = self.next_path_field(&mut right_tokens, right)?;
+            let (Some(left_field), Some(right_field)) = (left_field, right_field) else {
+                // Equal paths and either prefix share storage. Only a distinct
+                // field at the same depth proves that two places are disjoint.
+                return Ok(true);
+            };
+            if compare_bytes(
+                self.index.sources().text(left_field)?,
+                self.index.sources().text(right_field)?,
+                self.work,
+                right,
+            )? != Ordering::Equal
+            {
+                return Ok(false);
+            }
+        }
     }
     fn loan(&mut self, name: Span, kind: BorrowKind, at: Span) -> Result<(), Box<Diagnostic>> {
         if !self.abstract_body || !self.reachable {
@@ -2607,13 +2680,18 @@ impl<'a, 's> Walker<'a, 's> {
                 .debit(1, at, "generic reference acquisition comparison")?;
             if loan.binding == binding
                 && (loan.kind == BorrowKind::Exclusive || kind == BorrowKind::Exclusive)
+                && self.paths_overlap(loan.path, name)?
             {
                 return Err(error("conflicting borrows of the same value", at));
             }
         }
         self.storage.push(
             &mut self.loans,
-            Loan { binding, kind },
+            Loan {
+                binding,
+                kind,
+                path: name,
+            },
             self.allocator,
             self.work,
             at,
