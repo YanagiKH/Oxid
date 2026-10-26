@@ -167,7 +167,7 @@ pub(crate) fn run() -> Report {
         report.set(
             "host",
             Err(format!(
-                "native builds require a Linux x86_64 or ARM64 host; current host is {} {}",
+                "native builds require Linux or macOS on x86_64 or ARM64; current host is {} {}",
                 std::env::consts::OS,
                 std::env::consts::ARCH
             )),
@@ -183,7 +183,7 @@ pub(crate) fn run() -> Report {
         )),
     );
     #[cfg(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -193,7 +193,7 @@ pub(crate) fn run() -> Report {
 }
 
 #[cfg(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -216,6 +216,7 @@ mod supported {
     const TOOL_TIMEOUT: Duration = Duration::from_secs(5);
     const BUILD_TIMEOUT: Duration = Duration::from_secs(20);
     const RUN_TIMEOUT: Duration = Duration::from_secs(2);
+    #[cfg(target_os = "linux")]
     const ADDRESS_SPACE_LIMIT: libc::rlim_t = 1024 * 1024 * 1024;
 
     // Keep the waitable leader until group cleanup, including after it exits.
@@ -340,17 +341,22 @@ mod supported {
         // locks and does not access shared Rust state before exec.
         unsafe {
             command.pre_exec(|| {
-                let mut limit = libc::rlimit {
-                    rlim_cur: 0,
-                    rlim_max: 0,
-                };
-                if libc::getrlimit(libc::RLIMIT_AS, &mut limit) != 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                limit.rlim_cur = limit.rlim_cur.min(ADDRESS_SPACE_LIMIT);
-                limit.rlim_max = limit.rlim_max.min(ADDRESS_SPACE_LIMIT);
-                if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
-                    return Err(std::io::Error::last_os_error());
+                // Darwin executables reserve a large unmapped page-zero range;
+                // a Linux-sized address-space ceiling prevents dyld startup.
+                #[cfg(target_os = "linux")]
+                {
+                    let mut limit = libc::rlimit {
+                        rlim_cur: 0,
+                        rlim_max: 0,
+                    };
+                    if libc::getrlimit(libc::RLIMIT_AS, &mut limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    limit.rlim_cur = limit.rlim_cur.min(ADDRESS_SPACE_LIMIT);
+                    limit.rlim_max = limit.rlim_max.min(ADDRESS_SPACE_LIMIT);
+                    if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
                 }
                 let no_core = libc::rlimit {
                     rlim_cur: 0,
@@ -421,7 +427,7 @@ mod supported {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
-    fn elf(path: &Path, kind: u16) -> Result<(), String> {
+    fn artifact(path: &Path, executable: bool) -> Result<(), String> {
         let metadata = fs::symlink_metadata(path)
             .map_err(|error| format!("probe artifact is missing: {error}"))?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -430,14 +436,28 @@ mod supported {
         let mut header = [0u8; 64];
         fs::File::open(path)
             .and_then(|mut file| file.read_exact(&mut header))
-            .map_err(|error| format!("cannot read probe ELF header: {error}"))?;
-        if &header[..7] != b"\x7fELF\x02\x01\x01"
-            || u16::from_le_bytes([header[16], header[17]]) != kind
-            || u16::from_le_bytes([header[18], header[19]])
-                != super::super::NativeBuildSettings::elf_machine()
-        {
+            .map_err(|error| format!("cannot read probe executable header: {error}"))?;
+        let valid = if cfg!(target_os = "macos") {
+            let cpu = if cfg!(target_arch = "aarch64") {
+                0x0100_000c
+            } else {
+                0x0100_0007
+            };
+            header[..4] == [0xcf, 0xfa, 0xed, 0xfe]
+                && u32::from_le_bytes(header[4..8].try_into().unwrap()) == cpu
+                && u32::from_le_bytes(header[12..16].try_into().unwrap())
+                    == if executable { 2 } else { 1 }
+                && (!executable
+                    || u32::from_le_bytes(header[24..28].try_into().unwrap()) & 0x20_0000 != 0)
+        } else {
+            &header[..7] == b"\x7fELF\x02\x01\x01"
+                && u16::from_le_bytes([header[16], header[17]]) == if executable { 3 } else { 1 }
+                && u16::from_le_bytes([header[18], header[19]])
+                    == super::super::NativeBuildSettings::elf_machine()
+        };
+        if !valid {
             return Err(format!(
-                "probe artifact is not the required ELF64 little-endian {} target",
+                "probe artifact is not the required {} object or position-independent executable for this host",
                 std::env::consts::ARCH
             ));
         }
@@ -463,7 +483,7 @@ mod supported {
         for (id, name, marker) in [
             ("clang", "clang", "clang version"),
             ("opt", "opt", "LLVM version"),
-            ("linker", "ld.lld", "LLD"),
+            ("linker", super::super::NativeBuildSettings::linker(), "LLD"),
         ] {
             let result = (|| {
                 let path = resolve_tool(tool(name)).map_err(|error| error.message)?;
@@ -499,7 +519,7 @@ mod supported {
                     .current_dir(&workspace.0),
                 TOOL_TIMEOUT,
             )?;
-            elf(&workspace.0.join("runtime.o"), 1)?;
+            artifact(&workspace.0.join("runtime.o"), false)?;
             Ok(format!(
                 "production C runtime compiled against target SDK headers to an {} object",
                 std::env::consts::ARCH
@@ -531,8 +551,13 @@ mod supported {
                     .arg(&executable),
                 BUILD_TIMEOUT,
             )?;
-            elf(&executable, 3)?;
-            Ok(format!("{} compiled, verified and linked a fixed Oxid program with the production runtime and target libraries (ELF64 {} PIE)", compiler.display(),std::env::consts::ARCH))
+            artifact(&executable, true)?;
+            let format = if cfg!(target_os = "macos") {
+                "Mach-O64"
+            } else {
+                "ELF64"
+            };
+            Ok(format!("{} compiled, verified and linked a fixed Oxid program with the production runtime and target libraries ({format} {} PIE)", compiler.display(),std::env::consts::ARCH))
         })();
         let link_ok = linked.is_ok();
         report.set("compile-link", linked);

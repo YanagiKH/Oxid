@@ -450,7 +450,7 @@ fn library_execution_settings_cannot_change_the_calling_binary_policy() {
     let mut root = fs::read_to_string(&root_manifest).unwrap();
     root.push_str("[dependencies]\nmath = \"library\"\n");
     fs::write(&root_manifest, &root).unwrap();
-    if !cfg!(target_os = "linux") {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
         let refused = project.command(&["run"]);
         assert_eq!(refused.status.code(), Some(1), "{refused:?}");
         assert!(refused.stdout.is_empty(), "{refused:?}");

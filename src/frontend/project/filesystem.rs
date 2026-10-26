@@ -1,4 +1,4 @@
-//! Qualified Linux stable-filesystem policy, not a TOCTOU sandbox.
+//! Linux and macOS stable-filesystem policy, not a TOCTOU sandbox.
 use super::{
     add, budget::Allocator, io_error, policy, resource, Diagnostic, ProjectLimits, SourceUsage,
     Span,
@@ -10,7 +10,7 @@ use std::{
 };
 
 pub(super) fn qualified_host(origin: Span) -> Result<(), Box<Diagnostic>> {
-    if cfg!(target_os = "linux") {
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
         Ok(())
     } else {
         Err(policy(

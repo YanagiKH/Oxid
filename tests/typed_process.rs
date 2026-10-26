@@ -1,5 +1,4 @@
-//! Public process routes are observed in isolated CLI subprocesses. Linux
-//! execution and portable terminal diagnostics are distinct host qualifications.
+//! Public process routes are observed in isolated CLI subprocesses.
 use std::{
     fs,
     path::PathBuf,
@@ -10,7 +9,7 @@ use std::{
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const QUALIFIED: bool = cfg!(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -277,7 +276,7 @@ fn unsupported_process_host_is_rejected_before_source_and_output_access() {
     if TERMINAL {
         assert_eq!(
             process_error(out, "E0608", "oir-run"),
-            "error[E0608] (oir-run): process execution requires Linux x86_64\n"
+            "error[E0608] (oir-run): process execution requires Linux or macOS on x86_64 or ARM64\n"
         );
     } else {
         assert_eq!(out.status.code(), Some(74));

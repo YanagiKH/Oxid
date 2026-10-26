@@ -90,7 +90,7 @@ fn unit3a_both_selectors_cover_every_form_and_ignore_comment_text() {
         .unwrap());
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn unit3a_child_only_syntax_keeps_cumulative_source_token_node_admission() {
     let f = Fixture::new();

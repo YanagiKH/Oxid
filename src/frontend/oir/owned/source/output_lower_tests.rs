@@ -81,7 +81,7 @@ fn with_project_kind(
     });
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn with_project_load(
     files: &[(&str, &str)],
     run: impl FnOnce(Result<ProjectSources, crate::frontend::project::LoadFailure>),
@@ -758,7 +758,7 @@ pub fn relay(bytes:&[i32])->i32{
     }
 }
 "#;
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     with_project_load(&[("main.ox", ROOT), ("child.ox", CHILD)], |loaded| {
         let failure = loaded.unwrap_err();
         assert_eq!(failure.diagnostics.len(), 1);
@@ -767,7 +767,7 @@ pub fn relay(bytes:&[i32])->i32{
             ("E0005", "source"),
         );
     });
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     with_each_project(
         &[("main.ox", ROOT), ("child.ox", CHILD)],
         |index, sources| {

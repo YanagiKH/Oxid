@@ -150,7 +150,7 @@ fn linked_scalar_byte_modules_and_inferred_wide_temporaries_use_the_typed_checke
             "pub fn answer()->u8{let n=250u8;return n+5u8;}",
         )
         .unwrap();
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             p.result(255);
         } else {
             p.refused_modules();
@@ -164,7 +164,7 @@ fn linked_scalar_byte_modules_and_inferred_wide_temporaries_use_the_typed_checke
             "pub fn answer()->i32{let n=7;let wide=n.to_i64();return wide.to_i32_checked();}",
         )
         .unwrap();
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             let out = p.invoke(&["run"]);
             assert_eq!(
                 (out.status.code(), out.stdout, out.stderr),
@@ -197,7 +197,7 @@ fn byte_arithmetic_stays_strict_and_process_entries_still_require_i32() {
     assert!(out.stdout.is_empty());
     let error = String::from_utf8(out.stderr).unwrap();
     if cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")

@@ -61,14 +61,14 @@ fn bounded_stdin_public_unused_and_zero_capacity_preserve_host_policy() {
         let project = fixture.load();
         let program = checked(&project).unwrap();
         assert_eq!(program.function_count(), 2);
-        #[cfg(all(target_os="linux",target_pointer_width="64",target_endian="little",any(target_arch="x86_64",target_arch="aarch64")))]
+        #[cfg(all(any(target_os="linux",target_os="macos"),target_pointer_width="64",target_endian="little",any(target_arch="x86_64",target_arch="aarch64")))]
         assert_eq!(program.run().unwrap(), Scalar::I32(result));
-        #[cfg(not(all(target_os="linux",target_pointer_width="64",target_endian="little",any(target_arch="x86_64",target_arch="aarch64"))))]
+        #[cfg(not(all(any(target_os="linux",target_os="macos"),target_pointer_width="64",target_endian="little",any(target_arch="x86_64",target_arch="aarch64"))))]
         {
             let _ = result;
             let error = program.run().unwrap_err();
             assert_eq!((error.code, error.stage), ("E0608", "oir-owned-run"));
-            assert_eq!(error.message, "bounded stdin execution requires Linux x86_64 or ARM64");
+            assert_eq!(error.message, "bounded stdin execution requires Linux or macOS on x86_64 or ARM64");
             assert_eq!((error.primary.unwrap().start,error.primary.unwrap().end), (13,23));
         }
     }
@@ -76,7 +76,7 @@ fn bounded_stdin_public_unused_and_zero_capacity_preserve_host_policy() {
 
 #[test]
 #[cfg(not(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -95,7 +95,7 @@ fn bounded_stdin_public_unsupported_host_precedes_entry_activation() {
 
 #[test]
 #[cfg(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")

@@ -748,7 +748,7 @@ fn bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor() {
         ("main.ox", "use std::io::write_stdout as first; pub mod output; fn main()->i32{let bytes=[65];return crate::output::send(&bytes);}"),
         ("output.ox", "use std::io::write_stdout as later; use std::io::WriteStatus as W; pub fn send(xs:&[i32])->i32{let status=later(&*xs);match status{W::Complete=>{return 0;},W::InvalidInput=>{return 1;},W::IoError(n)=>{return n;},}}"),
     ];
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let fixture = Fixture::new(&files);
         let failure = ProjectSources::load_output_candidate(
@@ -768,7 +768,7 @@ fn bounded_stdout_fresh_typing_preserves_child_aliases_and_first_anchor() {
             ),
         );
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     with_both_files(&files, |index| {
         let work = WorkMeter::default();
         let mut allocator = Allocator::default();

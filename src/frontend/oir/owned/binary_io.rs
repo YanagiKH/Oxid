@@ -37,7 +37,7 @@ pub(super) fn admit_delivery(
     fuel: &mut usize,
 ) -> std::result::Result<(), Failure> {
     if !cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -69,7 +69,7 @@ impl Transport for Stdio {
             return result;
         }
         #[cfg(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -85,7 +85,7 @@ impl Transport for Stdio {
             }
         }
         #[cfg(not(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -101,7 +101,7 @@ impl Transport for Stdio {
             return result;
         }
         #[cfg(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -116,7 +116,7 @@ impl Transport for Stdio {
             }
         }
         #[cfg(not(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")

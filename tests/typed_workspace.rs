@@ -91,7 +91,7 @@ impl Workspace {
         }
     }
     fn qualified(&self) -> bool {
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             return true;
         }
         failure(
@@ -1134,7 +1134,7 @@ fn native_doctor_admits_every_workspace_member_without_claiming_typechecks_or_ru
             .output()
             .unwrap()
     };
-    if !cfg!(target_os = "linux") {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
         let output = failure(
             doctor(""),
             "package source policy is qualified only on Linux",

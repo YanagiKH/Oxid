@@ -222,7 +222,7 @@ fn process_entries_can_calculate_with_full_width_values_and_return_i32_status() 
         .unwrap();
         let result = project.invoke(&["run"]);
         if cfg!(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -254,7 +254,7 @@ fn linked_scalar_modules_and_inferred_full_width_temporaries_select_complete_sto
             "pub fn number()->i128{return 18446744073709551616i128;}",
         )
         .unwrap();
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             project.result("i128", "18446744073709551617");
         } else {
             project.refused_modules();
@@ -290,7 +290,7 @@ fn mixed_types_invalid_literals_and_non_i32_process_entries_are_rejected() {
     assert_eq!(result.status.code(), Some(1), "{result:?}");
     assert!(result.stdout.is_empty(), "{result:?}");
     let expected = if cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")

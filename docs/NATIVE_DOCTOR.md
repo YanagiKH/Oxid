@@ -7,8 +7,9 @@ from typechecking or executing source, which doctor never performs. Workspace
 source/manifest limits and ownership checks apply to this diagnosis too.
 
 Run `oxid doctor --native` from any directory to diagnose the currently supported
-native target: Linux x86_64 (`x86_64-unknown-linux-gnu`) or Linux ARM64
-(`aarch64-unknown-linux-gnu`), using LLVM **19.1.7** for the current host.
+native target on Linux or macOS, on x86_64 or ARM64, using LLVM **19.1.7**
+for the current host. macOS requires the Command Line Tools SDK; set
+`export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"` before running native commands.
 `oxid diagnose --native` is an alias. `--message-format=json` produces one JSON
 document; `--message-format=text` selects human output. Explicit
 `--edition=typed-preview` is also accepted. Other options are rejected before
@@ -19,12 +20,12 @@ The command performs these checks in order:
 
 1. Confirm that this compiler runs on a supported native build host.
 2. Reserve private temporary storage.
-3. Launch `clang`, `opt` and `ld.lld` and verify their exact LLVM versions.
+3. Launch `clang`, `opt` and the platform linker (`ld.lld` or `ld64.lld`) and verify their exact LLVM versions.
 4. Compile Oxid's production C runtime against the target SDK headers and verify
-   that the result is an ELF64 object for the current host.
+   that the result is an ELF64 or Mach-O64 object for the current host.
 5. Use the running Oxid compiler to compile a fixed `fn main()->i32{return 42;}`
    program through the normal typed frontend, LLVM verifier, code generator,
-   C runtime compiler and linker. Require an ELF64 PIE executable for that host.
+   C runtime compiler and linker. Require an ELF64 or Mach-O64 PIE executable for that host.
 6. Execute that fixed program and require exit status 0, stdout `42\n` and empty
    stderr. This checks the target loader and runtime libraries in use.
 7. If the nearest manifest selects `typed-preview`, admit its local package graph
@@ -33,8 +34,9 @@ The command performs these checks in order:
    reproducibility. An invalid nearest manifest is an error.
 
 Tool selection and version checks use the same rules as native builds:
-`OXID_LLVM_BIN` selects a directory containing `clang`, `opt` and `ld.lld`;
-otherwise `clang-19`, `opt-19` and `ld.lld-19` are selected through `PATH`.
+`OXID_LLVM_BIN` selects a directory containing `clang`, `opt` and the platform
+linker: `ld.lld` on Linux, `ld64.lld` on macOS. Otherwise the same tool names
+with a `-19` suffix are selected through `PATH`.
 Relative selections are resolved from the caller's directory. Clang's
 `CCC_OVERRIDE_OPTIONS` environment override is removed, as during normal builds.
 No target download, package fetch, source program, project test or script runs.
@@ -48,11 +50,11 @@ deadline each, the compiler probe has a 20 second deadline, and execution has a
 2 second deadline. Each child stream is limited to 65,536 bytes. The command
 kills its probe process groups before reaping their leaders and bounds leader
 cleanup. Inherited non-default `SIGCHLD` handling or automatic child reaping is
-rejected before spawning probes. Each probe process
-and its descendants inherit an address-space hard limit of at most 1 GiB and
-disabled core dumps. Existing lower limits are preserved. This also bounds
-the compiler child's internal buffering of tool output; ordinary builds keep
-their existing resource policy. Installed tools and
+rejected before spawning probes. Core dumps are disabled for probe processes and their descendants. Linux
+probes also inherit an address-space hard limit of at most 1 GiB, preserving
+existing lower limits. macOS retains inherited address-space limits because
+Mach-O reserves a large unmapped page-zero range. Ordinary builds keep their
+existing resource policy. Installed tools and
 the local filesystem remain trusted inputs; this is a diagnostic, not a sandbox
 for hostile executables.
 

@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_scalar_debug_storage_compatibility.py \
+          python3 -B scripts/verify_macos_native_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -280,6 +280,72 @@ jobs:
           name: arm64-host-source-policy-predecessor
           path: ${{ runner.temp }}/arm64-host-source-policy-replay
           if-no-files-found: error
+          retention-days: 14
+
+  macos-native:
+    name: Current macOS native (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install LLVM 19 and the Mach-O linker
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This revision contains 19.1.7 bottles for both Intel and Apple Silicon.
+          # Current formula revisions may omit the Intel bottle.
+          core="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
+          if ! test -d "$core/.git"; then
+            git clone --filter=blob:none --no-checkout --depth=1 \
+              https://github.com/Homebrew/homebrew-core.git "$core"
+          fi
+          git -C "$core" fetch --depth=1 origin 6a00b97b93bfc245d7083e4a90c7459ff5325222
+          git -C "$core" checkout --detach FETCH_HEAD
+          HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
+            brew install --force-bottle llvm@19 lld@19
+          llvm_bin="$(brew --prefix llvm@19)/bin"
+          lld_bin="$(brew --prefix lld@19)/bin"
+          tools="$RUNNER_TEMP/oxid-llvm-19"
+          mkdir "$tools"
+          ln -s "$llvm_bin/clang" "$tools/clang"
+          ln -s "$llvm_bin/opt" "$tools/opt"
+          ln -s "$lld_bin/ld64.lld" "$tools/ld64.lld"
+          echo "OXID_LLVM_BIN=$tools" >> "$GITHUB_ENV"
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+          "$tools/clang" --version
+          "$tools/opt" --version
+          "$tools/ld64.lld" --version
+      - name: Build both current compiler profiles
+        run: |
+          cargo build --locked
+          cargo build --release --locked
+      - name: Verify native diagnosis on the actual host
+        run: cargo test --locked --test native_doctor -- --include-ignored --test-threads=1
+      - name: Verify native file lifetime and failure contracts
+        run: python3 -B scripts/test_native_files_runtime.py
+      - name: Verify Mach-O execution and deployment
+        run: |
+          python3 -B scripts/verify_macos_native.py target/debug/oxid target/release/oxid \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/current-macos-native"
+      - name: Retain native programs and raw transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-macos-native-${{ matrix.os }}
+          path: ${{ runner.temp }}/current-macos-native
+          include-hidden-files: true
+          if-no-files-found: warn
           retention-days: 14
 
   cross-platform:

@@ -1441,7 +1441,7 @@ fn process_file_with_lexical(
         let diagnostic = *Diagnostic::new(
             "E0608",
             "oir-run",
-            "process execution requires Linux x86_64",
+            "process execution requires Linux or macOS on x86_64 or ARM64",
             None,
         );
         return if process_run {

@@ -21,7 +21,7 @@ impl Fixture {
         }
         Self(path)
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn load(&self) -> ProjectSources {
         ProjectSources::load_project_candidate(
             self.0.join("app.ox").to_str().unwrap(),
@@ -35,7 +35,7 @@ impl Drop for Fixture {
         fs::remove_dir_all(&self.0).unwrap();
     }
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn checked(project: &ProjectSources) -> Result<CheckedSourceProgram<'_>, Vec<Diagnostic>> {
     check_project_executable_candidate(
         project,
@@ -44,7 +44,7 @@ fn checked(project: &ProjectSources) -> Result<CheckedSourceProgram<'_>, Vec<Dia
         &mut Allocator::default(),
     )
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn u8_project_annotation_only_helpers_use_the_typed_checker() {
     let fixture = Fixture::new(&[
@@ -56,7 +56,7 @@ fn u8_project_annotation_only_helpers_use_the_typed_checker() {
     assert_eq!(result.route(), ProjectRoute::Owned);
     assert_eq!(result.run().unwrap(), Scalar::I32(4));
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn u8_project_byte_entry_has_typed_results_and_a_closed_scalar_adapter() {
     let text = "mod child; fn main()->u8{let n=0;return n.to_u8_checked();}";
@@ -91,7 +91,7 @@ fn u8_project_byte_entry_has_typed_results_and_a_closed_scalar_adapter() {
         )
     );
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn scalar_project_uses_original_root_entry_and_global_calls() {
     let fixture = Fixture::new(&[
@@ -121,7 +121,7 @@ fn scalar_project_uses_original_root_entry_and_global_calls() {
             <= 17 * project.usage().syntax_nodes
     );
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn owned_project_links_nominals_and_preserves_nonzero_entry() {
     let fixture = Fixture::new(&[
@@ -147,7 +147,7 @@ fn owned_project_links_nominals_and_preserves_nonzero_entry() {
         PREDECESSOR_DIMENSIONS + U8_ASSIGNMENT_DISCRIMINATORS
     );
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn type_depth_stays_type_only_and_executable_checks_unused_ownership() {
     let fixture = Fixture::new(&[
@@ -166,7 +166,7 @@ fn type_depth_stays_type_only_and_executable_checks_unused_ownership() {
     assert_eq!(errors[0].code, "E0310");
     assert_eq!(errors[0].primary.unwrap().file.0, 1);
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn child_or_imported_main_never_supplies_entry() {
     for owned in [false, true] {
@@ -202,7 +202,7 @@ fn private_linking_does_not_enable_public_module_syntax() {
     assert_eq!(failure.diagnostics[0].stage, "parse");
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn project_depths_share_one_namespace_schedule_and_work_total() {
     for child in [
@@ -246,7 +246,7 @@ fn project_depths_share_one_namespace_schedule_and_work_total() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn private_child_discovery_rejects_unqualified_hosts_before_child_io() {
     let fixture = Fixture::new(&[("app.ox", "mod missing; fn main()->i32{return 0;}")]);

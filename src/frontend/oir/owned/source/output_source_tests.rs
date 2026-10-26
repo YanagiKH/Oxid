@@ -494,7 +494,7 @@ fn output_source_module_policy_and_local_aliases_are_preserved() {
         ProjectLimits::default(),
         &mut Allocator::default(),
     );
-    if cfg!(target_os = "linux") {
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
         let project = result.unwrap();
         assert_eq!(project.sources().files().len(), 2);
         assert!(emitted_module(&project).contains("@__oxid_write_stdout_byte"));

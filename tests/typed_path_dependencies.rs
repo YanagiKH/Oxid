@@ -91,7 +91,7 @@ fn value(packages: &Packages, expected: i32) {
     assert!(text.contains(&format!("\"value\":{expected}")), "{text}");
 }
 fn package_host(packages: &Packages) -> bool {
-    if cfg!(target_os = "linux") {
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
         return true;
     }
     let output = failure(
@@ -592,7 +592,7 @@ fn invalid_package_build_preserves_the_previous_managed_binary() {
     packages.write("app/.oxid/bin/app", "previous managed binary");
     failure(
         packages.run(&["build"]),
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             "E0300"
         } else {
             "package source policy is qualified only on Linux"

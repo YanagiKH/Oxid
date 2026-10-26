@@ -73,7 +73,7 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
     for output in ["existing", "fresh"] {
         let text = diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
         if cfg!(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -86,7 +86,7 @@ fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
             }
         } else {
             assert!(
-                text.contains("native builds require a Linux x86_64 or ARM64 host"),
+                text.contains("native builds require Linux or macOS on x86_64 or ARM64"),
                 "{text}"
             );
         }
@@ -219,7 +219,7 @@ fn byte_storage_public_identical_module_text_keeps_runtime_file_identity() {
         let ran = source_command(&case, "run", false);
         assert_eq!(ran.status.code(), Some(1), "{ran:?}");
         assert!(ran.stdout.is_empty());
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             assert_eq!(checked.status.code(), Some(0), "{checked:?}");
             assert_eq!(ran.stderr, format!("error[E0606] (oir-owned-run): array index out of bounds\n  --> {chosen}.ox:1:{column}\n").as_bytes());
         } else {
@@ -332,9 +332,9 @@ fn byte_storage_public_unused_nested_enum_array_payload_checks_without_effects()
             let output = source_command(
                 &case,
                 operation,
-                operation == "check" || !cfg!(target_os = "linux"),
+                operation == "check" || !cfg!(any(target_os = "linux", target_os = "macos")),
             );
-            if cfg!(target_os = "linux") {
+            if cfg!(any(target_os = "linux", target_os = "macos")) {
                 assert!(output.status.success(), "{output:?}");
                 assert!(output.stderr.is_empty(), "{output:?}");
                 if operation == "run" {

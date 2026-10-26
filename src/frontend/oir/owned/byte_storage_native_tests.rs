@@ -1010,16 +1010,25 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             ordinary_visits: 64, cost: 46,
         },
     ];
+    let target = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
     oracles.map(|mut oracle| {
-        // Preserve the frozen x86 oracle. ARM changes exactly the target name
-        // and its one additional byte; every instruction and other bound stays.
-        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        // Substitute only the independently specified host target in the frozen
+        // Linux x86_64 template. Every instruction and other bound stays fixed.
+        if target != "x86_64-unknown-linux-gnu" {
             assert_eq!(oracle.text.matches("x86_64-unknown-linux-gnu").count(), 1);
             oracle.text = oracle
                 .text
-                .replacen("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", 1)
+                .replacen("x86_64-unknown-linux-gnu", target, 1)
                 .into();
-            oracle.text_bytes += 1;
+            oracle.text_bytes = oracle.text_bytes - "x86_64-unknown-linux-gnu".len() + target.len();
         }
         oracle
     })

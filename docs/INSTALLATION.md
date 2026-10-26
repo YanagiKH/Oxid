@@ -95,6 +95,9 @@ cargo build --release --locked
 
 On Windows, use `.\target\release\oxid.exe` for the executable. To check a source contribution, follow [Contributing](../CONTRIBUTING.md).
 
+To build native Oxid programs on macOS, follow [Native builds on macOS](NATIVE_MACOS.md)
+to configure LLVM and the Command Line Tools SDK.
+
 ## Docker
 
 From a repository checkout with Docker installed:

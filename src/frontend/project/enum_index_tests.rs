@@ -246,7 +246,7 @@ fn enum_index_loader_root_reserve_diagnostic_oracle_rejects_mutations() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn enum_index_loader_preserves_global_limits_and_real_file_association() {
     let fixture = Fixture::new();
@@ -347,7 +347,7 @@ fn enum_index_loader_preserves_global_limits_and_real_file_association() {
     .is_ok());
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn enum_index_loader_all_observed_requests_fail_without_later_source_growth() {
     let fixture = Fixture::new();
@@ -393,7 +393,7 @@ fn enum_index_loader_and_project_headers_are_measured() {
 
 // Child modules intentionally remain unavailable until this host's filesystem
 // policy is qualified. Both enum loader entry points must retain that boundary.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn enum_index_loader_unqualified_host_stops_before_child_io() {
     let fixture = Fixture::new();
@@ -459,7 +459,7 @@ fn enum_index_loader_unqualified_host_stops_before_child_io() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn enum_index_loader_unqualified_host_reserve_failures_stop_at_the_paid_prefix() {
     let fixture = Fixture::new();
