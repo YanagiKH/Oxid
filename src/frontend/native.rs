@@ -17,14 +17,14 @@ const RUNTIME: &str = include_str!("../../native/typed_preview.c");
 const CHARACTER_RUNTIME: &str = include_str!("../../native/typed_character.c");
 const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
 #[cfg(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 const FLOAT_FORMAT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/float_format.a"));
 #[cfg(not(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -172,6 +172,10 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
     .into_iter()
     .map(OsString::from)
     .collect();
+    if cfg!(target_os = "macos") {
+        arguments.push(OsString::from("-mmacosx-version-min=11.0"));
+        arguments.push(OsString::from("-D_DARWIN_C_SOURCE"));
+    }
     if settings.execution().heap_limit() != super::build_config::ExecutionPolicy::DEFAULT_HEAP_LIMIT
     {
         arguments.push(OsString::from(format!(
@@ -183,8 +187,8 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
 }
 
 /// Publish a project-owned native output without destroying the previous build
-/// on a compile/link failure. This route retains the Linux host restriction;
-/// rename replaces a regular file atomically on that supported filesystem.
+/// on a compile/link failure. Rename replaces a regular file atomically on
+/// the supported host filesystems.
 pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
     managed(module, output, false, None).map(|_| ())
 }
@@ -218,11 +222,7 @@ fn managed(
     incremental: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !NativeBuildSettings::host_supported() {
-        return Err(failure(
-            "native builds require a Linux x86_64 or ARM64 host",
-        ));
-    }
+    admit_settings(settings)?;
     let output = Path::new(output);
     let parent = output
         .parent()
@@ -305,17 +305,27 @@ pub(super) fn compile_with_settings(
     compile_inner(module, output, None, Some(settings)).map(|_| ())
 }
 
+fn admit_settings(settings: Option<&NativeBuildSettings>) -> Result<(), Box<Diagnostic>> {
+    if !NativeBuildSettings::host_supported() {
+        return Err(failure(
+            "native builds require Linux or macOS on x86_64 or ARM64",
+        ));
+    }
+    if settings.is_some_and(|settings| settings.debug_info())
+        && !NativeBuildSettings::debug_info_supported()
+    {
+        return Err(failure("native debug information currently requires Linux"));
+    }
+    Ok(())
+}
+
 fn compile_inner(
     module: &str,
     output: &str,
     cache_root: Option<&Path>,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !NativeBuildSettings::host_supported() {
-        return Err(failure(
-            "native builds require a Linux x86_64 or ARM64 host",
-        ));
-    }
+    admit_settings(settings)?;
     // Path::file_name normalizes trailing separators and `.` components.
     // Preserve the caller's file-vs-directory intent before that normalization.
     if matches!(output.rsplit('/').next(), Some("" | "." | "..")) {
@@ -387,7 +397,7 @@ fn compile_inner(
     };
     let clang = resolve(selected("clang"))?;
     let opt = resolve(selected("opt"))?;
-    let lld = resolve(selected("ld.lld"))?;
+    let lld = resolve(selected(NativeBuildSettings::linker()))?;
     version(&clang, "clang version", &parent, environment.as_ref())?;
     version(&opt, "LLVM version", &parent, environment.as_ref())?;
     version(&lld, "LLD", &parent, environment.as_ref())?;
@@ -459,7 +469,7 @@ fn compile_inner(
         args(&["-passes=verify", "-disable-output", "program.ll"]),
     )?;
     let target = format!("--target={}", settings.target_triple());
-    let program_args = args(&[
+    let mut program_args = args(&[
         "--no-default-config",
         &target,
         settings.optimization_flag(),
@@ -471,6 +481,9 @@ fn compile_inner(
         "-o",
         "program.o",
     ]);
+    if cfg!(target_os = "macos") {
+        program_args.push(OsString::from("-mmacosx-version-min=11.0"));
+    }
     let key = || {
         cache_root
             .and(environment.as_ref())
@@ -520,21 +533,38 @@ fn compile_inner(
         }
     }
     invoke(&clang, runtime_compile_args(&settings))?;
-    let mut link = args(&[
-        "--no-default-config",
-        &target,
-        "-pie",
-        "-Wl,-z,noexecstack",
-        "-Wl,-z,relro",
-        "-Wl,-z,now",
-        "program.o",
-        "runtime.o",
-        "-o",
-        "executable",
-    ]);
+    let mut link = if cfg!(target_os = "macos") {
+        args(&[
+            "--no-default-config",
+            &target,
+            "-mmacosx-version-min=11.0",
+            "-Wl,-pie",
+            "program.o",
+            "runtime.o",
+            "-o",
+            "executable",
+        ])
+    } else {
+        args(&[
+            "--no-default-config",
+            &target,
+            "-pie",
+            "-Wl,-z,noexecstack",
+            "-Wl,-z,relro",
+            "-Wl,-z,now",
+            "program.o",
+            "runtime.o",
+            "-o",
+            "executable",
+        ])
+    };
     if float_operations {
         link.push(OsString::from("float_format.a"));
-        link.push(OsString::from("-Wl,--gc-sections"));
+        link.push(OsString::from(if cfg!(target_os = "macos") {
+            "-Wl,-dead_strip"
+        } else {
+            "-Wl,--gc-sections"
+        }));
     }
     if float_operations {
         link.push(OsString::from("-lm"));

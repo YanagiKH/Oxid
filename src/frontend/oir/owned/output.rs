@@ -11,7 +11,7 @@ pub(super) enum Attempt {
 
 pub(super) const fn supported_host() -> bool {
     cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -27,7 +27,7 @@ fn classify(result: isize, interrupted: bool) -> Attempt {
 }
 
 #[cfg(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -36,7 +36,7 @@ pub(super) fn write_one(byte: u8) -> Attempt {
     unsafe extern "C" {
         fn write(fd: std::ffi::c_int, buffer: *const std::ffi::c_void, count: usize) -> isize;
     }
-    // SAFETY: This is the 64-bit Linux write C ABI. fd 1 is inherited stdout;
+    // SAFETY: This is the 64-bit POSIX write C ABI. fd 1 is inherited stdout;
     // the live, initialized byte is readable for the exact count 1. The libc
     // write boundary makes one unbuffered attempt and does not retry EINTR.
     // Read its error immediately, before any other host operation can alter it.
@@ -47,7 +47,7 @@ pub(super) fn write_one(byte: u8) -> Attempt {
 }
 
 #[cfg(not(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")

@@ -1437,7 +1437,7 @@ fn scaffold(options: &Options) -> Result<(), String> {
     write("src/main.ox", "fn main() -> i32 {\n    return 0;\n}\n")?;
     write("tests/smoke.ox", "fn double(value: i32) -> i32 {\n    return value * 2;\n}\n\nfn main() -> i32 {\n    if double(21) == 42 {\n        return 0;\n    } else {\n        return 1;\n    }\n}\n")?;
     write(".gitignore", ".oxid/\n")?;
-    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 or ARM64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
+    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux or macOS on x86_64 or ARM64, and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"new-summary\",\"success\":true,\"path\":{}}}", json_string(&root.to_string_lossy()));
     } else {

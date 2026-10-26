@@ -125,7 +125,7 @@ fn failed_typed_loader_retains_sources_and_does_not_discover_children() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn global_owned_selection_scans_even_unused_loaded_modules() {
     let f = Fixture::new();
@@ -161,7 +161,7 @@ fn invalid_project_root_never_loads_its_declared_children() {
     assert_eq!(failure.usage.probes, 0);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn invalid_project_child_never_loads_its_declared_children() {
     let f = Fixture::new();
@@ -283,7 +283,7 @@ fn unit2_measured_layout_and_requested_inventory() {
     println!("validation span callbacks {spans}");
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn project_candidate_module_policy_is_explicit_on_unqualified_hosts() {
     let f = Fixture::new();

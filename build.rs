@@ -1,8 +1,10 @@
 fn main() {
     println!("cargo:rerun-if-changed=native");
     let target = std::env::var("TARGET").expect("Cargo target");
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux")
-        && std::env::var("CARGO_CFG_TARGET_POINTER_WIDTH").as_deref() == Ok("64")
+    if matches!(
+        std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
+        Ok("linux" | "macos")
+    ) && std::env::var("CARGO_CFG_TARGET_POINTER_WIDTH").as_deref() == Ok("64")
         && std::env::var("CARGO_CFG_TARGET_ENDIAN").as_deref() == Ok("little")
         && matches!(
             std::env::var("CARGO_CFG_TARGET_ARCH").as_deref(),

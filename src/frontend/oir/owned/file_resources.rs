@@ -112,7 +112,11 @@ impl Heap {
         fuel: &mut usize,
     ) -> Result<OpenValue> {
         if path.len() >= PATH_BYTES {
-            return Ok(OpenValue::Error(36));
+            #[cfg(target_os = "macos")]
+            let code = libc::ENAMETOOLONG;
+            #[cfg(not(target_os = "macos"))]
+            let code = 36;
+            return Ok(OpenValue::Error(code));
         }
         let work = path
             .len()
@@ -124,7 +128,7 @@ impl Heap {
             return Ok(OpenValue::Error(22));
         }
         #[cfg(not(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -134,7 +138,7 @@ impl Heap {
             return Ok(OpenValue::Error(38));
         }
         #[cfg(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -239,7 +243,7 @@ impl Heap {
             return Ok(Err(9));
         };
         #[cfg(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -253,7 +257,7 @@ impl Heap {
             })
         }
         #[cfg(not(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -270,8 +274,8 @@ impl Heap {
         let Some(mut node) = self.locate_file(value)? else {
             return Ok(Ok(()));
         };
-        // SAFETY: Only this registry can close the live descriptor. Linux close
-        // is never retried after EINTR; the descriptor has already been freed.
+        // SAFETY: Only this registry can close the live descriptor. Linux and Darwin
+        // release the descriptor before reporting final close errors; never retry.
         let result = unsafe { close_node(node.as_ref()) };
         // Mark it closed before unlink, so cleanup cannot close a reused fd.
         unsafe {
@@ -292,7 +296,7 @@ pub(super) unsafe fn close_node(header: &Header) -> std::result::Result<(), i32>
         return Ok(());
     }
     #[cfg(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -306,7 +310,7 @@ pub(super) unsafe fn close_node(header: &Header) -> std::result::Result<(), i32>
         }
     }
     #[cfg(not(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -335,7 +339,7 @@ impl FileAccess {
             return Ok(Ok(0));
         }
         #[cfg(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -350,7 +354,7 @@ impl FileAccess {
             })
         }
         #[cfg(not(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -374,7 +378,7 @@ impl FileAccess {
             return Ok(Ok(0));
         }
         #[cfg(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
@@ -389,7 +393,7 @@ impl FileAccess {
             })
         }
         #[cfg(not(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")

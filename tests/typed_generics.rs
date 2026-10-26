@@ -20,7 +20,7 @@ impl Project {
         Self(root)
     }
     fn unavailable_multifile(&self) -> bool {
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
             return false;
         }
         let output = self.invoke(&["check"]);

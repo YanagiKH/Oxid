@@ -1,9 +1,13 @@
 /* Included after experimental_bytebuf.c: files use the same checked registry,
  * allocation charge and execution lifetime, with a distinct resource class. */
 #include <fcntl.h>
-/* Linux x86_64 ABI, also when the C11 feature set hides the POSIX name. */
+/* Strict C11 on Linux can hide this POSIX flag. Darwin declares its own value. */
 #ifndef O_CLOEXEC
+#if defined(__linux__)
 #define O_CLOEXEC 02000000
+#else
+#error "O_CLOEXEC is required for native file handles"
+#endif
 #endif
 
 typedef struct { uint64_t identity, reserved; } oxid_file;
@@ -39,7 +43,8 @@ static int32_t close_file(oxid_byte_heap *heap, oxid_file *value, int32_t *error
     if (status) return status;
     *error = 0;
     if (node) {
-        /* On Linux close frees the descriptor even after EINTR. Never retry. */
+        /* Linux and Darwin release the descriptor before final close errors.
+         * Never retry against a descriptor number that may have been reused. */
         if (close((int)node->initialized) < 0) *error = errno;
         node->initialized = UINT32_MAX;
         unlink_node(heap, node);

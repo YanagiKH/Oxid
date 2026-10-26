@@ -99,7 +99,7 @@ fn original_facade_has_no_module_path_admission_and_preserves_bytes() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn private_loader_assigns_dfs_files_and_module_major_original_handles() {
     let f = Fixture::new();
@@ -141,7 +141,7 @@ fn private_loader_assigns_dfs_files_and_module_major_original_handles() {
     assert_eq!(project.usage.probes, 4);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn file_and_function_handles_do_not_flatten_local_arenas() {
     let f = Fixture::new();
@@ -256,7 +256,7 @@ fn public_parser_keeps_all_project_syntax_closed() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn parse_errors_prevent_child_reads_and_child_errors_precede_later_siblings() {
     let f = Fixture::new();
@@ -271,7 +271,7 @@ fn parse_errors_prevent_child_reads_and_child_errors_precede_later_siblings() {
     assert_eq!(fail.sources.files().len(), 2);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn aggregate_source_token_and_node_boundaries_include_trivia_but_not_eof() {
     let f = Fixture::new();
@@ -320,7 +320,7 @@ fn aggregate_source_token_and_node_boundaries_include_trivia_but_not_eof() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn child_encoding_and_oxbc_errors_keep_declaring_file_origin() {
     let f = Fixture::new();
@@ -335,7 +335,7 @@ fn child_encoding_and_oxbc_errors_keep_declaring_file_origin() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn duplicate_and_case_collisions_are_discovered_in_dfs_order() {
     let f = Fixture::new();
@@ -382,7 +382,7 @@ fn exact_case_wins_over_folded_entries_but_scan_caps_hide_partial_facts() {
     error(&f, ProjectLimits::default(), "E0002", "source", "a");
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn symlink_entry_uses_invoked_directory_and_repeated_identity_has_root_secondary() {
     use std::os::unix::fs::symlink;
@@ -404,7 +404,7 @@ fn symlink_entry_uses_invoked_directory_and_repeated_identity_has_root_secondary
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn module_symlinks_directories_and_indirection_are_rejected_hardlinks_distinct() {
     use std::os::unix::fs::symlink;
@@ -432,7 +432,7 @@ fn module_symlinks_directories_and_indirection_are_rejected_hardlinks_distinct()
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn lower_module_depth_relative_path_probe_and_retained_payload_limits() {
     let f = Fixture::new();
@@ -643,7 +643,7 @@ fn every_new_original_reserve_has_handled_failure_and_honest_origin() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn every_new_module_reserve_fails_without_subsequent_reserves() {
     let f = Fixture::new();
@@ -704,7 +704,7 @@ fn newline_dense_source_inventory_uses_bytes_not_token_count() {
     assert!(p.inventory().unwrap().line_starts > 8 * p.usage.non_eof_tokens);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn measured_layout_and_requested_inventory() {
     macro_rules! sizes { ($($ty:ty),* $(,)?) => { $(println!("layout {} {}", stringify!($ty), size_of::<$ty>());)* }; }
@@ -858,7 +858,7 @@ fn first_module_dimensions_precede_root_canonical_path_admission() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn private_module_policy_is_explicit_on_unqualified_hosts() {
     let f = Fixture::new();

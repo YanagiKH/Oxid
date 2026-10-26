@@ -10,8 +10,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@unittest.skipUnless(platform.system() == "Linux" and platform.machine() == "x86_64",
-                     "native files currently require Linux x86_64")
+@unittest.skipUnless(platform.system() in ("Linux", "Darwin")
+                         and platform.machine() in ("x86_64", "aarch64", "arm64"),
+                     "native files require Linux or macOS on x86_64 or ARM64")
 class NativeFiles(unittest.TestCase):
     def test_file_resources_faults_attempts_and_descriptor_classes(self):
         compiler = shutil.which(os.environ.get("CC", "cc"))

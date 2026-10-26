@@ -55,7 +55,7 @@ fn execute(specs: &[PackageSpec]) -> Result<oir::Scalar, Vec<Diagnostic>> {
     checked.run().map_err(|e| vec![*e])
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_scopes_crate_roots_and_retains_real_source_ids() {
     let f = Fixture::new();
@@ -85,7 +85,7 @@ fn package_session_scopes_crate_roots_and_retains_real_source_ids() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_diamond_shares_nominal_identity_and_entry_override() {
     let f = Fixture::new();
@@ -122,7 +122,7 @@ fn package_session_diamond_shares_nominal_identity_and_entry_override() {
     assert_eq!(checked.run().unwrap(), oir::Scalar::I32(17));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_same_spelling_from_distinct_roots_has_distinct_nominal_identity() {
     let f = Fixture::new();
@@ -144,7 +144,7 @@ fn package_session_same_spelling_from_distinct_roots_has_distinct_nominal_identi
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_enum_identity_is_shared_only_for_one_canonical_root() {
     let f = Fixture::new();
@@ -175,7 +175,7 @@ fn package_session_enum_identity_is_shared_only_for_one_canonical_root() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_a_later_root_cannot_read_an_earlier_roots_private_items() {
     let f = Fixture::new();
@@ -199,7 +199,7 @@ fn package_session_a_later_root_cannot_read_an_earlier_roots_private_items() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_private_items_and_transitive_edges_are_not_exposed() {
     let f = Fixture::new();
@@ -244,7 +244,7 @@ fn package_session_private_items_and_transitive_edges_are_not_exposed() {
         .any(|e| e.code == "E0206"));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_dependency_calls_keep_exclusive_borrow_rules() {
     let f = Fixture::new();
@@ -367,7 +367,7 @@ fn package_session_shared_suffix_depth_is_independent_of_dependency_order() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_alias_collision_and_aggregate_source_caps_fail_before_execution() {
     let f = Fixture::new();
@@ -396,7 +396,7 @@ fn package_session_alias_collision_and_aggregate_source_caps_fail_before_executi
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_raised_caller_limit_still_caps_source_identity_at_256_modules() {
     let f = Fixture::new();
@@ -428,7 +428,7 @@ fn package_session_raised_caller_limit_still_caps_source_identity_at_256_modules
     assert_eq!(failure.usage.modules, 256);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn package_session_entry_and_module_symlinks_cannot_cross_package_boundaries() {
     let f = Fixture::new();

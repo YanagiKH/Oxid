@@ -115,7 +115,11 @@ impl NativeBuildSettings {
     pub(crate) const fn target_triple(self) -> &'static str {
         match self.target {
             Target::Host => {
-                if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+                if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                    "aarch64-apple-darwin"
+                } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+                    "x86_64-apple-darwin"
+                } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
                     "aarch64-unknown-linux-gnu"
                 } else {
                     "x86_64-unknown-linux-gnu"
@@ -126,11 +130,23 @@ impl NativeBuildSettings {
 
     pub(crate) const fn host_supported() -> bool {
         cfg!(all(
-            target_os = "linux",
+            any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
         ))
+    }
+
+    pub(crate) const fn linker() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "ld64.lld"
+        } else {
+            "ld.lld"
+        }
+    }
+
+    pub(crate) const fn debug_info_supported() -> bool {
+        cfg!(target_os = "linux")
     }
 
     pub(crate) const fn elf_machine() -> u16 {

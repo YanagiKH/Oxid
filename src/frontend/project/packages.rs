@@ -366,9 +366,9 @@ impl<'a> PackageSources<'a> {
         };
         let result = (|| {
             validate_graph(specs, entry_override).map_err(one)?;
-            if !cfg!(target_os = "linux") {
+            if !cfg!(any(target_os = "linux", target_os = "macos")) {
                 return Err(one(failure(
-                    "package source policy is qualified only on Linux",
+                    "package source policy is qualified only on Linux or macOS",
                 )));
             }
             for (package, spec) in specs.iter().enumerate() {

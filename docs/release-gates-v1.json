@@ -35,7 +35,7 @@
         "General hosted execution without demonstration fuel limits, verified optimization and realistic multi-module clean/incremental builds."
       ],
       "remaining": [
-        "Native project compilation supports Linux x86_64 and ARM64 using LLVM 19.1.7 at O0/O2 with optional hosted execution; repository CI verifies the supported hosts. Windows/macOS native targets, aggregate-value debugging, larger compiler/storage limits and full-scale build acceptance remain incomplete."
+        "Native project compilation implements Linux and macOS x86_64/ARM64 using LLVM 19.1.7 at O0/O2 with optional hosted execution. Actual macOS host qualification, Windows native builds, macOS debugging, aggregate-value debugging, larger compiler/storage limits and full-scale build acceptance remain incomplete."
       ]
     },
     {
