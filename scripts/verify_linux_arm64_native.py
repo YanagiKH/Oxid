@@ -126,7 +126,8 @@ def verify(args):
                                   ("optimizer-checkpoints", "verify_optimizer_checkpoints.py"),
                                   ("optimizer-training", "verify_optimizer_training.py"),
                                   ("data-pipeline", "verify_data_pipeline.py"),
-                                  ("minibatch-training", "verify_minibatch_training.py")]:
+                                  ("minibatch-training", "verify_minibatch_training.py"),
+                                  ("streaming-training", "verify_streaming_training.py")]:
             runner.command(label, [sys.executable, "-B", "scripts/" + controller,
                            report["binaries"]["debug"]["compiler"], report["binaries"]["release"]["compiler"],
                            "--output", output / label, "--llvm-bin", args.llvm_bin])

@@ -469,6 +469,8 @@ jobs:
             --output "$RUNNER_TEMP/current-data-pipeline" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_minibatch_training.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-minibatch-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_streaming_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-streaming-training" --llvm-bin "$OXID_LLVM_BIN"
       - name: Check buffer runtime components at O0 and O2 with memory checking
         run: |
           python3 -B scripts/test_bytebuf_runtime.py
@@ -540,6 +542,7 @@ jobs:
             ${{ runner.temp }}/current-optimizer-training
             ${{ runner.temp }}/current-data-pipeline
             ${{ runner.temp }}/current-minibatch-training
+            ${{ runner.temp }}/current-streaming-training
           if-no-files-found: warn
           retention-days: 14
 

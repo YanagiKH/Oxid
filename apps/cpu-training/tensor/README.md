@@ -51,3 +51,7 @@ An update checks every candidate parameter and moment before committing any chan
 `data::checkpoint` encodes paired matrices; `data::sampler_checkpoint` preserves permutation, RNG and progress. Sampler decoding checks dimensions, reserved fields, exact lengths, checksum, unique in-range row indices and consistent epoch/cursor/counter values. Unshuffled states require identity order.
 
 `data::session` stores the model, optimizer, dataset and sampler together. It validates their dimensions and embedded formats. `checkpoint::pipeline` adds dataset and session files plus two-slot recovery. See [minibatch training](../../minibatch-training/README.md) for commands and data export.
+
+## Streaming datasets
+
+The separate [reader package](../../streaming-training/reader/README.md) reads finite input/target batches with a fixed 4 KiB buffer and returns owned tensors. See [streaming training](../../streaming-training/README.md) for the file format and a runnable example.
