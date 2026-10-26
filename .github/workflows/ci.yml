@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_local_reference_bindings_compatibility.py \
+          python3 -B scripts/verify_generic_field_borrows_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -366,6 +366,7 @@ jobs:
       - name: Run public native tests in both compiler profiles
         env:
           OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/current-local-reference-bindings
+          OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/current-generic-field-borrows
         shell: bash
         run: |
           for profile in debug release; do
@@ -522,6 +523,7 @@ jobs:
             ${{ runner.temp }}/current-local-references-debug
             ${{ runner.temp }}/current-local-references-release
             ${{ runner.temp }}/current-local-reference-bindings
+            ${{ runner.temp }}/current-generic-field-borrows
             ${{ runner.temp }}/current-byte-storage-debug
             ${{ runner.temp }}/current-byte-storage-release
             ${{ runner.temp }}/current-byte-fields-debug
@@ -576,6 +578,7 @@ jobs:
       - name: Verify native ARM64 builds and source-free execution
         env:
           OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
+          OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/generic-field-borrows
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
