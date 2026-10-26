@@ -1,0 +1,61 @@
+name: Clean up superseded queued checks
+
+on:
+  push:
+    branches: [KH/ci-queue-maintenance]
+
+permissions: {}
+
+concurrency:
+  group: oxid-ci-queue-maintenance
+  cancel-in-progress: false
+
+jobs:
+  queued-checks:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const expected = 'b40dfdf471331863b1b77204f95aa6263b18172d';
+            const { owner, repo } = context.repo;
+            const current = await github.rest.pulls.get({ owner, repo, pull_number: 146 });
+            if (current.data.head.sha !== expected) {
+              core.setFailed('Integration head changed; no checks were cancelled.');
+              return;
+            }
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner, repo, status: 'queued', event: 'pull_request', per_page: 100
+            });
+            let cancelled = 0;
+            for (const run of runs) {
+              if (run.workflow_id !== 321632921 || run.event !== 'pull_request' ||
+                  run.status !== 'queued' || run.head_sha === expected ||
+                  run.head_repository?.full_name?.toLowerCase() !== `${owner}/${repo}`.toLowerCase() ||
+                  !/^KH\//.test(run.head_branch || '') || !/^[0-9a-f]{40}$/.test(run.head_sha)) continue;
+              const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                owner, repo, basehead: `${run.head_sha}...${expected}`
+              });
+              if (comparison.data.status !== 'ahead') continue;
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner, repo, run_id: run.id, filter: 'latest', per_page: 100
+              });
+              if (jobs.some(job => job.runner_id || (job.status !== 'queued' &&
+                  !(job.status === 'completed' && job.conclusion === 'skipped')))) continue;
+              const fresh = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: run.id });
+              if (fresh.data.status !== 'queued' || fresh.data.head_sha !== run.head_sha) continue;
+              const integration = await github.rest.pulls.get({ owner, repo, pull_number: 146 });
+              if (integration.data.head.sha !== expected) {
+                core.setFailed('Integration head changed; stopped queued-run cleanup.');
+                return;
+              }
+              await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
+              core.info(`Cancelled superseded run ${run.id}; all reported jobs were unstarted or skipped.`);
+              cancelled += 1;
+            }
+            core.info(`Cancelled ${cancelled} superseded queued runs. Current integration: ${expected}.`);
