@@ -70,12 +70,16 @@ current file's declarations. In a project or workspace, use
 These operations read unsaved buffers too; import aliases and function privacy
 follow the compiler's ordinary namespace rules.
 
+Use `<C-x><C-o>` in Neovim for name completion. Suggestions include keywords,
+functions, types, import aliases and variables visible in the current block.
+They follow unsaved text and replace the name around the cursor.
+
 Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
-Cross-file loading currently requires Linux. Completion, rename and navigation
-to types or members are not yet provided. See the
+Cross-file loading currently requires Linux. Member and qualified-path
+completion, rename and navigation to types or members are not yet provided. See the
 [language server contract](../rfcs/0065-typed-language-server.md) and
 [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 

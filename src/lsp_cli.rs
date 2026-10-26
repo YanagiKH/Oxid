@@ -220,7 +220,7 @@ impl Server {
                         Ok(()) => response(
                             writer,
                             id,
-                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
+                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"completionProvider":{"resolveProvider":false},"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
                         )?,
                         Err(message) => error(writer, id, -32602, &message)?,
                     }
@@ -253,6 +253,15 @@ impl Server {
         if method == "textDocument/formatting" {
             if let Some(id) = id {
                 match self.format(params) {
+                    Ok(value) => response(writer, id, value)?,
+                    Err(message) => error(writer, id, -32803, &message)?,
+                }
+            }
+            return Ok(None);
+        }
+        if method == "textDocument/completion" {
+            if let Some(id) = id {
+                match self.complete(params) {
                     Ok(value) => response(writer, id, value)?,
                     Err(message) => error(writer, id, -32803, &message)?,
                 }
@@ -394,6 +403,77 @@ impl Server {
             return Ok(json!([]));
         }
         Ok(json!([{"range":range((0,0), end_position(&document.text)),"newText":text}]))
+    }
+    fn complete(&self, params: &Value) -> Result<Value, String> {
+        let document = self
+            .documents
+            .find(string(&params["textDocument"], "uri")?)
+            .ok_or("source is not open")?;
+        if self
+            .documents
+            .files
+            .values()
+            .any(|document| !document.synchronized)
+        {
+            return Err(
+                "reopen the unsynchronized document or send its full text before completion".into(),
+            );
+        }
+        let offset = documents::position(&document.text, &params["position"])?;
+        let entries: Vec<_> = self
+            .documents
+            .files
+            .values()
+            .map(|document| (document.path.as_path(), document.text.as_str()))
+            .collect();
+        let overlay = frontend::editor::SourceOverlay::new(&entries)?;
+        let graphs = project_cli::editor_project_graphs(&document.path, self.explicit_typed)?;
+        let (mut files, mut bytes) = (0, 0);
+        let mut labels = BTreeSet::new();
+        let mut items = Vec::new();
+        let mut incomplete = false;
+        for graph in graphs {
+            if !graph
+                .packages
+                .iter()
+                .any(|package| document.path.starts_with(&package.root))
+            {
+                continue;
+            }
+            let result = frontend::editor::complete(
+                &graph.packages,
+                graph.entry.as_deref(),
+                &overlay,
+                &document.path,
+                offset,
+            )
+            .map_err(|errors| {
+                errors.first().map_or_else(
+                    || "cannot read completion names".to_owned(),
+                    |error| bounded(&error.message, 8192).to_owned(),
+                )
+            })?;
+            files += result.files;
+            bytes += result.bytes;
+            if files > 1024 || bytes > 8 * 1024 * 1024 {
+                return Err("completion exceeds the source limit".into());
+            }
+            incomplete |= result.incomplete;
+            let Some(replacement) = result.replacement else {
+                continue;
+            };
+            for item in result.entries {
+                if !labels.insert(item.label.clone()) {
+                    continue;
+                }
+                if items.len() >= 512 {
+                    incomplete = true;
+                    continue;
+                }
+                items.push(json!({"label":item.label,"kind":item.kind,"detail":item.detail,"textEdit":{"range":range(replacement.start,replacement.end),"newText":item.label}}));
+            }
+        }
+        Ok(json!({"isIncomplete":incomplete,"items":items}))
     }
     fn definition(&self, params: &Value) -> Result<Value, String> {
         let document = self

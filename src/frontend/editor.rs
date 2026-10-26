@@ -6,6 +6,7 @@ use super::{
 };
 use std::path::Path;
 
+pub(super) mod completion;
 pub(super) mod navigation;
 mod positions;
 
@@ -41,6 +42,20 @@ pub(crate) struct EditorSymbols {
 
 pub(crate) struct EditorDefinition {
     pub location: Option<EditorLocation>,
+    pub files: usize,
+    pub bytes: usize,
+}
+
+pub(crate) struct EditorCompletionItem {
+    pub label: String,
+    pub kind: u8,
+    pub detail: &'static str,
+}
+
+pub(crate) struct EditorCompletions {
+    pub entries: Vec<EditorCompletionItem>,
+    pub replacement: Option<EditorLocation>,
+    pub incomplete: bool,
     pub files: usize,
     pub bytes: usize,
 }
@@ -142,6 +157,16 @@ pub(crate) fn check_entry(
     overlay: &SourceOverlay<'_>,
 ) -> EditorCheck {
     super::driver::editor_check(packages, entry, overlay)
+}
+
+pub(crate) fn complete(
+    packages: &[super::PackageSpec],
+    entry: Option<&Path>,
+    overlay: &SourceOverlay<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<EditorCompletions, Vec<EditorDiagnostic>> {
+    super::driver::editor_complete(packages, entry, overlay, path, offset)
 }
 
 pub(crate) fn definition(

@@ -79,8 +79,9 @@ before publication. A refresh retains at most 256 compiler diagnostics, 8 KiB of
 message text per diagnostic and eight related locations with 2 KiB messages.
 
 The service advertises synchronization, diagnostics, workspace folders,
-formatting and [definition/symbol queries](0066-editor-symbol-navigation.md).
-Completion, hover, rename, code actions and profiling are not implemented.
+formatting, [name completion](0069-editor-name-completion.md) and
+[definition/symbol queries](0066-editor-symbol-navigation.md).
+Hover, rename, code actions and profiling are not implemented.
 This experimental service does not complete the development-tool release gate.
 
 ## Verification

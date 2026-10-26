@@ -1997,7 +1997,7 @@
     },
     {
       "id": "typed-language-server",
-      "summary": "Live typed diagnostics, formatting, function/local definitions and source symbol lists",
+      "summary": "Live typed diagnostics, formatting, scoped name completion, definitions and source symbols",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -2008,7 +2008,8 @@
       "spec": [
         "rfcs/0065-typed-language-server.md",
         "docs/TYPED_PROJECTS.md",
-        "rfcs/0066-editor-symbol-navigation.md"
+        "rfcs/0066-editor-symbol-navigation.md",
+        "rfcs/0069-editor-name-completion.md"
       ],
       "implementation": [
         "src/lsp_cli.rs",
@@ -2019,7 +2020,8 @@
         "src/project_cli/editor.rs",
         "src/frontend/editor.rs",
         "src/frontend/project/editor_sources.rs",
-        "src/frontend/editor/navigation.rs"
+        "src/frontend/editor/navigation.rs",
+        "src/frontend/editor/completion.rs"
       ],
       "tests": [
         "tests/typed_language_server.rs",
@@ -2030,7 +2032,7 @@
         "src/lsp_cli/uri.rs"
       ],
       "evidence": [],
-      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion, type/member navigation, rename and profiling are unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
+      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion covers keywords and visible names with a 512-item response limit; member and qualified-path completion, type/member navigation, rename and profiling are unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
     },
     {
       "id": "disjoint-record-field-borrows",

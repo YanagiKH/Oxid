@@ -244,6 +244,45 @@ pub(super) fn editor_check(
     }
 }
 
+pub(super) fn editor_complete(
+    packages: &[PackageSpec],
+    entry: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<super::editor::EditorCompletions, Vec<super::editor::EditorDiagnostic>> {
+    let prepared =
+        match prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
+        {
+            Ok(prepared) => prepared,
+            Err(error)
+                if !error.diagnostics.is_empty()
+                    && error
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| matches!(diagnostic.code, "E0100" | "E0101")) =>
+            {
+                return super::editor::completion::fallback(&error.sources, path, offset)
+                    .map_err(|errors| super::editor::diagnostics(&error.sources, &errors))
+            }
+            Err(error) => {
+                return Err(super::editor::diagnostics(
+                    &error.sources,
+                    &error.diagnostics,
+                ))
+            }
+        };
+    let owner = match &prepared.sources {
+        PreparedSources::Single(project) => super::declaration_index::SourceOwner::project(project),
+        PreparedSources::Packages(package) => {
+            super::declaration_index::SourceOwner::packaged(package)
+        }
+    };
+    let sources = prepared.project().sources();
+    super::editor::completion::complete(owner, sources, path, offset)
+        .map_err(|errors| super::editor::diagnostics(sources, &errors))
+}
+
 pub(super) fn editor_definition(
     packages: &[PackageSpec],
     entry: Option<&Path>,

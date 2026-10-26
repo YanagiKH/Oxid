@@ -963,3 +963,330 @@ fn generic_instantiations_navigate_to_the_original_function_declaration() {
     c.finish();
     p.unchanged();
 }
+fn completion_at(client: &mut Client, path: &str, text: &str, needle: &str, prefix: u64) -> Value {
+    let mut position = position_at(text, needle);
+    position["character"] = json!(position["character"].as_u64().unwrap() + prefix);
+    let response = client.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":position}),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+    response["result"].clone()
+}
+
+#[test]
+fn completion_uses_unsaved_local_names_and_utf16_whole_word_edits() {
+    let p = Project::new();
+    let disk = "fn main()->i32{return 0;}";
+    p.write("main.ox", disk);
+    let path = p.uri("main.ox");
+    let text = "/*🦀*/fn answer()->i32{return 42;}\r\nfn main()->i32{/*🦀*/let answer_local=42;return ans_suffix;}";
+    let mut c = Client::spawn(&p, true);
+    let initialized = c.request("initialize", json!({"rootUri":p.uri(""),"capabilities":{}}));
+    assert_eq!(
+        initialized["result"]["capabilities"]["completionProvider"]["resolveProvider"],
+        false
+    );
+    c.open(&path, text);
+    let result = completion_at(&mut c, &path, text, "ans_suffix", 3);
+    let items = result["items"].as_array().unwrap();
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item["label"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["answer", "answer_local"]
+    );
+    let start = position_at(text, "ans_suffix");
+    let mut end = start.clone();
+    end["character"] = json!(end["character"].as_u64().unwrap() + 10);
+    for item in items {
+        assert_eq!(item["textEdit"]["range"], json!({"start":start,"end":end}));
+        assert_eq!(item["textEdit"]["newText"], item["label"]);
+    }
+    assert_eq!(result["isIncomplete"], false);
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
+    p.unchanged();
+}
+
+#[test]
+fn completion_respects_generic_parameters_block_exits_and_later_declarations() {
+    let p = Project::new();
+    let text = "fn inspect<T>(parameter:i32)->i32{let parent=1;if true{let child=2;let parent=3;return child+parameter+parent;}let later=4;return parent;}fn main()->i32{return inspect::<()> (0);}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    let inner = completion_at(&mut c, &path, text, "child+parameter", 0);
+    let names: Vec<_> = inner["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect();
+    for expected in ["T", "parameter", "parent", "child"] {
+        assert!(names.contains(&expected), "{inner}");
+    }
+    assert!(!names.contains(&"later"));
+    let outer = completion_at(&mut c, &path, text, "parent;}fn main", 0);
+    let names: Vec<_> = outer["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"later"));
+    assert!(!names.contains(&"child"));
+    let parent = inner["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["label"] == "parent")
+        .collect::<Vec<_>>();
+    assert_eq!(parent.len(), 1);
+    assert_eq!(parent[0]["detail"], "local variable");
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn completion_handles_range_pattern_and_reference_bindings_only_in_scope() {
+    let p = Project::new();
+    let text="struct V{x:i32}enum E{Some(i32),None}fn main()->i32{let v=V{x:42};let r=&v;let V{x:field}=v;for index in 0..1{let choice=E::Some(42);match choice{E::Some(payload)=>{return payload+index+field;},E::None=>{},}}return field;}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    let inside = completion_at(&mut c, &path, text, "payload+index", 0);
+    let names: Vec<_> = inside["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect();
+    for expected in ["payload", "index", "field", "r"] {
+        assert!(names.contains(&expected), "{inside}");
+    }
+    let outside = completion_at(&mut c, &path, text, "return field;}", 7);
+    let names: Vec<_> = outside["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect();
+    assert!(!names.contains(&"payload") && !names.contains(&"index"));
+    assert!(names.contains(&"r"));
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn completion_suppresses_comments_literals_members_and_qualified_paths() {
+    let p = Project::new();
+    let disk = "fn main()->i32{return 0;}";
+    p.write("main.ox", disk);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    for (version, text, needle, width) in [
+        (
+            1,
+            "fn main()->i32{/*return main*/return 0;}",
+            "return main",
+            3,
+        ),
+        (
+            2,
+            "fn main()->i32{//return main\nreturn 0;}",
+            "return main",
+            3,
+        ),
+        (
+            3,
+            "fn main()->i32{let text=\"return main\";return 0;}",
+            "return main",
+            3,
+        ),
+        (4, "fn main()->i32{let scalar='A';return 0;}", "A'", 0),
+        (
+            5,
+            "struct V{x:i32}fn main()->i32{let v=V{x:42};return v.x;}",
+            "x;}",
+            0,
+        ),
+        (6, "fn main()->i32{return crate::helper();}", "helper();", 2),
+    ] {
+        if version == 1 {
+            c.open(&path, text);
+        } else {
+            c.change(&path, version, json!([{"text":text} ]));
+        }
+        let result = completion_at(&mut c, &path, text, needle, width);
+        assert_eq!(result["items"], json!([]), "{text}: {result}");
+    }
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
+    p.unchanged();
+}
+
+#[test]
+fn completion_keywords_survive_partial_syntax_and_reject_unsynchronized_buffers() {
+    let p = Project::new();
+    let text = "fn main()->i32{ret";
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    let result = completion_at(&mut c, &path, text, "ret", 3);
+    assert_eq!(
+        result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["label"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["return"]
+    );
+    let bad = c.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":{"line":-1,"character":0}}),
+    );
+    assert_eq!(bad["error"]["code"], -32803);
+    c.change(&path,2,json!([{"range":{"start":{"line":0,"character":1},"end":{"line":0,"character":0}},"text":""}]));
+    assert_eq!(
+        c.request(
+            "textDocument/completion",
+            json!({"textDocument":{"uri":path},"position":{"line":0,"character":0}})
+        )["error"]["code"],
+        -32803
+    );
+    c.change(&path, 3, json!([{"text":text}]));
+    assert_eq!(
+        completion_at(&mut c, &path, text, "ret", 3)["items"][0]["label"],
+        "return"
+    );
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn completion_caps_results_and_narrows_large_name_sets() {
+    let p = Project::new();
+    let mut text = String::new();
+    for n in 0..600 {
+        text.push_str(&format!("fn item{n:04}()->i32{{return 0;}}"));
+    }
+    text.push_str("fn main()->i32{return item0599();}");
+    p.write("main.ox", &text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, &text);
+    let broad = completion_at(&mut c, &path, &text, "item0599();", 4);
+    assert_eq!(broad["isIncomplete"], true);
+    assert_eq!(broad["items"].as_array().unwrap().len(), 512);
+    let narrow = completion_at(&mut c, &path, &text, "item0599();", 8);
+    assert_eq!(narrow["isIncomplete"], false);
+    assert_eq!(narrow["items"].as_array().unwrap().len(), 1);
+    assert_eq!(narrow["items"][0]["label"], "item0599");
+    c.finish();
+    p.unchanged();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn completion_follows_current_module_names_and_unsaved_import_aliases() {
+    let p = Project::new();
+    let disk =
+        "mod helper;use crate::helper::answer as imported;fn main()->i32{return imported();}";
+    p.package("", "completion", "", disk);
+    p.write(
+        "src/helper.ox",
+        "pub fn answer()->i32{return 42;}fn hidden()->i32{return 0;}",
+    );
+    let path = p.uri("src/main.ox");
+    let text = disk
+        .replace("as imported", "as updated")
+        .replace("return imported()", "return upd()");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, &text);
+    let result = completion_at(&mut c, &path, &text, "upd();", 3);
+    assert_eq!(
+        result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["label"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["updated"]
+    );
+    assert_eq!(result["items"][0]["detail"], "import");
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn completion_candidate_limit_preserves_narrow_queries_after_exhaustion() {
+    let p = Project::new();
+    let mut text = String::new();
+    for n in 0..4097 {
+        text.push_str(&format!("fn item{n:04}()->i32{{return 0;}}"));
+    }
+    text.push_str("fn main()->i32{return item4096();}");
+    p.write("main.ox", &text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, &text);
+    let mut position = position_at(&text, "item4096();");
+    position["character"] = json!(position["character"].as_u64().unwrap() + 4);
+    let exhausted = c.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":position}),
+    );
+    assert_eq!(exhausted["error"]["code"], -32803, "{exhausted}");
+    assert!(
+        exhausted["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("completion candidates"),
+        "{exhausted}"
+    );
+    assert!(exhausted.get("result").is_none());
+    let narrow = completion_at(&mut c, &path, &text, "item4096();", 8);
+    assert_eq!(narrow["items"].as_array().unwrap().len(), 1);
+    assert_eq!(narrow["items"][0]["label"], "item4096");
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn completion_suggests_nominal_type_parameters_inside_their_declarations() {
+    for text in [
+        "struct Holder<Thing>{value:Thi}fn main()->i32{return 0;}",
+        "enum Choice<Thing>{Some(Thi),None}fn main()->i32{return 0;}",
+    ] {
+        let p = Project::new();
+        p.write("main.ox", text);
+        let path = p.uri("main.ox");
+        let mut c = Client::spawn(&p, true);
+        c.initialize(&p);
+        c.open(&path, text);
+        let needle = if text.starts_with("struct") {
+            "Thi}"
+        } else {
+            "Thi)"
+        };
+        let result = completion_at(&mut c, &path, text, needle, 3);
+        assert_eq!(result["items"].as_array().unwrap().len(), 1, "{result}");
+        assert_eq!(result["items"][0]["label"], "Thing");
+        assert_eq!(result["items"][0]["detail"], "type parameter");
+        c.finish();
+        p.unchanged();
+    }
+}
