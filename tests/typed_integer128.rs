@@ -5,6 +5,20 @@ use std::{
     process::{Command, Output},
     sync::atomic::{AtomicUsize, Ordering},
 };
+// Process diagnostics require the terminal setup described in RFC 0025.
+const PROCESS_TERMINAL: bool = cfg!(any(
+    all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ),
+    all(
+        target_os = "macos",
+        target_pointer_width = "64",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Project(PathBuf);
 impl Project {
@@ -221,6 +235,14 @@ fn process_entries_can_calculate_with_full_width_values_and_return_i32_status() 
         )
         .unwrap();
         let result = project.invoke(&["run"]);
+        if !PROCESS_TERMINAL {
+            assert_eq!(result.status.code(), Some(74), "{result:?}");
+            assert!(
+                result.stdout.is_empty() && result.stderr.is_empty(),
+                "{result:?}"
+            );
+            continue;
+        }
         if cfg!(all(
             any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
@@ -287,6 +309,14 @@ fn mixed_types_invalid_literals_and_non_i32_process_entries_are_rejected() {
     )
     .unwrap();
     let result = project.invoke(&["run"]);
+    if !PROCESS_TERMINAL {
+        assert_eq!(result.status.code(), Some(74), "{result:?}");
+        assert!(
+            result.stdout.is_empty() && result.stderr.is_empty(),
+            "{result:?}"
+        );
+        return;
+    }
     assert_eq!(result.status.code(), Some(1), "{result:?}");
     assert!(result.stdout.is_empty(), "{result:?}");
     let expected = if cfg!(all(

@@ -6,6 +6,20 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+// Process diagnostics require the terminal setup described in RFC 0025.
+const PROCESS_TERMINAL: bool = cfg!(any(
+    all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ),
+    all(
+        target_os = "macos",
+        target_pointer_width = "64",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Project(PathBuf);
 impl Project {
@@ -193,6 +207,11 @@ fn byte_arithmetic_stays_strict_and_process_entries_still_require_i32() {
     }
     let out = Project::new("fn main()->u8{return 255u8;}", "bounded")
         .invoke(&["run", "--entry-mode=process"]);
+    if !PROCESS_TERMINAL {
+        assert_eq!(out.status.code(), Some(74), "{out:?}");
+        assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{out:?}");
+        return;
+    }
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(out.stdout.is_empty());
     let error = String::from_utf8(out.stderr).unwrap();

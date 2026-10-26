@@ -371,7 +371,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Build and test current compiler
+        shell: bash
         run: |
+          set -euo pipefail
           cargo build --release --locked
           cargo test --all-targets --all-features --locked
           cargo run --release --locked -- test
@@ -386,7 +388,9 @@ jobs:
           if test "$RUNNER_OS" = Windows; then binary=target/release/oxid.exe; fi
           python scripts/verify_typed_formatter.py "$binary"
       - name: Exercise current benchmark reporting
+        shell: bash
         run: |
+          set -euo pipefail
           cargo run --release --locked -- bench --iterations 3 --json target/oxid-benchmark.json
           python scripts/verify_benchmark_report.py target/oxid-benchmark.json 3
       - name: Retain current compiler demonstration artifacts
