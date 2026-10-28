@@ -7,6 +7,7 @@ use super::{
 use std::path::Path;
 
 pub(super) mod completion;
+pub(crate) mod members;
 pub(super) mod navigation;
 mod positions;
 

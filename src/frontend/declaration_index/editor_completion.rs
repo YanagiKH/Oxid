@@ -8,6 +8,8 @@ use crate::frontend::{
     project::editor_sources::QuerySources,
 };
 
+pub(in crate::frontend) mod members;
+
 #[derive(Clone, Copy, Debug)]
 struct Row {
     module: ModuleId,

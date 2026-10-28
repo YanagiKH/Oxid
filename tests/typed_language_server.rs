@@ -1125,7 +1125,12 @@ fn completion_suppresses_comments_literals_members_and_qualified_paths() {
             c.change(&path, version, json!([{"text":text} ]));
         }
         let result = completion_at(&mut c, &path, text, needle, width);
-        assert_eq!(result["items"], json!([]), "{text}: {result}");
+        if version == 5 {
+            assert_eq!(completion_labels(&result), ["x"]);
+            assert_eq!(result["items"][0]["kind"], 5);
+        } else {
+            assert_eq!(result["items"], json!([]), "{text}: {result}");
+        }
     }
     c.finish();
     assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
@@ -1311,7 +1316,7 @@ fn qualified_completion_supports_empty_endpoints_eof_and_whole_word_utf16_edits(
     let initialized = c.request("initialize", json!({"rootUri":p.uri(""),"capabilities":{}}));
     assert_eq!(
         initialized["result"]["capabilities"]["completionProvider"]["triggerCharacters"],
-        json!([":"])
+        json!([":", "."])
     );
     let mut text = format!("{declarations}fn main()->i32{{let c='🦀';return crate::;}}");
     c.open(&path, &text);
@@ -1729,6 +1734,349 @@ fn qualified_completion_preserves_both_result_limits_and_recovers_with_a_longer_
     assert_eq!(
         completion_labels(&completion_at(&mut c, &path, &text, "item0599();", 8)),
         ["item0599"]
+    );
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn record_field_completion_uses_unsaved_bindings_and_exact_utf16_replacements() {
+    let p = Project::new();
+    let disk = "fn main()->i32{return 0;}";
+    p.write("main.ox", disk);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    let prefix =
+        "struct Point{value:i32,other:bool}\r\nfn unrelated<T>(x:T)->T{return missing;}\r\n";
+    let text = format!("{prefix}fn main()->i32{{/*🦀*/let point:crate::Point=Point{{value:1,other:true}};return point.va_suffix;}}");
+    c.open(&path, &text);
+    let result = completion_at(&mut c, &path, &text, "va_suffix", 2);
+    assert_eq!(completion_labels(&result), ["value"]);
+    assert_eq!(result["items"][0]["kind"], 5);
+    assert_eq!(result["items"][0]["detail"], "record field");
+    let start = position_at(&text, "va_suffix");
+    let end = json!({"line":start["line"],"character":start["character"].as_u64().unwrap()+9});
+    assert_eq!(
+        result["items"][0]["textEdit"],
+        json!({"range":{"start":start,"end":end},"newText":"value"})
+    );
+    for (version, ty) in [(2, "Point"), (3, "&Point"), (4, "&mut crate::Point")] {
+        let text = format!("{prefix}fn inspect(point:{ty})->i32{{return point.");
+        c.change(&path, version, json!([{"text":text}]));
+        let result = completion_at(&mut c, &path, &text, "point.", 6);
+        assert_eq!(completion_labels(&result), ["other", "value"]);
+        let caret = json!({"line":text.bytes().filter(|byte|*byte==b'\n').count(),"character":text.rsplit('\n').next().unwrap().encode_utf16().count()});
+        for item in result["items"].as_array().unwrap() {
+            assert_eq!(
+                item["textEdit"]["range"],
+                json!({"start":caret,"end":caret})
+            );
+        }
+    }
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
+    p.unchanged();
+}
+
+#[test]
+fn record_field_completion_never_falls_back_to_lexical_names_for_unsupported_receivers() {
+    let p = Project::new();
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    for (index, body) in [
+        "return point.;",
+        "let point=1;return point.;",
+        "let point=Point{value:1};let moved=point;return point.;",
+        "let point=Point{value:1};consume(point);return point.;",
+        "let point=Point{value:1};if true{return 0;}return point.;",
+        "if true{let point=Point{value:1};return point.;}",
+        "let point=Point{value:1};let point=Point{value:2};return point.;",
+        "let point:Other=Point{value:1};return point.;",
+        "let point=Point{value:1};return container.point.;",
+        "let point=Point{value:1};return make().point.;",
+        "let point=Point{value:1};/*point.*/return 0;",
+        "let point=Point{value:1};let text=\"point.\";return 0;",
+        "let point=Point{value:1};return point.雪;",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let text = format!("struct Point{{value:i32}}struct Other{{value:i32}}fn value()->i32{{return 0;}}fn main()->i32{{{body}}}");
+        if index == 0 {
+            c.open(&path, &text);
+        } else {
+            c.change(&path, (index + 1) as i32, json!([{"text":text}]));
+        }
+        assert_eq!(
+            completion_at(&mut c, &path, &text, "point.", 6)["items"],
+            json!([]),
+            "{text}"
+        );
+    }
+    for (version, text) in [
+        (
+            20,
+            "struct Point<T>{value:T}fn inspect(point:Point<i32>)->i32{return point.;}",
+        ),
+        (
+            21,
+            "struct Point{value:i32}fn inspect<Point>(point:Point)->i32{return point.;}",
+        ),
+        (
+            22,
+            "struct Point{value:i32}fn inspect(point:&[i32])->i32{return point.;}",
+        ),
+    ] {
+        c.change(&path, version, json!([{"text":text}]));
+        assert_eq!(
+            completion_at(&mut c, &path, text, "point.", 6)["items"],
+            json!([])
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn record_field_completion_respects_module_visibility_and_did_close_restores_saved_fields() {
+    let p = Project::new();
+    let text = "mod model;fn inspect(point:&crate::model::Point)->i32{return point.;}fn main()->i32{return 0;}";
+    p.package("", "fields", "", text);
+    let saved = "pub struct Point{pub saved:i32,secret:i32}pub mod inside;mod hidden;";
+    p.write("src/model.ox", saved);
+    let inside = "pub fn inspect(point:&crate::model::Point)->i32{return point.;}";
+    p.write("src/model/inside.ox", inside);
+    p.write("src/model/hidden.ox", "pub struct Point{pub hidden:i32}");
+    let main = p.uri("src/main.ox");
+    let model = p.uri("src/model.ox");
+    let child = p.uri("src/model/inside.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&main, text);
+    let supported = cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    ));
+    if !supported {
+        let mut position = position_at(text, "point.");
+        position["character"] = json!(position["character"].as_u64().unwrap() + 6);
+        let response = c.request(
+            "textDocument/completion",
+            json!({"textDocument":{"uri":main},"position":position}),
+        );
+        assert_eq!(response["error"]["code"], -32803);
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("source policy"));
+        assert!(response.get("result").is_none());
+        c.finish();
+        p.unchanged();
+        return;
+    }
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, text, "point.", 6)),
+        ["saved"]
+    );
+    c.open(
+        &model,
+        "pub struct Point{pub unsaved:i32,secret:i32}pub mod inside;mod hidden;",
+    );
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, text, "point.", 6)),
+        ["unsaved"]
+    );
+    c.open(&child, inside);
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &child, inside, "point.", 6)),
+        ["secret", "unsaved"]
+    );
+    let hidden = "mod model;fn inspect(point:&crate::model::hidden::Point)->i32{return point.;}fn main()->i32{return 0;}";
+    c.change(&main, 2, json!([{"text":hidden}]));
+    assert_eq!(
+        completion_at(&mut c, &main, hidden, "point.", 6)["items"],
+        json!([])
+    );
+    c.notify(
+        "textDocument/didClose",
+        json!({"textDocument":{"uri":model}}),
+    );
+    c.barrier();
+    c.change(&main, 3, json!([{"text":text}]));
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, text, "point.", 6)),
+        ["saved"]
+    );
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("src/model.ox")).unwrap(), saved);
+    p.unchanged();
+}
+
+#[test]
+fn record_field_completion_uses_direct_dependency_identity_and_closes_import_alias_inference() {
+    let p = Project::new();
+    let text = "struct Point{wrong:i32}fn inspect(point:&crate::library::Point)->i32{return point.;}fn main()->i32{return 0;}";
+    p.package(
+        "",
+        "application",
+        "[dependencies]\nlibrary=\"library\"\n",
+        text,
+    );
+    p.write(
+        "library/oxid.toml",
+        "[project]\nname=\"library\"\nedition=\"typed-preview\"\nkind=\"lib\"\n",
+    );
+    p.write(
+        "library/src/lib.ox",
+        "pub struct Point{pub correct:i32,secret:i32}",
+    );
+    let path = p.uri("src/main.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, text);
+    if !cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
+        let mut position = position_at(text, "point.");
+        position["character"] = json!(position["character"].as_u64().unwrap() + 6);
+        let response = c.request(
+            "textDocument/completion",
+            json!({"textDocument":{"uri":path},"position":position}),
+        );
+        assert_eq!(response["error"]["code"], -32803);
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("source policy"));
+        assert!(response.get("result").is_none());
+    } else {
+        assert_eq!(
+            completion_labels(&completion_at(&mut c, &path, text, "point.", 6)),
+            ["correct"]
+        );
+        let alias = "use crate::library::Point;fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}";
+        c.change(&path, 2, json!([{"text":alias}]));
+        assert_eq!(
+            completion_at(&mut c, &path, alias, "point.", 6)["items"],
+            json!([])
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn record_field_completion_does_not_union_conflicting_shared_source_entry_graphs() {
+    let p = Project::new();
+    p.package(
+        "",
+        "entry_fields",
+        "[tests]\nsmoke=\"src/smoke.ox\"\n",
+        "mod shared;struct Point{from_application:i32}fn main()->i32{return 0;}",
+    );
+    p.write(
+        "src/smoke.ox",
+        "mod shared;struct Point{from_test:i32}fn main()->i32{return 0;}",
+    );
+    let text = "fn inspect(point:&crate::Point)->i32{return point.;}";
+    p.write("src/shared.ox", text);
+    let path = p.uri("src/shared.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, text);
+    let mut position = position_at(text, "point.");
+    position["character"] = json!(position["character"].as_u64().unwrap() + 6);
+    let response = c.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":position}),
+    );
+    if cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
+        assert!(response.get("error").is_none(), "{response}");
+        assert_eq!(response["result"]["items"], json!([]));
+        assert_eq!(response["result"]["isIncomplete"], false);
+    } else {
+        assert_eq!(response["error"]["code"], -32803);
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("source policy"));
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn record_field_completion_preserves_candidate_and_result_limits() {
+    let p = Project::new();
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    let source = |count: usize, suffix: &str| {
+        let fields: String = (0..count)
+            .map(|index| format!("field{index:04}:i32,"))
+            .collect();
+        format!("struct Point{{{fields}}}fn inspect(point:&Point)->i32{{return point.{suffix};}}")
+    };
+    let text = source(600, "");
+    c.open(&path, &text);
+    let result = completion_at(&mut c, &path, &text, "point.", 6);
+    assert_eq!(result["items"].as_array().unwrap().len(), 512);
+    assert_eq!(result["isIncomplete"], true);
+    assert_eq!(result["items"][0]["label"], "field0000");
+    assert_eq!(result["items"][511]["label"], "field0511");
+    let text = source(4097, "");
+    c.change(&path, 2, json!([{"text":text}]));
+    let mut position = position_at(&text, "point.");
+    position["character"] = json!(position["character"].as_u64().unwrap() + 6);
+    let error = c.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":position}),
+    );
+    assert_eq!(error["error"]["code"], -32803);
+    assert!(error["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("too many completion candidates"));
+    assert!(error.get("result").is_none());
+    let text = source(4097, "field409_suffix");
+    c.change(&path, 3, json!([{"text":text}]));
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &path, &text, "field409_suffix", 8)),
+        [
+            "field4090",
+            "field4091",
+            "field4092",
+            "field4093",
+            "field4094",
+            "field4095",
+            "field4096"
+        ]
     );
     c.finish();
     p.unchanged();

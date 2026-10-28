@@ -3,6 +3,8 @@ use super::*;
 use crate::frontend::source::{SourceFileId, Span};
 use std::num::NonZeroUsize;
 
+pub(in crate::frontend) mod members;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum DeclarationKind {
     Function,

@@ -253,6 +253,13 @@ pub(super) fn editor_complete(
 ) -> Result<super::editor::EditorCompletions, Vec<super::editor::EditorDiagnostic>> {
     if overlay
         .text(path)
+        .is_some_and(|text| super::editor::members::hint(text, offset))
+    {
+        return super::editor::members::complete(packages, entry, overlay, path, offset)
+            .map(|result| result.completions);
+    }
+    if overlay
+        .text(path)
         .is_some_and(|text| super::editor::completion::qualified_hint(text, offset))
     {
         let session = super::project::editor_sources::QuerySources::load(packages, entry, overlay)
