@@ -87,7 +87,7 @@ fn flat_copy_record_types_use_checked_padding_and_distinct_nominal_ids() {
 
 #[test]
 fn unsupported_records_are_omitted_whole_without_rejecting_the_program() {
-    let project = project("#[derive(Copy)]struct Point{x:i32}#[derive(Copy)]struct Boolean{x:i32,flag:bool}#[derive(Copy)]struct Unit{x:i32,nothing:()}#[derive(Copy)]struct Character{x:i32,letter:char}#[derive(Copy)]struct Nested{point:Point}#[derive(Copy)]struct Empty{}#[derive(Copy)]struct Generic<T:Copy>{value:T}struct Moved{x:i32}struct Array{items:[i32;1]}fn main()->i32{let boolean=Boolean{x:1,flag:true};let unit=Unit{x:2,nothing:()};let character=Character{x:3,letter:'雪'};let nested=Nested{point:Point{x:4}};let empty=Empty{};let generic=Generic::<i32>{value:5};let moved=Moved{x:6};let array=Array{items:[7]};return 42;}");
+    let project = project("#[derive(Copy)]struct Point{x:i32}#[derive(Copy)]struct Boolean{x:i32,flag:bool}#[derive(Copy)]struct Unit{x:i32,nothing:()}#[derive(Copy)]struct Character{x:i32,letter:char}#[derive(Copy)]struct Nested{point:Point}#[derive(Copy)]struct Empty{}#[derive(Copy)]struct Generic<T:Copy>{value:T}struct Moved{x:i32}struct Array{items:[i32;1]}fn main()->i32{let boolean=Boolean{x:1,flag:true};let unit=Unit{x:2,nothing:()};let character=Character{x:3,letter:38634u32.to_char_checked()};let nested=Nested{point:Point{x:4}};let empty=Empty{};let generic=Generic::<i32>{value:5};let moved=Moved{x:6};let array=Array{items:[7]};return 42;}");
     let checked = checked(&project);
     let records = checked.debug_records().unwrap();
     let marked = checked
