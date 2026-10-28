@@ -197,12 +197,24 @@ mod linux {
             &["--fuel=-1"][..],
             &["--fuel=1000001"][..],
             &["--fuel=one"][..],
-            &["--entry-mode=process"][..],
         ] {
             let fixture = Fixture::new(PRICING);
             failure(fixture.without_tools("crate::line_total", extra), "E0001");
             assert_eq!(fixture.entries(), [std::ffi::OsString::from("input.ox")]);
         }
+    }
+
+    #[test]
+    fn rejected_process_option_preserves_the_existing_stderr_diagnostic() {
+        let fixture = Fixture::new(PRICING);
+        let output = fixture.without_tools("crate::line_total", &["--entry-mode=process"]);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert_eq!(
+            output.stderr,
+            b"error[E0001] (cli): --entry-mode requires typed-preview run or compile\n"
+        );
+        assert_eq!(fixture.entries(), [std::ffi::OsString::from("input.ox")]);
     }
 
     #[test]
