@@ -291,6 +291,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  record-vector-source-policy-predecessor:
+    name: Vector and Copy source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_record_vector_predecessor_tests.py "$RUNNER_TEMP/record-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 6c3161640dbcc36a484ebdd23eb2594ccde4e16a
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/record-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/record-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: record-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/record-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
