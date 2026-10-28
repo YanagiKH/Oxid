@@ -82,6 +82,48 @@ pub(super) const FILE_DELIVERY_BYTES: usize = size_of::<FileControl>();
 
 #[allow(dead_code)]
 #[repr(C)]
+struct FileSeekFrame {
+    file: *const (),
+    offset: i64,
+    fuel: *mut u64,
+    result: *mut (),
+    return_cost: u64,
+    node: *mut (),
+    status: i32,
+    error: i32,
+    position: i64,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct FileSeekHostedFrame {
+    file: *const (),
+    offset: i64,
+    fuel: *mut u64,
+    result: *mut (),
+    return_cost: u64,
+    operation_budget: u64,
+    returned_status: i32,
+}
+pub(super) const FILE_SEEK_BYTES: usize =
+    size_of::<FileSeekFrame>() + size_of::<FileSeekHostedFrame>();
+
+#[allow(dead_code)]
+struct SeekEmitterCarriers {
+    names: [String; 4],
+    operand: Operand,
+    offset_type: hir::Ty,
+    helper: &'static str,
+    return_cost: usize,
+    captures: [FormatCallsiteBacking<8>; 4],
+    writes: [std::fmt::Result; 4],
+}
+pub(super) const fn seek_emitter_control_bytes() -> usize {
+    // All names contain numeric function/block/instruction IDs, not source text.
+    size_of::<SeekEmitterCarriers>() + 4 * (8 * usize::BITS as usize + 128)
+}
+
+#[allow(dead_code)]
+#[repr(C)]
 struct ArgumentContext {
     count: i32,
     values: *const (),
@@ -540,6 +582,43 @@ fn file_operation(
     out: &mut Emission,
 ) {
     let f = &storage.execution().witness().functions()[storage.id().0];
+    if operation == Function::SeekAbsolute {
+        let file = base_pointer(
+            out,
+            f,
+            &format!("{name}_file"),
+            AccessBase::Parameter(ReferenceParamId(0)),
+        );
+        let offset = load_operand(
+            out,
+            f,
+            &format!("{name}_offset"),
+            Operand {
+                local: LocalId(0),
+                span,
+            },
+        );
+        let cost = storage
+            .execution()
+            .file_delivery_cost(f.id)
+            .expect("sealed file seek return");
+        let helper = if out.policy.hosted() {
+            "__oxid_file_seek_absolute_hosted"
+        } else {
+            "__oxid_file_seek_absolute"
+        };
+        writeln!(out, "  %{name}_status = call i32 @{helper}(ptr {file}, i64 {offset}, ptr %fuel, ptr %result, i64 {cost})").unwrap();
+        status(
+            out,
+            diagnostics,
+            name,
+            &format!("%{name}_status"),
+            "file_ok",
+            span,
+            true,
+        );
+        return;
+    }
     let code = match operation {
         Function::OpenRead => 0,
         Function::Create => 1,

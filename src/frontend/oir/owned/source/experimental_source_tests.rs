@@ -11,6 +11,8 @@ use super::super::super::byte_buffer;
 use super::*;
 use crate::frontend::project::{ProjectLimits, ProjectSources};
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[path = "file_seek_tests.rs"]
+mod file_seek;
 #[path = "io_delivery_source_tests.rs"]
 mod io_delivery;
 #[path = "process_arguments_tests.rs"]

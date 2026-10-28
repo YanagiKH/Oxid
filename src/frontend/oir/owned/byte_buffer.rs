@@ -21,6 +21,9 @@ pub(in crate::frontend::oir::owned) use vectors::{
 pub(super) const fn file_helper_control_bytes() -> usize {
     files::helper_control_bytes()
 }
+pub(super) const fn file_seek_helper_control_bytes() -> usize {
+    files::seek_helper_control_bytes()
+}
 
 pub(super) const LIMIT: u64 = crate::frontend::build_config::ExecutionPolicy::DEFAULT_HEAP_LIMIT;
 pub(super) const ALLOCATION_CHARGE: u64 = 32;

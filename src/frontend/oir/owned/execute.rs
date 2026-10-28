@@ -4484,6 +4484,10 @@ fn execute_plan_policy<V: StoredValue>(
                     experimental::file_delivery_control_bytes()
                 } else {
                     0
+                } + if plan.has_file_seek() {
+                    experimental::file_seek_control_bytes::<V>()
+                } else {
+                    0
                 } + if plan.uses_vectors() {
                     vector::control_bytes::<V>()
                         + if plan.uses_record_vectors() {
