@@ -18,7 +18,7 @@ import types
 PREDECESSOR = '8180b1bbcbcf9ccd4d648ff5ba0ec9ea3d5b971f'
 PREDECESSOR_POLICY = 'scripts/verify_windows_native_compatibility.py'
 PREDECESSOR_POLICY_PIN = (55942, '498fb28cfa67a7c4ab03754824323a51b651400b80264996cf1549716ad28dbd')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 RECORD_FIELD_COMPLETION_CHANGED = frozenset(['src/frontend/declaration_index/editor_completion.rs',
  'src/frontend/driver.rs',
  'src/frontend/editor.rs',
