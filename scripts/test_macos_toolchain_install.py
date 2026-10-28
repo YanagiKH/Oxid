@@ -187,7 +187,7 @@ class InstallerFixture:
                         RUNNER_TEMP=str(self.temp), GITHUB_ENV=str(self.environment))
         self.command('brew', '''#!/usr/bin/env python3
 from pathlib import Path
-import json, os, sys, time
+import json, os, signal, sys, time
 root = Path(os.environ['INSTALL_FIXTURE'])
 args = sys.argv[1:]
 with (root / 'brew.jsonl').open('a') as log:
@@ -199,7 +199,15 @@ elif args == ['install', '--force-bottle', 'llvm@19', 'lld@19']:
         if any(line.startswith(b'  no_autobump!') for line in path.read_bytes().splitlines()):
             raise SystemExit('unsupported update-bot metadata reached Homebrew')
     if os.environ.get('PAUSE_FIXTURE_INSTALL'):
-        (root / 'install-active').touch()
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        def stop_install(signum, frame):
+            original = root / 'brew/Library/Taps/homebrew/homebrew-core/Formula/r/rustup.rb'
+            (root / 'install-stopped').write_text(json.dumps({
+                'signal': signum, 'private_tap_active': not original.exists()}))
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN if os.environ.get('IGNORE_FIXTURE_TERM') else stop_install)
+        (root / 'install-starting').write_text(json.dumps({'pid': os.getpid(), 'group': os.getpgrp()}))
+        (root / 'install-starting').rename(root / 'install-active')
         while True:
             time.sleep(0.01)
     if int(os.environ['INSTALL_FIXTURE_STATUS']):
@@ -501,6 +509,80 @@ class MacosToolchainInstallTests(unittest.TestCase):
                 self.assertEqual(fixture.core_snapshot(), fixture.before)
                 self.assertEqual(git(fixture.staged_core(),
                                      'rev-parse', 'HEAD').decode().strip(), fixture.revision)
+
+    def signal_only_the_installer_shell(self, interruption, expected, ignore_term=False,
+                                       before_pid_assignment=False):
+        fixture = self.fixture()
+        env = dict(fixture.env, PAUSE_FIXTURE_INSTALL='1')
+        if ignore_term:
+            env['IGNORE_FIXTURE_TERM'] = '1'
+        script = fixture.script()
+        if before_pid_assignment:
+            # Widen the launch/assignment boundary without changing the actual
+            # signal handler, cleanup, child job or wait implementation.
+            script = script.replace('install_pid=$!\n',
+                                    'while ! test -e "$INSTALL_FIXTURE/release-pid"; do sleep 0.01; done\n'
+                                    'install_pid=$!\n', 1)
+        process = subprocess.Popen(['bash', '--noprofile', '--norc', '-c', script],
+                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   start_new_session=True)
+        child = None
+        try:
+            deadline = time.monotonic() + 10
+            active = fixture.root / 'install-active'
+            while not active.exists():
+                if process.poll() is not None or time.monotonic() > deadline:
+                    self.fail('installer did not reach the paused install')
+                time.sleep(0.01)
+            child = json.loads(active.read_text())
+            # Actions signals the shell PID first. Signalling the whole group
+            # here would hide a trap deferred until foreground brew completes.
+            os.kill(process.pid, interruption)
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                raise AssertionError('shell-PID cancellation did not stop the active installer within five seconds') from None
+            self.assertEqual(process.returncode, expected, stderr.decode())
+            self.assertFalse(fixture.environment.exists())
+            self.assertFalse((fixture.temp / 'oxid-llvm-19').exists())
+            self.assertEqual(fixture.calls(), [['--repository'],
+                                              ['install', '--force-bottle', 'llvm@19', 'lld@19']])
+            self.assertEqual(fixture.core_snapshot(), fixture.before)
+            used = fixture.staged_core()
+            self.assertEqual(git(used, 'rev-parse', 'HEAD').decode().strip(), fixture.revision)
+            for name, original in fixture.formulas.items():
+                self.assertEqual((used / name).read_bytes(), adapted_formula(original), name)
+            with self.assertRaises(ProcessLookupError, msg='brew child was not stopped and reaped'):
+                os.kill(child['pid'], 0)
+            if not ignore_term:
+                self.assertEqual(json.loads((fixture.root / 'install-stopped').read_text()),
+                                 {'signal': signal.SIGTERM, 'private_tap_active': True})
+        finally:
+            # Emergency cleanup only; an earlier assertion has already failed
+            # if either process remains active. It cannot turn a timeout green.
+            if child is not None:
+                try:
+                    os.kill(child['pid'], 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    os.killpg(child['group'], signal.SIGKILL)
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
+
+    def test_shell_pid_interrupt_and_termination_stop_brew_before_restoring_the_tap(self):
+        for interruption, expected in [(signal.SIGINT, 130), (signal.SIGTERM, 143)]:
+            with self.subTest(signal=interruption):
+                self.signal_only_the_installer_shell(interruption, expected)
+
+    def test_shell_pid_cancellation_reaps_a_child_that_ignores_int_and_term(self):
+        self.signal_only_the_installer_shell(signal.SIGINT, 130, ignore_term=True)
+
+    def test_shell_pid_cancellation_between_launching_brew_and_assigning_its_pid(self):
+        for interruption, expected in [(signal.SIGINT, 130), (signal.SIGTERM, 143)]:
+            with self.subTest(signal=interruption):
+                self.signal_only_the_installer_shell(interruption, expected, before_pid_assignment=True)
 
     def test_staging_failure_leaves_the_existing_tap_unchanged(self):
         fixture = self.fixture()

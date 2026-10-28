@@ -450,10 +450,32 @@ jobs:
           print("Verified metadata-only formula adaptation: " + str(report_path))
           PY
           # Install through a clean core checkout, then restore the runner's tap intact.
+          install_pid=
+          install_started=0
+          install_signal=TERM
           restore_core() {
             install_status=$?
             trap - EXIT
             trap '' INT TERM
+            if test "$install_started" = 1; then
+              # Cover a signal between launching the job and assigning its PID.
+              install_pid="${install_pid:-${!:-}}"
+              if test -n "$install_pid"; then
+                kill "-$install_signal" -- "-$install_pid" 2>/dev/null || true
+                # Async descendants may ignore INT; bound their shutdown too.
+                if test "$install_signal" = INT; then
+                  kill -TERM -- "-$install_pid" 2>/dev/null || true
+                fi
+                for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                  if ! kill -0 -- "-$install_pid" 2>/dev/null; then
+                    break
+                  fi
+                  sleep 0.1
+                done
+                kill -KILL -- "-$install_pid" 2>/dev/null || true
+                wait "$install_pid" 2>/dev/null || true
+              fi
+            fi
             if ! test -e "$pinned_core" && { test -e "$core" || test -L "$core"; }; then
               mv "$core" "$pinned_core" || exit 1
             fi
@@ -463,14 +485,23 @@ jobs:
             exit "$install_status"
           }
           trap restore_core EXIT
-          trap 'exit 130' INT
+          trap 'install_signal=INT; exit 130' INT
           trap 'exit 143' TERM
           if test -e "$core" || test -L "$core"; then
             mv "$core" "$saved_core"
           fi
           mv "$pinned_core" "$core"
+          # Foreground commands defer shell-PID cancellation traps. Isolate the
+          # install job's group, then wait interruptibly without job control.
+          set -m
+          install_started=1
           HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
-            brew install --force-bottle llvm@19 lld@19
+            brew install --force-bottle llvm@19 lld@19 &
+          install_pid=$!
+          set +m
+          wait "$install_pid"
+          install_started=0
+          install_pid=
           llvm_bin="$(brew --prefix llvm@19)/bin"
           lld_bin="$(brew --prefix lld@19)/bin"
           test "$("$llvm_bin/llvm-config" --version)" = "19.1.7"
