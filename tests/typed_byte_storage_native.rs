@@ -341,7 +341,8 @@ fn byte_storage_public_unused_nested_enum_array_payload_checks_without_effects()
             let output = source_command(
                 &case,
                 operation,
-                operation == "check" || !cfg!(any(
+                operation == "check"
+                    || !cfg!(any(
                         target_os = "linux",
                         target_os = "macos",
                         all(
