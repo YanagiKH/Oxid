@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_typed_vector_compatibility.py \
+          python3 -B scripts/verify_checked_copy_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -93,6 +93,8 @@ jobs:
             --output "$RUNNER_TEMP/current-float-vector-interpreter" --reference-only
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-typed-vector-interpreter" --reference-only
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-interpreter" --reference-only
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-interpreter" --reference-only
       - name: Retain current source qualification
@@ -153,6 +155,7 @@ jobs:
             ${{ runner.temp }}/current-utf8-text-interpreter
             ${{ runner.temp }}/current-utf8-characters-interpreter
             ${{ runner.temp }}/current-typed-vector-interpreter
+            ${{ runner.temp }}/current-copy-record-interpreter
           if-no-files-found: warn
           retention-days: 14
       - name: Verify current source installation
@@ -309,26 +312,53 @@ jobs:
           # This revision contains 19.1.7 bottles for both Intel and Apple Silicon.
           # Current formula revisions may omit the Intel bottle.
           core="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
-          if ! test -d "$core/.git"; then
-            git clone --filter=blob:none --no-checkout --depth=1 \
-              https://github.com/Homebrew/homebrew-core.git "$core"
+          mkdir -p "$(dirname "$core")"
+          core_workspace="$(mktemp -d "$(dirname "$core")/.oxid-llvm19.XXXXXX")"
+          pinned_core="$core_workspace/pinned"
+          saved_core="$core_workspace/original"
+          revision=6a00b97b93bfc245d7083e4a90c7459ff5325222
+          git init "$pinned_core"
+          git -C "$pinned_core" remote add origin https://github.com/Homebrew/homebrew-core.git
+          git -C "$pinned_core" fetch --filter=blob:none --depth=1 origin "$revision"
+          test "$(git -C "$pinned_core" rev-parse FETCH_HEAD)" = "$revision"
+          git -C "$pinned_core" checkout --detach FETCH_HEAD
+          # Install through a clean core checkout, then restore the runner's tap intact.
+          restore_core() {
+            install_status=$?
+            trap - EXIT
+            trap '' INT TERM
+            if ! test -e "$pinned_core" && { test -e "$core" || test -L "$core"; }; then
+              mv "$core" "$pinned_core" || exit 1
+            fi
+            if test -e "$saved_core" || test -L "$saved_core"; then
+              mv "$saved_core" "$core" || exit 1
+            fi
+            exit "$install_status"
+          }
+          trap restore_core EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          if test -e "$core" || test -L "$core"; then
+            mv "$core" "$saved_core"
           fi
-          git -C "$core" fetch --depth=1 origin 6a00b97b93bfc245d7083e4a90c7459ff5325222
-          git -C "$core" checkout --detach FETCH_HEAD
+          mv "$pinned_core" "$core"
           HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
             brew install --force-bottle llvm@19 lld@19
           llvm_bin="$(brew --prefix llvm@19)/bin"
           lld_bin="$(brew --prefix lld@19)/bin"
+          test "$("$llvm_bin/llvm-config" --version)" = "19.1.7"
           tools="$RUNNER_TEMP/oxid-llvm-19"
           mkdir "$tools"
           ln -s "$llvm_bin/clang" "$tools/clang"
           ln -s "$llvm_bin/opt" "$tools/opt"
           ln -s "$lld_bin/ld64.lld" "$tools/ld64.lld"
-          echo "OXID_LLVM_BIN=$tools" >> "$GITHUB_ENV"
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
           "$tools/clang" --version
           "$tools/opt" --version
           "$tools/ld64.lld" --version
+          oxid_sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          test -n "$oxid_sdkroot"
+          echo "OXID_LLVM_BIN=$tools" >> "$GITHUB_ENV"
+          echo "SDKROOT=$oxid_sdkroot" >> "$GITHUB_ENV"
       - name: Build both current compiler profiles
         run: |
           cargo build --locked
@@ -343,6 +373,8 @@ jobs:
             --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/current-macos-native"
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-macos-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
       - name: Retain native programs and raw transcripts
         if: always()
         uses: actions/upload-artifact@v4
@@ -452,6 +484,7 @@ jobs:
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
               --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion
+            cargo test --locked "${profile_flags[@]}" --test typed_copy_records
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
@@ -461,6 +494,8 @@ jobs:
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              native::copy_record_tests:: -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
@@ -531,6 +566,8 @@ jobs:
             --output "$RUNNER_TEMP/current-float-vector-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-typed-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify native CPU training, gradients and checkpoint recovery
@@ -613,6 +650,7 @@ jobs:
             ${{ runner.temp }}/current-byte-buffers-release
             ${{ runner.temp }}/current-byte-reverse-application
             ${{ runner.temp }}/current-typed-vector-native
+            ${{ runner.temp }}/current-copy-record-native
             ${{ runner.temp }}/current-utf8-characters-native
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files
@@ -672,6 +710,8 @@ jobs:
             --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/linux-arm64-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify local reference lifetimes on ARM64
         shell: bash
         run: |
@@ -680,6 +720,8 @@ jobs:
             profile_flags=()
             if test "$profile" = release; then profile_flags=(--release); fi
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/linux-arm64-native/local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              native::copy_record_tests:: -- --ignored --test-threads=1
           done
       - name: Retain ARM64 native results
         if: always()
