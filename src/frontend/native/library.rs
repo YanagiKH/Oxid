@@ -40,6 +40,8 @@ struct PublicationBank {
     metadata: Metadata<'static>,
     source_row: SourceRow<'static>,
     source_sequence: Sources<'static>,
+    source_files: [&'static crate::frontend::source::SourceFile; 2],
+    source_paths: [&'static str; 2],
     status: Statuses,
     status_values: [i32; 5],
     counts: [usize; 8],
@@ -157,10 +159,15 @@ impl Serialize for Sources<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.0.modules().len()))?;
         for module in self.0.modules() {
-            let bytes = self.0.sources().get(module.file).text().as_bytes();
+            let file = self.0.sources().get(module.file);
+            let bytes = file.text().as_bytes();
             let hash = hex(&Sha256::digest(bytes).into());
             sequence.serialize_element(&SourceRow {
-                path: &module.relative_path,
+                path: if module.relative_path.is_empty() {
+                    file.path()
+                } else {
+                    &module.relative_path
+                },
                 sha256: ascii(&hash),
             })?;
         }
