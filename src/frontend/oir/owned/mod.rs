@@ -378,6 +378,12 @@ enum OwnedInstruction {
     },
     AcquireLocalBorrow(LoanId),
     ReleaseLocalBorrow(LoanId),
+    /// Checked finite record copy. Source stays live; validate all leaves
+    /// before writing any initialized destination leaf. Padding is never read.
+    CopyInitialize {
+        destination: OwnerPlaceId,
+        source: OwnerPlaceId,
+    },
 }
 #[derive(Clone, Debug)]
 struct OwnedTerminator {

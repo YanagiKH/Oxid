@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_typed_vector_compatibility.py \
+          python3 -B scripts/verify_checked_copy_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -93,6 +93,8 @@ jobs:
             --output "$RUNNER_TEMP/current-float-vector-interpreter" --reference-only
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-typed-vector-interpreter" --reference-only
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-interpreter" --reference-only
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-interpreter" --reference-only
       - name: Retain current source qualification
@@ -153,6 +155,7 @@ jobs:
             ${{ runner.temp }}/current-utf8-text-interpreter
             ${{ runner.temp }}/current-utf8-characters-interpreter
             ${{ runner.temp }}/current-typed-vector-interpreter
+            ${{ runner.temp }}/current-copy-record-interpreter
           if-no-files-found: warn
           retention-days: 14
       - name: Verify current source installation
@@ -309,26 +312,210 @@ jobs:
           # This revision contains 19.1.7 bottles for both Intel and Apple Silicon.
           # Current formula revisions may omit the Intel bottle.
           core="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
-          if ! test -d "$core/.git"; then
-            git clone --filter=blob:none --no-checkout --depth=1 \
-              https://github.com/Homebrew/homebrew-core.git "$core"
+          mkdir -p "$(dirname "$core")"
+          core_workspace="$(mktemp -d "$(dirname "$core")/.oxid-llvm19.XXXXXX")"
+          pinned_core="$core_workspace/pinned"
+          saved_core="$core_workspace/original"
+          revision=6a00b97b93bfc245d7083e4a90c7459ff5325222
+          git init "$pinned_core"
+          git -C "$pinned_core" remote add origin https://github.com/Homebrew/homebrew-core.git
+          git -C "$pinned_core" fetch --filter=blob:none --depth=1 origin "$revision"
+          test "$(git -C "$pinned_core" rev-parse FETCH_HEAD)" = "$revision"
+          git -C "$pinned_core" checkout --detach FETCH_HEAD
+          # Current Homebrew rejects this obsolete update-bot metadata. Keep
+          # every source, bottle, dependency and build byte unchanged.
+          python3 - "$pinned_core" <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import stat
+          import subprocess
+          import sys
+
+          formula_tree = "072eb5593e65cd9374940a2a183e18b656f57543"
+          formula_file_count = 7674
+          formula_inventory_sha = "d54485054853a163d3b5835b3403131eece818c7509fae4a570a7a35861e35b3"
+          adaptation_file_count = 1156
+          adaptation_inventory_sha = "df40f1369bb73ae9e9f489877dbd9137558d12f3048af29945cd91bdb304252a"
+          formulas = {
+              "llvm@19.rb": ("14c7ae5879dff4c4d3fab077671d924a56605c24e2fef252ca343d49029efa59",
+                             "9672f3b5b565b7b5e310bd0aa4698540712ff5b74955d1716b8127825517eb95"),
+              "lld@19.rb": ("bda99a28eec9b9e4986220751dd0c622566619d5071b9df9dcb3f315a92358a1",
+                            "5fa2731e9bf2027ecb569817b3934cfb07e2684f7d41bd0e3310eda0de3d84fe"),
+          }
+          metadata_stanzas = {
+              b'  no_autobump! because: :requires_manual_review\n': 1125,
+              b'  no_autobump! because: :incompatible_version_format\n': 17,
+              b'  no_autobump! because: :bumped_by_upstream\n': 10,
+              b'  no_autobump! because: "some resources have to be updated manually"\n': 1,
+              b'  no_autobump! because: "unable to get versions"\n': 1,
+              b'  no_autobump! because: "resources cannot be updated automatically"\n': 1,
+              b'  no_autobump! because: "\'playwright\' resource lacks PyPI sdist"\n': 1,
+          }
+          # These calls are inside deferred strategy bodies, not class metadata.
+          # Keep their complete bodies and return values unchanged.
+          nested_livechecks = (
+              "Formula/b/bash.rb", "Formula/b/blastem.rb", "Formula/c/calabash.rb",
+              "Formula/f/frege.rb", "Formula/h/http_load.rb",
+          )
+          nested_stanza = b"      no_autobump! because: :requires_manual_review\n"
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          def digest(body):
+              return hashlib.sha256(body).hexdigest()
+
+          def encoded(value):
+              return json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode() + b"\n"
+
+          root = Path(sys.argv[1])
+          command = ["git", "-C", str(root)]
+          actual_tree = subprocess.check_output(command + ["rev-parse", "HEAD:Formula"]).decode().strip()
+          require(actual_tree == formula_tree, "changed pinned Formula tree")
+          entries = subprocess.check_output(command + ["ls-tree", "-rlz", "HEAD", "--", "Formula"])
+          rows, prepared, changes, actual_names, nested_seen = [], [], [], set(), set()
+          counts = dict.fromkeys(metadata_stanzas, 0)
+          for entry in entries.split(b"\0"):
+              if not entry:
+                  continue
+              details, path_bytes = entry.split(b"\t", 1)
+              mode, kind, object_id, length = details.split()
+              name = path_bytes.decode()
+              relative = PurePosixPath(name)
+              require(not relative.is_absolute() and relative.parts[0] == "Formula"
+                      and ".." not in relative.parts and name.endswith(".rb")
+                      and kind == b"blob" and mode in (b"100644", b"100755")
+                      and name not in actual_names, "invalid pinned formula member")
+              path = root / name
+              before_stat = path.lstat()
+              require(stat.S_ISREG(before_stat.st_mode) and before_stat.st_nlink == 1
+                      and bool(before_stat.st_mode & 0o111) == (mode == b"100755"),
+                      "nonregular or changed-mode pinned formula: " + name)
+              before = path.read_bytes()
+              fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+              require(all(getattr(before_stat, field) == getattr(path.lstat(), field) for field in fields),
+                      "pinned formula changed during read: " + name)
+              blob = b"blob " + str(len(before)).encode() + b"\0" + before
+              require(len(before) == int(length)
+                      and hashlib.sha1(blob, usedforsecurity=False).hexdigest().encode() == object_id,
+                      "changed pinned formula: " + name)
+              actual_names.add(name)
+              rows.append([name, mode.decode(), object_id.decode(), len(before)])
+              found = [line for line in before.splitlines(keepends=True) if b"no_autobump!" in line]
+              require(len(found) <= 1, "repeated formula update metadata: " + name)
+              after = before
+              if found:
+                  stanza = found[0]
+                  if name in nested_livechecks:
+                      require(stanza == nested_stanza, "changed nested livecheck: " + name)
+                      nested_seen.add(name)
+                  else:
+                      require(stanza in metadata_stanzas, "unknown formula update metadata: " + name)
+                      counts[stanza] += 1
+                      position = before.index(stanza)
+                      after = b"".join(line for line in before.splitlines(keepends=True) if line != stanza)
+                      require(after[:position] + stanza + after[position:] == before,
+                              "invalid formula metadata inverse: " + name)
+                      changes.append([name, mode.decode(), object_id.decode(), len(before), digest(before),
+                                      len(after), digest(after), digest(stanza)])
+                      prepared.append((path, after, before_stat.st_mode))
+              if relative.name in formulas and name == "Formula/l/" + relative.name:
+                  require((digest(before), digest(after)) == formulas[relative.name],
+                          "invalid target formula adaptation: " + name)
+          require(len(rows) == formula_file_count and digest(encoded(rows)) == formula_inventory_sha,
+                  "changed pinned formula inventory")
+          require(counts == metadata_stanzas and nested_seen == set(nested_livechecks)
+                  and len(changes) == adaptation_file_count
+                  and digest(encoded(changes)) == adaptation_inventory_sha,
+                  "changed formula adaptation inventory")
+          actual = set()
+          for directory, directories, files in os.walk(root / "Formula", followlinks=False):
+              require(all(not (Path(directory) / name).is_symlink() for name in directories),
+                      "symlink pinned formula directory")
+              actual.update((Path(directory) / name).relative_to(root).as_posix() for name in files)
+          require(actual == actual_names, "untracked or missing pinned formula member")
+          for path, body, mode in prepared:
+              path.write_bytes(body)
+              require(path.read_bytes() == body and path.stat().st_mode == mode,
+                      "formula metadata write differed: " + str(path))
+          report = {"formula_tree": formula_tree, "formula_files": len(rows),
+                    "formula_inventory_sha256": formula_inventory_sha,
+                    "adapted_formulas": len(changes), "adaptation_inventory_sha256": adaptation_inventory_sha,
+                    "unchanged_nested_livechecks": sorted(nested_seen), "changes": changes}
+          report_path = root.parent / "formula-adaptation.json"
+          report_path.write_text(json.dumps(report, indent=2) + "\n")
+          print("Verified metadata-only formula adaptation: " + str(report_path))
+          PY
+          # Install through a clean core checkout, then restore the runner's tap intact.
+          install_pid=
+          install_started=0
+          install_signal=TERM
+          restore_core() {
+            install_status=$?
+            trap - EXIT
+            trap '' INT TERM
+            if test "$install_started" = 1; then
+              # Cover a signal between launching the job and assigning its PID.
+              install_pid="${install_pid:-${!:-}}"
+              if test -n "$install_pid"; then
+                kill "-$install_signal" -- "-$install_pid" 2>/dev/null || true
+                # Async descendants may ignore INT; bound their shutdown too.
+                if test "$install_signal" = INT; then
+                  kill -TERM -- "-$install_pid" 2>/dev/null || true
+                fi
+                install_waits=10
+                while kill -0 -- "-$install_pid" 2>/dev/null && test "$install_waits" -gt 0; do
+                  sleep 0.1
+                  install_waits=$((install_waits - 1))
+                done
+                kill -KILL -- "-$install_pid" 2>/dev/null || true
+                wait "$install_pid" 2>/dev/null || true
+              fi
+            fi
+            if ! test -e "$pinned_core" && { test -e "$core" || test -L "$core"; }; then
+              mv "$core" "$pinned_core" || exit 1
+            fi
+            if test -e "$saved_core" || test -L "$saved_core"; then
+              mv "$saved_core" "$core" || exit 1
+            fi
+            exit "$install_status"
+          }
+          trap restore_core EXIT
+          trap 'install_signal=INT; exit 130' INT
+          trap 'exit 143' TERM
+          if test -e "$core" || test -L "$core"; then
+            mv "$core" "$saved_core"
           fi
-          git -C "$core" fetch --depth=1 origin 6a00b97b93bfc245d7083e4a90c7459ff5325222
-          git -C "$core" checkout --detach FETCH_HEAD
+          mv "$pinned_core" "$core"
+          # Foreground commands defer shell-PID cancellation traps. Isolate the
+          # install job's group, then wait interruptibly without job control.
+          set -m
+          install_started=1
           HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
-            brew install --force-bottle llvm@19 lld@19
+            brew install --force-bottle llvm@19 lld@19 &
+          install_pid=$!
+          set +m
+          wait "$install_pid"
+          install_started=0
+          install_pid=
           llvm_bin="$(brew --prefix llvm@19)/bin"
           lld_bin="$(brew --prefix lld@19)/bin"
+          test "$("$llvm_bin/llvm-config" --version)" = "19.1.7"
           tools="$RUNNER_TEMP/oxid-llvm-19"
           mkdir "$tools"
           ln -s "$llvm_bin/clang" "$tools/clang"
           ln -s "$llvm_bin/opt" "$tools/opt"
           ln -s "$lld_bin/ld64.lld" "$tools/ld64.lld"
-          echo "OXID_LLVM_BIN=$tools" >> "$GITHUB_ENV"
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
           "$tools/clang" --version
           "$tools/opt" --version
           "$tools/ld64.lld" --version
+          oxid_sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          test -n "$oxid_sdkroot"
+          echo "OXID_LLVM_BIN=$tools" >> "$GITHUB_ENV"
+          echo "SDKROOT=$oxid_sdkroot" >> "$GITHUB_ENV"
       - name: Build both current compiler profiles
         run: |
           cargo build --locked
@@ -343,6 +530,8 @@ jobs:
             --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/current-macos-native"
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-macos-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
       - name: Retain native programs and raw transcripts
         if: always()
         uses: actions/upload-artifact@v4
@@ -452,6 +641,7 @@ jobs:
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
               --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion
+            cargo test --locked "${profile_flags[@]}" --test typed_copy_records
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
@@ -461,6 +651,8 @@ jobs:
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              native::copy_record_tests:: -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
@@ -475,36 +667,6 @@ jobs:
               frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal \
               -- --ignored --exact
           done
-      - name: Verify real package application and source-free deployment
-        run: |
-          python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-i64-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-integer-widths-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_byte_integers.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-byte-integer-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_integer128.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-integer128-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_integer_bits.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-integer-bits-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_floats.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-float-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-float-roots-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_hosted_capacity.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-hosted-capacity-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_float_output.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-float-output" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-character-native" --llvm-bin "$OXID_LLVM_BIN"
-          python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-package-application" --native
-          python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-package-lock-application" --native
-          python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-workspace-application" --native
-          python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-package-bundle-application" --native
       - name: Verify relocatable native builds against raw executable bytes
         run: |
           python3 -B scripts/verify_reproducible_native.py target/debug/oxid target/release/oxid \
@@ -531,6 +693,8 @@ jobs:
             --output "$RUNNER_TEMP/current-float-vector-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-typed-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify native CPU training, gradients and checkpoint recovery
@@ -585,18 +749,6 @@ jobs:
           name: current-native
           path: |
             ${{ runner.temp }}/current-native
-            ${{ runner.temp }}/current-i64-native
-            ${{ runner.temp }}/current-integer-widths-native
-            ${{ runner.temp }}/current-byte-integer-native
-            ${{ runner.temp }}/current-integer128-native
-            ${{ runner.temp }}/current-integer-bits-native
-            ${{ runner.temp }}/current-float-native
-            ${{ runner.temp }}/current-character-native
-            ${{ runner.temp }}/current-float-output
-            ${{ runner.temp }}/current-package-application
-            ${{ runner.temp }}/current-package-lock-application
-            ${{ runner.temp }}/current-workspace-application
-            ${{ runner.temp }}/current-package-bundle-application
             ${{ runner.temp }}/current-reproducible-native
             ${{ runner.temp }}/current-native-profiles
             ${{ runner.temp }}/current-owned-enum-application
@@ -613,6 +765,7 @@ jobs:
             ${{ runner.temp }}/current-byte-buffers-release
             ${{ runner.temp }}/current-byte-reverse-application
             ${{ runner.temp }}/current-typed-vector-native
+            ${{ runner.temp }}/current-copy-record-native
             ${{ runner.temp }}/current-utf8-characters-native
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files
@@ -624,6 +777,87 @@ jobs:
             ${{ runner.temp }}/current-minibatch-training
             ${{ runner.temp }}/current-streaming-training
           if-no-files-found: warn
+          retention-days: 14
+
+
+  native-numeric-and-packages:
+    name: Current native numeric and package conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: debian:trixie-slim
+      options: --cap-add=SYS_PTRACE
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install pinned LLVM and host tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Build both current compiler profiles
+        run: |
+          cargo build --locked
+          cargo build --release --locked
+      - name: Verify real package application and source-free deployment
+        run: |
+          python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-i64-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_byte_integers.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-integer-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer128.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer128-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_bits.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-bits-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_floats.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-roots-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_hosted_capacity.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-hosted-capacity-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_output.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-output" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-character-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-application" --native
+          python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-lock-application" --native
+          python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-workspace-application" --native
+          python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-bundle-application" --native
+      - name: Retain native numeric and package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-native-numeric-and-packages
+          path: |
+            ${{ runner.temp }}/current-i64-native
+            ${{ runner.temp }}/current-integer-widths-native
+            ${{ runner.temp }}/current-byte-integer-native
+            ${{ runner.temp }}/current-integer128-native
+            ${{ runner.temp }}/current-integer-bits-native
+            ${{ runner.temp }}/current-float-native
+            ${{ runner.temp }}/current-float-roots-native
+            ${{ runner.temp }}/current-hosted-capacity-native
+            ${{ runner.temp }}/current-float-output
+            ${{ runner.temp }}/current-character-native
+            ${{ runner.temp }}/current-package-application
+            ${{ runner.temp }}/current-package-lock-application
+            ${{ runner.temp }}/current-workspace-application
+            ${{ runner.temp }}/current-package-bundle-application
+          if-no-files-found: error
           retention-days: 14
 
   linux-arm64-native:
@@ -672,6 +906,8 @@ jobs:
             --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
           python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/linux-arm64-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify local reference lifetimes on ARM64
         shell: bash
         run: |
@@ -680,6 +916,8 @@ jobs:
             profile_flags=()
             if test "$profile" = release; then profile_flags=(--release); fi
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/linux-arm64-native/local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              native::copy_record_tests:: -- --ignored --test-threads=1
           done
       - name: Retain ARM64 native results
         if: always()

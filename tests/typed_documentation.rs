@@ -149,6 +149,86 @@ fn not_public() -> i32 { return 123456; }
 }
 
 #[test]
+fn public_copy_records_keep_their_contract_after_formatting_without_exposing_private_fields() {
+    let p = Project::new();
+    p.library(
+        "",
+        "snapshots",
+        "",
+        r#"/// An ordinary owned value.
+pub struct Affine { pub value: i32, affine_secret: bool }
+/// Coordinates <&>.
+# /* not public API <script> */ [ derive ( Copy ) ]
+pub struct Point { pub x: i32, point_secret: u128 }
+#[derive(Copy)]
+/// Generic & reusable.
+pub struct Holder<T: Copy> { pub value: T, holder_secret: i32 }
+#[derive(Copy)]
+pub struct Closed { closed_secret: Point }
+#[derive(Copy)]
+struct HiddenCopy { hidden_secret: i32 }
+pub fn twice(point: Point) -> i32 {
+    let second = point;
+    return point.x + second.x;
+}
+"#,
+    );
+    let public_contract = |page: &str| {
+        for declaration in [
+            "<pre><code>pub struct Affine {\n",
+            "<pre><code>#[derive(Copy)]\npub struct Point {\n",
+            "<pre><code>#[derive(Copy)]\npub struct Holder&lt;T: Copy&gt; {\n",
+            "<pre><code>#[derive(Copy)]\npub struct Closed {\n",
+        ] {
+            assert!(
+                page.contains(declaration),
+                "missing {declaration:?}: {page}"
+            );
+        }
+        assert_eq!(page.matches("#[derive(Copy)]").count(), 3, "{page}");
+        assert!(page.contains("snapshots 1.2.3"));
+        assert!(page.contains("Coordinates &lt;&amp;&gt;."));
+        assert!(page.contains("Generic &amp; reusable."));
+        assert!(page.contains("// private fields"));
+        for hidden in [
+            "affine_secret",
+            "point_secret",
+            "holder_secret",
+            "closed_secret",
+            "HiddenCopy",
+            "hidden_secret",
+            "not public API",
+            "<script>",
+        ] {
+            assert!(!page.contains(hidden), "{hidden}: {page}");
+        }
+    };
+    success(p.run(&["doc"]));
+    public_contract(&p.page());
+    let formatted = success(p.run(&["fmt", "src/lib.ox"]));
+    p.write(
+        "src/lib.ox",
+        std::str::from_utf8(&formatted.stdout).unwrap(),
+    );
+    success(p.run(&["doc"]));
+    let page = p.page();
+    public_contract(&page);
+    p.write(
+        "src/lib.ox",
+        "use alloc::bytes::ByteBuf;\n#[derive(Copy)]\npub struct Invalid { pub values: ByteBuf }\n",
+    );
+    let invalid = failure(p.run(&["doc"]));
+    assert!(
+        String::from_utf8_lossy(&invalid.stderr).contains("Copy"),
+        "{invalid:?}"
+    );
+    assert_eq!(p.page(), page);
+    assert!(!p.0.join(".oxid/bin").exists());
+    assert!(!p.0.join("oxid.lock").exists());
+    assert!(!p.0.join("download-cache").exists());
+}
+
+#[test]
 fn docs_check_dependencies_without_documenting_them_and_enforce_frozen_inputs() {
     let p = Project::new();
     p.library(

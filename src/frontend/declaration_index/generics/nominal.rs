@@ -10,6 +10,7 @@ pub(super) struct RecordApplication {
     depth: usize,
     pub(super) fields: Vec<Value>,
     pub(super) complete: bool,
+    pub(super) is_copy: bool,
     pub(super) emitted: Option<RecordId>,
 }
 
@@ -70,11 +71,15 @@ impl Nominals {
         Ok((concrete, depth))
     }
 
-    pub(super) fn copy(value: Value) -> bool {
-        matches!(
-            value,
-            Value::Concrete(ValueTy::Scalar(_)) | Value::Parameter { copy: true, .. }
-        )
+    pub(super) fn copy(&self, value: Value) -> bool {
+        match value {
+            Value::Concrete(ValueTy::Scalar(_)) | Value::Parameter { copy: true, .. } => true,
+            Value::Record(id) => self
+                .records
+                .get(id)
+                .is_some_and(|record| record.complete && record.is_copy),
+            _ => false,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -298,7 +303,7 @@ impl Nominals {
             return Err(error("record type argument count mismatch", at));
         }
         for (parameter, argument) in parameters.iter().zip(&arguments) {
-            if !parameter.bounds.is_empty() && !Self::copy(*argument) {
+            if !parameter.bounds.is_empty() && !self.copy(*argument) {
                 return Err(error("type argument does not satisfy Copy", at));
             }
         }
@@ -338,6 +343,7 @@ impl Nominals {
                 depth: argument_depth,
                 fields: Vec::new(),
                 complete: false,
+                is_copy: false,
                 emitted: None,
             },
             allocator,
@@ -364,10 +370,17 @@ impl Nominals {
                     depth + 1,
                 )?
                 .value(field.ty.span)?;
+            if declaration.derive_copy.is_some() && !self.copy(value) {
+                return Err(error(
+                    "Copy record fields require scalars or checked Copy records",
+                    field.ty.span,
+                ));
+            }
             storage.push(&mut fields, value, allocator, work, field.span)?;
         }
         self.records[id].fields = fields;
         self.records[id].complete = true;
+        self.records[id].is_copy = declaration.derive_copy.is_some();
         Ok(Value::Record(id))
     }
 
@@ -394,7 +407,7 @@ impl Nominals {
             return Err(error("enum type argument count mismatch", at));
         }
         for (parameter, argument) in parameters.iter().zip(&arguments) {
-            if !parameter.bounds.is_empty() && !Self::copy(*argument) {
+            if !parameter.bounds.is_empty() && !self.copy(*argument) {
                 return Err(error("type argument does not satisfy Copy", at));
             }
         }
@@ -676,6 +689,17 @@ impl Nominals {
         ty.parameter(at)
     }
 
+    pub(super) fn record_is_copy(
+        &self,
+        record: RecordId,
+        at: Span,
+    ) -> Result<bool, Box<Diagnostic>> {
+        self.emitted_records
+            .get(record.0)
+            .and_then(|id| self.records.get(*id))
+            .map(|record| record.complete && record.is_copy)
+            .ok_or_else(|| bad(at))
+    }
     pub(super) fn record_count(&self) -> usize {
         self.emitted_records.len()
     }

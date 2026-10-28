@@ -1458,6 +1458,7 @@ impl<'s> DeclarationFacts<'s> {
                 index.sources().ast(ModuleId(module)).is_ok_and(|program| {
                     program.has_generics()
                         || program.has_parsed_named_slice()
+                        || program.has_parsed_copy_records()
                         || program.has_record_patterns()
                 })
             });

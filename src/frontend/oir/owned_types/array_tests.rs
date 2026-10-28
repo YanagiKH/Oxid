@@ -13,6 +13,7 @@ fn table() -> Declarations {
     ]
     .into_iter()
     .map(|(id, elements)| RawRecordDecl {
+        is_copy: false,
         id: RecordId(id),
         span,
         fields: elements
@@ -253,7 +254,36 @@ fn array_seam_reports_representation_without_widening_existing_carriers() {
         assert_eq!(size_of::<RecordId>(), 8);
         assert_eq!(size_of::<ValueTy>(), 16);
         assert_eq!(size_of::<ParameterTy>(), 24);
-        assert_eq!(size_of::<RecordDecl>(), 72);
+        #[allow(dead_code)]
+        #[repr(C)]
+        struct PriorRecordHeader {
+            id: RecordId,
+            span: Span,
+            first: usize,
+            end: usize,
+            layout: Layout,
+            width: usize,
+        }
+        #[allow(dead_code)]
+        #[repr(C)]
+        struct CopyRecordHeader {
+            id: RecordId,
+            span: Span,
+            first: usize,
+            end: usize,
+            layout: Layout,
+            width: usize,
+            is_copy: bool,
+        }
+        let predecessor = size_of::<PriorRecordHeader>();
+        let copy_growth = size_of::<CopyRecordHeader>() - predecessor;
+        assert_eq!(predecessor, 72);
+        assert_eq!(size_of::<CopyRecordHeader>(), 80);
+        assert_eq!(size_of::<RecordDecl>(), predecessor + copy_growth);
+        assert_eq!(
+            std::mem::align_of::<RecordDecl>(),
+            std::mem::align_of::<CopyRecordHeader>()
+        );
         assert_eq!(size_of::<FieldDecl>(), 64);
         assert_eq!(
             size_of::<ast::Function>() + size_of::<ast::BodyBlock>() + size_of::<ast::ItemId>(),

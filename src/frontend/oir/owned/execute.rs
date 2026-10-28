@@ -3204,7 +3204,11 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 }
                 self.change_owner(frame, *destination, AVAILABLE, span)?;
             }
-            OwnedInstruction::MoveInitialize {
+            OwnedInstruction::CopyInitialize {
+                destination,
+                source,
+            }
+            | OwnedInstruction::MoveInitialize {
                 destination,
                 source,
             }
@@ -3212,8 +3216,31 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 destination,
                 source,
             } => {
-                let from = self.base(frame, AccessBase::Owner(*source), Access::Consume, span)?;
-                self.expect_owner(frame, *source, &[AVAILABLE], span)?;
+                let copying = matches!(instruction, OwnedInstruction::CopyInitialize { .. });
+                let from = self.base(
+                    frame,
+                    AccessBase::Owner(*source),
+                    if copying {
+                        Access::Read
+                    } else {
+                        Access::Consume
+                    },
+                    span,
+                )?;
+                // A copy is a read: shared child loans and the source epoch
+                // remain valid. base() already proves the source is available.
+                if !copying {
+                    self.expect_owner(frame, *source, &[AVAILABLE], span)?;
+                }
+                if copying
+                    && !self
+                        .plan
+                        .witness()
+                        .declarations()
+                        .is_copy(self.aggregate(from, span)?)
+                {
+                    return Err(bad("copy requires a checked Copy record", span));
+                }
                 let replacing = matches!(instruction, OwnedInstruction::Replace { .. });
                 self.expect_owner(
                     frame,
@@ -3249,7 +3276,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     }
                 }
                 self.transfer_payload(from, to, span)?;
-                self.change_owner(frame, *source, MOVED, span)?;
+                if !copying {
+                    self.change_owner(frame, *source, MOVED, span)?;
+                }
                 self.change_owner(frame, *destination, AVAILABLE, span)?;
             }
             OwnedInstruction::ReadField {

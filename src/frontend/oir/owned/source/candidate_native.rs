@@ -163,6 +163,7 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         OwnedInstruction::Scalar(Statement::Initialize { .. }) => "Scalar(Initialize)",
         OwnedInstruction::Scalar(Statement::Store { .. }) => "Scalar(Store)",
         OwnedInstruction::Construct { .. } => "Construct",
+        OwnedInstruction::CopyInitialize { .. } => "CopyInitialize",
         OwnedInstruction::MoveInitialize { .. } => "MoveInitialize",
         OwnedInstruction::Replace { .. } => "Replace",
         OwnedInstruction::ReadField { .. } => "ReadField",

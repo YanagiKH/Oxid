@@ -313,6 +313,7 @@ pub(in crate::frontend) enum ParameterTy {
 
 #[derive(Debug)]
 pub(super) struct RawRecordDecl {
+    pub(super) is_copy: bool,
     pub(super) id: RecordId,
     pub(super) span: Span,
     pub(super) fields: Vec<RawFieldDecl>,
@@ -429,6 +430,7 @@ impl FieldDecl {
 
 #[derive(Debug)]
 pub(super) struct RecordDecl {
+    is_copy: bool,
     id: RecordId,
     span: Span,
     field_start: usize,
@@ -439,6 +441,9 @@ pub(super) struct RecordDecl {
     width_and_owned_fields: usize,
 }
 impl RecordDecl {
+    pub(super) fn is_copy(&self) -> bool {
+        self.is_copy
+    }
     const WIDTH_BITS: u32 = 20;
 
     fn width(&self) -> usize {
@@ -640,6 +645,14 @@ impl Declarations {
                 }
                 check_span(sources, field.span)?;
                 let ty = value_field_with_enums(field, raw_enums.len())?;
+                if record.is_copy {
+                    match ty {
+                        ValueTy::Scalar(_) => (),
+                        ValueTy::Owned(AggregateTy::Record(id))
+                            if raw.get(id.0).is_some_and(|nested| nested.is_copy) => {}
+                        _ => return Err(DeclarationError::NonScalarField(field.id)),
+                    }
+                }
                 enum_record_fields |= matches!(ty, ValueTy::Owned(AggregateTy::Enum(_)));
                 resource_declarations |= matches!(
                     ty,
@@ -748,6 +761,7 @@ impl Declarations {
                 });
             }
             records.push(RecordDecl {
+                is_copy: record.is_copy,
                 id: record.id,
                 span: record.span,
                 field_start,
@@ -848,6 +862,7 @@ impl Declarations {
                 });
             }
             records.push(RecordDecl {
+                is_copy: record.is_copy,
                 id: record.id,
                 span: record.span,
                 field_start,
@@ -977,6 +992,12 @@ impl Declarations {
             AggregateTy::Record(id) => self.record(id).map(|_| ()),
             AggregateTy::Enum(id) => self.enums.enumeration(id).map(|_| ()).map_err(Into::into),
             AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
+        }
+    }
+    pub(super) fn is_copy(&self, aggregate: AggregateTy) -> bool {
+        match aggregate {
+            AggregateTy::Record(id) => self.records.get(id.0).is_some_and(RecordDecl::is_copy),
+            _ => false,
         }
     }
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
@@ -1680,6 +1701,7 @@ mod tests {
 
     pub(super) fn record(id: usize, types: &[hir::Ty], span: Span) -> RawRecordDecl {
         RawRecordDecl {
+            is_copy: false,
             id: RecordId(id),
             span,
             fields: types
@@ -1722,7 +1744,7 @@ mod tests {
     }
 
     #[test]
-    fn record_pattern_cached_field_counts_preserve_width_and_carrier_at_both_limits() {
+    fn checked_copy_record_header_and_cached_field_counts_at_both_limits() {
         #[allow(dead_code)]
         struct OriginalRecordDecl {
             id: RecordId,
@@ -1732,10 +1754,21 @@ mod tests {
             layout: Layout,
             width: usize,
         }
-        assert_eq!(size_of::<RecordDecl>(), size_of::<OriginalRecordDecl>());
+        #[allow(dead_code)]
+        struct CopyRecordDecl {
+            id: RecordId,
+            span: Span,
+            field_start: usize,
+            field_end: usize,
+            layout: Layout,
+            width: usize,
+            is_copy: bool,
+        }
+        assert_eq!(size_of::<RecordDecl>(), size_of::<CopyRecordDecl>());
+        assert!(size_of::<RecordDecl>() >= size_of::<OriginalRecordDecl>());
         assert_eq!(
             std::mem::align_of::<RecordDecl>(),
-            std::mem::align_of::<OriginalRecordDecl>()
+            std::mem::align_of::<CopyRecordDecl>()
         );
         let (sources, span) = source();
         let array = FixedArrayTy::check(hir::Ty::U8, 1024).unwrap();
@@ -2529,3 +2562,6 @@ mod u8_tests;
 
 #[cfg(test)]
 mod byte_storage_tests;
+
+#[cfg(test)]
+mod copy_tests;

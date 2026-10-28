@@ -421,13 +421,28 @@ pub(super) struct GenericSyntax {
     pub headers: Vec<GenericHeader>,
     pub calls: Vec<GenericArguments>,
 }
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct StructDecl {
+    pub derive_copy: Option<Span>,
     pub public: Option<Span>,
     pub name: Span,
     pub fields: Vec<StructField>,
     pub span: Span,
     pub end: Span,
+}
+impl std::fmt::Debug for StructDecl {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = formatter.debug_struct("StructDecl");
+        if let Some(mark) = self.derive_copy {
+            out.field("derive_copy", &mark);
+        }
+        out.field("public", &self.public)
+            .field("name", &self.name)
+            .field("fields", &self.fields)
+            .field("span", &self.span)
+            .field("end", &self.end)
+            .finish()
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumPayloadSyntax {
@@ -680,6 +695,7 @@ pub struct Program {
     project_syntax: ProjectSyntax,
     // Set during parsing, never recomputed from the publicly mutable AST.
     parsed_has_named_slice: bool,
+    parsed_has_copy_records: bool,
 }
 
 impl std::fmt::Debug for Program {
@@ -886,6 +902,7 @@ impl Program {
         path_segments: Vec<Span>,
         imports: Vec<ImportDecl>,
         parsed_has_named_slice: bool,
+        parsed_has_copy_records: bool,
     ) -> Self {
         let mut project_syntax =
             !modules.is_empty() || !imports.is_empty() || source.has_generics();
@@ -923,12 +940,18 @@ impl Program {
             project_syntax: ProjectSyntax::new(project_syntax, std_import_syntax)
                 .with_ranges(range_syntax),
             parsed_has_named_slice,
+            parsed_has_copy_records,
         }
     }
     /// This immutable parse fact survives edits to any TypeSyntaxKind. It only
     /// selects full source authentication; it grants no slice/type authority.
     pub(super) fn has_parsed_named_slice(&self) -> bool {
         self.parsed_has_named_slice
+    }
+    /// Immutable parse authority selects the paid full syntax comparison even
+    /// when a public AST mark is removed or attached to a different record.
+    pub(super) fn has_parsed_copy_records(&self) -> bool {
+        self.parsed_has_copy_records
     }
     pub(super) fn syntax_matches(&self, other: &Self) -> bool {
         self.tokens == other.tokens
@@ -945,6 +968,7 @@ impl Program {
             && self.generic_calls() == other.generic_calls()
             && self.project_syntax == other.project_syntax
             && self.parsed_has_named_slice == other.parsed_has_named_slice
+            && self.parsed_has_copy_records == other.parsed_has_copy_records
     }
     pub(super) fn belongs_to(&self, source: &SourceFile) -> bool {
         self.source.belongs_to(source) && self.generic_headers_match_source(source)
@@ -1480,7 +1504,10 @@ impl Program {
                 return false;
             }
             project_syntax |= record.public.is_some();
-            if !valid(record.name)
+            if record
+                .derive_copy
+                .is_some_and(|mark| !self.parsed_has_copy_records || !valid(mark))
+                || !valid(record.name)
                 || !valid(record.span)
                 || !valid(record.end)
                 || record.public.is_some_and(|span| !valid(span))
@@ -1918,7 +1945,8 @@ impl Program {
             }
             TypeSyntaxKind::Name(ItemPath::Absolute(_)) => true,
         };
-        !self.records.is_empty()
+        self.parsed_has_copy_records
+            || !self.records.is_empty()
             || !self.enums.is_empty()
             || self.uses_std_imports()
             || self.functions.iter().any(|f| {

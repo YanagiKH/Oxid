@@ -165,6 +165,7 @@ fn inventory_with_limit(
             });
         }
         raw_records.push(RawRecordDecl {
+            is_copy: record.is_copy,
             id: record.id,
             span: record.name_span,
             fields,
@@ -243,6 +244,7 @@ mod tests {
         let original = &index.sources().ast(module).unwrap().records[key.index];
         let field = &original.fields[0];
         let records = [Record {
+            is_copy: false,
             id: RecordId(0),
             name_span: original.name,
             span: original.span,

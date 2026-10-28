@@ -79,6 +79,7 @@ fn rv_fn(id: usize, ty: ValueTy, span: Span) -> RawOwnedFunction {
 }
 fn rv_record(types: &[hir::Ty], span: Span) -> RawRecordDecl {
     RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span,
         fields: types

@@ -678,6 +678,7 @@ fn subject(span: Span) -> RawOwnedProgram {
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![RawRecordDecl {
+            is_copy: false,
             id: RecordId(0),
             span,
             fields: vec![],
@@ -1345,6 +1346,7 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
                 builtins: BuiltinOrigins::None,
                 enums: vec![],
                 records: vec![RawRecordDecl {
+                    is_copy: false,
                     id: RecordId(0),
                     span: s,
                     fields: vec![]
@@ -1778,6 +1780,7 @@ fn nominal_record_ids_and_ordered_constructor_fields_survive_in_the_witness() {
     assert_eq!(checked.usage().owner_layout_bytes, 2);
     let mut raw = subject(s);
     raw.records.push(RawRecordDecl {
+        is_copy: false,
         id: RecordId(1),
         span: s,
         fields: vec![],

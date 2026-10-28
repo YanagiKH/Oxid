@@ -127,6 +127,7 @@ fn wide_parameter(length: usize) -> (SourceMap, RawOwnedProgram) {
     };
     let records = vec![
         RawRecordDecl {
+            is_copy: false,
             id: RecordId(0),
             span,
             fields: vec![
@@ -136,6 +137,7 @@ fn wide_parameter(length: usize) -> (SourceMap, RawOwnedProgram) {
             ],
         },
         RawRecordDecl {
+            is_copy: false,
             id: RecordId(1),
             span,
             fields: (0..4)
@@ -308,6 +310,7 @@ fn native_composition_maximum_depth_uses_bounded_projection_and_copy_scratch() {
     let span = raw.functions[0].span;
     raw.records = (0..64)
         .map(|record| RawRecordDecl {
+            is_copy: false,
             id: RecordId(record),
             span,
             fields: vec![RawFieldDecl {

@@ -71,6 +71,33 @@ const OUTPUT_CAPACITY_INVARIANT: &str =
 // Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
 // resolution and composite emission never retain an expanded leaf collection.
 const EMITTER_TRANSIENT_BYTES: usize = 32_768;
+// Copy makes complete scalar validation reachable without a resource helper.
+// Charge its real iterator, caller/leaf transports and simultaneous owned names
+// separately; the old emitter envelope and limits are unchanged.
+#[allow(dead_code)]
+struct CopyTransferCarriers {
+    source_and_destination: [String; 2],
+    leaf_names: [String; 4], // copy prefix, input/output pointers, field-pointer temporary
+    leaves: std::iter::Enumerate<crate::frontend::oir::owned_types::ScalarLeaves<'static>>,
+    next_leaf: Option<(usize, crate::frontend::oir::owned_types::ScalarLeaf)>,
+    selected_leaf: (usize, crate::frontend::oir::owned_types::ScalarLeaf),
+    emission: &'static mut Emission,
+    parameters: (
+        &'static ExecutionPlan<'static>,
+        &'static str,
+        AggregateTy,
+        &'static str,
+        TransferIntent<'static>,
+        (&'static Diagnostics, Span),
+    ),
+    formatting: [FormatCallsiteBacking<8>; 4],
+    writes: [std::fmt::Result; 4],
+    scalar_storage: &'static str,
+    predicate: &'static str,
+    bound: usize,
+}
+const COPY_TRANSFER_CONTROL_BYTES: usize =
+    size_of::<CopyTransferCarriers>() + 6 * (5 * usize::BITS as usize + 128);
 // The borrowed native plan and its fixed checking/mapping carriers occupy this
 // part of the inherited envelope; no retained table or new reserve is added.
 const _: () = assert!(plan::native_storage::FIXED_CARRIER_ALLOWANCE <= EMITTER_TRANSIENT_BYTES);
@@ -732,7 +759,14 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
         )?,
     )?;
     let emitter_transient = add(
-        add(inherited_emitter_transient, R::CONTROL_BYTES)?,
+        add(
+            add(inherited_emitter_transient, R::CONTROL_BYTES)?,
+            if plan.uses_checked_copies() {
+                COPY_TRANSFER_CONTROL_BYTES
+            } else {
+                0
+            },
+        )?,
         if plan.uses_vectors() {
             vector::control_bytes()
         } else if plan.uses_typed_ranges() {
@@ -1748,6 +1782,9 @@ fn diagnostic_occurrences(
                         visit(FailureKind::EnumTag, span)?;
                         visit(FailureKind::EnumPayload, span)?;
                     }
+                    OwnedInstruction::CopyInitialize { .. } => {
+                        visit(FailureKind::EnumPayload, plan::instruction_span(statement))?;
+                    }
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
                     | OwnedInstruction::PrepareOwned { source, .. }
@@ -2550,6 +2587,11 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                         cells = add(cells, plan.owner_width(f.id, destination))?;
                         None
                     }
+                    OwnedInstruction::CopyInitialize { source, .. } => {
+                        // Complete validation and then initialized-leaf copy.
+                        cells = add(cells, mul(2, plan.owner_width(f.id, source))?)?;
+                        None
+                    }
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
                     | OwnedInstruction::PrepareOwned { source, .. } => Some(source),
@@ -3328,6 +3370,10 @@ fn active_transfer_with_intent(
                 writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
                 emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
                 writeln!(out, "{cell}_ok:").unwrap();
+            } else if leaf.ty == hir::Ty::Char && plan.witness().declarations().is_copy(aggregate) {
+                writeln!(out, "  %{cell}_below = icmp ule i32 %{cell}, 1114111\n  %{cell}_before_surrogate = icmp ult i32 %{cell}, 55296\n  %{cell}_after_surrogate = icmp ugt i32 %{cell}, 57343\n  %{cell}_not_surrogate = or i1 %{cell}_before_surrogate, %{cell}_after_surrogate\n  %{cell}_canonical = and i1 %{cell}_below, %{cell}_not_surrogate\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+                emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+                writeln!(out, "{cell}_ok:").unwrap();
             }
         }
     }
@@ -3866,6 +3912,7 @@ fn continuation(
         OwnedInstruction::ConsumeVariant { .. }
         | OwnedInstruction::ConsumeOwnedVariant { .. }
         | OwnedInstruction::ConstructOwnedEnum { .. } => Continuation::Enum,
+        OwnedInstruction::CopyInitialize { .. } => Continuation::Aggregate,
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::Replace { source, .. }
         | OwnedInstruction::PrepareOwned { source, .. }
@@ -5127,6 +5174,23 @@ fn emit_statement(
                 )
                 .unwrap();
             }
+        }
+        OwnedInstruction::CopyInitialize {
+            destination,
+            source,
+        } => {
+            let aggregate = f.owners[source.0].aggregate();
+            assert!(plan.witness().declarations().is_copy(aggregate));
+            active_transfer_with_intent(
+                out,
+                plan,
+                name,
+                aggregate,
+                &format!("%o{}", source.0),
+                TransferIntent::Move(&format!("%o{}", destination.0)),
+                (diagnostics, plan::instruction_span(statement)),
+            );
+            writeln!(out, "  br label %{name}_aggregate_ok\n{name}_aggregate_ok:").unwrap();
         }
         OwnedInstruction::MoveInitialize {
             destination,
@@ -6839,3 +6903,7 @@ fn owned_enum_native_shared_branch_counts_and_exact_ir_admission() {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "copy_record_native_tests.rs"]
+mod copy_record_tests;

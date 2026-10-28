@@ -514,6 +514,7 @@ fn range_program(
             index: 0,
         };
         raw.records.push(RawRecordDecl {
+            is_copy: false,
             id: RecordId(0),
             span: at(0),
             fields: vec![RawFieldDecl {

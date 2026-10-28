@@ -375,6 +375,7 @@ pub(super) fn projected_record_program() -> (SourceMap, RawOwnedProgram, hir::De
     };
     let array = raw.functions[0].owners[0].aggregate;
     raw.records = vec![RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span: s(100),
         fields: [

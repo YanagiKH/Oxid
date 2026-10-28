@@ -303,7 +303,11 @@ impl<'s> SourceOwner<'s> {
             let module = ModuleId(m);
             let program = self.ast(module)?;
             work.preflight(self.file(module)?.span(0, 0))?;
-            if !program.records.is_empty() || !program.enums.is_empty() || program.has_generics() {
+            if !program.records.is_empty()
+                || !program.enums.is_empty()
+                || program.has_generics()
+                || program.has_parsed_copy_records()
+            {
                 owned = true;
                 continue;
             }

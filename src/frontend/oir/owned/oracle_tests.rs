@@ -377,6 +377,7 @@ fn scalar(local: usize, value: Rvalue, span: Span) -> OwnedStatement {
 }
 fn record(span: Span) -> RawRecordDecl {
     RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span,
         fields: vec![RawFieldDecl {

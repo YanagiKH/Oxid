@@ -403,7 +403,8 @@ bool/i32/unit, another nominal record, or a fixed bool/i32/unit array.
 that same contract. Fields also support the other scalar types described above,
 finite enums and the supported owned resources. Forward type
 references are allowed, but by-value containment must be acyclic even in unused
-declarations. Records remain nominal and move-only. Containment and named-root
+declarations. Records remain nominal and move-only unless explicitly declared
+`#[derive(Copy)]` as described below. Containment and named-root
 field paths are bounded to 64 levels, with the existing byte and work ceilings.
 
 ```text
@@ -455,6 +456,33 @@ Scalar leaf accesses retain their existing fuel charge. Indexed writes evaluate
 RHS then index, charge fuel, check signed bounds, and finally store. Earlier
 moves/helper effects survive a later failure. Reference and native consumers
 transfer initialized leaves and empty sentinels without copying padding.
+
+## Copy records
+
+Place `#[derive(Copy)]` immediately before a struct declaration to permit
+copying its complete value through assignments, arguments, returns and record
+patterns. Each copy owns independent fields; the original remains available.
+See the [Copy guide](../docs/COPY.md) for a complete example.
+
+Every field must be a scalar or another explicitly marked Copy record. A generic
+field requires a `Copy` bound, and each concrete application must satisfy that
+bound. Empty records are allowed. By-value cycles, arrays, enums, references,
+vectors, byte buffers and files are not allowed in Copy records. An unmarked
+record stays affine even if all its fields are scalars. Nominal identities must
+match exactly; matching field layouts do not make distinct records compatible.
+
+A shared borrow permits copying; an active exclusive borrow prevents it.
+Copies preserve the source's ownership generation and existing shared borrows.
+Execution validates all initialized fields and the destination state before
+writing any destination field. Record padding is neither read nor copied.
+Bounded reference execution charges `1 + 2w` before the operation, where `w`
+is the recursive initialized-cell width; insufficient fuel leaves both values
+unchanged.
+
+The attribute does not add user-defined traits or a general `Clone` operation.
+Aggregate field reads remain unavailable: extract nested records with a record
+pattern or pass the complete record. Vectors and scalar slices still require
+scalar elements; `Copy` alone does not authorize a record element type.
 
 ## Call-only projected array slices
 
@@ -906,7 +934,8 @@ arguments; omitted parameters and inference placeholders are not supported.
 Repeated occurrences must agree on the
 same type identity, including nominal package and declaration identity. An
 unconstrained parameter is affine: passing or returning it moves the value even
-when a particular call uses a scalar. `T: Copy` permits repeated scalar reads;
+when a particular call uses a scalar. `T: Copy` permits repeated uses of scalars
+and explicitly checked Copy records;
 it does not authorize arithmetic, comparison, field access or conversions on T.
 Generic definitions are checked with distinct opaque parameters, including
 unused definitions. Unknown or repeated bounds are errors.
@@ -930,7 +959,7 @@ apply; exceeding a limit reports a compilation error.
 
 ## Generic structs and enums
 
-Struct and enum declarations may declare the same type parameters and scalar
+Struct and enum declarations may declare the same type parameters and
 `Copy` bounds as functions. Type applications use `Cell<T>` and
 `Result<T, E>` in annotations, fields, payloads and function signatures.
 Applications resolve in the module containing that syntax. Their identity

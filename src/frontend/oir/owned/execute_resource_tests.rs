@@ -7,6 +7,7 @@ fn declarations() -> (Declarations, Span) {
     let mut inner = fixture::record(&[hir::Ty::Unit, hir::Ty::I32], span);
     inner.fields[0].ty = ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf));
     let outer = RawRecordDecl {
+        is_copy: false,
         id: RecordId(1),
         span,
         fields: [AggregateTy::Record(RecordId(0)), AggregateTy::ByteBuf]

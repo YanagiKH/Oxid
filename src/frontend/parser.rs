@@ -372,6 +372,7 @@ fn parse_counted_with_policies(
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         parsed_has_named_slice: false,
+        parsed_has_copy_records: false,
         tokens,
         cursor: 0,
         pending_equal: None,
@@ -448,68 +449,84 @@ fn parse_counted_with_policies(
                 Ok(())
             })
         } else {
-            let public = if mode == SourceMode::ProjectCandidate
-                && parser.peek().kind == Kind::Pub
-                && (matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
-                    || parser.next_enum_keyword("enum"))
-            {
-                parser.take(Kind::Pub).map(|token| {
-                    parser.project_recovery = true;
-                    token.span
-                })
-            } else {
-                None
-            };
-            if parser.enum_keyword("enum") {
-                parser.enumeration(public).and_then(|enumeration| {
-                    parser.candidate_reserve(
-                        &mut enumerations,
-                        MAX_NODES,
-                        "enum declarations",
-                        enumeration.name,
-                    )?;
-                    parser.candidate_reserve(
-                        &mut items,
-                        MAX_NODES,
-                        "syntax items",
-                        enumeration.name,
-                    )?;
-                    items.push(ItemId::Enum(enumerations.len()));
-                    enumerations.push(enumeration);
-                    Ok(())
-                })
-            } else if mode.owned() && parser.peek().kind == Kind::Struct {
-                parser.record(public).and_then(|record| {
-                    parser.candidate_reserve(
-                        &mut records,
-                        MAX_NODES,
-                        "syntax records",
-                        record.name,
-                    )?;
-                    parser.candidate_reserve(&mut items, MAX_NODES, "syntax items", record.name)?;
-                    items.push(ItemId::Struct(records.len()));
-                    records.push(record);
-                    Ok(())
-                })
-            } else {
-                parser.function(public).and_then(|function| {
-                    parser.candidate_reserve(
-                        &mut functions,
-                        MAX_NODES,
-                        "syntax functions",
-                        function.name,
-                    )?;
-                    parser.candidate_reserve(
-                        &mut items,
-                        MAX_NODES,
-                        "syntax items",
-                        function.name,
-                    )?;
-                    items.push(ItemId::Function(functions.len()));
-                    functions.push(function);
-                    Ok(())
-                })
-            }
+            (|| {
+                let derive_copy = parser.copy_attribute()?;
+                let public = if mode == SourceMode::ProjectCandidate
+                    && parser.peek().kind == Kind::Pub
+                    && (matches!(parser.next_kind(), Kind::Fn | Kind::Struct)
+                        || parser.next_enum_keyword("enum"))
+                {
+                    parser.take(Kind::Pub).map(|token| {
+                        parser.project_recovery = true;
+                        token.span
+                    })
+                } else {
+                    None
+                };
+                if derive_copy.is_some() && parser.peek().kind != Kind::Struct {
+                    return Err(parser.diagnostic(
+                        "E0202",
+                        "parse",
+                        "Copy derivation requires a record declaration",
+                        derive_copy,
+                    ));
+                }
+                if parser.enum_keyword("enum") {
+                    parser.enumeration(public).and_then(|enumeration| {
+                        parser.candidate_reserve(
+                            &mut enumerations,
+                            MAX_NODES,
+                            "enum declarations",
+                            enumeration.name,
+                        )?;
+                        parser.candidate_reserve(
+                            &mut items,
+                            MAX_NODES,
+                            "syntax items",
+                            enumeration.name,
+                        )?;
+                        items.push(ItemId::Enum(enumerations.len()));
+                        enumerations.push(enumeration);
+                        Ok(())
+                    })
+                } else if mode.owned() && parser.peek().kind == Kind::Struct {
+                    parser.record(public, derive_copy).and_then(|record| {
+                        parser.candidate_reserve(
+                            &mut records,
+                            MAX_NODES,
+                            "syntax records",
+                            record.name,
+                        )?;
+                        parser.candidate_reserve(
+                            &mut items,
+                            MAX_NODES,
+                            "syntax items",
+                            record.name,
+                        )?;
+                        items.push(ItemId::Struct(records.len()));
+                        records.push(record);
+                        Ok(())
+                    })
+                } else {
+                    parser.function(public).and_then(|function| {
+                        parser.candidate_reserve(
+                            &mut functions,
+                            MAX_NODES,
+                            "syntax functions",
+                            function.name,
+                        )?;
+                        parser.candidate_reserve(
+                            &mut items,
+                            MAX_NODES,
+                            "syntax items",
+                            function.name,
+                        )?;
+                        items.push(ItemId::Function(functions.len()));
+                        functions.push(function);
+                        Ok(())
+                    })
+                }
+            })()
         };
         if let Err(error) = result {
             let resource_failure = parser.enums_enabled() && error.code == "E0400";
@@ -579,6 +596,7 @@ fn parse_counted_with_policies(
                 parser.path_segments,
                 imports,
                 parser.parsed_has_named_slice,
+                parser.parsed_has_copy_records,
             ),
             parser.nodes,
         ))
@@ -599,6 +617,7 @@ struct Parser<'a> {
     project_recovery: bool,
     // Written in the already bounded named-slice parse branch, with no AST scan.
     parsed_has_named_slice: bool,
+    parsed_has_copy_records: bool,
     tokens: Vec<Token>,
     cursor: usize,
     pending_equal: Option<Token>,
@@ -1350,9 +1369,31 @@ impl Parser<'_> {
         }
         self.ty()
     }
+    fn copy_attribute(&mut self) -> Result<Option<super::source::Span>, Box<Diagnostic>> {
+        if !self.wide_scalars_enabled() || self.source.text_at(self.peek().span) != "#" {
+            return Ok(None);
+        }
+        self.node()?;
+        let start = self.bump().span;
+        let mut end = start.end;
+        for spelling in ["[", "derive", "(", "Copy", ")", "]"] {
+            if self.source.text_at(self.peek().span) != spelling {
+                return Err(self.diagnostic(
+                    "E0202",
+                    "parse",
+                    "only #[derive(Copy)] on records is supported",
+                    Some(self.peek().span),
+                ));
+            }
+            end = self.bump().span.end;
+        }
+        self.parsed_has_copy_records = true;
+        Ok(Some(self.source.span(start.start, end)))
+    }
     fn record(
         &mut self,
         public: Option<super::source::Span>,
+        derive_copy: Option<super::source::Span>,
     ) -> Result<StructDecl, Box<Diagnostic>> {
         self.node()?;
         let start = self
@@ -1393,10 +1434,13 @@ impl Parser<'_> {
             .expect(Kind::RBrace, "expected record fields `}`")?
             .span;
         Ok(StructDecl {
+            derive_copy,
             public,
             name,
             fields,
-            span: self.source.span(public.unwrap_or(start).start, end.end),
+            span: self
+                .source
+                .span(derive_copy.or(public).unwrap_or(start).start, end.end),
             end,
         })
     }
@@ -2802,3 +2846,6 @@ fn bounded_enum_production_parser_policy_layout() {
     );
     assert_eq!(std::mem::size_of::<EnumSyntaxPolicy>(), 1);
 }
+
+#[cfg(test)]
+mod copy_record_tests;

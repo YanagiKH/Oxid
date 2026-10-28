@@ -791,6 +791,7 @@ impl<'a> Fingerprint<'a> {
                 ItemId::Struct(index) => {
                     assert!(records.visit(index).1, "duplicate item root");
                     let StructDecl {
+                        derive_copy,
                         public,
                         name,
                         fields,
@@ -798,6 +799,7 @@ impl<'a> Fingerprint<'a> {
                         end,
                     } = &program.records[index];
                     self.tag("struct");
+                    self.optional_span(*derive_copy);
                     self.optional_span(*public);
                     self.spelling(*name);
                     self.generics(*name);

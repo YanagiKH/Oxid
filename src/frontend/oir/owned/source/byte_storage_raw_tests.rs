@@ -146,6 +146,7 @@ fn byte_storage_raw_record_byte_fields_are_checked_even_unused_and_nested() {
     for n in [0, 1, 1024] {
         for nested in [false, true] {
             let mut records = vec![RawRecordDecl {
+                is_copy: false,
                 id: RecordId(0),
                 span: s(0),
                 fields: vec![RawFieldDecl {
@@ -159,6 +160,7 @@ fn byte_storage_raw_record_byte_fields_are_checked_even_unused_and_nested() {
             }];
             if nested {
                 records.push(RawRecordDecl {
+                    is_copy: false,
                     id: RecordId(1),
                     span: s(2),
                     fields: vec![RawFieldDecl {

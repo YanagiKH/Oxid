@@ -1042,6 +1042,7 @@ impl fmt::Display for Instruction<'_> {
         match self.0 {
             I::AcquireLocalBorrow(id) => write!(f, "[\"acquire-local-borrow\",{}]", id.0),
             I::ReleaseLocalBorrow(id) => write!(f, "[\"release-local-borrow\",{}]", id.0),
+            I::CopyInitialize { .. } => unreachable!("Copy record observer gate"),
             I::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             I::PrepareBorrowRange { .. }
             | I::Experimental { .. }

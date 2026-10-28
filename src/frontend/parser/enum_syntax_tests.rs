@@ -532,6 +532,7 @@ fn parser_for<'a>(
         storage: enums::SyntaxStorage::default(),
         project_recovery: false,
         parsed_has_named_slice: false,
+        parsed_has_copy_records: false,
         tokens: lexer::lex(file).unwrap(),
         cursor: 0,
         pending_equal: None,

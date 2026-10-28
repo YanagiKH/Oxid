@@ -141,6 +141,9 @@ const _: () = assert!(
         == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
 );
 impl<'a> ExecutionPlan<'a> {
+    pub(super) fn uses_checked_copies(&self) -> bool {
+        self.integer_extension & 128 != 0
+    }
     pub(super) fn uses_vectors(&self) -> bool {
         self.integer_extension & 32 != 0
     }
@@ -303,6 +306,7 @@ impl<'a> ExecutionPlan<'a> {
             | OwnedInstruction::ConstructComposite { destination, .. } => {
                 1 + self.owner_width(f, *destination)
             }
+            OwnedInstruction::CopyInitialize { source, .. } => 1 + 2 * self.owner_width(f, *source),
             OwnedInstruction::MoveInitialize { source, .. }
             | OwnedInstruction::PrepareOwned { source, .. } => 1 + self.owner_width(f, *source),
             OwnedInstruction::DestructureRecord { source, fields } => {
@@ -565,7 +569,7 @@ impl<'a> ExecutionPlan<'a> {
                 borrowed_loans,
             });
         }
-        let result = Self {
+        let mut result = Self {
             witness,
             functions: plans,
             // The independently checked production ceiling is 32 MiB. Packing
@@ -600,6 +604,11 @@ impl<'a> ExecutionPlan<'a> {
                 add(1, mul(2, result.owner_width(f.id, OwnerPlaceId(owner)))?)?;
             }
             for statement in f.blocks.iter().flat_map(|block| &block.statements) {
+                // The existing complete operation-cost walk also derives the
+                // final closed policy bit. No second discovery scan or carrier.
+                if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
+                    result.integer_extension |= 128;
+                }
                 if let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind {
                     add(
                         add(1, mul(2, result.owner_width(f.id, *source))?)?,

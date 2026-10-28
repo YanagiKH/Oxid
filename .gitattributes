@@ -97,3 +97,6 @@ tests/fixtures/typed_vectors/reject/wrong_type_arity.ox -text
 tests/fixtures/typed_vectors/scenarios/array-ranges.ox -text
 tests/fixtures/typed_vectors/scenarios/dynamic-range.ox -text
 tests/fixtures/typed_vectors/scenarios/projected-vector.ox -text
+
+tests/fixtures/copy_records/all_scalars.ox -text
+tests/fixtures/copy_records/wide_unicode.ox -text

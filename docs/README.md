@@ -33,6 +33,7 @@ described in the guides below.
 - [Check the native toolchain](NATIVE_DOCTOR.md)
 - [Try the multi-package byte-count application](../apps/byte-count/README.md)
 - [Use growable vectors](VECTORS.md)
+- [Copy records](COPY.md)
 - [Read the typed language reference](../spec/typed-preview.md)
 - [Check native compilation requirements and limits](../spec/native-preview.md)
 

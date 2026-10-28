@@ -115,6 +115,7 @@ fn c3a_inventory_reads_every_actual_nested_vector_length_and_capacity_without_al
     fields.extend([row_field(at, 0), row_field(at, 1)]);
     let mut records = Vec::with_capacity(2);
     records.push(Record {
+        is_copy: false,
         id: RecordId(0),
         name_span: at,
         span: at,
@@ -302,6 +303,7 @@ fn c3a_inventory_counts_enum_fields_but_keeps_enum_references_and_empty_matches_
                 let mut field = row_field(at, 0);
                 field.ty = ValueTy::Owned(enumeration);
                 parts.0.push(Record {
+                    is_copy: false,
                     id: RecordId(0),
                     name_span: at,
                     span: at,

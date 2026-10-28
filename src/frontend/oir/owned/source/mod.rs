@@ -127,3 +127,6 @@ mod character_tests;
 
 #[cfg(test)]
 mod record_pattern_tests;
+
+#[cfg(test)]
+pub(super) mod copy_record_tests;

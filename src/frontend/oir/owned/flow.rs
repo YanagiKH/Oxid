@@ -72,6 +72,7 @@ pub(super) enum DeniedOperation {
     ConstructEnum,
     ConsumeVariant,
     MatchDispatch,
+    CopyInitialize,
     MoveInitialize,
     Replace,
     Discard,
@@ -91,6 +92,7 @@ pub(super) enum DeniedOperation {
 pub(super) enum DeniedRole {
     Storage,
     InitializationDestination,
+    SourceCopy,
     SourceConsume,
     ReplacementDestination,
     FieldBase,
@@ -187,6 +189,16 @@ impl DenialContext {
                 if base == AccessBase::Owner(*destination) =>
             {
                 DeniedOperation::ConstructArray
+            }
+            (OwnedInstruction::CopyInitialize { source, destination }, SourceCopy)
+                if base == AccessBase::Owner(*source) => {
+                counterpart = Some(Self::owner(f, *destination)?);
+                DeniedOperation::CopyInitialize
+            }
+            (OwnedInstruction::CopyInitialize { source, destination }, InitializationDestination)
+                if base == AccessBase::Owner(*destination) => {
+                counterpart = Some(Self::owner(f, *source)?);
+                DeniedOperation::CopyInitialize
             }
             (
                 OwnedInstruction::MoveInitialize {
@@ -426,6 +438,7 @@ fn step(
         | OwnedInstruction::ReadStdin { destination, .. }
         | OwnedInstruction::WriteStdout { destination, .. }
         | OwnedInstruction::ConstructComposite { destination, .. }
+        | OwnedInstruction::CopyInitialize { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
         {
@@ -475,6 +488,12 @@ fn step(
             next = Available;
             failure = Violation::Initialization;
             role = DeniedRole::ReplacementDestination;
+        }
+        OwnedInstruction::CopyInitialize { source, .. } if *source == owner => {
+            event = true;
+            legal = &[Available];
+            next = Available;
+            role = DeniedRole::SourceCopy;
         }
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::ConstructOwnedEnum {
@@ -977,6 +996,21 @@ fn accesses(
         }
         OwnedInstruction::WriteIndex { base, .. } => {
             visit(*base, Access::Write, DeniedRole::ArrayBase)?
+        }
+        OwnedInstruction::CopyInitialize {
+            source,
+            destination,
+        } => {
+            visit(
+                AccessBase::Owner(*source),
+                Access::Read,
+                DeniedRole::SourceCopy,
+            )?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
         }
         OwnedInstruction::MoveInitialize {
             source,

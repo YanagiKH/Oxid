@@ -109,6 +109,7 @@ fn setup(active: bool) -> (SourceMap, RawOwnedProgram, Span) {
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![RawRecordDecl {
+                is_copy: false,
                 id: RecordId(0),
                 span: s,
                 fields: vec![],
@@ -525,6 +526,7 @@ fn clone_raw(p: &RawOwnedProgram) -> RawOwnedProgram {
             .records
             .iter()
             .map(|r| RawRecordDecl {
+                is_copy: false,
                 id: r.id,
                 span: r.span,
                 fields: r

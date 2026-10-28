@@ -20,23 +20,40 @@ impl Project {
         Self(root)
     }
     fn unavailable_multifile(&self) -> bool {
+        self.unavailable_source_policy(
+            "error[E0005] (source): module source policy is not qualified on this host",
+        )
+    }
+    fn unavailable_packages(&self) -> bool {
+        self.unavailable_source_policy(
+            "error[E0006] (package): package source policy is qualified only on Linux or macOS",
+        )
+    }
+    fn unavailable_source_policy(&self, expected: &str) -> bool {
         if cfg!(any(target_os = "linux", target_os = "macos")) {
             return false;
         }
-        let output = self.invoke(&["check"]);
-        assert_eq!(output.status.code(), Some(1), "{output:?}");
-        assert!(output.stdout.is_empty(), "{output:?}");
-        let message = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            message.contains("error[E0005] (source):") && message.contains("qualified"),
-            "{output:?}"
-        );
+        for command in ["check", "run"] {
+            let output = self.invoke(&[command]);
+            assert_eq!(output.status.code(), Some(1), "{command}: {output:?}");
+            assert!(output.stdout.is_empty(), "{command}: {output:?}");
+            let message = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(
+                message.lines().next(),
+                Some(expected),
+                "{command}: {message}"
+            );
+            for path in [".oxid", "oxid.lock", "download-cache"] {
+                assert!(!self.0.join(path).exists(), "{command} created {path}");
+            }
+        }
         true
     }
     fn invoke(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_oxid"))
             .args(args)
             .current_dir(&self.0)
+            .env("OXID_CACHE_DIR", self.0.join("download-cache"))
             .output()
             .unwrap()
     }
@@ -440,7 +457,7 @@ fn generic_functions_keep_dependency_type_and_definition_identity() {
         )
         .unwrap();
     }
-    if project.unavailable_multifile() {
+    if project.unavailable_packages() {
         return;
     }
     let output = project.invoke(&["run"]);
