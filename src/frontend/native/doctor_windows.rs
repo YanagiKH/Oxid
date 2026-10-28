@@ -117,6 +117,13 @@ const _: () = {
 unsafe extern "system" {
     fn CloseHandle(handle: RawHandle) -> i32;
     fn GetLastError() -> u32;
+    fn CompareStringOrdinal(
+        left: *const u16,
+        left_length: i32,
+        right: *const u16,
+        right_length: i32,
+        ignore_case: i32,
+    ) -> i32;
     fn CreateJobObjectW(attributes: *const SecurityAttributes, name: *const u16) -> RawHandle;
     fn SetInformationJobObject(
         job: RawHandle,
@@ -535,10 +542,58 @@ fn command_line(program: &Path, arguments: &[OsString]) -> Result<Vec<u16>, Stri
     line.push(0);
     Ok(line)
 }
-fn environment() -> Result<Vec<u16>, String> {
+fn environment(deadline: Instant) -> Result<Vec<u16>, String> {
+    // Environment ordering is Windows ordinal, case-insensitive Unicode by
+    // variable name. A fallible in-place heap sort can stop immediately on an
+    // API error or deadline; it never substitutes a different collation.
+    type Entry = (usize, Vec<u16>);
+    fn compare(
+        left: &Entry,
+        right: &Entry,
+        deadline: Instant,
+    ) -> Result<std::cmp::Ordering, String> {
+        if Instant::now() >= deadline {
+            return Err("probe environment setup timed out".into());
+        }
+        // SAFETY: The lengths are bounded UTF-16 key lengths in these live
+        // entries, without their separators/values. Windows retains raw UTF-16.
+        match unsafe {
+            CompareStringOrdinal(
+                left.1.as_ptr(),
+                left.0 as i32,
+                right.1.as_ptr(),
+                right.0 as i32,
+                1,
+            )
+        } {
+            1 => Ok(std::cmp::Ordering::Less),
+            2 => Ok(std::cmp::Ordering::Equal),
+            3 => Ok(std::cmp::Ordering::Greater),
+            _ => Err(os_error("compare Windows probe environment names")),
+        }
+    }
+    fn sift(entries: &mut [Entry], mut root: usize, deadline: Instant) -> Result<(), String> {
+        while root < entries.len() / 2 {
+            let mut child = root * 2 + 1;
+            if child + 1 < entries.len()
+                && compare(&entries[child], &entries[child + 1], deadline)?.is_lt()
+            {
+                child += 1;
+            }
+            if !compare(&entries[root], &entries[child], deadline)?.is_lt() {
+                break;
+            }
+            entries.swap(root, child);
+            root = child;
+        }
+        Ok(())
+    }
     let mut entries = Vec::new();
     let mut units = 1usize;
     for (key, value) in std::env::vars_os() {
+        if Instant::now() >= deadline {
+            return Err("probe environment setup timed out".into());
+        }
         if key
             .to_string_lossy()
             .eq_ignore_ascii_case("CCC_OVERRIDE_OPTIONS")
@@ -547,35 +602,26 @@ fn environment() -> Result<Vec<u16>, String> {
         }
         let mut entry = wide(&key)?;
         entry.pop();
+        let key_units = entry.len();
         entry.push(u16::from(b'='));
         entry.extend(wide(&value)?);
         units = units
             .checked_add(entry.len())
             .ok_or("probe environment overflow")?;
         if units > 2 * 1024 * 1024 {
-            return Err("probe environment exceeds byte limit".into());
+            return Err("probe environment exceeds UTF-16 storage limit".into());
         }
-        entries.push(entry);
+        entries.push((key_units, entry));
     }
-    entries.sort_unstable_by(|left, right| {
-        left.iter()
-            .map(|c| {
-                if (*c >= 97) && (*c <= 122) {
-                    *c - 32
-                } else {
-                    *c
-                }
-            })
-            .cmp(right.iter().map(|c| {
-                if (*c >= 97) && (*c <= 122) {
-                    *c - 32
-                } else {
-                    *c
-                }
-            }))
-    });
+    for root in (0..entries.len() / 2).rev() {
+        sift(&mut entries, root, deadline)?;
+    }
+    for end in (1..entries.len()).rev() {
+        entries.swap(0, end);
+        sift(&mut entries[..end], 0, deadline)?;
+    }
     let mut block = Vec::new();
-    for entry in entries {
+    for (_, entry) in entries {
         block.extend(entry);
     }
     block.push(0);
@@ -631,7 +677,7 @@ fn capture(
     let application = wide(program.as_os_str())?;
     let mut line = command_line(program, arguments)?;
     let directory = cwd.map(|path| wide(path.as_os_str())).transpose()?;
-    let environment = environment()?;
+    let environment = environment(deadline)?;
     // SAFETY: These C structures contain only scalar/pointer fields. All values
     // referenced by attributes, startup, argv and environment outlive the call.
     let mut startup: StartupInfoEx = unsafe { std::mem::zeroed() };
@@ -642,6 +688,9 @@ fn capture(
     startup.startup.stderr = handles[2];
     startup.attributes = attributes.raw();
     let mut information: ProcessInformation = unsafe { std::mem::zeroed() };
+    if Instant::now() >= deadline {
+        return Err("probe setup timed out before process creation".into());
+    }
     let created = unsafe {
         CreateProcessW(
             application.as_ptr(),

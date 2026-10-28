@@ -39,7 +39,7 @@ typedef ssize_t oxid_io_count;
 #define native_read read
 #define native_write write
 #define native_exit _exit
-static int native_interrupted(void) { return errno == EINTR; }
+#define native_interrupted() (errno == EINTR)
 #endif
 
 /* Private bounded-input adapter. Exactly one unbuffered one-byte attempt;
