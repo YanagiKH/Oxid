@@ -34,8 +34,8 @@ def pe(data):
     start = struct.unpack_from("<I", data, 60)[0]
     require(64 <= start <= len(data) - 24 and data[start:start + 4] == b"PE\0\0", "invalid PE signature")
     machine, count, timestamp, _, _, optional_bytes, flags = struct.unpack_from("<HHIIIHH", data, start + 4)
-    require(machine == 0x8664 and 0 < count <= 96 and flags & 2 and not flags & 0x2000,
-            "requires AMD64 executable COFF")
+    require(machine == 0x8664 and 0 < count <= 96 and flags & 2 and not flags & (0x2000 | 1),
+            "requires AMD64 executable COFF with relocations retained")
     optional = start + 24
     require(optional_bytes >= 240 and optional + optional_bytes + count * 40 <= len(data), "truncated PE headers")
     require(struct.unpack_from("<H", data, optional)[0] == 0x20B, "requires PE32+")
@@ -79,6 +79,10 @@ def pe(data):
                 "non-system or dynamic CRT DLL dependency: " + library)
         imports.append(library)
     require(terminated and imports, "unterminated or empty import table")
+    require(directories >= 6, "missing base relocation directory")
+    relocation_rva, relocation_length = struct.unpack_from("<II", data, optional + 152)
+    require(relocation_rva and relocation_length >= 8, "ASLR requires retained base relocations")
+    extent(relocation_rva, relocation_length)
     return {"machine": machine, "format": "PE32+", "dll_flags": dll,
             "stack_reserve": stack, "stack_commit": committed, "timestamp": timestamp,
             "imports": imports}

@@ -17,6 +17,7 @@ def image(library=b"KERNEL32.dll"):
     struct.pack_into("<QQ", data, optional + 72, 8388608, 4096)
     struct.pack_into("<I", data, optional + 108, 16)
     struct.pack_into("<II", data, optional + 120, 0x1000, 40)
+    struct.pack_into("<II", data, optional + 152, 0x1100, 12)
     struct.pack_into("<4I", data, 392 + 8, 512, 0x1000, 512, 512)
     struct.pack_into("<5I", data, 512, 0x1060, 0, 0, 0x1040, 0x1080)
     data[576:576 + len(library) + 1] = library + b"\0"
@@ -40,6 +41,9 @@ class WindowsNativePeTests(unittest.TestCase):
             ("optional-magic", 152, "H", 0x10B),
             ("not-executable", 150, "H", 0),
             ("dll-image", 150, "H", 0x2002),
+            ("stripped-relocations", 150, "H", 3),
+            ("no-base-relocations", 304, "I", 0),
+            ("truncated-base-relocations", 308, "I", 7),
             ("non-console", 220, "H", 2),
             ("no-aslr", 222, "H", 0x120),
             ("no-high-entropy", 222, "H", 0x140),
