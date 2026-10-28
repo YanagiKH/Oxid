@@ -636,14 +636,18 @@ impl Workspace {
                 .position(|candidate| *candidate == index)
                 .expect("selected session");
             let member = &self.members[index];
-            let artifact = member.root.join(".oxid/bin").join(
+            let artifact =
                 member
-                    .snapshot
-                    .manifest
-                    .name
-                    .as_deref()
-                    .expect("admitted name"),
-            );
+                    .root
+                    .join(".oxid/bin")
+                    .join(frontend::NativeBuildSettings::executable_name(
+                        member
+                            .snapshot
+                            .manifest
+                            .name
+                            .as_deref()
+                            .expect("admitted name"),
+                    ));
             let command = if options.command() == "build" && !member.library() {
                 frontend::PackageCommand::Compile {
                     output: artifact

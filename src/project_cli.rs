@@ -1217,7 +1217,9 @@ fn build(
     }
     let name = snapshot.manifest.name.as_deref().unwrap_or("app");
     validate_name(name)?;
-    let output = root.join(".oxid/bin").join(name);
+    let output = root
+        .join(".oxid/bin")
+        .join(frontend::NativeBuildSettings::executable_name(name));
     execute_project(
         root,
         snapshot,
@@ -1394,6 +1396,9 @@ fn test(
 }
 
 fn validate_name(name: &str) -> Result<(), String> {
+    if cfg!(windows) && frontend::NativeBuildSettings::windows_device_name(name) {
+        return Err("project name is reserved by Windows".into());
+    }
     if name.is_empty()
         || !name
             .bytes()

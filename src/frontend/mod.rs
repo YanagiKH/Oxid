@@ -25,6 +25,7 @@ mod parser;
 mod project;
 mod source;
 mod typeck;
+mod windows_native;
 pub(crate) use build_config::{ExecutionPolicy, NativeBuildSettings, NativeOptimization};
 pub use driver::dispatch;
 pub(crate) use driver::{

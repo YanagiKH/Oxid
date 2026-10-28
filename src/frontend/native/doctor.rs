@@ -183,6 +183,17 @@ pub(crate) fn run() -> Report {
         )),
     );
     #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    report.set(
+        "compile-link",
+        Err("this build cannot yet verify a Windows native toolchain".into()),
+    );
+    #[cfg(all(
         any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
