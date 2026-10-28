@@ -19,7 +19,7 @@ import types
 PREDECESSOR = '9a5ecaaeb5fa50aff2296bf990d63167143cf312'
 PREDECESSOR_POLICY = 'scripts/verify_copy_record_debug_compatibility.py'
 PREDECESSOR_POLICY_PIN = (50526, '9d4c5981b6f027d782a4a7e7505cc2cce812c6c689e8fe8bbb592b5745b7f688')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 WINDOWS_NATIVE_CHANGED = frozenset(['native/typed_preview.c',
  'src/frontend/build_config.rs',
  'src/frontend/driver.rs',
