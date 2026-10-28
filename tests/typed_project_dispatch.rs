@@ -140,7 +140,16 @@ fn unused_child_is_checked_before_entry_or_native_admission() {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn child_discovery_is_rejected_at_the_root_declaration() {
     let scratch = Scratch::new(&[("main.ox", "mod child; fn main()->i32{return 7;}")]);

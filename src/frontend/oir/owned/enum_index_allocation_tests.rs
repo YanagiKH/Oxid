@@ -710,7 +710,16 @@ fn enum_index_lifecycle_two_file_loader_success_and_every_reserve_failure_drop()
     );
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn enum_index_lifecycle_unqualified_host_drops_all_loader_owners() {
     const TRACE_ROWS: usize = 512;

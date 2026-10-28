@@ -283,7 +283,16 @@ fn unit2_measured_layout_and_requested_inventory() {
     println!("validation span callbacks {spans}");
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn project_candidate_module_policy_is_explicit_on_unqualified_hosts() {
     let f = Fixture::new();

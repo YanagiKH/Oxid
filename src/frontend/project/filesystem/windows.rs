@@ -29,6 +29,7 @@ const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_FLAG_POSIX_SEMANTICS: u32 = 0x0100_0000;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_TYPE_DISK: u32 = 1;
+const VOLUME_NAME_GUID: u32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -421,41 +422,48 @@ fn qualified_volume(name: &[u16], serial: u32, expected: u32, maximum_component:
         && maximum_component == 255
 }
 
-fn final_name(
+fn pathname_error(error: io::Error, flags: u32, origin: Span) -> Box<Diagnostic> {
+    if flags == VOLUME_NAME_GUID && matches!(error.raw_os_error(), Some(1 | 3 | 50 | 87)) {
+        return policy(
+            "Windows module source policy requires an ordinary local NTFS volume identity",
+            origin,
+        );
+    }
+    io_error(error, "", Some(origin))
+}
+
+fn query_name(
     file: &File,
-    expected: &Path,
+    flags: u32,
     scratch: &Scratch,
     allocator: &mut Allocator,
     origin: Span,
-) -> Result<(), Box<Diagnostic>> {
-    // VOLUME_NAME_DOS | FILE_NAME_NORMALIZED matches std canonicalize. Validate
-    // against the ordinary canonical root plus exact scanned components; do not
-    // create a second lossy pathname or merge hardlink names by file ID.
+    kind: &'static str,
+) -> Result<Vec<u16>, Box<Diagnostic>> {
+    // SAFETY: This first call borrows a live handle and requests only a length.
     let required =
-        unsafe { GetFinalPathNameByHandleW(file.as_raw_handle(), std::ptr::null_mut(), 0, 0) };
+        unsafe { GetFinalPathNameByHandleW(file.as_raw_handle(), std::ptr::null_mut(), 0, flags) };
     if required == 0 {
-        return Err(io_error(io::Error::last_os_error(), "", Some(origin)));
+        return Err(pathname_error(io::Error::last_os_error(), flags, origin));
     }
     let units = usize::try_from(required).map_err(|_| super::super::overflow(Some(origin)))?;
-    let mut wide = scratch.wide(units, allocator, origin, "Windows module final pathname")?;
+    let mut wide = scratch.wide(units, allocator, origin, kind)?;
     wide.resize(units, 0);
     // SAFETY: required was bounded and fallibly reserved; resize initialized
     // the whole output range. No returned length is trusted before the checks.
-    let count =
-        unsafe { GetFinalPathNameByHandleW(file.as_raw_handle(), wide.as_mut_ptr(), required, 0) };
+    let count = unsafe {
+        GetFinalPathNameByHandleW(file.as_raw_handle(), wide.as_mut_ptr(), required, flags)
+    };
     if count == 0 {
-        return Err(io_error(io::Error::last_os_error(), "", Some(origin)));
+        return Err(pathname_error(io::Error::last_os_error(), flags, origin));
     }
     let count = usize::try_from(count).map_err(|_| super::super::overflow(Some(origin)))?;
-    validate_final_name(&wide, count, expected, origin)
+    validate_name_buffer(&wide, count, origin)?;
+    wide.truncate(count);
+    Ok(wide)
 }
 
-fn validate_final_name(
-    wide: &[u16],
-    count: usize,
-    expected: &Path,
-    origin: Span,
-) -> Result<(), Box<Diagnostic>> {
+fn validate_name_buffer(wide: &[u16], count: usize, origin: Span) -> Result<(), Box<Diagnostic>> {
     if count >= wide.len() || wide[count] != 0 || wide[..count].contains(&0) {
         return Err(policy(
             "module canonical pathname changed during loading",
@@ -468,6 +476,44 @@ fn validate_final_name(
             origin,
         ));
     }
+    Ok(())
+}
+
+fn final_name(
+    file: &File,
+    expected: &Path,
+    scratch: &Scratch,
+    allocator: &mut Allocator,
+    origin: Span,
+) -> Result<(), Box<Diagnostic>> {
+    // VOLUME_NAME_DOS | FILE_NAME_NORMALIZED matches std canonicalize. Validate
+    // against the ordinary canonical root plus exact scanned components; do not
+    // create a second lossy pathname or merge hardlink names by file ID.
+    let wide = query_name(
+        file,
+        0,
+        scratch,
+        allocator,
+        origin,
+        "Windows module final pathname",
+    )?;
+    if !wide.iter().copied().eq(expected.as_os_str().encode_wide()) {
+        return Err(policy(
+            "module canonical pathname changed during loading",
+            origin,
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_final_name(
+    wide: &[u16],
+    count: usize,
+    expected: &Path,
+    origin: Span,
+) -> Result<(), Box<Diagnostic>> {
+    validate_name_buffer(wide, count, origin)?;
     if !wide[..count]
         .iter()
         .copied()
@@ -477,6 +523,70 @@ fn validate_final_name(
             "module canonical pathname changed during loading",
             origin,
         ));
+    }
+    Ok(())
+}
+
+fn local_volume_name(
+    file: &File,
+    root: &Path,
+    scratch: &Scratch,
+    allocator: &mut Allocator,
+    origin: Span,
+) -> Result<(), Box<Diagnostic>> {
+    // Network shares have no volume GUID. A drive-shaped pathname plus the
+    // server's reported NTFS name must never be mistaken for local storage.
+    let wide = query_name(
+        file,
+        VOLUME_NAME_GUID,
+        scratch,
+        allocator,
+        origin,
+        "Windows module volume pathname",
+    )?;
+    validate_volume_name(&wide, root, origin)
+}
+
+fn validate_volume_name(wide: &[u16], root: &Path, origin: Span) -> Result<(), Box<Diagnostic>> {
+    let reject = || {
+        policy(
+            "Windows module source policy requires an ordinary local NTFS volume identity",
+            origin,
+        )
+    };
+    // \\?\Volume{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\ is 49 UTF-16 units.
+    // Check the entire closed prefix before any fixed-offset indexing.
+    const PREFIX: [u16; 11] = [92, 92, 63, 92, 86, 111, 108, 117, 109, 101, 123];
+    if wide.len() < 49 || !wide.starts_with(&PREFIX) {
+        return Err(reject());
+    }
+    for (position, &unit) in wide[11..47].iter().enumerate() {
+        let correct = if matches!(position, 8 | 13 | 18 | 23) {
+            unit == 45
+        } else {
+            matches!(unit, 48..=57 | 65..=70 | 97..=102)
+        };
+        if !correct {
+            return Err(reject());
+        }
+    }
+    if wide[47] != 125 || wide[48] != 92 {
+        return Err(reject());
+    }
+    let skip = match root.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::VerbatimDisk(_) => 7,
+            Prefix::Disk(_) => 3,
+            _ => return Err(reject()),
+        },
+        _ => return Err(reject()),
+    };
+    if !wide[49..]
+        .iter()
+        .copied()
+        .eq(root.as_os_str().encode_wide().skip(skip))
+    {
+        return Err(reject());
     }
     Ok(())
 }
@@ -501,6 +611,7 @@ pub(in crate::frontend::project) fn verify(
     let (root_file, root_identity) = open(root, true, &scratch, allocator, origin)?;
     volume(&root_file, root_identity, origin)?;
     final_name(&root_file, root, &scratch, allocator, origin)?;
+    local_volume_name(&root_file, root, &scratch, allocator, origin)?;
     let mut parents: [Option<Ancestor>; MAX_ANCESTORS] = std::array::from_fn(|_| None);
     parents[0] = Some(Ancestor {
         file: root_file,
@@ -633,10 +744,11 @@ mod tests {
             .iter()
             .filter(|event| event.kind.starts_with("Windows module "))
             .collect();
-        assert_eq!(wide.len(), 4);
+        assert_eq!(wide.len(), 5);
         for (event, expected) in wide.into_iter().zip([
             fixture.0.as_os_str().encode_wide().count() + 1,
             fixture.0.as_os_str().encode_wide().count() + 1,
+            49 + fixture.0.as_os_str().encode_wide().count() - 7 + 1,
             path.as_os_str().encode_wide().count() + 1,
             path.as_os_str().encode_wide().count() + 1,
         ]) {
@@ -645,7 +757,7 @@ mod tests {
             assert!(event.success);
         }
         let attempts = allocator.attempts;
-        assert_eq!(attempts, 5);
+        assert_eq!(attempts, 6);
         drop(child);
         fixture.moved();
         for attempt in 1..=attempts {
@@ -778,7 +890,7 @@ mod tests {
             .unwrap_err();
             assert_eq!((error.code, error.stage), ("E0400", "source-project"));
             assert_eq!(error.message, "module directory scan budget exceeded");
-            assert_eq!(allocator.attempts, 3); // probe, root open, root pathname; no child open.
+            assert_eq!(allocator.attempts, 4); // probe, root open, DOS/GUID names; no child open.
             fixture.moved();
         }
     }
@@ -832,6 +944,44 @@ mod tests {
         wide[7] = 0xd800;
         let error = validate_final_name(&wide, count, path, origin()).unwrap_err();
         assert!(error.message.contains("not valid Unicode"));
+    }
+
+    #[test]
+    fn local_volume_query_accepts_only_a_closed_guid_root_with_the_same_opened_suffix() {
+        let root = Path::new(r"\\?\C:\ordinary\child");
+        let text = r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\ordinary\child";
+        let good: Vec<_> = text.encode_utf16().collect();
+        validate_volume_name(&good, root, origin()).unwrap();
+        for text in [
+            r"\\?\UNC\server\share\ordinary\child",
+            r"\\?\C:\ordinary\child",
+            r"\\?\Volume{0123456789ab-cdef-0123-456789abcdef}\ordinary\child",
+            r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdeg}\ordinary\child",
+            r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\elsewhere\child",
+        ] {
+            let wide: Vec<_> = text.encode_utf16().collect();
+            assert_eq!(
+                validate_volume_name(&wide, root, origin())
+                    .unwrap_err()
+                    .code,
+                "E0005"
+            );
+        }
+        for count in 0..49 {
+            assert!(validate_volume_name(&good[..count], root, origin()).is_err());
+        }
+        for code in [1, 3, 50, 87] {
+            let error = pathname_error(
+                io::Error::from_raw_os_error(code),
+                VOLUME_NAME_GUID,
+                origin(),
+            );
+            assert_eq!((error.code, error.stage), ("E0005", "source"));
+        }
+        for (code, flags) in [(5, VOLUME_NAME_GUID), (32, VOLUME_NAME_GUID), (3, 0)] {
+            let error = pathname_error(io::Error::from_raw_os_error(code), flags, origin());
+            assert_eq!((error.code, error.stage), ("E0002", "source"));
+        }
     }
 
     #[test]

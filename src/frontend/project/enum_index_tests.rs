@@ -393,7 +393,16 @@ fn enum_index_loader_and_project_headers_are_measured() {
 
 // Child modules intentionally remain unavailable until this host's filesystem
 // policy is qualified. Both enum loader entry points must retain that boundary.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn enum_index_loader_unqualified_host_stops_before_child_io() {
     let fixture = Fixture::new();
@@ -459,7 +468,16 @@ fn enum_index_loader_unqualified_host_stops_before_child_io() {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn enum_index_loader_unqualified_host_reserve_failures_stop_at_the_paid_prefix() {
     let fixture = Fixture::new();
