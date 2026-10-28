@@ -560,6 +560,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify Windows installer and recovery
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $shells = @((Get-Command pwsh).Source, (Get-Command powershell.exe).Source)
+          foreach ($installerShell in $shells) {
+            $env:OXID_TEST_POWERSHELL = $installerShell
+            python -B -m unittest discover -s scripts -p test_windows_installer.py
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Build and test current compiler
         shell: bash
         run: |
