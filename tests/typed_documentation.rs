@@ -62,6 +62,12 @@ fn failure(output: Output) -> Output {
     assert!(!output.status.success(), "{output:?}");
     output
 }
+fn source_policy_failure(output: Output, expected: &str) {
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(error.lines().next(), Some(expected), "{error}");
+}
 
 #[test]
 fn public_api_comments_generics_and_private_boundaries_are_documented() {
@@ -100,6 +106,14 @@ fn not_public() -> i32 { return 123456; }
         "src/hidden.ox",
         "pub fn hidden_public() -> i32 { return 765432; }\n",
     );
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        source_policy_failure(
+            p.run(&["doc"]),
+            "error[E0001] (project): error[E0005] (source): module source policy is not qualified on this host",
+        );
+        p.no_page();
+        return;
+    }
     success(p.run(&["doc"]));
     let page = p.page();
     for text in [
@@ -146,6 +160,16 @@ fn docs_check_dependencies_without_documenting_them_and_enforce_frozen_inputs() 
     p.library("", "application", "[dependencies]\nmath=\"dep\"\n", "use crate::math::dependency_value;\npub fn public_value() -> i32 { return dependency_value(); }\n");
     failure(p.run(&["doc", "--frozen"]));
     p.no_page();
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        for command in ["lock", "doc"] {
+            source_policy_failure(
+                p.run(&[command]),
+                "error[E0001] (project): error[E0006] (package): package source policy is qualified only on Linux or macOS",
+            );
+            p.no_page();
+        }
+        return;
+    }
     success(p.run(&["lock"]));
     let lock = fs::read(p.0.join("oxid.lock")).unwrap();
     success(p.run(&["doc", "--frozen"]));
