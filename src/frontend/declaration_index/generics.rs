@@ -3316,9 +3316,15 @@ impl<'a, 's> Walker<'a, 's> {
             self.expect(actual, parameters[position], at)?;
         }
         if let Some(plan) = self.plan.as_deref_mut() {
-            let key = match self.nominals.value(element.value(), at)? {
-                ValueTy::Scalar(ty) => vector::Function::new(operation, ty),
-                ValueTy::Owned(AggregateTy::Record(id)) => vector::Function::record(operation, id),
+            let value = element.value();
+            let key = match value {
+                Value::Concrete(ValueTy::Scalar(ty)) => vector::Function::new(operation, ty),
+                Value::Record(_) | Value::Concrete(ValueTy::Owned(AggregateTy::Record(_))) => {
+                    vector::Function::record(
+                        operation,
+                        self.nominals.vector_record_id(value, self.work, at)?,
+                    )
+                }
                 _ => None,
             }
             .ok_or_else(|| bad(at))?;

@@ -749,6 +749,39 @@ impl Nominals {
         ty.parameter(at)
     }
 
+    /// Final record ordinals are the ranks of concrete applications, in arena
+    /// order. Computing a prefix rank here does not mint a declaration witness
+    /// or allocate/freeze tables before the complete worklist has been checked.
+    pub(super) fn vector_record_id(
+        &self,
+        value: Value,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<RecordId, Box<Diagnostic>> {
+        match value {
+            Value::Record(id) => {
+                let record = self.records.get(id).ok_or_else(|| bad(at))?;
+                if !record.complete || !record.concrete || !record.is_copy {
+                    return Err(bad(at));
+                }
+                let mut rank = 0usize;
+                for record in &self.records[..id] {
+                    work.debit(1, at, "vector record identity rank")?;
+                    rank += usize::from(record.concrete);
+                }
+                if rank >= 4096 {
+                    return Err(exhausted(at));
+                }
+                Ok(RecordId(rank))
+            }
+            Value::Concrete(ValueTy::Owned(AggregateTy::Record(id)))
+                if self.record_is_copy(id, at)? =>
+            {
+                Ok(id)
+            }
+            _ => Err(bad(at)),
+        }
+    }
     pub(super) fn record_is_copy(
         &self,
         record: RecordId,
