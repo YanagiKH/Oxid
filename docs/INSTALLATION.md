@@ -71,7 +71,17 @@ Invoke-WebRequest https://raw.githubusercontent.com/YanagiKH/Oxid/main/install.p
 & "$env:LOCALAPPDATA\Oxid\bin\oxid.exe" --version
 ```
 
-The installer checks the archive checksum and supports Windows x86_64. `OXID_INSTALL_DIR` and `OXID_VERSION` override the installation directory and release tag. If your machine's script policy prevents execution, use a release archive or follow your organization's policy.
+The installer checks the archive checksum and supports Windows x86_64. Its default destination is `%LOCALAPPDATA%\Oxid\bin`. Use `-InstallDir` or `OXID_INSTALL_DIR` to choose another folder, and `-Version` or `OXID_VERSION` to select a release tag. Run it again with the desired tag to update or return to an earlier release; without a version it installs the latest release.
+
+For an offline installation, copy `install.ps1`, `oxid-windows-x86_64.zip` and its `.sha256` file to the computer. Keep the checksum beside the archive, then run:
+
+```powershell
+.\install.ps1 -Archive D:\Oxid\oxid-windows-x86_64.zip
+```
+
+`OXID_ARCHIVE` also selects a local archive. This mode makes no download requests and can restore a previously saved release.
+
+Close running Oxid programs before updating. Validation and copy errors keep the previous executable. If Windows prevents automatic recovery after a replacement error, the error identifies the backup to restore. If your machine's script policy prevents execution, use a release archive or follow your organization's policy.
 
 ## Cargo installation
 
