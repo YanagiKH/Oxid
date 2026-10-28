@@ -123,15 +123,15 @@ impl<'a, 's> Namespace<'a, 's> {
             if file.has_member_import(source, source.text_at(first), self.work)? {
                 return Ok(None);
             }
-            return Ok(
-                match self.member_row(requester, first, DeclarationKind::Record, requester)? {
-                    Some(row) => Some(Record {
-                        owner: self.sources,
-                        row,
-                    }),
-                    None => None,
-                },
-            );
+            let Some(row) =
+                self.member_row(requester, first, DeclarationKind::Record, requester)?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some(Record {
+                owner: self.sources,
+                row,
+            }));
         }
         if source.text_at(first) != "crate" {
             return Err(bad(at));
@@ -141,15 +141,15 @@ impl<'a, 's> Namespace<'a, 's> {
         while let Some(segment) = current {
             let next = names.next()?;
             if next.is_none() {
-                return Ok(
-                    match self.member_row(selected, segment, DeclarationKind::Record, requester)? {
-                        Some(row) => Some(Record {
-                            owner: self.sources,
-                            row,
-                        }),
-                        None => None,
-                    },
-                );
+                let Some(row) =
+                    self.member_row(selected, segment, DeclarationKind::Record, requester)?
+                else {
+                    return Ok(None);
+                };
+                return Ok(Some(Record {
+                    owner: self.sources,
+                    row,
+                }));
             }
             let mut child = None;
             if first_segment {

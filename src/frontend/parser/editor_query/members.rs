@@ -667,16 +667,16 @@ impl EditorFile {
                 return Ok(None);
             }
         }
-        Ok(match path {
-            Some(path) => Some(MemberQuery {
-                path,
-                annotation,
-                constructor,
-                replacement,
-                cursor,
-            }),
-            None => None,
-        })
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        Ok(Some(MemberQuery {
+            path,
+            annotation,
+            constructor,
+            replacement,
+            cursor,
+        }))
     }
 }
 
