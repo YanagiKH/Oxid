@@ -1,10 +1,16 @@
 """Keep actual Windows native qualification mandatory without a YAML dependency.
 
 These checks follow the workflow's block style, like test_ci_trigger_policy.py.
-They inspect source only; no compiler, Windows tool, or workflow is executed.
+Source checks run on every host; Windows also executes the SDK command against
+a temporary batch fixture. No compiler or real SDK is executed by these tests.
 """
 from pathlib import Path
+import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import textwrap
 import unittest
 
@@ -40,11 +46,14 @@ DOCTOR_TESTS = (
 # indentation, blank lines, and explanatory comments to change independently.
 SDK_COMMANDS = r'''
 $ErrorActionPreference = 'Stop'
+python -B scripts/test_windows_native_ci.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Installed MSVC x64 tools are required' }
 $devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'
-$settings = & $env:ComSpec /d /s /c "`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""
+$PSNativeCommandArgumentPassing = 'Legacy'
+$settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"
 if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }
 $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
   'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion', 'WindowsSDKLibVersion',
@@ -251,6 +260,10 @@ class WindowsNativeCiTests(unittest.TestCase):
             ('wrong-sdk-shell', 'shell: pwsh', 'shell: cmd'),
             ('missing-vc-tools', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', 'Other.Component'),
             ('wrong-sdk-architecture', '-arch=x64 -host_arch=x64', '-arch=x86 -host_arch=x86'),
+            ('missing-sdk-invocation-regression', '          python -B scripts/test_windows_native_ci.py\n', ''),
+            ('wrong-native-binding', "$PSNativeCommandArgumentPassing = 'Legacy'", "$PSNativeCommandArgumentPassing = 'Standard'"),
+            ('double-wrapped-batch', '"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"',
+             '"`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""'),
             ('missing-include', "'INCLUDE', ", ''),
             ('missing-library-path', "'LIB', ", ''),
             ('missing-sdk-lib-version', "'WindowsSDKLibVersion',", ''),
@@ -335,6 +348,98 @@ class WindowsNativeCiTests(unittest.TestCase):
                     validate_doctor_test_roster(self.doctor, self.windows.replace(old, new, 1))
         with self.assertRaises(AssertionError):
             validate_doctor_test_roster(self.doctor.replace('doctor_windows.rs', 'other.rs'), self.windows)
+
+
+class WindowsSdkInvocationTests(unittest.TestCase):
+    def sdk_tail(self):
+        workflow = (REPO / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        job = '    ' + block(workflow, JOB, 2) + '\n'
+        match = re.search(r'^      - name: ' + re.escape(SDK_STEP) +
+                          r'\n(.*?)(?=^      - |\Z)', job, re.MULTILINE | re.DOTALL)
+        require(match is not None, 'SDK initialization step is required')
+        commands = step_commands(textwrap.dedent(match[1]))
+        start = commands.index("$devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'")
+        return '\n'.join(commands[start:])
+
+    def test_cmd_s_removes_exactly_the_native_binders_outer_quote_pair(self):
+        # PowerShell's Legacy binder wraps arguments with unquoted whitespace;
+        # cmd /s then removes the first and last quotes after /c. Model those two
+        # independent boundaries, keeping the path's own quotes intact.
+        invocation = next(line for line in self.sdk_tail().splitlines()
+                          if line.startswith('$settings = '))
+        expression = invocation.removeprefix('$settings = & $env:ComSpec /d /s /c ')
+        self.assertTrue(expression.startswith('"') and expression.endswith('"'))
+        for path in (r'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat',
+                     r'C:\Program Files (x86)\Visual Studio 雪 & tools\Common7\Tools\VsDevCmd.bat'):
+            with self.subTest(path=path):
+                argument = expression[1:-1].replace('`"', '"').replace('$devcmd', path)
+                quoted = False
+                needs_outer_quotes = False
+                previous = ''
+                for char in argument:
+                    if char == '"' and previous != '\\':
+                        quoted = not quoted
+                    elif char.isspace() and not quoted:
+                        needs_outer_quotes = True
+                    previous = char
+                self.assertTrue(needs_outer_quotes)
+                raw_command = '"' + argument + '"'
+                self.assertEqual(raw_command, '""' + path +
+                                 '" -no_logo -arch=x64 -host_arch=x64 >nul && set"')
+                self.assertEqual(raw_command[1:-1], '"' + path +
+                                 '" -no_logo -arch=x64 -host_arch=x64 >nul && set')
+
+    @unittest.skipUnless(sys.platform == 'win32', 'requires actual Windows cmd.exe and PowerShell 7')
+    def test_real_cmd_batch_preserves_spaced_paths_arguments_environment_and_errors(self):
+        pwsh = shutil.which('pwsh')
+        self.assertIsNotNone(pwsh, 'PowerShell 7 is mandatory on the Windows runner')
+        tail = self.sdk_tail()
+        for directory in ('Program Files (x86)/Microsoft Visual Studio/2022/Enterprise',
+                          'Program Files/Visual Studio 雪 & tools'):
+            for status in (0, 37):
+                with self.subTest(directory=directory, batch_exit=status), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    installation = root / directory
+                    batch = installation / 'Common7/Tools/VsDevCmd.bat'
+                    batch.parent.mkdir(parents=True)
+                    batch.write_text(
+                        '@echo off\n'
+                        'if not "%~1"=="-no_logo" exit /b 21\n'
+                        'if not "%~2"=="-arch=x64" exit /b 22\n'
+                        'if not "%~3"=="-host_arch=x64" exit /b 23\n'
+                        'if not "%~4"=="" exit /b 24\n'
+                        'if not "%OXID_SDK_TEST_PARENT%"=="inherited unchanged" exit /b 25\n'
+                        'set "INCLUDE=fixture headers=a;b"\n'
+                        'set "LIB=fixture libraries=c;d"\n'
+                        'set "VSCMD_ARG_TGT_ARCH=x64"\n'
+                        'set "VSCMD_ARG_HOST_ARCH=x64"\n'
+                        'set "OXID_SDK_TEST_UNLISTED=must not be exported"\n'
+                        f'exit /b {status}\n', encoding='ascii', newline='\r\n')
+                    exported = root / 'github-env.txt'
+                    script = root / 'initialize.ps1'
+                    script.write_text("$ErrorActionPreference = 'Stop'\n"
+                                      "$PSNativeCommandArgumentPassing = 'Standard'\n"
+                                      '$installation = $env:OXID_SDK_TEST_INSTALLATION\n' + tail + '\n',
+                                      encoding='utf-8')
+                    environment = dict(os.environ, GITHUB_ENV=str(exported),
+                                       OXID_SDK_TEST_INSTALLATION=str(installation),
+                                       OXID_SDK_TEST_PARENT='inherited unchanged')
+                    result = subprocess.run([pwsh, '-NoLogo', '-NoProfile', '-NonInteractive',
+                                             '-File', str(script)], env=environment,
+                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            timeout=30, check=False)
+                    if status:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn(b'Visual Studio environment initialization failed', result.stderr)
+                        self.assertFalse(exported.exists(), 'failed SDK setup must not export environment')
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+                        self.assertEqual(result.stdout, b'')
+                        values = exported.read_text(encoding='utf-8-sig').splitlines()
+                        for value in ('INCLUDE=fixture headers=a;b', 'LIB=fixture libraries=c;d',
+                                      'VSCMD_ARG_TGT_ARCH=x64', 'VSCMD_ARG_HOST_ARCH=x64'):
+                            self.assertIn(value, values)
+                        self.assertFalse(any(line.startswith('OXID_SDK_TEST_') for line in values))
 
 
 if __name__ == '__main__':
