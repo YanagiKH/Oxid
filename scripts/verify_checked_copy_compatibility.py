@@ -23,7 +23,7 @@ PREDECESSOR_POLICY = "scripts/verify_typed_vector_compatibility.py"
 PREDECESSOR_POLICY_BYTES = 306460
 PREDECESSOR_POLICY_SHA = '6fb58c5296eb64d9462e849cbc06056d6852dd1a9323e124a219b5fc407166ca'
 # Final reviewed source pins are admission authority, not execution evidence.
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 CHECKED_COPY_CHANGED = frozenset(['build.rs',
  'src/frontend/ast.rs',
  'src/frontend/declaration_index/generics.rs',
