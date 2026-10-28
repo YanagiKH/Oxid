@@ -167,7 +167,7 @@ pub(crate) fn run() -> Report {
         report.set(
             "host",
             Err(format!(
-                "native builds require Linux or macOS on x86_64 or ARM64; current host is {} {}",
+                "native builds require Linux or macOS on x86_64 or ARM64, or Windows MSVC x86_64; current host is {} {}",
                 std::env::consts::OS,
                 std::env::consts::ARCH
             )),
@@ -184,15 +184,11 @@ pub(crate) fn run() -> Report {
     );
     #[cfg(all(
         target_os = "windows",
-        target_env = "msvc",
         target_arch = "x86_64",
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    report.set(
-        "compile-link",
-        Err("this build cannot yet verify a Windows native toolchain".into()),
-    );
+    windows::probe(&mut report);
     #[cfg(all(
         any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
@@ -583,3 +579,12 @@ mod supported {
             }));
     }
 }
+
+#[cfg(all(
+    target_os = "windows",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+#[path = "doctor_windows.rs"]
+mod windows;
