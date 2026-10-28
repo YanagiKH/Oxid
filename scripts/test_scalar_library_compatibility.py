@@ -249,7 +249,7 @@ class ScalarLibraryAdmission(unittest.TestCase):
 
 class FrozenFileSeekReplay(unittest.TestCase):
     def test_thirteen_input_pins_use_only_the_integrated_reachable_revision(self):
-        frozen = "9f69c5c86521ed96d47a8af3c7cda8afbd9c5508"
+        frozen = "9be31bc374bffee230768ecd1fe3e52b5a4ea965"
         subprocess.check_call(["git", "--no-replace-objects", "merge-base", "--is-ancestor",
                                frozen, "HEAD"], cwd=ROOT)
         self.assertEqual(len(gate.SCALAR_LIBRARY_CHANGED), 10)
@@ -474,7 +474,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                     self.test_both_complete_Windows_replay_blocks_and_every_selector_are_unchanged()
 
     def test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch(self):
-        frozen = "9f69c5c86521ed96d47a8af3c7cda8afbd9c5508"
+        frozen = "9be31bc374bffee230768ecd1fe3e52b5a4ea965"
         name = ".github/workflows/ci.yml"
         current = gate.regular(ROOT, name)
         job = re.search(rb"^  file-seek-source-policy-predecessor:.*?(?=^  [A-Za-z0-9_-]+:|\Z)",

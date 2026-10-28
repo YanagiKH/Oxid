@@ -37,8 +37,8 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (100317, 'a726da52d510324f304cfda94
  'src/frontend/native.rs': (26278, 'a2b3dec1185c5be9d9a935ab13bb90375f63b7a4f998558829440827d578baf9'),
  'src/frontend/native/library.rs': (14468,
                                     'a9e7cc740eb9b9671ce7ecb4fbcf8406207a7163e41741004d9155dd742f1cf0'),
- 'src/frontend/native_library.rs': (14020,
-                                    'accaced2563ab6174ba5a07505e2a72d2f34d76ecc0f9c0346a9954eaafadf74'),
+ 'src/frontend/native_library.rs': (15276,
+                                    '5c56a6d3e882fbac1e1e7c9d9c4af9fc0ccd76b391df17e12593272db47d4dcd'),
  'src/frontend/oir/mod.rs': (24711, 'd9d4cd63dca6bc1f5e93e8fdaa57dbd1e4ff343e555c0c3cceafa2f1b7a7f997'),
  'src/frontend/oir/native.rs': (123231, 'a56c08285dc8902814a53eece47346a45cfefe4207b6e9c3e3be95246dc05920'),
  'src/frontend/oir/native_library.rs': (32712,
@@ -50,7 +50,7 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (100317, 'a726da52d510324f304cfda94
                                                       '7beca0122e80b00821f711317e8853b7bb88ae1f60f4d0ce816bb07905e728eb'),
  'src/frontend/oir/source/sealed.rs': (33822,
                                        '0ab60e4e82b72abda6cb17ac4a5693349dd8df6f3a3a36b5b46e1d5d992099f2'),
- 'src/frontend/options.rs': (66684, '345541d6385e8c2982667c8e79bec957cce3fead7c84a637a03bdea84f2d793b')}
+ 'src/frontend/options.rs': (66690, 'cb212bbfe0800590784954012ae785c5161a490535a264fdccc6db1e5a06e5a7')}
 REVIEWED_DIRECTIVES = {'src/frontend/driver.rs': {'attributes': ((b'#[derive(Clone, Debug, PartialEq, Eq)]', 1),
                                            (b'#[derive(Debug)]', 2),
                                            (b'#[allow(clippy::large_enum_variant)]', 1),
