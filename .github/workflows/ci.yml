@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_record_field_completion_compatibility.py \
+          python3 -B scripts/verify_file_seek_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -388,6 +388,31 @@ jobs:
         with:
           name: windows-native-source-policy-predecessor
           path: ${{ runner.temp }}/windows-native-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  record-field-completion-source-policy-predecessor:
+    name: Record-field source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_record_field_completion_predecessor_tests.py "$RUNNER_TEMP/record-field-completion-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: b273b71237cc6a1d2db76dfe7c971e073d1d5cb3
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/record-field-completion-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/record-field-completion-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: record-field-completion-source-policy-predecessor
+          path: ${{ runner.temp }}/record-field-completion-source-policy-replay
           if-no-files-found: error
           retention-days: 14
 

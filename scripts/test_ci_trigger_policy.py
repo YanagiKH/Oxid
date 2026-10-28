@@ -81,7 +81,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_record_field_completion_compatibility.py', current)
+        self.assertIn('scripts/verify_file_seek_compatibility.py', current)
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_float_roots.py', current)
         self.assertIn('scripts/verify_characters.py', current)
@@ -141,6 +141,22 @@ class CiTriggerPolicyTests(unittest.TestCase):
                       '--repo . --output "$RUNNER_TEMP/windows-native-source-policy-replay"', replay)
         self.assertIn('if: always()', replay)
         self.assertIn('path: ${{ runner.temp }}/windows-native-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_record_field_source_policy_replay_is_mandatory_and_keeps_evidence(self):
+        replay = block(self.ci, 'record-field-completion-source-policy-predecessor', 2)
+        self.assertIn('runs-on: ubuntu-latest', replay)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('cp scripts/run_record_field_completion_predecessor_tests.py '
+                      '"$RUNNER_TEMP/record-field-completion-source-policy-replay.py"', replay)
+        self.assertIn('ref: b273b71237cc6a1d2db76dfe7c971e073d1d5cb3', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/record-field-completion-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/record-field-completion-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/record-field-completion-source-policy-replay', replay)
         self.assertIn('if-no-files-found: error', replay)
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')

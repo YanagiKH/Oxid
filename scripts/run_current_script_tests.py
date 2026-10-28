@@ -58,6 +58,10 @@ HISTORICAL_ONLY = {
 # These complete source-pinned modules test policies on their exact parent
 # compilers. ci.yml replays them unchanged in separate required jobs.
 PREDECESSOR_ONLY = {
+    "test_record_field_completion_compatibility": (
+        "96289f7dfc3a90a00c02aa7e2076f1dde2b550780e4b4757f987ed4f114cbb3f",
+        "b273b71237cc6a1d2db76dfe7c971e073d1d5cb3",
+        "requires the pre-seek compiler and catalog resource admission"),
     "test_windows_native_compatibility": (
         "aacdb546d5e7fb7a69551316fd5135eeb08b04944a27e526a660d49217c158f4",
         "8180b1bbcbcf9ccd4d648ff5ba0ec9ea3d5b971f",
