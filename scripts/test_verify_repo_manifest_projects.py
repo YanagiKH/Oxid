@@ -68,8 +68,22 @@ class ManifestApplications(unittest.TestCase):
             path.write_bytes((verify_repo.ROOT / name).read_bytes())
         copy_paths = {self.root / name for name in copy_members}
         self.assertFalse(copy_paths & selected)
+        record_vector_project = "examples/copy-record-vectors"
+        record_vector_members = ("examples/copy-record-vectors/src/main.ox",
+                                 "examples/copy-record-vectors/tests/records.ox")
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[record_vector_project], record_vector_members)
+        for name in (record_vector_project + "/oxid.toml", *record_vector_members):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((verify_repo.ROOT / name).read_bytes())
+        record_vector_paths = {self.root / name for name in record_vector_members}
+        self.assertFalse(record_vector_paths & (selected | copy_paths))
         neighbor = self.root / "apps/frame-filter/unregistered.ox"
-        admitted, roots = verify_repo.manifest_project_members(list(selected | copy_paths) + [neighbor], self.root, required=True)
+        admitted, roots = verify_repo.manifest_project_members(list(selected | copy_paths | record_vector_paths) + [neighbor], self.root, required=True)
+        self.assertTrue(record_vector_paths <= admitted)
+        self.assertEqual(roots.count(self.root / record_vector_project), 1)
+        admitted -= record_vector_paths
+        roots = [path for path in roots if path != self.root / record_vector_project]
         self.assertTrue(copy_paths <= admitted)
         self.assertEqual(roots.count(self.root / copy_project), 1)
         admitted -= copy_paths
@@ -79,7 +93,11 @@ class ManifestApplications(unittest.TestCase):
         self.assertNotIn(neighbor, admitted)
         for missing in selected - set(self.members):
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
-                verify_repo.manifest_project_members(list((selected - {missing}) | copy_paths), self.root, required=True)
+                verify_repo.manifest_project_members(list((selected - {missing}) | copy_paths | record_vector_paths), self.root, required=True)
+        for missing in record_vector_paths:
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
+                verify_repo.manifest_project_members(list(selected | copy_paths | (record_vector_paths - {missing})),
+                                                    self.root, required=True)
 
 
 if __name__ == "__main__":
