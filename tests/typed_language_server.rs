@@ -1608,6 +1608,51 @@ fn qualified_completion_does_not_instantiate_generic_copy_or_vector_bodies() {
 }
 
 #[test]
+fn qualified_completion_refuses_declaration_conflicts_before_publication() {
+    let p = Project::new();
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    for (index, (declarations, expected)) in [
+        ("struct bool{}", "scalar type names cannot be redeclared"),
+        ("enum i32{A}", "scalar type names cannot be redeclared"),
+        (
+            "fn duplicate()->i32{return 1;}fn duplicate()->i32{return 2;}",
+            "duplicate binding",
+        ),
+        ("struct Same{}enum Same{A}", "duplicate binding"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let text = format!("{declarations}fn main()->i32{{return crate::;}}");
+        if index == 0 {
+            c.open(&path, &text);
+        } else {
+            c.change(&path, (index + 1) as i32, json!([{"text":text}]));
+        }
+        let mut position = position_at(&text, "crate::");
+        position["character"] = json!(position["character"].as_u64().unwrap() + 7);
+        let response = c.request(
+            "textDocument/completion",
+            json!({"textDocument":{"uri":path},"position":position}),
+        );
+        assert_eq!(response["error"]["code"], -32803, "{response}");
+        assert!(response.get("result").is_none(), "{response}");
+        assert!(
+            response["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(expected),
+            "{response}"
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
 fn qualified_completion_preserves_both_result_limits_and_recovers_with_a_longer_prefix() {
     let p = Project::new();
     p.write("main.ox", "fn main()->i32{return 0;}");

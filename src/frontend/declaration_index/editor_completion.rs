@@ -97,6 +97,23 @@ impl<'a, 's> Namespace<'a, 's> {
             )
         };
         merge_sort(&mut order, &mut scratch, compare, work, at)?;
+        for &index in &order {
+            let declaration = rows[index as usize].declaration;
+            work.debit(1, declaration.name, "editor declaration conflict")?;
+            if declaration.kind != DeclarationKind::Function {
+                let spelling = project.sources().text(declaration.name);
+                if compare_bytes(spelling, "bool", work, declaration.name)? == Ordering::Equal
+                    || compare_bytes(spelling, "i32", work, declaration.name)? == Ordering::Equal
+                {
+                    return Err(diagnostic(
+                        "E0202",
+                        "resolve",
+                        "scalar type names cannot be redeclared",
+                        declaration.name,
+                    ));
+                }
+            }
+        }
         for pair in order.windows(2) {
             if compare(pair[0], pair[1])? == Ordering::Equal {
                 return Err(duplicate(
