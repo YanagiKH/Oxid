@@ -1645,7 +1645,7 @@ impl ProjectSources {
 #[allow(dead_code)]
 mod lexical_loader_layout_tests {
     use super::*;
-    use std::mem::{align_of, size_of};
+    use std::mem::{align_of, offset_of, size_of};
     // Exact retained baseline carriers. The optional mutable provider belongs
     // only to call frames; changing these layouts is not part of this route.
     struct BaselineProjectSources {
@@ -1690,6 +1690,80 @@ mod lexical_loader_layout_tests {
         assert_eq!(
             align_of::<SourceSetBuilder<'_>>(),
             align_of::<BaselineBuilder<'_>>()
+        );
+    }
+
+    #[test]
+    fn editor_query_loader_keeps_ordinary_field_types_and_offsets() {
+        // Exhaustive patterns also reject added fields; the explicit reference
+        // types reject a default that silently switches executable syntax.
+        let _project_types = |value: &ProjectSources| {
+            let ProjectSources {
+                sources,
+                programs,
+                modules,
+                canonical_root,
+                usage,
+                syntax_flavor,
+            } = value;
+            let _: &SourceMap = sources;
+            let _: &Vec<ast::Program> = programs;
+            let _: &Vec<ModuleHeader> = modules;
+            let _: &Option<PathBuf> = canonical_root;
+            let _: &SourceUsage = usage;
+            let _: &SyntaxFlavor = syntax_flavor;
+        };
+        let _builder_types = |value: &SourceSetBuilder<'_>| {
+            let SourceSetBuilder {
+                entry,
+                limits,
+                allocator,
+                mode,
+                arrays,
+                enums,
+                project,
+            } = value;
+            let _: &&str = entry;
+            let _: &ProjectLimits = limits;
+            let _: &&mut Allocator = allocator;
+            let _: &parser::SourceMode = mode;
+            let _: &parser::ArraySyntaxPolicy = arrays;
+            let _: &ProjectEnumSyntax = enums;
+            let _: &ProjectSources<ast::Program> = project;
+        };
+        macro_rules! same_offsets {
+            ($current:ty, $previous:ty, $($field:ident),+ $(,)?) => {
+                $(assert_eq!(offset_of!($current, $field), offset_of!($previous, $field), stringify!($field));)+
+            };
+        }
+        same_offsets!(
+            ProjectSources,
+            BaselineProjectSources,
+            sources,
+            programs,
+            modules,
+            canonical_root,
+            usage,
+            syntax_flavor,
+        );
+        same_offsets!(
+            SourceSetBuilder<'_>,
+            BaselineBuilder<'_>,
+            entry,
+            limits,
+            allocator,
+            mode,
+            arrays,
+            enums,
+            project,
+        );
+        same_offsets!(
+            LoadFailure,
+            BaselineLoadFailure,
+            sources,
+            diagnostics,
+            usage,
+            allocator,
         );
     }
 }

@@ -20,12 +20,16 @@ pub(in crate::frontend) struct Namespace<'a, 's> {
     ends: [usize; 256],
     work: &'a WorkMeter,
 }
+pub(in crate::frontend) type NamespaceBuildResult<'a, 's> =
+    Result<Namespace<'a, 's>, Box<Diagnostic>>;
+pub(in crate::frontend) type NamespaceCompletionResult<'a, 's> =
+    Result<Namespace<'a, 's>, Vec<Diagnostic>>;
 impl<'a, 's> Namespace<'a, 's> {
     pub(in crate::frontend) fn build(
         sources: &'a QuerySources<'s>,
         work: &'a WorkMeter,
         allocator: &mut Allocator,
-    ) -> Result<Self, Box<Diagnostic>> {
+    ) -> NamespaceBuildResult<'a, 's> {
         Self::build_limited(sources, work, allocator, IndexLimits::default().scratch)
     }
     fn build_limited(
@@ -33,7 +37,7 @@ impl<'a, 's> Namespace<'a, 's> {
         work: &'a WorkMeter,
         allocator: &mut Allocator,
         limit: u64,
-    ) -> Result<Self, Box<Diagnostic>> {
+    ) -> NamespaceBuildResult<'a, 's> {
         let project = sources.project();
         let at = project.sources().get(SourceFileId(0)).span(0, 0);
         let mut count = 0usize;
@@ -46,12 +50,17 @@ impl<'a, 's> Namespace<'a, 's> {
                 .checked_add(file.declarations().len())
                 .ok_or_else(|| overflow(at))?;
         }
-        // Real row/order/merge capacities and complete construction/return
-        // carriers spend the existing scratch allowance before allocation.
-        let fixed = 3 * size_of::<Self>()
-            + size_of::<Result<Self, Box<Diagnostic>>>()
+        // This bank covers namespace construction and its complete return
+        // transports, conservatively summing successive owned roles. It is
+        // not an editor-wide memory cap. The selected caller query stays live;
+        // its earlier Result/Option transports have already completed.
+        let fixed = size_of::<Self>() // construction fields
             + size_of::<Vec<u32>>()
-            + 2 * size_of::<PathQuery>();
+            + size_of::<NamespaceBuildResult<'a, 's>>() // limited return
+            + size_of::<NamespaceBuildResult<'a, 's>>() // forwarding return
+            + size_of::<NamespaceCompletionResult<'a, 's>>() // caller mapping
+            + size_of::<Self>() // selected caller namespace
+            + size_of::<PathQuery>(); // selected caller query, once
         let requested = count
             .checked_mul(size_of::<Row>() + 2 * size_of::<u32>())
             .and_then(|bytes| bytes.checked_add(fixed))
@@ -275,6 +284,7 @@ mod tests {
     };
     use std::{
         fs,
+        mem::align_of,
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
     };
@@ -314,14 +324,29 @@ mod tests {
     fn editor_namespace_layout_and_exact_scratch_boundary_are_independently_derived() {
         #[cfg(target_pointer_width = "64")]
         {
+            assert_eq!(size_of::<usize>(), 8);
+            assert_eq!(size_of::<Span>(), 24);
+            assert_eq!(align_of::<Span>(), 8);
+            assert_eq!(size_of::<DeclarationKind>(), 1);
+            assert_eq!(size_of::<bool>(), 1);
+            assert_eq!(size_of::<ModuleId>(), 8);
+            assert_eq!(size_of::<Vec<Row>>(), 24);
+            assert_eq!(size_of::<Vec<u32>>(), 24);
+            assert_eq!(size_of::<&QuerySources<'_>>(), 8);
+            assert_eq!(size_of::<&WorkMeter>(), 8);
+            assert_eq!(size_of::<[usize; 256]>(), 2048);
             assert_eq!(size_of::<Row>(), 40); // module word + 32B declaration
             assert_eq!(size_of::<Declaration>(), 32); // Span24 + kind1 + bool1 + pad6
             assert_eq!(size_of::<Namespace<'_, '_>>(), 2112); // two Vec24 + two refs8 +256 words
             assert_eq!(size_of::<PathQuery>(), 872); //34 Span24 + Span24 +four8B facts
-            assert_eq!(
-                size_of::<Result<Namespace<'_, '_>, Box<Diagnostic>>>(),
-                2112
-            );
+            assert_eq!(size_of::<NamespaceBuildResult<'_, '_>>(), 2112);
+            assert_eq!(size_of::<NamespaceCompletionResult<'_, '_>>(), 2112);
+            assert_eq!(align_of::<Declaration>(), 8);
+            assert_eq!(align_of::<Row>(), 8);
+            assert_eq!(align_of::<PathQuery>(), 8);
+            assert_eq!(align_of::<Namespace<'_, '_>>(), 8);
+            assert_eq!(align_of::<NamespaceBuildResult<'_, '_>>(), 8);
+            assert_eq!(align_of::<NamespaceCompletionResult<'_, '_>>(), 8);
             assert_eq!(
                 size_of::<ProjectSources>(),
                 size_of::<ProjectSources<EditorFile>>()
@@ -334,10 +359,13 @@ mod tests {
                 "fn answer()->i32{return 42;}fn main()->i32{return crate::;}",
                 None,
                 |sources| {
-                    // Four complete namespace envelopes, one merge Vec header,
-                    // two cursor-path transports, and two rows/order/merge cells.
-                    let exact = 4 * 2112 + 24 + 2 * 872 + 2 * (40 + 4 + 4);
-                    assert_eq!(exact, 10312);
+                    // Construction, two real raw return envelopes, one mapped
+                    // return, one selected namespace; a merge Vec; one selected
+                    // cursor query; and two actual rows/order/merge cells.
+                    let fixed = 5 * 2112 + 24 + 872;
+                    let exact = fixed + 2 * (40 + 4 + 4);
+                    assert_eq!(fixed, 11456);
+                    assert_eq!(exact, 11552);
                     for (limit, pass) in [(exact - 1, false), (exact, true)] {
                         let work = WorkMeter::default();
                         let mut allocator = Allocator::default();
@@ -352,16 +380,19 @@ mod tests {
                             );
                         }
                     }
-                    let work = WorkMeter::default();
-                    let mut allocator = Allocator {
-                        fail_at: Some(1),
-                        ..Default::default()
-                    };
-                    assert!(
-                        Namespace::build_limited(sources, &work, &mut allocator, exact as u64)
-                            .is_err()
-                    );
-                    assert_eq!(allocator.attempts, 1);
+                    for ordinal in 1..=3 {
+                        let work = WorkMeter::default();
+                        let mut allocator = Allocator {
+                            fail_at: Some(ordinal),
+                            ..Default::default()
+                        };
+                        let failure =
+                            Namespace::build_limited(sources, &work, &mut allocator, exact as u64)
+                                .err()
+                                .expect("failed allocation must not publish a namespace");
+                        assert_eq!(failure.code, "E0400");
+                        assert_eq!(allocator.attempts, ordinal);
+                    }
                 },
             );
         }

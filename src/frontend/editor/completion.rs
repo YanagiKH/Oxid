@@ -158,7 +158,8 @@ pub(in crate::frontend) fn complete_qualified(
     offset: usize,
 ) -> Result<EditorCompletions, Vec<Diagnostic>> {
     use crate::frontend::declaration_index::{
-        editor_completion::Namespace, IndexLimits, WorkMeter,
+        editor_completion::{Namespace, NamespaceCompletionResult},
+        IndexLimits, WorkMeter,
     };
     use crate::frontend::parser::editor_query::DeclarationKind;
     let project = session.project();
@@ -179,8 +180,9 @@ pub(in crate::frontend) fn complete_qualified(
     };
     let work = WorkMeter::new(IndexLimits::default().work);
     let mut allocator = Allocator::default();
-    let namespace =
-        Namespace::build(session, &work, &mut allocator).map_err(|error| vec![*error])?;
+    let namespace: NamespaceCompletionResult<'_, '_> =
+        Namespace::build(session, &work, &mut allocator).map_err(|error| vec![*error]);
+    let namespace = namespace?;
     let mut candidates = Candidates {
         prefix: &source.text()[query.replacement().start..query.cursor()],
         entries: Vec::new(),
