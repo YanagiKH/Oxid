@@ -2,6 +2,7 @@
 import ctypes
 from ctypes import wintypes as W
 import os
+from functools import cmp_to_key
 from pathlib import Path
 import subprocess
 import time
@@ -63,6 +64,7 @@ def kernel():
         "WaitForSingleObject": ([W.HANDLE, W.DWORD], W.DWORD),
         "GetExitCodeProcess": ([W.HANDLE, ctypes.POINTER(W.DWORD)], W.BOOL),
         "OpenProcess": ([W.DWORD, W.BOOL, W.DWORD], W.HANDLE),
+        "CompareStringOrdinal": ([W.LPCWSTR, ctypes.c_int, W.LPCWSTR, ctypes.c_int, W.BOOL], ctypes.c_int),
     }
     for name, (args, result) in signatures.items():
         function = getattr(api, name)
@@ -94,8 +96,14 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
     for key, value in environment.items():
         if "\0" in key + value or "=" in key:
             raise ValueError("invalid test environment entry")
+    def compare(left, right):
+        order = api.CompareStringOrdinal(left[0], -1, right[0], -1, True)
+        if order not in (1, 2, 3):
+            raise OSError(ctypes.get_last_error(), "compare qualification environment names")
+        return order - 2
+
     block = "\0".join(k + "=" + v for k, v in sorted(
-        environment.items(), key=lambda item: item[0].upper())) + "\0\0"
+        environment.items(), key=cmp_to_key(compare))) + "\0\0"
     env = ctypes.create_unicode_buffer(block)
     command = ctypes.create_unicode_buffer(command)
     job = checked(api.CreateJobObjectW(None, None), "create qualification job")
