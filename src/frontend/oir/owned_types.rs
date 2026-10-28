@@ -458,6 +458,7 @@ impl FieldDecl {
 #[derive(Debug)]
 pub(super) struct RecordDecl {
     is_copy: bool,
+    packed_bytes: u32,
     id: RecordId,
     span: Span,
     field_start: usize,
@@ -800,6 +801,8 @@ impl Declarations {
             }
             records.push(RecordDecl {
                 is_copy: record.is_copy,
+                packed_bytes: u32::try_from(summaries[record.id.0].packed_bytes())
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
                 id: record.id,
                 span: record.span,
                 field_start,
@@ -907,6 +910,8 @@ impl Declarations {
             }
             records.push(RecordDecl {
                 is_copy: record.is_copy,
+                packed_bytes: u32::try_from(layouts.records()[record.id.0].packed_bytes())
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
                 id: record.id,
                 span: record.span,
                 field_start,
@@ -1051,6 +1056,14 @@ impl Declarations {
             AggregateTy::Record(id) => self.records.get(id.0).is_some_and(RecordDecl::is_copy),
             _ => false,
         }
+    }
+    /// Dense initialized-leaf extent, independent of owner alignment padding.
+    pub(super) fn record_packed_bytes(&self, id: RecordId) -> Result<usize, DeclarationError> {
+        let record = self.record(id)?;
+        if !record.is_copy || record.packed_bytes == 0 {
+            return Err(DeclarationError::TypeMismatch);
+        }
+        Ok(record.packed_bytes as usize)
     }
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
         match ty {
@@ -1325,7 +1338,21 @@ pub(super) const MAX_CONTAINMENT_DEPTH: usize = 64;
 struct ContainmentSummary {
     layout: Layout,
     width: usize,
-    depth: usize,
+    depth_and_packed: usize,
+}
+impl ContainmentSummary {
+    fn depth(self) -> usize {
+        self.depth_and_packed & 255
+    }
+    fn packed_bytes(self) -> usize {
+        self.depth_and_packed >> 8
+    }
+    fn pack(depth: usize, bytes: usize) -> Result<usize, DeclarationError> {
+        if depth > MAX_CONTAINMENT_DEPTH || bytes > (usize::MAX >> 8) {
+            return Err(DeclarationError::LayoutOverflow);
+        }
+        Ok(depth | (bytes << 8))
+    }
 }
 
 fn value_summary(
@@ -1336,35 +1363,35 @@ fn value_summary(
         ValueTy::Scalar(ty) => ContainmentSummary {
             layout: Layout::scalar(ty),
             width: 1,
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, Layout::scalar(ty).size)?,
         },
         ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
             layout: array.layout()?,
             width: array.length().max(1),
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, array.layout()?.size)?,
         },
         ValueTy::Owned(AggregateTy::File) => ContainmentSummary {
             layout: Layout { size: 16, align: 8 },
             width: 2,
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, 16)?,
         },
         ValueTy::Owned(AggregateTy::ByteBuf) => ContainmentSummary {
             layout: Layout { size: 16, align: 8 },
             width: 3,
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, 16)?,
         },
         ValueTy::Owned(AggregateTy::Vector(element)) => {
             check_vector_element(element)?;
             ContainmentSummary {
                 layout: Layout { size: 16, align: 8 },
                 width: 3,
-                depth: 0,
+                depth_and_packed: ContainmentSummary::pack(0, 16)?,
             }
         }
         ValueTy::Owned(AggregateTy::RecordVector(_)) => ContainmentSummary {
             layout: Layout { size: 16, align: 8 },
             width: 3,
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, 16)?,
         },
         ValueTy::Owned(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
         ValueTy::Owned(AggregateTy::Record(id)) => *summaries
@@ -1433,7 +1460,7 @@ fn containment_graph(
                 continue;
             }
             let mut cursor = LayoutCursor::default();
-            let (mut width, mut depth) = (0usize, 1usize);
+            let (mut width, mut depth, mut packed) = (0usize, 1usize, 0usize);
             for field in 0..field_count(id) {
                 let child = value_summary(field_type(id, field)?, &summaries)?;
                 cursor.push(child.layout)?;
@@ -1443,7 +1470,13 @@ fn containment_graph(
                     limits.layout_bytes,
                     "record expanded width",
                 )?;
-                depth = depth.max(child.depth + 1);
+                packed = limited_add(
+                    packed,
+                    child.packed_bytes(),
+                    limits.layout_bytes,
+                    "packed record bytes",
+                )?;
+                depth = depth.max(child.depth() + 1);
                 if depth > MAX_CONTAINMENT_DEPTH {
                     return Err(DeclarationError::ResourceLimit("record containment depth"));
                 }
@@ -1455,7 +1488,7 @@ fn containment_graph(
             summaries[id] = ContainmentSummary {
                 layout,
                 width: width.max(1),
-                depth,
+                depth_and_packed: ContainmentSummary::pack(depth, packed.max(1))?,
             };
             state[id] = 2;
             stack.pop();

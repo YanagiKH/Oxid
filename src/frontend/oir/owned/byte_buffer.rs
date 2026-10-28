@@ -14,7 +14,10 @@ mod files;
 #[path = "vector_resources.rs"]
 mod vectors;
 pub(super) use files::{FileAccess, FileDescriptor, OpenValue};
-pub(in crate::frontend::oir::owned) use vectors::{Element as VectorElement, VectorDescriptor};
+pub(in crate::frontend::oir::owned) use vectors::{
+    CheckedElement as CheckedVectorElement, Element as VectorElement,
+    RecordElement as RecordVectorElement, VectorDescriptor,
+};
 pub(super) const fn file_helper_control_bytes() -> usize {
     files::helper_control_bytes()
 }

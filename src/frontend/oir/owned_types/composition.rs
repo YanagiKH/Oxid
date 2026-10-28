@@ -194,6 +194,7 @@ pub(super) fn layouts(
             }
             let mut width = if node < records.len() { 0usize } else { 1usize };
             let mut depth = 1usize;
+            let mut packed = 0usize;
             let mut record_layout = LayoutCursor::default();
             let mut payload_size = 4usize;
             let mut payload_align = 4usize;
@@ -216,7 +217,7 @@ pub(super) fn layouts(
                 )?;
                 depth = depth.max(
                     child
-                        .depth
+                        .depth()
                         .checked_add(1)
                         .ok_or(DeclarationError::LayoutOverflow)?,
                 );
@@ -227,6 +228,12 @@ pub(super) fn layouts(
                 }
                 if node < records.len() {
                     record_layout.push(child.layout)?;
+                    packed = limited_add(
+                        packed,
+                        child.packed_bytes(),
+                        limits.layout_bytes,
+                        "packed record bytes",
+                    )?;
                     width = limited_add(
                         width,
                         child.width,
@@ -261,7 +268,14 @@ pub(super) fn layouts(
             summaries[node] = ContainmentSummary {
                 layout,
                 width,
-                depth,
+                depth_and_packed: ContainmentSummary::pack(
+                    depth,
+                    if node < records.len() {
+                        packed.max(1)
+                    } else {
+                        layout.size
+                    },
+                )?,
             };
             state[node] = 2 | (u8::from(enum_nesting) << 2);
             stack[length - 1] = None;
@@ -388,7 +402,7 @@ mod tests {
             (4, 5)
         );
         assert_eq!(
-            (layouts.records()[2].depth, layouts.enums()[1].depth),
+            (layouts.records()[2].depth(), layouts.enums()[1].depth()),
             (3, 4)
         );
     }
@@ -458,7 +472,7 @@ mod tests {
                     ))
                 ));
             } else {
-                assert_eq!(result.unwrap().records()[0].depth, 64);
+                assert_eq!(result.unwrap().records()[0].depth(), 64);
             }
         }
     }
