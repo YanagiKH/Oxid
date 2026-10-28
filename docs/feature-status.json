@@ -1780,7 +1780,7 @@
     },
     {
       "id": "inferred-generic-functions",
-      "summary": "Generic functions, structs and enums with type inference from call arguments, record fields and enum payloads, scalar Copy bounds and concrete native specialization.",
+      "summary": "Generic functions, structs and enums with type inference from call arguments, record fields and enum payloads, scalar and checked-record Copy bounds and concrete native specialization.",
       "status": "experimental",
       "classification": "production-path",
       "owner": "unassigned",
@@ -1788,7 +1788,7 @@
       "edition": "typed-preview",
       "backend": "Owned typed frontend, reference execution and native builds.",
       "target_scope": "Linux x86_64 with LLVM 19.1.7 for native execution.",
-      "limitations": "Unconstrained constructor type parameters require explicit arguments. Record operations retain whole-owner moves; different record fields may be borrowed together. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
+      "limitations": "Unconstrained constructor type parameters require explicit arguments. Unmarked records retain whole-owner moves; different record fields may be borrowed together. Returned references and user-defined traits are unavailable. Compiler resource limits apply.",
       "spec": [
         "spec/typed-preview.md",
         "docs/TYPED_PROJECTS.md"
@@ -2131,6 +2131,41 @@
       ],
       "evidence": [],
       "limitations": "Scalar elements only. Lengths and capacities use i32. Growth is fallible and shares configured heap and work limits with byte buffers and files. Vectors of owned elements, stored or returned references, partial moves and user destructors are unavailable. Vec<u8> and ByteBuf are distinct owned types."
+    },
+    {
+      "id": "checked-copy-records",
+      "summary": "Explicit Copy records with scalar and nested Copy fields, generic bounds, independent values and shared-borrow preservation.",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "Owned typed frontend, reference execution and LLVM 19.1.7 native builds.",
+      "target_scope": "Local verification: Linux x86_64. Other hosts require their platform tests.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/COPY.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/parser.rs",
+        "src/frontend/declaration_index/generics/nominal.rs",
+        "src/frontend/oir/owned_types/composition.rs",
+        "src/frontend/oir/owned/source/lower.rs",
+        "src/frontend/oir/owned/shape.rs",
+        "src/frontend/oir/owned/flow.rs",
+        "src/frontend/oir/owned/execute.rs",
+        "src/frontend/oir/owned/native.rs"
+      ],
+      "tests": [
+        "src/frontend/parser/copy_record_tests.rs",
+        "src/frontend/oir/owned_types/copy_tests.rs",
+        "src/frontend/oir/owned/source/copy_record_tests.rs",
+        "src/frontend/oir/owned/copy_record_native_tests.rs",
+        "src/frontend/oir/owned/execute_tests.rs",
+        "tests/typed_copy_records.rs"
+      ],
+      "evidence": [],
+      "limitations": "Explicit finite records only. Arrays, enums, references and owned resources cannot be Copy fields. Vector and slice elements remain scalar-only. Direct aggregate field reads, stored or returned references and user-defined traits are unavailable. Compiler resource limits apply."
     }
   ]
 }
