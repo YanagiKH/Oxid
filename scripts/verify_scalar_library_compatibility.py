@@ -18,7 +18,7 @@ import types
 PREDECESSOR = '104c900222ead9d9177025102a90520b08e761a4'
 PREDECESSOR_POLICY = 'scripts/verify_file_seek_compatibility.py'
 PREDECESSOR_POLICY_PIN = (66400, 'eec5daba34c6380781289a3bb01ed58e44e359a4b03fd23288f950be0ca99e38')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 SCALAR_LIBRARY_CHANGED = frozenset(['src/frontend/driver.rs',
  'src/frontend/mod.rs',
  'src/frontend/native.rs',
