@@ -71,6 +71,15 @@ GROWABLE_VECTOR_PROJECTS = {
     ),
 }
 GROWABLE_VECTOR_MEMBERS = {member for members in GROWABLE_VECTOR_PROJECTS.values() for member in members}
+COPY_PROJECTS = {
+    "examples/copy-records": (
+        "examples/copy-records/src/main.ox", "examples/copy-records/tests/copies.ox",
+    ),
+}
+COPY_MEMBERS = {member for members in COPY_PROJECTS.values() for member in members}
+COPY_DATA = Path("tests/fixtures/copy_records")
+COPY_DATA_SOURCES = ("tests/fixtures/copy_records/all_scalars.ox",
+                     "tests/fixtures/copy_records/wide_unicode.ox")
 VECTOR_DATA = Path("tests/fixtures/typed_vectors")
 VECTOR_DATA_SOURCES = tuple((VECTOR_DATA / group / (name + ".ox")).as_posix()
                            for group, names in (
@@ -231,6 +240,37 @@ def fingerprint(values):
     return hashlib.sha256(json.dumps(values, separators=(",", ":")).encode()).hexdigest()
 
 
+def copy_predecessor_report(text):
+    """Project the independently checked Copy delta out of the printed totals."""
+    data = list(re.finditer(r"^fixture-data validation passed: (?P<data>\d+) source-only files", text, re.M))
+    report = list(re.finditer(
+        r"^repository verification passed: (?P<language>\d+) language sources, "
+        r"(?P<checks>\d+) checks, (?P<runs>\d+) runnable programs "
+        r"\(\d+ legacy sources, \d+ legacy runnable programs, "
+        r"(?P<members>\d+) typed source members / (?P<entries>\d+) typed entry runs; "
+        r"\d+ v2 overlay source members / \d+ materialized typed checks in a \d+-module closure; "
+        r"\d+ wide parser overlay members / 2 materialized typed checks; "
+        r"(?P<projects>\d+) manifest projects checked; (?P<project_runs>\d+) run; "
+        r"(?P<project_tests>\d+) tested\)", text, re.M))
+    if len(data) != 1 or len(report) != 1:
+        raise AssertionError("expected one complete repository summary and DATA summary")
+    adjustments = [(data[0], {"data": len(COPY_DATA_SOURCES)}),
+                   (report[0], {"language": len(COPY_MEMBERS), "checks": len(COPY_PROJECTS),
+                                "runs": len(COPY_PROJECTS), "members": len(COPY_MEMBERS),
+                                "entries": len(COPY_PROJECTS), "projects": len(COPY_PROJECTS),
+                                "project_runs": len(COPY_PROJECTS), "project_tests": len(COPY_PROJECTS)})]
+    edits = []
+    for match, deltas in adjustments:
+        for name, delta in deltas.items():
+            value = int(match.group(name))
+            if value < delta:
+                raise AssertionError("Copy successor exceeds its reported category")
+            edits.append((*match.span(name), str(value - delta)))
+    for start, end, value in sorted(edits, reverse=True):
+        text = text[:start] + value + text[end:]
+    return text
+
+
 class PublishedRegistrationTests(unittest.TestCase):
     def test_full_published_inputs_and_exact_predecessor_inventory(self):
         root = verify_repo.ROOT
@@ -268,12 +308,30 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(vector_data, {root / name for name in VECTOR_DATA_SOURCES})
         self.assertEqual(len(vector_data), 17 + 10 + 3)
         self.assertFalse(vector_data & (data_sources | byte_data))
-        self.assertEqual(verify_repo.fixture_data_sources(root), data_sources | byte_data | vector_data)
+        copy_data = verify_repo.copy_record_fixture_data_sources(root)
+        self.assertEqual(copy_data, {root / name for name in COPY_DATA_SOURCES})
+        self.assertEqual(len(copy_data), 2)
+        self.assertFalse(copy_data & (data_sources | byte_data | vector_data))
+        self.assertEqual(verify_repo.fixture_data_sources(root) - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
         language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources | byte_data]
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Project only the closed Copy successor before all predecessor assertions.
+        self.assertEqual([name for name in language if name in COPY_DATA_SOURCES], sorted(COPY_DATA_SOURCES))
+        self.assertEqual([name for name in language if name in COPY_MEMBERS], sorted(COPY_MEMBERS))
+        self.assertFalse(any(name in COPY_DATA_SOURCES + tuple(COPY_MEMBERS)
+                             for name, _ in check_inventory + run_inventory))
+        self.assertEqual([row for row in check_inventory if row[0] in COPY_PROJECTS], [("examples/copy-records", True)])
+        self.assertEqual([row for row in run_inventory if row[0] in COPY_PROJECTS], [("examples/copy-records", True)])
+        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                          if name in COPY_PROJECTS}, COPY_PROJECTS)
+        language = [name for name in language if name not in COPY_DATA_SOURCES + tuple(COPY_MEMBERS)]
+        check_inventory = [row for row in check_inventory if row[0] not in COPY_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in COPY_PROJECTS]
+        typed_members -= len(COPY_MEMBERS)
+        typed_entries = [path for path in typed_entries if path.relative_to(root).as_posix() not in COPY_PROJECTS]
         # Authenticate the new DATA separately, then project only that exact
         # registration out before every historical language/count fingerprint.
         self.assertEqual([name for name in language if name in VECTOR_DATA_SOURCES], sorted(VECTOR_DATA_SOURCES))
@@ -296,7 +354,8 @@ class PublishedRegistrationTests(unittest.TestCase):
             application + "/src/main.ox", application + "/tests/counts.ox",
             application + "/packages/counts/src/lib.ox", application + "/packages/report/src/lib.ox",
         )
-        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS,
+        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                          if name not in COPY_PROJECTS},
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
@@ -555,35 +614,45 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
+        copy_root = verify_repo.ROOT / "examples/copy-records"
+        copy_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == copy_root]
+        self.assertEqual([call.args[0] for call in copy_calls],
+                         [[str(Path(sys.executable).resolve()), command] for command in ("check", "run", "test")])
+        self.assertTrue(all(call.kwargs.get("input_text") == "" for call in copy_calls[1:]))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
+                             for name in COPY_DATA_SOURCES + tuple(COPY_MEMBERS)
+                             for call in run.call_args_list))
+        predecessor_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") != copy_root]
+        output = io.StringIO(copy_predecessor_report(output.getvalue()))
         application = verify_repo.ROOT / "apps/byte-count"
-        application_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == application]
+        application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
         self.assertEqual([call.args[0] for call in application_calls],
                          [[str(Path(sys.executable).resolve()), command] for command in ("check", "run", "test")])
         self.assertTrue(all(call.kwargs.get("input_text") == "" for call in application_calls[1:]))
         for name in ENUM_PROJECTS:
-            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
+            calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == verify_repo.ROOT / name]
             expected_commands = (("check",) if name == ENUM_LIBRARY else
                                  ("check", "run", "test") if name == "apps/frame-filter" else ("check", "run"))
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected_commands])
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
-        buffer_calls = [call for call in run.call_args_list
+        buffer_calls = [call for call in predecessor_calls
                         if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/byte-reverse"]
         self.assertEqual([call.args[0] for call in buffer_calls],
                          [[str(Path(sys.executable).resolve()), "check"]])
         for name in TEXT_PROJECTS | UNICODE_PROJECTS:
-            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
+            calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == verify_repo.ROOT / name]
             self.assertEqual([call.args[0] for call in calls], [[str(Path(sys.executable).resolve()), "check"]])
         for name in VECTOR_PROJECTS | MATRIX_PROJECTS | GROWABLE_VECTOR_PROJECTS:
-            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / name]
+            calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == verify_repo.ROOT / name]
             expected_commands = ("check",) if name in ("packages/float_vector", "packages/matrix") else ("check", "run", "test")
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected_commands])
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
-        cpu_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/cpu-training"]
+        cpu_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == verify_repo.ROOT / "apps/cpu-training"]
         self.assertEqual([call.args[0] for call in cpu_calls], [[str(Path(sys.executable).resolve()), "check"]])
         manifest_roots = {application} | {verify_repo.ROOT / name for name in ENUM_PROJECTS | BUFFER_PROJECTS | TEXT_PROJECTS | UNICODE_PROJECTS | VECTOR_PROJECTS | MATRIX_PROJECTS | CPU_PROJECTS | GROWABLE_VECTOR_PROJECTS}
-        commands = [call.args[0] for call in run.call_args_list if call.kwargs.get("cwd") not in manifest_roots]
+        commands = [call.args[0] for call in predecessor_calls if call.kwargs.get("cwd") not in manifest_roots]
         self.assertFalse(any(str(verify_repo.ROOT / name) in command
                              for name in VECTOR_DATA_SOURCES + tuple(GROWABLE_VECTOR_MEMBERS)
                              for command in commands))
@@ -641,7 +710,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                 for child in members[1:]:
                     self.assertFalse(any(str(verify_repo.ROOT / child) in command for command in commands))
         self.assertFalse(any("fixed_array_source_unit3" in arg
-                             for call in run.call_args_list for arg in call.args[0]))
+                             for call in predecessor_calls for arg in call.args[0]))
         self.assertFalse(any(str(verify_repo.ROOT / name) in command
                              for name in U8_SOURCES for command in commands))
         for relative in PARSER_ADDED_FILES[1:] + tuple(name for name in STATIC_ADDED_FILES if name not in STATIC_ROOTS):
@@ -744,6 +813,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         copy_u8_data(self.root)
         shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
         shutil.copytree(verify_repo.ROOT / VECTOR_DATA, self.root / VECTOR_DATA)
+        shutil.copytree(verify_repo.ROOT / COPY_DATA, self.root / COPY_DATA)
         self.manifest = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[0][0]
         self.document = json.loads(self.manifest.read_bytes())
         self.source = next(self.manifest.parent / name for name in self.document["files"] if name.endswith(".ox"))
@@ -887,6 +957,62 @@ class FixtureAdmissionTests(unittest.TestCase):
         self.assertIn((extra, False), checks)
         self.assertNotIn(extra, entries)
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in U8_SOURCES))
+
+    def test_copy_data_is_authenticated_before_any_compiler_call(self):
+        for relative in COPY_DATA_SOURCES:
+            source = self.root / relative
+            body = source.read_bytes()
+            with self.subTest(source=relative, change="same-size"):
+                source.write_bytes(bytes([body[0] ^ 1]) + body[1:])
+                self.assert_no_compiler("Copy record fixture-data body identity mismatch")
+                source.write_bytes(body)
+            with self.subTest(source=relative, change="missing"):
+                source.unlink()
+                self.assert_no_compiler("unreadable Copy record fixture-data input")
+                source.write_bytes(body)
+
+    def test_copy_missing_discovery_rejects_and_unlisted_neighbour_remains_legacy(self):
+        source = self.root / COPY_DATA_SOURCES[0]
+        with self.assertRaisesRegex(RuntimeError, "source-only fixture data missing from discovery"):
+            verify_repo.source_plan([path for path in discover(self.root) if path != source], self.root)
+        neighbour = self.write(COPY_DATA / "unlisted.ox", b"unregistered source\n")
+        checks, entries, _ = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertIn((neighbour, False), checks)
+        self.assertNotIn(neighbour, entries)
+        self.assertFalse(any(path == self.root / name for path, _ in checks for name in COPY_DATA_SOURCES))
+
+    def copy_example(self):
+        project = "examples/copy-records"
+        for name in (project + "/oxid.toml", *COPY_PROJECTS[project]):
+            self.write(name, (verify_repo.ROOT / name).read_bytes())
+        return project
+
+    def test_copy_example_adds_one_typed_root_and_exactly_two_members(self):
+        before_checks, before_entries, before_count = verify_repo.source_plan(discover(self.root), self.root)
+        project = self.copy_example()
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertEqual([row for row in checks if row[0] == self.root / project], [(self.root / project, True)])
+        self.assertEqual([row for row in checks if row[0] != self.root / project], before_checks)
+        self.assertEqual(entries, before_entries + [self.root / project])
+        self.assertEqual(count - before_count, 2)
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[project], COPY_PROJECTS[project])
+        self.assertIn(project, verify_repo.TYPED_TESTED_MANIFEST_PROJECTS)
+        self.assertNotIn(project, verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        neighbour = self.write(project + "/tests/unlisted.ox", b"unregistered source\n")
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertIn((neighbour, False), checks)
+        self.assertNotIn(neighbour, entries)
+        self.assertEqual(count - before_count, 2)
+
+    def test_copy_example_missing_member_or_manifest_rejects_before_compiler(self):
+        project = self.copy_example()
+        for name in (project + "/oxid.toml", *COPY_PROJECTS[project]):
+            path = self.root / name
+            body = path.read_bytes()
+            with self.subTest(source=name):
+                path.unlink()
+                self.assert_no_compiler("typed manifest application missing from discovery")
+                path.write_bytes(body)
 
     def test_vector_data_is_authenticated_before_any_compiler_call(self):
         source = self.root / VECTOR_DATA_SOURCES[0]
@@ -1117,6 +1243,7 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         copy_u8_data(self.root)
         shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
         shutil.copytree(verify_repo.ROOT / VECTOR_DATA, self.root / VECTOR_DATA)
+        shutil.copytree(verify_repo.ROOT / COPY_DATA, self.root / COPY_DATA)
         members = set(verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES)
         members.update(name for project in verify_repo.TYPED_PROJECTS.values() for name in project)
         members.update(V2_OVERLAY_FILES)

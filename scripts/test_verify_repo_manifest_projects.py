@@ -59,14 +59,27 @@ class ManifestApplications(unittest.TestCase):
             manifest.write_text('[project]\nedition="typed-preview"\n')
             selected.update(members)
             entries.append(self.root / project)
+        copy_project = "examples/copy-records"
+        copy_members = ("examples/copy-records/src/main.ox", "examples/copy-records/tests/copies.ox")
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[copy_project], copy_members)
+        for name in (copy_project + "/oxid.toml", *copy_members):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((verify_repo.ROOT / name).read_bytes())
+        copy_paths = {self.root / name for name in copy_members}
+        self.assertFalse(copy_paths & selected)
         neighbor = self.root / "apps/frame-filter/unregistered.ox"
-        admitted, roots = verify_repo.manifest_project_members(list(selected) + [neighbor], self.root, required=True)
+        admitted, roots = verify_repo.manifest_project_members(list(selected | copy_paths) + [neighbor], self.root, required=True)
+        self.assertTrue(copy_paths <= admitted)
+        self.assertEqual(roots.count(self.root / copy_project), 1)
+        admitted -= copy_paths
+        roots = [path for path in roots if path != self.root / copy_project]
         self.assertEqual(admitted, selected)
         self.assertEqual(roots, entries)
         self.assertNotIn(neighbor, admitted)
         for missing in selected - set(self.members):
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
-                verify_repo.manifest_project_members(list(selected - {missing}), self.root, required=True)
+                verify_repo.manifest_project_members(list((selected - {missing}) | copy_paths), self.root, required=True)
 
 
 if __name__ == "__main__":

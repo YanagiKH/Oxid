@@ -102,7 +102,12 @@ class CurrentByteFixtureInventory(unittest.TestCase):
             vectors = verify_repo.typed_vector_fixture_data_sources(root)
             gate.require(len(vectors) == 30 and not vectors & (current | previous),
                          'portable vector fixture registration differs')
-            gate.require(not current & previous and verify_repo.fixture_data_sources(root) == current | previous | vectors,
+            copies = verify_repo.copy_record_fixture_data_sources(root)
+            gate.require(copies == {root / 'tests/fixtures/copy_records/all_scalars.ox',
+                                    root / 'tests/fixtures/copy_records/wide_unicode.ox'}
+                         and not copies & (current | previous | vectors),
+                         'portable Copy fixture registration differs')
+            gate.require(not current & previous and verify_repo.fixture_data_sources(root) - copies == current | previous | vectors,
                          'portable fixture registration differs')
             verify_repo.verify_test_fixture_registration(root)
             gate.require(not {'resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'} & sys.modules.keys(),
