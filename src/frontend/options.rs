@@ -449,7 +449,7 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
                 operation: Operation::Compile,
             };
         }
-        return super::native_library::route(forwarded, json);
+        return super::native_library::route(forwarded, json, args);
     }
     if forwarded.first().map(String::as_str) == Some("fmt") {
         return route_format(forwarded, json);

@@ -30,6 +30,9 @@ struct DriverBank {
     results: [Result<String, Box<Diagnostic>>; 3],
     inputs: [(&'static Options, &'static super::project::ProjectSources); 2],
     limits: [super::declaration_index::IndexLimits; 3],
+    raw_option_inputs: [&'static [String]; 2],
+    raw_option_iterators: [std::slice::Iter<'static, String>; 2],
+    raw_option_words: [Option<&'static String>; 4],
 }
 #[allow(dead_code)]
 struct HeaderBank {
@@ -125,7 +128,25 @@ pub(super) fn export_name(value: &str) -> Option<&str> {
     Some(name)
 }
 
-pub(super) fn route(arguments: Vec<String>, json: bool) -> Route {
+pub(super) fn route(arguments: Vec<String>, json: bool, raw_arguments: &[String]) -> Route {
+    // Validate original adjacency before using globally normalized arguments.
+    // A global option cannot fill or erase another option's missing value.
+    // This preflight is reached only for an explicit typed library command.
+    let mut raw = raw_arguments.iter();
+    while let Some(key) = raw.next() {
+        if key == "--" {
+            break;
+        }
+        if matches!(
+            key.as_str(),
+            "--output" | "--export" | "--backend" | "--profile" | "--fuel"
+        ) && raw
+            .next()
+            .is_none_or(|value| value.is_empty() || value.starts_with('-'))
+        {
+            return invalid(format!("{key} requires an adjacent nonempty value"), json);
+        }
+    }
     let mut path = None;
     let mut output = None;
     let mut export = None;
@@ -376,6 +397,16 @@ mod tests {
             super::super::options::route(&args(&["library", "entry.ox"])),
             Route::Legacy(_)
         ));
+        let Route::Legacy(forwarded) = super::super::options::route(&args(&[
+            "library",
+            "--output",
+            "--edition=legacy-0.9",
+            "old",
+            "entry.ox",
+        ])) else {
+            panic!("legacy route");
+        };
+        assert_eq!(forwarded, args(&["library", "--output", "old", "entry.ox"]));
     }
 
     #[test]

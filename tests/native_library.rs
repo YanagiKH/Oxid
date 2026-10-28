@@ -8,7 +8,7 @@ use std::{
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
-const PRICING: &str = include_str!("fixtures/native_library/pricing.ox");
+const PRICING: &str = include_str!("fixtures/native_library/pricing.ox.in");
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -201,6 +201,155 @@ mod linux {
             let fixture = Fixture::new(PRICING);
             failure(fixture.without_tools("crate::line_total", extra), "E0001");
             assert_eq!(fixture.entries(), [std::ffi::OsString::from("input.ox")]);
+        }
+    }
+
+    #[test]
+    fn global_options_cannot_supply_missing_adjacent_library_values() {
+        let pairs = [
+            ("--output", "published-v1"),
+            ("--export", "crate::line_total"),
+            ("--backend", "llvm"),
+            ("--profile", "dev"),
+            ("--fuel", "5"),
+        ];
+        for (selected, _) in pairs {
+            for interrupted_by in [
+                vec!["--message-format=json"],
+                vec!["--message-format", "json"],
+                vec!["--edition=typed-preview"],
+                vec!["--edition", "typed-preview"],
+            ] {
+                let fixture = Fixture::new(PRICING);
+                fs::remove_file(fixture.0.join("input.ox")).unwrap();
+                let format_inside = interrupted_by[0].starts_with("--message-format");
+                let mut arguments = vec![
+                    if format_inside {
+                        "--edition=typed-preview"
+                    } else {
+                        "--message-format=json"
+                    },
+                    "library",
+                ];
+                for (key, value) in pairs {
+                    arguments.push(key);
+                    if key == selected {
+                        arguments.extend(interrupted_by.iter().copied());
+                    }
+                    arguments.push(value);
+                }
+                arguments.push("input.ox");
+                let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                    .current_dir(&fixture.0)
+                    .stdin(Stdio::null())
+                    .env("OXID_LLVM_BIN", fixture.0.join("absent-tools"))
+                    .args(arguments)
+                    .output()
+                    .unwrap();
+                let text = failure(output, "E0001");
+                assert!(
+                    text.contains("requires an adjacent nonempty value"),
+                    "{text}"
+                );
+                assert!(
+                    fixture.entries().is_empty(),
+                    "invalid argv touched source or output"
+                );
+            }
+            for invalid in [Some(""), Some("-1"), Some("--"), None] {
+                let fixture = Fixture::new(PRICING);
+                fs::remove_file(fixture.0.join("input.ox")).unwrap();
+                let mut arguments = vec![
+                    "--edition=typed-preview",
+                    "--message-format=json",
+                    "library",
+                ];
+                for (key, value) in pairs {
+                    if key != selected {
+                        arguments.extend([key, value]);
+                    }
+                }
+                arguments.extend(["input.ox", selected]);
+                if let Some(value) = invalid {
+                    arguments.push(value);
+                }
+                let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                    .current_dir(&fixture.0)
+                    .stdin(Stdio::null())
+                    .env("OXID_LLVM_BIN", fixture.0.join("absent-tools"))
+                    .args(arguments)
+                    .output()
+                    .unwrap();
+                let text = failure(output, "E0001");
+                assert!(
+                    text.contains("requires an adjacent nonempty value"),
+                    "{text}"
+                );
+                assert!(fixture.entries().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn complete_library_values_keep_global_options_equals_forms_and_literal_paths() {
+        for arguments in [
+            vec![
+                "--edition=typed-preview",
+                "library",
+                "--output",
+                "published-v1",
+                "--message-format=json",
+                "--export",
+                "crate::line_total",
+                "input.ox",
+            ],
+            vec![
+                "library",
+                "--output",
+                "published-v1",
+                "--edition=typed-preview",
+                "--export",
+                "crate::line_total",
+                "input.ox",
+                "--message-format=json",
+            ],
+            vec![
+                "library",
+                "--output=published-v1",
+                "--export=crate::line_total",
+                "--backend=llvm",
+                "--profile=dev",
+                "--fuel=5",
+                "input.ox",
+                "--edition=typed-preview",
+                "--message-format=json",
+            ],
+            vec![
+                "--edition=typed-preview",
+                "--message-format=json",
+                "library",
+                "--output",
+                "published-v1",
+                "--export",
+                "crate::line_total",
+                "--",
+                "--output",
+            ],
+        ] {
+            let fixture = Fixture::new(PRICING);
+            if arguments.last() == Some(&"--output") {
+                fs::rename(fixture.0.join("input.ox"), fixture.0.join("--output")).unwrap();
+            }
+            let before = fixture.entries();
+            let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .current_dir(&fixture.0)
+                .stdin(Stdio::null())
+                .env("OXID_LLVM_BIN", fixture.0.join("absent-tools"))
+                .args(arguments)
+                .output()
+                .unwrap();
+            failure(output, "E0701");
+            assert_eq!(fixture.entries(), before);
         }
     }
 
