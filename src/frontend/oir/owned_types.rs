@@ -649,10 +649,7 @@ impl Declarations {
                     match ty {
                         ValueTy::Scalar(_) => (),
                         ValueTy::Owned(AggregateTy::Record(id))
-                            if raw.get(id.0).is_some_and(|nested| nested.is_copy) =>
-                        {
-                            ()
-                        }
+                            if raw.get(id.0).is_some_and(|nested| nested.is_copy) => {}
                         _ => return Err(DeclarationError::NonScalarField(field.id)),
                     }
                 }
