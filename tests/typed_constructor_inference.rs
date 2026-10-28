@@ -146,7 +146,16 @@ fn imported_aliases_keep_definition_identity_and_private_fields() {
     )
     .unwrap();
     let output = project.invoke(&["run"]);
-    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+    if !cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         assert_eq!(output.status.code(), Some(1), "{output:?}");
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("error[E0005] (source):"),

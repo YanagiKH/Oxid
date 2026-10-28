@@ -858,7 +858,16 @@ fn first_module_dimensions_precede_root_canonical_path_admission() {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn private_module_policy_is_explicit_on_unqualified_hosts() {
     let f = Fixture::new();
