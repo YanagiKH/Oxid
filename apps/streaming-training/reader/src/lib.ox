@@ -152,7 +152,7 @@ pub fn open_at(path: &[u8], size: i32, start_row: i32) -> Result<Reader>{
             // Validated dimensions fit this signed 64-bit byte offset. The
             // language's checked arithmetic also rejects any future overflow.
             let byte_offset = 24i64 + wide_start * wide_columns * 8i64;
-            let moved = seek_absolute(&mut *reader.file, byte_offset);
+            let moved = seek_absolute(&mut reader.file, byte_offset);
             match moved {
                 FileStatus::Error(code) => { return reject::<Reader>(&mut reader, Error::Io(code)); },
                 FileStatus::Ok => {
