@@ -100,7 +100,17 @@ class ProjectRegistrationTests(unittest.TestCase):
                      Path('tests/qualification/byte_storage_current'),
                      Path('tests/fixtures/typed_vectors')):
             shutil.copytree(verify_repo.ROOT / data, self.root / data)
+        copy_names = ('tests/fixtures/copy_records/all_scalars.ox',
+                      'tests/fixtures/copy_records/wide_unicode.ox')
+        for name in copy_names:
+            destination = self.root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(verify_repo.ROOT / name, destination)
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
+        copy_data = verify_repo.copy_record_fixture_data_sources(self.root)
+        self.assertEqual(copy_data, {self.root / name for name in copy_names})
+        self.assertEqual(len(copy_data), 2)
+        self.assertTrue(copy_data <= set(self.data_sources))
         vector_data = verify_repo.typed_vector_fixture_data_sources(self.root)
         expected_vectors = {self.root / 'tests/fixtures/typed_vectors' / group / (name + '.ox')
                             for group, names in (
@@ -114,8 +124,9 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.assertEqual(vector_data, expected_vectors)
         self.assertEqual(len(vector_data), 30)
         self.assertTrue(vector_data <= set(self.data_sources))
-        predecessor_data = set(self.data_sources) - vector_data
+        predecessor_data = set(self.data_sources) - copy_data - vector_data
         byte_data = verify_repo.byte_storage_fixture_data_sources(self.root)
+        self.assertFalse(copy_data & (vector_data | byte_data))
         self.assertFalse(vector_data & byte_data)
         self.assertEqual(len(byte_data), 325)
         self.assertEqual(len(predecessor_data), 188 + 325)

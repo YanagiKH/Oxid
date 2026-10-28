@@ -239,6 +239,9 @@ fn render(
                         continue;
                     };
                     begin_item(out, project, "Struct", record.name)?;
+                    if record.derive_copy.is_some() {
+                        out.write_str("#[derive(Copy)]\n")?;
+                    }
                     out.write_str("pub struct ")?;
                     escaped(out, text(project, record.name)?)?;
                     generics(out, project, ast, record.name)?;
@@ -257,6 +260,9 @@ fn render(
                         out.write_str("    // private fields\n")?;
                     }
                     out.write_str("}</code></pre>\n")?;
+                    if let Some(attribute) = record.derive_copy {
+                        comments(out, project, attribute)?;
+                    }
                     comments(out, project, public)?;
                     for field in &record.fields {
                         if let Some(public) = field.public {
@@ -372,6 +378,45 @@ mod tests {
         );
         assert!(fragment(&project, 0..1, "library<&", Some("1.0.0"), html.len() - 1).is_err());
         assert!(fragment(&project, 0..1, "library<&", Some("1.0.0"), 0).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn copy_record_fragments_preserve_comments_privacy_and_exact_output_limits() {
+        let root = std::env::temp_dir().join(format!(
+            "oxid-copy-doc-budget-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        let source = root.join("lib.ox");
+        let declaration = "pub struct Value { pub number: i32, hidden_number: i32 }\n";
+        let description = "/// A snapshot <&>.\n";
+        let mut pages = Vec::new();
+        for attribute in ["", "# /* not API text <script> */ [ derive ( Copy ) ]\n"] {
+            fs::write(&source, format!("{description}{attribute}{declaration}")).unwrap();
+            let project = ProjectSources::load_typed(
+                source.to_str().unwrap(),
+                super::super::project::ProjectLimits::default(),
+            )
+            .unwrap();
+            let html = fragment(&project, 0..1, "library", Some("1.2.3"), 4096).unwrap();
+            assert!(html.contains("A snapshot &lt;&amp;&gt;."));
+            assert!(!html.contains("hidden_number"));
+            assert!(!html.contains("not API text"));
+            assert!(!html.contains("<script>"));
+            assert_eq!(
+                fragment(&project, 0..1, "library", Some("1.2.3"), html.len()).unwrap(),
+                html
+            );
+            assert!(fragment(&project, 0..1, "library", Some("1.2.3"), html.len() - 1).is_err());
+            pages.push(html);
+        }
+        let attribute = "#[derive(Copy)]\n";
+        assert!(!pages[0].contains(attribute));
+        assert_eq!(pages[1].matches(attribute).count(), 1);
+        assert_eq!(pages[1].replace(attribute, ""), pages[0]);
+        assert_eq!(pages[1].len(), pages[0].len() + attribute.len());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -326,38 +326,156 @@ jobs:
           # every source, bottle, dependency and build byte unchanged.
           python3 - "$pinned_core" <<'PY'
           import hashlib
-          from pathlib import Path
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import stat
+          import subprocess
           import sys
 
+          formula_tree = "072eb5593e65cd9374940a2a183e18b656f57543"
+          formula_file_count = 7674
+          formula_inventory_sha = "d54485054853a163d3b5835b3403131eece818c7509fae4a570a7a35861e35b3"
+          adaptation_file_count = 1156
+          adaptation_inventory_sha = "df40f1369bb73ae9e9f489877dbd9137558d12f3048af29945cd91bdb304252a"
           formulas = {
               "llvm@19.rb": ("14c7ae5879dff4c4d3fab077671d924a56605c24e2fef252ca343d49029efa59",
                              "9672f3b5b565b7b5e310bd0aa4698540712ff5b74955d1716b8127825517eb95"),
               "lld@19.rb": ("bda99a28eec9b9e4986220751dd0c622566619d5071b9df9dcb3f315a92358a1",
                             "5fa2731e9bf2027ecb569817b3934cfb07e2684f7d41bd0e3310eda0de3d84fe"),
           }
-          obsolete = b"  no_autobump! because: :requires_manual_review\n"
-          prepared = []
-          for name, (before_sha, after_sha) in formulas.items():
-              path = Path(sys.argv[1]) / "Formula/l" / name
-              if path.is_symlink() or not path.is_file():
-                  raise SystemExit("nonregular pinned formula: " + name)
+          metadata_stanzas = {
+              b'  no_autobump! because: :requires_manual_review\n': 1125,
+              b'  no_autobump! because: :incompatible_version_format\n': 17,
+              b'  no_autobump! because: :bumped_by_upstream\n': 10,
+              b'  no_autobump! because: "some resources have to be updated manually"\n': 1,
+              b'  no_autobump! because: "unable to get versions"\n': 1,
+              b'  no_autobump! because: "resources cannot be updated automatically"\n': 1,
+              b'  no_autobump! because: "\'playwright\' resource lacks PyPI sdist"\n': 1,
+          }
+          # These calls are inside deferred strategy bodies, not class metadata.
+          # Keep their complete bodies and return values unchanged.
+          nested_livechecks = (
+              "Formula/b/bash.rb", "Formula/b/blastem.rb", "Formula/c/calabash.rb",
+              "Formula/f/frege.rb", "Formula/h/http_load.rb",
+          )
+          nested_stanza = b"      no_autobump! because: :requires_manual_review\n"
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          def digest(body):
+              return hashlib.sha256(body).hexdigest()
+
+          def encoded(value):
+              return json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode() + b"\n"
+
+          root = Path(sys.argv[1])
+          command = ["git", "-C", str(root)]
+          actual_tree = subprocess.check_output(command + ["rev-parse", "HEAD:Formula"]).decode().strip()
+          require(actual_tree == formula_tree, "changed pinned Formula tree")
+          entries = subprocess.check_output(command + ["ls-tree", "-rlz", "HEAD", "--", "Formula"])
+          rows, prepared, changes, actual_names, nested_seen = [], [], [], set(), set()
+          counts = dict.fromkeys(metadata_stanzas, 0)
+          for entry in entries.split(b"\0"):
+              if not entry:
+                  continue
+              details, path_bytes = entry.split(b"\t", 1)
+              mode, kind, object_id, length = details.split()
+              name = path_bytes.decode()
+              relative = PurePosixPath(name)
+              require(not relative.is_absolute() and relative.parts[0] == "Formula"
+                      and ".." not in relative.parts and name.endswith(".rb")
+                      and kind == b"blob" and mode in (b"100644", b"100755")
+                      and name not in actual_names, "invalid pinned formula member")
+              path = root / name
+              before_stat = path.lstat()
+              require(stat.S_ISREG(before_stat.st_mode) and before_stat.st_nlink == 1
+                      and bool(before_stat.st_mode & 0o111) == (mode == b"100755"),
+                      "nonregular or changed-mode pinned formula: " + name)
               before = path.read_bytes()
-              if hashlib.sha256(before).hexdigest() != before_sha or before.count(obsolete) != 1:
-                  raise SystemExit("changed pinned formula: " + name)
-              position = before.index(obsolete)
-              after = before.replace(obsolete, b"", 1)
-              if (hashlib.sha256(after).hexdigest() != after_sha
-                      or after[:position] + obsolete + after[position:] != before):
-                  raise SystemExit("invalid formula metadata adaptation: " + name)
-              prepared.append((path, after))
-          for path, body in prepared:
+              fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+              require(all(getattr(before_stat, field) == getattr(path.lstat(), field) for field in fields),
+                      "pinned formula changed during read: " + name)
+              blob = b"blob " + str(len(before)).encode() + b"\0" + before
+              require(len(before) == int(length)
+                      and hashlib.sha1(blob, usedforsecurity=False).hexdigest().encode() == object_id,
+                      "changed pinned formula: " + name)
+              actual_names.add(name)
+              rows.append([name, mode.decode(), object_id.decode(), len(before)])
+              found = [line for line in before.splitlines(keepends=True) if b"no_autobump!" in line]
+              require(len(found) <= 1, "repeated formula update metadata: " + name)
+              after = before
+              if found:
+                  stanza = found[0]
+                  if name in nested_livechecks:
+                      require(stanza == nested_stanza, "changed nested livecheck: " + name)
+                      nested_seen.add(name)
+                  else:
+                      require(stanza in metadata_stanzas, "unknown formula update metadata: " + name)
+                      counts[stanza] += 1
+                      position = before.index(stanza)
+                      after = b"".join(line for line in before.splitlines(keepends=True) if line != stanza)
+                      require(after[:position] + stanza + after[position:] == before,
+                              "invalid formula metadata inverse: " + name)
+                      changes.append([name, mode.decode(), object_id.decode(), len(before), digest(before),
+                                      len(after), digest(after), digest(stanza)])
+                      prepared.append((path, after, before_stat.st_mode))
+              if relative.name in formulas and name == "Formula/l/" + relative.name:
+                  require((digest(before), digest(after)) == formulas[relative.name],
+                          "invalid target formula adaptation: " + name)
+          require(len(rows) == formula_file_count and digest(encoded(rows)) == formula_inventory_sha,
+                  "changed pinned formula inventory")
+          require(counts == metadata_stanzas and nested_seen == set(nested_livechecks)
+                  and len(changes) == adaptation_file_count
+                  and digest(encoded(changes)) == adaptation_inventory_sha,
+                  "changed formula adaptation inventory")
+          actual = set()
+          for directory, directories, files in os.walk(root / "Formula", followlinks=False):
+              require(all(not (Path(directory) / name).is_symlink() for name in directories),
+                      "symlink pinned formula directory")
+              actual.update((Path(directory) / name).relative_to(root).as_posix() for name in files)
+          require(actual == actual_names, "untracked or missing pinned formula member")
+          for path, body, mode in prepared:
               path.write_bytes(body)
+              require(path.read_bytes() == body and path.stat().st_mode == mode,
+                      "formula metadata write differed: " + str(path))
+          report = {"formula_tree": formula_tree, "formula_files": len(rows),
+                    "formula_inventory_sha256": formula_inventory_sha,
+                    "adapted_formulas": len(changes), "adaptation_inventory_sha256": adaptation_inventory_sha,
+                    "unchanged_nested_livechecks": sorted(nested_seen), "changes": changes}
+          report_path = root.parent / "formula-adaptation.json"
+          report_path.write_text(json.dumps(report, indent=2) + "\n")
+          print("Verified metadata-only formula adaptation: " + str(report_path))
           PY
           # Install through a clean core checkout, then restore the runner's tap intact.
+          install_pid=
+          install_started=0
+          install_signal=TERM
           restore_core() {
             install_status=$?
             trap - EXIT
             trap '' INT TERM
+            if test "$install_started" = 1; then
+              # Cover a signal between launching the job and assigning its PID.
+              install_pid="${install_pid:-${!:-}}"
+              if test -n "$install_pid"; then
+                kill "-$install_signal" -- "-$install_pid" 2>/dev/null || true
+                # Async descendants may ignore INT; bound their shutdown too.
+                if test "$install_signal" = INT; then
+                  kill -TERM -- "-$install_pid" 2>/dev/null || true
+                fi
+                for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                  if ! kill -0 -- "-$install_pid" 2>/dev/null; then
+                    break
+                  fi
+                  sleep 0.1
+                done
+                kill -KILL -- "-$install_pid" 2>/dev/null || true
+                wait "$install_pid" 2>/dev/null || true
+              fi
+            fi
             if ! test -e "$pinned_core" && { test -e "$core" || test -L "$core"; }; then
               mv "$core" "$pinned_core" || exit 1
             fi
@@ -367,14 +485,23 @@ jobs:
             exit "$install_status"
           }
           trap restore_core EXIT
-          trap 'exit 130' INT
+          trap 'install_signal=INT; exit 130' INT
           trap 'exit 143' TERM
           if test -e "$core" || test -L "$core"; then
             mv "$core" "$saved_core"
           fi
           mv "$pinned_core" "$core"
+          # Foreground commands defer shell-PID cancellation traps. Isolate the
+          # install job's group, then wait interruptibly without job control.
+          set -m
+          install_started=1
           HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
-            brew install --force-bottle llvm@19 lld@19
+            brew install --force-bottle llvm@19 lld@19 &
+          install_pid=$!
+          set +m
+          wait "$install_pid"
+          install_started=0
+          install_pid=
           llvm_bin="$(brew --prefix llvm@19)/bin"
           lld_bin="$(brew --prefix lld@19)/bin"
           test "$("$llvm_bin/llvm-config" --version)" = "19.1.7"
