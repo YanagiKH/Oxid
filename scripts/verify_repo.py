@@ -170,6 +170,8 @@ TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-recor
 TYPED_CHECK_ONLY_FILES = (
     "fixtures/typed-expression-samples/stdin.ox",
     "fixtures/typed-expression-samples/stack_stdin.ox",
+    # This library export runs through its CPython host, not a standalone main.
+    "apps/python-pricing/src/pricing.ox",
 )
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
