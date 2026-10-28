@@ -466,7 +466,10 @@ impl<'a> ExecutionPlan<'a> {
                 matches!(
                     reference.referent(),
                     BorrowedTy::Exact(
-                        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                        AggregateTy::ByteBuf
+                            | AggregateTy::File
+                            | AggregateTy::Vector(_)
+                            | AggregateTy::RecordVector(_)
                     )
                 )
             });
@@ -512,7 +515,10 @@ impl<'a> ExecutionPlan<'a> {
             for owner in &f.owners {
                 dynamic_resources |= matches!(
                     owner.aggregate(),
-                    AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                    AggregateTy::ByteBuf
+                        | AggregateTy::File
+                        | AggregateTy::Vector(_)
+                        | AggregateTy::RecordVector(_)
                 );
                 let layout = witness
                     .declarations()

@@ -404,12 +404,22 @@ pub(super) fn resource_borrow(
     if declaration.projection.is_empty() {
         matches!(
             indexed_base(f, declaration.authority),
-            BorrowedTy::Exact(AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_))
+            BorrowedTy::Exact(
+                AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
+            )
         )
     } else {
         matches!(
             projection(plan, f, declaration.authority, &declaration.projection).0,
-            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_))
+            ValueTy::Owned(
+                AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
+            )
         )
     }
 }

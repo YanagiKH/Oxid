@@ -3340,7 +3340,10 @@ fn active_transfer_with_intent(
     }
     if !matches!(
         aggregate,
-        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+        AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)
     ) {
         for (index, leaf) in plan
             .witness()
@@ -3467,7 +3470,10 @@ fn transfer(
     let record = match aggregate {
         AggregateTy::Record(record) => record,
         AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
-        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_) => {
+        AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
             resources::leaves(
                 out,
                 plan,
@@ -3553,7 +3559,10 @@ fn transfer_leaves(
     );
     if matches!(
         aggregate,
-        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+        AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)
     ) {
         return;
     }

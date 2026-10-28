@@ -6,12 +6,12 @@ use crate::frontend::builtin_catalog::{experimental::Enumeration, vector::Functi
 pub(super) fn check(raw: &RawOwnedProgram, ids: &builtins::BuiltinIds) -> Result<(), OwnedFailure> {
     for (rank, operation) in raw.vector_functions.iter().enumerate() {
         if !raw.builtins.contains_vector(operation.item())
-            || !crate::frontend::builtin_catalog::vector::scalar_admitted(operation.element)
+            || !crate::frontend::builtin_catalog::vector::scalar_admitted(operation.element())
             || raw.vector_functions[..rank].contains(operation)
         {
             return Err(bad());
         }
-        let status = if operation.operation.requires_grow_status() {
+        let status = if operation.operation().requires_grow_status() {
             ids.experimental_enum(Enumeration::Grow).ok_or_else(bad)?
         } else {
             EnumId(0)

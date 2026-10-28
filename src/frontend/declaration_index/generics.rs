@@ -697,7 +697,7 @@ impl Plan {
         storage.enter_vector(at)?;
         let result = (|| {
             work.debit(1, at, "vector specialization admission")?;
-            if !vector::scalar_admitted(key.element) {
+            if !vector::scalar_admitted(key.element()) {
                 return Err(error("vector specialization requires a scalar element", at));
             }
             if let Some(rank) = vector_rank(&self.vector_functions, key, work, at)? {
@@ -742,7 +742,8 @@ impl Plan {
                 for call in &mut instance.calls {
                     work.debit(1, at, "vector call identity freeze")?;
                     if let Some(key) = call.vector {
-                        if index.vector_template(call.template, work, at)? != Some(key.operation) {
+                        if index.vector_template(call.template, work, at)? != Some(key.operation())
+                        {
                             return Err(bad(at));
                         }
                         let rank = vector_rank(functions, key, work, at)?.ok_or_else(|| bad(at))?;

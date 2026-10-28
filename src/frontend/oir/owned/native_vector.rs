@@ -225,8 +225,8 @@ pub(super) fn operation(
         Some(key),
         "canonical vector function/key"
     );
-    let tag = super::super::vector_type::element(key.element).tag();
-    let pointer = if key.operation == Operation::New {
+    let tag = super::super::vector_type::element(key.element()).tag();
+    let pointer = if key.operation() == Operation::New {
         "null".to_owned()
     } else {
         base_pointer(
@@ -237,7 +237,7 @@ pub(super) fn operation(
         )
     };
     let count = if matches!(
-        key.operation,
+        key.operation(),
         Operation::TryReserve | Operation::TryResize | Operation::Truncate
     ) {
         load_operand(
@@ -255,12 +255,12 @@ pub(super) fn operation(
     // Native scalar slots already contain each initialized typed byte prefix:
     // signed/narrow integers, bool/unit, chars, floats and 128-bit integers.
     // Passing that prefix avoids an unpriced alloca and a by-value C scalar.
-    let scalar = match key.operation {
+    let scalar = match key.operation() {
         Operation::TryPush => "%s0",
         Operation::TryResize => "%s1",
         _ => "null",
     };
-    let (source, length) = if key.operation == Operation::TryExtend {
+    let (source, length) = if key.operation() == Operation::TryExtend {
         (
             base_pointer(
                 out,
@@ -282,7 +282,7 @@ pub(super) fn operation(
         CallResult::Owned(_) => "%result".to_owned(),
         CallResult::Scalar(local) => format!("%s{}", local.0),
     };
-    let code = match key.operation {
+    let code = match key.operation() {
         Operation::New => 0,
         Operation::Len => 1,
         Operation::Capacity => 2,

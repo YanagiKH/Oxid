@@ -69,8 +69,8 @@ fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFunction {
 /// No catalog signature/member builder supplies these expected declarations.
 fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction {
     use vector::Operation::*;
-    let result = match key.operation {
-        New | Take => ValueTy::Owned(AggregateTy::Vector(key.element)),
+    let result = match key.operation() {
+        New | Take => ValueTy::Owned(AggregateTy::Vector(key.element())),
         Len | Capacity => ValueTy::Scalar(hir::Ty::I32),
         Truncate => ValueTy::Scalar(hir::Ty::Unit),
         TryReserve | TryPush | TryExtend | TryResize => {
@@ -78,13 +78,13 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
         }
     };
     let mut raw = function(id, result, span);
-    if key.operation != New {
+    if key.operation() != New {
         raw.parameters
             .push(ParameterBinding::Reference(ReferenceParamId(0)));
         raw.references.push(ReferenceDecl {
-            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Vector(key.element)))
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Vector(key.element())))
                 .unwrap(),
-            kind: if matches!(key.operation, Len | Capacity) {
+            kind: if matches!(key.operation(), Len | Capacity) {
                 BorrowKind::Shared
             } else {
                 BorrowKind::Exclusive
@@ -93,10 +93,10 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
             span,
         });
     }
-    let scalar_parameters: &[hir::Ty] = match key.operation {
+    let scalar_parameters: &[hir::Ty] = match key.operation() {
         TryReserve | Truncate => &[hir::Ty::I32],
-        TryPush => std::slice::from_ref(&key.element),
-        TryResize => &[hir::Ty::I32, key.element],
+        TryPush => std::slice::from_ref(&key.element()),
+        TryResize => &[hir::Ty::I32, key.element()],
         _ => &[],
     };
     for ty in scalar_parameters {
@@ -108,11 +108,11 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
             span,
         });
     }
-    if key.operation == TryExtend {
+    if key.operation() == TryExtend {
         raw.parameters
             .push(ParameterBinding::Reference(ReferenceParamId(1)));
         raw.references.push(ReferenceDecl {
-            referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(key.element)).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(key.element())).unwrap(),
             kind: BorrowKind::Shared,
             position: 1,
             span,
@@ -177,7 +177,7 @@ fn program(keys: &[vector::Function]) -> (SourceMap, RawOwnedProgram) {
     for key in keys {
         raw.builtins = raw.builtins.admit(BuiltinItem::Vector(key.item()));
         grow |= matches!(
-            key.operation,
+            key.operation(),
             vector::Operation::TryReserve
                 | vector::Operation::TryPush
                 | vector::Operation::TryExtend

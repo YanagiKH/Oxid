@@ -3913,9 +3913,12 @@ impl<V: StoredValue> Iterator for ValueCells<'_, V> {
             })),
             // Resource identities are never scalar cells. A separate checked
             // traversal validates and transfers their allocation obligations.
-            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)) => {
-                None
-            }
+            ValueTy::Owned(
+                AggregateTy::ByteBuf
+                | AggregateTy::File
+                | AggregateTy::Vector(_)
+                | AggregateTy::RecordVector(_),
+            ) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                 let result = (|| {
                     let leaf = ScalarLeaf {

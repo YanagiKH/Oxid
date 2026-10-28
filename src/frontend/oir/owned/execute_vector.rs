@@ -918,7 +918,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         span: Span,
     ) -> Result<(VectorPlace, byte_buffer::VectorDescriptor)> {
         if self.authority_referent(frame, AccessBase::Parameter(ReferenceParamId(0)), span)?
-            != BorrowedTy::Exact(AggregateTy::Vector(key.element))
+            != BorrowedTy::Exact(AggregateTy::Vector(key.element()))
         {
             return Err(bad("vector parameter type", span));
         }
@@ -932,7 +932,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             .get(index(handle.permission.loan, span)?)
             .map(LoanDecl::referent)
             .ok_or_else(|| bad("vector parameter loan", span))?;
-        if referent != BorrowedTy::Exact(AggregateTy::Vector(key.element)) {
+        if referent != BorrowedTy::Exact(AggregateTy::Vector(key.element())) {
             return Err(bad("vector parameter requires whole authority", span));
         }
         let root = self.base(
@@ -947,7 +947,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             root,
             span,
         )?;
-        self.vector_at(root, view.offset, key.element, span)
+        self.vector_at(root, view.offset, key.element(), span)
     }
     fn vector_i32(&self, frame: usize, local: usize, span: Span) -> Result<i32> {
         match self
@@ -1283,14 +1283,14 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         // Reserve the ACTUAL sealed return work before any heap mutation. The
         // direct completion below never recharges or re-enters fallible return.
         self.charge(delivery.cost, span)?;
-        let element = super::super::vector_type::element(key.element);
-        let value = match key.operation {
+        let element = super::super::vector_type::element(key.element());
+        let value = match key.operation() {
             Operation::New => {
                 Returned::Descriptor(byte_buffer::VectorDescriptor::empty().encoding())
             }
             Operation::Len | Operation::Capacity => {
                 let (_, value) = self.vector_parameter(frame, key, Access::Read, span)?;
-                let count = if key.operation == Operation::Len {
+                let count = if key.operation() == Operation::Len {
                     self.heap.vector_len(&value, element)
                 } else {
                     self.heap.vector_capacity(&value, element)
@@ -1322,7 +1322,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                         )
                     }
                     Operation::TryPush => {
-                        let scratch = self.vector_scalar(frame, 0, key.element, span)?;
+                        let scratch = self.vector_scalar(frame, 0, key.element(), span)?;
                         self.heap.vector_try_push(
                             &mut value,
                             element,
@@ -1332,7 +1332,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     }
                     Operation::TryResize => {
                         let count = self.vector_i32(frame, 0, span)?;
-                        let scratch = self.vector_scalar(frame, 1, key.element, span)?;
+                        let scratch = self.vector_scalar(frame, 1, key.element(), span)?;
                         self.heap.vector_try_resize(
                             &mut value,
                             element,
@@ -1345,7 +1345,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                         frame,
                         AccessBase::Parameter(ReferenceParamId(1)),
                         Access::Read,
-                        key.element,
+                        key.element(),
                         span,
                     )? {
                         ScalarRegion::Activation {
@@ -1353,7 +1353,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             bytes,
                             element: source_type,
                         } => {
-                            if source_type != key.element {
+                            if source_type != key.element() {
                                 return Err(bad("vector source element", span));
                             }
                             self.heap.vector_try_extend(
@@ -1369,7 +1369,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             end,
                             element: source_type,
                         } => {
-                            if source_type != key.element {
+                            if source_type != key.element() {
                                 return Err(bad("vector source element", span));
                             }
                             self.heap.vector_try_extend_vector(
@@ -1386,7 +1386,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             start,
                             end,
                         } => {
-                            if key.element != hir::Ty::U8 {
+                            if key.element() != hir::Ty::U8 {
                                 return Err(bad("vector byte source element", span));
                             }
                             let bytes = self

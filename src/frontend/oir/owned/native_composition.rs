@@ -278,7 +278,10 @@ fn value(
     match value {
         ValueTy::Scalar(ty) => scalar(out, name, ty, source, destination, mode),
         ValueTy::Owned(
-            aggregate @ (AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)),
+            aggregate @ (AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)),
         ) => resource(out, name, aggregate, source, destination, mode),
         ValueTy::Owned(aggregate @ (AggregateTy::Record(_) | AggregateTy::Enum(_))) => {
             let function = helper(aggregate, mode);
