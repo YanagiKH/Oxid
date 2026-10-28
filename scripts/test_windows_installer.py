@@ -100,13 +100,33 @@ function Invoke-WebRequest {
     [System.IO.File]::Copy($source, $OutFile, $false)
 }
 """ + prelude + "\n$arguments = " + arguments + "\n" + load + "\n", encoding="utf-8")
+        # PowerShell repairs this only when it directly launches powershell.exe.
+        # A Python child must let its selected edition initialize inbox modules.
+        environment = {key: value for key, value in self.environment.items()
+                       if key.casefold() != "psmodulepath"}
         return subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(wrapper)],
-                              cwd=self.root, env=self.environment, capture_output=True, timeout=30)
+                              cwd=self.root, env=environment, capture_output=True, timeout=30)
 
     def assert_clean(self):
         self.assertEqual(list(self.temporary.iterdir()), [])
         if self.destination.exists():
             self.assertEqual(list(self.destination.glob(".oxid-install-*")), [])
+
+    def test_child_shell_uses_its_own_module_path(self):
+        foreign_modules = self.root / "other-shell-modules"
+        foreign_modules.mkdir()
+        self.environment.update(PSModulePath=str(foreign_modules),
+                                TEST_FOREIGN_MODULES=str(foreign_modules),
+                                OXID_ARCHIVE=str(self.archive))
+        result = self.run_installer(prelude="""$paths = $env:PSModulePath -split [IO.Path]::PathSeparator
+if ($paths -contains $env:TEST_FOREIGN_MODULES) { throw 'Inherited another shell module path.' }
+$null = Get-Command Get-FileHash -ErrorAction Stop
+""")
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+        self.assertEqual(self.environment["PSModulePath"], str(foreign_modules))
+        self.assertEqual((self.destination / "oxid.exe").read_bytes(), self.payload)
+        self.assertFalse(self.requests.exists())
+        self.assert_clean()
 
     def test_offline_archive_never_downloads(self):
         self.environment.update(OXID_ARCHIVE=str(self.archive), TEST_DOWNLOAD_FAILURE="1")
