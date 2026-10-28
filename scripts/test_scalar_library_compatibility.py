@@ -506,7 +506,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                         restored, flags=re.M | re.S)
         self.assertIsNotNone(sdk)
         self.assertEqual((len(sdk.group()), gate.sha(sdk.group())),
-                         (3445, "e841b69ad012783a61cafd1e85a2b6d2e8c480e0a9934f1c587d89932db1c866"))
+                         (3451, "698042accd0ae6f47fbef134e5abfe8007b27415a45da837e244868e16f1132e"))
         previous_sdk = (
             b"          $PSNativeCommandArgumentPassing = 'Legacy'\n"
             + (r'          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"' + "\n").encode()

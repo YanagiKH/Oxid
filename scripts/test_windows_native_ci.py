@@ -61,7 +61,7 @@ $sdkStart.RedirectStandardOutput = $true
 $sdkStart.RedirectStandardError = $true
 $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
 $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
-$sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+$sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"'
 $sdk = [System.Diagnostics.Process]::new()
 $sdk.StartInfo = $sdkStart
 $sdkStarted = $false
@@ -319,7 +319,8 @@ class WindowsNativeCiTests(unittest.TestCase):
             ('missing-sdk-step', SDK_STEP, 'SDK setup disabled'),
             ('wrong-sdk-shell', 'shell: pwsh', 'shell: cmd'),
             ('missing-vc-tools', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', 'Other.Component'),
-            ('wrong-sdk-architecture', '-arch=x64 -host_arch=x64', '-arch=x86 -host_arch=x86'),
+            ('wrong-sdk-architecture', '"-arch=x64" "-host_arch=x64"', '"-arch=x86" "-host_arch=x86"'),
+            ('unquoted-equals-argument', '"-arch=x64"', '-arch=x64'),
             ('missing-sdk-invocation-regression', '          python -B scripts/test_windows_native_ci.py\n', ''),
             ('shell-execute-bypass', '$sdkStart.UseShellExecute = $false', '$sdkStart.UseShellExecute = $true'),
             ('double-wrapped-batch', "'/d /u /s /c \"\"'", "'/d /u /s /c \"\"\"'"),
@@ -436,17 +437,17 @@ class WindowsSdkInvocationTests(unittest.TestCase):
         invocation = next(line for line in self.sdk_tail().splitlines()
                           if line.startswith('$sdkStart.Arguments = '))
         self.assertEqual(invocation, "$sdkStart.Arguments = '/d /u /s /c \"\"' + $devcmd + "
-                         "'\" -no_logo -arch=x64 -host_arch=x64 >nul && set\"'")
+                         "'\" \"-no_logo\" \"-arch=x64\" \"-host_arch=x64\" >nul && set\"'")
         self.assertNotIn('$PSNativeCommandArgumentPassing', self.sdk_tail())
         for path in (r'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat',
                      r'C:\Program Files (x86)\Visual Studio 雪 & tools\Common7\Tools\VsDevCmd.bat'):
             with self.subTest(path=path):
-                raw_arguments = '/d /u /s /c ""' + path + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+                raw_arguments = '/d /u /s /c ""' + path + '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"'
                 raw_command = raw_arguments.split('/c ', 1)[1]
                 self.assertEqual(raw_command, '""' + path +
-                                 '" -no_logo -arch=x64 -host_arch=x64 >nul && set"')
+                                 '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"')
                 self.assertEqual(raw_command[1:-1], '"' + path +
-                                 '" -no_logo -arch=x64 -host_arch=x64 >nul && set')
+                                 '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set')
 
     @unittest.skipUnless(sys.platform == 'win32', 'requires actual Windows cmd.exe and PowerShell 7')
     def test_real_cmd_batch_preserves_spaced_paths_arguments_environment_and_errors(self):
@@ -465,6 +466,7 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                     batch.write_text(
                         '@echo off\n'
                         '> "%OXID_SDK_TEST_TRACE%" echo entered\n'
+                        '>> "%OXID_SDK_TEST_TRACE%" echo args:[%~1][%~2][%~3][%~4]\n'
                         'if not "%~1"=="-no_logo" exit /b 21\n'
                         'if not "%~2"=="-arch=x64" exit /b 22\n'
                         'if not "%~3"=="-host_arch=x64" exit /b 23\n'
@@ -498,7 +500,9 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                     self.assertTrue(trace.is_file(), 'the actual batch fixture was not entered: ' + diagnostics)
                     self.assertLessEqual(trace.stat().st_size, 16384)
                     marks = trace.read_bytes().decode('utf-16-le').removeprefix('\ufeff').splitlines()
-                    self.assertEqual(marks, ['entered', f'validated-exit-{status}'], diagnostics)
+                    self.assertEqual(marks, [
+                        'entered', 'args:[-no_logo][-arch=x64][-host_arch=x64][]',
+                        f'validated-exit-{status}'], diagnostics)
                     if status:
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn(b'Visual Studio environment initialization failed', result.stderr)
