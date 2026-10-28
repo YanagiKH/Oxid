@@ -1,8 +1,8 @@
 # Native projects
 
 Use Oxid's typed mode to check code, test local packages and build native
-executables. This workflow is available in development builds on Linux x86_64
-and ARM64. Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
+executables. Native project builds target Linux and macOS on x86_64 and ARM64.
+Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
 ## Create and run
@@ -20,6 +20,22 @@ oxid build
 The executable runs without the Oxid compiler or project sources. The generated
 `oxid.toml` selects typed mode for later commands, so you only specify the edition
 when creating the project.
+
+## Windows module checks
+
+Windows x86_64 development builds can check multi-file programs and run pure
+computations from a source entry on a local NTFS drive:
+
+```powershell
+oxid check main.ox --edition typed-preview
+oxid run main.ox --edition typed-preview --entry-mode=result
+```
+
+Use the exact letter case declared by each module. Child modules cannot pass
+through symbolic links or junctions. Network paths and other filesystems are
+unsupported. Windows native builds, package/workspace commands, process I/O and
+source bundles remain unavailable. See the [module contract](../spec/typed-preview.md#bounded-typed-projects)
+for source limits and path rules.
 
 ## Everyday commands
 

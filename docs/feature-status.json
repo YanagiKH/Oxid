@@ -2129,6 +2129,7 @@
         "tests/native_vectors_runtime.c",
         "scripts/verify_typed_vectors.py",
         "tests/typed_copy_record_vectors.rs",
+        "scripts/verify_copy_record_vectors.py",
         "src/frontend/oir/owned/record_vector_resources_tests.rs",
         "tests/native_copy_record_vectors.c",
         "scripts/test_native_copy_record_vectors.py"
@@ -2170,6 +2171,33 @@
       ],
       "evidence": [],
       "limitations": "Explicit finite records only. Arrays, enums, references and owned resources cannot be Copy fields. Checked Copy records may be vector and borrowed-slice elements; arrays of records and element references remain unavailable. Direct aggregate field reads, stored or returned references and user-defined traits are unavailable. Compiler resource limits apply."
+    },
+    {
+      "id": "windows-module-sources",
+      "summary": "Multi-file source checking and pure computation on local Windows NTFS drives.",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "Checked frontend and OIR reference execution",
+      "target_scope": "Implemented for Windows x86_64 with 64-bit little-endian pointers and local NTFS. Actual Windows execution qualification is pending.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/TYPED_PROJECTS.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/project.rs",
+        "src/frontend/project/filesystem.rs",
+        "src/frontend/project/filesystem/windows.rs",
+        "src/frontend/project/editor_sources.rs"
+      ],
+      "tests": [
+        "tests/typed_windows_modules.rs",
+        "src/frontend/project/filesystem/windows.rs"
+      ],
+      "evidence": [],
+      "limitations": "Explicit source entries only. Exact-case child names and regular local NTFS files are required. Child reparse points, network paths and other filesystems are rejected. Native Windows builds, package/workspace commands, process I/O and source bundles remain unavailable. Source, path and module limits are unchanged."
     }
   ]
 }

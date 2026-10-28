@@ -921,12 +921,20 @@ produce one complete verified program. There is no per-file fallback. Run and
 native compile require an original zero-argument scalar `main` declared in root;
 an imported or child `main` never supplies the entry. Check requires no main.
 
-Declared-child filesystem loading currently admits Linux only; non-Linux hosts
-reject it with E0005/source. Linux x86_64 has the predecessor filesystem evidence;
-other Linux architectures are not qualified. A module-free root has no discovery
-host gate, including root-only visibility/import/absolute-path syntax. Native
-supports Linux and macOS on x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2. The loader checks a stable filesystem;
-it does not promise a concurrent-filesystem snapshot or sandbox.
+Declared-child filesystem loading is implemented on Linux and macOS, and on
+Windows x86_64 with 64-bit little-endian pointers and a local NTFS volume. On
+Windows, source-entry `check` and pure Result `run` share the checked module graph;
+native builds, package/workspace commands, process I/O and source bundles remain
+unsupported. Module paths require exact case and regular files under the
+canonical root. Child symbolic links, junctions, other reparse points, network
+paths and non-NTFS volumes are rejected. The inspected Windows handles are retained
+through source reads. Actual Windows execution qualification is separate from
+cross-target compilation checks. Other unsupported hosts report E0005/source.
+A module-free root has no discovery host gate, including root-only
+visibility/import/absolute-path syntax. Native supports Linux and macOS on
+x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2.
+The loader checks a stable filesystem; it does not promise a concurrent-filesystem
+snapshot or sandbox.
 
 Source bytes (1 MiB), non-EOF tokens including trivia (100,000), syntax nodes
 (100,000), declaration/verifier/storage limits and execution fuel are aggregate,
