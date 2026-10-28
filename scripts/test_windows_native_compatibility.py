@@ -263,7 +263,8 @@ class WindowsNativeAdmission(unittest.TestCase):
 
 class FrozenCopyDebugReplay(unittest.TestCase):
     def test_all_fourteen_reviewed_inputs_match_the_frozen_source_bytes_and_directives(self):
-        frozen = "3d9648f3d2a87fb585adecccd73e55ff7f950a82"
+        frozen = "8271f9b4d41ea480c8b926ad363b3e7c0b4a6e08"
+        subprocess.check_call(["git", "merge-base", "--is-ancestor", frozen, "HEAD"], cwd=ROOT)
         self.assertEqual(len(gate.WINDOWS_NATIVE_CHANGED), 12)
         self.assertEqual(len(gate.WINDOWS_NATIVE_ADDED), 2)
         self.assertEqual(set(gate.REVIEWED_INPUTS), gate.WINDOWS_NATIVE_CHANGED | gate.WINDOWS_NATIVE_ADDED)
