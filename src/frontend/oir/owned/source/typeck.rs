@@ -1376,7 +1376,7 @@ pub(super) mod semantic_carriers {
         ),
         whole_array_parameter: ParameterTy,
         whole_array_constructed: (AccessBase, Ty),
-        whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+        whole_array_returned: Result<(AccessBase, ValueTy), Box<Diagnostic>>,
         // These are the caller's two named pattern values, not another full
         // tuple success carrier (already inside whole_array_returned).
         whole_array_caller_base: AccessBase,
@@ -1828,7 +1828,7 @@ pub(super) mod semantic_carriers {
             whole_array_input: ( &'static Function, BindingId, Span, &'static [Option<ParameterTy>], ),
             whole_array_parameter: ParameterTy,
             whole_array_constructed: (AccessBase, Ty),
-            whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+            whole_array_returned: Result<(AccessBase, ValueTy), Box<Diagnostic>>,
             whole_array_caller_base: AccessBase,
             whole_array_caller_ty: Ty,
         );
@@ -2208,7 +2208,7 @@ fn projected_array_access(
     bindings: &[Option<ParameterTy>],
     borrow: bool,
     paid: Option<&mut BodyPaid<'_>>,
-) -> Result<(Option<Projection>, AccessBase, Option<Ty>), Box<Diagnostic>> {
+) -> Result<(Option<Projection>, AccessBase, Option<ValueTy>), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
     let start = ast
@@ -2230,9 +2230,12 @@ fn projected_array_access(
     let element = match program.records()[projection.field.record.0].fields[projection.field.index]
         .ty
     {
-        ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.element()),
-        ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(Ty::U8),
-        ValueTy::Owned(AggregateTy::Vector(element)) => Some(element),
+        ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(ValueTy::Scalar(array.element())),
+        ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(ValueTy::Scalar(Ty::U8)),
+        ValueTy::Owned(AggregateTy::Vector(element)) => Some(ValueTy::Scalar(element)),
+        ValueTy::Owned(AggregateTy::RecordVector(record)) => {
+            Some(ValueTy::Owned(AggregateTy::Record(record)))
+        }
         ValueTy::Owned(AggregateTy::File) if borrow => None,
         ValueTy::Owned(AggregateTy::Record(_)) if borrow => None,
         _ => {
@@ -2256,21 +2259,33 @@ fn array_access(
     binding: BindingId,
     access_span: Span,
     bindings: &[Option<ParameterTy>],
-) -> Result<(AccessBase, Ty), Box<Diagnostic>> {
+) -> Result<(AccessBase, ValueTy), Box<Diagnostic>> {
     match bindings[binding.0].expect("resolved array base initialized") {
         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
-            Ok((AccessBase::Owner(binding), array.element()))
+            Ok((AccessBase::Owner(binding), ValueTy::Scalar(array.element())))
         }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Vector(element))) => {
-            Ok((AccessBase::Owner(binding), element))
+            Ok((AccessBase::Owner(binding), ValueTy::Scalar(element)))
         }
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::RecordVector(record))) => Ok((
+            AccessBase::Owner(binding),
+            ValueTy::Owned(AggregateTy::Record(record)),
+        )),
+        ParameterTy::Reference {
+            referent:
+                BorrowedTy::RecordSlice(record) | BorrowedTy::Exact(AggregateTy::RecordVector(record)),
+            kind,
+        } => Ok((
+            AccessBase::Reference { binding, kind },
+            ValueTy::Owned(AggregateTy::Record(record)),
+        )),
         ParameterTy::Reference { referent, kind }
             if referent.element().is_some()
                 && referent != BorrowedTy::Exact(AggregateTy::ByteBuf) =>
         {
             Ok((
                 AccessBase::Reference { binding, kind },
-                referent.element().expect("array or slice"),
+                ValueTy::Scalar(referent.element().expect("array or slice")),
             ))
         }
         _ => Err(error(
@@ -2777,11 +2792,22 @@ fn expression_type(
                                         resource @ (AggregateTy::Record(_)
                                         | AggregateTy::ByteBuf
                                         | AggregateTy::Vector(_)
+                                        | AggregateTy::RecordVector(_)
                                         | AggregateTy::File),
                                     ) => BorrowedTy::Exact(resource),
-                                    _ => BorrowedTy::ScalarSlice(
-                                        element.expect("array borrowing has an element"),
-                                    ),
+                                    _ => match element.expect("array borrowing has an element") {
+                                        ValueTy::Scalar(ty) => BorrowedTy::ScalarSlice(ty),
+                                        ValueTy::Owned(AggregateTy::Record(id)) => {
+                                            BorrowedTy::RecordSlice(id)
+                                        }
+                                        _ => {
+                                            return Err(error(
+                                                "E0500",
+                                                "invalid indexed borrow element",
+                                                *span,
+                                            ))
+                                        }
+                                    },
                                 },
                                 kind: *kind,
                             }
@@ -2807,6 +2833,7 @@ fn expression_type(
                                         referent: BorrowedTy::ScalarSlice(element), kind,
                                     }
                                 }
+                                ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::RecordVector(record)) | BorrowedTy::RecordSlice(record), kind } => ParameterTy::Reference { referent: BorrowedTy::RecordSlice(record), kind },
                                 ParameterTy::Reference {
                                     referent: BorrowedTy::Exact(AggregateTy::FixedArray(array)), kind,
                                 } if crate::frontend::builtin_catalog::vector::scalar_admitted(array.element()) => {
@@ -3007,7 +3034,7 @@ fn expression_type(
                     function.expressions[index.0].span,
                 ));
             }
-            scalar(element)
+            element
         }
         ExprKind::ArrayLength { base, base_span } => {
             program.work().debit(1, expr.span, "array type length")?;
@@ -3917,7 +3944,7 @@ fn check_body(
                     ));
                 }
                 let actual = expressions[value.0].expect("typed store value");
-                let expected = ValueTy::Scalar(element);
+                let expected = element;
                 if actual != expected {
                     return Err(mismatch(
                         program,

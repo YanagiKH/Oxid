@@ -232,6 +232,20 @@ impl<'a> ExecutionPlan<'a> {
         let start = end.checked_sub(builtins::OUTPUT_SCRATCH_BYTES)?;
         Some(start..end)
     }
+    /// The packed record staging area is outside every language owner extent.
+    pub(super) fn record_vector_scratch_range(
+        &self,
+        function: hir::DefId,
+    ) -> Option<std::ops::Range<usize>> {
+        let f = self.witness.functions().get(function.0)?;
+        let length =
+            native_vector_layout::record_scratch_bytes(self.witness.declarations(), f).ok()?;
+        if length == 0 {
+            return None;
+        }
+        let end = self.functions.get(function.0)?.usage.payload_bytes;
+        Some(end.checked_sub(length)?..end)
+    }
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
     }
@@ -287,6 +301,23 @@ impl<'a> ExecutionPlan<'a> {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
             // The consumer charges the validated capacity and each I/O attempt.
+            OwnedInstruction::Vector { operation, .. }
+                if operation.record_id().is_some()
+                    && matches!(
+                        operation.operation(),
+                        crate::frontend::builtin_catalog::vector::Operation::TryPush
+                            | crate::frontend::builtin_catalog::vector::Operation::TryResize
+                    ) =>
+            {
+                4 + (2 * MAX_CONTAINMENT_DEPTH + 3)
+                    * self
+                        .witness
+                        .declarations()
+                        .aggregate_width(AggregateTy::Record(
+                            operation.record_id().expect("checked record key"),
+                        ))
+                        .expect("checked Copy record")
+            }
             OwnedInstruction::Experimental { .. } | OwnedInstruction::Vector { .. } => 4,
             OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
@@ -307,6 +338,12 @@ impl<'a> ExecutionPlan<'a> {
                 1 + self.owner_width(f, *destination)
             }
             OwnedInstruction::CopyInitialize { source, .. } => 1 + 2 * self.owner_width(f, *source),
+            OwnedInstruction::CopyIndexWrite { source, .. } => {
+                1 + (2 * MAX_CONTAINMENT_DEPTH + 3) * self.owner_width(f, *source)
+            }
+            OwnedInstruction::CopyIndexInitialize { destination, .. } => {
+                1 + (2 * MAX_CONTAINMENT_DEPTH + 3) * self.owner_width(f, *destination)
+            }
             OwnedInstruction::MoveInitialize { source, .. }
             | OwnedInstruction::PrepareOwned { source, .. } => 1 + self.owner_width(f, *source),
             OwnedInstruction::DestructureRecord { source, fields } => {
@@ -429,19 +466,26 @@ impl<'a> ExecutionPlan<'a> {
         };
         let vectors = witness.declarations().has_vector_declarations()
             || functions.iter().any(|f| {
-                f.owners
+                f.owners.iter().any(|o| {
+                    matches!(
+                        o.aggregate(),
+                        AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+                    )
+                }) || f.references.iter().any(|r| {
+                    matches!(
+                        r.referent(),
+                        BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+                    )
+                }) || f.loans.iter().any(|l| {
+                    matches!(
+                        l.referent(),
+                        BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+                    )
+                }) || f
+                    .blocks
                     .iter()
-                    .any(|o| matches!(o.aggregate(), AggregateTy::Vector(_)))
-                    || f.references
-                        .iter()
-                        .any(|r| matches!(r.referent(), BorrowedTy::Exact(AggregateTy::Vector(_))))
-                    || f.loans
-                        .iter()
-                        .any(|l| matches!(l.referent(), BorrowedTy::Exact(AggregateTy::Vector(_))))
-                    || f.blocks
-                        .iter()
-                        .flat_map(|b| &b.statements)
-                        .any(|s| matches!(s.kind, OwnedInstruction::Vector { .. }))
+                    .flat_map(|b| &b.statements)
+                    .any(|s| matches!(s.kind, OwnedInstruction::Vector { .. }))
             });
         let typed_ranges = functions.iter().any(|f| {
             f.blocks
@@ -607,7 +651,13 @@ impl<'a> ExecutionPlan<'a> {
                 u.references,
             )?;
             for owner in 0..f.owners.len() {
-                add(1, mul(2, result.owner_width(f.id, OwnerPlaceId(owner)))?)?;
+                add(
+                    4,
+                    mul(
+                        2 * MAX_CONTAINMENT_DEPTH + 3,
+                        result.owner_width(f.id, OwnerPlaceId(owner)),
+                    )?,
+                )?;
             }
             for statement in f.blocks.iter().flat_map(|block| &block.statements) {
                 // The existing complete operation-cost walk also derives the
@@ -694,6 +744,10 @@ fn frame_usage(
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
     }
     u.payload_bytes = add(u.payload_bytes, scratch_bytes)?;
+    u.payload_bytes = add(
+        u.payload_bytes,
+        native_vector_layout::record_scratch_bytes(declarations, f)?,
+    )?;
     u.expanded_cells = add(add(u.scalar_slots, u.arguments)?, u.owner_cells)?;
     u.reference_bytes = add(
         mul(add(u.scalar_slots, u.arguments)?, scalar_bytes)?,
@@ -727,12 +781,22 @@ fn frame_usage(
     let slice_references = f
         .references
         .iter()
-        .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
+        .filter(|r| {
+            matches!(
+                r.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            )
+        })
         .count();
     let slice_loans = f
         .loans
         .iter()
-        .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
+        .filter(|l| {
+            matches!(
+                l.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            )
+        })
         .count();
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
     if scalar_bytes == size_of::<Option<RuntimeValue>>() {
@@ -762,7 +826,9 @@ pub(super) fn native_owner_alignment(declarations: &Declarations, f: &RawOwnedFu
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {
         OwnedInstruction::Scalar(s) => s.span(),
-        OwnedInstruction::ReadIndex { .. }
+        OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. }
+        | OwnedInstruction::ReadIndex { .. }
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ArrayLength { .. } => statement.primary_span(),
         _ => statement.span,

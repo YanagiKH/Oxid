@@ -27,7 +27,7 @@ struct ReferenceWalkCarriers {
     descriptor_return: std::result::Result<byte_buffer::Descriptor, byte_buffer::Failure>,
     file_descriptor: byte_buffer::FileDescriptor,
     file_descriptor_return: std::result::Result<byte_buffer::FileDescriptor, byte_buffer::Failure>,
-    vector_element: byte_buffer::VectorElement,
+    vector_element: byte_buffer::CheckedVectorElement<'static>,
     vector_descriptor: byte_buffer::VectorDescriptor,
     vector_descriptor_return:
         std::result::Result<byte_buffer::VectorDescriptor, byte_buffer::Failure>,
@@ -100,8 +100,16 @@ pub(super) fn preflight(
                 heap.file_descriptor(&source[source_extent])
                     .map_err(|_| bad("file descriptor", span))?;
             }
-            ResourceKind::Vector(ty) => {
-                let element = super::super::vector_type::element(ty);
+            ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => {
+                let ty = match leaf.kind {
+                    ResourceKind::Vector(ty) => super::super::vector_type::VectorTy::Scalar(ty),
+                    ResourceKind::RecordVector(id) => {
+                        super::super::vector_type::VectorTy::Record(RecordId(id as usize))
+                    }
+                    _ => unreachable!(),
+                };
+                let element = super::super::vector_type::checked(ty, declarations)
+                    .map_err(|_| bad("record vector type", span))?;
                 let value = heap
                     .vector_descriptor(&source[source_extent], element)
                     .map_err(|_| bad("resource descriptor", span))?;
@@ -161,8 +169,16 @@ pub(super) fn release(
                     .file_close(&mut value)
                     .map_err(|_| bad("file release", span))?;
             }
-            ResourceKind::Vector(ty) => {
-                let element = super::super::vector_type::element(ty);
+            ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => {
+                let ty = match leaf.kind {
+                    ResourceKind::Vector(ty) => super::super::vector_type::VectorTy::Scalar(ty),
+                    ResourceKind::RecordVector(id) => {
+                        super::super::vector_type::VectorTy::Record(RecordId(id as usize))
+                    }
+                    _ => unreachable!(),
+                };
+                let element = super::super::vector_type::checked(ty, declarations)
+                    .map_err(|_| bad("record vector type", span))?;
                 let mut value = heap
                     .vector_descriptor(&bytes[range], element)
                     .map_err(|_| bad("resource descriptor", span))?;

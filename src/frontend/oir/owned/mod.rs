@@ -339,6 +339,20 @@ enum OwnedInstruction {
         field: FieldId,
         value: Operand,
     },
+    /// A finite checked record copied from a vector element into a new owner.
+    CopyIndexInitialize {
+        destination: OwnerPlaceId,
+        base: AccessBase,
+        path: Vec<FieldId>,
+        index: Operand,
+    },
+    /// Whole-record replacement through exclusive vector or record-slice authority.
+    CopyIndexWrite {
+        base: AccessBase,
+        path: Vec<FieldId>,
+        index: Operand,
+        source: OwnerPlaceId,
+    },
     ReadIndex {
         destination: LocalId,
         base: AccessBase,

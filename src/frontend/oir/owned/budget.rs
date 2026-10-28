@@ -524,7 +524,9 @@ pub(super) fn preflight(
                         c.composite_fields = add(c.composite_fields, fields.len())?;
                         c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
                     }
-                    OwnedInstruction::ReadProjection { path, .. }
+                    OwnedInstruction::CopyIndexInitialize { path, .. }
+                    | OwnedInstruction::CopyIndexWrite { path, .. }
+                    | OwnedInstruction::ReadProjection { path, .. }
                     | OwnedInstruction::WriteProjection { path, .. }
                     | OwnedInstruction::ProjectionLength { path, .. } => {
                         cap(path.len(), MAX_CONTAINMENT_DEPTH, "record projection depth")?;

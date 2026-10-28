@@ -97,6 +97,9 @@ pub(in crate::frontend::oir::owned) trait VectorType:
     fn tag(self) -> u32;
     fn size(self) -> usize;
     fn canonical(self, bytes: &[u8]) -> bool;
+    fn validation_work(self, bytes: usize) -> Option<usize> {
+        Some(bytes)
+    }
 }
 impl sealed::Sealed for Element {}
 impl VectorType for Element {
@@ -172,6 +175,9 @@ impl<'a> RecordElement<'a> {
 }
 impl sealed::Sealed for RecordElement<'_> {}
 impl VectorType for RecordElement<'_> {
+    fn validation_work(self, bytes: usize) -> Option<usize> {
+        bytes.checked_mul(2 * crate::frontend::oir::owned_types::MAX_CONTAINMENT_DEPTH + 3)
+    }
     fn tag(self) -> u32 {
         self.tag()
     }
@@ -199,6 +205,12 @@ impl CheckedElement<'_> {
 }
 impl sealed::Sealed for CheckedElement<'_> {}
 impl VectorType for CheckedElement<'_> {
+    fn validation_work(self, bytes: usize) -> Option<usize> {
+        match self {
+            Self::Scalar(value) => value.validation_work(bytes),
+            Self::Record(value) => value.validation_work(bytes),
+        }
+    }
     fn tag(self) -> u32 {
         match self {
             Self::Scalar(value) => value.tag(),
@@ -588,9 +600,9 @@ impl Heap {
         } else {
             0
         };
-        let work = scratch
-            .len()
-            .checked_add(writes)
+        let work = element
+            .validation_work(scratch.len())
+            .and_then(|work| work.checked_add(writes))
             .and_then(|work| work.checked_add(copy_bytes))
             .ok_or(Failure::Fuel)?;
         if overlaps(

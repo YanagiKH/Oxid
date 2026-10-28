@@ -1567,9 +1567,33 @@ impl<'a, 'b> Walk<'a, 'b> {
                     )?;
                     self.set_owned(id, destination);
                 }
-                source::ExprKind::ArrayLiteral { .. }
-                | source::ExprKind::IndexRead { .. }
-                | source::ExprKind::ArrayLength { .. } => return Err(invariant(span)),
+                source::ExprKind::ArrayLiteral { .. } | source::ExprKind::ArrayLength { .. } => {
+                    return Err(invariant(span))
+                }
+                source::ExprKind::IndexRead { base, index, .. } => {
+                    if !self.view.is_copy(record) {
+                        return Err(invariant(span));
+                    }
+                    let destination = self.owner(record, OwnerKind::Temporary, span)?;
+                    self.statement(
+                        OwnedInstruction::StorageLive(destination),
+                        span,
+                        span,
+                        cause,
+                    )?;
+                    let path = match self.view.expression_projection(id) {
+                        Some(projection) => self.projection_path(projection, span)?,
+                        None => Vec::new(),
+                    };
+                    let instruction = OwnedInstruction::CopyIndexInitialize {
+                        destination,
+                        base: self.base(base, span)?,
+                        path,
+                        index: self.operand(index)?,
+                    };
+                    self.statement(instruction, span, span, cause)?;
+                    self.set_owned(id, destination);
+                }
                 source::ExprKind::Binding(binding) => {
                     let BindingLocation::Owner(source) = self.location(binding, span)? else {
                         return Err(invariant(span));
@@ -2315,7 +2339,18 @@ impl<'a, 'b> Walk<'a, 'b> {
             {
                 self.expression(value, s)?;
                 self.expression(index, s)?;
-                let kind = if let Some(projection) =
+                let kind = if let EvaluatedValue::Owned(source) = self.value(value)? {
+                    let path = match self.view.statement_projection(block, statement_index) {
+                        Some(projection) => self.projection_path(projection, target_span)?,
+                        None => Vec::new(),
+                    };
+                    OwnedInstruction::CopyIndexWrite {
+                        base: self.base(base, target_span)?,
+                        path,
+                        index: self.operand(index)?,
+                        source,
+                    }
+                } else if let Some(projection) =
                     self.view.statement_projection(block, statement_index)
                 {
                     OwnedInstruction::WriteProjection {
@@ -2332,6 +2367,9 @@ impl<'a, 'b> Walk<'a, 'b> {
                     }
                 };
                 self.statement(kind, s, target_span, s)?;
+                if let EvaluatedValue::Owned(source) = self.value(value)? {
+                    self.end_value(source, s, f.expressions[value.0].span, s)?;
+                }
                 continue;
             }
             let root = match statement.kind {

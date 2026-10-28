@@ -75,7 +75,7 @@ pub(super) fn leaves(
     for (index, leaf) in walk().enumerate() {
         let leaf = leaf.expect("enum alternatives handled by the enclosing emitter");
         let descriptor_cells = match leaf.kind {
-            ResourceKind::ByteBuf | ResourceKind::Vector(_) => 3,
+            ResourceKind::ByteBuf | ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => 3,
             ResourceKind::File => 2,
         };
         for _ in 0..descriptor_cells {
@@ -100,8 +100,12 @@ pub(super) fn leaves(
                 )
                 .unwrap();
             }
-            ResourceKind::Vector(ty) => {
-                let tag = super::super::vector_type::element(ty).tag();
+            ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => {
+                let tag = match leaf.kind {
+                    ResourceKind::Vector(ty) => super::super::vector_type::element(ty).tag(),
+                    ResourceKind::RecordVector(id) => 0x8000_0000 | id,
+                    _ => unreachable!(),
+                };
                 writeln!(
                     out,
                     "  %{cell}_status = call i32 @__oxid_vector_valid(ptr {input}, i32 {tag})"
@@ -128,8 +132,12 @@ pub(super) fn leaves(
                 ResourceKind::File => {
                     writeln!(out, "  call void @__oxid_file_drop(ptr {input})").unwrap();
                 }
-                ResourceKind::Vector(ty) => {
-                    let tag = super::super::vector_type::element(ty).tag();
+                ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => {
+                    let tag = match leaf.kind {
+                        ResourceKind::Vector(ty) => super::super::vector_type::element(ty).tag(),
+                        ResourceKind::RecordVector(id) => 0x8000_0000 | id,
+                        _ => unreachable!(),
+                    };
                     writeln!(
                         out,
                         "  call void @__oxid_vector_drop(ptr {input}, i32 {tag})"
@@ -143,7 +151,9 @@ pub(super) fn leaves(
                 // The old bytes become empty while the destination acquires the
                 // single obligation. The payload allocation is never copied.
                 let carrier = match leaf.kind {
-                    ResourceKind::ByteBuf | ResourceKind::Vector(_) => "{ i64, i32, i32 }",
+                    ResourceKind::ByteBuf
+                    | ResourceKind::Vector(_)
+                    | ResourceKind::RecordVector(_) => "{ i64, i32, i32 }",
                     ResourceKind::File => "{ i64, i64 }",
                 };
                 writeln!(out, "  %{cell}_descriptor = load {carrier}, ptr {input}, align 8\n  store {carrier} %{cell}_descriptor, ptr {output}, align 8\n  store {carrier} zeroinitializer, ptr {input}, align 8").unwrap();

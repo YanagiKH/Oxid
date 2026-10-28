@@ -431,7 +431,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             return;
         }
         let base = match instruction {
-            OwnedInstruction::ReadIndex { base, .. }
+            OwnedInstruction::CopyIndexInitialize { base, .. }
+            | OwnedInstruction::CopyIndexWrite { base, .. }
+            | OwnedInstruction::ReadIndex { base, .. }
             | OwnedInstruction::WriteIndex { base, .. }
             | OwnedInstruction::ArrayLength { base, .. }
             | OwnedInstruction::ReadProjection { base, .. }

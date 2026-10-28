@@ -1,6 +1,7 @@
 //! Typed scalar vector execution below the immutable canonical-suffix witness.
 //! Descriptor coordinates and element ranges are distinct; payloads never use a
 //! fixed-array carrier or an owned host Vec.
+use super::super::vector_type::{self, VectorTy};
 use super::experimental::{heap_failure, OperationValue, ResultPlace};
 use super::*;
 use crate::frontend::builtin_catalog::vector::{Function, Operation};
@@ -17,7 +18,7 @@ enum ScalarRegion {
     Activation {
         frame: usize,
         bytes: Range<usize>,
-        element: hir::Ty,
+        element: VectorTy,
     },
     Buffer {
         value: byte_buffer::Descriptor,
@@ -28,7 +29,7 @@ enum ScalarRegion {
         value: byte_buffer::VectorDescriptor,
         start: i32,
         end: i32,
-        element: hir::Ty,
+        element: VectorTy,
     },
 }
 
@@ -60,7 +61,7 @@ enum Footprint {
     Activation(Range<u64>),
     Vector {
         origin: u64,
-        element: hir::Ty,
+        element: VectorTy,
         start: i32,
         end: i32,
         whole: bool,
@@ -83,12 +84,16 @@ struct ControlCarriers<V> {
     views: [BorrowView; 3],
     owner_keys: [OwnerKey; 3],
     loan_keys: [LoanKey; 3],
-    elements: [byte_buffer::VectorElement; 3],
-    types: [hir::Ty; 3],
+    elements: [byte_buffer::CheckedVectorElement<'static>; 3],
+    types: [VectorTy; 3],
     ranges: [Range<usize>; 4],
     footprints: [Footprint; 2],
     footprint_return: Result<Footprint>,
     scalar_scratch: [u8; 16],
+    record_leaves: [ScalarLeaves<'static>; 4],
+    record_ids: [RecordId; 3],
+    packed_cursors: [usize; 4],
+    packed_ranges: [Range<usize>; 2],
     scalar: V,
     decoded: Result<V>,
     encoded: Result<()>,
@@ -167,7 +172,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         &self,
         root: OwnerKey,
         relative: u64,
-        ty: hir::Ty,
+        ty: VectorTy,
         span: Span,
     ) -> Result<(VectorPlace, byte_buffer::VectorDescriptor)> {
         self.owner(root, span)?;
@@ -185,7 +190,8 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             .heap
             .vector_descriptor(
                 &self.frames[frame].payload[start..end],
-                super::super::vector_type::element(ty),
+                vector_type::checked(ty, self.plan.witness().declarations())
+                    .map_err(|failure| heap_failure(failure, span))?,
             )
             .map_err(|failure| heap_failure(failure, span))?;
         Ok((
@@ -203,14 +209,14 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         &self,
         permission: LoanKey,
         root: OwnerKey,
-        ty: hir::Ty,
+        ty: VectorTy,
         span: Span,
     ) -> Result<u64> {
         match self.aggregate(root, span)? {
-            AggregateTy::Vector(element) if element == ty => Ok(0),
+            actual if actual == ty.aggregate() => Ok(0),
             AggregateTy::Record(_) => {
                 let view = self.projected_view(permission, root, span)?;
-                if view.aggregate.map(AggregateSlot::aggregate) != Some(AggregateTy::Vector(ty)) {
+                if view.aggregate.map(AggregateSlot::aggregate) != Some(ty.aggregate()) {
                     return Err(bad("vector projection type", span));
                 }
                 Ok(view.offset)
@@ -255,7 +261,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn vector_slice_proof(
         &self,
         mut handle: ReferenceHandle,
-        ty: hir::Ty,
+        ty: VectorTy,
         span: Span,
     ) -> Result<(u64, i32, i32)> {
         self.validate_handle_identity(handle, span)?;
@@ -263,13 +269,16 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         let (_, value) = self.vector_at(handle.root, origin, ty, span)?;
         let length = self
             .heap
-            .vector_len(&value, super::super::vector_type::element(ty))
+            .vector_len(
+                &value,
+                vector_type::checked(ty, self.plan.witness().declarations())
+                    .map_err(|failure| heap_failure(failure, span))?,
+            )
             .map_err(|failure| heap_failure(failure, span))?;
         let selected = self.vector_handle_range(handle, ty, origin, length, span)?;
         for _ in 0..plan::MAX_FRAMES * (MAX_LOCAL_REFERENCE_DEPTH + 1) {
             self.validate_handle_identity(handle, span)?;
-            if handle.view.aggregate.map(AggregateSlot::aggregate) != Some(AggregateTy::Vector(ty))
-            {
+            if handle.view.aggregate.map(AggregateSlot::aggregate) != Some(ty.aggregate()) {
                 return Err(bad("vector slice type", span));
             }
             let row = self.loan(handle.permission, span)?;
@@ -280,10 +289,8 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 .get(index(handle.permission.loan, span)?)
                 .ok_or_else(|| bad("vector slice loan", span))?;
             let child = match declaration.referent() {
-                BorrowedTy::ScalarSlice(element) if element == ty => {
-                    unpacked_range(handle.view.offset, span)?
-                }
-                BorrowedTy::Exact(AggregateTy::Vector(element)) if element == ty => {
+                actual if actual == ty.slice() => unpacked_range(handle.view.offset, span)?,
+                BorrowedTy::Exact(actual) if actual == ty.aggregate() => {
                     if handle.view.offset != origin {
                         return Err(bad("vector descriptor origin", span));
                     }
@@ -315,10 +322,8 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 self.whole_view(handle.root, span)?
             };
             let slice_parent = declaration.projection.is_empty()
-                && self.authority_referent(frame, declaration.authority, span)?
-                    == BorrowedTy::ScalarSlice(ty);
-            if slice_parent && declaration.referent() == BorrowedTy::Exact(AggregateTy::Vector(ty))
-            {
+                && self.authority_referent(frame, declaration.authority, span)? == ty.slice();
+            if slice_parent && declaration.referent() == BorrowedTy::Exact(ty.aggregate()) {
                 return Err(bad("vector slice cannot restore owner authority", span));
             }
             if !declaration.projection.is_empty() {
@@ -332,7 +337,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     .declarations()
                     .projection(base, &declaration.projection)
                     .map_err(|_| bad("vector slice projection", span))?;
-                if projected != ValueTy::Owned(AggregateTy::Vector(ty)) {
+                if projected != ValueTy::Owned(ty.aggregate()) {
                     return Err(bad("vector slice projection type", span));
                 }
                 base_view.offset = base_view
@@ -340,11 +345,11 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     .checked_add(offset as u64)
                     .ok_or_else(|| bad("vector slice projection offset", span))?;
                 base_view.aggregate = Some(
-                    AggregateSlot::try_from_aggregate(AggregateTy::Vector(ty))
+                    AggregateSlot::try_from_aggregate(ty.aggregate())
                         .map_err(|_| bad("vector slice projection descriptor", span))?,
                 );
             }
-            if base_view.aggregate.map(AggregateSlot::aggregate) != Some(AggregateTy::Vector(ty)) {
+            if base_view.aggregate.map(AggregateSlot::aggregate) != Some(ty.aggregate()) {
                 return Err(bad("vector slice base type", span));
             }
             let base_range = if slice_parent {
@@ -368,8 +373,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             let Some(parent) = parent else {
                 return Ok((origin, selected.0, selected.1));
             };
-            if parent.view.aggregate.map(AggregateSlot::aggregate) != Some(AggregateTy::Vector(ty))
-            {
+            if parent.view.aggregate.map(AggregateSlot::aggregate) != Some(ty.aggregate()) {
                 self.checked_handle_view(parent, span)?;
                 return Ok((origin, selected.0, selected.1));
             }
@@ -380,7 +384,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     fn vector_handle_range(
         &self,
         handle: ReferenceHandle,
-        ty: hir::Ty,
+        ty: VectorTy,
         origin: u64,
         length: i32,
         span: Span,
@@ -392,11 +396,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             .get(index(handle.permission.loan, span)?)
             .ok_or_else(|| bad("vector handle range loan", span))?;
         match declaration.referent() {
-            BorrowedTy::ScalarSlice(element) if element == ty => {
-                unpacked_range(handle.view.offset, span)
-            }
-            BorrowedTy::Exact(AggregateTy::Vector(element))
-                if element == ty && handle.view.offset == origin =>
+            actual if actual == ty.slice() => unpacked_range(handle.view.offset, span),
+            BorrowedTy::Exact(actual)
+                if actual == ty.aggregate() && handle.view.offset == origin =>
             {
                 Ok((0, length))
             }
@@ -406,7 +408,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     pub(super) fn vector_slice(
         &self,
         handle: ReferenceHandle,
-        ty: hir::Ty,
+        ty: VectorTy,
         span: Span,
     ) -> Result<()> {
         self.vector_slice_proof(handle, ty, span).map(|_| ())
@@ -421,28 +423,31 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         range: Option<(i32, i32)>,
         span: Span,
     ) -> Result<BorrowView> {
-        let Some(AggregateTy::Vector(ty)) = view.aggregate.map(AggregateSlot::aggregate) else {
+        let Some(ty) = view
+            .aggregate
+            .map(AggregateSlot::aggregate)
+            .and_then(VectorTy::from_aggregate)
+        else {
             return Err(bad("vector loan view", span));
         };
-        if declaration.referent() == BorrowedTy::Exact(AggregateTy::Vector(ty)) {
+        if declaration.referent() == BorrowedTy::Exact(ty.aggregate()) {
             if range.is_some() {
                 return Err(bad("vector exact range", span));
             }
             if matches!(
                 self.authority_referent(frame, declaration.authority, span)?,
-                BorrowedTy::ScalarSlice(_)
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
             ) {
                 return Err(bad("vector slice cannot restore owner authority", span));
             }
             self.vector_at(root, view.offset, ty, span)?;
             return Ok(view);
         }
-        if declaration.referent() != BorrowedTy::ScalarSlice(ty) {
+        if declaration.referent() != ty.slice() {
             return Err(bad("vector slice element", span));
         }
         let (start, end) = if declaration.projection.is_empty()
-            && self.authority_referent(frame, declaration.authority, span)?
-                == BorrowedTy::ScalarSlice(ty)
+            && self.authority_referent(frame, declaration.authority, span)? == ty.slice()
         {
             let parent = self
                 .authority_handle(frame, declaration.authority, span)?
@@ -454,7 +459,11 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             (
                 0,
                 self.heap
-                    .vector_len(&value, super::super::vector_type::element(ty))
+                    .vector_len(
+                        &value,
+                        vector_type::checked(ty, self.plan.witness().declarations())
+                            .map_err(|failure| heap_failure(failure, span))?,
+                    )
                     .map_err(|failure| heap_failure(failure, span))?,
             )
         };
@@ -500,15 +509,14 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         frame: usize,
         base: AccessBase,
         access: Access,
-        ty: hir::Ty,
+        ty: VectorTy,
         span: Span,
     ) -> Result<ScalarRegion> {
         let root = self.base(frame, base, access, span)?;
         let view = self.base_view(frame, base, root, span)?;
         match view.aggregate.map(AggregateSlot::aggregate) {
-            Some(AggregateTy::Vector(element)) if element == ty => {
-                let slice =
-                    self.authority_referent(frame, base, span)? == BorrowedTy::ScalarSlice(ty);
+            Some(actual) if actual == ty.aggregate() => {
+                let slice = self.authority_referent(frame, base, span)? == ty.slice();
                 let (origin, start, end) = if slice {
                     self.vector_slice_proof(
                         self.authority_handle(frame, base, span)?
@@ -522,7 +530,11 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                         view.offset,
                         0,
                         self.heap
-                            .vector_len(&value, super::super::vector_type::element(ty))
+                            .vector_len(
+                                &value,
+                                vector_type::checked(ty, self.plan.witness().declarations())
+                                    .map_err(|failure| heap_failure(failure, span))?,
+                            )
                             .map_err(|failure| heap_failure(failure, span))?,
                     )
                 };
@@ -534,7 +546,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     element: ty,
                 })
             }
-            Some(AggregateTy::FixedArray(array)) if array.element() == ty => {
+            Some(AggregateTy::FixedArray(array)) if VectorTy::Scalar(array.element()) == ty => {
                 let extent = self.owner_extent(root, span)?;
                 let start = extent
                     .start
@@ -550,7 +562,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     element: ty,
                 })
             }
-            Some(AggregateTy::ByteBuf) if ty == hir::Ty::U8 => {
+            Some(AggregateTy::ByteBuf) if ty == VectorTy::Scalar(hir::Ty::U8) => {
                 match self.byte_region(frame, base, access, span)? {
                     experimental::ByteRegion::Buffer { value, start, end } => {
                         Ok(ScalarRegion::Buffer { value, start, end })
@@ -569,7 +581,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         access: Access,
         span: Span,
     ) -> Result<experimental::ByteRegion> {
-        match self.scalar_region(frame, base, access, hir::Ty::U8, span)? {
+        match self.scalar_region(frame, base, access, VectorTy::Scalar(hir::Ty::U8), span)? {
             ScalarRegion::Vector {
                 value,
                 start,
@@ -605,7 +617,14 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 .and_then(|row| row.view.aggregate)
                 .map(AggregateSlot::aggregate),
         };
-        matches!(aggregate, Some(AggregateTy::Vector(_)))
+        matches!(
+            aggregate,
+            Some(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+        )
+    }
+    fn vector_view_type(&self, frame: usize, base: AccessBase, span: Span) -> Result<VectorTy> {
+        VectorTy::from_borrowed(self.authority_referent(frame, base, span)?)
+            .ok_or_else(|| bad("vector indexed type", span))
     }
     fn vector_view_element(&self, frame: usize, base: AccessBase, span: Span) -> Result<hir::Ty> {
         match self.authority_referent(frame, base, span)? {
@@ -626,7 +645,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         let ty = self.vector_view_element(frame, base, span)?;
         let ScalarRegion::Vector {
             value, start, end, ..
-        } = self.scalar_region(frame, base, Access::Read, ty, span)?
+        } = self.scalar_region(frame, base, Access::Read, VectorTy::Scalar(ty), span)?
         else {
             return Err(bad("vector indexed region", span));
         };
@@ -696,7 +715,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             start,
             end,
             ..
-        } = self.scalar_region(frame, base, Access::Write, ty, span)?
+        } = self.scalar_region(frame, base, Access::Write, VectorTy::Scalar(ty), span)?
         else {
             return Err(bad("vector indexed region", span));
         };
@@ -716,7 +735,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     ) -> Result<()> {
         #[cfg(test)]
         let root = self.base(frame, base, Access::Read, span)?;
-        let ty = self.vector_view_element(frame, base, span)?;
+        let ty = self.vector_view_type(frame, base, span)?;
         let ScalarRegion::Vector { start, end, .. } =
             self.scalar_region(frame, base, Access::Read, ty, span)?
         else {
@@ -739,7 +758,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         operand: Operand,
         span: Span,
     ) -> Result<()> {
-        let (_, descriptor) = self.vector_at(root, relative as u64, ty, span)?;
+        let (_, descriptor) = self.vector_at(root, relative as u64, VectorTy::Scalar(ty), span)?;
         let length = self
             .heap
             .vector_len(&descriptor, super::super::vector_type::element(ty))
@@ -772,7 +791,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         value: Operand,
         span: Span,
     ) -> Result<()> {
-        let (_, descriptor) = self.vector_at(root, relative as u64, ty, span)?;
+        let (_, descriptor) = self.vector_at(root, relative as u64, VectorTy::Scalar(ty), span)?;
         let length = self
             .heap
             .vector_len(&descriptor, super::super::vector_type::element(ty))
@@ -789,14 +808,18 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         frame: usize,
         destination: LocalId,
         root: OwnerKey,
-        ty: hir::Ty,
+        ty: VectorTy,
         relative: usize,
         span: Span,
     ) -> Result<()> {
         let (_, descriptor) = self.vector_at(root, relative as u64, ty, span)?;
         let length = self
             .heap
-            .vector_len(&descriptor, super::super::vector_type::element(ty))
+            .vector_len(
+                &descriptor,
+                vector_type::checked(ty, self.plan.witness().declarations())
+                    .map_err(|failure| heap_failure(failure, span))?,
+            )
             .map_err(|failure| heap_failure(failure, span))?;
         self.write(frame, destination, Scalar::I32(length), span)?;
         #[cfg(test)]
@@ -806,7 +829,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
 
     fn vector_footprint(&self, handle: ReferenceHandle, span: Span) -> Result<Footprint> {
         let actual = self.checked_handle_view(handle, span)?;
-        if let AggregateTy::Vector(ty) = actual {
+        if let Some(ty) = VectorTy::from_aggregate(actual) {
             let frame = index(handle.permission.frame, span)?;
             let declaration = self
                 .function(self.frames[frame].function)
@@ -824,7 +847,11 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     origin,
                     0,
                     self.heap
-                        .vector_len(&value, super::super::vector_type::element(ty))
+                        .vector_len(
+                            &value,
+                            vector_type::checked(ty, self.plan.witness().declarations())
+                                .map_err(|failure| heap_failure(failure, span))?,
+                        )
                         .map_err(|failure| heap_failure(failure, span))?,
                 )
             } else {
@@ -918,7 +945,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         span: Span,
     ) -> Result<(VectorPlace, byte_buffer::VectorDescriptor)> {
         if self.authority_referent(frame, AccessBase::Parameter(ReferenceParamId(0)), span)?
-            != BorrowedTy::Exact(AggregateTy::Vector(key.element()))
+            != BorrowedTy::Exact(key.aggregate())
         {
             return Err(bad("vector parameter type", span));
         }
@@ -932,7 +959,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             .get(index(handle.permission.loan, span)?)
             .map(LoanDecl::referent)
             .ok_or_else(|| bad("vector parameter loan", span))?;
-        if referent != BorrowedTy::Exact(AggregateTy::Vector(key.element())) {
+        if referent != BorrowedTy::Exact(key.aggregate()) {
             return Err(bad("vector parameter requires whole authority", span));
         }
         let root = self.base(
@@ -947,7 +974,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             root,
             span,
         )?;
-        self.vector_at(root, view.offset, key.element(), span)
+        self.vector_at(root, view.offset, VectorTy::function(key), span)
     }
     fn vector_i32(&self, frame: usize, local: usize, span: Span) -> Result<i32> {
         match self
@@ -1017,7 +1044,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 let generation = epoch(key.generation, span)?;
                 let bytes = self.owner_extent(key, span)?;
                 match aggregate {
-                    AggregateTy::Vector(_) if bytes.len() == 16 => (),
+                    AggregateTy::Vector(_) | AggregateTy::RecordVector(_) if bytes.len() == 16 => {
+                        ()
+                    }
                     AggregateTy::Enum(enumeration) => {
                         let variants = self
                             .plan
@@ -1085,12 +1114,28 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         {
             return Err(bad("vector return region", span));
         }
+        let input_owners = function
+            .parameters
+            .iter()
+            .filter(|parameter| matches!(parameter, ParameterBinding::Owned(_)))
+            .count();
+        for parameter in &function.parameters {
+            if let ParameterBinding::Owned(owner) = parameter {
+                let record = key
+                    .record_id()
+                    .ok_or_else(|| bad("scalar vector owned input", span))?;
+                if function.owners[owner.0].aggregate() != AggregateTy::Record(record) {
+                    return Err(bad("record vector input identity", span));
+                }
+                self.base(frame, AccessBase::Owner(*owner), Access::Read, span)?;
+            }
+        }
         let local = self.prepare_experimental_result(frame, destination, span)?;
         let from = match &local {
             ResultPlace::Owner {
                 owner, generation, ..
             } => {
-                if function.owners.len() != 1 {
+                if function.owners.len() != input_owners + 1 {
                     return Err(bad("vector return owners", span));
                 }
                 let key = OwnerKey {
@@ -1100,7 +1145,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 Some((key, epoch(*generation, span)?))
             }
             ResultPlace::Scalar(_) => {
-                if !function.owners.is_empty() {
+                if function.owners.len() != input_owners {
                     return Err(bad("vector scalar return owners", span));
                 }
                 None
@@ -1283,7 +1328,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         // Reserve the ACTUAL sealed return work before any heap mutation. The
         // direct completion below never recharges or re-enters fallible return.
         self.charge(delivery.cost, span)?;
-        let element = super::super::vector_type::element(key.element());
+        let ty = VectorTy::function(key);
+        let element = vector_type::checked(ty, self.plan.witness().declarations())
+            .map_err(|failure| heap_failure(failure, span))?;
         let value = match key.operation() {
             Operation::New => {
                 Returned::Descriptor(byte_buffer::VectorDescriptor::empty().encoding())
@@ -1321,6 +1368,36 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             &mut operation_fuel,
                         )
                     }
+                    Operation::TryPush if key.record_id().is_some() => {
+                        let scratch = self.packed_record_value(
+                            frame,
+                            OwnerPlaceId(0),
+                            key.record_id().expect("checked record key"),
+                            span,
+                        )?;
+                        self.heap.vector_try_push(
+                            &mut value,
+                            element,
+                            &self.frames[frame].payload[scratch],
+                            &mut operation_fuel,
+                        )
+                    }
+                    Operation::TryResize if key.record_id().is_some() => {
+                        let count = self.vector_i32(frame, 0, span)?;
+                        let scratch = self.packed_record_value(
+                            frame,
+                            OwnerPlaceId(0),
+                            key.record_id().expect("checked record key"),
+                            span,
+                        )?;
+                        self.heap.vector_try_resize(
+                            &mut value,
+                            element,
+                            count,
+                            &self.frames[frame].payload[scratch],
+                            &mut operation_fuel,
+                        )
+                    }
                     Operation::TryPush => {
                         let scratch = self.vector_scalar(frame, 0, key.element(), span)?;
                         self.heap.vector_try_push(
@@ -1345,7 +1422,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                         frame,
                         AccessBase::Parameter(ReferenceParamId(1)),
                         Access::Read,
-                        key.element(),
+                        ty,
                         span,
                     )? {
                         ScalarRegion::Activation {
@@ -1353,7 +1430,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             bytes,
                             element: source_type,
                         } => {
-                            if source_type != key.element() {
+                            if source_type != ty {
                                 return Err(bad("vector source element", span));
                             }
                             self.heap.vector_try_extend(
@@ -1369,7 +1446,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             end,
                             element: source_type,
                         } => {
-                            if source_type != key.element() {
+                            if source_type != ty {
                                 return Err(bad("vector source element", span));
                             }
                             self.heap.vector_try_extend_vector(
@@ -1386,7 +1463,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                             start,
                             end,
                         } => {
-                            if key.element() != hir::Ty::U8 {
+                            if ty != VectorTy::Scalar(hir::Ty::U8) {
                                 return Err(bad("vector byte source element", span));
                             }
                             let bytes = self
@@ -1429,6 +1506,182 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             }
         };
         self.complete_vector_delivery(frame, delivery, value);
+        Ok(())
+    }
+    fn packed_record_value(
+        &mut self,
+        frame: usize,
+        source: OwnerPlaceId,
+        record: RecordId,
+        span: Span,
+    ) -> Result<Range<usize>> {
+        let from = self.base(frame, AccessBase::Owner(source), Access::Read, span)?;
+        let declarations = self.plan.witness().declarations();
+        if self.aggregate(from, span)? != AggregateTy::Record(record)
+            || !declarations.is_copy(AggregateTy::Record(record))
+        {
+            return Err(bad("record vector value type", span));
+        }
+        let bytes = declarations
+            .record_packed_bytes(record)
+            .map_err(|_| bad("record vector payload extent", span))?;
+        let available = self
+            .plan
+            .record_vector_scratch_range(self.frames[frame].function)
+            .ok_or_else(|| bad("record vector staging", span))?;
+        let end = available
+            .start
+            .checked_add(bytes)
+            .filter(|end| *end <= available.end)
+            .ok_or_else(|| bad("record vector staging extent", span))?;
+        let scratch = available.start..end;
+        // Validate every initialized leaf before the first staging write. Neither
+        // traversal visits activation padding, even for a nested empty record.
+        let mut cursor = 0usize;
+        for leaf in declarations
+            .leaves(AggregateTy::Record(record))
+            .map_err(|_| bad("record vector leaves", span))?
+        {
+            self.load_leaf(from, leaf, span)?;
+            cursor = cursor
+                .checked_add(vector_type::element(leaf.ty).size())
+                .ok_or_else(|| bad("record vector leaf extent", span))?;
+        }
+        if cursor != bytes {
+            return Err(bad("record vector packed layout", span));
+        }
+        cursor = scratch.start;
+        for leaf in declarations
+            .leaves(AggregateTy::Record(record))
+            .map_err(|_| bad("record vector leaves", span))?
+        {
+            let value = self.load_leaf(from, leaf, span)?;
+            value.encode(&mut self.frames[frame].payload, cursor, span)?;
+            cursor += vector_type::element(leaf.ty).size();
+        }
+        Ok(scratch)
+    }
+    fn record_vector_region(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        path: &[FieldId],
+        access: Access,
+        record: RecordId,
+        span: Span,
+    ) -> Result<(byte_buffer::VectorDescriptor, i32, i32)> {
+        let ty = VectorTy::Record(record);
+        if path.is_empty() {
+            let ScalarRegion::Vector {
+                value,
+                start,
+                end,
+                element,
+            } = self.scalar_region(frame, base, access, ty, span)?
+            else {
+                return Err(bad("record vector indexed region", span));
+            };
+            if element != ty {
+                return Err(bad("record vector nominal identity", span));
+            }
+            return Ok((value, start, end));
+        }
+        let (root, actual, relative) = self.projection_base(frame, base, access, path, span)?;
+        if actual != ValueTy::Owned(ty.aggregate()) {
+            return Err(bad("record vector projected identity", span));
+        }
+        let (_, descriptor) = self.vector_at(root, relative as u64, ty, span)?;
+        let element = vector_type::checked(ty, self.plan.witness().declarations())
+            .map_err(|failure| heap_failure(failure, span))?;
+        let length = self
+            .heap
+            .vector_len(&descriptor, element)
+            .map_err(|failure| heap_failure(failure, span))?;
+        Ok((descriptor, 0, length))
+    }
+    pub(super) fn record_vector_index_read(
+        &mut self,
+        frame: usize,
+        destination: OwnerPlaceId,
+        base: AccessBase,
+        path: &[FieldId],
+        index_operand: Operand,
+        span: Span,
+    ) -> Result<()> {
+        self.expect_owner(frame, destination, &[UNINITIALIZED], span)?;
+        let to = self.raw_key(frame, destination);
+        let AggregateTy::Record(record) = self.aggregate(to, span)? else {
+            return Err(bad("record vector copy destination", span));
+        };
+        let declarations = self.plan.witness().declarations();
+        let element = vector_type::checked(VectorTy::Record(record), declarations)
+            .map_err(|failure| heap_failure(failure, span))?;
+        let (descriptor, start, end) =
+            self.record_vector_region(frame, base, path, Access::Read, record, span)?;
+        let ordinal = self.vector_index(frame, index_operand, end - start, span)?;
+        let bytes = self
+            .heap
+            .vector_range(&descriptor, element, start + ordinal, start + ordinal + 1)
+            .map_err(|failure| heap_failure(failure, span))?;
+        // The heap allocation is distinct from activation storage and stays
+        // registered for this synchronous copy; no allocation or release occurs.
+        let pointer = bytes.as_ptr();
+        let length = bytes.len();
+        let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+        let mut cursor = 0;
+        for leaf in declarations
+            .leaves(AggregateTy::Record(record))
+            .map_err(|_| bad("record vector copy leaves", span))?
+        {
+            V::decode(bytes, cursor, leaf.ty, span)?;
+            self.leaf_offset(to, leaf.offset, leaf.ty, span)?;
+            cursor += vector_type::element(leaf.ty).size();
+        }
+        if cursor != length {
+            return Err(bad("record vector copy extent", span));
+        }
+        cursor = 0;
+        for leaf in declarations
+            .leaves(AggregateTy::Record(record))
+            .map_err(|_| bad("record vector copy leaves", span))?
+        {
+            let value = V::decode(bytes, cursor, leaf.ty, span)?;
+            self.store_leaf(to, leaf, value, span)?;
+            cursor += vector_type::element(leaf.ty).size();
+        }
+        self.change_owner(frame, destination, AVAILABLE, span)
+    }
+    pub(super) fn record_vector_index_write(
+        &mut self,
+        frame: usize,
+        base: AccessBase,
+        path: &[FieldId],
+        index_operand: Operand,
+        source: OwnerPlaceId,
+        span: Span,
+    ) -> Result<()> {
+        let from = self.base(frame, AccessBase::Owner(source), Access::Read, span)?;
+        let AggregateTy::Record(record) = self.aggregate(from, span)? else {
+            return Err(bad("record vector store source", span));
+        };
+        let (descriptor, start, end) =
+            self.record_vector_region(frame, base, path, Access::Write, record, span)?;
+        let ordinal = self.vector_index(frame, index_operand, end - start, span)?;
+        let scratch = self.packed_record_value(frame, source, record, span)?;
+        let element =
+            vector_type::checked(VectorTy::Record(record), self.plan.witness().declarations())
+                .map_err(|failure| heap_failure(failure, span))?;
+        // SAFETY: complete source canonical validation and exclusive language
+        // authority precede this single dense initialized-payload write.
+        let target = unsafe {
+            self.heap
+                .vector_range_mut(&descriptor, element, start + ordinal, start + ordinal + 1)
+        }
+        .map_err(|failure| heap_failure(failure, span))?;
+        if target.len() != scratch.len() {
+            return Err(bad("record vector store extent", span));
+        }
+        target.copy_from_slice(&self.frames[frame].payload[scratch]);
         Ok(())
     }
 }

@@ -523,10 +523,10 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
     ) -> Result<bool> {
         if matches!(
             left.view.aggregate.map(AggregateSlot::aggregate),
-            Some(AggregateTy::Vector(_))
+            Some(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
         ) || matches!(
             right.view.aggregate.map(AggregateSlot::aggregate),
-            Some(AggregateTy::Vector(_))
+            Some(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
         ) {
             return self.vector_reference_overlap(left, right, span);
         }
@@ -761,7 +761,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             | AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
             | AggregateTy::File
-            | AggregateTy::Vector(_) => Err(bad("array aggregate type", span)),
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_) => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -789,8 +790,10 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         {
             return Err(bad("view root type", span));
         }
-        if matches!(root_type, AggregateTy::Vector(_))
-            && (view.offset != 0 || root_type != aggregate)
+        if matches!(
+            root_type,
+            AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+        ) && (view.offset != 0 || root_type != aggregate)
         {
             // Dynamic scalar slices take their checked packed-range path in
             // checked_handle_view. A vector descriptor cannot become a fixed
@@ -858,7 +861,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         | AggregateTy::FixedArray(_)
                         | AggregateTy::ByteBuf
                         | AggregateTy::File
-                        | AggregateTy::Vector(_)),
+                        | AggregateTy::Vector(_)
+                        | AggregateTy::RecordVector(_)),
                     ),
                     relative,
                 ) = self
@@ -917,8 +921,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .loans
             .get(index(handle.permission.loan, span)?)
             .ok_or_else(|| bad("view loan descriptor", span))?;
-        if let AggregateTy::Vector(element) = actual {
-            if loan.referent() == BorrowedTy::ScalarSlice(element) {
+        if let Some(element) = super::vector_type::VectorTy::from_aggregate(actual) {
+            if loan.referent() == element.slice() {
                 self.vector_slice(handle, element, span)?;
                 return Ok(actual);
             }
@@ -952,6 +956,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     | AggregateTy::ByteBuf
                     | AggregateTy::File
                     | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
             ) || (matches!(actual, AggregateTy::Record(_))
                 && (actual != root_type || handle.view.offset != 0)))
         {
@@ -1050,7 +1055,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                                 | AggregateTy::FixedArray(_)
                                 | AggregateTy::ByteBuf
                                 | AggregateTy::File
-                                | AggregateTy::Vector(_)),
+                                | AggregateTy::Vector(_)
+                                | AggregateTy::RecordVector(_)),
                             ),
                             offset,
                         ) = self
@@ -1845,7 +1851,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     | AggregateTy::FixedArray(_)
                     | AggregateTy::ByteBuf
                     | AggregateTy::File
-                    | AggregateTy::Vector(_)),
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)),
                 ),
                 relative,
             ) = self
@@ -1872,7 +1879,10 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .declarations()
             .check_borrowed_view(BorrowedTy::Exact(actual), descriptor.referent())
             .map_err(|_| bad("loan borrowed view", span))?;
-        view = if matches!(actual, AggregateTy::Vector(_)) {
+        view = if matches!(
+            actual,
+            AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+        ) {
             self.stage_vector_view(frame, descriptor, root, view, range, span)?
         } else if matches!(actual, AggregateTy::FixedArray(array) if array.element() != hir::Ty::U8)
             && range.is_some()
@@ -3008,15 +3018,17 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             } => {
                 let (_key, ty, relative) =
                     self.projection_base(frame, *base, Access::Read, path, span)?;
-                if let ValueTy::Owned(AggregateTy::Vector(element)) = ty {
-                    return self.vector_projection_length(
-                        frame,
-                        *destination,
-                        _key,
-                        element,
-                        relative,
-                        span,
-                    );
+                if let ValueTy::Owned(aggregate) = ty {
+                    if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                        return self.vector_projection_length(
+                            frame,
+                            *destination,
+                            _key,
+                            element,
+                            relative,
+                            span,
+                        );
+                    }
                 }
                 let ValueTy::Owned(AggregateTy::FixedArray(array)) = ty else {
                     return Err(bad("projection length type", span));
@@ -3059,6 +3071,22 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 self.change_owner(frame, *destination, AVAILABLE, span)?;
                 #[cfg(test)]
                 self.observe_end(observation);
+            }
+            OwnedInstruction::CopyIndexInitialize {
+                destination,
+                base,
+                path,
+                index,
+            } => {
+                self.record_vector_index_read(frame, *destination, *base, path, *index, span)?;
+            }
+            OwnedInstruction::CopyIndexWrite {
+                base,
+                path,
+                index,
+                source,
+            } => {
+                self.record_vector_index_write(frame, *base, path, *index, *source, span)?;
             }
             OwnedInstruction::ReadIndex {
                 destination,
@@ -3917,6 +3945,7 @@ impl<V: StoredValue> Iterator for ValueCells<'_, V> {
                 AggregateTy::ByteBuf
                 | AggregateTy::File
                 | AggregateTy::Vector(_)
+                | AggregateTy::RecordVector(_)
                 | AggregateTy::RecordVector(_),
             ) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
@@ -4723,7 +4752,8 @@ fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File
-        | AggregateTy::Vector(_) => Err(bad("unsupported aggregate carrier", span)),
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => Err(bad("unsupported aggregate carrier", span)),
     }
 }
 
