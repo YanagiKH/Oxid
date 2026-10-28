@@ -2,17 +2,17 @@ name: Clean up superseded queued checks
 
 on:
   push:
-    branches: [KH/ci-queue-maintenance]
+    branches: [KH/ci-queue-recovery]
 
 permissions: {}
 
 concurrency:
   group: oxid-ci-queue-maintenance
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   queued-checks:
-    runs-on: ubuntu-slim
+    runs-on: macos-15
     timeout-minutes: 5
     permissions:
       contents: read
@@ -22,13 +22,31 @@ jobs:
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const expected = 'b40dfdf471331863b1b77204f95aa6263b18172d';
+            const expected = '20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9';
+            const integrationPR = 154;
             const { owner, repo } = context.repo;
-            const current = await github.rest.pulls.get({ owner, repo, pull_number: 146 });
+            const repository = `${owner}/${repo}`.toLowerCase();
+            if (repository !== 'yanagikh/oxid') {
+              core.setFailed('Unexpected repository; no checks were cancelled.');
+              return;
+            }
+            const current = await github.rest.pulls.get({ owner, repo, pull_number: integrationPR });
             if (current.data.head.sha !== expected) {
               core.setFailed('Integration head changed; no checks were cancelled.');
               return;
             }
+            async function protectedHeads() {
+              const pulls = await github.paginate(github.rest.pulls.list, {
+                owner, repo, state: 'open', per_page: 100
+              });
+              const heads = new Set([expected]);
+              for (const pull of pulls) {
+                if (pull.head?.repo?.full_name?.toLowerCase() === repository &&
+                    /^[0-9a-f]{40}$/.test(pull.head.sha || '')) heads.add(pull.head.sha);
+              }
+              return heads;
+            }
+            const currentHeads = await protectedHeads();
             const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
               owner, repo, status: 'queued', event: 'pull_request', per_page: 100
             });
@@ -36,7 +54,7 @@ jobs:
             let unreadable = 0;
             for (const run of runs) {
               if (run.workflow_id !== 321632921 || run.event !== 'pull_request' ||
-                  run.status !== 'queued' || run.head_sha === expected ||
+                  run.status !== 'queued' || currentHeads.has(run.head_sha) ||
                   run.head_repository?.full_name?.toLowerCase() !== `${owner}/${repo}`.toLowerCase() ||
                   !/^KH\//.test(run.head_branch || '') || !/^[0-9a-f]{40}$/.test(run.head_sha)) continue;
               try {
@@ -47,16 +65,17 @@ jobs:
                 const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
                   owner, repo, run_id: run.id, filter: 'latest', per_page: 100
                 });
-                if (jobs.some(job => job.runner_id || (job.status !== 'queued' &&
+                if (!jobs.length || jobs.some(job => job.runner_id || (job.status !== 'queued' &&
                     !(job.status === 'completed' && job.conclusion === 'skipped')))) continue;
                 const fresh = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: run.id });
                 if (fresh.data.status !== 'queued' || fresh.data.head_sha !== run.head_sha) continue;
+                if ((await protectedHeads()).has(run.head_sha)) continue;
               } catch (error) {
                 unreadable += 1;
                 core.warning(`Skipped run ${run.id}: cannot verify its current state (HTTP ${error.status || 'unknown'}).`);
                 continue;
               }
-              const integration = await github.rest.pulls.get({ owner, repo, pull_number: 146 });
+              const integration = await github.rest.pulls.get({ owner, repo, pull_number: integrationPR });
               if (integration.data.head.sha !== expected) {
                 core.setFailed('Integration head changed; stopped queued-run cleanup.');
                 return;
