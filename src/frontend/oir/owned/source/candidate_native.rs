@@ -153,7 +153,9 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         OwnedInstruction::ReadProjection { .. } => "ReadProjection",
         OwnedInstruction::WriteProjection { .. } => "WriteProjection",
         OwnedInstruction::ProjectionLength { .. } => "ProjectionLength",
-        OwnedInstruction::ConstructArray { .. }
+        OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. }
+        | OwnedInstruction::ConstructArray { .. }
         | OwnedInstruction::ReadIndex { .. }
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ArrayLength { .. } => {

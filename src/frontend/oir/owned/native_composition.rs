@@ -235,8 +235,12 @@ fn resource(
     let (family, carrier) = match aggregate {
         AggregateTy::ByteBuf => ("bytebuf", "{ i64, i32, i32 }"),
         AggregateTy::File => ("file", "{ i64, i64 }"),
-        AggregateTy::Vector(ty) => {
-            let tag = super::super::vector_type::element(ty).tag();
+        aggregate @ (AggregateTy::Vector(_) | AggregateTy::RecordVector(_)) => {
+            let tag = match aggregate {
+                AggregateTy::Vector(ty) => super::super::vector_type::element(ty).tag(),
+                AggregateTy::RecordVector(id) => 0x8000_0000u32 | id.0 as u32,
+                _ => unreachable!(),
+            };
             match mode {
                 Mode::Validate => {
                     writeln!(out, "  %{name}_status = call i32 @__oxid_vector_valid(ptr {source}, i32 {tag})\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  ret i32 3\n{name}_ok:").unwrap();

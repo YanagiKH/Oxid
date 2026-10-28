@@ -306,7 +306,9 @@ fn function(
                         visitor.span(operand.span)?;
                     }
                 }
-                OwnedInstruction::ReadIndex { index, .. } => visitor.span(index.span)?,
+                OwnedInstruction::CopyIndexInitialize { index, .. }
+                | OwnedInstruction::CopyIndexWrite { index, .. }
+                | OwnedInstruction::ReadIndex { index, .. } => visitor.span(index.span)?,
                 OwnedInstruction::WriteIndex { value, index, .. } => {
                     visitor.span(value.span)?;
                     visitor.span(index.span)?;

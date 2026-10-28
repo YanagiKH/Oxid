@@ -176,6 +176,10 @@ impl<'a> RecordElement<'a> {
 impl sealed::Sealed for RecordElement<'_> {}
 impl VectorType for RecordElement<'_> {
     fn validation_work(self, bytes: usize) -> Option<usize> {
+        // Every initialized leaf occupies >=1 dense byte. A finite tree of
+        // depth D with L leaves has at most (D+1)*L visited nodes, even for
+        // unary record chains. Two iterator transitions plus scalar admission
+        // are bounded by (2*D+3)*bytes; this does not assume L <= D.
         bytes.checked_mul(2 * crate::frontend::oir::owned_types::MAX_CONTAINMENT_DEPTH + 3)
     }
     fn tag(self) -> u32 {

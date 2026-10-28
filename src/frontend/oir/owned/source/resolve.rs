@@ -1594,7 +1594,9 @@ fn resolve_index_impl(
                 let nominal = match payload {
                     Some(ValueTy::Owned(AggregateTy::ByteBuf)) => NominalId::ByteBuf,
                     Some(ValueTy::Owned(AggregateTy::File)) => NominalId::File,
-                    Some(ValueTy::Owned(AggregateTy::Vector(_))) => NominalId::Vector,
+                    Some(ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))) => {
+                        NominalId::Vector
+                    }
                     Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
                     Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
                     Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
@@ -1796,46 +1798,54 @@ fn resolve_index_impl(
     {
         let (key, module) = index.function(DefId(id)).map_err(|e| vec![*e])?;
         let function = &sources.ast(module).map_err(|e| vec![*e])?.functions[key.index];
-        let params = signature
-            .params
-            .iter()
-            .zip(&function.params)
-            .map(|(ty, p)| {
-                (
-                    match *ty {
-                        ParameterTy::Value(ValueTy::Owned(AggregateTy::File))
-                        | ParameterTy::Reference {
-                            referent: BorrowedTy::Exact(AggregateTy::File),
-                            ..
-                        } => Some(NominalId::File),
-                        ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf))
-                        | ParameterTy::Reference {
-                            referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
-                            ..
-                        } => Some(NominalId::ByteBuf),
-                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Vector(_)))
-                        | ParameterTy::Reference {
-                            referent: BorrowedTy::Exact(AggregateTy::Vector(_)),
-                            ..
-                        } => Some(NominalId::Vector),
-                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
-                        | ParameterTy::Reference {
-                            referent: BorrowedTy::Exact(AggregateTy::Record(r)),
-                            ..
-                        } => Some(NominalId::Record(r)),
-                        ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(e))) => {
-                            Some(NominalId::Enum(e))
-                        }
-                        _ => None,
-                    },
-                    &p.ty,
-                )
-            });
+        let params =
+            signature
+                .params
+                .iter()
+                .zip(&function.params)
+                .map(|(ty, p)| {
+                    (
+                        match *ty {
+                            ParameterTy::Value(ValueTy::Owned(AggregateTy::File))
+                            | ParameterTy::Reference {
+                                referent: BorrowedTy::Exact(AggregateTy::File),
+                                ..
+                            } => Some(NominalId::File),
+                            ParameterTy::Value(ValueTy::Owned(AggregateTy::ByteBuf))
+                            | ParameterTy::Reference {
+                                referent: BorrowedTy::Exact(AggregateTy::ByteBuf),
+                                ..
+                            } => Some(NominalId::ByteBuf),
+                            ParameterTy::Value(ValueTy::Owned(
+                                AggregateTy::Vector(_) | AggregateTy::RecordVector(_),
+                            ))
+                            | ParameterTy::Reference {
+                                referent:
+                                    BorrowedTy::Exact(
+                                        AggregateTy::Vector(_) | AggregateTy::RecordVector(_),
+                                    ),
+                                ..
+                            } => Some(NominalId::Vector),
+                            ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(r)))
+                            | ParameterTy::Reference {
+                                referent: BorrowedTy::Exact(AggregateTy::Record(r)),
+                                ..
+                            } => Some(NominalId::Record(r)),
+                            ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(e))) => {
+                                Some(NominalId::Enum(e))
+                            }
+                            _ => None,
+                        },
+                        &p.ty,
+                    )
+                });
         let result = (
             match signature.result {
                 ValueTy::Owned(AggregateTy::ByteBuf) => Some(NominalId::ByteBuf),
                 ValueTy::Owned(AggregateTy::File) => Some(NominalId::File),
-                ValueTy::Owned(AggregateTy::Vector(_)) => Some(NominalId::Vector),
+                ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_)) => {
+                    Some(NominalId::Vector)
+                }
                 ValueTy::Owned(AggregateTy::Record(r)) => Some(NominalId::Record(r)),
                 ValueTy::Owned(AggregateTy::Enum(e)) => Some(NominalId::Enum(e)),
                 _ => None,

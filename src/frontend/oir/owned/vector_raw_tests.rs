@@ -68,6 +68,7 @@ fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFunction {
 
 /// No catalog signature/member builder supplies these expected declarations.
 fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction {
+    let element = key.element();
     use vector::Operation::*;
     let result = match key.operation() {
         New | Take => ValueTy::Owned(AggregateTy::Vector(key.element())),
@@ -95,7 +96,7 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
     }
     let scalar_parameters: &[hir::Ty] = match key.operation() {
         TryReserve | Truncate => &[hir::Ty::I32],
-        TryPush => std::slice::from_ref(&key.element()),
+        TryPush => std::slice::from_ref(&element),
         TryResize => &[hir::Ty::I32, key.element()],
         _ => &[],
     };

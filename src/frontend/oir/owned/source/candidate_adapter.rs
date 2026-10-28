@@ -333,6 +333,8 @@ fn instruction(value: &OwnedInstruction) -> String {
         }
         // This frozen scalar-record observer is not the composition qualification path.
         OwnedInstruction::CopyInitialize { .. }
+        | OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. }
         | OwnedInstruction::DestructureRecord { .. }
         | OwnedInstruction::ConstructComposite { .. }
         | OwnedInstruction::ReadProjection { .. }
@@ -1170,7 +1172,8 @@ fn record_id(aggregate: AggregateTy) -> RecordId {
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File
-        | AggregateTy::Vector(_) => {
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
             panic!("source aggregate gate")
         }
     }
@@ -1179,6 +1182,6 @@ fn record_id(aggregate: AggregateTy) -> RecordId {
 fn borrowed_record_id(referent: BorrowedTy) -> RecordId {
     match referent {
         BorrowedTy::Exact(aggregate) => record_id(aggregate),
-        BorrowedTy::ScalarSlice(_) => panic!("source slice gate"),
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => panic!("source slice gate"),
     }
 }

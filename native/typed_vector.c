@@ -162,3 +162,75 @@ int32_t __oxid_vector_length(const oxid_vector *value, uint32_t element, void *r
     memcpy(result, &length, sizeof length);
     return 0;
 }
+
+/* Record activations keep their nominal padded layout. Heap elements contain
+ * only dense initialized scalar leaves. The immutable catalog owns both maps. */
+static int vector_record_cell(const uint8_t *pointer, uint32_t element) {
+    size_t width = vector_element_size(element);
+    if (!width || !(element & OXID_VECTOR_RECORD_BIT) || !pointer) return 0;
+    for (oxid_allocation *node = execution_heap.head; node; node = node->next) {
+        if (node->capacity != OXID_VECTOR_NODE) continue;
+        const oxid_vector_header *header = (const oxid_vector_header *)node;
+        if (header->element != element || header->capacity > INT32_MAX || node->initialized > header->capacity)
+            continue;
+        oxid_vector descriptor = {node->identity, (int32_t)node->initialized, (int32_t)header->capacity};
+        if (oxid_vector_validate(&execution_heap, &descriptor, element)) continue;
+        uintptr_t first = (uintptr_t)vector_data(node), selected = (uintptr_t)pointer;
+        if (selected >= first && selected - first < (size_t)node->initialized * width &&
+            !((selected - first) % width)) return 1;
+    }
+    return 0;
+}
+static int32_t vector_record_transfer(uint32_t element, const uint8_t *source,
+    uint8_t *destination, int pack) {
+    const oxid_vector_record_schema *schema = vector_record_schema(element);
+    if (!schema || !vector_record_layout_valid(schema) || !source || !destination)
+        return OXID_BUFFER_DESCRIPTOR;
+    size_t input_bytes = pack ? schema->owner_bytes : schema->stride;
+    size_t output_bytes = pack ? schema->stride : schema->owner_bytes;
+    if (vector_overlaps(source, input_bytes, destination, output_bytes) ||
+        vector_heap_overlap(destination, output_bytes) ||
+        (pack ? vector_heap_overlap(source, input_bytes) : !vector_record_cell(source, element)))
+        return OXID_BUFFER_DESCRIPTOR;
+    for (uint32_t i = 0; i < schema->leaf_count; ++i) {
+        const oxid_vector_record_leaf *leaf = &schema->leaves[i];
+        size_t offset = pack ? leaf->owner_offset : leaf->dense_offset;
+        if (!vector_scalar_canonical(leaf->element, source + offset,
+                vector_scalar_size(leaf->element))) return OXID_BUFFER_DESCRIPTOR;
+    }
+    /* Complete source and catalog admission precedes every destination write. */
+    for (uint32_t i = 0; i < schema->leaf_count; ++i) {
+        const oxid_vector_record_leaf *leaf = &schema->leaves[i];
+        size_t from = pack ? leaf->owner_offset : leaf->dense_offset;
+        size_t to = pack ? leaf->dense_offset : leaf->owner_offset;
+        memcpy(destination + to, source + from, vector_scalar_size(leaf->element));
+    }
+    return 0;
+}
+int32_t __oxid_record_vector_pack(uint32_t element, const uint8_t *source, uint8_t *packed) {
+    return vector_record_transfer(element, source, packed, 1);
+}
+int32_t __oxid_record_vector_unpack(uint32_t element, const uint8_t *packed, uint8_t *destination) {
+    return vector_record_transfer(element, packed, destination, 0);
+}
+int32_t __oxid_record_vector_write(uint32_t element, const uint8_t *packed, uint8_t *destination) {
+    const oxid_vector_record_schema *schema = vector_record_schema(element);
+    if (!schema || !packed || !vector_record_cell(destination, element) ||
+        vector_heap_overlap(packed, schema->stride) ||
+        !vector_canonical(element, packed, schema->stride)) return OXID_BUFFER_DESCRIPTOR;
+    memcpy(destination, packed, schema->stride);
+    return 0;
+}
+int32_t __oxid_record_vector_index_slice(const uint8_t *source, uint32_t element,
+    int32_t length, int32_t ordinal, uint8_t **pointer) {
+    const oxid_vector_record_schema *schema = vector_record_schema(element);
+    if (!schema || length < 0) return OXID_BUFFER_DESCRIPTOR;
+    if (ordinal < 0 || ordinal >= length) return OXID_BUFFER_BOUNDS;
+    if ((size_t)length > SIZE_MAX / schema->stride ||
+        !vector_record_cell(source, element) ||
+        !vector_record_source(&execution_heap, element, source, (size_t)length * schema->stride) ||
+        !vector_output(pointer, sizeof *pointer, NULL)) return OXID_BUFFER_DESCRIPTOR;
+    uint8_t *selected = (uint8_t *)source + (size_t)ordinal * schema->stride;
+    memcpy(pointer, &selected, sizeof selected);
+    return 0;
+}

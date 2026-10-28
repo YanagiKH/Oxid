@@ -133,6 +133,7 @@ enum PayloadSlot {
     ByteBuf,
     File,
     Vector(hir::Ty),
+    RecordVector(u32),
     AlignedScalar(hir::Ty),
     AlignedRecord(u32),
     AlignedEnum(u32),
@@ -144,6 +145,7 @@ enum PayloadSlot {
     DoubleAlignedByteBuf,
     DoubleAlignedFile,
     DoubleAlignedVector(hir::Ty),
+    DoubleAlignedRecordVector(u32),
 }
 impl PayloadSlot {
     fn check(ty: ValueTy, alignment: usize) -> Result<Self, DeclarationError> {
@@ -159,13 +161,22 @@ impl PayloadSlot {
             ValueTy::Owned(AggregateTy::FixedArray(array)) => Self::Array(array),
             ValueTy::Owned(AggregateTy::ByteBuf) => Self::ByteBuf,
             ValueTy::Owned(AggregateTy::File) => Self::File,
+            ValueTy::Owned(AggregateTy::RecordVector(id)) => Self::RecordVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
             ValueTy::Owned(AggregateTy::Vector(element)) => {
                 super::check_vector_element(element)?;
                 Self::Vector(element)
             }
         };
         match alignment {
-            4 if !matches!(payload, Self::ByteBuf | Self::File | Self::Vector(_)) => Ok(payload),
+            4 if !matches!(
+                payload,
+                Self::ByteBuf | Self::File | Self::Vector(_) | Self::RecordVector(_)
+            ) =>
+            {
+                Ok(payload)
+            }
             8 => Ok(match payload {
                 Self::Scalar(ty) => Self::AlignedScalar(ty),
                 Self::Record(id) => Self::AlignedRecord(id),
@@ -174,6 +185,7 @@ impl PayloadSlot {
                 Self::ByteBuf => Self::ByteBuf,
                 Self::File => Self::File,
                 Self::Vector(element) => Self::Vector(element),
+                Self::RecordVector(id) => Self::RecordVector(id),
                 _ => unreachable!("fresh compact payload"),
             }),
             16 => Ok(match payload {
@@ -184,6 +196,7 @@ impl PayloadSlot {
                 Self::ByteBuf => Self::DoubleAlignedByteBuf,
                 Self::File => Self::DoubleAlignedFile,
                 Self::Vector(element) => Self::DoubleAlignedVector(element),
+                Self::RecordVector(id) => Self::DoubleAlignedRecordVector(id),
                 _ => unreachable!("fresh compact payload"),
             }),
             _ => Err(DeclarationError::LayoutOverflow),
@@ -206,6 +219,9 @@ impl PayloadSlot {
             }
             Self::ByteBuf | Self::DoubleAlignedByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
             Self::File | Self::DoubleAlignedFile => ValueTy::Owned(AggregateTy::File),
+            Self::RecordVector(id) | Self::DoubleAlignedRecordVector(id) => {
+                ValueTy::Owned(AggregateTy::RecordVector(RecordId(id as usize)))
+            }
             Self::Vector(element) | Self::DoubleAlignedVector(element) => {
                 ValueTy::Owned(AggregateTy::Vector(element))
             }
@@ -220,7 +236,8 @@ impl PayloadSlot {
             | Self::DoubleAlignedArray(_)
             | Self::DoubleAlignedByteBuf
             | Self::DoubleAlignedFile
-            | Self::DoubleAlignedVector(_) => 16,
+            | Self::DoubleAlignedVector(_)
+            | Self::DoubleAlignedRecordVector(_) => 16,
             _ => 8,
         }
     }
@@ -758,7 +775,7 @@ fn owned_summaries(
                     Some(ValueTy::Scalar(ty)) => ContainmentSummary {
                         layout: Layout::scalar(ty),
                         width: 1,
-                        depth: 0,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
                     },
                     Some(ValueTy::Owned(AggregateTy::Record(record))) => *records
                         .get(record.0)
@@ -769,24 +786,29 @@ fn owned_summaries(
                     Some(ValueTy::Owned(AggregateTy::FixedArray(array))) => ContainmentSummary {
                         layout: array.layout()?,
                         width: array.length().max(1),
-                        depth: 0,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
                     },
                     Some(ValueTy::Owned(AggregateTy::File)) => ContainmentSummary {
                         layout: Layout { size: 16, align: 8 },
                         width: 2,
-                        depth: 0,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
                     },
                     Some(ValueTy::Owned(AggregateTy::ByteBuf)) => ContainmentSummary {
                         layout: Layout { size: 16, align: 8 },
                         width: 3,
-                        depth: 0,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
+                    },
+                    Some(ValueTy::Owned(AggregateTy::RecordVector(_))) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 3,
+                        depth_and_packed: ContainmentSummary::pack(0, 16)?,
                     },
                     Some(ValueTy::Owned(AggregateTy::Vector(element))) => {
                         super::check_vector_element(element)?;
                         ContainmentSummary {
                             layout: Layout { size: 16, align: 8 },
                             width: 3,
-                            depth: 0,
+                            depth_and_packed: ContainmentSummary::pack(0, 0)?,
                         }
                     }
                 };
@@ -795,7 +817,7 @@ fn owned_summaries(
                 width = width.max(child.width);
                 depth = depth.max(
                     child
-                        .depth
+                        .depth()
                         .checked_add(1)
                         .ok_or(DeclarationError::LayoutOverflow)?,
                 );
@@ -817,7 +839,7 @@ fn owned_summaries(
                     align: alignment,
                 },
                 width,
-                depth,
+                depth_and_packed: ContainmentSummary::pack(depth, bytes)?,
             };
             state[id] = 2;
             stack.pop();

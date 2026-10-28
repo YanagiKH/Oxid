@@ -645,6 +645,19 @@ impl Declarations {
             limits.table_bytes,
             "declaration table bytes",
         )?;
+        if owned_payloads {
+            for enumeration in raw_enums {
+                for variant in &enumeration.variants {
+                    if let Some(ParameterTy::Value(ValueTy::Owned(AggregateTy::RecordVector(id)))) =
+                        variant.payload
+                    {
+                        if !raw.get(id.0).is_some_and(|record| record.is_copy) {
+                            return Err(DeclarationError::TypeMismatch);
+                        }
+                    }
+                }
+            }
+        }
         usage.layout_bytes = if owned_payloads {
             0
         } else {

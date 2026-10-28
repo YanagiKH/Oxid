@@ -423,9 +423,14 @@ fn compile_inner(
         } else {
             ""
         };
+        let record_schemas = if module.contains("@__oxid_record_vector_schema_count = constant") {
+            "#define OXID_RECORD_VECTOR_SCHEMAS 1\n"
+        } else {
+            ""
+        };
         fs::write(
             workspace.0.join("runtime.c"),
-            format!("{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
+            format!("{record_schemas}{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
         )
         .map_err(io)?;
     }

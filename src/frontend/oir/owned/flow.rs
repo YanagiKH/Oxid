@@ -962,6 +962,17 @@ fn accesses(
                     DeniedRole::ArrayBase,
                 )?;
             }
+            if matches!(i, OwnedInstruction::Vector { .. }) {
+                for parameter in &f.parameters {
+                    if let ParameterBinding::Owned(owner) = parameter {
+                        visit(
+                            AccessBase::Owner(*owner),
+                            Access::Read,
+                            DeniedRole::SourceCopy,
+                        )?;
+                    }
+                }
+            }
             if let CallResult::Owned(destination) = destination {
                 visit(
                     AccessBase::Owner(*destination),

@@ -79,7 +79,12 @@ pub(in crate::frontend::oir::owned) fn frame_bytes(
 ) -> Result<usize, AdmissionFailure> {
     for block in &f.blocks {
         for statement in &block.statements {
-            if indexed(declarations, f, &statement.kind)?.is_some() {
+            if matches!(
+                statement.kind,
+                OwnedInstruction::CopyIndexInitialize { .. }
+                    | OwnedInstruction::CopyIndexWrite { .. }
+            ) || indexed(declarations, f, &statement.kind)?.is_some()
+            {
                 return Ok(INDEX_BYTES);
             }
         }

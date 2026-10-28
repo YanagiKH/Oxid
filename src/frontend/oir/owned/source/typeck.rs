@@ -311,6 +311,7 @@ enum TypeName<'a> {
     ByteBuf,
     File,
     Vector(Ty),
+    RecordVector(PreparedTypeName<'a>),
     Scalar(Ty),
     Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
@@ -321,6 +322,7 @@ impl std::fmt::Display for TypeName<'_> {
             Self::ByteBuf => write!(f, "alloc::bytes::ByteBuf"),
             Self::File => write!(f, "std::fs::File"),
             Self::Vector(element) => write!(f, "alloc::vec::Vec<{element}>"),
+            Self::RecordVector(element) => write!(f, "alloc::vec::Vec<{element}>"),
             Self::Scalar(ty) => write!(f, "{ty}"),
             Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
@@ -337,6 +339,9 @@ fn type_name<'a>(
         ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
         ValueTy::Owned(AggregateTy::File) => Ok(TypeName::File),
         ValueTy::Owned(AggregateTy::Vector(element)) => Ok(TypeName::Vector(element)),
+        ValueTy::Owned(AggregateTy::RecordVector(record)) => program
+            .prepare_name(record, span)
+            .map(TypeName::RecordVector),
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
@@ -3771,7 +3776,7 @@ fn check_body(
             } => {
                 let actual = borrow_type(function, kind, place, borrow_span, &bindings)?;
                 if let ParameterTy::Reference {
-                    referent: BorrowedTy::ScalarSlice(_),
+                    referent: BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_),
                     ..
                 } = actual
                 {

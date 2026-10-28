@@ -271,6 +271,23 @@ impl Declarations {
 
     /// Inspect each direct checked field/payload once. Nested vectors must have
     /// a direct declaration somewhere in these already bounded tables.
+    pub(in crate::frontend::oir) fn has_record_vector_declarations(&self) -> bool {
+        self.fields
+            .iter()
+            .any(|field| matches!(field.ty, ValueTy::Owned(AggregateTy::RecordVector(_))))
+            || self.enums.enums().iter().any(|enumeration| {
+                self.enums
+                    .variants(enumeration.id())
+                    .expect("checked enum")
+                    .iter()
+                    .any(|variant| {
+                        matches!(
+                            variant.value_payload(),
+                            Some(ValueTy::Owned(AggregateTy::RecordVector(_)))
+                        )
+                    })
+            })
+    }
     pub(in crate::frontend::oir) fn has_vector_declarations(&self) -> bool {
         self.fields.iter().any(|field| {
             matches!(
@@ -336,7 +353,7 @@ where
                 ValueTy::Owned(AggregateTy::RecordVector(record)) => {
                     self.length -= 1;
                     return Ok(Some(ResourceLeaf {
-                        offset: relative,
+                        offset,
                         kind: ResourceKind::RecordVector(
                             u32::try_from(record.0)
                                 .map_err(|_| DeclarationError::LayoutOverflow)?,

@@ -90,10 +90,6 @@ struct ControlCarriers<V> {
     footprints: [Footprint; 2],
     footprint_return: Result<Footprint>,
     scalar_scratch: [u8; 16],
-    record_leaves: [ScalarLeaves<'static>; 4],
-    record_ids: [RecordId; 3],
-    packed_cursors: [usize; 4],
-    packed_ranges: [Range<usize>; 2],
     scalar: V,
     decoded: Result<V>,
     encoded: Result<()>,
@@ -108,6 +104,24 @@ struct ControlCarriers<V> {
     scalar_results: [Result<i32>; 2],
     range_results: [Result<(i32, i32)>; 2],
     selected_ranges: [(i32, i32); 3],
+}
+#[allow(dead_code)]
+struct RecordControlCarriers {
+    record_leaves: [ScalarLeaves<'static>; 4],
+    record_ids: [RecordId; 3],
+    packed_cursors: [usize; 4],
+    packed_ranges: [Range<usize>; 2],
+    witness: byte_buffer::RecordVectorElement<'static>,
+    witness_result:
+        std::result::Result<byte_buffer::RecordVectorElement<'static>, byte_buffer::Failure>,
+    element_bytes: usize,
+    leaf: ScalarLeaf,
+    preflight_result: Result<()>,
+    region_result: Result<(byte_buffer::VectorDescriptor, i32, i32)>,
+    scratch_result: Result<Range<usize>>,
+}
+pub(super) const fn record_control_bytes() -> usize {
+    size_of::<RecordControlCarriers>()
 }
 pub(super) const fn control_bytes<V: StoredValue>() -> usize {
     size_of::<ControlCarriers<V>>() + range_control_bytes()
@@ -586,7 +600,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 value,
                 start,
                 end,
-                element: hir::Ty::U8,
+                element: VectorTy::Scalar(hir::Ty::U8),
             } => {
                 // Establish both U8 element identity and the initialized extent
                 // before any byte helper can acquire a raw mutable view.

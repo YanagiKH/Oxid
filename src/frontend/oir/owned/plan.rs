@@ -134,7 +134,7 @@ pub(super) struct ExecutionPlan<'a> {
     dynamic_resources: bool,
     wide_scalars: bool,
     integer_extension: u8,
-    quad_scalars: bool,
+    scalar_mode: u8,
 }
 const _: () = assert!(
     size_of::<ExecutionPlan<'_>>()
@@ -143,6 +143,9 @@ const _: () = assert!(
 impl<'a> ExecutionPlan<'a> {
     pub(super) fn uses_checked_copies(&self) -> bool {
         self.integer_extension & 128 != 0
+    }
+    pub(super) fn uses_record_vectors(&self) -> bool {
+        self.scalar_mode & 2 != 0
     }
     pub(super) fn uses_vectors(&self) -> bool {
         self.integer_extension & 32 != 0
@@ -169,10 +172,10 @@ impl<'a> ExecutionPlan<'a> {
         self.integer_extension & 2 != 0
     }
     pub(super) fn uses_quad_scalars(&self) -> bool {
-        self.quad_scalars
+        self.scalar_mode & 1 != 0
     }
     pub(super) fn native_scalar_bytes(&self) -> usize {
-        if self.quad_scalars {
+        if self.uses_quad_scalars() {
             16
         } else {
             8
@@ -464,7 +467,28 @@ impl<'a> ExecutionPlan<'a> {
         } else {
             size_of::<Option<Scalar>>()
         };
-        let vectors = witness.declarations().has_vector_declarations()
+        let record_vectors = witness.declarations().has_record_vector_declarations()
+            || functions.iter().any(|f| {
+                f.owners
+                    .iter()
+                    .any(|owner| matches!(owner.aggregate(), AggregateTy::RecordVector(_)))
+                    || f.references.iter().any(|reference| {
+                        matches!(
+                            reference.referent(),
+                            BorrowedTy::RecordSlice(_)
+                                | BorrowedTy::Exact(AggregateTy::RecordVector(_))
+                        )
+                    })
+                    || f.loans.iter().any(|loan| {
+                        matches!(
+                            loan.referent(),
+                            BorrowedTy::RecordSlice(_)
+                                | BorrowedTy::Exact(AggregateTy::RecordVector(_))
+                        )
+                    })
+            });
+        let vectors = record_vectors
+            || witness.declarations().has_vector_declarations()
             || functions.iter().any(|f| {
                 f.owners.iter().any(|o| {
                     matches!(
@@ -641,7 +665,7 @@ impl<'a> ExecutionPlan<'a> {
                 ) << 4)
                 | (u8::from(vectors) << 5)
                 | (u8::from(typed_ranges) << 6),
-            quad_scalars,
+            scalar_mode: u8::from(quad_scalars) | (u8::from(record_vectors) << 1),
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
         for f in functions {

@@ -3945,7 +3945,6 @@ impl<V: StoredValue> Iterator for ValueCells<'_, V> {
                 AggregateTy::ByteBuf
                 | AggregateTy::File
                 | AggregateTy::Vector(_)
-                | AggregateTy::RecordVector(_)
                 | AggregateTy::RecordVector(_),
             ) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
@@ -4487,6 +4486,11 @@ fn execute_plan_policy<V: StoredValue>(
                     0
                 } + if plan.uses_vectors() {
                     vector::control_bytes::<V>()
+                        + if plan.uses_record_vectors() {
+                            vector::record_control_bytes()
+                        } else {
+                            0
+                        }
                 } else if plan.uses_typed_ranges() {
                     vector::range_control_bytes()
                 } else {

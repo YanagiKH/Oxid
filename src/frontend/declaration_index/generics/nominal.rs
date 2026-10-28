@@ -532,6 +532,10 @@ impl Nominals {
             return Err(exhausted(at));
         }
         work.debit(1, at, "nominal argument visibility")?;
+        if let Value::Vector(element) = value {
+            self.exposure(index, work, owner, element.value(), at, depth + 1)?;
+        }
+
         let (nominal, arguments): (NominalId, &[Value]) = match value {
             Value::Record(id) => (
                 NominalId::Record(self.records[id].template),
@@ -547,9 +551,10 @@ impl Nominals {
             Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id))) => (NominalId::Enum(id), &[]),
             Value::Concrete(ValueTy::Owned(AggregateTy::ByteBuf)) => (NominalId::ByteBuf, &[]),
             Value::Concrete(ValueTy::Owned(AggregateTy::File)) => (NominalId::File, &[]),
-            Value::Vector(_) | Value::Concrete(ValueTy::Owned(AggregateTy::Vector(_))) => {
-                (NominalId::Vector, &[])
-            }
+            Value::Vector(_)
+            | Value::Concrete(ValueTy::Owned(
+                AggregateTy::Vector(_) | AggregateTy::RecordVector(_),
+            )) => (NominalId::Vector, &[]),
             _ => return Ok(()),
         };
         let exposure =
