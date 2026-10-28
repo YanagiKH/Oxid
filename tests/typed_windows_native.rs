@@ -387,3 +387,26 @@ fn the_pure_test_adapter_cannot_be_selected_by_forged_general_run_options() {
         "{output:?}"
     );
 }
+
+#[test]
+fn windows_test_option_errors_describe_the_pure_entry_contract() {
+    let fixture = declared_fixture();
+    fs::write(
+        fixture.0.join("tests/smoke.ox"),
+        "fn main()->i32{let bad=1/0;return 0;}",
+    )
+    .unwrap();
+    let output = fixture.invoke(&["test", "--entry-mode=result"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(output.stdout.is_empty());
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        text.contains("declared tests require fn main() -> i32 with no parameters"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("always use process mode") && !text.contains("E0607"),
+        "{text}"
+    );
+    fixture.clean();
+}

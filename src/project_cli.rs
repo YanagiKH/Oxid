@@ -1315,7 +1315,11 @@ fn test(
 ) -> Result<i32, String> {
     let manifest = &snapshot.manifest;
     if options.words.len() != 1 || options.entry_mode.is_some() {
-        return Err("typed-preview test accepts edition, message-format and locking options; test entries always use process mode".into());
+        return Err(if frontend::NativeBuildSettings::windows_msvc_host() {
+            "typed-preview test accepts edition, message-format and locking options; declared tests require fn main() -> i32 with no parameters"
+        } else {
+            "typed-preview test accepts edition, message-format and locking options; test entries always use process mode"
+        }.into());
     }
     if manifest.tests.is_empty() {
         return Err(
