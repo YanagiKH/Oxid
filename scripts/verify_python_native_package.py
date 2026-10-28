@@ -593,6 +593,206 @@ def loader_denials(evidence, python, row, cwd, runtime_environment, build_enviro
         for label, path in artifacts.items()}
 
 
+LIFECYCLE_FIXTURE = r'''
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+/* Synthetic transport fixture, never Oxid producer/semantic evidence. */
+static int final_fd = -1;
+static int pipe_fd(const char *name) {
+    const char *text = getenv(name);
+    if (text == NULL || *text == '\0') return -1;
+    char *end = NULL;
+    errno = 0;
+    long value = strtol(text, &end, 10);
+    if (errno != 0 || end == text || *end != '\0' || value < 0 || value > INT_MAX) return -1;
+    return (int)value;
+}
+static int send_one(int descriptor, char byte) {
+    for (int attempts = 0; attempts < 32; ++attempts) {
+        ssize_t count = write(descriptor, &byte, 1);
+        if (count == 1) return 0;
+        if (count < 0 && errno == EINTR) continue;
+        return -1;
+    }
+    return -1;
+}
+uint32_t oxid_library_abi_version(void) { return 1; }
+int32_t oxid_library_call_v1(int32_t a, int32_t b, int32_t c, int32_t *out) {
+    (void)a; (void)b; (void)c;
+    int entered = pipe_fd("OXID_LIFECYCLE_ENTERED_FD");
+    int gate = pipe_fd("OXID_LIFECYCLE_GATE_FD");
+    final_fd = pipe_fd("OXID_LIFECYCLE_CLOSED_FD");
+    if (entered < 0 || gate < 0 || final_fd < 0) return 99;
+    if (out == NULL) return 4;
+    if (send_one(entered, 'E') != 0) return 99;
+    for (int attempts = 0; attempts < 32; ++attempts) {
+        char release = 0;
+        ssize_t count = read(gate, &release, 1);
+        if (count < 0 && errno == EINTR) continue;
+        if (count != 1 || release != 'G') return 99;
+        *out = 1875;
+        return 0;
+    }
+    return 99;
+}
+__attribute__((destructor)) static void closed(void) {
+    if (final_fd >= 0) (void)send_one(final_fd, 'C');
+}
+'''
+
+
+LIFECYCLE_PROBE = r'''
+import gc, importlib, json, os, select, sys, threading, types, weakref
+name, export = sys.argv[1:]
+checks = 0
+def check(condition, message):
+    global checks
+    checks += 1
+    if not condition: raise AssertionError(message)
+entered_read, entered_write = os.pipe()
+gate_read, gate_write = os.pipe()
+closed_read, closed_write = os.pipe()
+descriptors = [entered_read, entered_write, gate_read, gate_write, closed_read, closed_write]
+os.environ['OXID_LIFECYCLE_ENTERED_FD'] = str(entered_write)
+os.environ['OXID_LIFECYCLE_GATE_FD'] = str(gate_read)
+os.environ['OXID_LIFECYCLE_CLOSED_FD'] = str(closed_write)
+results, errors, functions = [], [], []
+worker = None
+try:
+    package = importlib.import_module(name)
+    native = importlib.import_module(name + '._native')
+    function = getattr(package, export)
+    check(function is getattr(native, export) and isinstance(function, types.BuiltinFunctionType),
+          'lifecycle test must call the genuine produced C extension')
+    reference = weakref.ref(native)
+    functions.append(function)
+    del function
+    def invoke():
+        try:
+            # pop() leaves no control-side callable/second library handle.
+            results.append(functions.pop()(1250, 3, 2))
+        except BaseException as error:
+            errors.append(type(error).__name__ + ': ' + str(error))
+    worker = threading.Thread(target=invoke, daemon=True)
+    worker.start()
+    check(bool(select.select([entered_read], [], [], 10)[0]), 'native entry did not signal before its deadline')
+    check(os.read(entered_read, 2) == b'E', 'native entry signal differs')
+    for module_name in (name, name + '._native'):
+        sys.modules.pop(module_name, None)
+    del native, package
+    check(functions == [], 'control-side callable reference remains')
+    for _ in range(8):
+        gc.collect()
+        check(worker.is_alive(), 'native call stopped before the gate release')
+        check(reference() is not None, 'module died during its actual GIL-free native call')
+        check(not select.select([closed_read], [], [], 0)[0], 'private handle closed during its blocked call')
+    check(os.write(gate_write, b'G') == 1, 'could not release the native gate')
+    worker.join(timeout=10)
+    check(not worker.is_alive() and not errors and results == [1875], 'blocked transport call did not return correctly')
+    for _ in range(8):
+        gc.collect()
+        if reference() is None:
+            break
+    check(reference() is None, 'last owned module reference was not released after the call')
+    check(bool(select.select([closed_read], [], [], 5)[0]), 'last module did not close its private library')
+    close_events = os.read(closed_read, 16)
+    check(close_events == b'C', 'private library destructor count differs from one')
+    gc.collect()
+    check(not select.select([closed_read], [], [], 0.05)[0], 'private library closed more than once')
+    print(json.dumps({'schema': 'oxid-python-synthetic-lifecycle-v1', 'status': 'passed',
+                      'checks': checks, 'synthetic_blocked_calls': 1, 'close_events': 1,
+                      'entered_before_gc': True, 'closed_while_blocked': False,
+                      'module_collected_after_call': True, 'no_secondary_dlopen_handle': True,
+                      'oxid_producer_qualified': False, 'oxid_semantics_qualified': False,
+                      'genuine_native_calls': 0, 'counts_as_production_qualification': False}))
+finally:
+    # If any assertion fails, EOF releases a read-blocked native call before
+    # descriptors are closed. A daemon thread cannot strand process teardown;
+    # the parent also bounds/kills/reaps this whole child process group.
+    try:
+        os.write(gate_write, b'G')
+    except OSError:
+        pass
+    try:
+        os.close(gate_write)
+    except OSError:
+        pass
+    if worker is not None:
+        worker.join(timeout=2)
+    for descriptor in descriptors:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+'''
+
+
+def lifecycle_transport(evidence, python, row, cwd, runtime_environment, build_environment):
+    """A deterministic synthetic lifetime oracle; no genuine semantics claim."""
+    folder = evidence.output / 'synthetic-lifecycle-transport'
+    folder.mkdir()
+    compiler = row['c_compiler']
+    require(Path(compiler['path']).resolve(strict=True) == Path(compiler['resolved'])
+            and file_identity(compiler['resolved'])['sha256'] == compiler['sha256'],
+            'selected Clang identity changed before lifecycle fixture compilation')
+    blocked = {'CC', 'CFLAGS', 'CPPFLAGS', 'LDFLAGS', 'CPATH', 'C_INCLUDE_PATH',
+               'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH',
+               'GCC_EXEC_PREFIX', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE',
+               'CLANG_CONFIG_FILE_SYSTEM_DIR', 'CLANG_CONFIG_FILE_USER_DIR', 'SDKROOT',
+               'LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT', 'LD_RUN_PATH', 'LD_DEBUG'}
+    fixture_environment = {key: value for key, value in build_environment.items() if key not in blocked}
+    c_file, library = folder / 'lifecycle.c', folder / 'lifecycle.so'
+    c_file.write_text(LIFECYCLE_FIXTURE)
+    argv = [compiler['path'], '--no-default-config', '--target=' + platform.machine() + '-unknown-linux-gnu',
+            '-std=c11', '-shared', '-fPIC', '-O2', '-Wall', '-Wextra', '-Werror',
+            str(c_file), '-o', str(library)]
+    evidence.command('lifecycle-fixture-build', argv, folder, fixture_environment, 60,
+                     purpose='synthetic-lifecycle-transport-only')
+    require(library.stat().st_size <= FILE_LIMIT, 'lifecycle fixture exceeds its artifact bound')
+    raw = evidence.command('lifecycle-installed-native-path', [str(python), '-I', '-B', '-c',
+                           'import json,sysconfig;print(json.dumps(sysconfig.get_path("platlib")))'],
+                           cwd, runtime_environment, 30, purpose='installed-path-inspection')
+    site = Path(json.loads(raw)).resolve(strict=True)
+    require(site.is_relative_to(python.parent.parent.resolve(strict=True)), 'lifecycle package escapes relocated venv')
+    target = site / row['module'] / '_oxid_native' / row['library']
+    expected_hash = row['members'][row['module'] + '/_oxid_native/' + row['library']]['sha256']
+    require(file_identity(target)['sha256'] == expected_hash, 'genuine library differs before lifecycle fixture')
+    backup = target.with_name(target.name + '.lifecycle-genuine')
+    staged = target.with_name(target.name + '.lifecycle-staged')
+    require(not backup.exists() and not staged.exists(), 'lifecycle swap path already exists')
+    target.rename(backup)
+    try:
+        shutil.copyfile(library, staged)
+        staged.rename(target)
+        raw = evidence.command('deterministic-native-lifetime', [str(python), '-I', '-B', '-c',
+                               LIFECYCLE_PROBE, row['module'], row['export']],
+                               cwd, runtime_environment, 60, purpose='synthetic-lifecycle-transport-only')
+        result = json.loads(raw)
+        require(result['status'] == 'passed' and result['checks'] > 0
+                and result['synthetic_blocked_calls'] == result['close_events'] == 1
+                and result['genuine_native_calls'] == 0
+                and result['oxid_producer_qualified'] is result['oxid_semantics_qualified'] is False
+                and result['counts_as_production_qualification'] is False,
+                'synthetic lifecycle transport did not execute its complete separate contract')
+        evidence.report['synthetic_lifecycle_transport'] = result
+    finally:
+        # No child remains active when its mapped fixture inode is retired.
+        if target.exists():
+            target.rename(folder / 'retired-installed-fixture.so')
+        backup.rename(target)
+        if staged.exists():
+            staged.unlink()
+        require(file_identity(target)['sha256'] == expected_hash, 'failed to restore genuine lifecycle target')
+        evidence.save()
+    evidence.report['synthetic_lifecycle_artifacts'] = {'source': file_identity(c_file), 'library': file_identity(library)}
+    require(file_identity(compiler['resolved'])['sha256'] == compiler['sha256'],
+            'selected Clang changed during lifecycle fixture compilation')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app', type=Path, default=ROOT / 'apps/python-pricing')
@@ -687,6 +887,7 @@ def main():
         evidence.report['native_calls'] += result['native_calls']
         require(evidence.report['native_calls'] > 0 and len(evidence.report['probes']) == 3, 'incomplete native qualification')
         loader_denials(evidence, python, rebuilt, empty, runtime, environment)
+        lifecycle_transport(evidence, python, rebuilt, empty, runtime, environment)
         evidence.report['status'] = 'passed'
         evidence.save()
         print(json.dumps({'status': 'passed', 'native_calls': evidence.report['native_calls'], 'output': str(output)}))
