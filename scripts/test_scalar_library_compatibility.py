@@ -15,6 +15,18 @@ from unittest.mock import patch
 import verify_scalar_library_compatibility as gate
 
 ROOT = Path(__file__).resolve().parents[1]
+NATIVE_LIBRARY_STEP = (
+    b"      - name: Verify returning native libraries from C Rust and Python\n"
+    b"        env:\n"
+    b"          TMPDIR: ${{ runner.temp }}/current-native-libraries\n"
+    b"          OXID_TEST_KEEP_ARTIFACTS: '1'\n"
+    b"        run: |\n"
+    b'          mkdir -p "$TMPDIR"\n'
+    b"          cargo test --locked --test native_library actual_same_library -- --ignored --nocapture\n"
+    b"          cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture\n"
+)
+NATIVE_LIBRARY_EVIDENCE = b"            ${{ runner.temp }}/current-native-libraries\n"
+NATIVE_LIBRARY_TEST = b"actual_same_library_is_called_by_c_rust_python_with_returning_errors_and_concurrent_calls"
 
 
 def git_body(commit, name):
@@ -487,6 +499,9 @@ class FrozenFileSeekReplay(unittest.TestCase):
             flags=re.M | re.S,
         )
         self.assertEqual(count, 1)
+        self.assertEqual(restored.count(NATIVE_LIBRARY_STEP), 1)
+        self.assertEqual(restored.count(NATIVE_LIBRARY_EVIDENCE), 1)
+        restored = restored.replace(NATIVE_LIBRARY_STEP, b"", 1).replace(NATIVE_LIBRARY_EVIDENCE, b"", 1)
         gate_name = b"scripts/verify_scalar_library_compatibility.py"
         self.assertEqual(restored.count(gate_name), 1)
         canonical = git_body(frozen, name)
@@ -516,6 +531,111 @@ class FrozenFileSeekReplay(unittest.TestCase):
             with self.subTest(heading=heading), patch.object(gate, "regular", side_effect=selected):
                 with self.assertRaises(AssertionError):
                     self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
+
+    def test_native_clients_are_required_in_both_profiles_with_retained_evidence(self):
+        current = gate.regular(ROOT, ".github/workflows/ci.yml")
+        job = re.search(rb"^  native-projects:.*?(?=^  [A-Za-z0-9_-]+:|\Z)", current,
+                        flags=re.M | re.S)
+        self.assertIsNotNone(job)
+        job = job.group()
+        self.assertNotRegex(job, rb"(?m)^    if:|continue-on-error:")
+        self.assertEqual(current.count(NATIVE_LIBRARY_STEP), 1)
+        self.assertEqual(job.count(NATIVE_LIBRARY_STEP), 1)
+        self.assertLess(job.index(NATIVE_LIBRARY_STEP),
+                        job.index(b"      - name: Verify source-free file copies larger than the process memory limit\n"))
+        upload = re.search(rb"^      - name: Retain current native evidence\n.*?(?=^      -|\Z)", job,
+                           flags=re.M | re.S)
+        self.assertIsNotNone(upload)
+        self.assertEqual(current.count(NATIVE_LIBRARY_EVIDENCE), 1)
+        self.assertEqual(upload.group().count(NATIVE_LIBRARY_EVIDENCE), 1)
+        self.assertIn(b"        if: always()\n", upload.group())
+        self.assertIn(b"        uses: actions/upload-artifact@v4\n", upload.group())
+        self.assertIn(b"          retention-days: 14\n", upload.group())
+        public = gate.regular(ROOT, "tests/native_library.rs")
+        tests = re.findall(rb"#\[test\]\s*#\[ignore[^\]]*\]\s*fn (actual_same_library\w*)\s*\(", public)
+        self.assertEqual(tests, [NATIVE_LIBRARY_TEST])
+        self.assertEqual(re.findall(rb"\bfn\s+(actual_same_library\w*)\s*\(", public), tests)
+        self.assertEqual(public.count(b"fn " + NATIVE_LIBRARY_TEST + b"("), 1)
+        guard = re.search(
+            rb'#\[cfg\(all\(\s*target_os = "linux",\s*target_pointer_width = "64",\s*'
+            rb'target_endian = "little",\s*any\(target_arch = "x86_64", target_arch = "aarch64"\)\s*'
+            rb'\)\)\]\s*mod linux \{', public,
+        )
+        self.assertIsNotNone(guard)
+        # Follow the repository's rustfmt module indentation, independently of
+        # the native test body. The next unindented closing brace ends linux.
+        end = re.search(rb"(?m)^}\s*$", public[guard.end():])
+        self.assertIsNotNone(end)
+        selected = re.search(rb"(?m)^    fn " + NATIVE_LIBRARY_TEST + rb"\(", public)
+        self.assertIsNotNone(selected)
+        self.assertLess(guard.end(), selected.start())
+        self.assertLess(selected.start(), guard.end() + end.start())
+
+    def test_native_client_CI_refuses_lost_profiles_filters_flags_and_artifacts(self):
+        name = ".github/workflows/ci.yml"
+        current = gate.regular(ROOT, name)
+        debug = b"          cargo test --locked --test native_library actual_same_library -- --ignored --nocapture"
+        release = b"          cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture"
+        keep = b"          OXID_TEST_KEEP_ARTIFACTS: '1'\n"
+        temporary = b"          TMPDIR: ${{ runner.temp }}/current-native-libraries\n"
+        mkdir = b'          mkdir -p "$TMPDIR"\n'
+        marker = b"      - name: Verify returning native libraries from C Rust and Python\n"
+        cases = [
+            ("missing-debug", debug + b"\n", b""),
+            ("missing-release", release + b"\n", b""),
+            ("lost-release-profile", release, release.replace(b" --release", b"")),
+            ("not-kept", keep, keep.replace(b"'1'", b"'0'")),
+            ("missing-keep", keep, b""),
+            ("wrong-tempdir", temporary, temporary.replace(b"current-native-libraries", b"unretained")),
+            ("missing-tempdir", temporary, b""),
+            ("missing-mkdir", mkdir, b""),
+            ("conditional-step", marker, marker + b"        if: false\n"),
+            ("soft-failed-step", marker, marker + b"        continue-on-error: true\n"),
+            ("conditional-job", b"  native-projects:\n", b"  native-projects:\n    if: false\n"),
+            ("missing-evidence", NATIVE_LIBRARY_EVIDENCE, b""),
+            ("wrong-evidence", NATIVE_LIBRARY_EVIDENCE,
+             NATIVE_LIBRARY_EVIDENCE.replace(b"current-native-libraries", b"unretained")),
+            ("duplicate-step", NATIVE_LIBRARY_STEP, NATIVE_LIBRARY_STEP * 2),
+            ("duplicate-evidence", NATIVE_LIBRARY_EVIDENCE, NATIVE_LIBRARY_EVIDENCE * 2),
+        ]
+        for profile, command in (("debug", debug), ("release", release)):
+            cases.extend([
+                (profile + "-not-ignored", command, command.replace(b" --ignored", b"")),
+                (profile + "-wrong-filter", command, command.replace(b"actual_same_library", b"another_library")),
+                (profile + "-missing-capture", command, command.replace(b" --nocapture", b"")),
+            ])
+        regular = gate.regular
+        for label, before, after in cases:
+            self.assertEqual(current.count(before), 1, label)
+            changed = current.replace(before, after, 1)
+            def selected(root, path):
+                return changed if path == name else regular(root, path)
+            with self.subTest(case=label), patch.object(gate, "regular", side_effect=selected):
+                with self.assertRaises(AssertionError):
+                    self.test_native_clients_are_required_in_both_profiles_with_retained_evidence()
+                with self.assertRaises(AssertionError):
+                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
+        public_path = "tests/native_library.rs"
+        public = regular(ROOT, public_path)
+        ignore = re.search(rb'(?m)^    #\[ignore[^\]]*\]\n(?=    fn ' + NATIVE_LIBRARY_TEST + rb'\()', public)
+        self.assertIsNotNone(ignore)
+        module_guard = re.search(rb'#\[cfg\(all\([^\]]+\)\)\]\s*mod linux \{', public)
+        self.assertIsNotNone(module_guard)
+        public_mutations = (
+            public.replace(b"fn " + NATIVE_LIBRARY_TEST, b"fn renamed_native_client", 1),
+            public.replace(ignore.group(), b"", 1),
+            public.replace(b"    #[test]\n" + ignore.group(), ignore.group(), 1),
+            public.replace(module_guard.group(), b"mod linux {", 1),
+            public.replace(module_guard.group(), module_guard.group().replace(b'"linux"', b'"windows"', 1), 1),
+            public + b"\nfn " + NATIVE_LIBRARY_TEST + b"() {}\n",
+        )
+        for index, changed in enumerate(public_mutations):
+            self.assertNotEqual(public, changed)
+            def selected(root, path):
+                return changed if path == public_path else regular(root, path)
+            with self.subTest(public_selector=index), patch.object(gate, "regular", side_effect=selected):
+                with self.assertRaises(AssertionError):
+                    self.test_native_clients_are_required_in_both_profiles_with_retained_evidence()
 
     def test_every_Windows_control_function_and_resource_preparation_are_unmodified(self):
         for name in (

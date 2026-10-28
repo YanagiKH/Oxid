@@ -186,6 +186,21 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
 
+    def test_returning_native_clients_run_in_both_profiles_and_keep_evidence(self):
+        native = block(self.ci, 'native-projects', 2)
+        self.assertIn('      - name: Verify returning native libraries from C Rust and Python\n'
+                      '        env:\n'
+                      '          TMPDIR: ${{ runner.temp }}/current-native-libraries\n'
+                      "          OXID_TEST_KEEP_ARTIFACTS: '1'\n"
+                      '        run: |\n'
+                      '          mkdir -p "$TMPDIR"\n', native)
+        for profile in ('', '--release '):
+            command = ('cargo test ' + profile + '--locked --test native_library '
+                       'actual_same_library -- --ignored --nocapture')
+            self.assertEqual(native.count(command), 1)
+        self.assertIn('${{ runner.temp }}/current-native-libraries', native)
+        self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
+
     def test_native_numeric_shard_preserves_the_complete_workload_and_evidence(self):
         primary = block(self.ci, 'native-projects', 2)
         shard = block(self.ci, 'native-numeric-and-packages', 2)
