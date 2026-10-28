@@ -200,6 +200,7 @@ def main():
             health = json.loads(stdout)
             require(not stderr and health["toolchain_ready"] and health["target"] == "x86_64-pc-windows-msvc",
                     "doctor did not qualify the actual MSVC SDK/link/execute chain")
+            scaffold_controls(binary, compiler_profile, output, environment, command, report, save)
             for profile in ("dev", "release"):
                 for name, source, expected_out, expected_error, expected_status in case_list():
                     label = "-".join((compiler_profile, profile, name))
@@ -251,6 +252,54 @@ def main():
         report.update(status="failed", failure=type(error).__name__ + ": " + str(error))
         save()
         raise
+
+
+def scaffold_controls(binary, compiler_profile, output, environment, command, report, save):
+    name = "hello-" + compiler_profile
+    project = output / "new-projects" / name
+    command(name + "-new", [binary, "new", project, "--edition=typed-preview"], output, environment)
+    manifest = (project / "oxid.toml").read_text(encoding="utf-8")
+    readme = (project / "README.md").read_text(encoding="utf-8")
+    require('entry-mode = "result"' in manifest, "Windows scaffold must select result entry")
+    require(".oxid\\bin\\" + name + ".exe" in readme and "Windows SDK" in readme,
+            "Windows scaffold instructions do not match the supported native target")
+    inputs = output / "inputs" / (name + "-scaffold")
+    inputs.parent.mkdir(exist_ok=True)
+    shutil.copytree(project, inputs)
+    stdout, stderr = command(name + "-check", [binary, "check", "--message-format=json"], project, environment)
+    require(not stderr and any(row.get("kind") == "check-summary" and row.get("success")
+                              for row in map(json.loads, stdout.splitlines())), "new project did not check")
+    stdout, stderr = command(name + "-run", [binary, "run"], project, environment)
+    require(stdout == b"0\n" and not stderr, "new project did not run through result entry")
+    stdout, stderr = command(name + "-test", [binary, "test", "--message-format=json"], project, environment)
+    rows = list(map(json.loads, stdout.splitlines()))
+    tests = [row for row in rows if row.get("kind") == "test-result"]
+    require(not stderr and len(tests) == 1 and tests[0].get("success")
+            and tests[0].get("exit_status") == 0 and tests[0].get("stdout") == ""
+            and tests[0].get("stderr") == "" and tests[0].get("name") == "smoke",
+            "new project's declared test did not return its typed zero status")
+    require(any(row.get("kind") == "test-summary" and row.get("passed") == 1
+                and row.get("failed") == 0 and row.get("success") for row in rows),
+            "new project's test summary differs")
+    artifacts = []
+    for profile in ("dev", "release"):
+        command(name + "-build-" + profile, [binary, "build", "--profile", profile], project, environment)
+        executable = project / ".oxid/bin" / (name + ".exe")
+        details = pe(executable.read_bytes())
+        artifact = output / "artifacts" / (name + "-scaffold-" + profile + ".exe")
+        artifact.parent.mkdir(exist_ok=True)
+        shutil.copy2(executable, artifact)
+        artifacts.append(artifact)
+        report.setdefault("scaffolds", []).append({"compiler": compiler_profile, "profile": profile,
+            "manifest_sha256": sha(project / "oxid.toml"), "readme_sha256": sha(project / "README.md"),
+            "artifact": str(artifact), "sha256": sha(artifact), **details})
+        save()
+    shutil.rmtree(project)
+    for artifact in artifacts:
+        deployment = output / "deployments" / artifact.stem
+        deployment.mkdir(parents=True)
+        stdout, stderr = command(name + "-scaffold-source-free", [artifact], deployment, {})
+        require(stdout == b"0\n" and not stderr, "new project's source-free executable differs")
 
 
 def failure_controls(binary, label, output, environment, fake_environment, command, report, save):
