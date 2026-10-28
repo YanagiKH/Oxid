@@ -4,11 +4,13 @@ These source-contract checks intentionally follow the workflows' block style;
 actionlint remains the YAML and GitHub Actions syntax validator.
 """
 from pathlib import Path
+import hashlib
 import re
 import shlex
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 
@@ -90,6 +92,35 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('--archive "$RUNNER_TEMP/historical-script-controller/typed-project-unit2-evidence.zip"', historical)
         self.assertIn('name: historical-script-replay', historical)
         self.assertNotRegex(historical, r'(?m)^    if:|continue-on-error:')
+
+    def test_native_numeric_shard_preserves_the_complete_workload_and_evidence(self):
+        primary = block(self.ci, 'native-projects', 2)
+        shard = block(self.ci, 'native-numeric-and-packages', 2)
+        step = 'Verify real package application and source-free deployment'
+        self.assertNotIn(step, primary)
+        match = re.search(
+            rf'^      - name: {re.escape(step)}\n        run: \|\n(.*?)(?=^      - |\Z)',
+            shard, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(match)
+        commands = textwrap.dedent(match.group(1)).strip() + '\n'
+        # Frozen complete command body from the previously executed native job.
+        self.assertEqual(hashlib.sha256(commands.encode()).hexdigest(),
+                         '1bd38ea49faf0c575f2b1a7900ae07c9f62dbeb0dac151a30374e480c8438c31')
+        outputs = re.findall(r'--output "\$RUNNER_TEMP/([^"]+)"', commands)
+        self.assertEqual(len(outputs), 14)
+        self.assertEqual(len(set(outputs)), 14)
+        for name in outputs:
+            self.assertIn('${{ runner.temp }}/' + name, shard)
+        for job in (primary, shard):
+            self.assertIn('timeout-minutes: 120', job)
+            self.assertNotRegex(job, r'(?m)^    (?:if|needs):|continue-on-error:')
+        self.assertIn('image: debian:trixie-slim', shard)
+        self.assertIn('uses: dtolnay/rust-toolchain@1.99.0', shard)
+        self.assertIn('cargo build --locked\n', shard)
+        self.assertIn('cargo build --release --locked\n', shard)
+        self.assertIn('if: always()', shard)
+        self.assertIn('name: current-native-numeric-and-packages', shard)
+        self.assertIn('Run current independent native oracles and private LLVM regressions', primary)
 
         predecessor = block(self.ci, 'source-policy-predecessor', 2)
         self.assertIn('ref: 2e3fe21f76d0027d2b24cb5c7f02ba38ad354809', predecessor)
