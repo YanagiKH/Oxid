@@ -84,6 +84,13 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('scripts/verify_integer_bits.py', current)
         self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
 
+        qualified = block(self.ci, 'qualified-completion-source-policy-predecessor', 2)
+        self.assertIn('ref: 20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9', qualified)
+        self.assertIn('scripts/run_qualified_completion_predecessor_tests.py', qualified)
+        self.assertIn('"$RUNNER_TEMP/qualified-completion-source-policy-replay.py" --repo . --output', qualified)
+        self.assertIn('if-no-files-found: error', qualified)
+        self.assertNotRegex(qualified, r'(?m)^    if:|continue-on-error:')
+
         replay = block(self.ci, 'historical-qualification', 2)
         self.assertIn('uses: ./.github/workflows/historical-qualification.yml', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')

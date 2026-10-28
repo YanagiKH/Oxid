@@ -316,6 +316,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  qualified-completion-source-policy-predecessor:
+    name: Qualified completion source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_qualified_completion_predecessor_tests.py "$RUNNER_TEMP/qualified-completion-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/qualified-completion-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/qualified-completion-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qualified-completion-source-policy-predecessor
+          path: ${{ runner.temp }}/qualified-completion-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
