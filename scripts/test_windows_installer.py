@@ -1,4 +1,5 @@
 """Run the Windows installer in real PowerShell with isolated local archives."""
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -173,7 +174,8 @@ function Invoke-WebRequest {
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"Controlled partial installation copy failure.", result.stderr)
         self.assertEqual(binary.read_bytes(), b"previous executable")
-        self.assertEqual(Path(Path(self.environment["TEST_STAGE_LOG"]).read_text()).parent.parent, self.destination)
+        stage = Path(Path(self.environment["TEST_STAGE_LOG"]).read_text())
+        self.assertTrue(os.path.samefile(stage.parent.parent, self.destination))
         self.assert_clean()
 
     def test_failed_publication_preserves_previous_executable(self):
@@ -402,16 +404,24 @@ function Move-OxidExecutable {
             with self.subTest(target=target.name):
                 try:
                     binary.symlink_to(target)
-                except (OSError, NotImplementedError) as error:
+                except NotImplementedError as error:
                     self.skipTest(f"Symbolic links are not available: {error}")
-                result = self.run_installer()
-                self.assertNotEqual(result.returncode, 0)
-                self.assertTrue(binary.is_symlink())
-                self.assertEqual(os.readlink(binary), str(target))
-                self.assertEqual(outside.read_bytes(), b"untouched")
-                self.assertFalse(self.requests.exists())
-                self.assert_clean()
-                binary.unlink()
+                except OSError as error:
+                    if (error.errno in {errno.EPERM, errno.EACCES, errno.ENOSYS, errno.ENOTSUP}
+                            or getattr(error, "winerror", None) in {1, 50, 1314}):
+                        self.skipTest(f"Symbolic links are not available: {error}")
+                    raise
+                try:
+                    original_target = os.readlink(binary)
+                    result = self.run_installer()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertTrue(binary.is_symlink())
+                    self.assertEqual(os.readlink(binary), original_target)
+                    self.assertEqual(outside.read_bytes(), b"untouched")
+                    self.assertFalse(self.requests.exists())
+                    self.assert_clean()
+                finally:
+                    binary.unlink(missing_ok=True)
 
     def test_cleanup_preserves_preexisting_files_with_installer_like_names(self):
         existing = self.destination / ".oxid-install-keep"
