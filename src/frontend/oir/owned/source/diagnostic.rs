@@ -59,11 +59,26 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         && facts.requested_borrow.is_none();
     let array = matches!(
         facts.operation,
-        Op::ReadIndex | Op::WriteIndex | Op::ArrayLength
+        Op::ReadIndex
+            | Op::WriteIndex
+            | Op::ArrayLength
+            | Op::CopyIndexInitialize
+            | Op::CopyIndexWrite
     ) && facts.role == Role::ArrayBase
         && facts.counterpart.is_none()
         && facts.requested_borrow.is_none()
-        && facts.subject.referent().element().is_some()
+        && (facts.subject.referent().element().is_some()
+            || matches!(
+                facts.subject.referent(),
+                BorrowedTy::Exact(AggregateTy::RecordVector(_)) | BorrowedTy::RecordSlice(_)
+            )
+            || (matches!(
+                facts.operation,
+                Op::CopyIndexInitialize | Op::CopyIndexWrite
+            ) && matches!(
+                facts.subject.referent(),
+                BorrowedTy::Exact(AggregateTy::Record(_))
+            )))
         && named_subject(facts.subject);
     let borrow = facts.operation == Op::PrepareBorrow
         && facts.role == Role::BorrowAuthority
@@ -93,7 +108,10 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                         && named_subject(facts.subject)
                         && (matches!(
                             facts.operation,
-                            Op::ReadField | Op::ReadIndex | Op::ArrayLength
+                            Op::ReadField
+                                | Op::ReadIndex
+                                | Op::CopyIndexInitialize
+                                | Op::ArrayLength
                         ) || writable(facts.subject)))
                     || (facts.operation == Op::Replace
                         && facts.role == Role::ReplacementDestination
@@ -122,7 +140,8 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                     }
                 )
                 && ((field && facts.operation == Op::WriteField)
-                    || (array && facts.operation == Op::WriteIndex)
+                    || (array
+                        && matches!(facts.operation, Op::WriteIndex | Op::CopyIndexWrite))
                     || (borrow && facts.requested_borrow == Some(BorrowKind::Exclusive))) =>
         {
             Some("E0313")
