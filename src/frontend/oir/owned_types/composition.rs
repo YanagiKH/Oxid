@@ -567,6 +567,7 @@ mod tests {
                 for tagged in [false, true] {
                     let record = RecordDecl {
                         is_copy: false,
+                        packed_bytes: 0,
                         id: RecordId(0),
                         span,
                         field_start: 0,

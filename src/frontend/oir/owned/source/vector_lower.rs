@@ -21,7 +21,6 @@ pub(super) fn counts(kind: Function) -> super::super::budget::FunctionCounts {
             ParameterTy::Value(ValueTy::Scalar(_)) => result.locals += 1,
             ParameterTy::Value(ValueTy::Owned(_)) => result.owners += 1,
             ParameterTy::Reference { .. } => result.references += 1,
-            _ => unreachable!("closed parameter"),
         }
     }
     match signature.result {
@@ -107,7 +106,6 @@ pub(super) fn function(
                 )?;
                 ParameterBinding::Reference(reference)
             }
-            _ => unreachable!("closed parameter"),
         };
         budget::append(&mut raw.parameters, binding, c.parameters, span)?;
     }

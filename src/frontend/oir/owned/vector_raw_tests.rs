@@ -206,14 +206,16 @@ fn program(keys: &[vector::Function]) -> (SourceMap, RawOwnedProgram) {
     (sources, raw)
 }
 pub(super) fn one_element_program(element: hir::Ty) -> (SourceMap, RawOwnedProgram) {
-    program(&OPERATIONS.map(|operation| vector::Function { operation, element }))
+    program(&OPERATIONS.map(|operation| vector::Function::new(operation, element).unwrap()))
 }
 
 #[test]
 fn vector_raw_all_operations_and_elements_require_complete_proof() {
     let keys: Vec<_> = ELEMENTS
         .into_iter()
-        .flat_map(|element| OPERATIONS.map(|operation| vector::Function { operation, element }))
+        .flat_map(|element| {
+            OPERATIONS.map(|operation| vector::Function::new(operation, element).unwrap())
+        })
         .collect();
     assert_eq!(keys.len(), 153);
     let (sources, raw) = program(&keys);
@@ -236,10 +238,13 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
             r.builtins = BuiltinOrigins::None;
         }),
         ("element key", |r| {
-            r.vector_functions[0].element = hir::Ty::U64;
+            r.vector_functions[0] =
+                vector::Function::new(r.vector_functions[0].operation(), hir::Ty::U64).unwrap();
         }),
         ("operation key", |r| {
-            r.vector_functions[0].operation = vector::Operation::Take;
+            r.vector_functions[0] =
+                vector::Function::new(vector::Operation::Take, r.vector_functions[0].element())
+                    .unwrap();
         }),
         ("duplicate key", |r| {
             r.vector_functions.push(r.vector_functions[0]);
@@ -292,10 +297,7 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
             });
         }),
     ];
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     for (name, mutate) in mutations {
         let (sources, mut raw) = program(&[key]);
         mutate(&mut raw);
@@ -306,20 +308,16 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
         vector::Operation::TryPush,
         vector::Operation::TryExtend,
     ] {
-        let (sources, mut raw) = program(&[vector::Function {
-            operation,
-            element: hir::Ty::I64,
-        }]);
+        let (sources, mut raw) =
+            program(&[vector::Function::new(operation, hir::Ty::I64).unwrap()]);
         raw.functions[0].references[0].kind = BorrowKind::Shared;
         assert!(
             verify_owned(raw, &sources).is_err(),
             "exclusive parameter: {operation:?}"
         );
     }
-    let (sources, mut raw) = program(&[vector::Function {
-        operation: vector::Operation::TryPush,
-        element: hir::Ty::I64,
-    }]);
+    let (sources, mut raw) =
+        program(&[vector::Function::new(vector::Operation::TryPush, hir::Ty::I64).unwrap()]);
     raw.functions[0].locals[0].ty = hir::Ty::U64;
     assert!(
         verify_owned(raw, &sources).is_err(),
@@ -329,10 +327,7 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
 
 #[test]
 fn vector_raw_matching_ordinary_and_unreachable_bodies_never_gain_identity() {
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     for unreachable in [false, true] {
         let (sources, mut raw) = program(&[key]);
         let mut ordinary = raw.functions[0].clone();
@@ -406,10 +401,7 @@ fn vector_suffix_preserves_fixed_builtin_ids_and_experimental_rank() {
         ),
     });
     raw.functions.push(count);
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     raw.vector_functions.push(key);
     raw.functions.push(vector_body(4, key, span));
     let witness = verify_owned(raw, &sources).unwrap();
@@ -463,10 +455,7 @@ fn vector_raw_capacity_work_and_metadata_refuse_before_allocating() {
         },
     )
     .unwrap();
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     let (_, narrow) = program(&[key]);
     let (_, mut spare) = program(&[key]);
     spare.vector_functions.reserve_exact(7);

@@ -1339,7 +1339,8 @@ fn reference_fixture(
         AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File
-        | AggregateTy::Vector(_) => {
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
             unreachable!("aggregate executable gate")
         }
     };
@@ -1364,7 +1365,8 @@ fn reference_fixture(
         AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File
-        | AggregateTy::Vector(_) => {
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
             unreachable!("aggregate executable gate")
         }
         AggregateTy::FixedArray(_) => OwnedInstruction::ConstructArray {
