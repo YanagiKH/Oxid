@@ -975,6 +975,14 @@ jobs:
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_i64_output_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer_output_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer128_runtime.py
+      - name: Verify returning native libraries from C Rust and Python
+        env:
+          TMPDIR: ${{ runner.temp }}/current-native-libraries
+          OXID_TEST_KEEP_ARTIFACTS: '1'
+        run: |
+          mkdir -p "$TMPDIR"
+          cargo test --locked --test native_library actual_same_library -- --ignored --nocapture
+          cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture
       - name: Verify source-free file copies larger than the process memory limit
         run: |
           python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
@@ -1020,6 +1028,7 @@ jobs:
             ${{ runner.temp }}/current-minibatch-training
             ${{ runner.temp }}/current-streaming-training
             ${{ runner.temp }}/current-seekable-streaming
+            ${{ runner.temp }}/current-native-libraries
           if-no-files-found: warn
           retention-days: 14
 
