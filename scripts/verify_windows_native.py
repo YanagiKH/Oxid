@@ -306,7 +306,7 @@ def failure_controls(binary, label, output, environment, fake_environment, comma
     project = output / "failure-controls" / label
     (project / "src").mkdir(parents=True)
     (project / "src/main.ox").write_text("fn main()->i32{return 42;}", encoding="utf-8")
-    (project / "oxid.toml").write_text('[project]\nname="app"\nedition="typed-preview"\nentry="src/main.ox"\n', encoding="utf-8")
+    (project / "oxid.toml").write_text('[project]\nname="app"\nedition="typed-preview"\nentry="src/main.ox"\n[build]\nentry-mode="result"\n', encoding="utf-8")
     command(label + "-old-output", [binary, "build"], project, environment)
     built = project / ".oxid/bin/app.exe"
     old = built.read_bytes()

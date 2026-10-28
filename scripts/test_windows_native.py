@@ -1,11 +1,13 @@
 """Portable corruption controls for the independent Windows PE verifier."""
 import struct
 import sys
+import tempfile
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 import unittest
 
-from verify_windows_native import pe
+from verify_windows_native import pe, failure_controls
 from windows_native_process import run
 
 
@@ -108,6 +110,25 @@ class WindowsNativeCommandInputTests(unittest.TestCase):
         with patch("windows_native_process.kernel", side_effect=AssertionError("kernel acquisition forbidden")):
             with self.assertRaisesRegex(RuntimeError, "path conversion failure"):
                 run([sys.executable], Path.cwd(), {}, InvalidPath(), "err")
+
+
+class WindowsNativeFixtureTests(unittest.TestCase):
+    def test_failure_controls_start_with_a_supported_result_project(self):
+        class ReadyToBuild(Exception):
+            pass
+        with tempfile.TemporaryDirectory(prefix="oxid-windows-native-input-") as temporary:
+            observed = []
+            def first_command(label, argv, cwd, environment, **kwargs):
+                manifest = tomllib.loads((cwd / "oxid.toml").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["build"]["entry-mode"], "result")
+                self.assertEqual((cwd / manifest["project"]["entry"]).read_text(encoding="utf-8"),
+                                 "fn main()->i32{return 42;}")
+                observed.append(label)
+                raise ReadyToBuild()
+            with self.assertRaises(ReadyToBuild):
+                failure_controls(Path("not-executed.exe"), "input-only", Path(temporary), {}, {},
+                                 first_command, {}, lambda: None)
+            self.assertEqual(observed, ["input-only-old-output"])
 
 
 if __name__ == "__main__":
