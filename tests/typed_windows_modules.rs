@@ -289,6 +289,35 @@ fn a_failed_child_open_releases_ancestors_and_retry_preserves_the_same_public_re
         .share_mode(0)
         .open(fixture.0.join("child.ox"))
         .unwrap();
+    let path = fixture.0.join("child.ox");
+    let ordinary = fs::File::open(&path)
+        .err()
+        .and_then(|error| error.raw_os_error());
+    // Compare the loader's native flag combinations with an ordinary read
+    // while the exclusive handle is still alive. Keep the original CLI
+    // refusal assertion, and retain these probes if the platform disagrees.
+    for flags in [
+        0,
+        0x0200_0000,
+        0x0020_0000,
+        0x0100_0000,
+        0x0220_0000,
+        0x0300_0000,
+        0x0120_0000,
+        0x0320_0000,
+    ] {
+        let result = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .custom_flags(flags)
+            .open(&path);
+        eprintln!("read-sharing probe {path:?}, flags={flags:#010x}: {result:?}");
+    }
+    assert_eq!(
+        ordinary,
+        Some(32),
+        "exclusive handle must deny ordinary reads"
+    );
     diagnostic(fixture.check(), "E0002", "cannot read");
     fixture.no_artifacts();
     drop(held);
@@ -324,7 +353,17 @@ fn aggregate_source_bytes_keep_the_existing_inclusive_boundary() {
     let fixture = Fixture::new();
     fixture.program();
     let mut child = CHILD.as_bytes().to_vec();
-    child.resize(1_048_576 - MAIN.len(), b' ');
+    let limit = 1_048_576 - MAIN.len();
+    // Bound each trivia token so this exercises aggregate source admission,
+    // rather than the independent maximum length of a single lexer token.
+    while limit - child.len() >= 4 {
+        let padding = (limit - child.len() - 4).min(4096);
+        child.extend_from_slice(b"/*");
+        child.resize(child.len() + padding, b' ');
+        child.extend_from_slice(b"*/");
+    }
+    child.resize(limit, b' ');
+    assert_eq!(MAIN.len() + child.len(), 1_048_576);
     fixture.write("child.ox", &child);
     success(fixture.check());
     child.push(b' ');
