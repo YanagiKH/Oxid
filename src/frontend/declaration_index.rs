@@ -2,6 +2,7 @@
 //! No linked execution witness is constructed in this module.
 #![allow(dead_code)] // Private ProjectCandidate qualification precedes activation.
 
+pub(in crate::frontend) mod editor_completion;
 mod enum_views;
 mod generics;
 mod resource;
@@ -63,6 +64,11 @@ const MODULE: u32 = 2;
 const ENUM: u32 = 3;
 const KIND_MASK: u32 = 3;
 const PUBLIC: u32 = 4;
+
+/// One preorder containment predicate for executable and editor namespaces.
+fn module_contains(root: usize, subtree_end: usize, module: usize) -> bool {
+    root <= module && module < subtree_end
+}
 
 /// Both alias lanes share the original-row prefix and checked builtin suffix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -947,7 +953,11 @@ impl<'s> Tables<'s> {
         if b as usize >= self.modules.len() {
             return Err(bad(self.sources.eof()));
         }
-        Ok(a <= b && b < row.subtree_end)
+        Ok(module_contains(
+            a as usize,
+            row.subtree_end as usize,
+            b as usize,
+        ))
     }
     fn permission(
         &self,

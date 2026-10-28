@@ -26,11 +26,31 @@ pub(in crate::frontend) struct EditorFile {
     imports: Vec<Span>,
     regions: Vec<Span>,
 }
+#[derive(Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct PathQuery {
-    pub segments: [Span; MAX_PATH_SEGMENTS],
-    pub prefix_len: usize,
-    pub replacement: Span,
-    pub cursor: usize,
+    identity: u64,
+    bytes: usize,
+    segments: [Span; MAX_PATH_SEGMENTS],
+    prefix_len: usize,
+    replacement: Span,
+    cursor: usize,
+}
+
+impl PathQuery {
+    pub(in crate::frontend) fn segments(&self) -> &[Span] {
+        &self.segments[..self.prefix_len]
+    }
+    pub(in crate::frontend) fn replacement(&self) -> Span {
+        self.replacement
+    }
+    pub(in crate::frontend) fn cursor(&self) -> usize {
+        self.cursor
+    }
+    pub(in crate::frontend) fn belongs_to(&self, source: &SourceFile) -> bool {
+        self.identity == source.identity()
+            && self.bytes == source.text().len()
+            && self.replacement.file == source.span(0, 0).file
+    }
 }
 
 impl EditorFile {
@@ -144,6 +164,7 @@ impl EditorFile {
                             }
                             count += 1;
                             if matches!(parser.peek().kind, Kind::Semi | Kind::Eof) {
+                                endpoint = None;
                                 break;
                             }
                             endpoint = Some(
@@ -298,7 +319,7 @@ impl EditorFile {
                     || (source.text_at(token.span).starts_with("//") && cursor == token.span.end))
             {
                 let text = source.text_at(token.span);
-                if token.kind != Kind::Ident && token.kind != Kind::Trivia {
+                if matches!(token.kind, Kind::String | Kind::Number) || text.starts_with('\'') {
                     return Ok(None);
                 }
                 if token.kind == Kind::Trivia && (text.starts_with("//") || text.starts_with("/*"))
@@ -366,6 +387,8 @@ impl EditorFile {
             return Ok(None);
         }
         Ok(Some(PathQuery {
+            identity: self.identity,
+            bytes: self.bytes,
             segments,
             prefix_len: length,
             replacement,
