@@ -179,13 +179,15 @@ def snapshot(app, destination):
     return config, inventory
 
 
-def variant(source, destination, suffix, body, fuel=None, helpers=None):
+def variant(source, destination, suffix, body, fuel=None, helpers=None, profile=None):
     shutil.copytree(source, destination)
     config = project_config(destination)
     config['name'] += '-' + suffix
     config['module'] += '_' + suffix
     if fuel is not None:
         config['fuel'] = fuel
+    if profile is not None:
+        config['profile'] = profile
     require(len(config['sources']) == 1, 'qualification variants require the published single-source example')
     (destination / config['source']).write_text(body, encoding='utf-8')
     for name, contents in ({} if helpers is None else helpers).items():
@@ -303,7 +305,8 @@ def inspect_wheel(path, config, expected_tag, prepared=None):
             and provenance['extension_sha256'] == sha(files[extension]), 'native provenance tuple differs')
     require(native['library_sha256'] == sha(files[library])
             and native['header_sha256'] == sha(files[private + 'oxid_library.h'])
-            and native['export'] == config['export'] and native['fuel'] == config['fuel'],
+            and native['export'] == config['export'] and native['fuel'] == config['fuel']
+            and native['profile'] == config['profile'],
             'wheel does not bind the configured native bundle')
     require(files[library].startswith(b'\x7fELF\x02\x01\x01')
             and files[extension].startswith(b'\x7fELF\x02\x01\x01'), 'wheel does not contain real ELF extensions')
@@ -329,7 +332,7 @@ def inspect_wheel(path, config, expected_tag, prepared=None):
             'export': config['export'][7:], 'library': provenance['library_filename'],
             'members': {name: {'bytes': len(body), 'sha256': sha(body)} for name, body in files.items()},
             'source_manifest': provenance['source_manifest'], 'build_commands': provenance['commands'],
-            'native_sources': native['sources'],
+            'native_sources': native['sources'], 'profile': native['profile'],
             'c_compiler': provenance['c_compiler']}
 
 
@@ -835,7 +838,7 @@ def main():
         evidence.report['sdist'] = {'archive': file_identity(sdist), 'members': inspect_sdist(sdist, inventory)}
         packages = [(source, config)]
         export = config['export'][7:]
-        peer = variant(source, output / 'source-peer', 'peer', f'pub fn {export}(a:i32,b:i32,c:i32)->i32{{return a+b+c;}}\n')
+        peer = variant(source, output / 'source-peer', 'peer', f'pub fn {export}(a:i32,b:i32,c:i32)->i32{{return a+b+c;}}\n', profile='dev')
         exhausted = variant(source, output / 'source-fuel', 'fuel', (source / config['source']).read_text(), fuel=0)
         zero_source = f'pub fn {export}()->i32{{return 73;}}\n'
         zero = variant(source, output / 'source-zero', 'zero', zero_source, fuel=4)
