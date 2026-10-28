@@ -478,7 +478,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
         name = ".github/workflows/ci.yml"
         current = gate.regular(ROOT, name)
         restored, count = re.subn(
-            rb"^  file-seek-source-policy-predecessor:.*?(?=^  macos-native:)", b"", current,
+            rb"^  file-seek-source-policy-predecessor:.*?(?=^  [A-Za-z0-9_-]+:|\Z)", b"", current,
             flags=re.M | re.S,
         )
         self.assertEqual(count, 1)
@@ -495,6 +495,21 @@ class FrozenFileSeekReplay(unittest.TestCase):
             self.assertEqual(canonical.count(added), 1)
         self.assertEqual(canonical.replace(check, b"", 1).replace(legacy, b"", 1).replace(after, before, 1),
                          git_body(gate.PREDECESSOR, name))
+
+    def test_CI_comparison_refuses_an_unrelated_job_after_the_new_replay_job(self):
+        name = ".github/workflows/ci.yml"
+        current = gate.regular(ROOT, name)
+        anchor = b"  macos-native:\n"
+        self.assertEqual(current.count(anchor), 1)
+        extra = (b"  unrelated-job:\n    runs-on: ubuntu-latest\n"
+                 b"    steps:\n      - run: true\n\n")
+        changed = current.replace(anchor, extra + anchor, 1)
+        regular = gate.regular
+        def selected(root, path):
+            return changed if path == name else regular(root, path)
+        with patch.object(gate, "regular", side_effect=selected):
+            with self.assertRaises(AssertionError):
+                self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
 
     def test_every_Windows_control_function_and_resource_preparation_are_unmodified(self):
         for name in (
