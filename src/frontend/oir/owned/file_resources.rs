@@ -70,6 +70,17 @@ pub(super) const fn helper_control_bytes() -> usize {
     size_of::<HelperCarriers>()
 }
 
+/// Additional scalar roles of seek, admitted only for a seek-bearing witness.
+#[allow(dead_code)]
+struct SeekHelperCarriers {
+    offset_argument: i64,
+    syscall_offset: libc::off_t,
+    syscall_return: libc::off_t,
+}
+pub(super) const fn seek_helper_control_bytes() -> usize {
+    size_of::<SeekHelperCarriers>()
+}
+
 impl Heap {
     fn locate_file(&self, value: &FileDescriptor) -> Result<Option<NonNull<Header>>> {
         if value.reserved != 0 {
@@ -254,6 +265,45 @@ impl Heap {
             } else {
                 Ok(())
             })
+        }
+        #[cfg(not(all(
+            any(target_os = "linux", target_os = "macos"),
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
+        {
+            let _ = fd;
+            Ok(Err(38))
+        }
+    }
+    pub(in crate::frontend::oir::owned) fn file_seek_absolute(
+        &self,
+        value: &FileDescriptor,
+        offset: i64,
+    ) -> Result<std::result::Result<(), i32>> {
+        // Descriptor authority precedes both ordinary offset errors and I/O.
+        let Some(fd) = self.file_fd(value)? else {
+            return Ok(Err(9));
+        };
+        if offset < 0 {
+            return Ok(Err(22));
+        }
+        #[cfg(all(
+            any(target_os = "linux", target_os = "macos"),
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
+        {
+            const {
+                assert!(size_of::<libc::off_t>() == size_of::<i64>());
+                assert!((-1i64 as libc::off_t) < 0);
+            }
+            // SAFETY: the checked registry owns fd; these admitted ABIs have
+            // signed 64-bit off_t. SEEK_SET never accesses a source buffer.
+            let position = unsafe { libc::lseek(fd, offset as libc::off_t, libc::SEEK_SET) };
+            Ok(if position < 0 { Err(errno()) } else { Ok(()) })
         }
         #[cfg(not(all(
             any(target_os = "linux", target_os = "macos"),

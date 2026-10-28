@@ -7,6 +7,7 @@ use crate::tensor::column_count;
 use crate::reader::Result;
 use crate::reader::Error;
 use crate::reader::open;
+use crate::reader::open_at;
 use crate::reader::next;
 use crate::reader::remaining;
 use crate::reader::position;
@@ -27,7 +28,7 @@ fn argument(index: i32) -> i32 {
 }
 fn failure_code(problem: Error) -> i32 {
     match problem {
-        Error::InvalidHeader => { return 1; }, Error::Truncated => { return 2; }, Error::TrailingData => { return 3; }, Error::InvalidBatchSize => { return 4; }, Error::Poisoned => { return 5; }, Error::End => { return 6; }, Error::Io(code) => { return 1000 + code; },
+        Error::InvalidHeader => { return 1; }, Error::Truncated => { return 2; }, Error::TrailingData => { return 3; }, Error::InvalidBatchSize => { return 4; }, Error::Poisoned => { return 5; }, Error::End => { return 6; }, Error::InvalidStartRow => { return 7; }, Error::Io(code) => { return 1000 + code; },
         Error::Tensor(cause) => { match cause {
                 TensorError::MemoryLimit => { return 8; }, TensorError::NonFinite => { return 9; }, TensorError::SizeOverflow => { return 10; },
                 TensorError::NegativeShape => { return 20; }, TensorError::ShapeMismatch => { return 21; }, TensorError::Bounds => { return 22; }, TensorError::AllocationFailed => { return 23; }, TensorError::InvalidStorage => { return 24; }, TensorError::EmptyReduction => { return 25; }, TensorError::InvalidNode => { return 26; }, TensorError::GraphCapacity => { return 27; }, TensorError::InvalidRate => { return 28; }, TensorError::InvalidOptimizer => { return 29; }, TensorError::StepOverflow => { return 30; }, TensorError::InvalidCheckpoint => { return 31; }, TensorError::IoError(code) => { return 2000 + code; }, TensorError::WriteZero => { return 32; }, } },
@@ -51,7 +52,37 @@ fn verify_row(inputs: &Tensor, targets: &Tensor, row: i32, seen: i32) -> i32 {
     return 0;
 }
 fn passed() -> i32 { return 0; }
+fn seek_defaults() -> bool {
+    let path = b"tests/data/reader.oxds";
+    for start in 0..5 {
+        let opened = open_at(&path, 2, start);
+        match opened {
+            Result::Err(problem) => { return false; },
+            Result::Ok(value) => {
+                let mut reader = value; let mut seen = start;
+                if position(&reader) != start || remaining(&reader) != 5 - start { return false; }
+                while remaining(&reader) > 0 {
+                    let loaded = next(&mut reader);
+                    match loaded { Result::Err(problem) => { return false; }, Result::Ok(batch) => {
+                        for row in 0..row_count(&batch.inputs) {
+                            if verify_row(&batch.inputs, &batch.targets, row, seen) != 0 { return false; }
+                            seen = seen + 1;
+                        }
+                        if position(&reader) != seen { return false; }
+                    }, }
+                }
+                if seen != 5 { return false; }
+            },
+        }
+    }
+    let negative = open_at(&path, 2, -1);
+    match negative { Result::Ok(reader) => { return false; }, Result::Err(error) => { if failure_code(error) != 7 { return false; } }, }
+    let end = open_at(&path, 2, 5);
+    match end { Result::Ok(reader) => { return false; }, Result::Err(error) => { if failure_code(error) != 7 { return false; } }, }
+    return true;
+}
 fn main() -> i32 {
+    if arg_count() == 1 && !seek_defaults() { return 109; }
     let mut expected_error = 0; let mut expected_rows = 5; let mut size = 2;
     if arg_count() != 1 { expected_error = argument(1); expected_rows = argument(2); size = argument(3); }
     if expected_error < 0 || expected_rows < 0 || size < 0 { return 90; }

@@ -300,6 +300,13 @@ impl<'a> ExecutionPlan<'a> {
             .filter(|operation| operation.is_file())
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
+    pub(super) fn has_file_seek(&self) -> bool {
+        self.witness
+            .experimental_function(
+                crate::frontend::builtin_catalog::experimental::Function::SeekAbsolute,
+            )
+            .is_some()
+    }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {

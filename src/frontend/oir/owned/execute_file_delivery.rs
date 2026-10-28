@@ -1,6 +1,16 @@
 //! File primitives prepare their complete return and loan releases before I/O.
 use super::*;
 
+#[cfg(all(
+    test,
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[path = "execute_file_seek_tests.rs"]
+mod tests;
+
 #[derive(Clone, Copy)]
 struct Release {
     loan: LoanKey,
@@ -66,6 +76,20 @@ struct ControlCarriers {
 }
 pub(in super::super) fn control_bytes() -> usize {
     size_of::<ControlCarriers>() + byte_buffer::file_helper_control_bytes()
+}
+
+#[allow(dead_code)]
+struct SeekCarriers<V> {
+    operand: Operand,
+    read: Result<V>,
+    value: V,
+    decoded: Option<i64>,
+    decoded_return: Result<i64>,
+    error_mapper: &'static Span,
+    offset: i64,
+}
+pub(in super::super) fn seek_control_bytes<V>() -> usize {
+    size_of::<SeekCarriers<V>>() + byte_buffer::file_seek_helper_control_bytes()
 }
 
 impl<V: StoredValue> ValueMachine<'_, '_, V> {
@@ -380,6 +404,27 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     Ok(0) if reading && !empty => Value::status(1, None, 0),
                     Ok(count) => Value::status(0, Some(count as i32), 4),
                     Err(code) => Value::status(if reading { 2 } else { 1 }, Some(code), 4),
+                }
+            }
+            Function::SeekAbsolute => {
+                let (_, file) = self.file_parameter(frame, span)?;
+                let offset = self
+                    .read(
+                        frame,
+                        Operand {
+                            local: LocalId(0),
+                            span,
+                        },
+                    )?
+                    .wide()
+                    .ok_or_else(|| bad("file seek offset type", span))?;
+                let result = self
+                    .heap
+                    .file_seek_absolute(&file, offset)
+                    .map_err(|failure| heap_failure(failure, span))?;
+                match result {
+                    Ok(()) => Value::status(0, None, 0),
+                    Err(code) => Value::status(1, Some(code), 4),
                 }
             }
             Function::SyncAll | Function::Close => {

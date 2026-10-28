@@ -81,7 +81,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_record_field_completion_compatibility.py', current)
+        self.assertIn('scripts/verify_file_seek_compatibility.py', current)
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_float_roots.py', current)
         self.assertIn('scripts/verify_characters.py', current)
@@ -144,6 +144,31 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('if-no-files-found: error', replay)
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_record_field_source_policy_replay_is_mandatory_and_keeps_evidence(self):
+        replay = block(self.ci, 'record-field-completion-source-policy-predecessor', 2)
+        self.assertIn('runs-on: ubuntu-latest', replay)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('cp scripts/run_record_field_completion_predecessor_tests.py '
+                      '"$RUNNER_TEMP/record-field-completion-source-policy-replay.py"', replay)
+        self.assertIn('ref: b273b71237cc6a1d2db76dfe7c971e073d1d5cb3', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/record-field-completion-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/record-field-completion-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/record-field-completion-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_seekable_streaming_native_oracle_and_sanitizers_are_required(self):
+        native = block(self.ci, 'native-projects', 2)
+        self.assertIn('python3 -B scripts/verify_seekable_streaming.py target/debug/oxid target/release/oxid', native)
+        self.assertIn('--output "$RUNNER_TEMP/current-seekable-streaming" --llvm-bin "$OXID_LLVM_BIN"', native)
+        self.assertIn('${{ runner.temp }}/current-seekable-streaming', native)
+        self.assertIn('          python3 -B scripts/test_native_file_seek_runtime.py\n', native)
+        self.assertIn('          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_file_seek_runtime.py\n', native)
+        self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
 
     def test_native_numeric_shard_preserves_the_complete_workload_and_evidence(self):
         primary = block(self.ci, 'native-projects', 2)

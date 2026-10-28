@@ -152,3 +152,35 @@ int32_t __oxid_file_delivery_hosted(int32_t operation, oxid_file *file, uint8_t 
     uint64_t operation_budget = UINT64_MAX;
     return __oxid_file_delivery(operation, file, bytes, length, &operation_budget, result, return_cost);
 }
+
+/* Separate entrypoint preserves every existing file operation and its ABI.
+ * The caller has prepared both results and the exclusive loan release. */
+_Static_assert(sizeof(off_t) == sizeof(int64_t), "file seeking requires 64-bit off_t");
+_Static_assert((off_t)-1 < (off_t)0, "file seeking requires signed off_t");
+int32_t __oxid_file_seek_absolute(const oxid_file *file, int64_t offset,
+    uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
+    if (!file || !fuel || !result ||
+        overlaps(file, sizeof(*file), result, sizeof(*result))) return OXID_BUFFER_DESCRIPTOR;
+    oxid_allocation *node = NULL;
+    int32_t status = locate_file(&execution_heap, file, &node);
+    if (status) return status;
+    if (*fuel < return_cost) return OXID_BUFFER_FUEL;
+    *fuel -= return_cost;
+    int error = 0;
+    if (!node) error = EBADF;
+    else if (offset < 0) error = EINVAL;
+    else {
+        off_t position = lseek((int)node->initialized, (off_t)offset, SEEK_SET);
+        if (position < 0) error = errno;
+    }
+    /* No allocation, admission or source work can fail after lseek. */
+    result->tag = error ? 1 : 0;
+    result->value = error;
+    return 0;
+}
+int32_t __oxid_file_seek_absolute_hosted(const oxid_file *file, int64_t offset,
+    uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
+    if (!fuel) return OXID_BUFFER_DESCRIPTOR;
+    uint64_t operation_budget = UINT64_MAX;
+    return __oxid_file_seek_absolute(file, offset, &operation_budget, result, return_cost);
+}

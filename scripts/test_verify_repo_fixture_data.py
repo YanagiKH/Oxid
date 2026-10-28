@@ -117,7 +117,7 @@ CPU_PROJECTS = {
         "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/data.ox",
     )),
     "apps/streaming-training": tuple("apps/streaming-training/" + name for name in (
-        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox", "reader/src/lib.ox",
+        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox", "tests/seek.ox", "reader/src/lib.ox",
     )),
 }
 
@@ -415,7 +415,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
-        self.assertEqual(len(CPU_MEMBERS), 32)
+        self.assertEqual(len(CPU_MEMBERS), 33)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
         self.assertEqual([row for row in check_inventory if row[0] in CPU_PROJECTS], [("apps/cpu-training", True), ("apps/minibatch-training", True), ("apps/streaming-training", True)])
         self.assertFalse(any(name in CPU_MEMBERS for name, _ in check_inventory + run_inventory))

@@ -781,7 +781,14 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
         )?,
     )?;
     let emitter_transient = add(
-        if debug { RECORD_DEBUG_CONTROL_BYTES } else { 0 },
+        add(
+            if debug { RECORD_DEBUG_CONTROL_BYTES } else { 0 },
+            if plan.has_file_seek() {
+                experimental::seek_emitter_control_bytes()
+            } else {
+                0
+            },
+        )?,
         add(
             add(
                 add(inherited_emitter_transient, R::CONTROL_BYTES)?,
@@ -1170,6 +1177,10 @@ fn runtime_storage_bytes(
                 0
             } + if plan.has_file_delivery() {
                 experimental::FILE_DELIVERY_BYTES
+            } else {
+                0
+            } + if plan.has_file_seek() {
+                experimental::FILE_SEEK_BYTES
             } else {
                 0
             } + if plan.has_program_arguments() {
@@ -3739,6 +3750,16 @@ fn emit_selected<R: EmittedFunctions>(
         }
     }
     if out.resources {
+        if plan.has_file_seek() {
+            out.write_str("declare i32 @__oxid_file_seek_absolute(ptr, i64, ptr, ptr, i64)\n")
+                .unwrap();
+            if out.policy.hosted() {
+                out.write_str(
+                    "declare i32 @__oxid_file_seek_absolute_hosted(ptr, i64, ptr, ptr, i64)\n",
+                )
+                .unwrap();
+            }
+        }
         out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
         if plan.uses_vectors() {
             out.write_str("declare i32 @__oxid_vector_valid(ptr, i32)\ndeclare void @__oxid_vector_drop(ptr, i32)\ndeclare i32 @__oxid_vector_operation(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_vector_view(ptr, i32, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_vector_index(ptr, i32, i32, ptr)\ndeclare i32 @__oxid_vector_length(ptr, i32, ptr)\ndeclare i32 @__oxid_record_vector_pack(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_unpack(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_write(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_index_slice(ptr, i32, i32, i32, ptr)\n").unwrap();

@@ -395,6 +395,15 @@ callers choose how to continue. `sync_all` and `close` return `FileStatus::Ok`
 or `FileStatus::Error(errno)`. Closing an already closed handle succeeds;
 other operations on it return `Error(9)`.
 
+`std::fs::seek_absolute(&mut file, offset)` accepts a nonnegative `i64`
+byte offset from the start of the file and returns `FileStatus`. It makes one
+OS attempt without reading skipped bytes or changing the file's length.
+Negative offsets return `Error(22)` without an OS attempt; nonseekable files
+and interrupted calls report the OS error without retrying. Seeking beyond EOF
+is permitted when the OS supports it; later reads observe EOF. See
+[absolute seeking](../rfcs/0073-seekable-streaming-datasets.md) and the
+[streaming reader](../apps/streaming-training/reader/README.md) for examples.
+
 Paths are byte slices of at most 4095 bytes. NUL is rejected before opening or
 truncating a file. `create` truncates an existing file. Both entry modes support
 files, with signal setup before source effects. See

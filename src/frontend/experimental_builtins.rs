@@ -32,9 +32,10 @@ pub(in crate::frontend) enum Item {
     ArgStatus,
     ArgCount,
     ArgBytes,
+    SeekAbsolute,
 }
 impl Item {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -62,6 +63,7 @@ impl Item {
         Self::ArgStatus,
         Self::ArgCount,
         Self::ArgBytes,
+        Self::SeekAbsolute,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -92,6 +94,7 @@ impl Item {
             Self::ArgStatus => "ArgStatus",
             Self::ArgCount => "arg_count",
             Self::ArgBytes => "arg_bytes",
+            Self::SeekAbsolute => "seek_absolute",
         }
     }
     pub fn family(self) -> usize {
@@ -106,7 +109,8 @@ impl Item {
             | Self::FileReadSome
             | Self::FileWriteSome
             | Self::SyncAll
-            | Self::Close => 3,
+            | Self::Close
+            | Self::SeekAbsolute => 3,
             Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
             _ => 0,
         }
@@ -140,6 +144,7 @@ impl Item {
             Self::Close => Function::Close,
             Self::ArgCount => Function::ArgCount,
             Self::ArgBytes => Function::ArgBytes,
+            Self::SeekAbsolute => Function::SeekAbsolute,
 
             _ => return None,
         })
@@ -234,6 +239,7 @@ pub(in crate::frontend) enum Function {
     Close,
     ArgCount,
     ArgBytes,
+    SeekAbsolute,
 }
 impl Function {
     pub fn is_file(self) -> bool {
@@ -242,7 +248,7 @@ impl Function {
     pub fn is_arguments(self) -> bool {
         self.item().family() == 4
     }
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -262,6 +268,7 @@ impl Function {
         Self::Close,
         Self::ArgCount,
         Self::ArgBytes,
+        Self::SeekAbsolute,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -284,6 +291,7 @@ impl Function {
             Self::Close => Item::Close,
             Self::ArgCount => Item::ArgCount,
             Self::ArgBytes => Item::ArgBytes,
+            Self::SeekAbsolute => Item::SeekAbsolute,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -292,7 +300,7 @@ impl Function {
             Self::ReadSome | Self::FileReadSome => Some(Enumeration::Read),
             Self::WriteSome | Self::FileWriteSome => Some(Enumeration::Write),
             Self::OpenRead | Self::Create => Some(Enumeration::Open),
-            Self::SyncAll | Self::Close => Some(Enumeration::File),
+            Self::SyncAll | Self::Close | Self::SeekAbsolute => Some(Enumeration::File),
             Self::ArgBytes => Some(Enumeration::Arguments),
             _ => None,
         }
@@ -331,6 +339,7 @@ impl Function {
             FileReadSome => ([file, bytes(BorrowKind::Exclusive), unit], 2),
             FileWriteSome => ([file, bytes(BorrowKind::Shared), unit], 2),
             SyncAll | Close => ([file, unit, unit], 1),
+            SeekAbsolute => ([file, scalar(Ty::I64), unit], 2),
             ArgBytes => ([scalar(Ty::I32), bytes(BorrowKind::Exclusive), unit], 2),
         };
         let result = match self {
@@ -383,6 +392,18 @@ impl VectorItemCursor {
         }
     }
 }
+// The original vector namespace occupies bits 27..36. Extending the fixed
+// catalog must not reinterpret those existing packed authorities.
+const VECTOR_ITEM_START: usize = 27;
+const SEEK_ITEM_BIT: usize = 37;
+impl Item {
+    const fn inventory_bit(self) -> usize {
+        match self {
+            Self::SeekAbsolute => SEEK_ITEM_BIT,
+            _ => self as usize,
+        }
+    }
+}
 impl Inventory {
     fn bits(self) -> u64 {
         u64::from_le_bytes(self.0)
@@ -392,6 +413,7 @@ impl Inventory {
     pub(super) fn pack(self, legacy: u8) -> [u8; 8] {
         const {
             assert!(Item::ALL.len() + super::vector::Item::ALL.len() <= 60);
+            assert!(VECTOR_ITEM_START + super::vector::Item::ALL.len() <= SEEK_ITEM_BIT);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -401,10 +423,10 @@ impl Inventory {
         (Self((bits >> 4).to_le_bytes()), (bits & 15) as u8)
     }
     pub fn contains(self, item: Item) -> bool {
-        self.bits() & (1 << item as u8) != 0
+        self.bits() & (1u64 << item.inventory_bit()) != 0
     }
     pub fn contains_vector(self, item: super::vector::Item) -> bool {
-        let bit = Item::ALL.len() + item as usize;
+        let bit = VECTOR_ITEM_START + item as usize;
         self.bits() & (1u64 << bit) != 0
     }
     pub fn admit_vector(self, item: super::vector::Item) -> Self {
@@ -415,26 +437,26 @@ impl Inventory {
         {
             inventory = inventory.admit(Item::GrowStatus);
         }
-        let bit = Item::ALL.len() + item as usize;
-        let vector = Item::ALL.len() + super::vector::Item::Vec as usize;
+        let bit = VECTOR_ITEM_START + item as usize;
+        let vector = VECTOR_ITEM_START + super::vector::Item::Vec as usize;
         Self((inventory.bits() | (1u64 << bit) | (1u64 << vector)).to_le_bytes())
     }
     /// Import templates do not create executable functions. Concrete vector
     /// keys are retained and charged by the authenticated generic plan.
     pub fn vector_templates(self) -> usize {
-        let start = Item::ALL.len() + super::vector::Item::New as usize;
+        let start = VECTOR_ITEM_START + super::vector::Item::New as usize;
         ((self.bits() >> start) & 0x1ff).count_ones() as usize
     }
     pub fn vector_template_rank(self, operation: super::vector::Operation) -> Option<usize> {
-        let start = Item::ALL.len() + super::vector::Item::New as usize;
-        let bit = Item::ALL.len() + operation.item() as usize;
+        let start = VECTOR_ITEM_START + super::vector::Item::New as usize;
+        let bit = VECTOR_ITEM_START + operation.item() as usize;
         self.contains_vector(operation.item()).then(|| {
             let preceding = ((1u64 << bit) - 1) & !((1u64 << start) - 1);
             (self.bits() & preceding).count_ones() as usize
         })
     }
     pub fn vector_item_rank(self, item: super::vector::Item) -> Option<usize> {
-        let start = Item::ALL.len();
+        let start = VECTOR_ITEM_START;
         let bit = start + item as usize;
         self.contains_vector(item).then(|| {
             let preceding = ((1u64 << bit) - 1) & !((1u64 << start) - 1);
@@ -444,7 +466,7 @@ impl Inventory {
     /// Select an imported item with four fixed-width bit partitions. This
     /// inspects one catalog row, without scanning the other imported rows.
     pub fn vector_item_at(self, rank: usize) -> Option<super::vector::Item> {
-        let mask = ((self.bits() >> Item::ALL.len()) & 0x3ff) as u16;
+        let mask = ((self.bits() >> VECTOR_ITEM_START) & 0x3ff) as u16;
         if rank >= mask.count_ones() as usize {
             return None;
         }
@@ -460,7 +482,7 @@ impl Inventory {
         super::vector::Item::ALL.get(cursor.offset).copied()
     }
     pub fn admit(self, item: Item) -> Self {
-        let mut bits = self.bits() | (1 << item as u8);
+        let mut bits = self.bits() | (1u64 << item.inventory_bit());
         if item.family() == 0 {
             bits |= 1 << Item::ByteBuf as u8;
         }
@@ -524,6 +546,7 @@ struct CompilerCarriers {
     vector_lower_bits: u16,
     vector_count: usize,
     vector_mask: u64,
+    selected_item_bit: usize,
     vector_preceding_mask: u64,
     vector_rank_return: Option<usize>,
     vector_selected: Option<super::vector::Item>,
@@ -538,9 +561,9 @@ struct CompilerCarriers {
     template_caller_selected: Option<super::vector::Operation>,
     signatures: [Signature; 4],
     signature_results: [Result<Signature, Box<crate::frontend::diagnostic::Diagnostic>>; 4],
-    item_iterations: [std::array::IntoIter<Item, 27>; 4],
+    item_iterations: [std::array::IntoIter<Item, 28>; 4],
     enumeration_iterations: [std::array::IntoIter<Enumeration, 6>; 4],
-    function_iterations: [std::array::IntoIter<Function, 19>; 4],
+    function_iterations: [std::array::IntoIter<Function, 20>; 4],
     path_iterations: [std::iter::Zip<
         std::array::IntoIter<&'static str, 3>,
         std::slice::Iter<'static, crate::frontend::source::Span>,
@@ -580,6 +603,50 @@ pub(in crate::frontend) const fn compiler_carrier_bytes() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn seek_preserves_old_ordinals_and_vector_inventory_bits() {
+        use super::super::vector::Item as VectorItem;
+        assert_eq!(Item::ArgBytes as usize, 26);
+        assert_eq!(Function::ArgBytes as usize, 18);
+        assert_eq!(Item::SeekAbsolute as usize, 27);
+        assert_eq!(Function::SeekAbsolute as usize, 19);
+        let seek = Inventory::default().admit(Item::SeekAbsolute);
+        assert_eq!(seek.bits(), (1 << 37) | (1 << 15) | (1 << 17));
+        for item in VectorItem::ALL {
+            let old = Inventory::default().admit_vector(item);
+            assert_eq!(
+                old.bits() & (0x3ff << 27),
+                (1 << 27) | (1 << (27 + item as usize))
+            );
+            assert!(!old.contains(Item::SeekAbsolute));
+            assert!(!seek.contains_vector(item));
+            let both = old.union(seek);
+            assert!(both.contains_vector(item));
+            assert!(both.contains(Item::SeekAbsolute));
+            for legacy in 0..9 {
+                assert_eq!(Inventory::unpack(both.pack(legacy)), (both, legacy));
+            }
+        }
+        let signature = Function::SeekAbsolute.signature(|enumeration| {
+            assert_eq!(enumeration, Enumeration::File);
+            EnumId(7)
+        });
+        assert_eq!(
+            signature.parameters[0],
+            ParameterTy::Reference {
+                kind: BorrowKind::Exclusive,
+                referent: BorrowedTy::Exact(AggregateTy::File),
+            }
+        );
+        assert_eq!(
+            signature.parameters[1],
+            ParameterTy::Value(ValueTy::Scalar(Ty::I64))
+        );
+        assert_eq!(
+            signature.result,
+            ValueTy::Owned(AggregateTy::Enum(EnumId(7)))
+        );
+    }
     #[test]
     fn vector_catalog_selection_and_ranks_cover_all_operation_subsets() {
         for mask in 0usize..512 {
@@ -676,7 +743,7 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (6, 19));
+        assert_eq!((all.enums(), all.functions()), (6, 20));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }
