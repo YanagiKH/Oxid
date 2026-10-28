@@ -1812,9 +1812,9 @@ pub(super) mod semantic_carriers {
         // A shared macro change must not silently reclassify a historical bank.
         let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a (AccessBase, Ty) =
             |model| &model.whole_array_constructed;
-        let _: for<'a> fn(
-            &'a PreFileProjectionSemanticCarriers,
-        ) -> &'a Result<(AccessBase, Ty), Box<Diagnostic>> = |model| &model.whole_array_returned;
+        type ScalarWholeArrayReturn = Result<(AccessBase, Ty), Box<Diagnostic>>;
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a ScalarWholeArrayReturn =
+            |model| &model.whole_array_returned;
         let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a Ty =
             |model| &model.whole_array_caller_ty;
 

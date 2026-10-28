@@ -1389,17 +1389,13 @@ impl SourceSetBuilder<'_> {
             .string(&mut display, plan.display_bytes, "module display")
             .map_err(|error| one(reserve_error(error, at)))?;
         display.push_str(display_parent);
-        if {
-            #[cfg(not(windows))]
-            {
-                !display_parent.is_empty() && !display_parent.ends_with('/')
-            }
-            #[cfg(windows)]
-            {
-                !display_parent.is_empty()
-                    && filesystem::separator_units(Path::new(display_parent)) != 0
-            }
-        } {
+        #[cfg(not(windows))]
+        if !display_parent.is_empty() && !display_parent.ends_with('/') {
+            display.push('/');
+        }
+        #[cfg(windows)]
+        if !display_parent.is_empty() && filesystem::separator_units(Path::new(display_parent)) != 0
+        {
             display.push('/');
         }
         display.push_str(&relative);

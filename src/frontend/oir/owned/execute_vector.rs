@@ -1058,9 +1058,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 let generation = epoch(key.generation, span)?;
                 let bytes = self.owner_extent(key, span)?;
                 match aggregate {
-                    AggregateTy::Vector(_) | AggregateTy::RecordVector(_) if bytes.len() == 16 => {
-                        ()
-                    }
+                    AggregateTy::Vector(_) | AggregateTy::RecordVector(_) if bytes.len() == 16 => {}
                     AggregateTy::Enum(enumeration) => {
                         let variants = self
                             .plan
