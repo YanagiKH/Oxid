@@ -216,7 +216,7 @@ def main():
                     inputs.parent.mkdir(exist_ok=True)
                     shutil.copytree(project, inputs)
                     shutil.copytree(project, relocated)
-                    stdout, stderr = command(label + "-reference", [binary, "run"], project, environment,
+                    stdout, stderr = command(label + "-reference", [binary, "run", "src/main.ox", "--edition=typed-preview"], project, environment,
                                              expected=expected_status)
                     require(stdout == expected_out and stderr == expected_error, "independent reference oracle differs: " + label)
                     variants = []
