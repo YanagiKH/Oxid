@@ -114,3 +114,39 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
     ]));
     fixture.clean();
 }
+
+#[test]
+fn unused_child_module_features_are_rejected_by_file_and_both_project_profiles() {
+    for hidden in [
+        "struct Private{x:i32}",
+        "fn unused<T:Copy>(value:T)->T{return value;}",
+        "fn unused()->i32{let n=1;let value=n.to_f64();return 0;}",
+    ] {
+        let fixture = Fixture::new("mod hidden;fn main()->i32{return 42;}");
+        fs::write(fixture.0.join("hidden.ox"), hidden).unwrap();
+        let checked = fixture.invoke(&[
+            "check",
+            "main.ox",
+            "--edition=typed-preview",
+            "--message-format=json",
+        ]);
+        assert!(
+            checked.status.success(),
+            "valid unused module: {hidden}: {checked:?}"
+        );
+        denial(fixture.invoke(&[
+            "compile",
+            "main.ox",
+            "--edition=typed-preview",
+            "--backend=llvm",
+            "--output=program.exe",
+            "--message-format=json",
+        ]));
+        fixture.clean();
+        fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"result\"\n").unwrap();
+        for profile in ["dev", "release"] {
+            denial(fixture.invoke(&["build", "--profile", profile, "--message-format=json"]));
+            fixture.clean();
+        }
+    }
+}
