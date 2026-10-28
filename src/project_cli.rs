@@ -1105,13 +1105,19 @@ fn execute_project(
     let entry_override = entry_override
         .map(|entry| local_source(&graph.specs[0].root, entry))
         .transpose()?;
+    let pure_test = frontend::NativeBuildSettings::windows_msvc_host()
+        && matches!(command, frontend::PackageCommand::Run)
+        && options.project_test.is_some();
     let prepared = match frontend::prepare_package_project(&graph.specs, entry_override.as_deref())
     {
         Ok(prepared) => prepared,
-        Err(error) => return Ok(error.report(command, options.json(), process)),
+        Err(error) => return Ok(error.report(command, options.json(), process && !pure_test)),
     };
     if existing.is_some() {
         project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
+    }
+    if pure_test {
+        return Ok(prepared.execute_test(execution_policy(&snapshot.manifest)?));
     }
     Ok(match native_settings {
         Some(settings) => prepared.execute_with_native_settings(
@@ -1438,11 +1444,18 @@ fn scaffold(options: &Options) -> Result<(), String> {
         fs::create_dir(root.join(directory))
             .map_err(|e| format!("cannot create {directory}: {e}"))?;
     }
-    write("oxid.toml", &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n\n[build]\nbackend = \"llvm\"\nprofile = \"dev\"\nentry-mode = \"process\"\n\n[tests]\nsmoke = \"tests/smoke.ox\"\n"))?;
+    let windows_native = frontend::NativeBuildSettings::windows_msvc_host();
+    let entry_mode = if windows_native { "result" } else { "process" };
+    write("oxid.toml", &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n\n[build]\nbackend = \"llvm\"\nprofile = \"dev\"\nentry-mode = \"{entry_mode}\"\n\n[tests]\nsmoke = \"tests/smoke.ox\"\n"))?;
     write("src/main.ox", "fn main() -> i32 {\n    return 0;\n}\n")?;
     write("tests/smoke.ox", "fn double(value: i32) -> i32 {\n    return value * 2;\n}\n\nfn main() -> i32 {\n    if double(21) == 42 {\n        return 0;\n    } else {\n        return 1;\n    }\n}\n")?;
     write(".gitignore", ".oxid/\n")?;
-    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux or macOS on x86_64 or ARM64, and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
+    let readme = if windows_native {
+        format!("# {name}\n\nA native Oxid project.\n\n```bat\noxid check\noxid run\noxid test\noxid build --profile release\n.oxid\\bin\\{name}.exe\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nUse Windows 10 or later on x64, Visual Studio 2022 C++ tools with the Windows SDK, and the complete LLVM 19.1.7 toolchain containing clang.exe, opt.exe and lld-link.exe.\nOpen the x64 Native Tools Command Prompt and set OXID_LLVM_BIN to the LLVM bin directory before building.\nThis preview supports bounded result-entry bool, i32 and unit functions, conditions and while loops. Declared tests return i32: zero passes and any other value fails. Process I/O, package dependencies and workspace projects are unavailable on this target.\n")
+    } else {
+        format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux or macOS on x86_64 or ARM64, and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n")
+    };
+    write("README.md", &readme)?;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"new-summary\",\"success\":true,\"path\":{}}}", json_string(&root.to_string_lossy()));
     } else {

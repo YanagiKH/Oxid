@@ -23,16 +23,40 @@ pub(super) fn preflight(
     // All modules and unused declarations participate. These bounded parser
     // feature facts only deny. Ordinary type checking and OIR verification still
     // establish the sole authority for the native consumer.
-    for header in project.modules() {
-        let Some(program) = project.try_file_ast(header.file) else {
-            return Err(reject());
-        };
-        let source = project.sources().get(header.file);
-        if outside_scalar_scope(program, source) {
-            return Err(reject());
-        }
+    if outside_project_scope(project) {
+        return Err(reject());
     }
     Ok(())
+}
+
+pub(super) fn test_preflight(
+    project: &ProjectSources,
+    execution: ExecutionPolicy,
+) -> Result<(), Box<Diagnostic>> {
+    if execution.hosted() {
+        return Err(Diagnostic::new(
+            "E0608",
+            "oir-run",
+            "Windows project tests require bounded execution",
+            None,
+        ));
+    }
+    if outside_project_scope(project) {
+        return Err(Diagnostic::new(
+            "E0608", "oir-run",
+            "Windows project tests support only pure bool, i32 and unit functions without owned values, references, arrays, resources, generics or process I/O",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn outside_project_scope(project: &ProjectSources) -> bool {
+    project.modules().iter().any(|header| {
+        project
+            .try_file_ast(header.file)
+            .is_none_or(|program| outside_scalar_scope(program, project.sources().get(header.file)))
+    })
 }
 
 // This is a denial predicate, not a witness or a type check. Inferred
@@ -109,6 +133,103 @@ mod tests {
         ] {
             let text = format!("fn unused()->i32{{{body}return 0;}}fn main()->i32{{return 42;}}");
             assert!(outside(&text), "{text}");
+        }
+    }
+
+    fn typed_test_status(text: &str) -> Result<i32, Box<Diagnostic>> {
+        let mut sources = SourceMap::new();
+        let id = sources.add("declared-test.ox".into(), text.into());
+        let source = sources.get(id);
+        let program = parser::parse(source, lexer::lex(source).unwrap()).unwrap();
+        let checked = crate::frontend::oir::check_source(source, &program, &sources).unwrap();
+        checked.run_test_i32()
+    }
+
+    #[test]
+    fn pure_tests_return_actual_i32_status_without_process_setup() {
+        for value in [0, 7, -1, 256, i32::MIN, i32::MAX] {
+            let text = format!("fn main()->i32{{return {value};}}");
+            assert_eq!(typed_test_status(&text).unwrap(), value, "{text}");
+        }
+    }
+
+    #[test]
+    fn pure_test_signature_is_checked_before_any_user_evaluation() {
+        for text in [
+            "fn main()->bool{while true{}return false;}",
+            "fn main()->(){let x=1/0;return;}",
+            "fn main(value:i32)->i32{while true{}return value;}",
+            "fn helper()->i32{return 0;}",
+            "struct P{}fn main()->P{return P{};}",
+        ] {
+            let error = typed_test_status(text).unwrap_err();
+            assert_eq!(
+                (error.code, error.stage),
+                ("E0600", "oir-run"),
+                "{text}: {error:?}"
+            );
+            assert_eq!(
+                error.message,
+                "test entry requires fn main() -> i32 with no parameters in the declared test file"
+            );
+        }
+    }
+
+    #[test]
+    fn pure_test_runtime_errors_keep_the_original_diagnostic_and_origin() {
+        for (expression, code, marker) in [("2147483647+1", "E0604", "+"), ("1/0", "E0607", "/")] {
+            let text = format!("fn main()->i32{{return {expression};}}");
+            let error = typed_test_status(&text).unwrap_err();
+            assert_eq!((error.code, error.stage), (code, "oir-run"));
+            let span = error.primary.unwrap();
+            assert_eq!(&text[span.start..span.end], marker);
+        }
+    }
+
+    #[test]
+    fn pure_test_scope_and_hosted_refusals_are_exercised_on_every_host() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        for (text, policy, allowed) in [
+            ("fn main()->i32{return 0;}", ExecutionPolicy::Bounded, true),
+            ("fn main()->i32{return 0;}", ExecutionPolicy::Hosted, false),
+            (
+                "struct P{}fn main()->i32{return 0;}",
+                ExecutionPolicy::Bounded,
+                false,
+            ),
+            (
+                "fn main()->i32{let n=1;let value=n.to_f64();return 0;}",
+                ExecutionPolicy::Bounded,
+                false,
+            ),
+            (
+                "fn unused<T:Copy>(value:T)->T{return value;}fn main()->i32{return 0;}",
+                ExecutionPolicy::Bounded,
+                false,
+            ),
+        ] {
+            let root = std::env::temp_dir().join(format!(
+                "oxid-pure-test-scope-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&root).unwrap();
+            let entry = root.join("main.ox");
+            std::fs::write(&entry, text).unwrap();
+            let project = ProjectSources::load_typed(
+                entry.to_str().unwrap(),
+                crate::frontend::project::ProjectLimits::default(),
+            )
+            .unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+            let result = test_preflight(&project, policy);
+            if allowed {
+                result.unwrap();
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!((error.code, error.stage), ("E0608", "oir-run"), "{text}");
+            }
         }
     }
 }

@@ -752,6 +752,22 @@ impl PreparedPackageProject<'_> {
         }
     }
 
+    /// Execute only an explicitly selected declared pure test. The caller owns
+    /// declared-entry selection; the sealed program owns its typed entry facts.
+    pub(crate) fn execute_test(&self, execution: ExecutionPolicy) -> i32 {
+        let project = self.project();
+        let result = (|| {
+            let checked = self.checked()?;
+            super::windows_native::test_preflight(project, execution)
+                .map_err(|error| vec![*error])?;
+            checked.run_test_i32().map_err(|error| vec![*error])
+        })();
+        match result {
+            Ok(status) => status,
+            Err(errors) => report(project.sources(), errors, false, Summary::Run(None)),
+        }
+    }
+
     /// Consume the retained input logically, never by reopening a source path.
     /// All compilation and publication remain behind the ordinary OIR witness.
     pub(crate) fn execute(&self, command: PackageCommand<'_>, json: bool, process: bool) -> i32 {
