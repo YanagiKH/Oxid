@@ -34,6 +34,24 @@ pub(super) struct Nominals {
     pub(super) emitted_records: Vec<usize>,
 }
 
+/// Read-only ranking introduces no arena allocation. Price its independent
+/// synchronous arguments, iterator and result transports only on record keys.
+#[allow(dead_code)]
+struct RecordVectorKeyControls {
+    value: Value,
+    arena: &'static [RecordApplication],
+    selected: &'static RecordApplication,
+    prefix: std::slice::Iter<'static, RecordApplication>,
+    rank: usize,
+    id: RecordId,
+    checked_id: Option<RecordId>,
+    result: Result<RecordId, Box<Diagnostic>>,
+    caller_result: Result<RecordId, Box<Diagnostic>>,
+    function: Option<vector::Function>,
+    work: &'static WorkMeter,
+    origin: Span,
+}
+
 impl Nominals {
     pub(super) fn concrete(&self, value: Value) -> bool {
         match value {
@@ -755,9 +773,16 @@ impl Nominals {
     pub(super) fn vector_record_id(
         &self,
         value: Value,
+        storage: &Storage,
         work: &WorkMeter,
         at: Span,
     ) -> Result<RecordId, Box<Diagnostic>> {
+        if storage
+            .live_after(size_of::<RecordVectorKeyControls>())
+            .is_none_or(|bytes| bytes > MAX_STORAGE)
+        {
+            return Err(exhausted(at));
+        }
         match value {
             Value::Record(id) => {
                 let record = self.records.get(id).ok_or_else(|| bad(at))?;

@@ -1523,3 +1523,240 @@ fn checked_copy_fuel_is_paid_before_any_destination_or_source_change() {
         }
     }
 }
+
+fn stopped_at_record_vector_index<'p, 'w>(
+    plan: &'p ExecutionPlan<'w>,
+    reading: bool,
+) -> Machine<'p, 'w> {
+    let entry = plan
+        .witness()
+        .functions()
+        .iter()
+        .find(|function| {
+            function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.statements)
+                .any(|statement| {
+                    matches!(statement.kind, OwnedInstruction::CopyIndexInitialize { .. })
+                        == reading
+                        && matches!(
+                            statement.kind,
+                            OwnedInstruction::CopyIndexInitialize { .. }
+                                | OwnedInstruction::CopyIndexWrite { .. }
+                        )
+                })
+        })
+        .unwrap()
+        .id;
+    let initial = 1 + plan.function(entry).usage().activation_fuel_cells();
+    for fuel in initial..initial + 20_000 {
+        let machine = stopped_machine(plan, fuel);
+        if machine.frames.len() != 1 {
+            continue;
+        }
+        let frame = &machine.frames[0];
+        let f = &plan.witness().functions()[frame.function.0];
+        if f.blocks[frame.block.0]
+            .statements
+            .get(frame.next)
+            .is_some_and(|statement| {
+                if reading {
+                    matches!(statement.kind, OwnedInstruction::CopyIndexInitialize { .. })
+                } else {
+                    matches!(statement.kind, OwnedInstruction::CopyIndexWrite { .. })
+                }
+            })
+        {
+            return machine;
+        }
+    }
+    panic!("record vector index was not reached");
+}
+#[test]
+fn record_vector_copy_preflights_private_bytes_and_owner_epochs_before_any_write() {
+    let text="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let mut v=new::<P>();try_push(&mut v,p);let second=v[0];return second.earlier;}";
+    let (_, witness, _) = super::super::source::copy_record_tests::checked(text);
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let mut machine = stopped_at_record_vector_index(&plan, true);
+    let frame = &machine.frames[0];
+    let statement =
+        &witness.functions()[frame.function.0].blocks[frame.block.0].statements[frame.next];
+    let OwnedInstruction::CopyIndexInitialize {
+        destination,
+        base: AccessBase::Owner(base),
+        ref path,
+        ..
+    } = statement.kind
+    else {
+        unreachable!()
+    };
+    assert!(path.is_empty());
+    let span = plan::instruction_span(statement);
+    let target = machine
+        .owner_extent(machine.raw_key(0, destination), span)
+        .unwrap();
+    machine.frames[0].payload[target.clone()].fill(0xa5);
+    let descriptor_extent = machine
+        .owner_extent(machine.raw_key(0, base), span)
+        .unwrap();
+    let element =
+        byte_buffer::RecordVectorElement::check(witness.declarations(), RecordId(0)).unwrap();
+    let descriptor = machine
+        .heap
+        .vector_descriptor(
+            &machine.frames[0].payload[descriptor_extent.clone()],
+            element,
+        )
+        .unwrap();
+    let original_heap = machine
+        .heap
+        .vector_range(&descriptor, element, 0, 1)
+        .unwrap()
+        .to_vec();
+    assert_eq!(original_heap, [7, 42, 0, 0, 0, 1]);
+    let baseline_payload = machine.frames[0].payload.clone();
+    let baseline_owners = machine.frames[0].owners.clone();
+    for mutation in 0..6 {
+        machine.frames[0].payload.clone_from(&baseline_payload);
+        machine.frames[0].owners.clone_from(&baseline_owners);
+        unsafe { machine.heap.vector_range_mut(&descriptor, element, 0, 1) }
+            .unwrap()
+            .copy_from_slice(&original_heap);
+        match mutation {
+            0 => machine.frames[0].owners[destination.0].generation = u64::MAX,
+            1 => machine.frames[0].owners[destination.0].state = AVAILABLE,
+            2 => machine.frames[0].owners[base.0].exclusive_children = 1,
+            3 => {
+                unsafe { machine.heap.vector_range_mut(&descriptor, element, 0, 1) }.unwrap()[5] = 2
+            }
+            4 => machine.frames[0].payload
+                [descriptor_extent.start + 12..descriptor_extent.start + 16]
+                .copy_from_slice(&0i32.to_le_bytes()),
+            5 => (),
+            _ => unreachable!(),
+        }
+        let before = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let heap = machine
+            .heap
+            .vector_range(&descriptor, element, 0, 1)
+            .unwrap()
+            .to_vec();
+        let result = machine.statement(0, &statement.kind, span);
+        if mutation == 5 {
+            result.unwrap();
+            let mut expected = before;
+            expected[target.clone()]
+                .copy_from_slice(&[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]);
+            assert_eq!(machine.frames[0].payload, expected);
+            assert_eq!(machine.frames[0].owners[base.0], owners[base.0]);
+            assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
+        } else {
+            assert!(result.is_err(), "mutation={mutation}");
+            assert_eq!(machine.frames[0].payload, before, "mutation={mutation}");
+            assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+        }
+        assert_eq!(
+            machine
+                .heap
+                .vector_range(&descriptor, element, 0, 1)
+                .unwrap(),
+            heap
+        );
+    }
+}
+#[test]
+fn record_vector_store_validates_every_source_leaf_before_staging_or_heap_publication() {
+    let text="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:21,last:false};let mut v=new::<P>();try_push(&mut v,p);let replacement=P{first:9u8,earlier:42,last:true};v[0]=replacement;return replacement.earlier;}";
+    let (_, witness, _) = super::super::source::copy_record_tests::checked(text);
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let mut machine = stopped_at_record_vector_index(&plan, false);
+    let frame = &machine.frames[0];
+    let statement =
+        &witness.functions()[frame.function.0].blocks[frame.block.0].statements[frame.next];
+    let OwnedInstruction::CopyIndexWrite {
+        base: AccessBase::Owner(base),
+        source,
+        ref path,
+        ..
+    } = statement.kind
+    else {
+        unreachable!()
+    };
+    assert!(path.is_empty());
+    let span = plan::instruction_span(statement);
+    let source_extent = machine
+        .owner_extent(machine.raw_key(0, source), span)
+        .unwrap();
+    for padding in [1, 2, 3, 9, 10, 11] {
+        machine.frames[0].payload[source_extent.start + padding] = 0xcc;
+    }
+    let descriptor_extent = machine
+        .owner_extent(machine.raw_key(0, base), span)
+        .unwrap();
+    let element =
+        byte_buffer::RecordVectorElement::check(witness.declarations(), RecordId(0)).unwrap();
+    let descriptor = machine
+        .heap
+        .vector_descriptor(&machine.frames[0].payload[descriptor_extent], element)
+        .unwrap();
+    let original_heap = machine
+        .heap
+        .vector_range(&descriptor, element, 0, 1)
+        .unwrap()
+        .to_vec();
+    let baseline_payload = machine.frames[0].payload.clone();
+    let baseline_owners = machine.frames[0].owners.clone();
+    for mutation in 0..5 {
+        machine.frames[0].payload.clone_from(&baseline_payload);
+        machine.frames[0].owners.clone_from(&baseline_owners);
+        unsafe { machine.heap.vector_range_mut(&descriptor, element, 0, 1) }
+            .unwrap()
+            .copy_from_slice(&original_heap);
+        match mutation {
+            0 => machine.frames[0].payload[source_extent.start + 8] = 2,
+            1 => machine.frames[0].owners[source.0].state = MOVED,
+            2 => machine.frames[0].owners[source.0].exclusive_children = 1,
+            3 => machine.frames[0].owners[base.0].shared_children = 1,
+            4 => (),
+            _ => unreachable!(),
+        }
+        let before = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let result = machine.statement(0, &statement.kind, span);
+        if mutation == 4 {
+            result.unwrap();
+            let scratch = plan
+                .record_vector_scratch_range(machine.frames[0].function)
+                .unwrap();
+            let mut expected = before.clone();
+            expected[scratch].copy_from_slice(&[9, 42, 0, 0, 0, 1]);
+            assert_eq!(machine.frames[0].payload, expected);
+            assert_eq!(machine.frames[0].owners, owners);
+            assert_eq!(
+                machine
+                    .heap
+                    .vector_range(&descriptor, element, 0, 1)
+                    .unwrap(),
+                [9, 42, 0, 0, 0, 1]
+            );
+            assert_eq!(
+                &machine.frames[0].payload[source_extent.clone()],
+                &before[source_extent.clone()]
+            );
+        } else {
+            assert!(result.is_err(), "mutation={mutation}");
+            assert_eq!(machine.frames[0].payload, before, "mutation={mutation}");
+            assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+            assert_eq!(
+                machine
+                    .heap
+                    .vector_range(&descriptor, element, 0, 1)
+                    .unwrap(),
+                original_heap,
+                "mutation={mutation}"
+            );
+        }
+    }
+}

@@ -6963,3 +6963,7 @@ fn owned_enum_native_shared_branch_counts_and_exact_ir_admission() {
 #[cfg(test)]
 #[path = "copy_record_native_tests.rs"]
 mod copy_record_tests;
+
+#[cfg(test)]
+#[path = "record_vector_native_tests.rs"]
+mod record_vector_tests;

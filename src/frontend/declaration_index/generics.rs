@@ -3322,7 +3322,8 @@ impl<'a, 's> Walker<'a, 's> {
                 Value::Record(_) | Value::Concrete(ValueTy::Owned(AggregateTy::Record(_))) => {
                     vector::Function::record(
                         operation,
-                        self.nominals.vector_record_id(value, self.work, at)?,
+                        self.nominals
+                            .vector_record_id(value, self.storage, self.work, at)?,
                     )
                 }
                 _ => None,
