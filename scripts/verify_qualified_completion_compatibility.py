@@ -17,7 +17,7 @@ import types
 PREDECESSOR = 'af6460826d2a0abe141f36becd23fdcc2de3e479'
 PREDECESSOR_POLICY = 'scripts/verify_copy_record_vector_compatibility.py'
 PREDECESSOR_POLICY_PIN = (185301, '87f83b91277eb107d09cf88f618842fb7592ce20ef52f632e3a7254c27a8f16f')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 QUALIFIED_COMPLETION_CHANGED = frozenset(['src/frontend/declaration_index.rs',
  'src/frontend/driver.rs',
  'src/frontend/editor/completion.rs',
