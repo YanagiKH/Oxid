@@ -563,7 +563,7 @@ def build_sdist(sdist_directory, config_settings=None):
         fail("sdist output already exists")
     with tempfile.TemporaryDirectory(prefix=".oxid-sdist-", dir=output) as temporary:
         staged = Path(temporary) / filename
-        with tarfile.open(staged, "w:gz", format=tarfile.USTAR_FORMAT) as archive:
+        with tarfile.open(staged, "w:gz", format=tarfile.PAX_FORMAT) as archive:
             for member, payload in sorted(config["payloads"].items()):
                 info = tarfile.TarInfo(name + "/" + relative(member))
                 info.size = len(payload)
