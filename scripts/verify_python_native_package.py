@@ -842,7 +842,7 @@ def main():
         zerolow = variant(source, output / 'source-zerolow', 'zerolow', zero_source, fuel=3)
         parameters = ','.join(f'a{i}:i32' for i in range(64))
         wide = variant(source, output / 'source-wide', 'wide', f'pub fn {export}({parameters})->i32{{return a0+a7*2+a8*3+a31*5+a63*7;}}\n')
-        modules_source = f'mod math;\npub fn {export}(a:i32,b:i32,c:i32)->i32{{return math::subtotal(a,b)/c;}}\n'
+        modules_source = f'mod math;\nuse crate::math::subtotal as multiply;\npub fn {export}(a:i32,b:i32,c:i32)->i32{{return multiply(a,b)/c;}}\n'
         modules_helper = 'pub fn subtotal(unit:i32,quantity:i32)->i32{return unit*quantity;}\n'
         modules = variant(source, output / 'source-modules', 'modules', modules_source,
                           helpers={'src/math.ox': modules_helper})
