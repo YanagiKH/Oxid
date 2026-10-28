@@ -42,8 +42,9 @@ Shared borrows permit copying. An exclusive borrow prevents copying or other
 access until the borrow ends. Use record patterns to extract a nested record;
 returning an aggregate field directly is not yet supported.
 
-`Vec<T>` and scalar slices still require scalar elements. Declaring a record
-Copy does not make it a supported vector element.
+Copy records can be stored in [`Vec<T>`](VECTORS.md#store-records). Indexed reads
+produce independent values, and matching slices borrow the vector's elements.
+Arrays of records remain unavailable.
 
 Use a compiler built from this source tree. Published 0.9 binaries do not
 support this attribute.

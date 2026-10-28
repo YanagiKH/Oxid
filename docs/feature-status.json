@@ -2100,7 +2100,7 @@
     },
     {
       "id": "typed-scalar-vectors",
-      "summary": "Growable Vec<T> for all seventeen scalar types, with fallible growth and borrowed slices.",
+      "summary": "Growable Vec<T> for seventeen scalar types and finite checked Copy records, with fallible growth and borrowed slices.",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -2127,10 +2127,14 @@
         "src/frontend/oir/owned/execute_vector_tests.rs",
         "src/frontend/oir/owned/vector_resources_tests.rs",
         "tests/native_vectors_runtime.c",
-        "scripts/verify_typed_vectors.py"
+        "scripts/verify_typed_vectors.py",
+        "tests/typed_copy_record_vectors.rs",
+        "src/frontend/oir/owned/record_vector_resources_tests.rs",
+        "tests/native_copy_record_vectors.c",
+        "scripts/test_native_copy_record_vectors.py"
       ],
       "evidence": [],
-      "limitations": "Scalar elements only. Lengths and capacities use i32. Growth is fallible and shares configured heap and work limits with byte buffers and files. Vectors of owned elements, stored or returned references, partial moves and user destructors are unavailable. Vec<u8> and ByteBuf are distinct owned types."
+      "limitations": "Lengths and capacities use i32. Growth is fallible and shares configured heap and work limits with byte buffers and files. Record elements require finite checked Copy fields. Non-Copy, resource and enum elements, nested vectors, arrays of records, individual element references, stored or returned references, partial moves and user destructors are unavailable. Vec<u8> and ByteBuf are distinct owned types."
     },
     {
       "id": "checked-copy-records",
@@ -2165,7 +2169,7 @@
         "tests/typed_copy_records.rs"
       ],
       "evidence": [],
-      "limitations": "Explicit finite records only. Arrays, enums, references and owned resources cannot be Copy fields. Vector and slice elements remain scalar-only. Direct aggregate field reads, stored or returned references and user-defined traits are unavailable. Compiler resource limits apply."
+      "limitations": "Explicit finite records only. Arrays, enums, references and owned resources cannot be Copy fields. Checked Copy records may be vector and borrowed-slice elements; arrays of records and element references remain unavailable. Direct aggregate field reads, stored or returned references and user-defined traits are unavailable. Compiler resource limits apply."
     }
   ]
 }

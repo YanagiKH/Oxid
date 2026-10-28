@@ -103,6 +103,10 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/copy-records/src/main.ox",
         "examples/copy-records/tests/copies.ox",
     ),
+    "examples/copy-record-vectors": (
+        "examples/copy-record-vectors/src/main.ox",
+        "examples/copy-record-vectors/tests/records.ox",
+    ),
     "packages/matrix": ("packages/matrix/src/lib.ox",),
     "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
     "apps/cpu-training": (
@@ -159,7 +163,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/streaming-training",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
-TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records",)
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (

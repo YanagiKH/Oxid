@@ -311,9 +311,10 @@ constructor can exceed the narrower native per-function slot cap and be refused
 before tools/output. Native project builds support Linux and macOS on x86_64 and ARM64 with LLVM19.1.7 at
 O0 and O2.
 
-## Growable scalar vectors
+## Growable vectors
 
-`alloc::vec::Vec<T>` owns a growable collection of one scalar `Copy` element type.
+`alloc::vec::Vec<T>` owns a growable collection of one scalar or finite checked
+Copy record element type.
 The type is affine; moving a vector transfers its allocation, and destruction
 releases it. Records and finite enum payloads may contain vectors. `Vec<u8>` is
 a distinct type from `alloc::bytes::ByteBuf`.
@@ -327,9 +328,27 @@ lengths and capacity arguments are i32 element counts. Reads and writes require
 an initialized element and obey the existing whole-owner loan rules.
 
 Shared or exclusive scalar slices borrow matching arrays, vectors or existing
-slices, including call-only ranges. Elements cannot be owned aggregates or
-references. The vector API, supported scalar types and examples are documented
-in [Growable vectors](../docs/VECTORS.md).
+slices, including call-only ranges. Record slices borrow a vector of the exact
+checked Copy record type or a matching existing record slice. Generic slice
+parameters with `T: Copy` specialize both scalar and checked record elements.
+An indexed record read initializes an independent owned Copy value; a whole
+indexed assignment copies a matching value through exclusive authority.
+
+Record element payloads contain only initialized scalar leaves in declaration
+order, including a Unit sentinel for empty records. Activation padding is
+neither read nor copied. Record identity and dense stride come from the checked
+nominal declaration and the compiler's read-only native schema catalog. All
+leaf and descriptor validation precedes initialized destination writes. The
+private vector descriptor and allocation header remain 16 and 48 bytes.
+Record validation work is bounded by `(2D+3)*B`, where `D=64` is the maximum
+containment depth and `B` is the initialized dense byte count. Pack/unpack
+operations pay the corresponding bound over expanded initialized leaves.
+No heap or compiler resource ceiling is raised.
+
+Non-Copy records, resource or enum elements, nested vectors, arrays of records,
+individual element references, and stored or returned references remain
+unavailable. The vector API and examples are documented in
+[Growable vectors](../docs/VECTORS.md).
 
 ## Growable byte buffers and partial binary I/O
 
@@ -481,8 +500,9 @@ unchanged.
 
 The attribute does not add user-defined traits or a general `Clone` operation.
 Aggregate field reads remain unavailable: extract nested records with a record
-pattern or pass the complete record. Vectors and scalar slices still require
-scalar elements; `Copy` alone does not authorize a record element type.
+pattern or pass the complete record. Finite checked Copy records can be vector
+and borrowed-slice elements; arrays of records and element references remain
+unavailable.
 
 ## Call-only projected array slices
 
@@ -945,7 +965,8 @@ arguments. Name resolution stays in the definition's module and package.
 Reference parameters `&T` and `&mut T` infer a supported owned referent; references
 cannot be returned or stored as values. Other trait bounds remain unavailable.
 Function type arguments cannot be applied to enum variants or functions without
-type parameters. Vector builtin operations accept their scalar element argument;
+type parameters. Vector builtin operations accept a scalar or finite checked
+Copy record element argument;
 `alloc::vec::new::<T>()` requires it explicitly. Enum type arguments precede the
 variant name instead.
 
