@@ -1,0 +1,197 @@
+/* Generated per export. No Oxid symbols are linked through DT_NEEDED. */
+#define Py_LIMITED_API 0x030A0000
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include <dlfcn.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+#define OXID_ARITY @ARITY@
+#define OXID_LIBRARY "/_oxid_native/@LIBRARY@"
+
+typedef int32_t (*oxid_call)(@PARAMETERS@);
+typedef uint32_t (*oxid_version)(void);
+
+typedef struct {
+    void *handle;
+    oxid_call call;
+} oxid_state;
+
+_Static_assert(sizeof(void *) == 8, "qualified Linux64 host required");
+_Static_assert(sizeof(oxid_call) == sizeof(void *), "POSIX function pointer representation required");
+_Static_assert(sizeof(oxid_version) == sizeof(void *), "POSIX function pointer representation required");
+
+static PyObject *oxid_invoke(PyObject *module, PyObject *arguments) {
+    Py_ssize_t count = PyTuple_Size(arguments);
+    if (count < 0) return NULL;
+    if (count != OXID_ARITY) {
+        PyErr_Format(PyExc_TypeError, "@EXPORT@() requires exactly %d positional arguments", OXID_ARITY);
+        return NULL;
+    }
+    /* Avoid a nonstandard zero-length array for a zero-argument export. */
+    int32_t values[64] = {0};
+    for (Py_ssize_t i = 0; i < count; ++i) {
+        PyObject *item = PyTuple_GetItem(arguments, i);
+        if (item == NULL) return NULL;
+        if (!PyLong_Check(item) || PyBool_Check(item)) {
+            PyErr_SetString(PyExc_TypeError, "Oxid arguments must be integers, excluding bool");
+            return NULL;
+        }
+        long long value = PyLong_AsLongLong(item);
+        if (value == -1 && PyErr_Occurred()) return NULL;
+        if (value < INT32_MIN || value > INT32_MAX) {
+            PyErr_SetString(PyExc_OverflowError, "Oxid argument is outside the i32 range");
+            return NULL;
+        }
+        values[i] = (int32_t)value;
+    }
+    oxid_state *state = (oxid_state *)PyModule_GetState(module);
+    if (state == NULL || state->handle == NULL || state->call == NULL) {
+        PyErr_SetString(PyExc_SystemError, "Oxid native module is not initialized");
+        return NULL;
+    }
+    oxid_call call = state->call;
+    int32_t output = 0;
+    int32_t status;
+    /* The handle belongs to module state. Keep it alive until the GIL returns,
+       even if another thread removes this module and invokes garbage collection. */
+    Py_INCREF(module);
+    Py_BEGIN_ALLOW_THREADS
+    status = call(@ARGUMENTS@);
+    Py_END_ALLOW_THREADS
+    PyObject *result = NULL;
+    switch (status) {
+        case 0:
+            result = PyLong_FromLong((long)output);
+            break;
+        case 1:
+            PyErr_SetString(PyExc_OverflowError, "Oxid integer overflow");
+            break;
+        case 2:
+            PyErr_SetString(PyExc_ZeroDivisionError, "Oxid division or remainder by zero");
+            break;
+        case 3:
+            PyErr_SetString(PyExc_RuntimeError, "Oxid execution allowance exhausted");
+            break;
+        case 4:
+            PyErr_SetString(PyExc_SystemError, "Oxid rejected its extension-owned output storage");
+            break;
+        default:
+            PyErr_SetString(PyExc_SystemError, "Oxid returned an unknown native status");
+            break;
+    }
+    /* No state/handle access follows this release. */
+    Py_DECREF(module);
+    return result;
+}
+
+static PyMethodDef oxid_methods[] = {
+    {"@EXPORT@", oxid_invoke, METH_VARARGS, "Call the compiled Oxid scalar export."},
+    {NULL, NULL, 0, NULL}
+};
+
+static int oxid_exec(PyObject *module) {
+    oxid_state *state = (oxid_state *)PyModule_GetState(module);
+    if (state == NULL) return -1;
+    if (state->handle != NULL) return 0;
+    PyObject *filename = PyModule_GetFilenameObject(module);
+    if (filename == NULL) return -1;
+    PyObject *encoded = PyUnicode_EncodeFSDefault(filename);
+    Py_DECREF(filename);
+    if (encoded == NULL) return -1;
+    char *filename_bytes = NULL;
+    Py_ssize_t filename_size = 0;
+    if (PyBytes_AsStringAndSize(encoded, &filename_bytes, &filename_size) < 0) {
+        Py_DECREF(encoded);
+        return -1;
+    }
+    if (filename_size < 1 || filename_bytes[0] != '/' || memchr(filename_bytes, '\0', (size_t)filename_size) != NULL) {
+        Py_DECREF(encoded);
+        PyErr_SetString(PyExc_ImportError, "Oxid extension requires an absolute installed filename");
+        return -1;
+    }
+    char *separator = strrchr(filename_bytes, '/');
+    size_t parent_size = (size_t)(separator - filename_bytes);
+    size_t suffix_size = sizeof(OXID_LIBRARY); /* includes the terminator */
+    if (parent_size > SIZE_MAX - suffix_size) {
+        Py_DECREF(encoded);
+        PyErr_SetString(PyExc_ImportError, "Oxid installed path is too long");
+        return -1;
+    }
+    char *path = (char *)PyMem_Malloc(parent_size + suffix_size);
+    if (path == NULL) {
+        Py_DECREF(encoded);
+        PyErr_NoMemory();
+        return -1;
+    }
+    memcpy(path, filename_bytes, parent_size);
+    memcpy(path + parent_size, OXID_LIBRARY, suffix_size);
+    Py_DECREF(encoded);
+    void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    PyMem_Free(path);
+    if (handle == NULL) {
+        const char *error = dlerror();
+        PyErr_Format(PyExc_ImportError, "cannot open the private Oxid library: %s", error == NULL ? "unknown loader error" : error);
+        return -1;
+    }
+    dlerror();
+    void *raw_version = dlsym(handle, "oxid_library_abi_version");
+    const char *error = dlerror();
+    if (error != NULL || raw_version == NULL) {
+        PyErr_SetString(PyExc_ImportError, "private Oxid library has no ABI version symbol");
+        dlclose(handle);
+        return -1;
+    }
+    oxid_version version;
+    memcpy(&version, &raw_version, sizeof(version));
+    if (version() != 1) {
+        PyErr_SetString(PyExc_ImportError, "private Oxid library has an unsupported ABI version");
+        dlclose(handle);
+        return -1;
+    }
+    dlerror();
+    void *raw_call = dlsym(handle, "oxid_library_call_v1");
+    error = dlerror();
+    if (error != NULL || raw_call == NULL) {
+        PyErr_SetString(PyExc_ImportError, "private Oxid library has no scalar call symbol");
+        dlclose(handle);
+        return -1;
+    }
+    oxid_call call;
+    memcpy(&call, &raw_call, sizeof(call));
+    state->call = call;
+    state->handle = handle;
+    return 0;
+}
+
+static void oxid_free(void *module) {
+    oxid_state *state = (oxid_state *)PyModule_GetState((PyObject *)module);
+    if (state == NULL) return;
+    void *handle = state->handle;
+    state->handle = NULL;
+    state->call = NULL;
+    if (handle != NULL) dlclose(handle);
+}
+
+static PyModuleDef_Slot oxid_slots[] = {
+    {Py_mod_exec, (void *)oxid_exec},
+    {0, NULL}
+};
+
+static struct PyModuleDef oxid_definition = {
+    PyModuleDef_HEAD_INIT,
+    "@MODULE@._native",
+    "An Oxid scalar export with independent per-module native ownership.",
+    sizeof(oxid_state),
+    oxid_methods,
+    oxid_slots,
+    NULL,
+    NULL,
+    oxid_free
+};
+
+PyMODINIT_FUNC PyInit__native(void) {
+    return PyModuleDef_Init(&oxid_definition);
+}
