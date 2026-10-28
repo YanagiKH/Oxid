@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   queued-checks:
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -22,8 +22,8 @@ jobs:
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const expected = '20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9';
-            const integrationPR = 154;
+            const expected = '8180b1bbcbcf9ccd4d648ff5ba0ec9ea3d5b971f';
+            const integrationPR = 156;
             const { owner, repo } = context.repo;
             const repository = `${owner}/${repo}`.toLowerCase();
             if (repository !== 'yanagikh/oxid') {
