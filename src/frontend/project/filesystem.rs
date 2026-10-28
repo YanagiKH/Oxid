@@ -1,16 +1,30 @@
-//! Linux and macOS stable-filesystem policy, not a TOCTOU sandbox.
+//! Qualified stable-filesystem source policy, not a TOCTOU sandbox.
 use super::{
     add, budget::Allocator, io_error, policy, resource, Diagnostic, ProjectLimits, SourceUsage,
     Span,
 };
-use std::{
-    ffi::OsString,
-    fs, io,
-    path::{Path, PathBuf},
+use std::{ffi::OsString, io, path::Path};
+#[cfg(not(windows))]
+use std::{fs, path::PathBuf};
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub(super) use windows::{
+    admit_invoked_entry, fixed_scratch_bytes, separator_units, verify, VerifiedChild,
 };
 
 pub(super) fn qualified_host(origin: Span) -> Result<(), Box<Diagnostic>> {
-    if cfg!(any(target_os = "linux", target_os = "macos")) {
+    if cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         Ok(())
     } else {
         Err(policy(
@@ -24,6 +38,7 @@ pub(super) fn path_units(path: &Path) -> usize {
     path.as_os_str().as_encoded_bytes().len()
 }
 
+#[cfg(not(windows))]
 pub(super) fn verify(
     root: &Path,
     relative: &str,
