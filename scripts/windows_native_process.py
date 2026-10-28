@@ -82,9 +82,23 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
     """No spawn/assign race: JOB_LIST is applied inside CreateProcessW.
 
     Files avoid pipe-reader scheduling in this independent test orchestrator.
-    The owned job bounds memory and all descendants. Transcripts are limited to
-    8 MiB each, independently of the production doctor's 64 KiB pipe contract.
+    The owned job bounds memory and all descendants. An 8 MiB polling threshold
+    stops excessive transcripts; success also requires final sizes <=8 MiB after
+    the entire tree has exited. This is not a hard transient disk quota and is
+    independent of the production doctor's strict 64 KiB byte-pipe contract.
     """
+    argv = list(map(str, argv))
+    if not argv:
+        raise ValueError("qualification command cannot be empty")
+    cwd = str(cwd)
+    stdout, stderr = Path(stdout), Path(stderr)
+    input_path = os.devnull if stdin is None else str(stdin)
+    for value in [*argv, cwd, str(stdout), str(stderr), input_path]:
+        if "\0" in value:
+            raise ValueError("NUL in qualification command or pathname")
+    application = str(Path(argv[0]).resolve(strict=True))
+    if "\0" in application:
+        raise ValueError("NUL in qualification application")
     import msvcrt
     api = kernel()
     assert ctypes.sizeof(Security) == 24
@@ -106,19 +120,20 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
         environment.items(), key=cmp_to_key(compare))) + "\0\0"
     env = ctypes.create_unicode_buffer(block)
     command = ctypes.create_unicode_buffer(command)
-    job = checked(api.CreateJobObjectW(None, None), "create qualification job")
-    process = thread = attributes = None
+    job = process = thread = attributes = None
     handles = []
+    result = None
     started = time.monotonic()
-    stdout, stderr = Path(stdout), Path(stderr)
     try:
+        job = checked(api.CreateJobObjectW(None, None), "create qualification job")
         limits = Limits()
         limits.basic.flags = 0x2000 | 0x200  # KILL_ON_JOB_CLOSE | JOB_MEMORY
         limits.job_memory = 1024 * 1024 * 1024
         checked(api.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)),
                 "set qualification job limits")
-        handles = [open(os.devnull if stdin is None else stdin, "rb"),
-                   stdout.open("xb"), stderr.open("xb")]
+        handles.append(open(input_path, "rb"))
+        handles.append(stdout.open("xb"))
+        handles.append(stderr.open("xb"))
         native = (W.HANDLE * 3)(*(msvcrt.get_osfhandle(file.fileno()) for file in handles))
         for handle in native:
             os.set_handle_inheritable(handle, True)
@@ -142,12 +157,12 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
         startup.startup.stdin, startup.startup.stdout, startup.startup.stderr = native
         startup.attributes = attributes
         information = Information()
-        checked(api.CreateProcessW(str(Path(argv[0]).resolve(strict=True)), command, None, None,
+        checked(api.CreateProcessW(application, command, None, None,
                                    True, 0x80000 | 0x400 | 0x8000000, env, str(cwd),
                                    ctypes.byref(startup), ctypes.byref(information)),
                 "create atomically job-bound qualification process")
         process, thread = information.process, information.thread
-        api.CloseHandle(thread)
+        checked(api.CloseHandle(thread), "close owned qualification primary thread")
         thread = None
         api.DeleteProcThreadAttributeList(attributes)
         attributes = None
@@ -165,7 +180,8 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
             if wait == 0:
                 code = W.DWORD()
                 checked(api.GetExitCodeProcess(process, ctypes.byref(code)), "read qualification status")
-                return code.value, time.monotonic() - started
+                result = (code.value, time.monotonic() - started)
+                break
             if wait != 258:
                 raise OSError(ctypes.get_last_error(), "wait for qualification process")
             if time.monotonic() - started >= timeout:
@@ -173,7 +189,8 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
             time.sleep(0.005)
     finally:
         try:
-            checked(api.TerminateJobObject(job, 1), "terminate qualification process tree")
+            if job:
+                checked(api.TerminateJobObject(job, 1), "terminate qualification process tree")
             deadline = time.monotonic() + 2
             while process:
                 accounting = (ctypes.c_uint64 * 6)()
@@ -185,10 +202,29 @@ def run(argv, cwd, environment, stdout, stderr, timeout=300, stdin=None, tick=No
                     raise TimeoutError("qualification process tree did not terminate")
                 time.sleep(0.005)
         finally:
+            first_close_error = None
             if attributes:
-                api.DeleteProcThreadAttributeList(attributes)
+                try:
+                    api.DeleteProcThreadAttributeList(attributes)
+                except BaseException as error:
+                    first_close_error = error
             for file in handles:
-                file.close()
+                try:
+                    file.close()
+                except BaseException as error:
+                    if first_close_error is None:
+                        first_close_error = error
             for handle in (thread, process, job):
                 if handle:
-                    api.CloseHandle(handle)
+                    try:
+                        checked(api.CloseHandle(handle), "close owned qualification handle")
+                    except BaseException as error:
+                        if first_close_error is None:
+                            first_close_error = error
+            if first_close_error is not None:
+                raise first_close_error
+    # A descendant can append between the last poll and leader exit. Check only
+    # after every owned process has stopped and all transcript handles closed.
+    if stdout.stat().st_size > 8 * 1024 * 1024 or stderr.stat().st_size > 8 * 1024 * 1024:
+        raise ValueError("final qualification transcript exceeded 8 MiB per stream")
+    return result

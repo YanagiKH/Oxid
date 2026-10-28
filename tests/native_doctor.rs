@@ -24,6 +24,10 @@ impl Fixture {
             .current_dir(&self.0)
             .env("TMPDIR", self.0.join("scratch"))
             .env("OXID_LLVM_BIN", self.0.join("missing-tools"));
+        #[cfg(windows)]
+        command
+            .env("TMP", self.0.join("scratch"))
+            .env("TEMP", self.0.join("scratch"));
         command
     }
     fn run(&self, args: &[&str]) -> Output {

@@ -1,8 +1,12 @@
 """Portable corruption controls for the independent Windows PE verifier."""
 import struct
+import sys
+from pathlib import Path
+from unittest.mock import patch
 import unittest
 
 from verify_windows_native import pe
+from windows_native_process import run
 
 
 def image(library=b"KERNEL32.dll"):
@@ -80,6 +84,30 @@ class WindowsNativePeTests(unittest.TestCase):
         data[576:] = b"A" * (len(data) - 576)
         with self.assertRaisesRegex(ValueError, "DLL import name"):
             pe(data)
+
+
+class WindowsNativeCommandInputTests(unittest.TestCase):
+    def test_embedded_nul_cannot_truncate_recorded_arguments_or_paths(self):
+        for argv, cwd, stdout, stderr, incoming in [
+            (["not-a-program\0.exe"], ".", "out", "err", None),
+            ([sys.executable, "visible\0hidden"], ".", "out", "err", None),
+            ([sys.executable], "cwd\0hidden", "out", "err", None),
+            ([sys.executable], ".", "out\0hidden", "err", None),
+            ([sys.executable], ".", "out", "err\0hidden", None),
+            ([sys.executable], ".", "out", "err", "input\0hidden"),
+        ]:
+            with self.subTest(argv=argv, cwd=cwd, stdout=stdout, stderr=stderr, incoming=incoming):
+                with patch("windows_native_process.kernel", side_effect=AssertionError("kernel acquisition forbidden")):
+                    with self.assertRaisesRegex(ValueError, "NUL"):
+                        run(argv, cwd, {}, stdout, stderr, stdin=incoming)
+
+    def test_path_conversion_failure_precedes_kernel_handle_acquisition(self):
+        class InvalidPath:
+            def __fspath__(self):
+                raise RuntimeError("controlled path conversion failure")
+        with patch("windows_native_process.kernel", side_effect=AssertionError("kernel acquisition forbidden")):
+            with self.assertRaisesRegex(RuntimeError, "path conversion failure"):
+                run([sys.executable], Path.cwd(), {}, InvalidPath(), "err")
 
 
 if __name__ == "__main__":
