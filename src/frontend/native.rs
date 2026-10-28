@@ -157,6 +157,14 @@ fn validate_version_output(
     Ok(())
 }
 
+/// Runtime catalog linkage follows an emitted global definition. Printable
+/// source names in debug metadata cannot select a different runtime ABI.
+fn record_vector_schemas_declared(module: &str) -> bool {
+    module
+        .lines()
+        .any(|line| line.starts_with("@__oxid_record_vector_schema_count = constant i32 "))
+}
+
 fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
     let mut arguments: Vec<OsString> = [
         "--no-default-config",
@@ -423,7 +431,7 @@ fn compile_inner(
         } else {
             ""
         };
-        let record_schemas = if module.contains("@__oxid_record_vector_schema_count = constant") {
+        let record_schemas = if record_vector_schemas_declared(module) {
             "#define OXID_RECORD_VECTOR_SCHEMAS 1\n"
         } else {
             ""
@@ -588,4 +596,29 @@ fn compile_inner(
     // hard_link cannot clobber an output created concurrently after preflight.
     fs::hard_link(workspace.0.join("executable"), output).map_err(io)?;
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod record_vector_selector_tests {
+    use super::record_vector_schemas_declared;
+
+    #[test]
+    fn record_vector_selector_requires_a_real_global_definition_line() {
+        for module in [
+            "@__oxid_record_vector_schema_count = constant i32 1, align 4\n",
+            "; module\n@__oxid_record_vector_schema_count = constant i32 4096, align 4\n!0 = !{}\n",
+        ] {
+            assert!(record_vector_schemas_declared(module), "{module}");
+        }
+    }
+    #[test]
+    fn record_vector_selector_rejects_debug_filenames_comments_and_declarations() {
+        for module in [
+            "!5 = !DIFile(filename: \"@__oxid_record_vector_schema_count = constant.ox\", directory: \".\")\n",
+            "!5 = !DIFile(filename: \"@__oxid_record_vector_schema_count = constant i32 1.ox\", directory: \".\")\n",
+            "; @__oxid_record_vector_schema_count = constant i32 1\n",
+            "@__oxid_record_vector_schema_count = external constant i32\n",
+            "@__oxid_record_vector_schema_count = global i32 1\n",
+        ] { assert!(!record_vector_schemas_declared(module),"{module}"); }
+    }
 }
