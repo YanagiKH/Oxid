@@ -18,7 +18,7 @@ import types
 PREDECESSOR = 'b273b71237cc6a1d2db76dfe7c971e073d1d5cb3'
 PREDECESSOR_POLICY = 'scripts/verify_record_field_completion_compatibility.py'
 PREDECESSOR_POLICY_PIN = (34962, 'ead92afc11561aa67df6ac1ed6ed6b468a5a323ab2dd7d34e7cb5a5131386484')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 FILE_SEEK_CHANGED = frozenset(['native/experimental_files.c',
  'src/frontend/builtin_catalog.rs',
  'src/frontend/declaration_index/experimental_tests.rs',
