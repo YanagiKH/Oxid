@@ -240,7 +240,7 @@ class RecordFieldCompletionAdmission(unittest.TestCase):
 
 class FrozenWindowsReplay(unittest.TestCase):
     def test_ten_source_pins_use_a_reachable_integrated_revision(self):
-        frozen = "146c51cf193b78208c18b7dd2dc604843b61d1d7"
+        frozen = "8b9c69dca600e51cb10e19c76116ae3e9457403b"
         subprocess.check_call(["git", "--no-replace-objects", "merge-base", "--is-ancestor",
                                frozen, "HEAD"], cwd=ROOT)
         self.assertEqual(len(gate.RECORD_FIELD_COMPLETION_CHANGED), 5)

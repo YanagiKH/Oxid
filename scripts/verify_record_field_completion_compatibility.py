@@ -31,8 +31,8 @@ RECORD_FIELD_COMPLETION_ADDED = frozenset(['src/frontend/declaration_index/edito
  'src/frontend/parser/editor_query/members.rs'])
 REVIEWED_INPUTS = {'src/frontend/declaration_index/editor_completion.rs': (18441,
                                                          '09a8406f7b4d293658ed3e99c4dd6aef417f0c7aee49ba57ff4216187a1aea1f'),
- 'src/frontend/declaration_index/editor_completion/members.rs': (11147,
-                                                                 '15b102c1b43b3ebcc4ad367f71b26740c0fdb59285ed6e27bc3c5403b26dd1fd'),
+ 'src/frontend/declaration_index/editor_completion/members.rs': (11071,
+                                                                 'df31118eeddd624c38a5adc6683ab874b69434ace6c6def3a6e244b9f5190be2'),
  'src/frontend/driver.rs': (98540, '45b5763dd897320def85bc4a8c9fe0ba948a94225d28f052228f74ab9535f08b'),
  'src/frontend/editor.rs': (12635, '5b0cf7e87f1c4f1a36906d74294039741113f975b3abbe52c58fb9812a53711d'),
  'src/frontend/editor/members.rs': (18286,
@@ -43,8 +43,8 @@ REVIEWED_INPUTS = {'src/frontend/declaration_index/editor_completion.rs': (18441
                                           'a1454a898065ad5ef994fa497835899081c5c28b7c22c8a4307b0c3aeb85564b'),
  'src/frontend/parser/editor_query.rs': (23946,
                                          '0d187ac400350c888e4850c736ec3fcf3eec6e185d55f8b86c2d81e8018fe1ec'),
- 'src/frontend/parser/editor_query/members.rs': (24478,
-                                                 'a288d0bdd6e9fde589f3a732bcb20e1ff3ae8c67682dbc7fab9a17ece101ecbc'),
+ 'src/frontend/parser/editor_query/members.rs': (24455,
+                                                 'b0e2114dedf01ed5a1a8452ed8d354fc6421980ab6db4278f772c639688a68ad'),
  'src/lsp_cli.rs': (34532, '4c9e5d62a26bb5c030e816aae797e735da71637951076a9b194cea97fd6bc4fd')}
 REVIEWED_DIRECTIVES = {'src/frontend/declaration_index/editor_completion.rs': {'attributes': ((b'#[derive(Clone, Copy, Debug)]', 1),
                                                                         (b'#[cfg(test)]', 1),
