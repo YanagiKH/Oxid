@@ -948,6 +948,8 @@ jobs:
             --output "$RUNNER_TEMP/current-minibatch-training" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_streaming_training.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-streaming-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_seekable_streaming.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-seekable-streaming" --llvm-bin "$OXID_LLVM_BIN"
       - name: Check buffer runtime components at O0 and O2 with memory checking
         run: |
           python3 -B scripts/test_bytebuf_runtime.py
@@ -955,6 +957,7 @@ jobs:
           python3 -B scripts/test_hosted_bytebuf.py
           python3 -B scripts/test_bytebuf_transfer.py
           python3 -B scripts/test_native_files_runtime.py
+          python3 -B scripts/test_native_file_seek_runtime.py
           python3 -B scripts/test_process_arguments_runtime.py
           python3 -B scripts/test_i64_output_runtime.py
           python3 -B scripts/test_integer_output_runtime.py
@@ -964,6 +967,7 @@ jobs:
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_hosted_bytebuf.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_transfer.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_files_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_file_seek_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_process_arguments_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_i64_output_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer_output_runtime.py
@@ -1012,6 +1016,7 @@ jobs:
             ${{ runner.temp }}/current-data-pipeline
             ${{ runner.temp }}/current-minibatch-training
             ${{ runner.temp }}/current-streaming-training
+            ${{ runner.temp }}/current-seekable-streaming
           if-no-files-found: warn
           retention-days: 14
 

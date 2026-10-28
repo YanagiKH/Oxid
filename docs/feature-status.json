@@ -1375,16 +1375,17 @@
       "id": "native-files",
       "status": "experimental",
       "classification": "production-path",
-      "summary": "Move-only file handles with partial binary reads and writes, fsync and automatic close.",
+      "summary": "Move-only file handles with partial binary reads and writes, absolute i64 seeking, fsync and automatic close.",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "edition": "typed-preview",
       "backend": "Reference execution and LLVM native compilation at O0/O2.",
       "target_scope": "Linux x86_64 with LLVM/Clang/LLD 19.1.7 for native builds.",
-      "limitations": "Raw Linux byte paths of at most 4095 bytes. Blocking single OS attempts, caller-directed retries, shared normalized live-memory and existing ownership limits. No seek, directories, async, deadlines, cancellation or additional native targets.",
+      "limitations": "Raw Linux byte paths of at most 4095 bytes. Blocking single OS attempts, caller-directed retries, shared normalized live-memory and existing ownership limits. No relative seeking, directories, async, deadlines, cancellation or additional native targets.",
       "spec": [
         "rfcs/0048-native-file-io.md",
-        "spec/typed-preview.md"
+        "spec/typed-preview.md",
+        "rfcs/0073-seekable-streaming-datasets.md"
       ],
       "implementation": [
         "src/frontend/experimental_builtins.rs",
@@ -1398,7 +1399,12 @@
         "tests/native_files_runtime.c",
         "scripts/test_native_files_runtime.py",
         "scripts/verify_native_files.py",
-        "tests/fixtures/native_files/copy.ox.in"
+        "tests/fixtures/native_files/copy.ox.in",
+        "tests/file_seek.rs",
+        "tests/native_file_seek_runtime.c",
+        "scripts/test_native_file_seek_runtime.py",
+        "src/frontend/oir/owned/execute_file_seek_tests.rs",
+        "src/frontend/oir/owned/source/file_seek_tests.rs"
       ],
       "evidence": []
     },
@@ -1972,12 +1978,14 @@
         "scripts/test_data_pipeline_oracles.py",
         "apps/streaming-training/tests/reader.ox",
         "scripts/verify_streaming_training.py",
-        "scripts/test_streaming_training_oracle.py"
+        "scripts/test_streaming_training_oracle.py",
+        "apps/streaming-training/tests/seek.ox",
+        "scripts/verify_seekable_streaming.py"
       ],
       "evidence": [
         "apps/cpu-training/README.md"
       ],
-      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Sequential datasets use a fixed input buffer and caller-selected batches; the streaming example does not shuffle, save or resume. Existing resumable sessions hold their dataset in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
+      "limitations": "Row-major f64 matrices and row-bias broadcasting; configurable two-layer ReLU MLP. Sequential datasets use a fixed input buffer and caller-selected batches, with an optional zero-based start row that seeks directly to the selected suffix; skipped rows are not validated; the streaming example does not shuffle, save or resume. Existing resumable sessions hold their dataset in memory. General views, other dtypes, larger-model and complete performance qualification remain pending. Compiler limits and the configured shared heap budget apply; the default heap budget is 16 MiB."
     },
     {
       "id": "typed-project-api-documentation",

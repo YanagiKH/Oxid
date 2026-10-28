@@ -161,6 +161,15 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
 
+    def test_seekable_streaming_native_oracle_and_sanitizers_are_required(self):
+        native = block(self.ci, 'native-projects', 2)
+        self.assertIn('python3 -B scripts/verify_seekable_streaming.py target/debug/oxid target/release/oxid', native)
+        self.assertIn('--output "$RUNNER_TEMP/current-seekable-streaming" --llvm-bin "$OXID_LLVM_BIN"', native)
+        self.assertIn('${{ runner.temp }}/current-seekable-streaming', native)
+        self.assertIn('          python3 -B scripts/test_native_file_seek_runtime.py\n', native)
+        self.assertIn('          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_file_seek_runtime.py\n', native)
+        self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
+
     def test_native_numeric_shard_preserves_the_complete_workload_and_evidence(self):
         primary = block(self.ci, 'native-projects', 2)
         shard = block(self.ci, 'native-numeric-and-packages', 2)

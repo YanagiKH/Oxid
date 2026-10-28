@@ -145,6 +145,7 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/streaming-training/src/report.ox',
         'apps/streaming-training/src/training.ox',
         'apps/streaming-training/tests/reader.ox',
+        'apps/streaming-training/tests/seek.ox',
         'apps/streaming-training/reader/src/lib.ox',
     ),
 }
