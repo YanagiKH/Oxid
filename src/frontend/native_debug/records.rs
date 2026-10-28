@@ -3,6 +3,28 @@ use super::*;
 use crate::frontend::oir::{DebugField, DebugRecord};
 use std::mem::size_of;
 
+// These aliases are used by the real production expressions/signatures below,
+// not just by the accounting model. Nested Result/Option layouts are distinct.
+type RecordLookup<'a> = Option<DebugRecord<'a>>;
+type CheckedRecord<'a> = Result<DebugRecord<'a>, fmt::Error>;
+pub(super) type SupportedRecord<'a> = Result<RecordLookup<'a>, fmt::Error>;
+type CheckedField = Result<DebugField, fmt::Error>;
+pub(super) type VariableType = (usize, Option<&'static str>);
+
+#[allow(dead_code)]
+struct SupportLookupCarriers {
+    checked_construction: CheckedRecord<'static>,
+    checked_return: CheckedRecord<'static>,
+    checked_caller: CheckedRecord<'static>,
+    supported_construction: SupportedRecord<'static>,
+    supported_return: SupportedRecord<'static>,
+    supported_caller: SupportedRecord<'static>,
+    lookup_option: RecordLookup<'static>,
+    local_record: DebugRecord<'static>,
+    selected_option: RecordLookup<'static>,
+    bound_record: DebugRecord<'static>,
+}
+
 // Named construction/return/caller roles for the new allocation-free bridge,
 // type walk and variable-marker branch. This is a conservative payload model,
 // not an assumption about the compiler's generated machine stack. Formatting
@@ -22,8 +44,14 @@ struct RecordMetadataCarriers {
     // Include construction, return and caller slots across add/render/type
     // rendering/support lookup/facade queries, even when moves can coalesce.
     records: [Option<DebugRecords<'static>>; 8],
-    record: [Option<DebugRecord<'static>>; 6],
-    fields: [Option<DebugField>; 4],
+    // The variable-marker walk and type-render walk call supported() in
+    // successive phases. Pay one complete construction/return/caller chain,
+    // not two supposedly simultaneous record owners, nor an Option stand-in
+    // for the real Result<Option<...>> transport.
+    support_lookup: SupportLookupCarriers,
+    fields: [Option<DebugField>; 3],
+    selected_field: DebugField,
+    checked_fields: [CheckedField; 3],
     project: [&'static ProjectSources; 6],
     ast: [Option<&'static ast::Program>; 2],
     source_record: [Option<&'static ast::StructDecl>; 2],
@@ -33,7 +61,8 @@ struct RecordMetadataCarriers {
     range_iterators: [std::ops::Range<usize>; 3],
     scalar_type: [Option<usize>; 3],
     variable_kind: Option<(bool, &'static str)>,
-    variable_type: Option<(usize, Option<&'static str>)>,
+    selected_variable_type: VariableType,
+    selected_variable_parts: VariableType,
     marker_words: std::str::Split<'static, char>,
     marker_word: Option<&'static str>,
     results: [fmt::Result; 7],
@@ -65,7 +94,7 @@ pub(super) const fn control_bytes() -> usize {
     // The optional bridge/ID bookkeeping also has a physical representation
     // when no owned records are present. Charge the complete fixed model for
     // every metadata render, rather than treating a None value as zero bytes.
-    size_of::<RecordMetadataCarriers>()
+    size_of::<RecordMetadataCarriers>() + DebugRecords::control_bytes()
 }
 
 fn scalar(ty: Ty) -> Option<usize> {
@@ -95,10 +124,10 @@ pub(super) fn supported<'a>(
     records: Option<DebugRecords<'a>>,
     id: usize,
     project: &ProjectSources,
-) -> Result<Option<DebugRecord<'a>>, fmt::Error> {
-    let record = records
-        .and_then(|records| records.record(id))
-        .ok_or(fmt::Error)?;
+) -> SupportedRecord<'a> {
+    let record: RecordLookup<'a> = records.and_then(|records| records.record(id));
+    let record: CheckedRecord<'a> = record.ok_or(fmt::Error);
+    let record = record?;
     if !record.is_copy() || record.len() == 0 {
         return Ok(None);
     }
@@ -186,7 +215,8 @@ pub(super) fn render(
         }
         out.write_str("}\n")?;
         for index in 0..record.len() {
-            let field = record.field(index).ok_or(fmt::Error)?;
+            let field: CheckedField = record.field(index).ok_or(fmt::Error);
+            let field = field?;
             let field_id = members
                 .checked_add(1)
                 .and_then(|id| id.checked_add(index))
@@ -207,4 +237,120 @@ pub(super) fn render(
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, target_pointer_width = "64"))]
+#[test]
+fn real_record_result_and_variable_mapping_roles_match_independent_physical_oracles() {
+    use std::mem::align_of;
+    // The type alias is also the real public-to-parent helper return. This
+    // assignment cannot accept a dummy accounting-only wrapper signature.
+    let _signature: for<'a, 'p> fn(
+        Option<DebugRecords<'a>>,
+        usize,
+        &'p ProjectSources,
+    ) -> SupportedRecord<'a> = supported;
+    assert_eq!(
+        (size_of::<DebugRecord<'_>>(), align_of::<DebugRecord<'_>>()),
+        (24, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<RecordLookup<'_>>(),
+            align_of::<RecordLookup<'_>>()
+        ),
+        (24, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<CheckedRecord<'_>>(),
+            align_of::<CheckedRecord<'_>>()
+        ),
+        (24, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<SupportedRecord<'_>>(),
+            align_of::<SupportedRecord<'_>>()
+        ),
+        (32, 8)
+    );
+    assert_eq!(
+        (size_of::<VariableType>(), align_of::<VariableType>()),
+        (24, 8)
+    );
+    assert_eq!((size_of::<DebugField>(), align_of::<DebugField>()), (56, 8));
+    assert_eq!(
+        (
+            size_of::<Option<DebugField>>(),
+            align_of::<Option<DebugField>>()
+        ),
+        (56, 8)
+    );
+    assert_eq!(
+        (size_of::<CheckedField>(), align_of::<CheckedField>()),
+        (56, 8)
+    );
+    assert_eq!(
+        (size_of::<fmt::Result>(), align_of::<fmt::Result>()),
+        (1, 1)
+    );
+    assert_eq!(
+        (
+            size_of::<fmt::Arguments<'_>>(),
+            align_of::<fmt::Arguments<'_>>()
+        ),
+        (16, 8)
+    );
+    assert_eq!(
+        (size_of::<Formatting<12>>(), align_of::<Formatting<12>>()),
+        (512, 8)
+    );
+    // Independent role inventory: three actual Result constructions/returns/
+    // callers, then four selected Option/local/caller values. No carrier's
+    // reported control bytes or observed metadata_peak supplies this oracle.
+    let support = 3 * 24 + 3 * 32 + 4 * 24;
+    assert_eq!(
+        (
+            size_of::<SupportLookupCarriers>(),
+            align_of::<SupportLookupCarriers>()
+        ),
+        (support, 8)
+    );
+    let split = size_of::<std::str::Split<'static, char>>();
+    assert_eq!(align_of::<std::str::Split<'static, char>>(), 8);
+    assert_eq!(split % 8, 0);
+    // The std searcher retains its real library-defined width; all new view,
+    // return, selected-tuple and multiplicity expectations are numeric above.
+    let payload = 8 * 8
+        + support
+        + 3 * 56
+        + 56
+        + 3 * 56
+        + 6 * 8
+        + 2 * 8
+        + 2 * 8
+        + 4 * 24
+        + 3 * 8
+        + 24 * 8
+        + 3 * 16
+        + 3 * 16
+        + 24
+        + 2 * 24
+        + split
+        + 16
+        + 7
+        + 6 * 512;
+    let metadata = payload.div_ceil(8) * 8;
+    assert_eq!(
+        (
+            size_of::<RecordMetadataCarriers>(),
+            align_of::<RecordMetadataCarriers>()
+        ),
+        (metadata, 8)
+    );
+    // Query-chain oracle: record 504B; scalar-field 400B. They are successive
+    // and share the larger fixed envelope, separately checked inside OIR.
+    assert_eq!(DebugRecords::control_bytes(), 504);
+    assert_eq!(control_bytes(), metadata + 504);
 }

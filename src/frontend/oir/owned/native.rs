@@ -108,6 +108,9 @@ struct RecordDebugCarriers {
     owner: &'static OwnerDecl,
     aggregate: AggregateTy,
     record: RecordId,
+    // The table query really returns a Result, including its error payload.
+    // Its construction/return/caller roles precede the selected reference.
+    declaration_result: [debug::RecordDeclaration<'static>; 3],
     declaration: &'static RecordDecl,
     marker_parameters: (Span, usize, usize, usize),
     offset_and_argument: [usize; 2],
@@ -4459,11 +4462,8 @@ fn record_debug_variable(
     let AggregateTy::Record(record) = owner.aggregate() else {
         return;
     };
-    let declaration = plan
-        .witness()
-        .declarations()
-        .record(record)
-        .expect("verified record");
+    let declaration: debug::RecordDeclaration<'_> = plan.witness().declarations().record(record);
+    let declaration = declaration.expect("verified record");
     if declaration.is_copy() {
         crate::frontend::native_debug::record_variable(out, owner.span, record.0, argument, offset);
     }

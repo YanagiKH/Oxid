@@ -191,6 +191,13 @@ struct Scopes<'a> {
     bindings: Vec<BindingScope>,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    // Observe only the actual scope inventory reservation callsites. This is
+    // test instrumentation; production has no counter or additional carrier.
+    static SCOPE_RESERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl<'a> Scopes<'a> {
     fn new(
         function: &'a ast::Function,
@@ -229,6 +236,8 @@ impl<'a> Scopes<'a> {
             return Err(fmt::Error);
         }
         let mut blocks = Vec::new();
+        #[cfg(test)]
+        SCOPE_RESERVATIONS.with(|count| count.set(count.get() + 1));
         blocks.try_reserve_exact(count).map_err(|_| fmt::Error)?;
         for block in &function.blocks {
             blocks.push(LexicalScope {
@@ -259,6 +268,8 @@ impl<'a> Scopes<'a> {
             blocks,
             bindings: Vec::new(),
         };
+        #[cfg(test)]
+        SCOPE_RESERVATIONS.with(|count| count.set(count.get() + 1));
         result
             .bindings
             .try_reserve_exact(bindings)
@@ -482,7 +493,7 @@ fn render(
                 {
                     return Err(fmt::Error);
                 }
-                let (type_id, value_type) = if record {
+                let (type_id, value_type): records::VariableType = if record {
                     if kind != "address" || operand != "%owners" {
                         return Err(fmt::Error);
                     }

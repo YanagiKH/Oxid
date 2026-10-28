@@ -2,6 +2,73 @@ use super::*;
 
 const SOURCE: &str = "#[derive(Copy)]struct Point{x:i32,y:i32}fn inspect(prefix:i32,input:Point,suffix:i32)->i32{let original=input;let mut changed=original;changed.x=changed.x+3;let snapshot=changed;changed.y=changed.y+3;return original.x+changed.x+snapshot.y+changed.y+prefix+suffix;}fn main()->i32{let preceding=Point{x:17,y:1};return inspect(0,preceding,0);}";
 
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn owned_record_marker_roles_have_an_independent_physical_oracle() {
+    use std::mem::align_of;
+    assert_eq!(
+        (size_of::<AggregateTy>(), align_of::<AggregateTy>()),
+        (16, 8)
+    );
+    assert_eq!((size_of::<RecordId>(), align_of::<RecordId>()), (8, 8));
+    assert_eq!(
+        (
+            size_of::<debug::RecordDeclaration<'_>>(),
+            align_of::<debug::RecordDeclaration<'_>>()
+        ),
+        (32, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<(Span, usize, usize, usize)>(),
+            align_of::<(Span, usize, usize, usize)>()
+        ),
+        (48, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<Option<(OwnerPlaceId, &OwnerDecl)>>(),
+            align_of::<Option<(OwnerPlaceId, &OwnerDecl)>>()
+        ),
+        (16, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<Option<(usize, &ParameterBinding)>>(),
+            align_of::<Option<(usize, &ParameterBinding)>>()
+        ),
+        (16, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<std::fmt::Arguments<'_>>(),
+            align_of::<std::fmt::Arguments<'_>>()
+        ),
+        (16, 8)
+    );
+    assert_eq!(
+        (
+            size_of::<FormatCallsiteBacking<6>>(),
+            align_of::<FormatCallsiteBacking<6>>()
+        ),
+        (272, 8)
+    );
+    // Three borrowed arguments; aggregate/ID; three real declaration-Result
+    // construction/return/caller roles and selected reference; source marker
+    // arguments; loop/parameter transports; six-capture streaming formatting.
+    let payload: usize = 3 * 8 + 16 + 8 + 3 * 32 + 8 + 48 + 2 * 8 + 16 + 16 + 272 + 1;
+    let expected = payload.div_ceil(8) * 8;
+    assert_eq!(expected, 528);
+    assert_eq!(
+        (
+            size_of::<RecordDebugCarriers>(),
+            align_of::<RecordDebugCarriers>()
+        ),
+        (expected, 8)
+    );
+    assert_eq!(RECORD_DEBUG_CONTROL_BYTES, expected);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit(
     witness: &VerifiedOwnedProgram,

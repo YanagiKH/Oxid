@@ -227,3 +227,77 @@ fn record_metadata_control_shares_the_existing_scratch_and_output_caps() {
         assert!(count.length <= maximum);
     }
 }
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn scope_scratch_exact_boundary_reserves_only_after_admission_and_preserves_ids_on_denial() {
+    use std::mem::{align_of, size_of};
+    let project = project("#[derive(Copy)]struct Point{x:i32,y:i32}fn main()->i32{let p=Point{x:20,y:22};return p.x+p.y;}");
+    let function = &project.try_file_ast(SourceFileId(0)).unwrap().functions[0];
+    // Independently derived source inventory: one lexical block and one named
+    // let binding. Span=24B, ID=8B, Option<usize>=16B on the qualified host.
+    assert_eq!(function.blocks.len(), 1);
+    assert_eq!(
+        (size_of::<LexicalScope>(), align_of::<LexicalScope>()),
+        (48, 8)
+    );
+    assert_eq!(
+        (size_of::<BindingScope>(), align_of::<BindingScope>()),
+        (32, 8)
+    );
+    let scope_payload = 48 + 32;
+    for remaining in [scope_payload, scope_payload - 1] {
+        let reservations = SCOPE_RESERVATIONS.with(std::cell::Cell::get);
+        let mut next = 100;
+        let result = Scopes::new(function, 99, &mut next, MAX_DEBUG_IR_BYTES - remaining);
+        assert_eq!(result.is_ok(), remaining == scope_payload);
+        let attempted = SCOPE_RESERVATIONS.with(std::cell::Cell::get) - reservations;
+        if remaining == scope_payload {
+            let scopes = result.unwrap();
+            assert_eq!(scopes.blocks.len(), 1);
+            assert_eq!(scopes.bindings.len(), 1);
+            assert_eq!(attempted, 2);
+            assert_eq!(next, 101);
+        } else {
+            assert_eq!(
+                attempted, 0,
+                "both actual reservation sites follow scratch admission"
+            );
+            assert_eq!(next, 100, "scratch denial precedes metadata-ID mutation");
+        }
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+fn source_record_ordinals_ignore_native_fuel_owned_result_and_preceding_slice_length() {
+    let project = project("#[derive(Copy)]struct Point{x:i32,y:i32}fn pass(prefix:&[i32],lead:i32,incoming:Point,suffix:i32)->Point{let original=incoming;let mut changed=original;changed.x=changed.x+prefix[0]+lead;changed.y=changed.y+prefix[1]+suffix;return changed;}fn main()->i32{let prefix=[2,3];let point=Point{x:17,y:1};let returned=pass(&prefix,5,point,7);if returned.x==24 && returned.y==11{return 0;}return 1;}");
+    let checked = checked(&project);
+    for execution in [ExecutionPolicy::Bounded, ExecutionPolicy::Hosted] {
+        let marked = checked
+            .native_debug_module_with_execution(true, execution, None)
+            .unwrap();
+        assert!(marked.lines().any(|line| line == "define internal void @__oxid_owned_fn_0(ptr %fuel, ptr %result, ptr %arg0, i32 %arg0_length, i32 %arg1, ptr %arg2, i32 %arg3) noinline {"), "{marked}");
+        let module = add(&marked, &project, None, false, checked.debug_records()).unwrap();
+        for (name, argument) in [("lead", 2), ("incoming", 3), ("suffix", 4)] {
+            assert!(
+                module.contains(&format!(
+                    "!DILocalVariable(name: \"{name}\", arg: {argument},"
+                )),
+                "{name}: {module}"
+            );
+        }
+        for name in ["prefix", "fuel", "result", "arg0_length"] {
+            assert!(
+                !module.lines().any(|line| line.contains("!DILocalVariable(")
+                    && line.contains(&format!("name: \"{name}\", arg:"))),
+                "{name}: {module}"
+            );
+        }
+    }
+}

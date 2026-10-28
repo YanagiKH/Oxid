@@ -17,6 +17,10 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Project(PathBuf);
 impl Project {
     fn new(source: &str, policy: &str, profile: &str) -> Self {
+        Self::with_entry_mode(source, policy, profile, "result")
+    }
+
+    fn with_entry_mode(source: &str, policy: &str, profile: &str, entry_mode: &str) -> Self {
         let root = std::env::temp_dir().join(format!(
             "oxid-record-debug-雪-{}-{}",
             std::process::id(),
@@ -25,7 +29,7 @@ impl Project {
         fs::create_dir(&root).unwrap();
         fs::create_dir(root.join("src")).unwrap();
         fs::write(root.join("src/main.ox"), source).unwrap();
-        fs::write(root.join("oxid.toml"), format!("[project]\nname=\"record-debug\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[build]\nentry-mode=\"result\"\nprofile=\"{profile}\"\ndebug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n")).unwrap();
+        fs::write(root.join("oxid.toml"), format!("[project]\nname=\"record-debug\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[build]\nentry-mode=\"{entry_mode}\"\nprofile=\"{profile}\"\ndebug-info=true\nreproducible=true\n[execution]\npolicy=\"{policy}\"\n")).unwrap();
         Self(root)
     }
 
@@ -145,6 +149,71 @@ fn section<'a>(text: &'a str, name: &str) -> &'a str {
 }
 
 const POINT: &str = "#[derive(Copy)]\nstruct Point{x:i32,y:i32}\nfn by_value(prefix:i32,incoming:Point,suffix:i32)->Point{\n    let returned=incoming;\n    return returned;\n}\nfn inspect(prefix:i32,incoming:Point,suffix:i32)->i32{\n    let point=incoming;\n    let mut changed=point;\n    changed.x=changed.x+3;\n    let snapshot=changed;\n    changed.y=changed.y+3;\n    if prefix==0{\n        let point=Point{x:99,y:100};\n        let inside=point.x;\n    }\n    return point.x+changed.x+snapshot.y+changed.y+prefix+suffix;\n}\nfn main()->i32{\n    let original=Point{x:17,y:1};\n    let forwarded=by_value(0,original,0);\n    let result=inspect(0,forwarded,0);\n    return result+original.y-1;\n}\n";
+
+const PROCESS_ABI: &str = "#[derive(Copy)]\nstruct Point{x:i32,y:i32}\nfn pass(prefix:&[i32],lead:i32,incoming:Point,suffix:i32)->Point{\n    let original=incoming;\n    let mut changed=original;\n    changed.x=changed.x+prefix[0]+lead;\n    changed.y=changed.y+prefix[1]+suffix;\n    let snapshot=changed;\n    return snapshot;\n}\nfn main()->i32{\n    let prefix=[2,3];\n    let point=Point{x:17,y:1};\n    let returned=pass(&prefix,5,point,7);\n    if point.x==17 && point.y==1 && returned.x==24 && returned.y==11{return 0;}\n    return 1;\n}\n";
+
+#[test]
+#[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
+fn process_record_arguments_keep_source_positions_after_fuel_result_and_slice_length_parameters() {
+    // Process mode makes every function guarded: the native signature has
+    // fuel, then an owned-result pointer, then prefix + prefix_length before
+    // lead/incoming/suffix. The source record is still argument three.
+    for policy in ["bounded", "hosted"] {
+        for profile in ["dev", "release"] {
+            let project = Project::with_entry_mode(PROCESS_ABI, policy, profile, "process");
+            project.build(&[]);
+            project.verify();
+            let result = success(
+                Command::new(project.binary())
+                    .env_clear()
+                    .stdin(Stdio::null())
+                    .output()
+                    .unwrap(),
+            );
+            assert_eq!(result.status.code(), Some(0), "{result:?}");
+            assert!(
+                result.stdout.is_empty() && result.stderr.is_empty(),
+                "{result:?}"
+            );
+            if profile == "release" {
+                continue;
+            }
+            let text = project.debugger(&[
+                breakpoint(PROCESS_ABI, "return snapshot;"), "run".into(),
+                "echo ABI_START\\n".into(), "info args".into(), "info locals".into(), "ptype incoming".into(),
+                "print incoming.x".into(), "print changed.y".into(),
+                "printf \"ABI_VALUES %d %d %d %d %d %d %d %d %d %d\\n\", lead, incoming.x, incoming.y, suffix, original.x, original.y, changed.x, changed.y, snapshot.x, snapshot.y".into(),
+                "set language c".into(),
+                "printf \"ABI_DISTINCT %d %d %d\\n\", &incoming != &original, &original != &changed, &changed != &snapshot".into(),
+                "echo ABI_END\\n".into(), "continue".into(),
+            ]);
+            let values = section(&text, "ABI");
+            for expected in [
+                "lead = 5",
+                "incoming =",
+                "suffix = 7",
+                "original =",
+                "changed =",
+                "snapshot =",
+                "Point",
+                "i32",
+                "ABI_VALUES 5 17 1 7 17 1 24 11 24 11",
+                "ABI_DISTINCT 1 1 1",
+            ] {
+                assert!(values.contains(expected), "{expected}: {text}");
+            }
+            for hidden in [
+                "fuel =",
+                "result =",
+                "prefix =",
+                "prefix_length =",
+                "arg0_length =",
+            ] {
+                assert!(!values.contains(hidden), "{hidden}: {text}");
+            }
+        }
+    }
+}
 
 #[test]
 #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
