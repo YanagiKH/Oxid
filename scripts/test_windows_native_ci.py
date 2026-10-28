@@ -52,9 +52,69 @@ $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer
 $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Installed MSVC x64 tools are required' }
 $devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'
-$PSNativeCommandArgumentPassing = 'Legacy'
-$settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"
-if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }
+$sdkStart = [System.Diagnostics.ProcessStartInfo]::new()
+$sdkStart.FileName = $env:ComSpec
+$sdkStart.UseShellExecute = $false
+$sdkStart.CreateNoWindow = $true
+$sdkStart.RedirectStandardInput = $true
+$sdkStart.RedirectStandardOutput = $true
+$sdkStart.RedirectStandardError = $true
+$sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
+$sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
+$sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+$sdk = [System.Diagnostics.Process]::new()
+$sdk.StartInfo = $sdkStart
+$sdkStarted = $false
+try {
+  if (!$sdk.Start()) { throw 'Visual Studio environment initialization did not start' }
+  $sdkStarted = $true
+  $sdk.StandardInput.Close()
+  $sdkOut = [System.Text.StringBuilder]::new()
+  $sdkErr = [System.Text.StringBuilder]::new()
+  $outBuffer = [char[]]::new(4096)
+  $errBuffer = [char[]]::new(4096)
+  $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+  $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+  $outDone = $false
+  $errDone = $false
+  $sdkTimer = [System.Diagnostics.Stopwatch]::StartNew()
+  while (!$outDone -or !$errDone -or !$sdk.HasExited) {
+    if ($sdkTimer.Elapsed.TotalSeconds -ge 120) { throw 'Visual Studio environment initialization timed out' }
+    if (!$outDone -and $outRead.IsCompleted) {
+      $count = $outRead.GetAwaiter().GetResult()
+      if ($count -eq 0) { $outDone = $true } else {
+        if ($sdkOut.Length + $count -gt 1048576) { throw 'Visual Studio environment output exceeded its limit' }
+        [void]$sdkOut.Append($outBuffer, 0, $count)
+        $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+      }
+    }
+    if (!$errDone -and $errRead.IsCompleted) {
+      $count = $errRead.GetAwaiter().GetResult()
+      if ($count -eq 0) { $errDone = $true } else {
+        if ($sdkErr.Length + $count -gt 65536) { throw 'Visual Studio environment error output exceeded its limit' }
+        [void]$sdkErr.Append($errBuffer, 0, $count)
+        $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+      }
+    }
+    if (!$outDone -or !$errDone -or !$sdk.HasExited) { Start-Sleep -Milliseconds 10 }
+  }
+  $sdk.WaitForExit()
+  if ($sdk.ExitCode -ne 0) {
+    throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length))"
+  }
+  $settings = $sdkOut.ToString() -split '\r?\n'
+} finally {
+  try {
+    if ($sdkStarted -and !$sdk.HasExited) {
+      try { $sdk.Kill($true) } catch [System.InvalidOperationException] {
+        if (!$sdk.HasExited) { throw }
+      }
+      if (!$sdk.WaitForExit(5000)) { throw 'Visual Studio environment process did not terminate' }
+    }
+  } finally {
+    $sdk.Dispose()
+  }
+}
 $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
   'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion', 'WindowsSDKLibVersion',
   'UniversalCRTSdkDir', 'UCRTVersion', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')
@@ -261,9 +321,17 @@ class WindowsNativeCiTests(unittest.TestCase):
             ('missing-vc-tools', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', 'Other.Component'),
             ('wrong-sdk-architecture', '-arch=x64 -host_arch=x64', '-arch=x86 -host_arch=x86'),
             ('missing-sdk-invocation-regression', '          python -B scripts/test_windows_native_ci.py\n', ''),
-            ('wrong-native-binding', "$PSNativeCommandArgumentPassing = 'Legacy'", "$PSNativeCommandArgumentPassing = 'Standard'"),
-            ('double-wrapped-batch', '"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"',
-             '"`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""'),
+            ('shell-execute-bypass', '$sdkStart.UseShellExecute = $false', '$sdkStart.UseShellExecute = $true'),
+            ('double-wrapped-batch', "'/d /u /s /c \"\"'", "'/d /u /s /c \"\"\"'"),
+            ('missing-outer-pair', "'/d /u /s /c \"\"'", "'/d /u /s /c \"'"),
+            ('unicode-output-disabled', '/d /u /s /c ', '/d /s /c '),
+            ('wrong-output-decoder', '$sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode',
+             '$sdkStart.StandardOutputEncoding = [System.Text.Encoding]::UTF8'),
+            ('sdk-exit-ignored', '$sdk.ExitCode -ne 0', '$sdk.ExitCode -ne 37'),
+            ('sdk-deadline-removed', "    if ($sdkTimer.Elapsed.TotalSeconds -ge 120) { throw 'Visual Studio environment initialization timed out' }\n", ''),
+            ('sdk-output-unbounded', '$sdkOut.Length + $count -gt 1048576', '$false'),
+            ('sdk-errors-unbounded', '$sdkErr.Length + $count -gt 65536', '$false'),
+            ('sdk-child-tree-not-killed', '$sdk.Kill($true)', '$sdk.Kill($false)'),
             ('missing-include', "'INCLUDE', ", ''),
             ('missing-library-path', "'LIB', ", ''),
             ('missing-sdk-lib-version', "'WindowsSDKLibVersion',", ''),
@@ -361,29 +429,20 @@ class WindowsSdkInvocationTests(unittest.TestCase):
         start = commands.index("$devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'")
         return '\n'.join(commands[start:])
 
-    def test_cmd_s_removes_exactly_the_native_binders_outer_quote_pair(self):
-        # PowerShell's Legacy binder wraps arguments with unquoted whitespace;
-        # cmd /s then removes the first and last quotes after /c. Model those two
-        # independent boundaries, keeping the path's own quotes intact.
+    def test_cmd_s_removes_exactly_the_explicit_outer_quote_pair(self):
+        # ProcessStartInfo.Arguments is the raw CreateProcess argument string,
+        # with no PowerShell native binder or ArgumentList/CRT re-escaping.
+        # cmd /s removes the explicit first and last quotes after /c.
         invocation = next(line for line in self.sdk_tail().splitlines()
-                          if line.startswith('$settings = '))
-        expression = invocation.removeprefix('$settings = & $env:ComSpec /d /s /c ')
-        self.assertTrue(expression.startswith('"') and expression.endswith('"'))
+                          if line.startswith('$sdkStart.Arguments = '))
+        self.assertEqual(invocation, "$sdkStart.Arguments = '/d /u /s /c \"\"' + $devcmd + "
+                         "'\" -no_logo -arch=x64 -host_arch=x64 >nul && set\"'")
+        self.assertNotIn('$PSNativeCommandArgumentPassing', self.sdk_tail())
         for path in (r'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat',
                      r'C:\Program Files (x86)\Visual Studio 雪 & tools\Common7\Tools\VsDevCmd.bat'):
             with self.subTest(path=path):
-                argument = expression[1:-1].replace('`"', '"').replace('$devcmd', path)
-                quoted = False
-                needs_outer_quotes = False
-                previous = ''
-                for char in argument:
-                    if char == '"' and previous != '\\':
-                        quoted = not quoted
-                    elif char.isspace() and not quoted:
-                        needs_outer_quotes = True
-                    previous = char
-                self.assertTrue(needs_outer_quotes)
-                raw_command = '"' + argument + '"'
+                raw_arguments = '/d /u /s /c ""' + path + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+                raw_command = raw_arguments.split('/c ', 1)[1]
                 self.assertEqual(raw_command, '""' + path +
                                  '" -no_logo -arch=x64 -host_arch=x64 >nul && set"')
                 self.assertEqual(raw_command[1:-1], '"' + path +
@@ -394,7 +453,8 @@ class WindowsSdkInvocationTests(unittest.TestCase):
         pwsh = shutil.which('pwsh')
         self.assertIsNotNone(pwsh, 'PowerShell 7 is mandatory on the Windows runner')
         tail = self.sdk_tail()
-        for directory in ('Program Files (x86)/Microsoft Visual Studio/2022/Enterprise',
+        for directory in ('VisualStudio',
+                          'Program Files (x86)/Microsoft Visual Studio/2022/Enterprise',
                           'Program Files/Visual Studio 雪 & tools'):
             for status in (0, 37):
                 with self.subTest(directory=directory, batch_exit=status), tempfile.TemporaryDirectory() as temp:
@@ -404,6 +464,7 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                     batch.parent.mkdir(parents=True)
                     batch.write_text(
                         '@echo off\n'
+                        '> "%OXID_SDK_TEST_TRACE%" echo entered\n'
                         'if not "%~1"=="-no_logo" exit /b 21\n'
                         'if not "%~2"=="-arch=x64" exit /b 22\n'
                         'if not "%~3"=="-host_arch=x64" exit /b 23\n'
@@ -411,11 +472,14 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                         'if not "%OXID_SDK_TEST_PARENT%"=="inherited unchanged" exit /b 25\n'
                         'set "INCLUDE=fixture headers=a;b"\n'
                         'set "LIB=fixture libraries=c;d"\n'
+                        'set "LIBPATH=%OXID_SDK_TEST_UNICODE%"\n'
                         'set "VSCMD_ARG_TGT_ARCH=x64"\n'
                         'set "VSCMD_ARG_HOST_ARCH=x64"\n'
                         'set "OXID_SDK_TEST_UNLISTED=must not be exported"\n'
+                        f'>> "%OXID_SDK_TEST_TRACE%" echo validated-exit-{status}\n'
                         f'exit /b {status}\n', encoding='ascii', newline='\r\n')
                     exported = root / 'github-env.txt'
+                    trace = root / 'fixture-trace.txt'
                     script = root / 'initialize.ps1'
                     script.write_text("$ErrorActionPreference = 'Stop'\n"
                                       "$PSNativeCommandArgumentPassing = 'Standard'\n"
@@ -423,20 +487,29 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                                       encoding='utf-8')
                     environment = dict(os.environ, GITHUB_ENV=str(exported),
                                        OXID_SDK_TEST_INSTALLATION=str(installation),
-                                       OXID_SDK_TEST_PARENT='inherited unchanged')
+                                       OXID_SDK_TEST_PARENT='inherited unchanged',
+                                       OXID_SDK_TEST_UNICODE='fixture Unicode 雪 library path',
+                                       OXID_SDK_TEST_TRACE=str(trace))
                     result = subprocess.run([pwsh, '-NoLogo', '-NoProfile', '-NonInteractive',
                                              '-File', str(script)], env=environment,
                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             timeout=30, check=False)
+                    diagnostics = result.stderr.decode(errors='replace')
+                    self.assertTrue(trace.is_file(), 'the actual batch fixture was not entered: ' + diagnostics)
+                    self.assertLessEqual(trace.stat().st_size, 16384)
+                    marks = trace.read_bytes().decode('utf-16-le').removeprefix('\ufeff').splitlines()
+                    self.assertEqual(marks, ['entered', f'validated-exit-{status}'], diagnostics)
                     if status:
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn(b'Visual Studio environment initialization failed', result.stderr)
+                        self.assertIn(b'cmd exit code 37;', result.stderr)
                         self.assertFalse(exported.exists(), 'failed SDK setup must not export environment')
                     else:
                         self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
                         self.assertEqual(result.stdout, b'')
                         values = exported.read_text(encoding='utf-8-sig').splitlines()
                         for value in ('INCLUDE=fixture headers=a;b', 'LIB=fixture libraries=c;d',
+                                      'LIBPATH=fixture Unicode 雪 library path',
                                       'VSCMD_ARG_TGT_ARCH=x64', 'VSCMD_ARG_HOST_ARCH=x64'):
                             self.assertIn(value, values)
                         self.assertFalse(any(line.startswith('OXID_SDK_TEST_') for line in values))

@@ -721,9 +721,69 @@ jobs:
           $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Installed MSVC x64 tools are required' }
           $devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'
-          $PSNativeCommandArgumentPassing = 'Legacy'
-          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"
-          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }
+          $sdkStart = [System.Diagnostics.ProcessStartInfo]::new()
+          $sdkStart.FileName = $env:ComSpec
+          $sdkStart.UseShellExecute = $false
+          $sdkStart.CreateNoWindow = $true
+          $sdkStart.RedirectStandardInput = $true
+          $sdkStart.RedirectStandardOutput = $true
+          $sdkStart.RedirectStandardError = $true
+          $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
+          $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
+          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+          $sdk = [System.Diagnostics.Process]::new()
+          $sdk.StartInfo = $sdkStart
+          $sdkStarted = $false
+          try {
+            if (!$sdk.Start()) { throw 'Visual Studio environment initialization did not start' }
+            $sdkStarted = $true
+            $sdk.StandardInput.Close()
+            $sdkOut = [System.Text.StringBuilder]::new()
+            $sdkErr = [System.Text.StringBuilder]::new()
+            $outBuffer = [char[]]::new(4096)
+            $errBuffer = [char[]]::new(4096)
+            $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+            $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+            $outDone = $false
+            $errDone = $false
+            $sdkTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            while (!$outDone -or !$errDone -or !$sdk.HasExited) {
+              if ($sdkTimer.Elapsed.TotalSeconds -ge 120) { throw 'Visual Studio environment initialization timed out' }
+              if (!$outDone -and $outRead.IsCompleted) {
+                $count = $outRead.GetAwaiter().GetResult()
+                if ($count -eq 0) { $outDone = $true } else {
+                  if ($sdkOut.Length + $count -gt 1048576) { throw 'Visual Studio environment output exceeded its limit' }
+                  [void]$sdkOut.Append($outBuffer, 0, $count)
+                  $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+                }
+              }
+              if (!$errDone -and $errRead.IsCompleted) {
+                $count = $errRead.GetAwaiter().GetResult()
+                if ($count -eq 0) { $errDone = $true } else {
+                  if ($sdkErr.Length + $count -gt 65536) { throw 'Visual Studio environment error output exceeded its limit' }
+                  [void]$sdkErr.Append($errBuffer, 0, $count)
+                  $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+                }
+              }
+              if (!$outDone -or !$errDone -or !$sdk.HasExited) { Start-Sleep -Milliseconds 10 }
+            }
+            $sdk.WaitForExit()
+            if ($sdk.ExitCode -ne 0) {
+              throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length))"
+            }
+            $settings = $sdkOut.ToString() -split '\r?\n'
+          } finally {
+            try {
+              if ($sdkStarted -and !$sdk.HasExited) {
+                try { $sdk.Kill($true) } catch [System.InvalidOperationException] {
+                  if (!$sdk.HasExited) { throw }
+                }
+                if (!$sdk.WaitForExit(5000)) { throw 'Visual Studio environment process did not terminate' }
+              }
+            } finally {
+              $sdk.Dispose()
+            }
+          }
           $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
             'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion', 'WindowsSDKLibVersion',
             'UniversalCRTSdkDir', 'UCRTVersion', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')
