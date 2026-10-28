@@ -466,11 +466,10 @@ jobs:
                 if test "$install_signal" = INT; then
                   kill -TERM -- "-$install_pid" 2>/dev/null || true
                 fi
-                for attempt in 1 2 3 4 5 6 7 8 9 10; do
-                  if ! kill -0 -- "-$install_pid" 2>/dev/null; then
-                    break
-                  fi
+                install_waits=10
+                while kill -0 -- "-$install_pid" 2>/dev/null && test "$install_waits" -gt 0; do
                   sleep 0.1
+                  install_waits=$((install_waits - 1))
                 done
                 kill -KILL -- "-$install_pid" 2>/dev/null || true
                 wait "$install_pid" 2>/dev/null || true
