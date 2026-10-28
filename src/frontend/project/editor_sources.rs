@@ -40,7 +40,7 @@ impl<'a> SourceOverlay<'a> {
         Ok(Self { entries })
     }
 
-    fn text(&self, path: &Path) -> Option<&str> {
+    pub(in crate::frontend) fn text(&self, path: &Path) -> Option<&str> {
         if let Some((_, text)) = self.entries.iter().find(|(key, _)| *key == path) {
             return Some(text);
         }
@@ -52,7 +52,90 @@ impl<'a> SourceOverlay<'a> {
     }
 }
 
-impl SourceSetBuilder<'_> {
+/// Query syntax has its own concrete owner; there is no conversion to the
+/// ordinary ProjectSources<ast::Program> required by compiler source owners.
+#[derive(Debug)]
+pub(in crate::frontend) enum QuerySources<'a> {
+    Single(ProjectSources<parser::editor_query::EditorFile>),
+    Packages(packages::PackageSources<'a, parser::editor_query::EditorFile>),
+}
+impl<'a> QuerySources<'a> {
+    pub(in crate::frontend) fn load(
+        specs: &'a [packages::PackageSpec],
+        entry: Option<&Path>,
+        overlay: &SourceOverlay<'_>,
+    ) -> Result<Self, LoadFailure> {
+        packages::validate_graph(specs, entry).map_err(|error| LoadFailure {
+            sources: SourceMap::new(),
+            diagnostics: vec![*error],
+            usage: Default::default(),
+            #[cfg(test)]
+            allocator: Allocator::default(),
+        })?;
+        if specs.len() == 1 {
+            let entry = entry
+                .unwrap_or(&specs[0].entry)
+                .to_str()
+                .expect("validated source path");
+            ProjectSources::load_with_syntax_inputs(
+                entry,
+                ProjectLimits::default(),
+                parser::SourceMode::ProjectCandidate,
+                &mut Allocator::default(),
+                parser::ArraySyntaxPolicy::Enabled,
+                ProjectEnumSyntax::Enabled,
+                None,
+                Some(overlay),
+            )
+            .map(Self::Single)
+        } else {
+            packages::PackageSources::load_syntax_with_editor(
+                specs,
+                entry,
+                ProjectLimits::default(),
+                Some(overlay),
+            )
+            .map(Self::Packages)
+        }
+    }
+    pub(in crate::frontend) fn project(&self) -> &ProjectSources<parser::editor_query::EditorFile> {
+        match self {
+            Self::Single(project) => project,
+            Self::Packages(sources) => &sources.project,
+        }
+    }
+    pub(in crate::frontend) fn root(&self, module: ModuleId) -> Option<ModuleId> {
+        match self {
+            Self::Single(_) => Some(ModuleId(0)),
+            Self::Packages(sources) => sources.context.root(module),
+        }
+    }
+    pub(in crate::frontend) fn dependencies(
+        &self,
+        module: ModuleId,
+    ) -> &[packages::PackageDependency] {
+        match self {
+            Self::Single(_) => &[],
+            Self::Packages(sources) => sources.context.dependencies(module).unwrap_or(&[]),
+        }
+    }
+    pub(in crate::frontend) fn dependency_target(&self, package: usize) -> Option<ModuleId> {
+        match self {
+            Self::Single(_) => None,
+            Self::Packages(sources) => sources.context.target(package),
+        }
+    }
+}
+impl ProjectSources<parser::editor_query::EditorFile> {
+    pub(in crate::frontend) fn editor_files(&self) -> &[parser::editor_query::EditorFile] {
+        &self.programs
+    }
+    pub(in crate::frontend) fn editor_modules(&self) -> &[ModuleHeader] {
+        &self.modules
+    }
+}
+
+impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
     #[cfg(windows)]
     pub(super) fn read_verified_child_input(
         &mut self,

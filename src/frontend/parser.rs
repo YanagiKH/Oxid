@@ -1,3 +1,4 @@
+pub(in crate::frontend) mod editor_query;
 use super::{
     ast::*,
     diagnostic::Diagnostic,
@@ -1201,10 +1202,9 @@ impl Parser<'_> {
         self.generic_calls[id.0].span = self.source.span(start, end);
         Ok(id)
     }
-    fn function(
+    fn function_header(
         &mut self,
-        public: Option<super::source::Span>,
-    ) -> Result<Function, Box<Diagnostic>> {
+    ) -> Result<(super::source::Span, Vec<Param>, TypeSyntax), Box<Diagnostic>> {
         self.node()?;
         self.expect(Kind::Fn, "expected a top-level function declaration")?;
         let name = self.expect(Kind::Ident, "expected function name")?.span;
@@ -1238,6 +1238,13 @@ impl Parser<'_> {
             "function requires an explicit return type after `->`",
         )?;
         let result = self.ty()?;
+        Ok((name, params, result))
+    }
+    fn function(
+        &mut self,
+        public: Option<super::source::Span>,
+    ) -> Result<Function, Box<Diagnostic>> {
+        let (name, params, result) = self.function_header()?;
         let mut blocks = Vec::new();
         let body = self.block(&mut blocks, 0, "expected function body `{`")?;
         let end = blocks[body.0].end;

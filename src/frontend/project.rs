@@ -19,7 +19,9 @@ mod enum_carrier_tests;
 #[path = "project/enum_index_tests.rs"]
 mod enum_index_tests;
 mod filesystem;
+mod module_syntax;
 use editor_sources::SourceOverlay;
+use module_syntax::ModuleSyntax;
 pub(super) mod packages;
 #[cfg(test)]
 mod tests;
@@ -143,9 +145,9 @@ pub(super) struct ModuleHeader {
 }
 
 #[derive(Debug)]
-pub(super) struct ProjectSources {
+pub(super) struct ProjectSources<S = ast::Program> {
     sources: SourceMap,
-    programs: Vec<ast::Program>,
+    programs: Vec<S>,
     modules: Vec<ModuleHeader>,
     canonical_root: Option<PathBuf>,
     usage: SourceUsage,
@@ -488,58 +490,7 @@ impl ProjectSources {
             entry, limits, mode, allocator, arrays, enums, provider, None,
         )
     }
-    #[allow(clippy::too_many_arguments)]
-    fn load_with_syntax_inputs(
-        entry: &str,
-        limits: ProjectLimits,
-        mode: parser::SourceMode,
-        allocator: &mut Allocator,
-        arrays: parser::ArraySyntaxPolicy,
-        enums: ProjectEnumSyntax,
-        mut provider: Option<&mut dyn LexicalProvider>,
-        overlay: Option<&SourceOverlay<'_>>,
-    ) -> Result<Self, LoadFailure> {
-        let mut builder = SourceSetBuilder {
-            entry,
-            limits,
-            allocator,
-            mode,
-            arrays,
-            enums,
-            project: Self {
-                sources: SourceMap::new(),
-                programs: Vec::new(),
-                modules: Vec::new(),
-                canonical_root: None,
-                usage: SourceUsage::default(),
-                syntax_flavor: SyntaxFlavor::OriginalSingleFile,
-            },
-        };
-        let loaded = if overlay.is_some() {
-            builder.load_all_with_inputs(&mut provider, overlay)
-        } else {
-            builder.load_all_with_provider(&mut provider)
-        };
-        match loaded {
-            Ok(()) => Ok(builder.project),
-            Err(diagnostics) => Err(LoadFailure {
-                sources: builder.project.sources,
-                diagnostics,
-                usage: builder.project.usage,
-                #[cfg(test)]
-                allocator: std::mem::take(builder.allocator),
-            }),
-        }
-    }
-    pub fn sources(&self) -> &SourceMap {
-        &self.sources
-    }
-    pub fn usage(&self) -> SourceUsage {
-        self.usage
-    }
-    pub fn syntax_flavor(&self) -> SyntaxFlavor {
-        self.syntax_flavor
-    }
+
     pub fn uses_owned_syntax(&self) -> bool {
         self.programs
             .iter()
@@ -549,12 +500,7 @@ impl ProjectSources {
     pub fn modules(&self) -> &[ModuleHeader] {
         &self.modules
     }
-    pub fn try_text(&self, span: Span) -> Option<&str> {
-        self.sources.try_text(span)
-    }
-    pub fn text(&self, span: Span) -> &str {
-        self.sources.text(span)
-    }
+
     pub fn try_file_ast(&self, file: SourceFileId) -> Option<&ast::Program> {
         self.modules
             .get(file.0)
@@ -629,6 +575,67 @@ impl ProjectSources {
         (self.syntax_flavor == SyntaxFlavor::OriginalSingleFile && self.programs.len() == 1)
             .then(|| (self.sources.get(SourceFileId(0)), &self.programs[0]))
     }
+}
+
+impl<S: ModuleSyntax> ProjectSources<S> {
+    #[allow(clippy::too_many_arguments)]
+    fn load_with_syntax_inputs(
+        entry: &str,
+        limits: ProjectLimits,
+        mode: parser::SourceMode,
+        allocator: &mut Allocator,
+        arrays: parser::ArraySyntaxPolicy,
+        enums: ProjectEnumSyntax,
+        mut provider: Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
+        let mut builder = SourceSetBuilder {
+            entry,
+            limits,
+            allocator,
+            mode,
+            arrays,
+            enums,
+            project: Self {
+                sources: SourceMap::new(),
+                programs: Vec::new(),
+                modules: Vec::new(),
+                canonical_root: None,
+                usage: SourceUsage::default(),
+                syntax_flavor: SyntaxFlavor::OriginalSingleFile,
+            },
+        };
+        let loaded = if overlay.is_some() {
+            builder.load_all_with_inputs(&mut provider, overlay)
+        } else {
+            builder.load_all_with_provider(&mut provider)
+        };
+        match loaded {
+            Ok(()) => Ok(builder.project),
+            Err(diagnostics) => Err(LoadFailure {
+                sources: builder.project.sources,
+                diagnostics,
+                usage: builder.project.usage,
+                #[cfg(test)]
+                allocator: std::mem::take(builder.allocator),
+            }),
+        }
+    }
+    pub fn sources(&self) -> &SourceMap {
+        &self.sources
+    }
+    pub fn usage(&self) -> SourceUsage {
+        self.usage
+    }
+    pub fn syntax_flavor(&self) -> SyntaxFlavor {
+        self.syntax_flavor
+    }
+    pub fn try_text(&self, span: Span) -> Option<&str> {
+        self.sources.try_text(span)
+    }
+    pub fn text(&self, span: Span) -> &str {
+        self.sources.text(span)
+    }
     /// Exact requested retained lengths. Vec capacity/allocator/OS storage excluded.
     pub fn inventory(&self) -> Option<Inventory> {
         let mut result = Inventory {
@@ -640,7 +647,7 @@ impl ProjectSources {
                 .len()
                 .checked_mul(size_of::<super::source::SourceFile>())?,
             line_starts: self.usage.line_starts.checked_mul(size_of::<usize>())?,
-            ast_headers: self.programs.len().checked_mul(size_of::<ast::Program>())?,
+            ast_headers: self.programs.len().checked_mul(size_of::<S>())?,
             module_headers: self.modules.len().checked_mul(size_of::<ModuleHeader>())?,
             path_bytes: self.usage.retained_path_bytes,
             fixed_loader_scratch: size_of::<[u8; 8192]>().checked_add(size_of::<[Frame; 33]>())?,
@@ -652,7 +659,8 @@ impl ProjectSources {
                 .fixed_loader_scratch
                 .checked_add(filesystem::fixed_scratch_bytes()?)?;
         }
-        for program in &self.programs {
+        for parsed in &self.programs {
+            let program = parsed.ordinary()?;
             if !program.generic_headers().is_empty() {
                 result.ast_payload = result
                     .ast_payload
@@ -861,7 +869,7 @@ fn io_error(error: io::Error, display: &str, origin: Option<Span>) -> Box<Diagno
 }
 
 #[derive(Clone, Copy)]
-enum ProjectEnumSyntax {
+pub(super) enum ProjectEnumSyntax {
     #[cfg(test)]
     OutputCandidate,
     #[cfg(test)]
@@ -875,14 +883,14 @@ enum ProjectEnumSyntax {
     Candidate,
 }
 
-struct SourceSetBuilder<'a> {
+struct SourceSetBuilder<'a, S = ast::Program> {
     entry: &'a str,
     limits: ProjectLimits,
     allocator: &'a mut Allocator,
     mode: parser::SourceMode,
     arrays: parser::ArraySyntaxPolicy,
     enums: ProjectEnumSyntax,
-    project: ProjectSources,
+    project: ProjectSources<S>,
 }
 #[derive(Clone, Copy)]
 struct Frame {
@@ -890,7 +898,7 @@ struct Frame {
     next: usize,
 }
 
-impl SourceSetBuilder<'_> {
+impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
     fn load_all(&mut self) -> Result<(), Errors> {
         self.load_all_with_provider(&mut None)
     }
@@ -931,11 +939,11 @@ impl SourceSetBuilder<'_> {
         });
         self.project.usage.modules = 1;
         // No additional path policy, including host capability checks, for one file.
-        if self.project.programs[0].modules.is_empty() {
+        if self.project.programs[0].modules().is_empty() {
             return Ok(());
         }
         self.project.syntax_flavor = SyntaxFlavor::ProjectSyntax;
-        let origin = self.project.programs[0].modules[0].name;
+        let origin = self.project.programs[0].modules()[0].name;
         // Root canonicalization is deferred until the first declared child has
         // passed the earlier M/D/component/relative-path dimensional checks.
         let first_name_bytes = self.project.text(origin).len();
@@ -988,7 +996,7 @@ impl SourceSetBuilder<'_> {
         let mut height = 1;
         while height != 0 {
             let frame = stack[height - 1];
-            if frame.next == self.project.programs[frame.module.0].modules.len() {
+            if frame.next == self.project.programs[frame.module.0].modules().len() {
                 height -= 1;
                 continue;
             }
@@ -1019,7 +1027,7 @@ impl SourceSetBuilder<'_> {
         // Count and byte products for both tables are admitted before either grows.
         let count = add(self.project.programs.len(), 1, origin)?;
         count
-            .checked_mul(size_of::<ast::Program>())
+            .checked_mul(size_of::<S>())
             .and_then(|_| count.checked_mul(size_of::<ModuleHeader>()))
             .ok_or_else(|| overflow(origin))?;
         self.allocator
@@ -1125,7 +1133,7 @@ impl SourceSetBuilder<'_> {
         display: String,
         text: String,
         origin: Option<Span>,
-    ) -> Result<ast::Program, Errors> {
+    ) -> Result<S, Errors> {
         self.parse_file_with_provider(display, text, origin, &mut None)
     }
     fn parse_file_with_provider(
@@ -1134,7 +1142,7 @@ impl SourceSetBuilder<'_> {
         text: String,
         origin: Option<Span>,
         provider: &mut Option<&mut dyn LexicalProvider>,
-    ) -> Result<ast::Program, Errors> {
+    ) -> Result<S, Errors> {
         let path_bytes = add(
             self.project.usage.retained_path_bytes,
             display.len(),
@@ -1201,72 +1209,15 @@ impl SourceSetBuilder<'_> {
                 .selected_for_parser(source, &tokens, tokens.capacity())
                 .map_err(one)?;
         }
-        let (program, nodes) = match self.enums {
-            #[cfg(test)]
-            ProjectEnumSyntax::StdClosed => parser::parse_typed_closed_std_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            #[cfg(test)]
-            ProjectEnumSyntax::OutputCandidate => parser::parse_output_candidate_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            #[cfg(test)]
-            ProjectEnumSyntax::BuiltinCandidate => parser::parse_builtin_candidate_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            ProjectEnumSyntax::Closed => {
-                if self.arrays == parser::ArraySyntaxPolicy::Closed {
-                    parser::parse_counted(
-                        source,
-                        tokens,
-                        self.mode,
-                        remaining_nodes,
-                        self.allocator,
-                    )?
-                } else {
-                    parser::parse_counted_with_arrays(
-                        source,
-                        tokens,
-                        self.mode,
-                        remaining_nodes,
-                        self.allocator,
-                        self.arrays,
-                    )?
-                }
-            }
-            ProjectEnumSyntax::Enabled => parser::parse_typed_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            #[cfg(test)]
-            ProjectEnumSyntax::Candidate => parser::parse_enum_candidate_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-        };
+        let (program, nodes) = S::parse(
+            source,
+            tokens,
+            self.mode,
+            self.arrays,
+            self.enums,
+            remaining_nodes,
+            self.allocator,
+        )?;
         self.project.usage.syntax_nodes =
             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
         if program.uses_project_syntax() {
@@ -1293,7 +1244,7 @@ impl SourceSetBuilder<'_> {
         provider: &mut Option<&mut dyn LexicalProvider>,
         overlay: Option<&SourceOverlay<'_>>,
     ) -> Result<ModuleId, Errors> {
-        let declaration = self.project.programs[parent.0].modules[local];
+        let declaration = self.project.programs[parent.0].modules()[local];
         let at = Some(declaration.name);
         let name = self.project.text(declaration.name);
         let parent_header = &self.project.modules[parent.0];
@@ -1349,7 +1300,7 @@ impl SourceSetBuilder<'_> {
             at,
         )
         .map_err(one)?;
-        for earlier in &self.project.programs[parent.0].modules[..local] {
+        for earlier in &self.project.programs[parent.0].modules()[..local] {
             let old = self.project.text(earlier.name);
             if old == name {
                 return Err(one(owned_diagnostic::secondary(
