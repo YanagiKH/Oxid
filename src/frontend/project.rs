@@ -646,6 +646,12 @@ impl ProjectSources {
             fixed_loader_scratch: size_of::<[u8; 8192]>().checked_add(size_of::<[Frame; 33]>())?,
             ..Inventory::default()
         };
+        #[cfg(windows)]
+        if self.canonical_root.is_some() {
+            result.fixed_loader_scratch = result
+                .fixed_loader_scratch
+                .checked_add(filesystem::fixed_scratch_bytes()?)?;
+        }
         for program in &self.programs {
             if !program.generic_headers().is_empty() {
                 result.ast_payload = result
@@ -949,6 +955,8 @@ impl SourceSetBuilder<'_> {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
+        #[cfg(windows)]
+        filesystem::admit_invoked_entry(Path::new(self.entry), origin).map_err(one)?;
         // OS-returned canonicalization storage is outside controlled reserve accounting.
         let root_path = parent
             .canonicalize()
@@ -1029,6 +1037,15 @@ impl SourceSetBuilder<'_> {
         origin: Option<Span>,
     ) -> Result<String, Box<Diagnostic>> {
         let mut file = File::open(path).map_err(|e| io_error(e, display, origin))?;
+        self.read_open_source(&mut file, display, origin)
+    }
+
+    fn read_open_source(
+        &mut self,
+        file: &mut File,
+        display: &str,
+        origin: Option<Span>,
+    ) -> Result<String, Box<Diagnostic>> {
         let mut bytes = Vec::new();
         let mut scratch = [0u8; 8192];
         let remaining = self
@@ -1300,13 +1317,32 @@ impl SourceSetBuilder<'_> {
             name.len(),
             add(
                 display_parent.len(),
-                usize::from(!display_parent.is_empty() && !display_parent.ends_with('/')),
+                usize::from({
+                    #[cfg(not(windows))]
+                    {
+                        !display_parent.is_empty() && !display_parent.ends_with('/')
+                    }
+                    #[cfg(windows)]
+                    {
+                        !display_parent.is_empty()
+                            && filesystem::separator_units(Path::new(display_parent)) != 0
+                    }
+                }),
                 at,
             )
             .map_err(one)?,
             add(
                 filesystem::path_units(root_path),
-                usize::from(!root_path.as_os_str().as_encoded_bytes().ends_with(b"/")),
+                {
+                    #[cfg(not(windows))]
+                    {
+                        usize::from(!root_path.as_os_str().as_encoded_bytes().ends_with(b"/"))
+                    }
+                    #[cfg(windows)]
+                    {
+                        filesystem::separator_units(root_path)
+                    }
+                },
                 at,
             )
             .map_err(one)?,
@@ -1353,7 +1389,17 @@ impl SourceSetBuilder<'_> {
             .string(&mut display, plan.display_bytes, "module display")
             .map_err(|error| one(reserve_error(error, at)))?;
         display.push_str(display_parent);
-        if !display_parent.is_empty() && !display_parent.ends_with('/') {
+        if {
+            #[cfg(not(windows))]
+            {
+                !display_parent.is_empty() && !display_parent.ends_with('/')
+            }
+            #[cfg(windows)]
+            {
+                !display_parent.is_empty()
+                    && filesystem::separator_units(Path::new(display_parent)) != 0
+            }
+        } {
             display.push('/');
         }
         display.push_str(&relative);
@@ -1366,7 +1412,18 @@ impl SourceSetBuilder<'_> {
                 at,
             )));
         }
+        #[cfg(not(windows))]
         let canonical = filesystem::verify(
+            root_path,
+            &relative,
+            self.limits,
+            &mut self.project.usage,
+            self.allocator,
+            declaration.name,
+        )
+        .map_err(one)?;
+        #[cfg(windows)]
+        let (canonical, mut verified_child) = filesystem::verify(
             root_path,
             &relative,
             self.limits,
@@ -1397,8 +1454,19 @@ impl SourceSetBuilder<'_> {
             }
         }
         self.reserve_file(at).map_err(one)?;
+        #[cfg(not(windows))]
         let text = self
             .read_source_input(&canonical, &display, at, overlay)
+            .map_err(one)?;
+        #[cfg(windows)]
+        let text = self
+            .read_verified_child_input(
+                &mut verified_child,
+                &canonical,
+                &display,
+                declaration.name,
+                overlay,
+            )
             .map_err(one)?;
         // display is charged when admitted into SourceMap; these two owned paths here.
         self.project.usage.retained_path_bytes =

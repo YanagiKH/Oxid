@@ -53,6 +53,11 @@ pub(super) const fn file_projection_successor_bytes() -> usize {
     typeck::semantic_carriers::file_projection_successor_bytes()
 }
 
+#[cfg(test)]
+pub(super) const fn record_vector_projection_successor_bytes() -> usize {
+    typeck::semantic_carriers::record_vector_projection_successor_bytes()
+}
+
 // Same numeric ceiling, separate from AST/index/raw admission. Future dynamic
 // projection capacities spend the remainder of this allowance, not a second cap.
 pub(super) const MAX_HIR_BYTES: usize = super::budget::MAX_RAW_BYTES;

@@ -53,6 +53,24 @@ impl<'a> SourceOverlay<'a> {
 }
 
 impl SourceSetBuilder<'_> {
+    #[cfg(windows)]
+    pub(super) fn read_verified_child_input(
+        &mut self,
+        child: &mut filesystem::VerifiedChild,
+        path: &Path,
+        display: &str,
+        origin: Span,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<String, Box<Diagnostic>> {
+        child.validate(origin)?;
+        let result = match overlay.and_then(|buffers| buffers.text(path)) {
+            Some(text) => self.read_overlay_source(text, Some(origin)),
+            None => self.read_open_source(&mut child.file, display, Some(origin)),
+        }?;
+        child.validate(origin)?;
+        Ok(result)
+    }
+
     pub(super) fn read_source_input(
         &mut self,
         path: &Path,
@@ -63,6 +81,14 @@ impl SourceSetBuilder<'_> {
         let Some(text) = overlay.and_then(|buffers| buffers.text(path)) else {
             return self.read_source(path, display, origin);
         };
+        self.read_overlay_source(text, origin)
+    }
+
+    fn read_overlay_source(
+        &mut self,
+        text: &str,
+        origin: Option<Span>,
+    ) -> Result<String, Box<Diagnostic>> {
         let remaining = self
             .limits
             .source_bytes

@@ -463,7 +463,16 @@ fn bounded_enum_pipeline_emits_after_success_and_inert_fuel_error_then_drops_art
     });
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn bounded_enum_pipeline_scanner_preserves_unqualified_host_diagnostic() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};

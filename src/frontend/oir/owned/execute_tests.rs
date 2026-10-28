@@ -1576,8 +1576,9 @@ fn stopped_at_record_vector_index<'p, 'w>(
 #[test]
 fn record_vector_copy_preflights_private_bytes_and_owner_epochs_before_any_write() {
     let text="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let mut v=new::<P>();try_push(&mut v,p);let second=v[0];return second.earlier;}";
-    let (_, witness, _) = super::super::source::copy_record_tests::checked(text);
-    let plan = ExecutionPlan::build(&witness).unwrap();
+    let checked = super::super::source::resource_fixtures::checked_enum_project(text);
+    let witness = &checked.witness;
+    let plan = ExecutionPlan::build(witness).unwrap();
     let mut machine = stopped_at_record_vector_index(&plan, true);
     let frame = &machine.frames[0];
     let statement =
@@ -1669,8 +1670,9 @@ fn record_vector_copy_preflights_private_bytes_and_owner_epochs_before_any_write
 #[test]
 fn record_vector_store_validates_every_source_leaf_before_staging_or_heap_publication() {
     let text="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:21,last:false};let mut v=new::<P>();try_push(&mut v,p);let replacement=P{first:9u8,earlier:42,last:true};v[0]=replacement;return replacement.earlier;}";
-    let (_, witness, _) = super::super::source::copy_record_tests::checked(text);
-    let plan = ExecutionPlan::build(&witness).unwrap();
+    let checked = super::super::source::resource_fixtures::checked_enum_project(text);
+    let witness = &checked.witness;
+    let plan = ExecutionPlan::build(witness).unwrap();
     let mut machine = stopped_at_record_vector_index(&plan, false);
     let frame = &machine.frames[0];
     let statement =

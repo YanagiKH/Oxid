@@ -106,7 +106,16 @@ fn not_public() -> i32 { return 123456; }
         "src/hidden.ox",
         "pub fn hidden_public() -> i32 { return 765432; }\n",
     );
-    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+    if !cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         source_policy_failure(
             p.run(&["doc"]),
             "error[E0001] (project): error[E0005] (source): module source policy is not qualified on this host",

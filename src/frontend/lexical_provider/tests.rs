@@ -357,7 +357,16 @@ fn lexical_loader_moves_actual_provider_allocation_into_each_module_parser() {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn lexical_loader_declared_child_refuses_unqualified_host_without_child_fallback() {
     let files = Files::new();

@@ -7,7 +7,7 @@ use alloc::vec::try_extend;
 struct Point { x: i32, y: i32 }
 
 fn first<T: Copy>(values: &[T]) -> T { return values[0]; }
-fn replace<T: Copy>(values: &mut [T], value: T) { values[0] = value; }
+fn replace<T: Copy>(values: &mut [T], value: T) -> () { values[0] = value; return; }
 
 fn main() -> i32 {
     let point = Point { x: 20, y: 1 };

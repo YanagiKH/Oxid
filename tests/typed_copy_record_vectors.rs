@@ -567,3 +567,57 @@ fn native_copy_record_vector_failures_keep_the_first_diagnostic_without_sources(
         }
     }
 }
+
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+#[ignore = "requires LLVM 19.1.7; debug filenames must not select a record schema runtime"]
+fn native_debug_filename_cannot_select_a_record_vector_catalog_for_scalar_vectors() {
+    let filename = "@__oxid_record_vector_schema_count = constant.ox";
+    for policy in ["bounded", "hosted"] {
+        let project=Project::new("fn main()->i32{let mut values=new::<i32>();try_push(&mut values,42);return values[0];}",policy);
+        fs::rename(project.0.join("main.ox"), project.0.join(filename)).unwrap();
+        let manifest = fs::read_to_string(project.0.join("oxid.toml"))
+            .unwrap()
+            .replace("entry = \"main.ox\"", &format!("entry = \"{filename}\""));
+        fs::write(project.0.join("oxid.toml"), manifest).unwrap();
+        let deployment = project.0.join("deployment");
+        fs::create_dir(&deployment).unwrap();
+        for profile in ["dev", "release"] {
+            let built = project.invoke(&["build", "--debug-info", "--profile", profile]);
+            assert!(built.status.success(), "{policy}: {profile}: {built:?}");
+            let source = project.0.join(".oxid/bin/copy-vector-contracts");
+            let header = fs::read(&source).unwrap();
+            let magic = if cfg!(target_os = "linux") {
+                b"\x7fELF"
+            } else {
+                b"\xcf\xfa\xed\xfe"
+            };
+            assert!(header.starts_with(magic), "actual host executable required");
+            fs::copy(source, deployment.join(profile)).unwrap();
+        }
+        fs::remove_file(project.0.join(filename)).unwrap();
+        fs::remove_file(project.0.join("oxid.toml")).unwrap();
+        for directory in [".oxid", "cache"] {
+            if project.0.join(directory).exists() {
+                fs::remove_dir_all(project.0.join(directory)).unwrap();
+            }
+        }
+        for profile in ["dev", "release"] {
+            let ran = output(
+                Command::new(deployment.join(profile))
+                    .env_clear()
+                    .current_dir(&deployment),
+            );
+            assert_eq!(
+                (ran.status.code(), ran.stdout, ran.stderr),
+                (Some(0), b"42\n".to_vec(), vec![]),
+                "{policy}: {profile}"
+            );
+        }
+    }
+}

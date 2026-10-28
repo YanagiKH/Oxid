@@ -28,7 +28,16 @@ impl Project {
             .unwrap()
     }
     fn unavailable_multifile(&self) -> bool {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                target_os = "windows",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             return false;
         }
         let output = self.invoke(&["check"]);

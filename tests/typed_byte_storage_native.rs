@@ -219,7 +219,16 @@ fn byte_storage_public_identical_module_text_keeps_runtime_file_identity() {
         let ran = source_command(&case, "run", false);
         assert_eq!(ran.status.code(), Some(1), "{ran:?}");
         assert!(ran.stdout.is_empty());
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                target_os = "windows",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             assert_eq!(checked.status.code(), Some(0), "{checked:?}");
             assert_eq!(ran.stderr, format!("error[E0606] (oir-owned-run): array index out of bounds\n  --> {chosen}.ox:1:{column}\n").as_bytes());
         } else {
@@ -332,9 +341,28 @@ fn byte_storage_public_unused_nested_enum_array_payload_checks_without_effects()
             let output = source_command(
                 &case,
                 operation,
-                operation == "check" || !cfg!(any(target_os = "linux", target_os = "macos")),
+                operation == "check"
+                    || !cfg!(any(
+                        target_os = "linux",
+                        target_os = "macos",
+                        all(
+                            target_os = "windows",
+                            target_arch = "x86_64",
+                            target_pointer_width = "64",
+                            target_endian = "little"
+                        )
+                    )),
             );
-            if cfg!(any(target_os = "linux", target_os = "macos")) {
+            if cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                all(
+                    target_os = "windows",
+                    target_arch = "x86_64",
+                    target_pointer_width = "64",
+                    target_endian = "little"
+                )
+            )) {
                 assert!(output.status.success(), "{output:?}");
                 assert!(output.stderr.is_empty(), "{output:?}");
                 if operation == "run" {
